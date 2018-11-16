@@ -1,0 +1,45 @@
+﻿using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using System;
+using System.IO;
+using System.Text;
+
+public class ClickCatcher : MonoBehaviour {
+    public Toggle TotalSwitch;
+    public string FileName;
+    public string txtPath;
+    FileStream fs;
+    StreamWriter SWriter;
+
+    void Update () {
+        if (!TotalSwitch.isOn)
+            return;
+        if (Input.GetMouseButtonDown(0))
+        {
+            Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            SWriter.WriteLine("Mouse0:" + mp.x + "," + mp.y);
+            //Debug.Log("Mouse0:" + mp.x + "," + mp.y);
+        }
+        if (Input.GetMouseButtonDown(1))
+        {
+            Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+            SWriter.WriteLine("Mouse1:" + mp.x + "," + mp.y);
+            //Debug.Log("Mouse1:" + mp.x + "," + mp.y);
+        }
+    }
+
+    public void SelectNewTXT()
+    {
+        if (SWriter != null)
+            SWriter.Close();
+        if (!TotalSwitch.isOn)
+            return;
+        FileName = "/" + string.Format("{0:D2}{1:D2}{2:D2}{3:D2}{4:D2}{5:D2}", System.DateTime.Now.Year, System.DateTime.Now.Month, System.DateTime.Now.Day, System.DateTime.Now.Hour, System.DateTime.Now.Minute, System.DateTime.Now.Second) + ".txt";
+        txtPath = Application.dataPath + FileName;
+        fs = new FileStream(txtPath, FileMode.OpenOrCreate,FileAccess.ReadWrite);
+        SWriter = new StreamWriter(fs);
+        SWriter.WriteLine("Started");
+    }
+}
