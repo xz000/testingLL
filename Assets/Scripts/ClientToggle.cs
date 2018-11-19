@@ -6,6 +6,8 @@ using UnityEngine.Networking;
 
 public class ClientToggle : MonoBehaviour
 {
+    public GameObject SRer;
+    Sender SenderScript;
     public Toggle CT;
     public InputField Cinput;
     public Text Ctext;
@@ -18,6 +20,12 @@ public class ClientToggle : MonoBehaviour
     public byte error;
     ConnectionConfig CCcFIG;
     HostTopology CosTT;
+
+    private void Start()
+    {
+        SenderScript = SRer.GetComponent<Sender>();
+        SenderScript.theCT = this;
+    }
 
     public void ClickCT()
     {
@@ -42,6 +50,7 @@ public class ClientToggle : MonoBehaviour
 
     void Cstart()
     {
+        SenderScript.isServer = false;
         NetworkTransport.Init();
         CCcFIG = new ConnectionConfig();
         CChannelID = CCcFIG.AddChannel(QosType.Reliable);

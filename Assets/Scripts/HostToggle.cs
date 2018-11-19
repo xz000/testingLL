@@ -4,7 +4,10 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 
-public class HostToggle : MonoBehaviour {
+public class HostToggle : MonoBehaviour
+{
+    public GameObject SRer;
+    Sender SenderScript;
     public Toggle HT;
     public InputField Hinput;
     public Text Htext;
@@ -13,6 +16,12 @@ public class HostToggle : MonoBehaviour {
     public int HChannelID;
     ConnectionConfig CCFIG;
     HostTopology HOSTTT;
+
+    private void Start()
+    {
+        SenderScript = SRer.GetComponent<Sender>();
+        SenderScript.theHT = this;
+    }
 
     public void ClickHT()
     {
@@ -36,6 +45,7 @@ public class HostToggle : MonoBehaviour {
 
     void Hstart()
     {
+        SenderScript.isServer = true;
         NetworkTransport.Init();
         CCFIG = new ConnectionConfig();
         HChannelID = CCFIG.AddChannel(QosType.Reliable);
