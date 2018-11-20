@@ -58,7 +58,9 @@ public class Sender : MonoBehaviour
         {
             buffer = System.Text.Encoding.Default.GetBytes(TextToSend.text);
             sz = buffer.Length;
-            //sendhi(HSID, CNID, CHANID);
+            if (sz == 0)
+                return;
+            sendhi(HSID, CNID, CHANID);
             TextToSend.text = null;
         }
     }
@@ -81,11 +83,13 @@ public class Sender : MonoBehaviour
                 break;
             case NetworkEventType.ConnectEvent:
                 SignalLight.color = Color.green;
+                SendButton.SetActive(true);
                 break;
             case NetworkEventType.DataEvent:
                 break;
             case NetworkEventType.DisconnectEvent:
                 SignalLight.color = Color.red;
+                SendButton.SetActive(false);
                 break;
         }
     }
