@@ -7,21 +7,17 @@ using UnityEngine.Networking;
 public class HostToggle : MonoBehaviour
 {
     public GameObject SRer;
-    Sender SenderScript;
+    public Sender SenderScript;
     public Toggle HT;
     public InputField Hinput;
     public Text Htext;
     public Text SLabel;
     public int HostNO;
     public int HChannelID;
+    public int hostId;
+    public byte Herror;
     ConnectionConfig CCFIG;
     HostTopology HOSTTT;
-
-    private void Start()
-    {
-        SenderScript = SRer.GetComponent<Sender>();
-        SenderScript.theHT = this;
-    }
 
     public void ClickHT()
     {
@@ -47,17 +43,22 @@ public class HostToggle : MonoBehaviour
     {
         SenderScript.isServer = true;
         NetworkTransport.Init();
+        SenderScript.StartSelf();
         CCFIG = new ConnectionConfig();
         HChannelID = CCFIG.AddChannel(QosType.Reliable);
         HOSTTT = new HostTopology(CCFIG, 10);
-        NetworkTransport.AddHost(HOSTTT, HostNO);
+        hostId = NetworkTransport.AddHost(HOSTTT, HostNO);
+
+
         SLabel.text = "Host on :" + HostNO.ToString();
     }
 
     void Hstop()
     {
         Hinput.interactable = true;
+        NetworkTransport.DisconnectNetworkHost(hostId, out Herror);
         NetworkTransport.Shutdown();
         SLabel.text = "Host Stoped";
+        SenderScript.ResetSelf();
     }
 }
