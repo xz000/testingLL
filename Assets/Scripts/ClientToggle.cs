@@ -7,7 +7,7 @@ using UnityEngine.Networking;
 public class ClientToggle : MonoBehaviour
 {
     public GameObject SRer;
-    Sender SenderScript;
+    public Sender SenderScript;
     public Toggle CT;
     public InputField Cinput;
     public Text Ctext;
@@ -17,15 +17,10 @@ public class ClientToggle : MonoBehaviour
     public int TargetNO;
     public int CChannelID;
     public int CntID;
+    int hostId;
     public byte error;
     ConnectionConfig CCcFIG;
     HostTopology CosTT;
-
-    private void Start()
-    {
-        SenderScript = SRer.GetComponent<Sender>();
-        SenderScript.theCT = this;
-    }
 
     public void ClickCT()
     {
@@ -52,18 +47,28 @@ public class ClientToggle : MonoBehaviour
     {
         SenderScript.isServer = false;
         NetworkTransport.Init();
+        SenderScript.StartSelf();
         CCcFIG = new ConnectionConfig();
         CChannelID = CCcFIG.AddChannel(QosType.Reliable);
         CosTT = new HostTopology(CCcFIG, 10);
-        int CHID = NetworkTransport.AddHost(CosTT, SelfNO);
-        CntID = NetworkTransport.Connect(CHID, "127.0.0.1", TargetNO, 0, out error);
+        hostId = NetworkTransport.AddHost(CosTT, SelfNO);
+        CntID = NetworkTransport.Connect(hostId, "127.0.0.1", TargetNO, 0, out error);
         CLabel.text = "From " + SelfNO.ToString() + " to " + TargetNO.ToString();
+
+        SenderScript.HTo = CosTT;
+        SenderScript.HSID = hostId;
+        SenderScript.CNID = CntID;
+        SenderScript.CHANID = CChannelID;
+
+        SenderScript.SendButton.SetActive(true);
     }
 
     void Cstop()
     {
         Cinput.interactable = true;
+        NetworkTransport.Disconnect(hostId, CntID, out error);
         NetworkTransport.Shutdown();
         CLabel.text = "Stoped";
+        SenderScript.ResetSelf();
     }
 }
