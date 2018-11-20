@@ -59,8 +59,6 @@ public class ClientToggle : MonoBehaviour
         SenderScript.HSID = hostId;
         SenderScript.CNID = CntID;
         SenderScript.CHANID = CChannelID;
-
-        SenderScript.SendButton.SetActive(true);
     }
 
     void Cstop()
