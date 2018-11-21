@@ -25,11 +25,6 @@ public class Sender : MonoBehaviour
     byte[] rcbuffer = new byte[1024];
     int rcbfsz = 1024;
 
-    public void sendhi(int hstid, int cnid, int chanid)
-    {
-        NetworkTransport.Send(hstid, cnid, chanid, buffer, sz, out error);
-    }
-
     private void Start()
     {
         ResetSelf();
@@ -50,17 +45,12 @@ public class Sender : MonoBehaviour
 
     public void ClickSendButton()
     {
-        if (isServer)
+        buffer = System.Text.Encoding.Unicode.GetBytes(TextToSend.text);
+        sz = buffer.Length;
+        if (sz != 0)
         {
-            return;
-        }
-        else
-        {
-            buffer = System.Text.Encoding.Default.GetBytes(TextToSend.text);
-            sz = buffer.Length;
-            if (sz == 0)
-                return;
-            sendhi(HSID, CNID, CHANID);
+            NetworkTransport.Send(HSID, CNID, CHANID, buffer, sz, out error);
+            TextReceived.text = System.Text.Encoding.Unicode.GetString(buffer);
             TextToSend.text = null;
         }
     }
@@ -86,6 +76,8 @@ public class Sender : MonoBehaviour
                 SendButton.SetActive(true);
                 break;
             case NetworkEventType.DataEvent:
+                TextReceived.text = System.Text.Encoding.Unicode.GetString(rcbuffer);
+                rcbuffer = new byte[1024];
                 break;
             case NetworkEventType.DisconnectEvent:
                 SignalLight.color = Color.red;

@@ -48,16 +48,17 @@ public class HostToggle : MonoBehaviour
         HChannelID = CCFIG.AddChannel(QosType.Reliable);
         HOSTTT = new HostTopology(CCFIG, 10);
         hostId = NetworkTransport.AddHost(HOSTTT, HostNO);
-
-
         SLabel.text = "Host on :" + HostNO.ToString();
     }
 
     void Hstop()
     {
         Hinput.interactable = true;
-        NetworkTransport.DisconnectNetworkHost(hostId, out Herror);
-        NetworkTransport.Shutdown();
+        if (NetworkTransport.IsStarted)
+        {
+            NetworkTransport.DisconnectNetworkHost(hostId, out Herror);
+            NetworkTransport.Shutdown();
+        }
         SLabel.text = "Host Stoped";
         SenderScript.ResetSelf();
     }
