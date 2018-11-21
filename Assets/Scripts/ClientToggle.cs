@@ -54,7 +54,6 @@ public class ClientToggle : MonoBehaviour
         hostId = NetworkTransport.AddHost(CosTT, SelfNO);
         CntID = NetworkTransport.Connect(hostId, "127.0.0.1", TargetNO, 0, out error);
         CLabel.text = "From " + SelfNO.ToString() + " to " + TargetNO.ToString();
-
         SenderScript.HTo = CosTT;
         SenderScript.HSID = hostId;
         SenderScript.CNID = CntID;
@@ -64,8 +63,11 @@ public class ClientToggle : MonoBehaviour
     void Cstop()
     {
         Cinput.interactable = true;
-        NetworkTransport.Disconnect(hostId, CntID, out error);
-        NetworkTransport.Shutdown();
+        if (NetworkTransport.IsStarted)
+        {
+            NetworkTransport.Disconnect(hostId, CntID, out error);
+            NetworkTransport.Shutdown();
+        }
         CLabel.text = "Stoped";
         SenderScript.ResetSelf();
     }
