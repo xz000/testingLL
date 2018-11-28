@@ -637,6 +637,7 @@ GameObject:
   - component: {fileID: 238781324}
   - component: {fileID: 238781325}
   - component: {fileID: 238781326}
+  - component: {fileID: 238781327}
   m_Layer: 5
   m_Name: RecordToggle
   m_TagString: Untagged
@@ -734,6 +735,22 @@ MonoBehaviour:
   TotalSwitch: {fileID: 238781325}
   FileName: 
   txtPath: 
+  lsw: {fileID: 238781327}
+--- !u!114 &238781327
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 238781323}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 25adb772fbf594d44af7bf54e1167f30, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  lsFileName: 
+  lstxtPath: 
+  FrameLength: 1
+  FrameNum: 0
 --- !u!1 &258478783
 GameObject:
   m_ObjectHideFlags: 0
@@ -2409,6 +2426,7 @@ MonoBehaviour:
   HostNO: 9000
   HChannelID: 0
   hostId: 0
+  Herror: 0
 --- !u!1 &1306829818
 GameObject:
   m_ObjectHideFlags: 0
