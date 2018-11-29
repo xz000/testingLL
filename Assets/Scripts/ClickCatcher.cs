@@ -24,15 +24,13 @@ public class ClickCatcher : MonoBehaviour {
             string m0st = "Mouse0:" + mp.x + "," + mp.y;
             LS.Add(m0st);
             SWriter.WriteLine(m0st);
-            //Debug.Log("Mouse0:" + mp.x + "," + mp.y);
         }
         if (Input.GetMouseButtonDown(1))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            string m1st = "Mouse0:" + mp.x + "," + mp.y;
+            string m1st = "Mouse1:" + mp.x + "," + mp.y;
             LS.Add(m1st);
             SWriter.WriteLine(m1st);
-            //Debug.Log("Mouse1:" + mp.x + "," + mp.y);
         }
     }
 
