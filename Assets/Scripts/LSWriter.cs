@@ -44,16 +44,10 @@ public class LSWriter : MonoBehaviour {
 
     void PrintList(ref List<string> theLS)
     {
-        /*
         while (theLS.Count != 0)
         {
             lsSWriter.WriteLine(theLS[0]);
             theLS.RemoveAt(0);
-        }*/
-        foreach(string str in theLS)
-        {
-            lsSWriter.WriteLine(str);
         }
-        theLS.Clear();
     }
 }
