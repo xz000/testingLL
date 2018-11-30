@@ -19,10 +19,10 @@ public class NetWriter : MonoBehaviour
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
     public int LocalFrameNum = 0;
-    public static List<string> L2S;
-    public List<string> L2R;
+    public static List<ClickData> L2S;
+    public List<ClickData> L2R;
 
-    byte[] buffer2s = new byte[1024];
+    //byte[] buffer2s = new byte[1024];
     bool isstarted = false;
 
     private void FixedUpdate()
@@ -46,10 +46,8 @@ public class NetWriter : MonoBehaviour
         LocalCurrentLength += Time.deltaTime;
         while (LocalCurrentLength >= LocalFrameLength)
         {
-            BinaryFormatter formatter = new BinaryFormatter();
-            buffer2s=
+            //buffer2s=
             //序列化数据并发送
-            
             LocalCurrentLength -= LocalFrameLength;
             netFrameNum++;
         }

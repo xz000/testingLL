@@ -89,5 +89,16 @@ public class Sender : MonoBehaviour
 
 public class ClickData
 {
+    public MButton blr;
+    public float xPos;
+    public float yPos;
 
+    public void setdata(MButton b,float x,float y)
+    {
+        blr = b;
+        xPos = x;
+        yPos = y;
+    }
 }
+
+public enum MButton { left, right };
