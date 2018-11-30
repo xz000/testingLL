@@ -23,6 +23,7 @@ public class ClickCatcher : MonoBehaviour {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             string m0st = "Mouse0:" + mp.x + "," + mp.y;
             LS.Add(m0st);
+            NetWriter.L2S.Add(m0st);
             SWriter.WriteLine(m0st);
         }
         if (Input.GetMouseButtonDown(1))
@@ -30,6 +31,7 @@ public class ClickCatcher : MonoBehaviour {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             string m1st = "Mouse1:" + mp.x + "," + mp.y;
             LS.Add(m1st);
+            NetWriter.L2S.Add(m1st);
             SWriter.WriteLine(m1st);
         }
     }

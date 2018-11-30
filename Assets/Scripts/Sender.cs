@@ -86,3 +86,8 @@ public class Sender : MonoBehaviour
         }
     }
 }
+
+public class ClickData
+{
+
+}
