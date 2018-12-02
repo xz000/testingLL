@@ -15,19 +15,20 @@ public class NetWriter : MonoBehaviour
     StreamWriter netSWriter;
     public float netFrameLength = 1f;
     float netCurrentLength = 0;
-    public int netFrameNum = 0;
+    public uint netFrameNum = 0;
+    public uint LocalFrameNum = 0;
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
-    public int LocalFrameNum = 0;
     public static List<ClickData> L2S;
     public List<ClickData> L2R;
-
-    //byte[] buffer2s = new byte[1024];
+    public static int hostID;
+    public static int connectID;
+    public static int channelID;
+    byte[] buffer2s = new byte[1024];
     bool isstarted = false;
 
     private void FixedUpdate()
     {
-
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
@@ -46,10 +47,18 @@ public class NetWriter : MonoBehaviour
         LocalCurrentLength += Time.deltaTime;
         while (LocalCurrentLength >= LocalFrameLength)
         {
-            //buffer2s=
-            //序列化数据并发送
+            Data2S Fd2s = new Data2S();
+            Fd2s.frameNum = LocalFrameNum;
+            Fd2s.clickDatas = L2S;
+            L2S.Clear();
+            BinaryFormatter bf = new BinaryFormatter();
+            MemoryStream ms = new MemoryStream();
+            bf.Serialize(ms, Fd2s);
+            buffer2s = ms.GetBuffer();
+            //序列化数据
+            //发送数据
             LocalCurrentLength -= LocalFrameLength;
-            netFrameNum++;
+            LocalFrameNum++;
         }
     }
 

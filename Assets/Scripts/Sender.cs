@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
+using System;
 
 public class Sender : MonoBehaviour
 {
@@ -99,6 +100,13 @@ public class ClickData
         xPos = x;
         yPos = y;
     }
+}
+
+[Serializable]
+public class Data2S
+{
+    public uint frameNum;
+    public List<ClickData> clickDatas;
 }
 
 public enum MButton { left, right };
