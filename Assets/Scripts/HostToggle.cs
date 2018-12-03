@@ -46,9 +46,11 @@ public class HostToggle : MonoBehaviour
         SenderScript.StartSelf();
         CCFIG = new ConnectionConfig();
         HChannelID = CCFIG.AddChannel(QosType.Reliable);
+        NetWriter.channelID = CCFIG.AddChannel(QosType.ReliableFragmentedSequenced);
         HOSTTT = new HostTopology(CCFIG, 10);
         hostId = NetworkTransport.AddHost(HOSTTT, HostNO);
         SLabel.text = "Host on :" + HostNO.ToString();
+        SenderScript.CHANID = HChannelID;
     }
 
     void Hstop()

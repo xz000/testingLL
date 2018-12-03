@@ -20,12 +20,12 @@ public class NetWriter : MonoBehaviour
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
     public static List<ClickData> L2S;
-    public List<ClickData> L2R;
-    public static int hostID;
-    public static int connectID;
+    public static byte[] bRC = new byte[1024];
+    public static List<ClickData> L2R;
     public static int channelID;
     byte[] buffer2s = new byte[1024];
     bool isstarted = false;
+    public byte error;
 
     private void FixedUpdate()
     {
@@ -56,6 +56,7 @@ public class NetWriter : MonoBehaviour
             bf.Serialize(ms, Fd2s);
             buffer2s = ms.GetBuffer();
             //序列化数据
+            NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             //发送数据
             LocalCurrentLength -= LocalFrameLength;
             LocalFrameNum++;
@@ -85,5 +86,14 @@ public class NetWriter : MonoBehaviour
             //netSWriter.WriteLine(netFrameNum + theLS[0]);
             theLS.RemoveAt(0);
         }
+    }
+
+    public static void Eat()
+    {
+        BinaryFormatter ef = new BinaryFormatter();
+        Stream S2E = new MemoryStream(bRC);
+        bRC = new byte[1024];
+        Data2S datarc = (Data2S)ef.Deserialize(S2E);
+        L2R = datarc.clickDatas;
     }
 }

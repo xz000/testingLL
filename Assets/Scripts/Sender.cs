@@ -20,8 +20,8 @@ public class Sender : MonoBehaviour
     public bool isServer;
     public GameObject SendButton;
     public HostTopology HTo;
-    public int HSID;
-    public int CNID;
+    public static int HSID;
+    public static int CNID;
     public int CHANID;
     byte[] rcbuffer = new byte[1024];
     int rcbfsz = 1024;
@@ -65,7 +65,8 @@ public class Sender : MonoBehaviour
 
     public void SignalControl()
     {
-        NetworkEventType recData = NetworkTransport.Receive(out HSID, out CNID, out CHANID, rcbuffer, rcbfsz, out rcsz, out error);
+        int RecChanID;
+        NetworkEventType recData = NetworkTransport.Receive(out HSID, out CNID, out RecChanID, rcbuffer, rcbfsz, out rcsz, out error);
         switch (recData)
         {
             case NetworkEventType.Nothing:
@@ -77,14 +78,29 @@ public class Sender : MonoBehaviour
                 SendButton.SetActive(true);
                 break;
             case NetworkEventType.DataEvent:
-                TextReceived.text = System.Text.Encoding.Unicode.GetString(rcbuffer);
-                rcbuffer = new byte[1024];
+                if (RecChanID == CHANID)
+                    PrintReceived();
+                else
+                    DeSerializeReceived();
                 break;
             case NetworkEventType.DisconnectEvent:
                 SignalLight.color = Color.red;
                 SendButton.SetActive(false);
                 break;
         }
+    }
+
+    private void PrintReceived()
+    {
+        TextReceived.text = System.Text.Encoding.Unicode.GetString(rcbuffer);
+        rcbuffer = new byte[1024];
+    }
+
+    void DeSerializeReceived()
+    {
+        NetWriter.bRC = rcbuffer;
+        NetWriter.Eat();
+        rcbuffer = new byte[1024];
     }
 }
 
