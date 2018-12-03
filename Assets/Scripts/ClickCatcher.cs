@@ -14,6 +14,8 @@ public class ClickCatcher : MonoBehaviour {
     StreamWriter SWriter;
     public static List<string> LS;
     public LSWriter lsw;
+    public NetWriter theNW;
+    public Image SignalLight;
 
     void Update () {
         if (!TotalSwitch.isOn)
@@ -42,6 +44,7 @@ public class ClickCatcher : MonoBehaviour {
 
     public void SelectNewTXT()
     {
+        theNW.enabled = false;//
         if (SWriter != null)
             SWriter.Close();
         if (!TotalSwitch.isOn)
@@ -49,6 +52,8 @@ public class ClickCatcher : MonoBehaviour {
             lsw.enabled = false;
             return;
         }
+        if (SignalLight.color == Color.green)
+            theNW.enabled = true;
         LS = new List<string>();
         FileName = "/" + string.Format("{0:D2}{1:D2}{2:D2}{3:D2}{4:D2}{5:D2}", System.DateTime.Now.Year, System.DateTime.Now.Month, System.DateTime.Now.Day, System.DateTime.Now.Hour, System.DateTime.Now.Minute, System.DateTime.Now.Second) + ".txt";
         txtPath = Application.dataPath + FileName;
