@@ -19,12 +19,14 @@ public class Sender : MonoBehaviour
     public bool started = false;
     public bool isServer;
     public GameObject SendButton;
+    public NetWriter MyNS;
     public HostTopology HTo;
     public static int HSID;
     public static int CNID;
     public int CHANID;
     byte[] rcbuffer = new byte[1024];
-    int rcbfsz = 1024;
+    public int rcbfsz = 1024;
+    public Toggle CCToggle;
 
     private void Start()
     {
@@ -76,6 +78,8 @@ public class Sender : MonoBehaviour
             case NetworkEventType.ConnectEvent:
                 SignalLight.color = Color.green;
                 SendButton.SetActive(true);
+                MyNS.enabled = true;//开启netwriter
+                CCToggle.isOn = true;
                 break;
             case NetworkEventType.DataEvent:
                 if (RecChanID == CHANID)
@@ -86,6 +90,9 @@ public class Sender : MonoBehaviour
             case NetworkEventType.DisconnectEvent:
                 SignalLight.color = Color.red;
                 SendButton.SetActive(false);
+                MyNS.enabled = false;
+                CCToggle.isOn = false;
+                MyNS.isstarted = false;
                 break;
         }
     }
@@ -98,12 +105,13 @@ public class Sender : MonoBehaviour
 
     void DeSerializeReceived()
     {
-        NetWriter.bRC = rcbuffer;
-        NetWriter.Eat();
+        MyNS.bRC = rcbuffer;
+        MyNS.Eat();
         rcbuffer = new byte[1024];
     }
 }
 
+[Serializable]
 public class ClickData
 {
     public MButton blr;
@@ -116,13 +124,28 @@ public class ClickData
         xPos = x;
         yPos = y;
     }
+
+    public string ToP()
+    {
+        string s2r = null;
+        switch (blr)
+        {
+            case MButton.left:
+                s2r = "Mouse0:" + "," + xPos.ToString() + "," + yPos.ToString();
+                break;
+            case MButton.right:
+                s2r = "Mouse1:" + "," + xPos.ToString() + "," + yPos.ToString();
+                break;
+        }
+        return s2r;
+    }
 }
 
 [Serializable]
 public class Data2S
 {
     public uint frameNum;
-    public List<ClickData> clickDatas;
+    public List<ClickData> clickDatas = new List<ClickData>();
 }
 
 public enum MButton { left, right };

@@ -16,15 +16,16 @@ public class NetWriter : MonoBehaviour
     public float netFrameLength = 1f;
     float netCurrentLength = 0;
     public uint netFrameNum = 0;
+    public static uint ReceivedFrameNum = 0;
     public uint LocalFrameNum = 0;
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
-    public static List<ClickData> L2S;
-    public static byte[] bRC = new byte[1024];
-    public static List<ClickData> L2R;
+    public List<ClickData> L2S = new List<ClickData>();
+    public byte[] bRC = new byte[25536];
+    public List<ClickData> L2R = new List<ClickData>();
     public static int channelID;
     byte[] buffer2s = new byte[1024];
-    bool isstarted = false;
+    public bool isstarted = false;
     public byte error;
 
     private void FixedUpdate()
@@ -32,9 +33,9 @@ public class NetWriter : MonoBehaviour
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength)
+        while (netCurrentLength >= netFrameLength && ReceivedFrameNum != 0)
         {
-            PrintList(ref ClickCatcher.LS);
+            PrintList(ref L2R);
             netCurrentLength -= netFrameLength;
             netFrameNum++;
         }
@@ -50,6 +51,7 @@ public class NetWriter : MonoBehaviour
             Data2S Fd2s = new Data2S();
             Fd2s.frameNum = LocalFrameNum;
             Fd2s.clickDatas = L2S;
+            Debug.Log(Fd2s.clickDatas.Count + "saved");
             L2S.Clear();
             BinaryFormatter bf = new BinaryFormatter();
             MemoryStream ms = new MemoryStream();
@@ -57,6 +59,8 @@ public class NetWriter : MonoBehaviour
             buffer2s = ms.GetBuffer();
             //序列化数据
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
+            Debug.Log(buffer2s.Length);
+            buffer2s = new byte[1024];
             //发送数据
             LocalCurrentLength -= LocalFrameLength;
             LocalFrameNum++;
@@ -70,30 +74,41 @@ public class NetWriter : MonoBehaviour
         netfs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
         netSWriter = new StreamWriter(netfs);
         netSWriter.WriteLine("Started");
+        isstarted = true;
     }
 
     private void OnDisable()
     {
+        isstarted = false;
         netSWriter.WriteLine("Stoped");
         netSWriter.Close();
     }
 
-    void PrintList(ref List<string> theLS)
+    void PrintList(ref List<ClickData> theLS)
     {
+        Debug.Log("真");
+        Debug.Log(theLS.Count);
+        ReceivedFrameNum = 0;
+        foreach (ClickData cd in theLS)
+        {
+            Debug.Log(cd.ToP());
+        }
         while (theLS.Count != 0)
         {
-            netSWriter.WriteLine(theLS[0]);
-            //netSWriter.WriteLine(netFrameNum + theLS[0]);
+            netSWriter.WriteLine(theLS[0].ToP());
             theLS.RemoveAt(0);
         }
+        Debug.Log("香");
     }
 
-    public static void Eat()
+    public void Eat()
     {
         BinaryFormatter ef = new BinaryFormatter();
         Stream S2E = new MemoryStream(bRC);
-        bRC = new byte[1024];
+        bRC = new byte[25536];
         Data2S datarc = (Data2S)ef.Deserialize(S2E);
+        Debug.Log(datarc.frameNum);
+        ReceivedFrameNum = datarc.frameNum;
         L2R = datarc.clickDatas;
     }
 }

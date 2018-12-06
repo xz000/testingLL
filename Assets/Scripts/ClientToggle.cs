@@ -50,7 +50,7 @@ public class ClientToggle : MonoBehaviour
         SenderScript.StartSelf();
         CCcFIG = new ConnectionConfig();
         CChannelID = CCcFIG.AddChannel(QosType.Reliable);
-        NetWriter.channelID = CCcFIG.AddChannel(QosType.ReliableFragmentedSequenced);
+        NetWriter.channelID = CCcFIG.AddChannel(QosType.ReliableSequenced);
         CosTT = new HostTopology(CCcFIG, 10);
         hostId = NetworkTransport.AddHost(CosTT, SelfNO);
         CntID = NetworkTransport.Connect(hostId, "127.0.0.1", TargetNO, 0, out error);
