@@ -12,7 +12,7 @@ public class ClickCatcher : MonoBehaviour {
     public string txtPath;
     FileStream fs;
     StreamWriter SWriter;
-    public static List<string> LS;
+    public static List<ClickData> LS = new List<ClickData>();
     public LSWriter lsw;
     public NetWriter theNW;
     public Image SignalLight;
@@ -23,22 +23,20 @@ public class ClickCatcher : MonoBehaviour {
         if (Input.GetMouseButtonDown(0))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            string m0st = "Mouse0:" + mp.x + "," + mp.y;
-            LS.Add(m0st);
             ClickData cd = new ClickData();
             cd.setdata(MButton.left, mp.x, mp.y);
-            NetWriter.L2S.Add(cd);
-            SWriter.WriteLine(m0st);
+            theNW.L2S.Add(cd);
+            LS.Add(cd);
+            //SWriter.WriteLine(cd.ToP());
         }
         if (Input.GetMouseButtonDown(1))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            string m1st = "Mouse1:" + mp.x + "," + mp.y;
-            LS.Add(m1st);
             ClickData cd = new ClickData();
             cd.setdata(MButton.right, mp.x, mp.y);
-            NetWriter.L2S.Add(cd);
-            SWriter.WriteLine(m1st);
+            theNW.L2S.Add(cd);
+            LS.Add(cd);
+            //SWriter.WriteLine(cd.ToP());
         }
     }
 
@@ -54,7 +52,7 @@ public class ClickCatcher : MonoBehaviour {
         }
         if (SignalLight.color == Color.green)
             theNW.enabled = true;
-        LS = new List<string>();
+        LS = new List<ClickData>();
         FileName = "/" + string.Format("{0:D2}{1:D2}{2:D2}{3:D2}{4:D2}{5:D2}", System.DateTime.Now.Year, System.DateTime.Now.Month, System.DateTime.Now.Day, System.DateTime.Now.Hour, System.DateTime.Now.Minute, System.DateTime.Now.Second) + ".txt";
         txtPath = Application.dataPath + FileName;
         fs = new FileStream(txtPath, FileMode.OpenOrCreate,FileAccess.ReadWrite);

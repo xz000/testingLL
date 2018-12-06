@@ -42,11 +42,11 @@ public class LSWriter : MonoBehaviour {
         lsSWriter.Close();
     }
 
-    void PrintList(ref List<string> theLS)
+    void PrintList(ref List<ClickData> theLS)
     {
         while (theLS.Count != 0)
         {
-            lsSWriter.WriteLine(theLS[0]);
+            lsSWriter.WriteLine(theLS[0].ToP());
             theLS.RemoveAt(0);
         }
     }
