@@ -21,7 +21,7 @@ public class NetWriter : MonoBehaviour
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
-    public byte[] bRC = new byte[25536];
+    public byte[] bRC = new byte[1024];
     public List<ClickData> L2R = new List<ClickData>();
     public static int channelID;
     byte[] buffer2s = new byte[1024];
@@ -53,10 +53,11 @@ public class NetWriter : MonoBehaviour
             Fd2s.clickDatas = L2S;
             Debug.Log(Fd2s.clickDatas.Count + "saved");
             L2S.Clear();
-            BinaryFormatter bf = new BinaryFormatter();
-            MemoryStream ms = new MemoryStream();
-            bf.Serialize(ms, Fd2s);
-            buffer2s = ms.GetBuffer();
+            //BinaryFormatter bf = new BinaryFormatter();
+            //MemoryStream ms = new MemoryStream();
+            //bf.Serialize(ms, Fd2s);
+            buffer2s = Encoding.Unicode.GetBytes(JsonUtility.ToJson(Fd2s));
+            //buffer2s = ms.GetBuffer();
             //序列化数据
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             Debug.Log(buffer2s.Length);
@@ -103,10 +104,11 @@ public class NetWriter : MonoBehaviour
 
     public void Eat()
     {
-        BinaryFormatter ef = new BinaryFormatter();
-        Stream S2E = new MemoryStream(bRC);
-        bRC = new byte[25536];
-        Data2S datarc = (Data2S)ef.Deserialize(S2E);
+        //BinaryFormatter ef = new BinaryFormatter();
+        //Stream S2E = new MemoryStream(bRC);
+        Data2S datarc = JsonUtility.FromJson<Data2S>(bRC.ToString());
+        bRC = new byte[1024];
+        //Data2S datarc = (Data2S)ef.Deserialize(S2E);
         Debug.Log(datarc.frameNum);
         ReceivedFrameNum = datarc.frameNum;
         L2R = datarc.clickDatas;
