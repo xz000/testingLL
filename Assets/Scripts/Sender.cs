@@ -38,6 +38,8 @@ public class Sender : MonoBehaviour
         started = false;
         SendButton.SetActive(false);
         SignalLight.color = Color.white;
+        MyNS.enabled = false;
+        MyNS.isstarted = false;
     }
 
     public void StartSelf()
@@ -118,7 +120,7 @@ public class ClickData
     public float xPos;
     public float yPos;
 
-    public void setdata(MButton b,float x,float y)
+    public void setdata(MButton b, float x, float y)
     {
         blr = b;
         xPos = x;
@@ -145,7 +147,7 @@ public class ClickData
 public class Data2S
 {
     public uint frameNum;
-    public List<ClickData> clickDatas = new List<ClickData>();
+    public List<ClickData> clickDatas;
 }
 
 public enum MButton { left, right };

@@ -52,15 +52,15 @@ public class NetWriter : MonoBehaviour
             Fd2s.frameNum = LocalFrameNum;
             Fd2s.clickDatas = L2S;
             Debug.Log(Fd2s.clickDatas.Count + "saved");
-            L2S.Clear();
-            //BinaryFormatter bf = new BinaryFormatter();
-            //MemoryStream ms = new MemoryStream();
-            //bf.Serialize(ms, Fd2s);
-            buffer2s = Encoding.Unicode.GetBytes(JsonUtility.ToJson(Fd2s));
-            //buffer2s = ms.GetBuffer();
+            BinaryFormatter bf = new BinaryFormatter();
+            MemoryStream ms = new MemoryStream();
+            bf.Serialize(ms, Fd2s);
+            string js = JsonUtility.ToJson(Fd2s);
+            buffer2s = ms.GetBuffer();
             //序列化数据
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
-            Debug.Log(buffer2s.Length);
+            Debug.Log(js);
+            L2S.Clear();
             buffer2s = new byte[1024];
             //发送数据
             LocalCurrentLength -= LocalFrameLength;
@@ -104,11 +104,10 @@ public class NetWriter : MonoBehaviour
 
     public void Eat()
     {
-        //BinaryFormatter ef = new BinaryFormatter();
-        //Stream S2E = new MemoryStream(bRC);
-        Data2S datarc = JsonUtility.FromJson<Data2S>(bRC.ToString());
+        BinaryFormatter ef = new BinaryFormatter();
+        Stream S2E = new MemoryStream(bRC);
         bRC = new byte[1024];
-        //Data2S datarc = (Data2S)ef.Deserialize(S2E);
+        Data2S datarc = (Data2S)ef.Deserialize(S2E);
         Debug.Log(datarc.frameNum);
         ReceivedFrameNum = datarc.frameNum;
         L2R = datarc.clickDatas;
