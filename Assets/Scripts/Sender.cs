@@ -40,6 +40,21 @@ public class Sender : MonoBehaviour
         SignalLight.color = Color.white;
         MyNS.enabled = false;
         MyNS.isstarted = false;
+        CCToggle.isOn = false;
+    }
+
+    void ConnectDo()
+    {
+        SignalLight.color = Color.green;
+        SendButton.SetActive(true);
+        MyNS.enabled = true;//开启netwriter
+        CCToggle.isOn = true;
+    }
+
+    void DisconnectDo()
+    {
+        ResetSelf();
+        SignalLight.color = Color.red;
     }
 
     public void StartSelf()
@@ -78,10 +93,7 @@ public class Sender : MonoBehaviour
             case NetworkEventType.BroadcastEvent:
                 break;
             case NetworkEventType.ConnectEvent:
-                SignalLight.color = Color.green;
-                SendButton.SetActive(true);
-                MyNS.enabled = true;//开启netwriter
-                CCToggle.isOn = true;
+                ConnectDo();
                 break;
             case NetworkEventType.DataEvent:
                 if (RecChanID == CHANID)
@@ -90,11 +102,7 @@ public class Sender : MonoBehaviour
                     DeSerializeReceived();
                 break;
             case NetworkEventType.DisconnectEvent:
-                SignalLight.color = Color.red;
-                SendButton.SetActive(false);
-                MyNS.enabled = false;
-                CCToggle.isOn = false;
-                MyNS.isstarted = false;
+                DisconnectDo();
                 break;
         }
     }
