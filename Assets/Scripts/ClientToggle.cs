@@ -45,7 +45,7 @@ public class ClientToggle : MonoBehaviour
 
     void Cstart()
     {
-        SenderScript.isServer = false;
+        Sender.isServer = false;
         NetworkTransport.Init();
         SenderScript.StartSelf();
         CCcFIG = new ConnectionConfig();

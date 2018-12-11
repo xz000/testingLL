@@ -41,7 +41,7 @@ public class HostToggle : MonoBehaviour
 
     void Hstart()
     {
-        SenderScript.isServer = true;
+        Sender.isServer = true;
         NetworkTransport.Init();
         SenderScript.StartSelf();
         CCFIG = new ConnectionConfig();

@@ -11,7 +11,7 @@ public class ClickCatcher : MonoBehaviour {
     public string FileName;
     public string txtPath;
     public static List<ClickData> LS = new List<ClickData>();
-    public LSWriter lsw;
+    //public LSWriter lsw;
     public NetWriter theNW;
     public Image SignalLight;
 
@@ -24,8 +24,6 @@ public class ClickCatcher : MonoBehaviour {
             ClickData cd = new ClickData();
             cd.setdata(MButton.left, mp.x, mp.y);
             theNW.L2S.Add(cd);
-            LS.Add(cd);
-            //SWriter.WriteLine(cd.ToP());
         }
         if (Input.GetMouseButtonDown(1))
         {
@@ -33,8 +31,6 @@ public class ClickCatcher : MonoBehaviour {
             ClickData cd = new ClickData();
             cd.setdata(MButton.right, mp.x, mp.y);
             theNW.L2S.Add(cd);
-            LS.Add(cd);
-            //SWriter.WriteLine(cd.ToP());
         }
     }
 }
