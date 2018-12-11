@@ -27,6 +27,8 @@ public class NetWriter : MonoBehaviour
     byte[] buffer2s = new byte[1024];
     public bool isstarted = false;
     public byte error;
+    public delegate void TakeAction();
+    public TakeAction ta;
 
     private void FixedUpdate()
     {
@@ -35,7 +37,8 @@ public class NetWriter : MonoBehaviour
         netCurrentLength += Time.fixedDeltaTime;
         while (netCurrentLength >= netFrameLength && ReceivedFrameNum != 0)
         {
-            PrintList(ref L2R);
+            ReceivedFrameNum = 0;//temp
+            ta();
             netCurrentLength -= netFrameLength;
             netFrameNum++;
         }
@@ -51,18 +54,14 @@ public class NetWriter : MonoBehaviour
             Data2S Fd2s = new Data2S();
             Fd2s.frameNum = LocalFrameNum;
             Fd2s.clickDatas = L2S;
-            Debug.Log(Fd2s.clickDatas.Count + "saved");
             BinaryFormatter bf = new BinaryFormatter();
             MemoryStream ms = new MemoryStream();
             bf.Serialize(ms, Fd2s);
-            string js = JsonUtility.ToJson(Fd2s);
             buffer2s = ms.GetBuffer();
-            //序列化数据
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
-            Debug.Log(js);
+            ClickCatcher.LS = new List<ClickData>(L2S);
             L2S.Clear();
             buffer2s = new byte[1024];
-            //发送数据
             LocalCurrentLength -= LocalFrameLength;
             LocalFrameNum++;
         }
@@ -74,6 +73,18 @@ public class NetWriter : MonoBehaviour
         nettxtPath = Application.dataPath + netFileName;
         netfs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
         netSWriter = new StreamWriter(netfs);
+        if (Sender.isServer)
+        {
+            ta = null;
+            ta += LSAction;
+            ta += NWAction;
+        }
+        else
+        {
+            ta = null;
+            ta += NWAction;
+            ta += LSAction;
+        }
         netSWriter.WriteLine("Started");
         isstarted = true;
     }
@@ -85,21 +96,23 @@ public class NetWriter : MonoBehaviour
         netSWriter.Close();
     }
 
+    public void NWAction()
+    {
+        PrintList(ref L2R);
+    }
+
+    void LSAction()
+    {
+        PrintList(ref ClickCatcher.LS);
+    }
+
     void PrintList(ref List<ClickData> theLS)
     {
-        Debug.Log("真");
-        Debug.Log(theLS.Count);
-        ReceivedFrameNum = 0;
-        foreach (ClickData cd in theLS)
-        {
-            Debug.Log(cd.ToP());
-        }
         while (theLS.Count != 0)
         {
             netSWriter.WriteLine(theLS[0].ToP());
             theLS.RemoveAt(0);
         }
-        Debug.Log("香");
     }
 
     public void Eat()

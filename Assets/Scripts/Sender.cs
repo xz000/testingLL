@@ -17,7 +17,7 @@ public class Sender : MonoBehaviour
     public int rcsz;
     public byte error;
     public bool started = false;
-    public bool isServer;
+    public static bool isServer;
     public GameObject SendButton;
     public NetWriter MyNS;
     public HostTopology HTo;
