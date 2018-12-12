@@ -15,9 +15,9 @@ public class NetWriter : MonoBehaviour
     StreamWriter netSWriter;
     public float netFrameLength = 1f;
     float netCurrentLength = 0;
-    public uint netFrameNum = 0;
+    public uint netFrameNum = 1;
     public static uint ReceivedFrameNum = 0;
-    public uint LocalFrameNum = 0;
+    public uint LocalFrameNum = 1;
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
@@ -60,6 +60,7 @@ public class NetWriter : MonoBehaviour
             buffer2s = ms.GetBuffer();
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             ClickCatcher.LS = new List<ClickData>(L2S);
+            //netFrameNum = LocalFrameNum;
             L2S.Clear();
             buffer2s = new byte[1024];
             LocalCurrentLength -= LocalFrameLength;
