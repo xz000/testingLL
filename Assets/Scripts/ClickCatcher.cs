@@ -11,7 +11,6 @@ public class ClickCatcher : MonoBehaviour {
     public string FileName;
     public string txtPath;
     public static List<ClickData> LS = new List<ClickData>();
-    //public LSWriter lsw;
     public NetWriter theNW;
     public Image SignalLight;
 
