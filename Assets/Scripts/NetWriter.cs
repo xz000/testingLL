@@ -15,7 +15,7 @@ public class NetWriter : MonoBehaviour
     StreamWriter netSWriter;
     public float netFrameLength = 1f;
     float netCurrentLength = 0;
-    public uint netFrameNum = 1;
+    public uint PassedFrameNum = 0;
     public static uint ReceivedFrameNum = 0;
     public uint LocalFrameNum = 1;
     public float LocalFrameLength = 1f;
@@ -40,7 +40,7 @@ public class NetWriter : MonoBehaviour
             ReceivedFrameNum = 0;//temp
             ta();
             netCurrentLength -= netFrameLength;
-            netFrameNum++;
+            PassedFrameNum++;
         }
     }
 
