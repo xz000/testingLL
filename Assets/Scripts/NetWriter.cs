@@ -30,6 +30,8 @@ public class NetWriter : MonoBehaviour
     public delegate void TakeAction();
     public TakeAction ta;
 
+    public List<ClickData>[] CDarray = new List<ClickData>[32];
+
     private void FixedUpdate()
     {
         if (!isstarted)
