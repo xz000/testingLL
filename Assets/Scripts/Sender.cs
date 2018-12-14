@@ -18,6 +18,7 @@ public class Sender : MonoBehaviour
     public byte error;
     public bool started = false;
     public static bool isServer;
+    public static int clientNum;
     public GameObject SendButton;
     public NetWriter MyNS;
     public HostTopology HTo;
@@ -154,7 +155,8 @@ public class ClickData
 [Serializable]
 public class Data2S
 {
-    public uint frameNum;
+    public int frameNum;
+    public int clientNum;
     public List<ClickData> clickDatas;
 }
 
