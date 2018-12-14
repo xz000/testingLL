@@ -15,9 +15,9 @@ public class NetWriter : MonoBehaviour
     StreamWriter netSWriter;
     public float netFrameLength = 1f;
     float netCurrentLength = 0;
-    public uint PassedFrameNum = 0;
-    public static uint ReceivedFrameNum = 0;
-    public uint LocalFrameNum = 1;
+    public int PassedFrameNum = 0;
+    public static int ReceivedFrameNum = 0;
+    public int LocalFrameNum = 1;
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
@@ -27,19 +27,16 @@ public class NetWriter : MonoBehaviour
     byte[] buffer2s = new byte[1024];
     public bool isstarted = false;
     public byte error;
-    public delegate void TakeAction();
-    public TakeAction ta;
-
-    public List<ClickData>[] CDarray = new List<ClickData>[32];
+    public static List<bool> bp = new List<bool>();
+    public static List<List<ClickData>> LLCD = new List<List<ClickData>>();
 
     private void FixedUpdate()
     {
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength && ReceivedFrameNum != 0)
+        while (netCurrentLength >= netFrameLength && bp[0])
         {
-            ReceivedFrameNum = 0;//temp
             ta();
             netCurrentLength -= netFrameLength;
             PassedFrameNum++;
@@ -55,14 +52,20 @@ public class NetWriter : MonoBehaviour
         {
             Data2S Fd2s = new Data2S();
             Fd2s.frameNum = LocalFrameNum;
+            Fd2s.clientNum = Sender.clientNum;
             Fd2s.clickDatas = L2S;
             BinaryFormatter bf = new BinaryFormatter();
             MemoryStream ms = new MemoryStream();
             bf.Serialize(ms, Fd2s);
             buffer2s = ms.GetBuffer();
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
-            ClickCatcher.LS = new List<ClickData>(L2S);
-            //netFrameNum = LocalFrameNum;
+            //
+            int a = (LocalFrameNum - PassedFrameNum - 1) * 2 + Sender.clientNum;
+            LLCD[a] = new List<ClickData>(L2S);
+            int b = (LocalFrameNum - PassedFrameNum - 1) * 3;
+            bp[b + 1 + Sender.clientNum] = true;
+            bp[b] = bp[b + 1] && bp[b + 2];
+            //
             L2S.Clear();
             buffer2s = new byte[1024];
             LocalCurrentLength -= LocalFrameLength;
@@ -76,18 +79,6 @@ public class NetWriter : MonoBehaviour
         nettxtPath = Application.dataPath + netFileName;
         netfs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
         netSWriter = new StreamWriter(netfs);
-        if (Sender.isServer)
-        {
-            ta = null;
-            ta += LSAction;
-            ta += NWAction;
-        }
-        else
-        {
-            ta = null;
-            ta += NWAction;
-            ta += LSAction;
-        }
         netSWriter.WriteLine("Started");
         isstarted = true;
     }
@@ -99,22 +90,20 @@ public class NetWriter : MonoBehaviour
         netSWriter.Close();
     }
 
-    public void NWAction()
+    void ta()
     {
-        PrintList(ref L2R);
+        PrintList(LLCD[0]);
+        LLCD.RemoveAt(0);
+        PrintList(LLCD[0]);
+        LLCD.RemoveAt(0);
+        bp.RemoveRange(0, 3);
     }
 
-    void LSAction()
+    void PrintList(List<ClickData> theLS)
     {
-        PrintList(ref ClickCatcher.LS);
-    }
-
-    void PrintList(ref List<ClickData> theLS)
-    {
-        while (theLS.Count != 0)
+        foreach (ClickData cd in theLS)
         {
-            netSWriter.WriteLine(theLS[0].ToP());
-            theLS.RemoveAt(0);
+            netSWriter.WriteLine(cd.ToP());
         }
     }
 
@@ -124,8 +113,14 @@ public class NetWriter : MonoBehaviour
         Stream S2E = new MemoryStream(bRC);
         bRC = new byte[1024];
         Data2S datarc = (Data2S)ef.Deserialize(S2E);
-        Debug.Log(datarc.frameNum);
+        //Debug.Log(datarc.frameNum);
         ReceivedFrameNum = datarc.frameNum;
-        L2R = datarc.clickDatas;
+        //L2R = datarc.clickDatas;
+        //
+        int a = (ReceivedFrameNum - PassedFrameNum - 1) * 2 + datarc.clientNum;
+        LLCD[a] = datarc.clickDatas;
+        int b = (ReceivedFrameNum - PassedFrameNum - 1) * 3;
+        bp[b + 1 + datarc.clientNum] = true;
+        bp[b] = bp[b + 1] && bp[b + 2];
     }
 }
