@@ -31,16 +31,16 @@ public class NetWriter : MonoBehaviour
     public byte error;
     //public List<bool> bp = new List<bool>();
     //public List<List<ClickData>> LLCD = new List<List<ClickData>>(32);
-    LoopList theLL;
+    //LoopList theLL;
 
     private void FixedUpdate()
     {
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength && theLL.headready())
+        while (netCurrentLength >= netFrameLength /*&& theLL.headready()*/)
         {
-            theLL.printhead();
+            //theLL.printhead();
             netCurrentLength -= netFrameLength;
             PassedFrameNum++;
             Debug.Log("pfn:" + PassedFrameNum);
@@ -66,7 +66,7 @@ public class NetWriter : MonoBehaviour
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
             Debug.Log("Local adding at:" + a);
-            theLL.addat(a, Sender.clientNum, L2S);
+            //theLL.addat(a, Sender.clientNum, L2S);
             //
             L2S.Clear();
             buffer2s = new byte[1024];
@@ -84,8 +84,11 @@ public class NetWriter : MonoBehaviour
         netSWriter = new StreamWriter(netfs);
         netSWriter.WriteLine("Started");
         */
-        theLL = new LoopList();
-        theLL.init();
+        //theLL = new LoopList();
+        //theLL.init();
+        PassedFrameNum = 0;
+        ReceivedFrameNum = 0;
+        LocalFrameNum = 1;
         isstarted = true;
     }
 
@@ -94,6 +97,9 @@ public class NetWriter : MonoBehaviour
         isstarted = false;
         //netSWriter.WriteLine("Stoped");
         //netSWriter.Close();
+        PassedFrameNum = 0;
+        ReceivedFrameNum = 1;
+        LocalFrameNum = 1;
     }
 
     /*
@@ -122,7 +128,7 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         Debug.Log("Receive adding at:" + a);
-        theLL.addat(a, datarc.clientNum, datarc.clickDatas);
+        //theLL.addat(a, datarc.clientNum, datarc.clickDatas);
     }
 }
 public class LoopList
