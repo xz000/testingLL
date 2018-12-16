@@ -116,8 +116,7 @@ public class Sender : MonoBehaviour
 
     void DeSerializeReceived()
     {
-        MyNS.bRC = rcbuffer;
-        MyNS.Eat();
+        MyNS.Eat(rcbuffer);
         rcbuffer = new byte[1024];
     }
 }
