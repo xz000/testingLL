@@ -17,8 +17,8 @@ public class NetWriter : MonoBehaviour
     */
     public float netFrameLength = 1f;
     float netCurrentLength = 0;
-    public int PassedFrameNum = 0;
-    public int ReceivedFrameNum = 1;
+    public int PassedFrameNum = -1;
+    public int ReceivedFrameNum = 0;
     public int LocalFrameNum = 1;
     public float LocalFrameLength = 1f;
     float LocalCurrentLength = 0;
@@ -31,16 +31,16 @@ public class NetWriter : MonoBehaviour
     public byte error;
     //public List<bool> bp = new List<bool>();
     //public List<List<ClickData>> LLCD = new List<List<ClickData>>(32);
-    //LoopList theLL;
+    LoopList theLL;
 
     private void FixedUpdate()
     {
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength /*&& theLL.headready()*/)
+        while (netCurrentLength >= netFrameLength && theLL.headready())
         {
-            //theLL.printhead();
+            theLL.printhead();
             netCurrentLength -= netFrameLength;
             PassedFrameNum++;
             Debug.Log("pfn:" + PassedFrameNum);
@@ -66,7 +66,7 @@ public class NetWriter : MonoBehaviour
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
             Debug.Log("Local adding at:" + a);
-            //theLL.addat(a, Sender.clientNum, L2S);
+            theLL.addat(a, Sender.clientNum, L2S);
             //
             L2S.Clear();
             buffer2s = new byte[1024];
@@ -84,8 +84,8 @@ public class NetWriter : MonoBehaviour
         netSWriter = new StreamWriter(netfs);
         netSWriter.WriteLine("Started");
         */
-        //theLL = new LoopList();
-        //theLL.init();
+        theLL = new LoopList();
+        theLL.init();
         PassedFrameNum = 0;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
@@ -97,8 +97,8 @@ public class NetWriter : MonoBehaviour
         isstarted = false;
         //netSWriter.WriteLine("Stoped");
         //netSWriter.Close();
-        PassedFrameNum = 0;
-        ReceivedFrameNum = 1;
+        PassedFrameNum = -1;
+        ReceivedFrameNum = 0;
         LocalFrameNum = 1;
     }
 
@@ -128,7 +128,7 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         Debug.Log("Receive adding at:" + a);
-        //theLL.addat(a, datarc.clientNum, datarc.clickDatas);
+        theLL.addat(a, datarc.clientNum, datarc.clickDatas);
     }
 }
 public class LoopList
@@ -144,18 +144,16 @@ public class LoopList
     {
         if (a >= fullnum)
             jiabei();
-        int ai = a;
-        ai += headnum;
-        if (ai >= fullnum)
-            ai -= fullnum;
-        UnityEngine.Debug.Log("adding at:" + ai);
-        ai = 0;//调试用
+        a += headnum;
+        if (a >= fullnum)
+            a -= fullnum;
         foreach (ClickData cd in lcd)
         {
-            CDA2[ai, b].Add(cd);
+            CDA2[a, b].Add(cd);
         }
-        bool3[ai, b] = true;
-        bool3[ai, 2] = bool3[ai, 0] && bool3[ai, 1];
+        bool3[a, b] = true;
+        bool3[a, 2] = bool3[a, 0] && bool3[a, 1];
+        UnityEngine.Debug.Log("Added at:" + a + "," + b);
     }
 
     public bool headready()
@@ -165,13 +163,16 @@ public class LoopList
 
     public void printhead()
     {
+        UnityEngine.Debug.Log("Printing");
         PrintList(CDA2[headnum, 0]);
         PrintList(CDA2[headnum, 1]);
         for (int n = 0; n < 3; n++)
         {
             bool3[headnum, n] = false;
         }
-        //headnum++;
+        headnum++;
+        if (headnum >= fullnum)
+            headnum -= fullnum;
     }
 
     void jiabei()
@@ -224,7 +225,7 @@ public class LoopList
     {
         string netFileName = "/" + "L" + string.Format("{0:D2}{1:D2}{2:D2}{3:D2}{4:D2}{5:D2}", System.DateTime.Now.Year, System.DateTime.Now.Month, System.DateTime.Now.Day, System.DateTime.Now.Hour, System.DateTime.Now.Minute, System.DateTime.Now.Second) + ".txt";
         string nettxtPath = Application.dataPath + netFileName;
-        fs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        fs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.Write);
         sw = new StreamWriter(fs);
         sw.WriteLine("Started");
     }
