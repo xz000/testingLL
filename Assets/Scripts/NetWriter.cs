@@ -11,26 +11,18 @@ public class NetWriter : MonoBehaviour
 {
     public string netFileName;
     public string nettxtPath;
-    /*
-    FileStream netfs;
-    StreamWriter netSWriter;
-    */
-    public float netFrameLength = 1f;
+    public float netFrameLength = 0.1f;
     float netCurrentLength = 0;
     public int PassedFrameNum = -1;
     public int ReceivedFrameNum = 0;
     public int LocalFrameNum = 1;
-    public float LocalFrameLength = 1f;
+    public float LocalFrameLength = 0.1f;
     float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
-    //public byte[] bRC = new byte[1024];
-    //public List<ClickData> L2R = new List<ClickData>();
     public static int channelID;
     byte[] buffer2s = new byte[1024];
     public bool isstarted = false;
     public byte error;
-    //public List<bool> bp = new List<bool>();
-    //public List<List<ClickData>> LLCD = new List<List<ClickData>>(32);
     LoopList theLL;
 
     private void FixedUpdate()
@@ -65,7 +57,6 @@ public class NetWriter : MonoBehaviour
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
-            Debug.Log("Local adding at:" + a);
             theLL.addat(a, Sender.clientNum, L2S);
             //
             L2S.Clear();
@@ -77,13 +68,6 @@ public class NetWriter : MonoBehaviour
 
     private void OnEnable()
     {
-        /*
-        netFileName = "/" + "net" + string.Format("{0:D2}{1:D2}{2:D2}{3:D2}{4:D2}{5:D2}", System.DateTime.Now.Year, System.DateTime.Now.Month, System.DateTime.Now.Day, System.DateTime.Now.Hour, System.DateTime.Now.Minute, System.DateTime.Now.Second) + ".txt";
-        nettxtPath = Application.dataPath + netFileName;
-        netfs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
-        netSWriter = new StreamWriter(netfs);
-        netSWriter.WriteLine("Started");
-        */
         theLL = new LoopList();
         theLL.init();
         PassedFrameNum = 0;
@@ -95,30 +79,11 @@ public class NetWriter : MonoBehaviour
     private void OnDisable()
     {
         isstarted = false;
-        //netSWriter.WriteLine("Stoped");
-        //netSWriter.Close();
         PassedFrameNum = -1;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
+        theLL.stop();
     }
-
-    /*
-    void ta()
-    {
-        PrintList(LLCD[0]);
-        PrintList(LLCD[1]);
-        LLCD.RemoveRange(0, 2);
-        bp.RemoveRange(0, 3);
-    }
-
-    void PrintList(List<ClickData> theLS)
-    {
-        foreach (ClickData cd in theLS)
-        {
-            netSWriter.WriteLine(cd.ToP());
-        }
-    }
-    */
 
     public void Eat(byte[] bRC)
     {
@@ -127,7 +92,6 @@ public class NetWriter : MonoBehaviour
         Data2S datarc = (Data2S)ef.Deserialize(S2E);
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
-        Debug.Log("Receive adding at:" + a);
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
     }
 }
@@ -153,7 +117,6 @@ public class LoopList
         }
         bool3[a, b] = true;
         bool3[a, 2] = bool3[a, 0] && bool3[a, 1];
-        UnityEngine.Debug.Log("Added at:" + a + "," + b);
     }
 
     public bool headready()
@@ -163,7 +126,6 @@ public class LoopList
 
     public void printhead()
     {
-        UnityEngine.Debug.Log("Printing");
         PrintList(CDA2[headnum, 0]);
         PrintList(CDA2[headnum, 1]);
         for (int n = 0; n < 3; n++)
@@ -219,6 +181,12 @@ public class LoopList
             }
             bool3[i, 2] = false;
         }
+    }
+
+    public void stop()
+    {
+        sw.Close();
+        fs.Close();
     }
 
     void initsw()
