@@ -3072,11 +3072,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   netFileName: 
   nettxtPath: 
-  netFrameLength: 1
+  netFrameLength: 0.1
   PassedFrameNum: 0
   ReceivedFrameNum: 0
   LocalFrameNum: 0
-  LocalFrameLength: 1
+  LocalFrameLength: 0.1
   L2S: []
   isstarted: 0
   error: 0
