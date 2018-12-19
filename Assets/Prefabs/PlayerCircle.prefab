@@ -188,6 +188,7 @@ GameObject:
   - component: {fileID: 50533253008486044}
   - component: {fileID: 58970719070418754}
   - component: {fileID: 120367070304518420}
+  - component: {fileID: 4785693520522694462}
   m_Layer: 0
   m_Name: PlayerCircle
   m_TagString: Player
@@ -405,6 +406,28 @@ LineRenderer:
     generateLightingData: 0
   m_UseWorldSpace: 1
   m_Loop: 0
+--- !u!114 &4785693520522694462
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9fe6f87ef9b360c48818ea3f4f14f821, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  controllable: 0
+  movespeed: 5
+  movedirection: {x: 0, y: 0}
+  targetshadow: {fileID: 1107476559263946, guid: 5f8a3608f810a904388f4c1cf83f7fa3,
+    type: 3}
+  Givenvelocity: {x: 0, y: 0}
+  VelotoAdd: {x: 0, y: 0}
+  selfvelocity: {x: 0, y: 0}
+  PlayerRb2d: {fileID: 50533253008486044}
+  targeticon: {fileID: 0}
 --- !u!1 &1865538166631764
 GameObject:
   m_ObjectHideFlags: 0

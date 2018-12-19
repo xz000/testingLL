@@ -13,12 +13,10 @@ public class MoveScript : MonoBehaviour {
     public GameObject targetshadow;
     public Vector2 Givenvelocity;
     public Vector2 VelotoAdd = Vector2.zero;
-    private Vector2 rightclickplace;
     private Vector2 movetarget;
     public Vector2 selfvelocity;
     public Rigidbody2D PlayerRb2d;
-    private GameObject maincam;
-    public GameObject targeticon;
+    GameObject targeticon;
     private Vector3 followplace;
     public CookVelo cook;
 
@@ -31,7 +29,6 @@ public class MoveScript : MonoBehaviour {
 	void Start ()
     {
         PlayerRb2d = GetComponent<Rigidbody2D>();
-        maincam = GameObject.Find("Main Camera");
         controllable = true;
         cook = cookstart;
     }
@@ -44,7 +41,7 @@ public class MoveScript : MonoBehaviour {
             movedirection = movetarget - PlayerRb2d.position;
             if (movedirection.sqrMagnitude < 0.1)
             {
-                GameObject.Destroy(targeticon);
+                stopwalking();
             }
             selfvelocity = movedirection.normalized * movespeed;// + StealthScript.Speed);
         }
@@ -53,19 +50,14 @@ public class MoveScript : MonoBehaviour {
             selfvelocity = Vector2.zero;
         }
     }
-    
-    // Update is called once per frame
-    void Update ()
+
+    public void SetTarget(Vector2 rcplace)
     {
-        if (Input.GetMouseButtonDown(1))
-        {
-            rightclickplace = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            GameObject.Destroy(targeticon);
-            targeticon = Instantiate(targetshadow, rightclickplace, Quaternion.identity);
-            //DoSkill.singing = 0;
-            //GetComponent<SkillR2b>().IdoDSWL();
-        }
-	}
+        GameObject.Destroy(targeticon);
+        targeticon = Instantiate(targetshadow, rcplace, Quaternion.identity);
+        //DoSkill.singing = 0;
+        //GetComponent<SkillR2b>().IdoDSWL();
+    }
 
     void FixedUpdate()
     {
@@ -80,14 +72,6 @@ public class MoveScript : MonoBehaviour {
             PlayerRb2d.velocity = Givenvelocity;
         }
         //VelotoAdd = Vector2.zero;
-    }
-    private void LateUpdate()
-    {
-        if (Input.GetButtonDown("FollowCam"))
-        {
-            followplace = new Vector3(PlayerRb2d.position.x, PlayerRb2d.position.y, maincam.transform.position.z);
-            maincam.transform.position = followplace;
-        }
     }
 
     public void stopwalking()
