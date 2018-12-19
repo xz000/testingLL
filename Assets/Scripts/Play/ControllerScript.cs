@@ -22,6 +22,7 @@ public class ControllerScript : MonoBehaviour
                     break;
             }
         }
+        LCD.Clear();
     }
 
     public void createPCs(int MaxNum)
