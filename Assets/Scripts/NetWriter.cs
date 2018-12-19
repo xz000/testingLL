@@ -170,6 +170,7 @@ public class LoopList
     {
         //initsw();
         CTL = TCS;
+        CTL.createPCs(2);
         headnum = 0;
         fullnum = 32;
         CDA2 = new List<ClickData>[fullnum, 2];
