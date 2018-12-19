@@ -69,7 +69,7 @@ public class NetWriter : MonoBehaviour
     private void OnEnable()
     {
         theLL = new LoopList();
-        theLL.init();
+        theLL.init(GetComponent<ControllerScript>());
         PassedFrameNum = 0;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
@@ -82,7 +82,7 @@ public class NetWriter : MonoBehaviour
         PassedFrameNum = -1;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
-        theLL.stop();
+        //theLL.stop();
     }
 
     public void Eat(byte[] bRC)
@@ -97,12 +97,13 @@ public class NetWriter : MonoBehaviour
 }
 public class LoopList
 {
-    FileStream fs;
-    StreamWriter sw;
+    /*FileStream fs;
+    StreamWriter sw;*/
     private int headnum;
     private int fullnum;
     private List<ClickData>[,] CDA2;
     private bool[,] bool3;
+    private ControllerScript CTL;
 
     public void addat(int a, int b, List<ClickData> lcd)
     {
@@ -126,8 +127,8 @@ public class LoopList
 
     public void printhead()
     {
-        PrintList(CDA2[headnum, 0]);
-        PrintList(CDA2[headnum, 1]);
+        CTL.powerrr(0, CDA2[headnum, 0]);
+        CTL.powerrr(1, CDA2[headnum, 1]);
         for (int n = 0; n < 3; n++)
         {
             bool3[headnum, n] = false;
@@ -165,9 +166,10 @@ public class LoopList
         fullnum = nextnum;
     }
 
-    public void init()
+    public void init(ControllerScript TCS)
     {
-        initsw();
+        //initsw();
+        CTL = TCS;
         headnum = 0;
         fullnum = 32;
         CDA2 = new List<ClickData>[fullnum, 2];
@@ -183,7 +185,7 @@ public class LoopList
         }
     }
 
-    public void stop()
+    /*public void stop()
     {
         sw.Close();
         fs.Close();
@@ -204,5 +206,5 @@ public class LoopList
         {
             sw.WriteLine(cd.ToP());
         }
-    }
+    }*/
 }

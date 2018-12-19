@@ -2981,6 +2981,7 @@ GameObject:
   - component: {fileID: 1914587338}
   - component: {fileID: 1914587339}
   - component: {fileID: 1914587340}
+  - component: {fileID: 1914587341}
   m_Layer: 5
   m_Name: SRER
   m_TagString: Untagged
@@ -3093,6 +3094,20 @@ MonoBehaviour:
   L2S: []
   isstarted: 0
   error: 0
+--- !u!114 &1914587341
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1914587337}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f49aa619d3ff1d746812d13159df8cdc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  PlayerCircle: {fileID: 1408053086481752, guid: cfb6bab80d9567e40a2ca8c3ad2e145b,
+    type: 3}
 --- !u!1 &2009048345
 GameObject:
   m_ObjectHideFlags: 0
