@@ -30,12 +30,26 @@ public class NetWriter : MonoBehaviour
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength && theLL.headready())
+        while (netCurrentLength >= netFrameLength)
         {
-            theLL.printhead();
-            netCurrentLength -= netFrameLength;
-            PassedFrameNum++;
-            Debug.Log("pfn:" + PassedFrameNum);
+            if (theLL.headready())
+            {
+                theLL.printhead();
+                netCurrentLength -= netFrameLength;
+                PassedFrameNum++;
+                Debug.Log("pfn:" + PassedFrameNum);
+            }
+            else
+            {
+                /*
+                 * 此时未接收到远端同一帧的数据
+                 * 显示丢帧信息（暂时可通过recordtoggle观察）
+                 * 暂停本地游戏（Time.timescale）
+                 * 停止记录本地操作（recordtoggle）
+                 * 暂停本地NW（isstarted）
+                 * 在eat中添加语句，headready时恢复游戏
+                 */
+            }
         }
     }
 

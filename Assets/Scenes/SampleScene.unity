@@ -675,6 +675,7 @@ GameObject:
   - component: {fileID: 238781324}
   - component: {fileID: 238781325}
   - component: {fileID: 238781326}
+  - component: {fileID: 238781327}
   m_Layer: 5
   m_Name: RecordToggle
   m_TagString: Untagged
@@ -766,6 +767,18 @@ MonoBehaviour:
   txtPath: 
   theNW: {fileID: 1914587340}
   SignalLight: {fileID: 703651734}
+--- !u!225 &238781327
+CanvasGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 238781323}
+  m_Enabled: 1
+  m_Alpha: 1
+  m_Interactable: 0
+  m_BlocksRaycasts: 1
+  m_IgnoreParentGroups: 0
 --- !u!1 &258478783
 GameObject:
   m_ObjectHideFlags: 0
