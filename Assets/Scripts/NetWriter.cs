@@ -41,6 +41,7 @@ public class NetWriter : MonoBehaviour
             }
             else
             {
+                return;
                 /*
                  * 此时未接收到远端同一帧的数据
                  * 显示丢帧信息（暂时可通过recordtoggle观察）
