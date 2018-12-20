@@ -9,6 +9,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 
 public class NetWriter : MonoBehaviour
 {
+    public Toggle RToggle;
     public string netFileName;
     public string nettxtPath;
     public float netFrameLength = 0.1f;
@@ -30,27 +31,12 @@ public class NetWriter : MonoBehaviour
         if (!isstarted)
             return;
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength)
+        while (netCurrentLength >= netFrameLength && theLL.headready())
         {
-            if (theLL.headready())
-            {
-                theLL.printhead();
-                netCurrentLength -= netFrameLength;
-                PassedFrameNum++;
-                Debug.Log("pfn:" + PassedFrameNum);
-            }
-            else
-            {
-                return;
-                /*
-                 * 此时未接收到远端同一帧的数据
-                 * 显示丢帧信息（暂时可通过recordtoggle观察）
-                 * 暂停本地游戏（Time.timescale）
-                 * 停止记录本地操作（recordtoggle）
-                 * 暂停本地NW（isstarted）
-                 * 在eat中添加语句，headready时恢复游戏
-                 */
-            }
+            theLL.printhead();
+            netCurrentLength -= netFrameLength;
+            PassedFrameNum++;
+            Debug.Log("pfn:" + PassedFrameNum);
         }
     }
 
@@ -108,12 +94,18 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
+        /*
+        if (Time.timeScale == 0 && theLL.headready())
+        {
+            //isstarted = false;
+            RToggle.isOn = true;
+            Time.timeScale = 1;
+        }
+        */
     }
 }
 public class LoopList
 {
-    /*FileStream fs;
-    StreamWriter sw;*/
     private int headnum;
     private int fullnum;
     private List<ClickData>[,] CDA2;
@@ -183,7 +175,6 @@ public class LoopList
 
     public void init(ControllerScript TCS)
     {
-        //initsw();
         CTL = TCS;
         CTL.createPCs(2);
         headnum = 0;
@@ -200,27 +191,4 @@ public class LoopList
             bool3[i, 2] = false;
         }
     }
-
-    /*public void stop()
-    {
-        sw.Close();
-        fs.Close();
-    }
-
-    void initsw()
-    {
-        string netFileName = "/" + "L" + string.Format("{0:D2}{1:D2}{2:D2}{3:D2}{4:D2}{5:D2}", System.DateTime.Now.Year, System.DateTime.Now.Month, System.DateTime.Now.Day, System.DateTime.Now.Hour, System.DateTime.Now.Minute, System.DateTime.Now.Second) + ".txt";
-        string nettxtPath = Application.dataPath + netFileName;
-        fs = new FileStream(nettxtPath, FileMode.OpenOrCreate, FileAccess.Write);
-        sw = new StreamWriter(fs);
-        sw.WriteLine("Started");
-    }
-
-    void PrintList(List<ClickData> theLS)
-    {
-        foreach (ClickData cd in theLS)
-        {
-            sw.WriteLine(cd.ToP());
-        }
-    }*/
 }
