@@ -12,12 +12,14 @@ public class ControllerScript : MonoBehaviour
     {
         foreach(ClickData CD in LCD)
         {
+            Vector2 v2 = new Vector2(CD.xPos, CD.yPos);
             switch (CD.blr)
             {
                 case MButton.left:
+                    thePC[PNO] = Instantiate(PlayerCircle, v2, Quaternion.identity);
+                    theMS[PNO] = thePC[PNO].GetComponent<MoveScript>();
                     break;
                 case MButton.right:
-                    Vector2 v2 = new Vector2(CD.xPos, CD.yPos);
                     theMS[PNO].SetTarget(v2);
                     break;
             }
@@ -29,6 +31,7 @@ public class ControllerScript : MonoBehaviour
     {
         thePC = new GameObject[MaxNum];
         theMS = new MoveScript[MaxNum];
+        /*
         Vector3 v3;
         for (int i = 0; i < MaxNum; i++)
         {
@@ -36,5 +39,6 @@ public class ControllerScript : MonoBehaviour
             thePC[i] = Instantiate(PlayerCircle, v3, Quaternion.identity);
             theMS[i] = thePC[i].GetComponent<MoveScript>();
         }
+        */
     }
 }
