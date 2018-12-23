@@ -189,6 +189,7 @@ GameObject:
   - component: {fileID: 58970719070418754}
   - component: {fileID: 120367070304518420}
   - component: {fileID: 4785693520522694462}
+  - component: {fileID: 7455845423356578868}
   m_Layer: 0
   m_Name: PlayerCircle
   m_TagString: Player
@@ -427,7 +428,21 @@ MonoBehaviour:
   VelotoAdd: {x: 0, y: 0}
   selfvelocity: {x: 0, y: 0}
   PlayerRb2d: {fileID: 50533253008486044}
-  targeticon: {fileID: 0}
+  fixposlater: 0
+--- !u!114 &7455845423356578868
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9154fd5ab8cd824ca8d1d850e66ec0f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyInfoText: {fileID: 3928609820575930937, guid: 8e94f8917243cd7449849ed55f5b149f,
+    type: 3}
 --- !u!1 &1865538166631764
 GameObject:
   m_ObjectHideFlags: 0

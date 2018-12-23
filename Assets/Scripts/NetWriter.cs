@@ -18,24 +18,36 @@ public class NetWriter : MonoBehaviour
     public int ReceivedFrameNum = 0;
     public int LocalFrameNum = 1;
     public float LocalFrameLength = 0.1f;
-    float LocalCurrentLength = 0;
+    public float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
     public static int channelID;
     byte[] buffer2s = new byte[1024];
     public bool isstarted = false;
+    //public bool Fstarted = false;
     public byte error;
+    uint mn = 1;
     LoopList theLL;
 
     private void FixedUpdate()
     {
-        if (!isstarted)
-            return;
+        /*if (!Fstarted)
+            return;*/
         netCurrentLength += Time.fixedDeltaTime;
-        while (netCurrentLength >= netFrameLength && theLL.headready())
+        while (netCurrentLength >= netFrameLength)
         {
-            theLL.printhead();
-            netCurrentLength -= netFrameLength;
-            PassedFrameNum++;
+            if (theLL.Numready(mn))
+            {
+                theLL.printhead();
+                netCurrentLength -= netFrameLength;
+                PassedFrameNum++;
+                mn = 0;
+            }
+            else
+            {
+                Time.timeScale = 0;
+                mn = 1;
+                return;
+            }
             //Debug.Log("pfn:" + PassedFrameNum);
         }
     }
@@ -44,7 +56,17 @@ public class NetWriter : MonoBehaviour
     {
         if (!isstarted)
             return;
-        LocalCurrentLength += Time.deltaTime;
+        if ((LocalFrameNum - PassedFrameNum) < 5)
+        {
+            if (!RToggle.isOn)
+                RToggle.isOn = true;
+            LocalCurrentLength += Time.unscaledDeltaTime;
+        }
+        else
+        {
+            RToggle.isOn = false;
+            LocalCurrentLength += Time.unscaledDeltaTime / 4;
+        }
         while (LocalCurrentLength >= LocalFrameLength)
         {
             Data2S Fd2s = new Data2S();
@@ -59,6 +81,11 @@ public class NetWriter : MonoBehaviour
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
+            if (Time.timeScale == 0 && theLL.Numready(3))
+            {
+                //isstarted = false;
+                Time.timeScale = 1;
+            }
             //
             L2S.Clear();
             buffer2s = new byte[1024];
@@ -75,11 +102,14 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
         isstarted = true;
+        //Fstarted = true;
+        Time.timeScale = 0;
     }
 
     private void OnDisable()
     {
         isstarted = false;
+        //Fstarted = false;
         PassedFrameNum = -1;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
@@ -94,14 +124,11 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
-        /*
-        if (Time.timeScale == 0 && theLL.headready())
+        if (Time.timeScale == 0 && theLL.Numready(3))
         {
             //isstarted = false;
-            RToggle.isOn = true;
             Time.timeScale = 1;
         }
-        */
     }
 }
 public class LoopList
@@ -130,6 +157,16 @@ public class LoopList
     public bool headready()
     {
         return bool3[headnum, 2];
+    }
+
+    public bool Numready(uint u)
+    {
+        bool a = true;
+        for(uint i= 0; i <= u; i++)
+        {
+            a = a && bool3[headnum + i, 2];
+        }
+        return a;
     }
 
     public void printhead()

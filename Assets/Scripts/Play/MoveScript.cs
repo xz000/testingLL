@@ -64,7 +64,7 @@ public class MoveScript : MonoBehaviour {
     {
         Setselfvelocity();
         SetTotalVelocity();
-        FixSelfPos();
+        //FixSelfPos();
     }
 
     void SetTotalVelocity()
