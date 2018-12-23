@@ -19,6 +19,7 @@ public class MoveScript : MonoBehaviour {
     GameObject targeticon;
     private Vector3 followplace;
     public CookVelo cook;
+    public bool fixposlater = false;
 
     void cookstart(Rigidbody2D victim, MoveScript worker)
     {
@@ -62,6 +63,12 @@ public class MoveScript : MonoBehaviour {
     void FixedUpdate()
     {
         Setselfvelocity();
+        SetTotalVelocity();
+        FixSelfPos();
+    }
+
+    void SetTotalVelocity()
+    {
         if (controllable)
         {
             cook(PlayerRb2d, this);
@@ -71,7 +78,22 @@ public class MoveScript : MonoBehaviour {
         {
             PlayerRb2d.velocity = Givenvelocity;
         }
-        //VelotoAdd = Vector2.zero;
+    }
+
+    void FixSelfPos()
+    {
+        if (PlayerRb2d.position != Vector2.zero)
+        {
+            fixposlater = true;
+            Debug.Log("ash");
+            return;
+        }
+        if (fixposlater)
+        {
+            PlayerRb2d.position = Fix256.F256v2(PlayerRb2d.position);
+            fixposlater = false;
+            Debug.Log("Smash");
+        }
     }
 
     public void stopwalking()
