@@ -36,7 +36,7 @@ public class NetWriter : MonoBehaviour
             theLL.printhead();
             netCurrentLength -= netFrameLength;
             PassedFrameNum++;
-            Debug.Log("pfn:" + PassedFrameNum);
+            //Debug.Log("pfn:" + PassedFrameNum);
         }
     }
 
