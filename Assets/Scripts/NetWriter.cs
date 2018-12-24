@@ -162,11 +162,18 @@ public class LoopList
     public bool Numready(uint u)
     {
         bool a = true;
-        for(uint i= 0; i <= u; i++)
+        for(int i= 0; i <= u; i++)
         {
-            a = a && bool3[headnum + i, 2];
+            a = a && intready(headnum + i);
         }
         return a;
+    }
+
+    bool intready(int i)
+    {
+        if (i >= fullnum)
+            i -= fullnum;
+        return bool3[i, 2];
     }
 
     public void printhead()
@@ -195,12 +202,12 @@ public class LoopList
                 if (i >= fullnum)
                 {
                     int m = i - fullnum;
-                    nextlist[i, n] = CDA2[m, n];
+                    nextlist[i, n] = new List<ClickData>(CDA2[m, n]);
                     nextb3[i, n] = bool3[m, n];
                 }
                 else
                 {
-                    nextlist[i, n] = CDA2[i, n];
+                    nextlist[i, n] = new List<ClickData>(CDA2[i, n]);
                     nextb3[i, n] = bool3[i, n];
                 }
             }
