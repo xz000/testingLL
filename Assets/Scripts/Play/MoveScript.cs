@@ -80,7 +80,7 @@ public class MoveScript : MonoBehaviour {
         }
     }
 
-    void FixSelfPos()
+    /*void FixSelfPos()
     {
         if (PlayerRb2d.position != Vector2.zero)
         {
@@ -94,7 +94,7 @@ public class MoveScript : MonoBehaviour {
             fixposlater = false;
             Debug.Log("Smash");
         }
-    }
+    }*/
 
     public void stopwalking()
     {
