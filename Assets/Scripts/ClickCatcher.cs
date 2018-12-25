@@ -21,14 +21,14 @@ public class ClickCatcher : MonoBehaviour {
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             ClickData cd = new ClickData();
-            cd.setdata(MButton.left, Fix256.F256f(mp.x), Fix256.F256f(mp.y));
+            cd.setdata(MButton.left, mp.x, mp.y);
             theNW.L2S.Add(cd);
         }
         if (Input.GetMouseButtonDown(1))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             ClickData cd = new ClickData();
-            cd.setdata(MButton.right, Fix256.F256f(mp.x), Fix256.F256f(mp.y));
+            cd.setdata(MButton.right, mp.x, mp.y);
             theNW.L2S.Add(cd);
         }
     }
