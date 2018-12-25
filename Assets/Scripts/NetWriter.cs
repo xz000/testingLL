@@ -137,7 +137,33 @@ public class LoopList
     private int fullnum;
     private List<ClickData>[,] CDA2;
     private bool[,] bool3;
+    /*private List<ClickData>[,] CDA2a;
+    private bool[,] bool3a;*/
     private ControllerScript CTL;
+    /*
+    delegate List<ClickData> CDA(int a, int b);
+    delegate bool ba(int a, int b);
+    bool a2 = true;
+
+    List<ClickData> CDFromA2(int a, int b)
+    {
+        return CDA2[a, b];
+    }
+
+    bool bFromb2(int a, int b)
+    {
+        return bool3[a, b];
+    }
+
+    List<ClickData> CDFromA2A(int a, int b)
+    {
+        return CDA2a[a, b];
+    }
+
+    bool bFromb2a(int a, int b)
+    {
+        return bool3a[a, b];
+    }*/
 
     public void addat(int a, int b, List<ClickData> lcd)
     {
@@ -193,8 +219,17 @@ public class LoopList
     {
         int nextnum = fullnum * 2;
         int endingnum = fullnum + headnum;
-        List<ClickData>[,] nextlist = new List<ClickData>[nextnum, 2];
-        bool[,] nextb3 = new bool[nextnum, 3];
+        List<ClickData>[,] CDA2a = new List<ClickData>[nextnum, 2];
+        bool[,] bool3a = new bool[nextnum, 3];
+        for (int i = 0; i < nextnum; i++)
+        {
+            for (int n = 0; n < 2; n++)
+            {
+                CDA2a[i, n] = new List<ClickData>();
+                bool3a[i, n] = false;
+            }
+            bool3a[i, 2] = false;
+        }
         for (int i = headnum; i < endingnum; i++)
         {
             for (int n = 0; n < 2; n++)
@@ -202,18 +237,20 @@ public class LoopList
                 if (i >= fullnum)
                 {
                     int m = i - fullnum;
-                    nextlist[i, n] = new List<ClickData>(CDA2[m, n]);
-                    nextb3[i, n] = bool3[m, n];
+                    CDA2a[i, n] = new List<ClickData>(CDA2[m, n]);
+                    bool3a[i, n] = bool3[m, n];
+                    bool3a[i, 2] = bool3[m, 2];
                 }
                 else
                 {
-                    nextlist[i, n] = new List<ClickData>(CDA2[i, n]);
-                    nextb3[i, n] = bool3[i, n];
+                    CDA2a[i, n] = new List<ClickData>(CDA2[i, n]);
+                    bool3a[i, n] = bool3[i, n];
+                    bool3a[i, 2] = bool3[i, 2];
                 }
             }
         }
-        CDA2 = nextlist;
-        bool3 = nextb3;
+        CDA2 = CDA2a;
+        bool3 = bool3a;
         fullnum = nextnum;
     }
 
