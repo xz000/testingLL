@@ -10,6 +10,10 @@ namespace FixMath
         public Fix64 x;
         public Fix64 y;
         public static readonly Fix64Vector2 Zero = new Fix64Vector2();
+        public static readonly Fix64Vector2 Up = new Fix64Vector2(Fix64.Zero, Fix64.One);
+        public static readonly Fix64Vector2 Down = new Fix64Vector2(Fix64.Zero, -Fix64.One);
+        public static readonly Fix64Vector2 Left = new Fix64Vector2(-Fix64.One, Fix64.Zero);
+        public static readonly Fix64Vector2 Right = new Fix64Vector2(Fix64.One, Fix64.Zero);
 
         public Fix64Vector2(Fix64 xv,Fix64 yv)
         {
@@ -51,6 +55,46 @@ namespace FixMath
             Fix64 ox = x;
             x = x * c + y * s;
             y = y * c - ox * s;
+        }
+
+        public static Fix64Vector2 operator +(Fix64Vector2 a, Fix64Vector2 b)
+        {
+            a.x += b.x;
+            a.y += b.y;
+            return a;
+        }
+        public static Fix64Vector2 operator -(Fix64Vector2 a, Fix64Vector2 b)
+        {
+            a.x -= b.x;
+            a.y -= b.y;
+            return a;
+        }
+        public static Fix64Vector2 operator -(Fix64Vector2 a)
+        {
+            a.x = -a.x;
+            a.y = -a.y;
+            return a;
+        }
+        public static bool operator ==(Fix64Vector2 t1, Fix64Vector2 t2)
+        {
+            return t1.x == t2.x && t1.y == t2.y;
+        }
+        public static bool operator !=(Fix64Vector2 t1, Fix64Vector2 t2)
+        {
+            return t1.x != t2.x || t1.y != t2.y;
+        }
+        public override bool Equals(object obj)
+        {
+            if (obj is Fix64Vector2)
+            {
+                Fix64Vector2 f = (Fix64Vector2)obj;
+                return x == f.x && y == f.y;
+            }
+            return false;
+        }
+        public override int GetHashCode()
+        {
+            return (x.ToString() + y.ToString()).GetHashCode();
         }
     }
 }
