@@ -1064,7 +1064,7 @@ namespace FixMath
         /// <summary>
         /// The underlying integer representation
         /// </summary>
-        //public long RawValue => m_rawValue;
+        public long RawValue => m_rawValue;
 
         /// <summary>
         /// This is the constructor from raw value; it can only be used interally.
