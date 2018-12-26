@@ -12,6 +12,7 @@ public class ClientToggle : MonoBehaviour
     public InputField Cinput;
     public Text Ctext;
     public Text Stext;
+    public Text Ttext;
     public Text CLabel;
     public int SelfNO;
     public int TargetNO;
@@ -54,7 +55,7 @@ public class ClientToggle : MonoBehaviour
         NetWriter.channelID = CCcFIG.AddChannel(QosType.ReliableSequenced);
         CosTT = new HostTopology(CCcFIG, 10);
         hostId = NetworkTransport.AddHost(CosTT, SelfNO);
-        CntID = NetworkTransport.Connect(hostId, "127.0.0.1", TargetNO, 0, out error);
+        CntID = NetworkTransport.Connect(hostId, Ttext.text, TargetNO, 0, out error);
         CLabel.text = "From " + SelfNO.ToString() + " to " + TargetNO.ToString();
         SenderScript.HTo = CosTT;
         Sender.HSID = hostId;
