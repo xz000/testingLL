@@ -16,6 +16,7 @@ public class MoveScript : MonoBehaviour {
     private Vector2 movetarget;
     public Vector2 selfvelocity;
     public Rigidbody2D PlayerRb2d;
+    bool isme = false;
     GameObject targeticon;
     private Vector3 followplace;
     public CookVelo cook;
@@ -52,10 +53,18 @@ public class MoveScript : MonoBehaviour {
         }
     }
 
+    public void itsme()
+    {
+        isme = true;
+        GetComponent<SpriteRenderer>().color = Color.green;
+    }
+
     public void SetTarget(Vector2 rcplace)
     {
         GameObject.Destroy(targeticon);
         targeticon = Instantiate(targetshadow, rcplace, Quaternion.identity);
+        if (isme)
+            targeticon.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0.5f);
         //DoSkill.singing = 0;
         //GetComponent<SkillR2b>().IdoDSWL();
     }

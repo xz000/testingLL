@@ -18,6 +18,8 @@ public class ControllerScript : MonoBehaviour
                 case MButton.left:
                     thePC[PNO] = Instantiate(PlayerCircle, v2, Quaternion.identity);
                     theMS[PNO] = thePC[PNO].GetComponent<MoveScript>();
+                    if (PNO == Sender.clientNum)
+                        theMS[PNO].itsme();
                     break;
                 case MButton.right:
                     theMS[PNO].SetTarget(v2);
