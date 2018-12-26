@@ -36,7 +36,7 @@ public class Sender : MonoBehaviour
 
     public void ResetSelf()
     {
-        //started = false;
+        started = false;
         SendButton.SetActive(false);
         SignalLight.color = Color.white;
         MyNS.isstarted = false;
