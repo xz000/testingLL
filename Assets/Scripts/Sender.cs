@@ -29,6 +29,7 @@ public class Sender : MonoBehaviour
     byte[] rcbuffer = new byte[1024];
     public int rcbfsz = 1024;
     public Toggle CCToggle;
+    public CanvasGroup MCG;
 
     private void Start()
     {
@@ -56,12 +57,14 @@ public class Sender : MonoBehaviour
         SendButton.SetActive(true);
         MyNS.enabled = true;//开启netwriter
         CCToggle.isOn = true;
+        HideMC();
     }
 
     void DisconnectDo()
     {
         ResetS2();
         SignalLight.color = Color.red;
+        ShowMC();
     }
 
     public void StartSelf()
@@ -83,8 +86,29 @@ public class Sender : MonoBehaviour
         }
     }
 
+    public void ShowMC()
+    {
+        MCG.alpha = 1;
+        MCG.blocksRaycasts = false;
+        MCG.interactable = true;
+    }
+
+    public void HideMC()
+    {
+        MCG.interactable = false;
+        MCG.blocksRaycasts = true;
+        MCG.alpha = 0;
+    }
+
     private void Update()
     {
+        if (Input.GetKeyDown(KeyCode.Tab))
+        {
+            if (MCG.interactable)
+                HideMC();
+            else
+                ShowMC();
+        }
         if (!started)
             return;
         SignalControl();

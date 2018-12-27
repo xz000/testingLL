@@ -12,8 +12,8 @@ public class ShowMyInfo : MonoBehaviour
     // Use this for initialization
     void Start()
     {
-        Canvas TheCanvas = GameObject.FindObjectOfType<Canvas>();
-        MyInfo = GameObject.Instantiate(MyInfoText, TheCanvas.gameObject.transform);
+        GameObject TheCanvas = GameObject.Find("Canvas2");
+        MyInfo = GameObject.Instantiate(MyInfoText, TheCanvas.transform);
         rb2d = GetComponent<Rigidbody2D>();
     }
 
