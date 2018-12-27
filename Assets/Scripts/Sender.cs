@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 using System;
+//using ProtoBuf;
 
 public class Sender : MonoBehaviour
 {
@@ -37,6 +38,11 @@ public class Sender : MonoBehaviour
     public void ResetSelf()
     {
         started = false;
+        ResetS2();
+    }
+
+    void ResetS2()
+    {
         SendButton.SetActive(false);
         SignalLight.color = Color.white;
         MyNS.isstarted = false;
@@ -54,7 +60,7 @@ public class Sender : MonoBehaviour
 
     void DisconnectDo()
     {
-        ResetSelf();
+        ResetS2();
         SignalLight.color = Color.red;
     }
 
@@ -66,11 +72,12 @@ public class Sender : MonoBehaviour
 
     public void ClickSendButton()
     {
-        buffer = System.Text.Encoding.Unicode.GetBytes(TextToSend.text);
-        sz = buffer.Length;
+        byte[] bff = new byte[1024];
+        bff = System.Text.Encoding.Unicode.GetBytes(TextToSend.text);
+        int bffsz = bff.Length;
         if (sz != 0)
         {
-            NetworkTransport.Send(HSID, CNID, CHANID, buffer, sz, out error);
+            NetworkTransport.Send(HSID, CNID, CHANID, bff, bffsz, out error);
             TextReceived.text = System.Text.Encoding.Unicode.GetString(buffer);
             TextToSend.text = null;
         }
@@ -116,6 +123,7 @@ public class Sender : MonoBehaviour
 
     void DeSerializeReceived()
     {
+        //System.Array.Resize<byte>(ref rcbuffer, rcbfsz);
         MyNS.Eat(rcbuffer);
         rcbuffer = new byte[1024];
     }
