@@ -16,10 +16,7 @@ public class ControllerScript : MonoBehaviour
             switch (CD.blr)
             {
                 case MButton.left:
-                    thePC[PNO] = Instantiate(PlayerCircle, v2, Quaternion.identity);
-                    theMS[PNO] = thePC[PNO].GetComponent<MoveScript>();
-                    if (PNO == Sender.clientNum)
-                        theMS[PNO].itsme();
+                    CPCat(PNO, v2);
                     break;
                 case MButton.right:
                     theMS[PNO].SetTarget(v2);
@@ -27,6 +24,14 @@ public class ControllerScript : MonoBehaviour
             }
         }
         LCD.Clear();
+    }
+
+    public void CPCat(int Num, Vector2 place)
+    {
+        thePC[Num] = Instantiate(PlayerCircle, place, Quaternion.identity);
+        theMS[Num] = thePC[Num].GetComponent<MoveScript>();
+        if (Num == Sender.clientNum)
+            theMS[Num].itsme();
     }
 
     public void createPCs(int MaxNum)
