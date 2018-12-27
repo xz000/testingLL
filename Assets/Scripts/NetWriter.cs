@@ -4,14 +4,15 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 using System.IO;
+using System;
 using System.Text;
 using System.Runtime.Serialization.Formatters.Binary;
 
 public class NetWriter : MonoBehaviour
 {
     public Toggle RToggle;
-    public string netFileName;
-    public string nettxtPath;
+    //public string netFileName;
+    //public string nettxtPath;
     public float netFrameLength = 0.1f;
     float netCurrentLength = 0;
     public int PassedFrameNum = -1;
@@ -21,7 +22,7 @@ public class NetWriter : MonoBehaviour
     public float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
     public static int channelID;
-    byte[] buffer2s = new byte[1024];
+    byte[] buffer2s;// = new byte[1024];
     public bool isstarted = false;
     //public bool Fstarted = false;
     public byte error;
@@ -73,9 +74,10 @@ public class NetWriter : MonoBehaviour
             Fd2s.frameNum = LocalFrameNum;
             Fd2s.clientNum = Sender.clientNum;
             Fd2s.clickDatas = L2S;
-            BinaryFormatter bf = new BinaryFormatter();
+            BinaryFormatter bf = new BinaryFormatter();//tt
             MemoryStream ms = new MemoryStream();
-            bf.Serialize(ms, Fd2s);
+            bf.Serialize(ms, Fd2s);//tt
+            //ProtoBuf.Serializer.Serialize(ms, Fd2s);
             buffer2s = ms.GetBuffer();
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             //
@@ -118,9 +120,10 @@ public class NetWriter : MonoBehaviour
 
     public void Eat(byte[] bRC)
     {
-        BinaryFormatter ef = new BinaryFormatter();
-        Stream S2E = new MemoryStream(bRC);
-        Data2S datarc = (Data2S)ef.Deserialize(S2E);
+        BinaryFormatter ef = new BinaryFormatter();//tt
+        MemoryStream S2E = new MemoryStream(bRC);
+        Data2S datarc = (Data2S)ef.Deserialize(S2E);//tt
+        //Data2S datarc = ProtoBuf.Serializer.Deserialize<Data2S>(S2E);
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
