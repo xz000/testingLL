@@ -25,6 +25,7 @@ public class NetWriter : MonoBehaviour
     public static int channelID;
     byte[] buffer2s;// = new byte[1024];
     public bool isstarted = false;
+    BinaryFormatter bf;
     //public bool Fstarted = false;
     public byte error;
     uint mn = 1;
@@ -71,7 +72,7 @@ public class NetWriter : MonoBehaviour
         }
         while (LocalCurrentLength >= LocalFrameLength)
         {
-            bondbf();//ttt
+            bff();//ttt
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
@@ -95,7 +96,6 @@ public class NetWriter : MonoBehaviour
         Fd2s.frameNum = LocalFrameNum;
         Fd2s.clientNum = Sender.clientNum;
         Fd2s.clickDatas = L2S;
-        BinaryFormatter bf = new BinaryFormatter();//tt
         MemoryStream ms = new MemoryStream();
         bf.Serialize(ms, Fd2s);//tt
         buffer2s = ms.GetBuffer();
@@ -115,6 +115,7 @@ public class NetWriter : MonoBehaviour
 
     private void OnEnable()
     {
+        bf = new BinaryFormatter();
         theLL = new LoopList();
         theLL.init(GetComponent<ControllerScript>());
         PassedFrameNum = 0;
@@ -137,9 +138,8 @@ public class NetWriter : MonoBehaviour
 
     Data2S bfd(byte[] bRC)
     {
-        BinaryFormatter ef = new BinaryFormatter();//tt
         MemoryStream S2E = new MemoryStream(bRC);
-        Data2S datarc = (Data2S)ef.Deserialize(S2E);//tt
+        Data2S datarc = (Data2S)bf.Deserialize(S2E);//tt
         return datarc;
     }
 
@@ -153,7 +153,7 @@ public class NetWriter : MonoBehaviour
 
     public void Eat(byte[] bRC)
     {
-        Data2S datarc = bondbfd(bRC);//ttt
+        Data2S datarc = bfd(bRC);//ttt
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
@@ -170,33 +170,7 @@ public class LoopList
     private int fullnum;
     private List<ClickData>[,] CDA2;
     private bool[,] bool3;
-    /*private List<ClickData>[,] CDA2a;
-    private bool[,] bool3a;*/
     private ControllerScript CTL;
-    /*
-    delegate List<ClickData> CDA(int a, int b);
-    delegate bool ba(int a, int b);
-    bool a2 = true;
-
-    List<ClickData> CDFromA2(int a, int b)
-    {
-        return CDA2[a, b];
-    }
-
-    bool bFromb2(int a, int b)
-    {
-        return bool3[a, b];
-    }
-
-    List<ClickData> CDFromA2A(int a, int b)
-    {
-        return CDA2a[a, b];
-    }
-
-    bool bFromb2a(int a, int b)
-    {
-        return bool3a[a, b];
-    }*/
 
     public void addat(int a, int b, List<ClickData> lcd)
     {

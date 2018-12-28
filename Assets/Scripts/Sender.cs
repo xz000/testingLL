@@ -89,14 +89,14 @@ public class Sender : MonoBehaviour
     public void ShowMC()
     {
         MCG.alpha = 1;
-        MCG.blocksRaycasts = false;
+        MCG.blocksRaycasts = true;
         MCG.interactable = true;
     }
 
     public void HideMC()
     {
         MCG.interactable = false;
-        MCG.blocksRaycasts = true;
+        MCG.blocksRaycasts = false;
         MCG.alpha = 0;
     }
 
