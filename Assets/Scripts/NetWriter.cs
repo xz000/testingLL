@@ -72,7 +72,7 @@ public class NetWriter : MonoBehaviour
         }
         while (LocalCurrentLength >= LocalFrameLength)
         {
-            bff();//ttt
+            bondbf();//ttt
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
@@ -107,10 +107,10 @@ public class NetWriter : MonoBehaviour
         Fd2s.frameNum = LocalFrameNum;
         Fd2s.clientNum = Sender.clientNum;
         Fd2s.clickDatas = L2S;
-        Serializer<MemoryStream> bof = new Serializer<MemoryStream>(typeof(Data2S));
-        MemoryStream ms = new MemoryStream();
-        bof.Serialize(Fd2s, ms);
-        buffer2s = ms.GetBuffer();
+        Bond.IO.Safe.OutputBuffer ob = new Bond.IO.Safe.OutputBuffer(1024);
+        Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer> bof = new Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob);
+        Serialize.To(bof, Fd2s);
+        buffer2s = ob.Data.Array;
     }
 
     private void OnEnable()
@@ -145,15 +145,15 @@ public class NetWriter : MonoBehaviour
 
     Data2S bondbfd(byte[] bRC)
     {
-        Deserializer<MemoryStream> ef = new Deserializer<MemoryStream>(typeof(Data2S));
-        MemoryStream S2E = new MemoryStream(bRC);
-        Data2S datarc = (Data2S)ef.Deserialize(S2E);//tt
+        Bond.IO.Safe.InputBuffer ib = new Bond.IO.Safe.InputBuffer(bRC);
+        Bond.Protocols.FastBinaryReader<Bond.IO.Safe.InputBuffer> fbr = new Bond.Protocols.FastBinaryReader<Bond.IO.Safe.InputBuffer>(ib);
+        Data2S datarc = Deserialize<Data2S>.From(fbr);
         return datarc;
     }
 
     public void Eat(byte[] bRC)
     {
-        Data2S datarc = bfd(bRC);//ttt
+        Data2S datarc = bondbfd(bRC);//ttt
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
