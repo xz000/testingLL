@@ -7,6 +7,7 @@ using System.IO;
 using System;
 using System.Text;
 using System.Runtime.Serialization.Formatters.Binary;
+using Bond;
 
 public class NetWriter : MonoBehaviour
 {
@@ -70,15 +71,7 @@ public class NetWriter : MonoBehaviour
         }
         while (LocalCurrentLength >= LocalFrameLength)
         {
-            Data2S Fd2s = new Data2S();
-            Fd2s.frameNum = LocalFrameNum;
-            Fd2s.clientNum = Sender.clientNum;
-            Fd2s.clickDatas = L2S;
-            BinaryFormatter bf = new BinaryFormatter();//tt
-            MemoryStream ms = new MemoryStream();
-            bf.Serialize(ms, Fd2s);//tt
-            //ProtoBuf.Serializer.Serialize(ms, Fd2s);
-            buffer2s = ms.GetBuffer();
+            bondbf();//ttt
             NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
@@ -94,6 +87,30 @@ public class NetWriter : MonoBehaviour
             LocalCurrentLength -= LocalFrameLength;
             LocalFrameNum++;
         }
+    }
+
+    void bff()
+    {
+        Data2S Fd2s = new Data2S();
+        Fd2s.frameNum = LocalFrameNum;
+        Fd2s.clientNum = Sender.clientNum;
+        Fd2s.clickDatas = L2S;
+        BinaryFormatter bf = new BinaryFormatter();//tt
+        MemoryStream ms = new MemoryStream();
+        bf.Serialize(ms, Fd2s);//tt
+        buffer2s = ms.GetBuffer();
+    }
+
+    void bondbf()
+    {
+        Data2S Fd2s = new Data2S();
+        Fd2s.frameNum = LocalFrameNum;
+        Fd2s.clientNum = Sender.clientNum;
+        Fd2s.clickDatas = L2S;
+        Serializer<MemoryStream> bof = new Serializer<MemoryStream>(typeof(Data2S));
+        MemoryStream ms = new MemoryStream();
+        bof.Serialize(Fd2s, ms);
+        buffer2s = ms.GetBuffer();
     }
 
     private void OnEnable()
@@ -118,12 +135,25 @@ public class NetWriter : MonoBehaviour
         //theLL.stop();
     }
 
-    public void Eat(byte[] bRC)
+    Data2S bfd(byte[] bRC)
     {
         BinaryFormatter ef = new BinaryFormatter();//tt
         MemoryStream S2E = new MemoryStream(bRC);
         Data2S datarc = (Data2S)ef.Deserialize(S2E);//tt
-        //Data2S datarc = ProtoBuf.Serializer.Deserialize<Data2S>(S2E);
+        return datarc;
+    }
+
+    Data2S bondbfd(byte[] bRC)
+    {
+        Deserializer<MemoryStream> ef = new Deserializer<MemoryStream>(typeof(Data2S));
+        MemoryStream S2E = new MemoryStream(bRC);
+        Data2S datarc = (Data2S)ef.Deserialize(S2E);//tt
+        return datarc;
+    }
+
+    public void Eat(byte[] bRC)
+    {
+        Data2S datarc = bondbfd(bRC);//ttt
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);

@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 using System;
-//using ProtoBuf;
+using Bond;
 
 public class Sender : MonoBehaviour
 {
@@ -153,11 +153,14 @@ public class Sender : MonoBehaviour
     }
 }
 
-[Serializable]
+[Serializable,Schema]
 public class ClickData
 {
+    [Id(0)]
     public MButton blr;
+    [Id(1)]
     public float xPos;
+    [Id(2)]
     public float yPos;
 
     public void setdata(MButton b, float x, float y)
@@ -183,11 +186,14 @@ public class ClickData
     }
 }
 
-[Serializable]
+[Serializable,Schema]
 public class Data2S
 {
+    [Id(0)]
     public int frameNum;
+    [Id(1)]
     public int clientNum;
+    [Id(2)]
     public List<ClickData> clickDatas;
 }
 
