@@ -23,7 +23,7 @@ public class NetWriter : MonoBehaviour
     public float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
     public static int channelID;
-    byte[] buffer2s;// = new byte[1024];
+    //byte[] buffer2s;// = new byte[1024];
     public bool isstarted = false;
     BinaryFormatter bf;
     //public bool Fstarted = false;
@@ -72,8 +72,14 @@ public class NetWriter : MonoBehaviour
         }
         while (LocalCurrentLength >= LocalFrameLength)
         {
-            bondbf();//ttt
-            NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, buffer2s, buffer2s.Length, out error);
+            Data2S Fd2s = new Data2S();
+            Fd2s.frameNum = LocalFrameNum;
+            Fd2s.clientNum = Sender.clientNum;
+            Fd2s.clickDatas = L2S;
+            Bond.IO.Safe.OutputBuffer ob = new Bond.IO.Safe.OutputBuffer(64);
+            Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer> bof = new Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob);
+            Serialize.To(bof, Fd2s);
+            NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, ob.Data.Array, ob.Data.Array.Length, out error);
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
@@ -84,33 +90,10 @@ public class NetWriter : MonoBehaviour
             }
             //
             L2S.Clear();
-            buffer2s = new byte[1024];
+            //buffer2s = new byte[1024];
             LocalCurrentLength -= LocalFrameLength;
             LocalFrameNum++;
         }
-    }
-
-    void bff()
-    {
-        Data2S Fd2s = new Data2S();
-        Fd2s.frameNum = LocalFrameNum;
-        Fd2s.clientNum = Sender.clientNum;
-        Fd2s.clickDatas = L2S;
-        MemoryStream ms = new MemoryStream();
-        bf.Serialize(ms, Fd2s);//tt
-        buffer2s = ms.GetBuffer();
-    }
-
-    void bondbf()
-    {
-        Data2S Fd2s = new Data2S();
-        Fd2s.frameNum = LocalFrameNum;
-        Fd2s.clientNum = Sender.clientNum;
-        Fd2s.clickDatas = L2S;
-        Bond.IO.Safe.OutputBuffer ob = new Bond.IO.Safe.OutputBuffer(1024);
-        Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer> bof = new Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob);
-        Serialize.To(bof, Fd2s);
-        buffer2s = ob.Data.Array;
     }
 
     private void OnEnable()

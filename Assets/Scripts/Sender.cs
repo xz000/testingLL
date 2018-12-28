@@ -26,8 +26,8 @@ public class Sender : MonoBehaviour
     public static int HSID;
     public static int CNID;
     public int CHANID;
-    byte[] rcbuffer = new byte[1024];
-    public int rcbfsz = 1024;
+    byte[] rcbuffer = new byte[256];
+    public int rcbfsz = 256;
     public Toggle CCToggle;
     public CanvasGroup MCG;
 
@@ -75,7 +75,7 @@ public class Sender : MonoBehaviour
 
     public void ClickSendButton()
     {
-        byte[] bff = new byte[1024];
+        byte[] bff = new byte[256];
         bff = System.Text.Encoding.Unicode.GetBytes(TextToSend.text);
         int bffsz = bff.Length;
         if (sz != 0)
@@ -142,14 +142,14 @@ public class Sender : MonoBehaviour
     private void PrintReceived()
     {
         TextReceived.text = System.Text.Encoding.Unicode.GetString(rcbuffer);
-        rcbuffer = new byte[1024];
+        rcbuffer = new byte[256];
     }
 
     void DeSerializeReceived()
     {
         //System.Array.Resize<byte>(ref rcbuffer, rcbfsz);
         MyNS.Eat(rcbuffer);
-        rcbuffer = new byte[1024];
+        rcbuffer = new byte[256];
     }
 }
 
