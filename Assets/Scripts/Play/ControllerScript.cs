@@ -12,14 +12,15 @@ public class ControllerScript : MonoBehaviour
     {
         foreach(ClickData CD in LCD)
         {
-            Vector2 v2 = new Vector2(CD.xPos, CD.yPos);
             switch (CD.blr)
             {
                 case MButton.left:
-                    CPCat(PNO, v2);
+                    Vector2 v2l = new Vector2((float)CD.xPos, (float)CD.yPos);
+                    CPCat(PNO, v2l);
                     break;
                 case MButton.right:
-                    theMS[PNO].SetTarget(v2);
+                    Vector2 v2r = new Vector2((float)CD.xPos, (float)CD.yPos);
+                    theMS[PNO].SetTarget(v2r);
                     break;
             }
         }
