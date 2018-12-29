@@ -16,7 +16,7 @@ public class MoveScript : MonoBehaviour {
     private Vector2 movetarget;
     public Vector2 selfvelocity;
     public Rigidbody2D PlayerRb2d;
-    bool isme = false;
+    public bool isme = false;
     GameObject targeticon;
     private Vector3 followplace;
     public CookVelo cook;
