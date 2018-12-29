@@ -153,36 +153,35 @@ public class Sender : MonoBehaviour
     }
 }
 
-[Serializable,Schema]
+[Serializable, Schema]
 public class ClickData
 {
     [Id(0)]
     public MButton blr;
     [Id(1)]
-    public float xPos;
+    public float? xPos;
     [Id(2)]
-    public float yPos;
+    public float? yPos;
+    [Id(3)]
+    public SkillCode SC;
+    [Id(4)]
+    public int? SLevel;
 
-    public void setdata(MButton b, float x, float y)
+    public void Msetdata(MButton b, float? x, float? y)
     {
         blr = b;
         xPos = x;
         yPos = y;
     }
-
-    public string ToP()
+    public void Ksetdata(MButton k)
     {
-        string s2r = null;
-        switch (blr)
-        {
-            case MButton.left:
-                s2r = "Mouse0:" + "," + xPos.ToString() + "," + yPos.ToString();
-                break;
-            case MButton.right:
-                s2r = "Mouse1:" + "," + xPos.ToString() + "," + yPos.ToString();
-                break;
-        }
-        return s2r;
+        blr = k;
+    }
+    public void SKsetdata(MButton s, SkillCode c, int l)
+    {
+        blr = s;
+        SC = c;
+        SLevel = l;
     }
 }
 
@@ -197,4 +196,5 @@ public class Data2S
     public List<ClickData> clickDatas;
 }
 
-public enum MButton { left, right };
+public enum MButton { left, right, skill };
+public enum SkillCode { SelfExplodeScript, SkillC1, SkillC2, SkillC3, SkillC4, SkillD2, SkillD3, SkillD4, SkillE1, SkillE1b, SkillE2, SkillE2b, SkillE3, SkillE3b, SkillR1, SkillR1b, SkillR2, SkillR2b, SkillR3b, SkillT1b, SkillT2, SkillT2b, SkillT3, SkillT3b, SkillY1, SkillY1b, SkillY2, SkillY2b, SkillY3, SkillY3b, TestSkill01, TestSkill02, TestSkill03, TestSkillLeech, TestSkillLightning };

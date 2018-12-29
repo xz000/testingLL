@@ -25,7 +25,7 @@ public class NetWriter : MonoBehaviour
     public static int channelID;
     //byte[] buffer2s;// = new byte[1024];
     public bool isstarted = false;
-    BinaryFormatter bf;
+    //BinaryFormatter bf;
     //public bool Fstarted = false;
     public byte error;
     uint mn = 1;
@@ -98,7 +98,7 @@ public class NetWriter : MonoBehaviour
 
     private void OnEnable()
     {
-        bf = new BinaryFormatter();
+        //bf = new BinaryFormatter();
         theLL = new LoopList();
         theLL.init(GetComponent<ControllerScript>());
         PassedFrameNum = 0;
@@ -117,13 +117,6 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
         //theLL.stop();
-    }
-
-    Data2S bfd(byte[] bRC)
-    {
-        MemoryStream S2E = new MemoryStream(bRC);
-        Data2S datarc = (Data2S)bf.Deserialize(S2E);//tt
-        return datarc;
     }
 
     Data2S bondbfd(byte[] bRC)
