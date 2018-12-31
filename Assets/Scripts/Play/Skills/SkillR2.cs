@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillR2 : MonoBehaviour
 {
@@ -48,11 +48,11 @@ public class SkillR2 : MonoBehaviour
         }
     }
 
-    public void Skill(Vector2 actionplace)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        float realdistance = Mathf.Min(skilldirection.magnitude, maxdistance);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
+        float realdistance = Mathf.Min((float)skilldirection.Length(), maxdistance);
         if (realdistance <= 0.6)
         {
             return;
@@ -63,10 +63,10 @@ public class SkillR2 : MonoBehaviour
             MS.controllable = true;
             currentcooldown = 0;
             skillavaliable = false;
-            float TimeR2 = realdistance / SpeedR2;
+            float TimeR2 = (float)((Fix64)realdistance / (Fix64)SpeedR2);
             gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, pushDamage);
             gameObject.GetComponent<ColliderScript>().StartKick(TimeR2);
-            gameObject.GetComponent<RBScript>().GetPushed(skilldirection.normalized * SpeedR2, TimeR2);
+            gameObject.GetComponent<RBScript>().GetPushed(skilldirection.normalized() * (Fix64)SpeedR2, TimeR2);
         }
     }
 }

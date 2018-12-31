@@ -28,7 +28,7 @@ public class SetSkillG : MonoBehaviour
         AllGOff();
         if (G1.isOn)
         {
-            Soldier.GetComponent<TestSkill01>().MyImageScript = IconG.GetComponent<CooldownImage>();
+            //Soldier.GetComponent<TestSkill01>().MyImageScript = IconG.GetComponent<CooldownImage>();
             Soldier.GetComponent<TestSkill01>().enabled = true;
             return;
         }
@@ -38,6 +38,6 @@ public class SetSkillG : MonoBehaviour
     {
         IconG.GetComponent<CooldownImage>().IconFillAmount = 1;
         Soldier.GetComponent<TestSkill01>().enabled = false;
-        Soldier.GetComponent<TestSkill01>().MyImageScript = null;
+        //Soldier.GetComponent<TestSkill01>().MyImageScript = null;
     }
 }

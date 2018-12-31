@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FixMath;
 
 public class RockExplode : MonoBehaviour
 {
@@ -30,13 +31,13 @@ public class RockExplode : MonoBehaviour
         GetComponent<DestroyScript>().Destroyself();
     }
 
-    //[PunRPC]
     public void RealSkill()
     {
         //gameObject.GetComponent<MoveScript>().stopwalking();
         float radius = transform.lossyScale.x / 2;
-        Vector2 actionplace = transform.position;
-        Collider2D[] colliders = Physics2D.OverlapCircleAll(actionplace, radius);
+        Vector2 actionplacev = transform.position;
+        Fix64Vector2 actionplacef = (Fix64Vector2)actionplacev;
+        Collider2D[] colliders = Physics2D.OverlapCircleAll(actionplacev, radius);
         foreach (Collider2D hit in colliders)
         {
             HPScript hp = hit.GetComponent<HPScript>();
@@ -46,9 +47,9 @@ public class RockExplode : MonoBehaviour
                 Rigidbody2D rb = hit.GetComponent<Rigidbody2D>();
                 if (rb != null)
                 {
-                    Vector2 explforce;
-                    explforce = rb.position - actionplace;
-                    hit.GetComponent<RBScript>().GetPushed(explforce.normalized * bombforce, pushtime);
+                    Fix64Vector2 explforce;
+                    explforce = (Fix64Vector2)rb.position - actionplacef;
+                    hit.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)bombforce, pushtime);
                 }
             }
         }

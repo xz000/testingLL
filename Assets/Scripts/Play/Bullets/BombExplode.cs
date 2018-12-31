@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class BombExplode : MonoBehaviour
 {
@@ -32,29 +32,22 @@ public class BombExplode : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
-         //if (!photonView.isMine)
-            return;
-        if (gameObject.GetComponent<DestroyScript>().selfprotect && collision.gameObject == sender)
-            return;
+        /*if (gameObject.GetComponent<DestroyScript>().selfprotect && collision.gameObject == sender)
+            return;*/
         /*if (selfprotect && collision.gameObject.GetComponent<ShieldScript>().sender == sender)
             return;*/
         Rigidbody2D rb = collision.gameObject.GetComponent<Rigidbody2D>();
         HPScript hp = collision.gameObject.GetComponent<HPScript>();
         if (hp != null && rb != null)
         {
-            Vector2 explforce;
+            Fix64Vector2 explforce;
             Rigidbody2D selfrb = gameObject.GetComponent<Rigidbody2D>();
-            explforce = rb.position - selfrb.position;
-            collision.gameObject.GetComponent<RBScript>().GetPushed(explforce.normalized * bombpower, pushtime);
+            explforce = (Fix64Vector2)rb.position - (Fix64Vector2)selfrb.position;
+            collision.gameObject.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)bombpower, pushtime);
             //hp.GetKicked(explforce.normalized * bombpower);
             hp.GetHurt(bombdamage);
         }
         if (selfbreak)
             gameObject.GetComponent<DestroyScript>().Destroyself();
-    }
-    
-    private void OnCollisionExit2D(Collision2D collision)
-    {
-        gameObject.GetComponent<DestroyScript>().selfprotect = false;
     }
 }

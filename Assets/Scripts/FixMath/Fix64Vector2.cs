@@ -27,6 +27,14 @@ namespace FixMath
             y = (Fix64)v2.y;
         }
 
+        public static explicit operator Fix64Vector2(Vector2 v2)
+        {
+            Fix64Vector2 Fv2;
+            Fv2.x = (Fix64)v2.x;
+            Fv2.y = (Fix64)v2.y;
+            return Fv2;
+        }
+
         public Vector2 ToV2()
         {
             Vector2 v2 = new Vector2((float)x, (float)y);
@@ -43,9 +51,20 @@ namespace FixMath
             return Fix64.Sqrt(LengthSquare());
         }
 
+        public Fix64Vector2 normalized()
+        {
+            Fix64Vector2 n = this / Length();
+            return n;
+        }
+
         public static Fix64 DotMulti(Fix64Vector2 fv2a, Fix64Vector2 fv2b)
         {
             return fv2a.x * fv2b.x + fv2a.y * fv2b.y;
+        }
+
+        public static explicit operator Vector2(Fix64Vector2 v)
+        {
+            return v.ToV2();
         }
 
         public void CCWTurn(Fix64 angle)
@@ -67,6 +86,24 @@ namespace FixMath
         {
             a.x -= b.x;
             a.y -= b.y;
+            return a;
+        }
+        public static Fix64Vector2 operator *(Fix64Vector2 a, Fix64 b)
+        {
+            a.x *= b;
+            a.y *= b;
+            return a;
+        }
+        public static Fix64Vector2 operator *(Fix64 b, Fix64Vector2 a)
+        {
+            a.x *= b;
+            a.y *= b;
+            return a;
+        }
+        public static Fix64Vector2 operator /(Fix64Vector2 a, Fix64 b)
+        {
+            a.x /= b;
+            a.y /= b;
             return a;
         }
         public static Fix64Vector2 operator -(Fix64Vector2 a)
@@ -94,7 +131,7 @@ namespace FixMath
         }
         public override int GetHashCode()
         {
-            return (x.ToString() + y.ToString()).GetHashCode();
+            return ToV2().GetHashCode();
         }
     }
 }

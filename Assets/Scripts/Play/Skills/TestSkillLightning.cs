@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class TestSkillLightning : MonoBehaviour
 {
@@ -44,20 +44,24 @@ public class TestSkillLightning : MonoBehaviour
         }
     }
 
-    public void Skill(Vector2 actionplace)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 realplace;
+        Fix64Vector2 realplace;
+        Vector2 rpv2;
         GetComponent<DoSkill>().BeforeSkill();
         currentcooldown = 0;
         skillavaliable = false;
         //gameObject.GetComponent<DoSkill>().Fire = null;
         Rigidbody2D selfrb2d = gameObject.GetComponent<Rigidbody2D>();
-        Vector2 skilldirection = actionplace - selfrb2d.position;
-        RaycastHit2D hit2D = Physics2D.Raycast(selfrb2d.position + skilldirection.normalized * SelfR, skilldirection - skilldirection.normalized * SelfR);
+        Fix64Vector2 selfv2f = (Fix64Vector2)selfrb2d.position;
+        Fix64 SRF = (Fix64)SelfR;
+        Fix64Vector2 skilldirection = actionplace - selfv2f;
+        RaycastHit2D hit2D = Physics2D.Raycast((selfv2f + skilldirection.normalized() * SRF).ToV2(), (skilldirection - skilldirection.normalized() * SRF).ToV2());
         if (hit2D.collider != null && hit2D.distance <= maxdistance - SelfR)
         {
-            realplace = hit2D.point;
-            Drawline(realplace);
+            rpv2 = hit2D.point;
+            realplace = (Fix64Vector2)rpv2;
+            Drawline(rpv2);
             if (hit2D.collider.GetComponent<DestroyScript>() != null && hit2D.collider.GetComponent<DestroyScript>().breakable == true)
                 hit2D.collider.GetComponent<DestroyScript>().Destroyself();
             else if (hit2D.collider.GetComponent<RollScript>() != null)
@@ -68,26 +72,20 @@ public class TestSkillLightning : MonoBehaviour
             }
             else if (hit2D.collider.GetComponent<RBScript>() != null)
             {
-                Vector2 kickdirection = hit2D.collider.GetComponent<Rigidbody2D>().position - realplace;
+                Fix64Vector2 kickdirection = (Fix64Vector2)hit2D.collider.GetComponent<Rigidbody2D>().position - realplace;
                 hit2D.collider.GetComponent<SkillE2b>().lighthit();
-                hit2D.collider.GetComponent<RBScript>().GetPushed(kickdirection * 10, 2);
+                hit2D.collider.GetComponent<RBScript>().GetPushed(kickdirection * (Fix64)10, 2);
                 hit2D.collider.GetComponent<HPScript>().GetHurt(10);
             }
         }
         else
         {
-            realplace = selfrb2d.position + maxdistance * skilldirection.normalized;
-            Drawline(realplace);
+            rpv2 = selfrb2d.position + maxdistance * skilldirection.ToV2().normalized;
+            Drawline(rpv2);
         }
     }
 
     void Drawline(Vector2 destn)
-    {
-        //photonView.RPC("LineDraw", PhotonTargets.All, destn);
-    }
-
-    //[PunRPC]
-    void LineDraw(Vector2 destn)
     {
         line.SetPosition(0, GetComponent<Rigidbody2D>().position);
         line.SetPosition(1, destn);

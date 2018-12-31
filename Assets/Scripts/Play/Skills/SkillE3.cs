@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillE3 : MonoBehaviour
 {
@@ -47,8 +47,9 @@ public class SkillE3 : MonoBehaviour
         }
     }
 
-    public void Skill(Vector2 actionplace)
+    public void Skill(Fix64Vector2 actionplacef)
     {
+        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
         Vector2 singplace = transform.position;
         Vector2 skilldirection = actionplace - singplace;

@@ -1,12 +1,12 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class DoSkill : MonoBehaviour
 {
     public int singing;
-    public delegate void PointSkill(Vector2 actionplace);
+    public delegate void PointSkill(Fix64Vector2 actionplace);
     public PointSkill Fire;
     public delegate void NoPointSkill();
     public NoPointSkill ClearDebuff;
@@ -19,26 +19,18 @@ public class DoSkill : MonoBehaviour
         ClearDebuff = null;
     }
 
-    // Update is called once per frame
-    void Update ()
-	{
-		if (Input.GetMouseButtonDown(0))
-		{
-			justdoit();
-		}
-        if (Input.GetButtonDown("Stop"))
-        {
-            gameObject.GetComponent<MoveScript>().stopwalking();
-            singing = 0;
-            FireReset();
-        }
-    }
-
-    public void justdoit()
+    public void justdoit(Fix64Vector2 fv2)
     {
         if (Fire == null)
             return;
-        Fire(Camera.main.ScreenToWorldPoint(Input.mousePosition));
+        Fire(fv2);
+        FireReset();
+    }
+
+    public void FireStop()
+    {
+        gameObject.GetComponent<MoveScript>().stopwalking();
+        singing = 0;
         FireReset();
     }
 
@@ -66,7 +58,7 @@ public class DoSkill : MonoBehaviour
     public void BeforeSkill()
     {
         gameObject.GetComponent<MoveScript>().stopwalking(); //停止走动
-        gameObject.GetComponent<StealthScript>().StealthEnd();
-        gameObject.GetComponent<SkillE2b>().lightninghit();
+        //gameObject.GetComponent<StealthScript>().StealthEnd();
+        //gameObject.GetComponent<SkillE2b>().lightninghit();
     }
 }

@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillC3 : MonoBehaviour
 {
@@ -15,7 +15,7 @@ public class SkillC3 : MonoBehaviour
     public bool skillavaliable;
     bool HaveShadow = false;
     bool canctrl;
-    Vector2 flyspeed;
+    Fix64Vector2 flyspeed;
     float remaintime;
 
     // Use this for initialization
