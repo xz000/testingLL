@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillY1b : MonoBehaviour
 {
@@ -50,22 +50,23 @@ public class SkillY1b : MonoBehaviour
         }
     }
 
-    public void Skill(Vector2 actionplace)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        float realdistance = Mathf.Min(skilldirection.magnitude, maxdistance);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
+        float realdistance = Mathf.Min((float)skilldirection.Length(), maxdistance);
         if (realdistance <= 0.6)
         {
             return;
         }   //半径小于自身半径时不施法
-        Vector2 realplace = singplace + skilldirection.normalized * realdistance;
+        Fix64Vector2 realplace = singplace + skilldirection.normalized() * (Fix64)realdistance;
+        Vector2 rpv2 = realplace.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
         currentcooldown = 0;
         skillavaliable = false;
-        if (Physics2D.OverlapPoint(realplace))
+        if (Physics2D.OverlapPoint(rpv2))
         {
-            Collider2D hit = Physics2D.OverlapPoint(realplace);
+            Collider2D hit = Physics2D.OverlapPoint(rpv2);
             if (hit.GetComponent<HPScript>() != null)
             {
                 //MyLine.GetComponent<RedLineScript>().DoMyJob(hit.gameObject.GetPhotonView().photonView.viewID, gameObject.GetPhotonView().viewID, realplace, speed, damage, maxtime);

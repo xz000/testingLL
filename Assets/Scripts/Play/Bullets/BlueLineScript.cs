@@ -98,6 +98,6 @@ public class BlueLineScript : MonoBehaviour
     IEnumerator EraseLine()
     {
         yield return new WaitForSeconds(0.1f);
-        gameObject.GetComponent<DestroyScript>().SDestroy();
+        gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 }

@@ -190,6 +190,11 @@ GameObject:
   - component: {fileID: 120367070304518420}
   - component: {fileID: 4785693520522694462}
   - component: {fileID: 7455845423356578868}
+  - component: {fileID: 8245036407187783964}
+  - component: {fileID: 7399405042454718834}
+  - component: {fileID: 2291859324425342231}
+  - component: {fileID: 668343940938574434}
+  - component: {fileID: 4339159004837974509}
   m_Layer: 0
   m_Name: PlayerCircle
   m_TagString: Player
@@ -424,10 +429,10 @@ MonoBehaviour:
   movedirection: {x: 0, y: 0}
   targetshadow: {fileID: 1107476559263946, guid: 5f8a3608f810a904388f4c1cf83f7fa3,
     type: 3}
-  Givenvelocity: {x: 0, y: 0}
   VelotoAdd: {x: 0, y: 0}
   selfvelocity: {x: 0, y: 0}
   PlayerRb2d: {fileID: 50533253008486044}
+  isme: 0
   fixposlater: 0
 --- !u!114 &7455845423356578868
 MonoBehaviour:
@@ -443,6 +448,80 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   MyInfoText: {fileID: 3928609820575930937, guid: 8e94f8917243cd7449849ed55f5b149f,
     type: 3}
+--- !u!114 &8245036407187783964
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0c1044b8a6915df418f3bac02e814f29, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  singing: 0
+--- !u!114 &7399405042454718834
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 129b342d7b138e74fb9609e95c0dec93, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxHP: 99
+  currentHP: 0
+  boostnow: 0
+  boostmax: 25
+--- !u!114 &2291859324425342231
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3e4f5329ad7ea846bfca3e998a64ad1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &668343940938574434
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 25e6f9a804887ed4f9fb0c2e58db3724, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maxdistance: 0
+  bulletspeed: 5
+  fireball: {fileID: 0}
+  force: 15
+  damage: 10
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &4339159004837974509
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef0e20ca971360545b0782b520c96b75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  breakable: 0
+  selfprotect: 0
 --- !u!1 &1865538166631764
 GameObject:
   m_ObjectHideFlags: 0

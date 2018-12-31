@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FixMath;
 
 public class RBScript : MonoBehaviour
 {
@@ -14,29 +15,13 @@ public class RBScript : MonoBehaviour
         PlayerRB2D = GetComponent<Rigidbody2D>();
         MS = GetComponent<MoveScript>();
     }
-	
-	// Update is called once per frame
-	void Update () {
-
-    }
 
     public void GetKicked(Vector2 force)
-    {
-        //photonView.RPC("DoGetKicked", PhotonTargets.All, force);
-    }
-
-    void DoGetKicked(Vector2 force)
     {
         PlayerRB2D.AddForce(force);
     }
 
-    public void GetPushed(Vector2 velo,float time)
-    {
-        //photonView.RPC("DoGetPushed", PhotonTargets.All, velo, time);
-    }
-
-    //[PunRPC]
-    void DoGetPushed(Vector2 velo, float time)
+    public void GetPushed(Fix64Vector2 velo,float time)
     {
         MS.controllable = false;
         MS.Givenvelocity = velo;
@@ -50,7 +35,7 @@ public class RBScript : MonoBehaviour
             return;
         if (timepassed >= timetostop)
         {
-            MS.Givenvelocity = Vector2.zero;
+            MS.Givenvelocity = Fix64Vector2.Zero;
             MS.controllable = true;
         }
         else
@@ -64,7 +49,7 @@ public class RBScript : MonoBehaviour
 
     public void PushEnd()
     {
-        MS.Givenvelocity = Vector2.zero;
+        MS.Givenvelocity = Fix64Vector2.Zero;
         MS.controllable = true;
         //timepassed = timetostop;
     }

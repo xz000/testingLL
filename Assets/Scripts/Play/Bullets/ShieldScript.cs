@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FixMath;
 
 public class ShieldScript : MonoBehaviour
 {
@@ -59,10 +60,10 @@ public class ShieldScript : MonoBehaviour
             return;
         if (collision.GetComponent<MoveScript>() != null)
         {
-            Vector2 sp = collision.GetComponent<MoveScript>().Givenvelocity;
+            Vector2 sp = collision.GetComponent<MoveScript>().Givenvelocity.ToV2();
             Vector2 vp = transform.position - collision.transform.position;
             float angel12 = Vector2.Angle(sp, vp);
-            collision.GetComponent<MoveScript>().Givenvelocity = Quaternion.AngleAxis(180 - angel12 * 2, Vector3.Cross(vp, sp)) * sp;
+            collision.GetComponent<MoveScript>().Givenvelocity = (Fix64Vector2)(Vector2)(Quaternion.AngleAxis(180 - angel12 * 2, Vector3.Cross(vp, sp)) * sp);//需要大改
             return;
         }
         if (collision.GetComponent<Rigidbody2D>() != null)

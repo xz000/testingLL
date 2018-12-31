@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillR2b : MonoBehaviour
 {
@@ -54,8 +54,9 @@ public class SkillR2b : MonoBehaviour
         }
     }
 
-    public void Skill(Vector2 actionplace)
+    public void Skill(Fix64Vector2 actionplacef)
     {
+        Vector2 actionplace = actionplacef.ToV2();
         Vector2 singplace = transform.position;
         Vector2 skilldirection = actionplace - singplace;
         GetComponent<DoSkill>().BeforeSkill();
@@ -63,7 +64,7 @@ public class SkillR2b : MonoBehaviour
         currentcooldown = 0;
         skillavaliable = false;
         ImLSDS = true;
-        gameObject.GetComponent<RBScript>().GetPushed(skilldirection.normalized * LDspeed, Mathf.Infinity);
+        gameObject.GetComponent<RBScript>().GetPushed((Fix64Vector2)(skilldirection.normalized * LDspeed), Mathf.Infinity);
         gameObject.GetComponent<StealthScript>().StealthByTime(Mathf.Infinity, true);
     }
 }

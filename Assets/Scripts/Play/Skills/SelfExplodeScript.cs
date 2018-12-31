@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SelfExplodeScript : MonoBehaviour
 {
@@ -57,9 +57,9 @@ public class SelfExplodeScript : MonoBehaviour
                     Rigidbody2D rb = hit.GetComponent<Rigidbody2D>();
                     if (rb != null)
                     {
-                        Vector2 explforce;
-                        explforce = rb.position - actionplace;
-                        hit.GetComponent<RBScript>().GetPushed(explforce.normalized * 15, 1f);
+                        Fix64Vector2 explforce;
+                        explforce = (Fix64Vector2)rb.position - (Fix64Vector2)actionplace;
+                        hit.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)15, 1f);
                     }
                 }
             }

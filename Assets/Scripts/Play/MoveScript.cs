@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FixMath;
 
 public delegate void CookVelo(Rigidbody2D victim,MoveScript worker);
 
@@ -11,7 +12,7 @@ public class MoveScript : MonoBehaviour {
     public float movespeed;
     public Vector2 movedirection = Vector2.zero;
     public GameObject targetshadow;
-    public Vector2 Givenvelocity;
+    public Fix64Vector2 Givenvelocity;
     public Vector2 VelotoAdd = Vector2.zero;
     private Vector2 movetarget;
     public Vector2 selfvelocity;
@@ -85,7 +86,7 @@ public class MoveScript : MonoBehaviour {
         }
         else
         {
-            PlayerRb2d.velocity = Givenvelocity;
+            PlayerRb2d.velocity = Givenvelocity.ToV2();
         }
     }
 
