@@ -16,7 +16,7 @@ public class ControllerScript : MonoBehaviour
             {
                 case MButton.left:
                     Vector2 v2l = new Vector2((float)CD.xPos, (float)CD.yPos);
-                    CPCat(PNO, v2l);
+                    //CPCat(PNO, v2l);
                     break;
                 case MButton.right:
                     Vector2 v2r = new Vector2((float)CD.xPos, (float)CD.yPos);
@@ -39,14 +39,19 @@ public class ControllerScript : MonoBehaviour
     {
         thePC = new GameObject[MaxNum];
         theMS = new MoveScript[MaxNum];
-        /*
+        PCBorn(MaxNum);
+    }
+
+    void PCBorn(int MNum)
+    {
         Vector3 v3;
-        for (int i = 0; i < MaxNum; i++)
+        for (int i = 0; i < MNum; i++)
         {
             v3 = new Vector3(i * 3, 0, 0);
             thePC[i] = Instantiate(PlayerCircle, v3, Quaternion.identity);
             theMS[i] = thePC[i].GetComponent<MoveScript>();
+            if (i == Sender.clientNum)
+                theMS[i].itsme();
         }
-        */
     }
 }
