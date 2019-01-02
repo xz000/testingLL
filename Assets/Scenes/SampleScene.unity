@@ -3393,11 +3393,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   RToggle: {fileID: 238781325}
-  netFrameLength: 0.1
+  netFrameLength: 0.06
   PassedFrameNum: 0
   ReceivedFrameNum: 0
   LocalFrameNum: 0
-  LocalFrameLength: 0.1
+  LocalFrameLength: 0.06
   LocalCurrentLength: 0
   L2S: []
   isstarted: 0

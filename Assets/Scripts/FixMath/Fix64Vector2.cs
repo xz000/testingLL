@@ -7,8 +7,8 @@ namespace FixMath
 {
     public struct Fix64Vector2
     {
-        public Fix64 x;
-        public Fix64 y;
+        readonly Fix64 x;
+        readonly Fix64 y;
         public static readonly Fix64Vector2 Zero = new Fix64Vector2();
         public static readonly Fix64Vector2 Up = new Fix64Vector2(Fix64.Zero, Fix64.One);
         public static readonly Fix64Vector2 Down = new Fix64Vector2(Fix64.Zero, -Fix64.One);
@@ -29,9 +29,7 @@ namespace FixMath
 
         public static explicit operator Fix64Vector2(Vector2 v2)
         {
-            Fix64Vector2 Fv2;
-            Fv2.x = (Fix64)v2.x;
-            Fv2.y = (Fix64)v2.y;
+            Fix64Vector2 Fv2 = new Fix64Vector2(v2);
             return Fv2;
         }
 
@@ -53,8 +51,8 @@ namespace FixMath
 
         public Fix64Vector2 normalized()
         {
-            Fix64Vector2 n = this / Length();
-            return n;
+            Fix64 l = Length();
+            return new Fix64Vector2(x / l, y / l);
         }
 
         public static Fix64 DotMulti(Fix64Vector2 fv2a, Fix64Vector2 fv2b)
@@ -62,55 +60,48 @@ namespace FixMath
             return fv2a.x * fv2b.x + fv2a.y * fv2b.y;
         }
 
+        public static Fix64Vector2 MirrorBy(Fix64Vector2 origin,Fix64Vector2 mirror)
+        {
+            Fix64 pl = DotMulti(origin, mirror);
+            Fix64Vector2 mp = mirror.normalized() * pl;
+            return mp * (Fix64)2 - origin;
+        }
+
         public static explicit operator Vector2(Fix64Vector2 v)
         {
             return v.ToV2();
         }
 
-        public void CCWTurn(Fix64 angle)
+        public Fix64Vector2 CCWTurn(Fix64 angle)
         {
             Fix64 c = Fix64.Cos(angle);
             Fix64 s = Fix64.Sin(angle);
-            Fix64 ox = x;
-            x = x * c + y * s;
-            y = y * c - ox * s;
+            return new Fix64Vector2(x * c + y * s, y * c - x * s);
         }
 
         public static Fix64Vector2 operator +(Fix64Vector2 a, Fix64Vector2 b)
         {
-            a.x += b.x;
-            a.y += b.y;
-            return a;
+            return new Fix64Vector2(a.x + b.x, a.y + b.y);
         }
         public static Fix64Vector2 operator -(Fix64Vector2 a, Fix64Vector2 b)
         {
-            a.x -= b.x;
-            a.y -= b.y;
-            return a;
+            return new Fix64Vector2(a.x - b.x, a.y - b.y);
         }
         public static Fix64Vector2 operator *(Fix64Vector2 a, Fix64 b)
         {
-            a.x *= b;
-            a.y *= b;
-            return a;
+            return new Fix64Vector2(a.x * b, a.y * b);
         }
         public static Fix64Vector2 operator *(Fix64 b, Fix64Vector2 a)
         {
-            a.x *= b;
-            a.y *= b;
-            return a;
+            return new Fix64Vector2(a.x * b, a.y * b);
         }
         public static Fix64Vector2 operator /(Fix64Vector2 a, Fix64 b)
         {
-            a.x /= b;
-            a.y /= b;
-            return a;
+            return new Fix64Vector2(a.x / b, a.y / b);
         }
         public static Fix64Vector2 operator -(Fix64Vector2 a)
         {
-            a.x = -a.x;
-            a.y = -a.y;
-            return a;
+            return new Fix64Vector2(-a.x, -a.y);
         }
         public static bool operator ==(Fix64Vector2 t1, Fix64Vector2 t2)
         {

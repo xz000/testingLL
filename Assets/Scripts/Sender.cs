@@ -157,13 +157,13 @@ public class Sender : MonoBehaviour
 public class ClickData
 {
     [Id(0)]
-    public MButton blr;
+    public MButton? blr;
     [Id(1)]
     public float? xPos;
     [Id(2)]
     public float? yPos;
     [Id(3)]
-    public SkillCode SC;
+    public SkillCode? SC;
     [Id(4)]
     public int? SLevel;
 
@@ -173,9 +173,9 @@ public class ClickData
         xPos = x;
         yPos = y;
     }
-    public void Ksetdata(MButton k)
+    public void Ksetdata(SkillCode k)
     {
-        blr = k;
+        SC = k;
     }
     public void SKsetdata(MButton s, SkillCode c, int l)
     {

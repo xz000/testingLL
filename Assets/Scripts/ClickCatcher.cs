@@ -17,6 +17,12 @@ public class ClickCatcher : MonoBehaviour {
     void Update () {
         if (!TotalSwitch.isOn)
             return;
+        if (Input.GetKeyDown(KeyCode.G))
+        {
+            ClickData cd = new ClickData();
+            cd.Ksetdata(SkillCode.TestSkill01);
+            theNW.L2S.Add(cd);
+        }
         if (Input.GetMouseButtonDown(0))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);

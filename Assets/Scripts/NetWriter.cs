@@ -14,12 +14,12 @@ public class NetWriter : MonoBehaviour
     public Toggle RToggle;
     //public string netFileName;
     //public string nettxtPath;
-    public float netFrameLength = 0.1f;
+    public float netFrameLength = 0.06f;
     float netCurrentLength = 0;
     public int PassedFrameNum = -1;
     public int ReceivedFrameNum = 0;
     public int LocalFrameNum = 1;
-    public float LocalFrameLength = 0.1f;
+    public float LocalFrameLength = 0.06f;
     public float LocalCurrentLength = 0;
     public List<ClickData> L2S = new List<ClickData>();
     public static int channelID;
