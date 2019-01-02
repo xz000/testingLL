@@ -59,6 +59,8 @@ public class SkillC3 : MonoBehaviour
         //shadowtime = 0;
         GetComponent<DoSkill>().BeforeSkill();
         MyShadow = Instantiate(ShadowCircle, transform.position, Quaternion.identity);
+        if (GetComponent<MoveScript>().isme)
+            MyShadow.GetComponent<ShadowControl>().ShowSelf();
         canctrl = gameObject.GetComponent<MoveScript>().controllable;
         if (!canctrl)
         {

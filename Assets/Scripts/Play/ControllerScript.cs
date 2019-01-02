@@ -21,6 +21,9 @@ public class ControllerScript : MonoBehaviour
                     case SkillCode.TestSkill01:
                         thePC[PNO].GetComponent<TestSkill01>().Go();
                         break;
+                    case SkillCode.SkillC3:
+                        thePC[PNO].GetComponent<SkillC3>().Go();
+                        break;
                 }
             }
             if (CD.blr != null)
