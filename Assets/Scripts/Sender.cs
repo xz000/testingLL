@@ -102,7 +102,7 @@ public class Sender : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Tab))
+        if (Input.GetKeyDown(KeyCode.Escape))
         {
             if (MCG.interactable)
                 HideMC();
@@ -154,6 +154,12 @@ public class Sender : MonoBehaviour
 }
 
 [Serializable, Schema]
+public class SkillData
+{
+    public int[] SLs;
+}
+
+[Serializable, Schema]
 public class ClickData
 {
     [Id(0)]
@@ -164,8 +170,6 @@ public class ClickData
     public float? yPos;
     [Id(3)]
     public SkillCode? SC;
-    [Id(4)]
-    public int? SLevel;
 
     public void Msetdata(MButton b, float? x, float? y)
     {
@@ -176,12 +180,6 @@ public class ClickData
     public void Ksetdata(SkillCode k)
     {
         SC = k;
-    }
-    public void SKsetdata(MButton s, SkillCode c, int l)
-    {
-        blr = s;
-        SC = c;
-        SLevel = l;
     }
 }
 
