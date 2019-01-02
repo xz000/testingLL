@@ -316,7 +316,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &15894770
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -5273,7 +5272,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &263607533
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -12535,7 +12533,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &659190758
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -15392,7 +15389,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &798124229
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -15724,7 +15720,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &819322208
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -20351,7 +20346,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &1092585653
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -25589,7 +25583,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &1365167134
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -28515,7 +28508,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &1518785822
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -32790,7 +32782,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &1742365117
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -35978,7 +35969,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!225 &1902398583
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -38722,7 +38712,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &1979670568
 MonoBehaviour:
   m_ObjectHideFlags: 0
