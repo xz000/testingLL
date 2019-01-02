@@ -503,11 +503,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxdistance: 0
   bulletspeed: 5
-  fireball: {fileID: 0}
+  fireball: {fileID: 1197206318659480, guid: fcdbc15aa8fd9314a9df84b8e39a3038, type: 3}
   force: 15
   damage: 10
   cooldowntime: 3
-  skillavaliable: 0
+  skillavaliable: 1
 --- !u!114 &4339159004837974509
 MonoBehaviour:
   m_ObjectHideFlags: 0

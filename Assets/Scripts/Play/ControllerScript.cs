@@ -1,27 +1,41 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FixMath;
 
 public class ControllerScript : MonoBehaviour
 {
     public GameObject PlayerCircle;
     GameObject[] thePC;
     MoveScript[] theMS;
+    DoSkill[] theDS;
 
     public void powerrr(int PNO, List<ClickData> LCD)
     {
         foreach(ClickData CD in LCD)
         {
-            switch (CD.blr)
+            if (CD.SC != null)
             {
-                case MButton.left:
-                    Vector2 v2l = new Vector2((float)CD.xPos, (float)CD.yPos);
-                    //CPCat(PNO, v2l);
-                    break;
-                case MButton.right:
-                    Vector2 v2r = new Vector2((float)CD.xPos, (float)CD.yPos);
-                    theMS[PNO].SetTarget(v2r);
-                    break;
+                switch (CD.SC)
+                {
+                    case SkillCode.TestSkill01:
+                        thePC[PNO].GetComponent<TestSkill01>().Go();
+                        break;
+                }
+            }
+            if (CD.blr != null)
+            {
+                switch (CD.blr)
+                {
+                    case MButton.left:
+                        Fix64Vector2 v2l = new Fix64Vector2((Fix64)CD.xPos, (Fix64)CD.yPos);
+                        theDS[PNO].justdoit(v2l);
+                        break;
+                    case MButton.right:
+                        Vector2 v2r = new Vector2((float)CD.xPos, (float)CD.yPos);
+                        theMS[PNO].SetTarget(v2r);
+                        break;
+                }
             }
         }
         LCD.Clear();
@@ -31,6 +45,7 @@ public class ControllerScript : MonoBehaviour
     {
         thePC[Num] = Instantiate(PlayerCircle, place, Quaternion.identity);
         theMS[Num] = thePC[Num].GetComponent<MoveScript>();
+        theDS[Num] = thePC[Num].GetComponent<DoSkill>();
         if (Num == Sender.clientNum)
             theMS[Num].itsme();
     }
@@ -39,6 +54,7 @@ public class ControllerScript : MonoBehaviour
     {
         thePC = new GameObject[MaxNum];
         theMS = new MoveScript[MaxNum];
+        theDS = new DoSkill[MaxNum];
         PCBorn(MaxNum);
     }
 
@@ -48,10 +64,7 @@ public class ControllerScript : MonoBehaviour
         for (int i = 0; i < MNum; i++)
         {
             v3 = new Vector3(i * 3, 0, 0);
-            thePC[i] = Instantiate(PlayerCircle, v3, Quaternion.identity);
-            theMS[i] = thePC[i].GetComponent<MoveScript>();
-            if (i == Sender.clientNum)
-                theMS[i].itsme();
+            CPCat(i, v3);
         }
     }
 }
