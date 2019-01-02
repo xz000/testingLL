@@ -5,7 +5,7 @@ using FixMath;
 
 public class SkillC3 : MonoBehaviour
 {
-    public CooldownImage MyImageScript;
+    //public CooldownImage MyImageScript;
     public GameObject ShadowCircle;
     GameObject MyShadow;
     private float currentcooldown;
@@ -26,20 +26,16 @@ public class SkillC3 : MonoBehaviour
         //ShadowCircle.GetComponent<SpriteRenderer>().color = new Color32(255, 255, 255, 127);
     }
 	
-	// Update is called once per frame
-	void Update ()
+	public void Go()
     {
-        if (Input.GetButtonDown("FireC"))
+        if (HaveShadow)
         {
-            if (HaveShadow)
-            {
-                BackToShadow();
-            }
-            else if(skillavaliable)
-            {
-                GetComponent<DoSkill>().singing = 0;
-                Skill();
-            }
+            BackToShadow();
+        }
+        else if (skillavaliable)
+        {
+            GetComponent<DoSkill>().singing = 0;
+            Skill();
         }
     }
 
@@ -54,7 +50,7 @@ public class SkillC3 : MonoBehaviour
             {
                 skillavaliable = true;
             }
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

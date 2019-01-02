@@ -43,7 +43,7 @@ public class SetSkillC : UnityEngine.MonoBehaviour
         }
         if (C3.isOn)
         {
-            Soldier.GetComponent<SkillC3>().MyImageScript = IconC.GetComponent<CooldownImage>();
+            //Soldier.GetComponent<SkillC3>().MyImageScript = IconC.GetComponent<CooldownImage>();
             Soldier.GetComponent<SkillC3>().enabled = true;
             return;
         }
@@ -63,7 +63,7 @@ public class SetSkillC : UnityEngine.MonoBehaviour
         Soldier.GetComponent<SkillC2>().enabled = false;
         Soldier.GetComponent<SkillC2>().MyImageScript = null;
         Soldier.GetComponent<SkillC3>().enabled = false;
-        Soldier.GetComponent<SkillC3>().MyImageScript = null;
+        //Soldier.GetComponent<SkillC3>().MyImageScript = null;
         Soldier.GetComponent<SkillC4>().enabled = false;
         Soldier.GetComponent<SkillC4>().MyImageScript = null;
     }

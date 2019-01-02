@@ -194,6 +194,7 @@ GameObject:
   - component: {fileID: 7399405042454718834}
   - component: {fileID: 2291859324425342231}
   - component: {fileID: 668343940938574434}
+  - component: {fileID: 1806875113310399451}
   - component: {fileID: 4339159004837974509}
   m_Layer: 0
   m_Name: PlayerCircle
@@ -508,6 +509,23 @@ MonoBehaviour:
   damage: 10
   cooldowntime: 3
   skillavaliable: 1
+--- !u!114 &1806875113310399451
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eeeb2a4d2f6bfd244a7f102c6adf2602, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShadowCircle: {fileID: 1385352283329590, guid: 5e2455aec5804554d80af56beb7d037e,
+    type: 3}
+  cooldowntime: 3
+  maxshadowtime: 2.5
+  skillavaliable: 0
 --- !u!114 &4339159004837974509
 MonoBehaviour:
   m_ObjectHideFlags: 0
