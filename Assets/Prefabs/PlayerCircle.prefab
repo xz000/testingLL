@@ -188,14 +188,18 @@ GameObject:
   - component: {fileID: 50533253008486044}
   - component: {fileID: 58970719070418754}
   - component: {fileID: 120367070304518420}
+  - component: {fileID: 4339159004837974509}
   - component: {fileID: 4785693520522694462}
   - component: {fileID: 7455845423356578868}
   - component: {fileID: 8245036407187783964}
   - component: {fileID: 7399405042454718834}
   - component: {fileID: 2291859324425342231}
+  - component: {fileID: 91555293648209813}
   - component: {fileID: 668343940938574434}
+  - component: {fileID: 3667270247323410806}
+  - component: {fileID: 5472693952405999995}
   - component: {fileID: 1806875113310399451}
-  - component: {fileID: 4339159004837974509}
+  - component: {fileID: 2847731694559201477}
   m_Layer: 0
   m_Name: PlayerCircle
   m_TagString: Player
@@ -413,6 +417,20 @@ LineRenderer:
     generateLightingData: 0
   m_UseWorldSpace: 1
   m_Loop: 0
+--- !u!114 &4339159004837974509
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef0e20ca971360545b0782b520c96b75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  breakable: 0
+  selfprotect: 0
 --- !u!114 &4785693520522694462
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -490,6 +508,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d3e4f5329ad7ea846bfca3e998a64ad1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &91555293648209813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1ce2a18c99aba984591fe987c8b56b90, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  cooldowntime: 3
+  skillavaliable: 0
 --- !u!114 &668343940938574434
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -509,6 +542,36 @@ MonoBehaviour:
   damage: 10
   cooldowntime: 3
   skillavaliable: 1
+--- !u!114 &3667270247323410806
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 14bd7ec102a26de46933ddc87e76f486, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 8
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &5472693952405999995
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e69bc9f10c30f4e48a48d0bc2236ef21, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  DS: {fileID: 8245036407187783964}
+  SES: {fileID: 91555293648209813}
 --- !u!114 &1806875113310399451
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -526,7 +589,7 @@ MonoBehaviour:
   cooldowntime: 3
   maxshadowtime: 2.5
   skillavaliable: 0
---- !u!114 &4339159004837974509
+--- !u!114 &2847731694559201477
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -535,11 +598,15 @@ MonoBehaviour:
   m_GameObject: {fileID: 1408053086481752}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ef0e20ca971360545b0782b520c96b75, type: 3}
+  m_Script: {fileID: 11500000, guid: bbe86c4404935d548bccdd1bf8362713, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  breakable: 0
-  selfprotect: 0
+  MyImageScript: {fileID: 0}
+  maxdistance: 10
+  cooldowntime: 3
+  skillavaliable: 0
+  SelfR: 0.51
+  line: {fileID: 120367070304518420}
 --- !u!1 &1865538166631764
 GameObject:
   m_ObjectHideFlags: 0
