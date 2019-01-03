@@ -5208,7 +5208,6 @@ GameObject:
   m_Component:
   - component: {fileID: 263607531}
   - component: {fileID: 263607534}
-  - component: {fileID: 263607532}
   - component: {fileID: 263607533}
   m_Layer: 5
   m_Name: SkillToggle(R3)
@@ -5244,18 +5243,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 33}
   m_SizeDelta: {x: 0, y: -78}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &263607532
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 263607530}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b5ab8af80ce5e694383c219e6daa7f84, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &263607533
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5312,7 +5299,7 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 263607532}
+      - m_Target: {fileID: 0}
         m_MethodName: SkillToggleCtrl
         m_Mode: 1
         m_Arguments:
@@ -9163,7 +9150,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1518785821}
+      - m_Target: {fileID: 0}
         m_MethodName: ClickMinusButton
         m_Mode: 1
         m_Arguments:
@@ -11609,7 +11596,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1979670567}
+      - m_Target: {fileID: 0}
         m_MethodName: ClickMinusButton
         m_Mode: 1
         m_Arguments:
@@ -12868,7 +12855,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 263607532}
+      - m_Target: {fileID: 0}
         m_MethodName: ClickMinusButton
         m_Mode: 1
         m_Arguments:
@@ -17931,7 +17918,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 263607532}
+      - m_Target: {fileID: 0}
         m_MethodName: ClickPlusButton
         m_Mode: 1
         m_Arguments:
@@ -25903,7 +25890,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1979670567}
+      - m_Target: {fileID: 0}
         m_MethodName: ClickPlusButton
         m_Mode: 1
         m_Arguments:
@@ -28374,7 +28361,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1518785820}
   - component: {fileID: 1518785822}
-  - component: {fileID: 1518785821}
   m_Layer: 5
   m_Name: SkillToggle(R1)
   m_TagString: Untagged
@@ -28409,18 +28395,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 33}
   m_SizeDelta: {x: 0, y: -78}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &1518785821
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1518785819}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b5ab8af80ce5e694383c219e6daa7f84, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &1518785822
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -28464,7 +28438,7 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1518785821}
+      - m_Target: {fileID: 0}
         m_MethodName: SkillToggleCtrl
         m_Mode: 1
         m_Arguments:
@@ -38332,7 +38306,7 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1518785821}
+      - m_Target: {fileID: 0}
         m_MethodName: ClickPlusButton
         m_Mode: 1
         m_Arguments:
@@ -38550,7 +38524,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1979670566}
   - component: {fileID: 1979670568}
-  - component: {fileID: 1979670567}
   m_Layer: 5
   m_Name: SkillToggle(R2)
   m_TagString: Untagged
@@ -38585,18 +38558,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 33}
   m_SizeDelta: {x: 0, y: -78}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &1979670567
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1979670565}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b5ab8af80ce5e694383c219e6daa7f84, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!114 &1979670568
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -38640,7 +38601,7 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1979670567}
+      - m_Target: {fileID: 0}
         m_MethodName: SkillToggleCtrl
         m_Mode: 1
         m_Arguments:

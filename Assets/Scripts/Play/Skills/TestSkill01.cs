@@ -21,7 +21,7 @@ public class TestSkill01 : MonoBehaviour
         currentcooldown = cooldowntime;
     }
 
-    public void Go()
+    public void GoTestSkill01()
     {
         if (skillavaliable)
         {

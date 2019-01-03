@@ -26,7 +26,7 @@ public class SkillC3 : MonoBehaviour
         //ShadowCircle.GetComponent<SpriteRenderer>().color = new Color32(255, 255, 255, 127);
     }
 	
-	public void Go()
+	public void GoSkillC3()
     {
         if (HaveShadow)
         {

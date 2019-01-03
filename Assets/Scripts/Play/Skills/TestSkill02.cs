@@ -19,7 +19,7 @@ public class TestSkill02 : MonoBehaviour
         //MS = GetComponent<MoveScript>();
     }
 	
-	public void Go()
+	public void GoTestSkill02()
     {
         if (skillavaliable)
         {

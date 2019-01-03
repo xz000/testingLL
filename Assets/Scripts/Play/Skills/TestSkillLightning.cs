@@ -22,7 +22,7 @@ public class TestSkillLightning : MonoBehaviour
     }
 
     // Update is called once per frame
-    public void Go()
+    public void GoTestSkillLightning()
     {
         if (skillavaliable)
         {
