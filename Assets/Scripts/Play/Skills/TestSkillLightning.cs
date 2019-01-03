@@ -11,18 +11,20 @@ public class TestSkillLightning : MonoBehaviour
     public float cooldowntime = 3;
     public bool skillavaliable;
     public float SelfR = 0.51f;
+    Fix64 SRF;
     public LineRenderer line;
 
     // Use this for initialization
     void Start()
     {
         currentcooldown = cooldowntime;
+        SRF = (Fix64)SelfR;
     }
 
     // Update is called once per frame
-    void Update()
+    public void Go()
     {
-        if (Input.GetButtonDown("FireD") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -40,7 +42,7 @@ public class TestSkillLightning : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -54,10 +56,9 @@ public class TestSkillLightning : MonoBehaviour
         //gameObject.GetComponent<DoSkill>().Fire = null;
         Rigidbody2D selfrb2d = gameObject.GetComponent<Rigidbody2D>();
         Fix64Vector2 selfv2f = (Fix64Vector2)selfrb2d.position;
-        Fix64 SRF = (Fix64)SelfR;
         Fix64Vector2 skilldirection = actionplace - selfv2f;
         RaycastHit2D hit2D = Physics2D.Raycast((selfv2f + skilldirection.normalized() * SRF).ToV2(), (skilldirection - skilldirection.normalized() * SRF).ToV2());
-        if (hit2D.collider != null && hit2D.distance <= maxdistance - SelfR)
+        if (hit2D.collider != null && (Fix64)hit2D.distance <= (Fix64)maxdistance - SRF)
         {
             rpv2 = hit2D.point;
             realplace = (Fix64Vector2)rpv2;
@@ -73,8 +74,8 @@ public class TestSkillLightning : MonoBehaviour
             else if (hit2D.collider.GetComponent<RBScript>() != null)
             {
                 Fix64Vector2 kickdirection = (Fix64Vector2)hit2D.collider.GetComponent<Rigidbody2D>().position - realplace;
-                hit2D.collider.GetComponent<SkillE2b>().lighthit();
-                hit2D.collider.GetComponent<RBScript>().GetPushed(kickdirection * (Fix64)10, 2);
+                //hit2D.collider.GetComponent<SkillE2b>().lighthit();
+                hit2D.collider.GetComponent<RBScript>().GetPushed(kickdirection * (Fix64)6, 1);
                 hit2D.collider.GetComponent<HPScript>().GetHurt(10);
             }
         }

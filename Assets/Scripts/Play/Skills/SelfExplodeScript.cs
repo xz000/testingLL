@@ -28,7 +28,7 @@ public class SelfExplodeScript : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -41,7 +41,9 @@ public class SelfExplodeScript : MonoBehaviour
         skillavaliable = false;
         float radius = 1.5f;
         Vector2 actionplace = transform.position;
-        Collider2D[] colliders = Physics2D.OverlapCircleAll(actionplace, radius);
+        Fix64 rfix = (Fix64)3 / (Fix64)2;
+        Fix64Vector2 apf = new Fix64Vector2(actionplace);
+        Collider2D[] colliders = Physics2D.OverlapCircleAll(actionplace, radius + 0.5f);
         foreach (Collider2D hit in colliders)
         {
             HPScript hp = hit.GetComponent<HPScript>();
@@ -53,14 +55,13 @@ public class SelfExplodeScript : MonoBehaviour
                 }
                 else
                 {
-                    hp.GetHurt(10);
                     Rigidbody2D rb = hit.GetComponent<Rigidbody2D>();
-                    if (rb != null)
-                    {
-                        Fix64Vector2 explforce;
-                        explforce = (Fix64Vector2)rb.position - (Fix64Vector2)actionplace;
-                        hit.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)15, 1f);
-                    }
+                    Fix64Vector2 rbpf = new Fix64Vector2(rb.position);
+                    Fix64Vector2 explforce = rbpf - apf;
+                    if (explforce.Length() > rfix)
+                        continue;
+                    hp.GetHurt(10);
+                    hit.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)9, 1f);
                 }
             }
         }

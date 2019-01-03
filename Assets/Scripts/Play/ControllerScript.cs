@@ -21,6 +21,15 @@ public class ControllerScript : MonoBehaviour
                     case SkillCode.TestSkill01:
                         thePC[PNO].GetComponent<TestSkill01>().Go();
                         break;
+                    case SkillCode.TestSkill02:
+                        thePC[PNO].GetComponent<TestSkill02>().Go();
+                        break;
+                    case SkillCode.TestSkill03:
+                        thePC[PNO].GetComponent<TestSkill03>().Go();
+                        break;
+                    case SkillCode.TestSkillLightning:
+                        thePC[PNO].GetComponent<TestSkillLightning>().Go();
+                        break;
                     case SkillCode.SkillC3:
                         thePC[PNO].GetComponent<SkillC3>().Go();
                         break;
