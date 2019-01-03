@@ -47,6 +47,12 @@ public class ClickCatcher : MonoBehaviour {
             cd.Ksetdata(SkillCode.TestSkillLightning);
             theNW.L2S.Add(cd);
         }
+        if (Input.GetKeyDown(KeyCode.S))
+        {
+            ClickData cd = new ClickData();
+            cd.Ksetdata(SkillCode.FireStop);
+            theNW.L2S.Add(cd);
+        }
         if (Input.GetMouseButtonDown(0))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);

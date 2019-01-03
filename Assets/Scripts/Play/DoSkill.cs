@@ -27,7 +27,7 @@ public class DoSkill : MonoBehaviour
         FireReset();
     }
 
-    public void FireStop()
+    public void GoFireStop()
     {
         gameObject.GetComponent<MoveScript>().stopwalking();
         singing = 0;
