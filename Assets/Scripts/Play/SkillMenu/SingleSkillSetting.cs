@@ -6,8 +6,8 @@ using UnityEngine.UI;
 public class SingleSkillSetting : MonoBehaviour {
 
     public GameObject GoldObj;
-    public GameObject MinusButton;
-    public GameObject PlusButton;
+    public Button MinusButton;
+    public Button PlusButton;
     public Text LevelText;
     public Text LevelPriceText;
     public Toggle SkillToggle;
@@ -19,25 +19,30 @@ public class SingleSkillSetting : MonoBehaviour {
     public int TopLevel02;
     public int TopLevel03;
     public int TopLevelJordan;
-    public int LevelPrice;// = { 11, 4, 5, 6, 7, 8, 0 };
+    public int LevelPrice = 5;// = { 11, 4, 5, 6, 7, 8, 0 };
     public int Level1Price = 11;
     public int Level2Price = 3;
     public int MultiInt = 1;
 
     // Use this for initialization
-    void Start () {
+    void Start ()
+    {
+        GoldObj = GameObject.Find("TextGold");
+        SkillToggle = GetComponent<Toggle>();
+        SkillToggle.onValueChanged.AddListener(SkillToggleCtrl);
+        LevelText = transform.Find("TextSkillLevel").GetComponent<Text>();
+        LevelPriceText = transform.Find("TextPrice").GetComponent<Text>();
+        MinusButton = transform.Find("ButtonMinus").GetComponent<Button>();
+        MinusButton.onClick.AddListener(ClickMinusButton);
+        PlusButton = transform.Find("ButtonPlus").GetComponent<Button>();
+        PlusButton.onClick.AddListener(ClickPlusButton);
         TopLevel = 1;//Under Construction
         UpdatePrice();
     }
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
 
-    public void SkillToggleCtrl()
+    public void SkillToggleCtrl(bool a)
     {
-        if (SkillToggle.isOn)
+        if (a)
             TurnOn();
         else
             TurnOff();
@@ -96,19 +101,19 @@ public class SingleSkillSetting : MonoBehaviour {
     {
         if (SkillLevel < 1 + BottomLevel)
         {
-            MinusButton.SetActive(false);
+            MinusButton.gameObject.SetActive(false);
             if (SkillToggle.isOn)
                 SkillToggle.isOn = false;
         }
         else
-            MinusButton.SetActive(true);
+            MinusButton.gameObject.SetActive(true);
     }
 
     void SetPlusButton()
     {
         if (SkillLevel >= TopLevel)
-            PlusButton.SetActive(false);
+            PlusButton.gameObject.SetActive(false);
         else
-            PlusButton.SetActive(true);
+            PlusButton.gameObject.SetActive(true);
     }
 }
