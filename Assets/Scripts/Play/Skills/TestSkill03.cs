@@ -15,7 +15,7 @@ public class TestSkill03 : MonoBehaviour
         timesinged = 0;
     }
 
-    public void Go()
+    public void GoTestSkill03()
     {
         if (SES.skillavaliable)
         {
