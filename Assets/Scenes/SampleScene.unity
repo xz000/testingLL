@@ -4268,6 +4268,7 @@ GameObject:
   - component: {fileID: 230954025}
   - component: {fileID: 230954027}
   - component: {fileID: 230954026}
+  - component: {fileID: 230954028}
   m_Layer: 5
   m_Name: SkillToggle(C4)
   m_TagString: Untagged
@@ -4370,6 +4371,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &230954028
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 230954024}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &238781323
 GameObject:
   m_ObjectHideFlags: 0
@@ -5209,6 +5241,7 @@ GameObject:
   - component: {fileID: 263607531}
   - component: {fileID: 263607534}
   - component: {fileID: 263607533}
+  - component: {fileID: 263607532}
   m_Layer: 5
   m_Name: SkillToggle(R3)
   m_TagString: Untagged
@@ -5243,6 +5276,37 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 33}
   m_SizeDelta: {x: 0, y: -78}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &263607532
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 263607530}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!114 &263607533
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5472,6 +5536,7 @@ GameObject:
   m_Component:
   - component: {fileID: 291109131}
   - component: {fileID: 291109132}
+  - component: {fileID: 291109133}
   m_Layer: 5
   m_Name: SkillToggle(Y2)
   m_TagString: Untagged
@@ -5563,6 +5628,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &291109133
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 291109130}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &291885982
 GameObject:
   m_ObjectHideFlags: 0
@@ -6194,6 +6290,7 @@ GameObject:
   m_Component:
   - component: {fileID: 328541524}
   - component: {fileID: 328541525}
+  - component: {fileID: 328541526}
   m_Layer: 5
   m_Name: SkillToggle(Y3)
   m_TagString: Untagged
@@ -6285,6 +6382,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &328541526
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 328541523}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &335832216
 GameObject:
   m_ObjectHideFlags: 0
@@ -6598,6 +6726,7 @@ GameObject:
   m_Component:
   - component: {fileID: 343655578}
   - component: {fileID: 343655579}
+  - component: {fileID: 343655580}
   m_Layer: 5
   m_Name: SkillToggle(E1)
   m_TagString: Untagged
@@ -6689,6 +6818,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &343655580
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 343655577}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &347129419
 GameObject:
   m_ObjectHideFlags: 0
@@ -16293,6 +16453,7 @@ GameObject:
   m_Component:
   - component: {fileID: 882907103}
   - component: {fileID: 882907104}
+  - component: {fileID: 882907105}
   m_Layer: 5
   m_Name: SkillToggle(D1)
   m_TagString: Untagged
@@ -16382,6 +16543,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &882907105
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 882907102}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &882975156
 GameObject:
   m_ObjectHideFlags: 0
@@ -17748,6 +17940,7 @@ GameObject:
   m_Component:
   - component: {fileID: 939871595}
   - component: {fileID: 939871596}
+  - component: {fileID: 939871597}
   m_Layer: 5
   m_Name: SkillToggle(T1)
   m_TagString: Untagged
@@ -17839,6 +18032,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &939871597
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 939871594}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &943021983
 GameObject:
   m_ObjectHideFlags: 0
@@ -18364,6 +18588,7 @@ GameObject:
   m_Component:
   - component: {fileID: 974238864}
   - component: {fileID: 974238865}
+  - component: {fileID: 974238866}
   m_Layer: 5
   m_Name: SkillToggle(C2)
   m_TagString: Untagged
@@ -18453,6 +18678,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &974238866
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 974238863}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &975514167
 GameObject:
   m_ObjectHideFlags: 0
@@ -18463,6 +18719,7 @@ GameObject:
   m_Component:
   - component: {fileID: 975514168}
   - component: {fileID: 975514169}
+  - component: {fileID: 975514170}
   m_Layer: 5
   m_Name: SkillToggle(Y1)
   m_TagString: Untagged
@@ -18554,6 +18811,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &975514170
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 975514167}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &983123796
 GameObject:
   m_ObjectHideFlags: 0
@@ -19154,6 +19442,7 @@ GameObject:
   - component: {fileID: 1016560130}
   - component: {fileID: 1016560132}
   - component: {fileID: 1016560131}
+  - component: {fileID: 1016560133}
   m_Layer: 5
   m_Name: SkillToggle(E4)
   m_TagString: Untagged
@@ -19258,6 +19547,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1016560133
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1016560129}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1026434862
 GameObject:
   m_ObjectHideFlags: 0
@@ -19432,6 +19752,7 @@ GameObject:
   - component: {fileID: 1041278621}
   - component: {fileID: 1041278623}
   - component: {fileID: 1041278622}
+  - component: {fileID: 1041278624}
   m_Layer: 5
   m_Name: SkillToggle(D5)
   m_TagString: Untagged
@@ -19534,6 +19855,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1041278624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1041278620}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1051940752
 GameObject:
   m_ObjectHideFlags: 0
@@ -19618,6 +19970,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1055581267}
   - component: {fileID: 1055581268}
+  - component: {fileID: 1055581269}
   m_Layer: 5
   m_Name: SkillToggle(T2)
   m_TagString: Untagged
@@ -19709,6 +20062,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1055581269
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1055581266}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1059631958
 GameObject:
   m_ObjectHideFlags: 0
@@ -20115,6 +20499,7 @@ GameObject:
   - component: {fileID: 1083649952}
   - component: {fileID: 1083649954}
   - component: {fileID: 1083649953}
+  - component: {fileID: 1083649955}
   m_Layer: 5
   m_Name: SkillToggle(T3)
   m_TagString: Untagged
@@ -20219,6 +20604,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1083649955
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1083649951}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1092585650
 GameObject:
   m_ObjectHideFlags: 0
@@ -24002,6 +24418,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1267156075}
   - component: {fileID: 1267156076}
+  - component: {fileID: 1267156077}
   m_Layer: 5
   m_Name: SkillToggle(D4)
   m_TagString: Untagged
@@ -24091,6 +24508,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1267156077
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1267156074}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1267686060
 GameObject:
   m_ObjectHideFlags: 0
@@ -26584,6 +27032,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1427286755}
   - component: {fileID: 1427286756}
+  - component: {fileID: 1427286757}
   m_Layer: 5
   m_Name: SkillToggle(C1)
   m_TagString: Untagged
@@ -26673,6 +27122,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1427286757
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1427286754}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1428232583
 GameObject:
   m_ObjectHideFlags: 0
@@ -26837,6 +27317,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1439011534}
   - component: {fileID: 1439011535}
+  - component: {fileID: 1439011536}
   m_Layer: 5
   m_Name: SkillToggle(E2)
   m_TagString: Untagged
@@ -26928,6 +27409,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1439011536
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1439011533}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1441546858
 GameObject:
   m_ObjectHideFlags: 0
@@ -28361,6 +28873,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1518785820}
   - component: {fileID: 1518785822}
+  - component: {fileID: 1518785821}
   m_Layer: 5
   m_Name: SkillToggle(R1)
   m_TagString: Untagged
@@ -28395,6 +28908,37 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 33}
   m_SizeDelta: {x: 0, y: -78}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1518785821
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1518785819}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!114 &1518785822
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -28887,6 +29431,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1547897448}
   - component: {fileID: 1547897449}
+  - component: {fileID: 1547897450}
   m_Layer: 5
   m_Name: SkillToggle(D2)
   m_TagString: Untagged
@@ -28976,6 +29521,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1547897450
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1547897447}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1550966871
 GameObject:
   m_ObjectHideFlags: 0
@@ -31639,6 +32215,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1674982072}
   - component: {fileID: 1674982073}
+  - component: {fileID: 1674982074}
   m_Layer: 5
   m_Name: SkillToggle(E3)
   m_TagString: Untagged
@@ -31730,6 +32307,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1674982074
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1674982071}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1679432853
 GameObject:
   m_ObjectHideFlags: 0
@@ -32716,6 +33324,7 @@ GameObject:
   - component: {fileID: 1745747805}
   - component: {fileID: 1745747807}
   - component: {fileID: 1745747806}
+  - component: {fileID: 1745747808}
   m_Layer: 5
   m_Name: SkillToggle(Y4)
   m_TagString: Untagged
@@ -32820,6 +33429,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &1745747808
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1745747804}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1748359833
 GameObject:
   m_ObjectHideFlags: 0
@@ -32988,6 +33628,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1754757101}
   - component: {fileID: 1754757102}
+  - component: {fileID: 1754757103}
   m_Layer: 5
   m_Name: SkillToggle(C3)
   m_TagString: Untagged
@@ -33077,6 +33718,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &1754757103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1754757100}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &1754906848
 GameObject:
   m_ObjectHideFlags: 0
@@ -35565,6 +36237,7 @@ GameObject:
   - component: {fileID: 1883118479}
   - component: {fileID: 1883118481}
   - component: {fileID: 1883118480}
+  - component: {fileID: 1883118482}
   m_Layer: 5
   m_Name: TextGold
   m_TagString: Untagged
@@ -35633,6 +36306,20 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1883118478}
   m_CullTransparentMesh: 0
+--- !u!114 &1883118482
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1883118478}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d277aade78517e4290841f6a28ba05a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GoldPoint: 50
+  GoldText: {fileID: 1883118480}
 --- !u!1 &1892370365
 GameObject:
   m_ObjectHideFlags: 0
@@ -38524,6 +39211,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1979670566}
   - component: {fileID: 1979670568}
+  - component: {fileID: 1979670567}
   m_Layer: 5
   m_Name: SkillToggle(R2)
   m_TagString: Untagged
@@ -38558,6 +39246,37 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 33}
   m_SizeDelta: {x: 0, y: -78}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!114 &1979670567
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1979670565}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!114 &1979670568
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -39220,6 +39939,7 @@ GameObject:
   - component: {fileID: 2025468223}
   - component: {fileID: 2025468225}
   - component: {fileID: 2025468224}
+  - component: {fileID: 2025468226}
   m_Layer: 5
   m_Name: SkillToggle(G1)
   m_TagString: Untagged
@@ -39324,6 +40044,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &2025468226
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2025468222}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 0
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &2026485094
 GameObject:
   m_ObjectHideFlags: 0
@@ -41119,6 +41870,7 @@ GameObject:
   - component: {fileID: 2124025207}
   - component: {fileID: 2124025209}
   - component: {fileID: 2124025208}
+  - component: {fileID: 2124025210}
   m_Layer: 5
   m_Name: SkillToggle(F1)
   m_TagString: Untagged
@@ -41223,6 +41975,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 1
+--- !u!114 &2124025210
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2124025206}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &2124925001
 GameObject:
   m_ObjectHideFlags: 0
@@ -41233,6 +42016,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2124925002}
   - component: {fileID: 2124925003}
+  - component: {fileID: 2124925004}
   m_Layer: 5
   m_Name: SkillToggle(D3)
   m_TagString: Untagged
@@ -41322,6 +42106,37 @@ MonoBehaviour:
     m_TypeName: UnityEngine.UI.Toggle+ToggleEvent, UnityEngine.UI, Version=1.0.0.0,
       Culture=neutral, PublicKeyToken=null
   m_IsOn: 0
+--- !u!114 &2124925004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2124925001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  skillCode: 0
+  GoldObj: {fileID: 0}
+  MinusButton: {fileID: 0}
+  PlusButton: {fileID: 0}
+  LevelText: {fileID: 0}
+  LevelPriceText: {fileID: 0}
+  SkillToggle: {fileID: 0}
+  SkillLevel: 0
+  BottomLevel: 0
+  TopLevel: 6
+  TopLevel00: 6
+  TopLevel01: 0
+  TopLevel02: 0
+  TopLevel03: 0
+  TopLevelJordan: 0
+  LevelPrice: 5
+  Level1Price: 11
+  Level2Price: 3
+  MultiInt: 1
 --- !u!1 &2132691829
 GameObject:
   m_ObjectHideFlags: 0
