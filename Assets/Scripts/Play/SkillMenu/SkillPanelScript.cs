@@ -5,21 +5,18 @@ using UnityEngine.UI;
 
 public class SkillPanelScript : MonoBehaviour {
 
-    public Toggle PanelSwitch;
+    Toggle PanelSwitch;
 
 	// Use this for initialization
 	void Start () {
-        OnOffSwitch();
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
+        PanelSwitch = GameObject.Find("Toggle " + name.Substring(name.Length - 3, 3)).GetComponent<Toggle>();
+        PanelSwitch.onValueChanged.AddListener(OnOffSwitch);
+        OnOffSwitch(PanelSwitch.isOn);
 	}
 
-    public void OnOffSwitch()
+    public void OnOffSwitch(bool a)
     {
-        if (PanelSwitch.isOn)
+        if (a)
         {
             gameObject.GetComponent<CanvasGroup>().alpha = 1;
             gameObject.GetComponent<CanvasGroup>().interactable = true;
