@@ -7,10 +7,8 @@ using System.IO;
 using System.Text;
 
 public class ClickCatcher : MonoBehaviour {
+    public CatcherKeys CK;
     public Toggle TotalSwitch;
-    public string FileName;
-    public string txtPath;
-    //public static List<ClickData> LS = new List<ClickData>();
     public NetWriter theNW;
     public Image SignalLight;
 
