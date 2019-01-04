@@ -200,6 +200,7 @@ GameObject:
   - component: {fileID: 5472693952405999995}
   - component: {fileID: 1806875113310399451}
   - component: {fileID: 2847731694559201477}
+  - component: {fileID: 2342278634341086658}
   m_Layer: 0
   m_Name: PlayerCircle
   m_TagString: Player
@@ -541,7 +542,7 @@ MonoBehaviour:
   force: 15
   damage: 10
   cooldowntime: 3
-  skillavaliable: 1
+  skillavaliable: 0
 --- !u!114 &3667270247323410806
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -607,6 +608,25 @@ MonoBehaviour:
   skillavaliable: 0
   SelfR: 0.51
   line: {fileID: 120367070304518420}
+--- !u!114 &2342278634341086658
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4057131c511ff5049adfc959d5f1ad4b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 0
+  bulletspeed: 6
+  leecher: {fileID: 1197206318659480, guid: ea4dfc87d0c2fbe4fad8294ed5ef35c8, type: 3}
+  damage: 10
+  cooldowntime: 3
+  skillavaliable: 0
 --- !u!1 &1865538166631764
 GameObject:
   m_ObjectHideFlags: 0
