@@ -315,7 +315,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &15894770
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -4327,6 +4326,7 @@ GameObject:
   - component: {fileID: 238781324}
   - component: {fileID: 238781325}
   - component: {fileID: 238781326}
+  - component: {fileID: 238781328}
   - component: {fileID: 238781327}
   m_Layer: 5
   m_Name: RecordToggle
@@ -4414,6 +4414,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cc8e21a021621c5418ef01a16ac9a83d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  CK: {fileID: 238781328}
   TotalSwitch: {fileID: 238781325}
   FileName: 
   txtPath: 
@@ -4431,6 +4432,18 @@ CanvasGroup:
   m_Interactable: 0
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
+--- !u!114 &238781328
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 238781323}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2389c0f3197e08e4c8a445043ac0cb0e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &239149069
 GameObject:
   m_ObjectHideFlags: 0
@@ -12600,7 +12613,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &659190758
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -15456,7 +15468,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &798124229
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -15787,7 +15798,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &819322208
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -20661,7 +20671,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &1092585653
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -25929,7 +25938,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &1365167134
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -33271,7 +33279,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &1742365117
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -36535,7 +36542,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 968cf29e1a2465f4eabeb8ec322270f3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  PanelSwitch: {fileID: 0}
 --- !u!225 &1902398583
 CanvasGroup:
   m_ObjectHideFlags: 0
