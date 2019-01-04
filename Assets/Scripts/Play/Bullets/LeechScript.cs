@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using FixMath;
 
 public class LeechScript : MonoBehaviour
 {
@@ -11,7 +12,7 @@ public class LeechScript : MonoBehaviour
     public GameObject sender;
     //private bool selfprotect;
     public float turntime;
-    public float speed;
+    public Fix64 speed;// = (Fix64)6;
     bool unturned = true;
 
     // Use this for initialization
@@ -30,8 +31,7 @@ public class LeechScript : MonoBehaviour
         if (unturned && pasttime >= turntime)
         {
             unturned = false;
-            Vector2 nextvec2 = FindClosestVector2n() * speed;
-            SelfTurn(nextvec2);
+            SelfTurn(FindClosestVector2());
         }
         if (pasttime >= maxtime)
         {
@@ -41,10 +41,6 @@ public class LeechScript : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
-        //if (!photonView.isMine)
-            //return;
-        if (collision.gameObject == sender && gameObject.GetComponent<DestroyScript>().selfprotect)
-            return;
         Rigidbody2D rb = collision.gameObject.GetComponent<Rigidbody2D>();
         HPScript hp = collision.gameObject.GetComponent<HPScript>();
         if (hp != null && rb != null)
@@ -55,24 +51,17 @@ public class LeechScript : MonoBehaviour
         gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 
-    private void OnCollisionExit2D(Collision2D collision)
-    {
-        //if (!PhotonNetwork.isMasterClient)
-        //return;
-        gameObject.GetComponent<DestroyScript>().selfprotect = false;
-    }
-
     GameObject FindClosestEnemy()
     {
         GameObject closest = null;  // GameObject.FindWithTag("Player");
         GameObject[] Allthem = GameObject.FindGameObjectsWithTag("Player");
-        float sqrdis = Mathf.Infinity;
-        Vector3 position = transform.position;
+        Fix64 sqrdis = Fix64.MaxValue;
+        Fix64Vector2 position = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
         foreach (GameObject Him in Allthem)
         {
-            //if (Him == sender) continue;//跳过施法者
-            Vector2 diff = (Him.transform.position - position); //距离向量
-            float curDistance = diff.sqrMagnitude; //距离平方
+            if (Him == sender) continue;//跳过施法者
+            Fix64Vector2 diff = ((Fix64Vector2)Him.GetComponent<Rigidbody2D>().position - position); //距离向量
+            Fix64 curDistance = diff.LengthSquare(); //距离平方
             if (curDistance < sqrdis)
             {
                 closest = Him; //更新最近距离敌人
@@ -82,28 +71,31 @@ public class LeechScript : MonoBehaviour
         return closest;
     }
 
-    Vector2 FindClosestVector2n()
+    Fix64Vector2 FindClosestVector2()
     {
         GameObject[] Allthem = GameObject.FindGameObjectsWithTag("Player");
-        float sqrdis = Mathf.Infinity;
-        Vector3 position = transform.position;
-        Vector2 vector = gameObject.GetComponent<Rigidbody2D>().velocity;
+        Fix64 sqrdis = Fix64.MaxValue;
+        Fix64Vector2 position = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 vector = (Fix64Vector2)GetComponent<Rigidbody2D>().velocity;
         foreach (GameObject Him in Allthem)
         {
+            Debug.Log(Him.name);
             if (Him == sender) continue;//跳过施法者
-            Vector2 diff = (Him.transform.position - position);//向量距离
-            float curDistance = diff.sqrMagnitude; //向量距离平方
-            if (curDistance < sqrdis)
+            Fix64Vector2 diff = ((Fix64Vector2)Him.GetComponent<Rigidbody2D>().position - position);
+            Fix64 curDistance = diff.LengthSquare(); //向量距离平方
+            if (curDistance <= sqrdis)
             {
                 sqrdis = curDistance;//更新最近距离
                 vector = diff;//更新向量
             }
+            Debug.Log(vector.LengthSquare());
         }
-        return vector.normalized;
+        Fix64Vector2 v2r = (vector.normalized() * speed);
+        return v2r;
     }
     
-    void SelfTurn(Vector2 vector)
+    void SelfTurn(Fix64Vector2 vector)
     {
-        gameObject.GetComponent<Rigidbody2D>().velocity = vector;
+        GetComponent<Rigidbody2D>().velocity = vector.ToV2();
     }
 }

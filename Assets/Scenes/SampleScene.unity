@@ -4416,8 +4416,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   CK: {fileID: 238781328}
   TotalSwitch: {fileID: 238781325}
-  FileName: 
-  txtPath: 
   theNW: {fileID: 1914587340}
   SignalLight: {fileID: 703651734}
 --- !u!225 &238781327
@@ -15235,7 +15233,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 0.49803922}
+  m_Color: {r: 0, g: 1, b: 1, a: 0.49803922}
   m_RaycastTarget: 1
   m_OnCullStateChanged:
     m_PersistentCalls:

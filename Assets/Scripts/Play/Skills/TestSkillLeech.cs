@@ -21,9 +21,9 @@ public class TestSkillLeech : MonoBehaviour
     }
     
     // Update is called once per frame
-    void Update()
+    void GoTestSkillLeech()
     {
-        if (Input.GetButtonDown("FireT") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -41,27 +41,28 @@ public class TestSkillLeech : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         //DoSkill.singing = 0;
         //gameObject.GetComponent<DoSkill>().Fire = null;
         GetComponent<DoSkill>().BeforeSkill();
+        Fix64 bsf = (Fix64)bulletspeed;
         GameObject bullet;
-        Vector2 skilldirection;
-        Vector2 singplace = transform.position;
+        Fix64Vector2 skilldirection;
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
         skilldirection = actionplace - singplace;
-        float turntime = (skilldirection.magnitude - 0.71f) / bulletspeed;
+        Fix64 turntime = (skilldirection.Length() - (Fix64)0.76) / bsf;
         leecher.GetComponent<LeechScript>().sender = gameObject;
-        leecher.GetComponent<LeechScript>().turntime = turntime;
-        leecher.GetComponent<LeechScript>().speed = bulletspeed;
+        leecher.GetComponent<LeechScript>().turntime = (float)turntime;
         leecher.GetComponent<LeechScript>().leechdamage = damage;
-        bullet = Instantiate(leecher, singplace + 0.71f * skilldirection.normalized, Quaternion.identity);
-        bullet.GetComponent<Rigidbody2D>().velocity = skilldirection.normalized * bulletspeed;
+        Fix64Vector2 sdnf = skilldirection.normalized();
+        bullet = Instantiate(leecher, (singplace + (Fix64)0.76 * sdnf).ToV2(), Quaternion.identity);
+        bullet.GetComponent<LeechScript>().speed = bsf;
+        bullet.GetComponent<Rigidbody2D>().velocity = (sdnf * bsf).ToV2();
         //bullet.GetComponent<LeechScript>().maxtime = maxdistance / bulletspeed;
         currentcooldown = 0;
         skillavaliable = false;
