@@ -2843,7 +2843,7 @@ RectTransform:
   - {fileID: 906813693}
   - {fileID: 1914587338}
   m_Father: {fileID: 0}
-  m_RootOrder: 3
+  m_RootOrder: 2
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -4079,105 +4079,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 223161074}
   m_CullTransparentMesh: 0
---- !u!1 &224872627
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 224872631}
-  - component: {fileID: 224872630}
-  - component: {fileID: 224872629}
-  - component: {fileID: 224872628}
-  m_Layer: 5
-  m_Name: Canvas4Skill
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &224872628
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 224872627}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 1301386320, guid: f70555f144d8491a825f0804e09c671c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_IgnoreReversedGraphics: 1
-  m_BlockingObjects: 0
-  m_BlockingMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
---- !u!114 &224872629
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 224872627}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 1980459831, guid: f70555f144d8491a825f0804e09c671c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_UiScaleMode: 1
-  m_ReferencePixelsPerUnit: 100
-  m_ScaleFactor: 1
-  m_ReferenceResolution: {x: 800, y: 600}
-  m_ScreenMatchMode: 0
-  m_MatchWidthOrHeight: 0
-  m_PhysicalUnit: 3
-  m_FallbackScreenDPI: 96
-  m_DefaultSpriteDPI: 96
-  m_DynamicPixelsPerUnit: 1
---- !u!223 &224872630
-Canvas:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 224872627}
-  m_Enabled: 1
-  serializedVersion: 3
-  m_RenderMode: 0
-  m_Camera: {fileID: 0}
-  m_PlaneDistance: 100
-  m_PixelPerfect: 0
-  m_ReceivesEvents: 1
-  m_OverrideSorting: 0
-  m_OverridePixelPerfect: 0
-  m_SortingBucketNormalizedSize: 0
-  m_AdditionalShaderChannelsFlag: 0
-  m_SortingLayerID: 0
-  m_SortingOrder: 0
-  m_TargetDisplay: 0
---- !u!224 &224872631
-RectTransform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 224872627}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 0, y: 0, z: 0}
-  m_Children:
-  - {fileID: 392646555}
-  m_Father: {fileID: 0}
-  m_RootOrder: 1
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 0}
 --- !u!1 &226043687
 GameObject:
   m_ObjectHideFlags: 0
@@ -4383,7 +4284,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -5288,7 +5188,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -5640,7 +5539,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -6394,7 +6292,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -6830,7 +6727,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -7599,6 +7495,8 @@ GameObject:
   - component: {fileID: 392646558}
   - component: {fileID: 392646557}
   - component: {fileID: 392646556}
+  - component: {fileID: 392646560}
+  - component: {fileID: 392646559}
   m_Layer: 5
   m_Name: SkillPanel
   m_TagString: Untagged
@@ -7613,9 +7511,9 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 392646554}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.94375, y: 0.94375, z: 0.94375}
   m_Children:
   - {fileID: 1883118479}
   - {fileID: 1333309616}
@@ -7627,13 +7525,13 @@ RectTransform:
   - {fileID: 1902398581}
   - {fileID: 1092585651}
   - {fileID: 659190756}
-  m_Father: {fileID: 224872631}
+  m_Father: {fileID: 1716205432}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
+  m_SizeDelta: {x: 45, y: 19.311249}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!225 &392646556
 CanvasGroup:
@@ -7646,7 +7544,7 @@ CanvasGroup:
   m_Alpha: 0
   m_Interactable: 0
   m_BlocksRaycasts: 0
-  m_IgnoreParentGroups: 0
+  m_IgnoreParentGroups: 1
 --- !u!114 &392646557
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7684,6 +7582,31 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 392646554}
   m_CullTransparentMesh: 0
+--- !u!114 &392646559
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 392646554}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5736a04facb1a574ebcc7b63140f16ce, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mySoldier: {fileID: 0}
+--- !u!114 &392646560
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 392646554}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c518330db5013149b09de17fde6ba73, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &394915640
 GameObject:
   m_ObjectHideFlags: 0
@@ -16555,7 +16478,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -18044,7 +17966,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -18690,7 +18611,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -18823,7 +18743,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -19559,7 +19478,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -19867,7 +19785,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -20074,7 +19991,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -20616,7 +20532,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -24520,7 +24435,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -25579,7 +25493,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 4
+  m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1325569002
 GameObject:
@@ -27134,7 +27048,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -27421,7 +27334,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -28560,7 +28472,7 @@ RectTransform:
   - {fileID: 1880939850}
   - {fileID: 1151998368}
   m_Father: {fileID: 1716205432}
-  m_RootOrder: 0
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0}
   m_AnchorMax: {x: 0.5, y: 0}
@@ -28920,7 +28832,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -29533,7 +29444,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -32319,7 +32229,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -32969,9 +32878,10 @@ RectTransform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 0, y: 0, z: 0}
   m_Children:
+  - {fileID: 392646555}
   - {fileID: 1481811811}
   m_Father: {fileID: 0}
-  m_RootOrder: 2
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
@@ -33441,7 +33351,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -33730,7 +33639,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -39258,7 +39166,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -40056,7 +39963,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -41987,7 +41893,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}
@@ -42118,7 +42023,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ba03aeb840208954abbb63af904bd2ee, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  skillCode: 0
   GoldObj: {fileID: 0}
   MinusButton: {fileID: 0}
   PlusButton: {fileID: 0}

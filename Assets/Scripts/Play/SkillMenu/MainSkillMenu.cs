@@ -4,23 +4,24 @@ using UnityEngine;
 
 public class MainSkillMenu : MonoBehaviour {
 
-    public GameObject SkillMenu;
+    CanvasGroup cg;
 
 	// Use this for initialization
-	void Start () {
-		
-	}
+	void Start ()
+    {
+        cg = GetComponent<CanvasGroup>();
+    }
 	
 	// Update is called once per frame
 	void Update () {
         if (Input.GetKeyDown(KeyCode.Tab))
         {
-            if (SkillMenu.GetComponent<CanvasGroup>().alpha == 0)
+            if (cg.alpha == 0)
             {
-                SkillMenu.GetComponent<CanvasGroup>().alpha = 1;
-                SkillMenu.GetComponent<CanvasGroup>().interactable = true;
-                SkillMenu.GetComponent<CanvasGroup>().blocksRaycasts = true;
-                gameObject.GetComponent<SkillsLink>().alphaset();
+                cg.alpha = 1;
+                cg.interactable = true;
+                cg.blocksRaycasts = true;
+                //GetComponent<SkillsLink>().alphaset();
             }
             else
                 CloseMainSkillMenu();
@@ -29,11 +30,11 @@ public class MainSkillMenu : MonoBehaviour {
 
     public void CloseMainSkillMenu()
     {
-        if (SkillMenu.GetComponent<CanvasGroup>().alpha == 0)
+        if (cg.alpha == 0)
             return;
-        SkillMenu.GetComponent<CanvasGroup>().alpha = 0;
-        SkillMenu.GetComponent<CanvasGroup>().interactable = false;
-        SkillMenu.GetComponent<CanvasGroup>().blocksRaycasts = false;
-        gameObject.GetComponent<SkillsLink>().alphaset();
+        cg.alpha = 0;
+        cg.interactable = false;
+        cg.blocksRaycasts = false;
+        //GetComponent<SkillsLink>().alphaset();
     }
 }
