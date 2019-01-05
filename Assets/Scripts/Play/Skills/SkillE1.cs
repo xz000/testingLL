@@ -9,7 +9,7 @@ public class SkillE1 : MonoBehaviour
     public GameObject TheRock;
     public float maxdistance = 5;
     public float damage = 10;
-    public float bombforce = 18;
+    public float bombforce = 8;
     private float currentcooldown;
     public float cooldowntime = 3;
     public bool skillavaliable;
@@ -21,9 +21,9 @@ public class SkillE1 : MonoBehaviour
     }
 	
     // Update is called once per frame
-    void Update ()
+    void GoSkillE1()
     {
-        if (Input.GetButtonDown("FireE") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -41,19 +41,19 @@ public class SkillE1 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
         GetComponent<DoSkill>().BeforeSkill();
-        if (skilldirection.magnitude > maxdistance)
-            actionplace = singplace + skilldirection.normalized * maxdistance;
-        GameObject MyRock = Instantiate(TheRock, actionplace, Quaternion.identity);
+        Fix64 mdf = (Fix64)maxdistance;
+        if (skilldirection.LengthSquare() > mdf * mdf)
+            actionplace = singplace + skilldirection.normalized() * mdf;
+        GameObject MyRock = Instantiate(TheRock, actionplace.ToV2(), Quaternion.identity);
         MyRock.GetComponent<RockExplode>().damage = damage;
         MyRock.GetComponent<RockExplode>().bombforce = bombforce;
         currentcooldown = 0;

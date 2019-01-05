@@ -51,6 +51,12 @@ public class ClickCatcher : MonoBehaviour {
             cd.Ksetdata(SkillCode.TestSkillLightning);
             theNW.L2S.Add(cd);
         }
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            ClickData cd = new ClickData();
+            cd.Ksetdata(SkillCode.SkillE1);
+            theNW.L2S.Add(cd);
+        }
         if (Input.GetKeyDown(KeyCode.S))
         {
             ClickData cd = new ClickData();
