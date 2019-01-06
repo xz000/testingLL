@@ -1,7 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
 
 public class BlueLineScript : MonoBehaviour
 {
@@ -13,7 +12,7 @@ public class BlueLineScript : MonoBehaviour
     public float maxtime = 2;
     float timepsd = 0;
     //public bool missed;
-    public bool Idrag = false;
+    //public bool Idrag = false;
 
 	// Use this for initialization
 	void Start () {
@@ -23,54 +22,36 @@ public class BlueLineScript : MonoBehaviour
 	// Update is called once per frame
 	void Update ()
     {
-        if (timepsd >= maxtime && Idrag)
-            gameObject.GetComponent<DestroyScript>().Destroyself();
-        if (sender == null)
-            gameObject.GetComponent<DestroyScript>().Destroyself();
-        if (Idrag && receiver == null)
-            gameObject.GetComponent<DestroyScript>().Destroyself();
         drawmyline(sender.position, receiver.position);
     }
 
     void FixedUpdate()
     {
-        if (Idrag)
-        {
-            timepsd += Time.fixedDeltaTime;
-            receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
-        }
+        timepsd += Time.fixedDeltaTime;
+        receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
+        if (timepsd >= maxtime || receiver == null || sender == null)
+            gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 
-    public void DoMyJob(int idv, int ids, Vector2 place, float sp, float dm, float mt)
+    public void SetBSC(float spd, float dmg, float maxT)
     {
-        //photonView.RPC("BlueLineWorking", PhotonTargets.All, idv, ids, place, sp, dm, mt);
+        damage = dmg;
+        speed = spd;
+        maxtime = maxT;
     }
 
-    //[PunRPC]
-    void BlueLineWorking(int victimId, int senderId, Vector2 missedplace, float spd, float dmg, float maxT)
+    public void BlueLineWorking(Rigidbody2D victimId)
     {
-        /*
-        if (victimId != 0)
-        {
-            receiver = PhotonView.Find(victimId).GetComponent<Rigidbody2D>();
-            sender = PhotonView.Find(senderId).GetComponent<Rigidbody2D>();
-            damage = dmg;
-            speed = spd;
-            receiver.GetComponent<MoveScript>().cook += AddConstentCentrallyVelocity;
-            maxtime = maxT;
-            if (receiver.gameObject.GetPhotonView().isMine)
-            {
-                Idrag = true;
-                receiver.GetComponent<DoSkill>().ClearDebuff += gameObject.GetComponent<DestroyScript>().Destroyself;
-            }
-        }
-        else
-        {
-            sender = PhotonView.Find(senderId).GetComponent<Rigidbody2D>();
-            drawmyline(sender.position, missedplace);
-            StartCoroutine(EraseLine());
-        }*/
+        receiver = victimId;
+        receiver.GetComponent<MoveScript>().cook += AddConstentCentrallyVelocity;
+        receiver.GetComponent<DoSkill>().ClearDebuff += gameObject.GetComponent<DestroyScript>().Destroyself;
         enabled = true;
+    }
+
+    public void BlueLineMissed(Vector2 missedplace)
+    {
+        drawmyline(sender.position, missedplace);
+        StartCoroutine(EraseLine());
     }
 
     public void AddConstentCentrallyVelocity(Rigidbody2D victim, MoveScript worker)

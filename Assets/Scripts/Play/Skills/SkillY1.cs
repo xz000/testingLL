@@ -7,7 +7,7 @@ public class SkillY1 : MonoBehaviour
 {
     public CooldownImage MyImageScript;
     public GameObject MyLineObj;
-    public GameObject MyLine;
+    GameObject MyLine;
     public float maxdistance = 10;
     private float currentcooldown;
     public float cooldowntime = 3;
@@ -23,15 +23,17 @@ public class SkillY1 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update ()
+    void GoSkillY1()
     {
-        if (Input.GetButtonDown("FireY") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             if (MyLine != null)
                 MyLine.GetComponent<DestroyScript>().Destroyself();
             MyLine = Instantiate(MyLineObj, gameObject.transform.position, Quaternion.identity);
-            gameObject.GetComponent<DoSkill>().Fire = Skill;
+            MyLine.GetComponent<BlueLineScript>().sender = GetComponent<Rigidbody2D>();
+            MyLine.GetComponent<BlueLineScript>().SetBSC(speed, damage, maxtime);
+            GetComponent<DoSkill>().Fire = Skill;
         }
     }
     
@@ -46,33 +48,34 @@ public class SkillY1 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        float realdistance = Mathf.Min(skilldirection.magnitude, maxdistance);
-        if (realdistance <= 0.6)
-        {
+        Fix64 mdf = (Fix64)maxdistance;
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
+        Fix64 rdf = skilldirection.Length();
+        if (rdf > mdf)
+            rdf = mdf;
+        if (rdf <= (Fix64)0.51)
             return;
-        }   //半径小于自身半径时不施法
-        Vector2 realplace = singplace + skilldirection.normalized * realdistance;
+        Fix64Vector2 realplace = singplace + skilldirection.normalized() * rdf;
         GetComponent<DoSkill>().BeforeSkill();
         currentcooldown = 0;
         skillavaliable = false;
-        if (Physics2D.OverlapPoint(realplace))
+        Vector2 rpv2 = realplace.ToV2();
+        if (Physics2D.OverlapPoint(rpv2))
         {
-            Collider2D hit = Physics2D.OverlapPoint(realplace);
+            Collider2D hit = Physics2D.OverlapPoint(rpv2);
             if (hit.GetComponent<HPScript>() != null)
             {
-                //MyLine.GetComponent<BlueLineScript>().DoMyJob(hit.gameObject.GetPhotonView().photonView.viewID, gameObject.GetPhotonView().viewID, Vector2.zero, speed, damage, maxtime);
+                MyLine.GetComponent<BlueLineScript>().BlueLineWorking(hit.GetComponent<Rigidbody2D>());
                 return;
             }
         }
-        //MyLine.GetComponent<BlueLineScript>().DoMyJob(0, gameObject.GetPhotonView().viewID, realplace, speed, damage, maxtime);
+        MyLine.GetComponent<BlueLineScript>().BlueLineMissed(rpv2);
     }
 }

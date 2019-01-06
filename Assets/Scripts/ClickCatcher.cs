@@ -57,6 +57,12 @@ public class ClickCatcher : MonoBehaviour {
             cd.Ksetdata(SkillCode.SkillE1);
             theNW.L2S.Add(cd);
         }
+        if (Input.GetKeyDown(KeyCode.Y))
+        {
+            ClickData cd = new ClickData();
+            cd.Ksetdata(SkillCode.SkillY1);
+            theNW.L2S.Add(cd);
+        }
         if (Input.GetKeyDown(KeyCode.S))
         {
             ClickData cd = new ClickData();
