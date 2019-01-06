@@ -6,65 +6,45 @@ using UnityEngine.UI;
 
 public class SetSkillC : UnityEngine.MonoBehaviour
 {
-
     public Toggle C1;
     public Toggle C2;
     public Toggle C3;
     public Toggle C4;
     public Image IconC;
-    GameObject Soldier;
-
-    // Use this for initialization
-    void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
+    public SkillsLink sls;
 
     public void SetC()
     {
-        if (Soldier == null)
-            Soldier = gameObject.GetComponent<SkillsLink>().mySoldier;
         AllCOff();
         if (C1.isOn)
         {
-            Soldier.GetComponent<SkillC1>().MyImageScript = IconC.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillC1>().enabled = true;
+            sls.mySoldier.GetComponent<SkillC1>().MyImageScript = IconC.GetComponent<CooldownImage>();
+            sls.KeyCSkill = SkillCode.SkillC1;
             return;
         }
         if (C2.isOn)
         {
-            Soldier.GetComponent<SkillC2>().MyImageScript = IconC.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillC2>().enabled = true;
+            sls.mySoldier.GetComponent<SkillC2>().MyImageScript = IconC.GetComponent<CooldownImage>();
+            sls.KeyCSkill = SkillCode.SkillC2;
             return;
         }
         if (C3.isOn)
         {
-            //Soldier.GetComponent<SkillC3>().MyImageScript = IconC.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillC3>().enabled = true;
+            IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC3>().CalcFA;
+            sls.KeyCSkill = SkillCode.SkillC3;
             return;
         }
         if (C4.isOn)
         {
-            Soldier.GetComponent<SkillC4>().MyImageScript = IconC.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillC4>().enabled = true;
+            sls.mySoldier.GetComponent<SkillC4>().MyImageScript = IconC.GetComponent<CooldownImage>();
+            sls.KeyCSkill = SkillCode.SkillC4;
             return;
         }
+        IconC.GetComponent<CooldownImage>().enabled = true;
     }
 
     public void AllCOff()
     {
         IconC.GetComponent<CooldownImage>().IconFillAmount = 1;
-        Soldier.GetComponent<SkillC1>().enabled = false;
-        Soldier.GetComponent<SkillC1>().MyImageScript = null;
-        Soldier.GetComponent<SkillC2>().enabled = false;
-        Soldier.GetComponent<SkillC2>().MyImageScript = null;
-        Soldier.GetComponent<SkillC3>().enabled = false;
-        //Soldier.GetComponent<SkillC3>().MyImageScript = null;
-        Soldier.GetComponent<SkillC4>().enabled = false;
-        Soldier.GetComponent<SkillC4>().MyImageScript = null;
     }
 }

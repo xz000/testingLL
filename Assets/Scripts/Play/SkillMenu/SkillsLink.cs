@@ -2,23 +2,21 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class SkillsLink : MonoBehaviour {
-
+public class SkillsLink : MonoBehaviour
+{
     public GameObject mySoldier;
-
-	// Use this for initialization
-	void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
+    public SkillCode KeyCSkill = SkillCode.SkillC3;
+    public SkillCode KeyDSkill = SkillCode.TestSkillLightning;
+    public SkillCode KeyESkill = SkillCode.SkillE1;
+    public SkillCode KeyFSkill = SkillCode.TestSkill03;
+    public SkillCode KeyGSkill = SkillCode.TestSkill01;
+    public SkillCode KeyRSkill = SkillCode.TestSkill02;
+    public SkillCode KeyTSkill = SkillCode.TestSkillLeech;
+    public SkillCode KeyYSkill = SkillCode.SkillY1;
 
     public void linktome()
     {
-        mySoldier.GetComponent<LinktoUI>().MyUI = gameObject;
+        //mySoldier.GetComponent<LinktoUI>().MyUI = gameObject;
     }
 
     public void alphaset()

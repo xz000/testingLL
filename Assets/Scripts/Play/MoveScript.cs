@@ -57,6 +57,7 @@ public class MoveScript : MonoBehaviour {
     public void itsme()
     {
         isme = true;
+        GameObject.Find("Canvas2").GetComponentInChildren<SkillsLink>().mySoldier = gameObject;
         GetComponent<SpriteRenderer>().color = Color.green;
     }
 

@@ -18,16 +18,6 @@ public class SetSkillR : MonoBehaviour
     public Image IconR;
     GameObject Soldier;
 
-    // Use this for initialization
-    void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
-
     public void SetR()
     {
         if (Soldier == null)

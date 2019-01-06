@@ -6,20 +6,9 @@ using UnityEngine.UI;
 
 public class SetSkillF : MonoBehaviour
 {
-
     public Toggle F1;
     public Image IconF;
     GameObject Soldier;
-
-    // Use this for initialization
-    void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-
-    }
 
     public void SetF()
     {

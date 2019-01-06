@@ -5,7 +5,7 @@ using FixMath;
 
 public class SkillC3 : MonoBehaviour
 {
-    //public CooldownImage MyImageScript;
+    public CooldownImage MyImageScript;
     public GameObject ShadowCircle;
     GameObject MyShadow;
     private float currentcooldown;
@@ -50,9 +50,13 @@ public class SkillC3 : MonoBehaviour
             {
                 skillavaliable = true;
             }
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    } 
 
     void Skill()
     {

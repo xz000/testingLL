@@ -39,11 +39,11 @@ public class SelfExplodeScript : MonoBehaviour
         //gameObject.GetComponent<StealthScript>().StealthEnd();
         currentcooldown = 0;
         skillavaliable = false;
-        float radius = 1.5f;
+        float radius = 2;
         Vector2 actionplace = transform.position;
-        Fix64 rfix = (Fix64)3 / (Fix64)2;
+        Fix64 rfix = (Fix64)4;
         Fix64Vector2 apf = new Fix64Vector2(actionplace);
-        Collider2D[] colliders = Physics2D.OverlapCircleAll(actionplace, radius + 0.5f);
+        Collider2D[] colliders = Physics2D.OverlapCircleAll(actionplace, radius);
         foreach (Collider2D hit in colliders)
         {
             HPScript hp = hit.GetComponent<HPScript>();
@@ -58,7 +58,7 @@ public class SelfExplodeScript : MonoBehaviour
                     Rigidbody2D rb = hit.GetComponent<Rigidbody2D>();
                     Fix64Vector2 rbpf = new Fix64Vector2(rb.position);
                     Fix64Vector2 explforce = rbpf - apf;
-                    if (explforce.Length() > rfix)
+                    if (explforce.LengthSquare() > rfix)
                         continue;
                     hp.GetHurt(10);
                     hit.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)9, 1f);
