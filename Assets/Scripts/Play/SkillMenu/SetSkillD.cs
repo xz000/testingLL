@@ -6,7 +6,6 @@ using UnityEngine.UI;
 
 public class SetSkillD : MonoBehaviour
 {
-
     public Toggle D1;
     public Toggle D2;
     public Toggle D3;
@@ -14,16 +13,6 @@ public class SetSkillD : MonoBehaviour
     //public Toggle D5;
     public Image IconD;
     GameObject Soldier;
-
-    // Use this for initialization
-    void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-
-    }
 
     public void SetD()
     {

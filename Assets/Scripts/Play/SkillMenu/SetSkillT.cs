@@ -6,7 +6,6 @@ using UnityEngine.UI;
 
 public class SetSkillT : MonoBehaviour
 {
-
     public Toggle T1;
     public Toggle T1a;
     public Toggle T1b;
@@ -18,16 +17,6 @@ public class SetSkillT : MonoBehaviour
     public Toggle T3b;
     public Image IconT;
     GameObject Soldier;
-
-    // Use this for initialization
-    void Start () {
-		
-	}
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
 
     public void SetT()
     {
