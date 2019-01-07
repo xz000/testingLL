@@ -19,65 +19,50 @@ public class SetSkillY : MonoBehaviour
     public Toggle Y4a;
     public Toggle Y4b;
     public Image IconY;
-    GameObject Soldier;
 
     public void SetY()
     {
-        if (Soldier == null)
-            Soldier = gameObject.GetComponent<SkillsLink>().mySoldier;
-        AllYOff();
+        IconY.GetComponent<CooldownImage>().enabled = true;
         if (Y1.isOn && Y1a.isOn)
         {
-            Soldier.GetComponent<SkillY1>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillY1>().enabled = true;
+            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1>().CalcFA;
+            GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1;
             return;
         }
         if (Y1.isOn && Y1b.isOn)
         {
-            Soldier.GetComponent<SkillY1b>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillY1b>().enabled = true;
+            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1b>().CalcFA;
+            GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1b;
             return;
         }
         if (Y2.isOn && Y2a.isOn)
         {
-            Soldier.GetComponent<SkillY2>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillY2>().enabled = true;
+            //Soldier.GetComponent<SkillY2>().MyImageScript = IconY.GetComponent<CooldownImage>();
+            //Soldier.GetComponent<SkillY2>().enabled = true;
             return;
         }
         if (Y2.isOn && Y2b.isOn)
         {
-            Soldier.GetComponent<SkillY2b>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillY2b>().enabled = true;
+            //Soldier.GetComponent<SkillY2b>().MyImageScript = IconY.GetComponent<CooldownImage>();
+            //Soldier.GetComponent<SkillY2b>().enabled = true;
             return;
         }
         if (Y3.isOn && Y3a.isOn)
         {
-            Soldier.GetComponent<SkillY3>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillY3>().enabled = true;
+            //Soldier.GetComponent<SkillY3>().MyImageScript = IconY.GetComponent<CooldownImage>();
+            //Soldier.GetComponent<SkillY3>().enabled = true;
             return;
         }
         if (Y3.isOn && Y3b.isOn)
         {
-            Soldier.GetComponent<SkillY3b>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillY3b>().enabled = true;
+            //Soldier.GetComponent<SkillY3b>().MyImageScript = IconY.GetComponent<CooldownImage>();
+            //Soldier.GetComponent<SkillY3b>().enabled = true;
             return;
         }
     }
 
     public void AllYOff()
     {
-        IconY.GetComponent<CooldownImage>().IconFillAmount = 1;
-        Soldier.GetComponent<SkillY1>().enabled = false;
-        Soldier.GetComponent<SkillY1>().MyImageScript = null;
-        Soldier.GetComponent<SkillY1b>().enabled = false;
-        Soldier.GetComponent<SkillY1b>().MyImageScript = null;
-        Soldier.GetComponent<SkillY2>().enabled = false;
-        Soldier.GetComponent<SkillY2>().MyImageScript = null;
-        Soldier.GetComponent<SkillY2b>().enabled = false;
-        Soldier.GetComponent<SkillY2b>().MyImageScript = null;
-        Soldier.GetComponent<SkillY3>().enabled = false;
-        Soldier.GetComponent<SkillY3>().MyImageScript = null;
-        Soldier.GetComponent<SkillY3b>().enabled = false;
-        Soldier.GetComponent<SkillY3b>().MyImageScript = null;
+        IconY.GetComponent<CooldownImage>().enabled = false;
     }
 }

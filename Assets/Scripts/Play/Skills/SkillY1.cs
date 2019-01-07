@@ -52,6 +52,11 @@ public class SkillY1 : MonoBehaviour
         }
     }
 
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
+
     public void Skill(Fix64Vector2 actionplace)
     {
         Fix64 mdf = (Fix64)maxdistance;

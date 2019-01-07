@@ -42,7 +42,7 @@ public class SkillT3b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -69,6 +69,6 @@ public class SkillT3b : MonoBehaviour
     public void ResetCD()
     {
         currentcooldown = cooldowntime;
-        MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+        //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
     }
 }

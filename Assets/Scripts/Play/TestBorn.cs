@@ -18,7 +18,7 @@ public class TestBorn : MonoBehaviour
         //PhotonNetwork.automaticallySyncScene = false;
         GameObject localPlayer = Instantiate(PlayerCircle, Random.insideUnitCircle * 7, Quaternion.identity);
         MyUI.GetComponent<SkillsLink>().mySoldier = localPlayer;
-        MyUI.GetComponent<SkillsLink>().linktome();
+        //MyUI.GetComponent<SkillsLink>().linktome();
         localPlayer.GetComponent<DoSkill>().enabled = true;
         localPlayer.GetComponent<MoveScript>().enabled = true;
         MyUI.GetComponent<SkillsLink>().alphaset();

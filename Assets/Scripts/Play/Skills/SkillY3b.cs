@@ -41,7 +41,7 @@ public class SkillY3b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

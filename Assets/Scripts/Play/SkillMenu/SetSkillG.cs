@@ -26,7 +26,7 @@ public class SetSkillG : MonoBehaviour
 
     public void AllGOff()
     {
-        IconG.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconG.GetComponent<CooldownImage>().enabled = false;
         Soldier.GetComponent<TestSkill01>().enabled = false;
         //Soldier.GetComponent<TestSkill01>().MyImageScript = null;
     }

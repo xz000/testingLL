@@ -66,7 +66,7 @@ public class SetSkillE : MonoBehaviour
 
     public void AllEOff()
     {
-        IconE.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconE.GetComponent<CooldownImage>().enabled = false;
         Soldier.GetComponent<SkillE1>().enabled = false;
         Soldier.GetComponent<SkillE1>().MyImageScript = null;
         Soldier.GetComponent<SkillE1b>().enabled = false;
