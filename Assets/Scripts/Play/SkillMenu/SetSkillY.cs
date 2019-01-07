@@ -2,13 +2,11 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-///using Photon;
 
 public class SetSkillY : MonoBehaviour
 {
     public Toggle Y1;
     public Toggle Y1a;
-    public Toggle Y1b;
     public Toggle Y2;
     public Toggle Y2a;
     public Toggle Y2b;
@@ -23,14 +21,14 @@ public class SetSkillY : MonoBehaviour
     public void SetY()
     {
         IconY.GetComponent<CooldownImage>().enabled = true;
-        if (Y1.isOn && Y1a.isOn)
+        if (Y1.isOn)
         {
-            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1>().CalcFA;
-            GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1;
-            return;
-        }
-        if (Y1.isOn && Y1b.isOn)
-        {
+            if (Y1a.isOn)
+            {
+                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1>().CalcFA;
+                GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1;
+                return;
+            }
             IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1b>().CalcFA;
             GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1b;
             return;
