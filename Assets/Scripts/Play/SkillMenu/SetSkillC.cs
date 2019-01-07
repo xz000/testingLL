@@ -2,9 +2,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-///using Photon;
 
-public class SetSkillC : UnityEngine.MonoBehaviour
+public class SetSkillC : MonoBehaviour
 {
     public Toggle C1;
     public Toggle C2;

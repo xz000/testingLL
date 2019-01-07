@@ -7778,19 +7778,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4a7e763a9b0d74a4ab28d24fdf37f2ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Y1: {fileID: 0}
-  Y1a: {fileID: 0}
-  Y1b: {fileID: 0}
-  Y2: {fileID: 0}
-  Y2a: {fileID: 0}
-  Y2b: {fileID: 0}
-  Y3: {fileID: 0}
-  Y3a: {fileID: 0}
-  Y3b: {fileID: 0}
-  Y4: {fileID: 0}
-  Y4a: {fileID: 0}
-  Y4b: {fileID: 0}
-  IconY: {fileID: 0}
+  Y1: {fileID: 975514169}
+  Y1a: {fileID: 165674033}
+  Y1b: {fileID: 1168090241}
+  Y2: {fileID: 291109132}
+  Y2a: {fileID: 1159932110}
+  Y2b: {fileID: 548173222}
+  Y3: {fileID: 328541525}
+  Y3a: {fileID: 1770870103}
+  Y3b: {fileID: 1803499592}
+  Y4: {fileID: 1745747807}
+  Y4a: {fileID: 510748105}
+  Y4b: {fileID: 1536659100}
+  IconY: {fileID: 2111645028}
 --- !u!114 &392646568
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -19001,7 +19001,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6

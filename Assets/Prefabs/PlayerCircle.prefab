@@ -203,6 +203,7 @@ GameObject:
   - component: {fileID: 2342278634341086658}
   - component: {fileID: 4445758486764450412}
   - component: {fileID: 4115436644824893292}
+  - component: {fileID: 3275582692835829541}
   m_Layer: 0
   m_Name: PlayerCircle
   m_TagString: Player
@@ -587,6 +588,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: eeeb2a4d2f6bfd244a7f102c6adf2602, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
   ShadowCircle: {fileID: 1385352283329590, guid: 5e2455aec5804554d80af56beb7d037e,
     type: 3}
   cooldowntime: 3
@@ -668,6 +670,26 @@ MonoBehaviour:
   speed: 1
   damage: 1
   maxtime: 3
+--- !u!114 &3275582692835829541
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f05eadba0787464d9e44e7bb6f7863b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  MyLineObj: {fileID: 1670538693123850, guid: 453ce8d5b0c8c5449b18d62e488abf22, type: 3}
+  maxdistance: 10
+  cooldowntime: 3
+  skillavaliable: 0
+  speed: 0
+  damage: 0
+  maxtime: 0
 --- !u!1 &1865538166631764
 GameObject:
   m_ObjectHideFlags: 0
