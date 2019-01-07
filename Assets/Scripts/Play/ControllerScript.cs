@@ -62,4 +62,9 @@ public class ControllerScript : MonoBehaviour
             CPCat(i, v3);
         }
     }
+
+    public void SetSkillMem(int cN, int[] cSL)
+    {
+        thePC[cN].GetComponent<CircleSkillMem>().SetCircleSL(cSL);
+    }
 }

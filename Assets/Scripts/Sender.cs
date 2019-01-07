@@ -73,17 +73,12 @@ public class Sender : MonoBehaviour
         SignalLight.color = Color.yellow;
     }
 
-    public void ClickSendButton()
+    public void Sendlsd(SkillData sd)
     {
-        byte[] bff = new byte[256];
-        bff = System.Text.Encoding.Unicode.GetBytes(TextToSend.text);
-        int bffsz = bff.Length;
-        if (sz != 0)
-        {
-            NetworkTransport.Send(HSID, CNID, CHANID, bff, bffsz, out error);
-            TextReceived.text = System.Text.Encoding.Unicode.GetString(buffer);
-            TextToSend.text = null;
-        }
+        Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
+        Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
+        Serialize.To(boc, sd);
+        NetworkTransport.Send(HSID, CNID, CHANID, ob2.Data.Array, ob2.Data.Array.Length, out error);
     }
 
     public void ShowMC()
@@ -129,7 +124,7 @@ public class Sender : MonoBehaviour
                 break;
             case NetworkEventType.DataEvent:
                 if (RecChanID == CHANID)
-                    PrintReceived();
+                    SetSD();
                 else
                     DeSerializeReceived();
                 break;
@@ -137,6 +132,14 @@ public class Sender : MonoBehaviour
                 DisconnectDo();
                 break;
         }
+    }
+
+    void SetSD()
+    {
+        Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
+        Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
+        SkillData CDrc = Deserialize<SkillData>.From(cbr);
+        MyNS.GetComponent<ControllerScript>().SetSkillMem(CDrc.cNum, CDrc.SLs);
     }
 
     private void PrintReceived()
@@ -156,6 +159,9 @@ public class Sender : MonoBehaviour
 [Serializable, Schema]
 public class SkillData
 {
+    [Id(0)]
+    public int cNum;
+    [Id(1)]
     public int[] SLs;
 }
 
@@ -177,7 +183,7 @@ public class ClickData
         xPos = x;
         yPos = y;
     }
-    public void Ksetdata(SkillCode k)
+    public void Ksetdata(SkillCode? k)
     {
         SC = k;
     }

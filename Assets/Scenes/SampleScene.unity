@@ -4418,6 +4418,7 @@ MonoBehaviour:
   TotalSwitch: {fileID: 238781325}
   theNW: {fileID: 1914587340}
   SignalLight: {fileID: 703651734}
+  slink: {fileID: 392646559}
 --- !u!225 &238781327
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -7628,14 +7629,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   mySoldier: {fileID: 0}
-  KeyCSkill: 2
-  KeyDSkill: 33
-  KeyESkill: 7
-  KeyFSkill: 31
-  KeyGSkill: 29
-  KeyRSkill: 30
-  KeyTSkill: 32
-  KeyYSkill: 23
+  sds: {fileID: 1914587339}
 --- !u!114 &392646560
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7780,7 +7774,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   Y1: {fileID: 975514169}
   Y1a: {fileID: 165674033}
-  Y1b: {fileID: 1168090241}
   Y2: {fileID: 291109132}
   Y2a: {fileID: 1159932110}
   Y2b: {fileID: 548173222}
