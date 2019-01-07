@@ -83,4 +83,12 @@ public class SkillY1 : MonoBehaviour
         }
         MyLine.GetComponent<BlueLineScript>().BlueLineMissed(rpv2);
     }
+
+    void SkillY1SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
 }

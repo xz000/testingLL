@@ -11,57 +11,82 @@ public class ClickCatcher : MonoBehaviour {
     public Toggle TotalSwitch;
     public NetWriter theNW;
     public Image SignalLight;
+    public SkillsLink slink;
 
     void Update () {
         if (!TotalSwitch.isOn)
             return;
         if (Input.GetKeyDown(KeyCode.G))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.TestSkill01);
-            theNW.L2S.Add(cd);
+            if (slink.KeyGSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyGSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.C))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.SkillC3);
-            theNW.L2S.Add(cd);
+            if (slink.KeyCSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyCSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.R))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.TestSkill02);
-            theNW.L2S.Add(cd);
+            if (slink.KeyRSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyRSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.T))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.TestSkillLeech);
-            theNW.L2S.Add(cd);
+            if (slink.KeyTSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyTSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.F))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.TestSkill03);
-            theNW.L2S.Add(cd);
+            if (slink.KeyFSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyFSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.D))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.TestSkillLightning);
-            theNW.L2S.Add(cd);
+            if (slink.KeyDSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyDSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.E))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.SkillE1);
-            theNW.L2S.Add(cd);
+            if (slink.KeyESkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyESkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.Y))
         {
-            ClickData cd = new ClickData();
-            cd.Ksetdata(SkillCode.SkillY1);
-            theNW.L2S.Add(cd);
+            if (slink.KeyYSkill != null)
+            {
+                ClickData cd = new ClickData();
+                cd.Ksetdata(slink.KeyYSkill);
+                theNW.L2S.Add(cd);
+            }
         }
         if (Input.GetKeyDown(KeyCode.S))
         {

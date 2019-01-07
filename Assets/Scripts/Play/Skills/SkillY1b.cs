@@ -12,9 +12,9 @@ public class SkillY1b : MonoBehaviour
     private float currentcooldown;
     public float cooldowntime = 3;
     public bool skillavaliable;
-    public float speed;
+    public float speed = 2;
     public float damage;
-    public float maxtime;
+    public float maxtime = 2;
 
     // Use this for initialization
     void Start()
@@ -23,7 +23,7 @@ public class SkillY1b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillY1b()
     {
         if (skillavaliable)
         {
@@ -82,5 +82,13 @@ public class SkillY1b : MonoBehaviour
             }
         }
         MyLine.GetComponent<RedLineScript>().RedLineMissed(rpv2);
+    }
+
+    void SkillY1bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
     }
 }

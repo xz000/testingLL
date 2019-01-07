@@ -31,9 +31,11 @@ public class RedLineScript : MonoBehaviour
     void FixedUpdate()
     {
         timepsd += Time.fixedDeltaTime;
-        receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         if (pointalive)
+        {
             centerpoint = receiver.position;
+            receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
+        }
         Vector2 RayV2 = sender.position - centerpoint;
         RaycastHit2D[] Allhit = Physics2D.RaycastAll(centerpoint, RayV2);
         foreach (RaycastHit2D hit in Allhit)
@@ -42,7 +44,7 @@ public class RedLineScript : MonoBehaviour
                 continue;
             hit.collider.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         }
-        if (timepsd >= maxtime || sender == null || receiver == null)
+        if (timepsd >= maxtime || sender == null)
             gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 
