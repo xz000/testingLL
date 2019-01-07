@@ -56,7 +56,7 @@ public class SkillR1b : MonoBehaviour
                 if (scd >= scdtime)
                     doscd = false;
             }
-            MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

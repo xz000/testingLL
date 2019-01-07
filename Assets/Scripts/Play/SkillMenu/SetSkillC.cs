@@ -15,7 +15,7 @@ public class SetSkillC : UnityEngine.MonoBehaviour
 
     public void SetC()
     {
-        AllCOff();
+        IconC.GetComponent<CooldownImage>().enabled = true;
         if (C1.isOn)
         {
             sls.mySoldier.GetComponent<SkillC1>().MyImageScript = IconC.GetComponent<CooldownImage>();
@@ -40,11 +40,10 @@ public class SetSkillC : UnityEngine.MonoBehaviour
             sls.KeyCSkill = SkillCode.SkillC4;
             return;
         }
-        IconC.GetComponent<CooldownImage>().enabled = true;
     }
 
     public void AllCOff()
     {
-        IconC.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconC.GetComponent<CooldownImage>().enabled = false;
     }
 }

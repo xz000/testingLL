@@ -14,21 +14,22 @@ public class SkillsLink : MonoBehaviour
     public SkillCode KeyTSkill = SkillCode.TestSkillLeech;
     public SkillCode KeyYSkill = SkillCode.SkillY1;
 
-    public void linktome()
+    public void linktome(GameObject go)
     {
-        //mySoldier.GetComponent<LinktoUI>().MyUI = gameObject;
+        mySoldier = go;
+        alphaset();
     }
 
     public void alphaset()
     {
         gameObject.GetComponent<SetSkillC>().SetC();
-        gameObject.GetComponent<SetSkillD>().SetD();
-        gameObject.GetComponent<SetSkillE>().SetE();
-        gameObject.GetComponent<SetSkillF>().SetF();
-        gameObject.GetComponent<SetSkillG>().SetG();
-        gameObject.GetComponent<SetSkillR>().SetR();
-        gameObject.GetComponent<SetSkillT>().SetT();
-        gameObject.GetComponent<SetSkillY>().SetY();
+        //gameObject.GetComponent<SetSkillD>().SetD();
+        //gameObject.GetComponent<SetSkillE>().SetE();
+        //gameObject.GetComponent<SetSkillF>().SetF();
+        //gameObject.GetComponent<SetSkillG>().SetG();
+        //gameObject.GetComponent<SetSkillR>().SetR();
+        //gameObject.GetComponent<SetSkillT>().SetT();
+        //gameObject.GetComponent<SetSkillY>().SetY();
     }
 
     void SetSkillImages()

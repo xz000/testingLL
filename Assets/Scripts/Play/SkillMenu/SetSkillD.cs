@@ -47,7 +47,7 @@ public class SetSkillD : MonoBehaviour
 
     public void AllDOff()
     {
-        IconD.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconD.GetComponent<CooldownImage>().enabled = false;
         Soldier.GetComponent<TestSkillLightning>().enabled = false;
         Soldier.GetComponent<TestSkillLightning>().MyImageScript = null;
         Soldier.GetComponent<SkillD2>().enabled = false;

@@ -13,7 +13,7 @@ public class RedLineScript : MonoBehaviour
     public float damage;
     public float maxtime = 2;
     float timepsd = 0;
-    public bool Idrag = false;
+    //public bool Idrag = false;
     bool pointalive = false;
 
     // Use this for initialization
@@ -25,64 +25,49 @@ public class RedLineScript : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (timepsd >= maxtime || sender == null)
-            gameObject.GetComponent<DestroyScript>().Destroyself();
-        if (Idrag && receiver == null)
-            gameObject.GetComponent<DestroyScript>().Destroyself();
         drawmyline(sender.position, centerpoint);
     }
 
     void FixedUpdate()
     {
         timepsd += Time.fixedDeltaTime;
-        if (Idrag)
-        {
-            receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
-        }
+        receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         if (pointalive)
             centerpoint = receiver.position;
-        else
+        Vector2 RayV2 = sender.position - centerpoint;
+        RaycastHit2D[] Allhit = Physics2D.RaycastAll(centerpoint, RayV2);
+        foreach (RaycastHit2D hit in Allhit)
         {
-            Vector2 RayV2 = sender.position - centerpoint;
-            RaycastHit2D[] Allhit = Physics2D.RaycastAll(centerpoint, RayV2);
-            foreach (RaycastHit2D hit in Allhit)
-            {
-                if (hit.collider.gameObject == sender.gameObject || hit.collider.GetComponent<HPScript>() == null)//!hit.collider.gameObject.GetPhotonView().isMine || 
-                    continue;
-                hit.collider.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
-                return;
-            }
+            if (hit.collider.gameObject == sender.gameObject || hit.collider.GetComponent<HPScript>() == null)//!hit.collider.gameObject.GetPhotonView().isMine || 
+                continue;
+            hit.collider.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         }
+        if (timepsd >= maxtime || sender == null || receiver == null)
+            gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 
-    public void DoMyJob(int idv, int ids, Vector2 place, float sp, float dm, float mt)
+    public void SetRSC(float spd, float dmg, float maxT)
     {
-        //photonView.RPC("RedLineWorking", PhotonTargets.All, idv, ids, place, sp, dm, mt);
-    }
-
-    /*[PunRPC]
-    void RedLineWorking(int victimId, int senderId, Vector2 missedplace, float spd, float dmg, float maxT)
-    {
-        sender = PhotonView.Find(senderId).GetComponent<Rigidbody2D>();
         damage = dmg;
         speed = spd;
         maxtime = maxT;
-        if (victimId != 0)
-        {
-            receiver = PhotonView.Find(victimId).GetComponent<Rigidbody2D>();
-            sender.GetComponent<MoveScript>().cook += AddConstentCentrallyVelocity;
-            pointalive = true;
-            centerpoint = receiver.position;
-            if (receiver.gameObject.GetPhotonView().isMine)
-            {
-                Idrag = true;
-                receiver.GetComponent<DoSkill>().ClearDebuff += gameObject.GetComponent<DestroyScript>().Destroyself;
-            }
-        }
-        else
-            centerpoint = missedplace;
+    }
+
+    public void RedLineWorking(Rigidbody2D victimId)
+    {
+        receiver = victimId;
+        sender.GetComponent<MoveScript>().cook += AddConstentCentrallyVelocity;
+        pointalive = true;
+        centerpoint = receiver.position;
+        receiver.GetComponent<DoSkill>().ClearDebuff += gameObject.GetComponent<DestroyScript>().Destroyself;
         enabled = true;
-    }*/
+    }
+
+    public void RedLineMissed(Vector2 missedplace)
+    {
+        centerpoint = missedplace;
+        enabled = true;
+    }
 
     public void AddConstentCentrallyVelocity(Rigidbody2D victim, MoveScript worker)
     {

@@ -63,7 +63,7 @@ public class SetSkillT : MonoBehaviour
 
     public void AllTOff()
     {
-        IconT.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconT.GetComponent<CooldownImage>().enabled = false;
         Soldier.GetComponent<TestSkillLeech>().enabled = false;
         Soldier.GetComponent<TestSkillLeech>().MyImageScript = null;
         Soldier.GetComponent<SkillT1b>().enabled = false;

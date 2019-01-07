@@ -26,7 +26,7 @@ public class SetSkillF : MonoBehaviour
 
     void AllFOff()
     {
-        IconF.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconF.GetComponent<CooldownImage>().enabled = false;
         Soldier.GetComponent<TestSkill03>().enabled = false;
         Soldier.GetComponent<SelfExplodeScript>().enabled = false;
         Soldier.GetComponent<SelfExplodeScript>().MyImageScript = null;

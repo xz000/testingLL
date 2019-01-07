@@ -63,7 +63,7 @@ public class SetSkillR : MonoBehaviour
 
     public void AllROff()
     {
-        IconR.GetComponent<CooldownImage>().IconFillAmount = 1;
+        IconR.GetComponent<CooldownImage>().enabled = false;
         Soldier.GetComponent<SkillR1>().enabled = false;
         Soldier.GetComponent<SkillR1>().MyImageScript = null;
         Soldier.GetComponent<SkillR1b>().enabled = false;

@@ -7674,12 +7674,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7072a706c15d19b41a2d6c04a9de2ac4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  C1: {fileID: 0}
-  C2: {fileID: 0}
-  C3: {fileID: 0}
-  C4: {fileID: 0}
-  IconC: {fileID: 0}
-  sls: {fileID: 0}
+  C1: {fileID: 1427286756}
+  C2: {fileID: 974238865}
+  C3: {fileID: 1754757102}
+  C4: {fileID: 230954027}
+  IconC: {fileID: 1880939851}
+  sls: {fileID: 392646559}
 --- !u!114 &392646563
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -15444,7 +15444,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &793034150
 GameObject:
@@ -19329,7 +19328,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &1000163243
 GameObject:
@@ -22378,7 +22376,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &1159782229
 GameObject:
@@ -28754,7 +28751,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &1481811810
 GameObject:
@@ -29038,7 +29034,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &1516440554
 GameObject:
@@ -30799,7 +30794,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &1616047077
 GameObject:
@@ -34012,7 +34006,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6
@@ -36514,7 +36508,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &1883118478
 GameObject:
@@ -41965,7 +41958,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f834a9c06c455de45b4e490742df3f98, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  IconFillAmount: 1
   Icon: {fileID: 0}
 --- !u!1 &2112305593
 GameObject:
