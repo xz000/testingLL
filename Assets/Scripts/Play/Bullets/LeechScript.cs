@@ -7,7 +7,7 @@ public class LeechScript : MonoBehaviour
 {
     private float pasttime;
     public float maxtime;
-    public float leechdamage;
+    public Fix64 leechdamage;
     //private Rigidbody2D selfrb;
     public GameObject sender;
     //private bool selfprotect;

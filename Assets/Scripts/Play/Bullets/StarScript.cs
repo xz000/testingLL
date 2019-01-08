@@ -1,11 +1,11 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class StarScript : MonoBehaviour
 {
-    public float powerpers = 2;
+    public Fix64 powerpers = (Fix64)2;
 
     private void FixedUpdate()
     {
@@ -23,9 +23,9 @@ public class StarScript : MonoBehaviour
             if (hp != null)
             {
                 if (1 == 0)//此处应检测是否为友军
-                    hp.GetHurt(-powerpers * Time.fixedDeltaTime);
+                    hp.GetHurt(-powerpers * (Fix64)Time.fixedDeltaTime);
                 else
-                    hp.GetHurt(powerpers * Time.fixedDeltaTime);
+                    hp.GetHurt(powerpers * (Fix64)Time.fixedDeltaTime);
             }
         }
     }

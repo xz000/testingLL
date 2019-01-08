@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class LeebScript : MonoBehaviour
 {
@@ -10,7 +10,7 @@ public class LeebScript : MonoBehaviour
     public float speed;
     public Rigidbody2D bulletRB2D;
     Rigidbody2D targetRB2D;
-    public float Damage;
+    public Fix64 Damage;
     float currenttime = 0;
     public float maxtime = 1;
     

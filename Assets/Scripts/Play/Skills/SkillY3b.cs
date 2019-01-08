@@ -54,7 +54,7 @@ public class SkillY3b : MonoBehaviour
         if (skilldirection.magnitude > maxdistance)
             actionplace = singplace + skilldirection.normalized * maxdistance;
         GameObject MyRock = Instantiate(TheStar, actionplace, Quaternion.identity);
-        MyRock.GetComponent<StarScript>().powerpers = powerpersecond;
+        MyRock.GetComponent<StarScript>().powerpers = (Fix64)powerpersecond;
         MyRock.GetComponent<CountdownScript>().maxtime = maxtime;
         currentcooldown = 0;
         skillavaliable = false;

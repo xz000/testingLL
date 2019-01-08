@@ -76,7 +76,7 @@ public class TestSkillLightning : MonoBehaviour
                 Fix64Vector2 kickdirection = (Fix64Vector2)hit2D.collider.GetComponent<Rigidbody2D>().position - realplace;
                 //hit2D.collider.GetComponent<SkillE2b>().lighthit();
                 hit2D.collider.GetComponent<RBScript>().GetPushed(kickdirection * (Fix64)6, 1);
-                hit2D.collider.GetComponent<HPScript>().GetHurt(10);
+                hit2D.collider.GetComponent<HPScript>().GetHurt((Fix64)10);
             }
         }
         else

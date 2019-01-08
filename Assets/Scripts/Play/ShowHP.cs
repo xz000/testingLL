@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-///using Photon;
 
 public class ShowHP : MonoBehaviour
 {
@@ -14,8 +13,8 @@ public class ShowHP : MonoBehaviour
     // Use this for initialization
     void Start ()
     {
-        Canvas TheCanvas = GameObject.FindObjectOfType<Canvas>();
-        MyHP = GameObject.Instantiate(MyHPGO, TheCanvas.gameObject.transform);
+        Canvas TheCanvas = FindObjectOfType<Canvas>();
+        MyHP = Instantiate(MyHPGO, TheCanvas.gameObject.transform);
         MyHPText = MyHP.gameObject.GetComponentInChildren<Text>();
         GetComponent<StealthScript>().BarSR = MyHP;
     }
@@ -24,8 +23,8 @@ public class ShowHP : MonoBehaviour
 	void Update ()
     {
         MyHP.transform.position = Camera.main.WorldToScreenPoint(transform.position + Vector3.up * 0.7f);
-        MyHP.GetComponent<Slider>().value = gameObject.GetComponent<HPScript>().currentHP / gameObject.GetComponent<HPScript>().maxHP;
-        MyHPText.text = Mathf.Round(gameObject.GetComponent<HPScript>().currentHP * 10) / 10 + "/" + gameObject.GetComponent<HPScript>().maxHP;
+        MyHP.GetComponent<Slider>().value = (float)GetComponent<HPScript>().currentHP / (float)GetComponent<HPScript>().maxHP;
+        MyHPText.text = Mathf.Round((float)GetComponent<HPScript>().currentHP * 10) / 10 + "/" + gameObject.GetComponent<HPScript>().maxHP;
     }
 
     private void OnDestroy()
