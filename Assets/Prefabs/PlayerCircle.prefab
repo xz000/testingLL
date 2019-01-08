@@ -198,6 +198,7 @@ GameObject:
   - component: {fileID: 668343940938574434}
   - component: {fileID: 3667270247323410806}
   - component: {fileID: 5472693952405999995}
+  - component: {fileID: 633004339099957913}
   - component: {fileID: 1806875113310399451}
   - component: {fileID: 2847731694559201477}
   - component: {fileID: 2342278634341086658}
@@ -577,6 +578,25 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   DS: {fileID: 8245036407187783964}
   SES: {fileID: 91555293648209813}
+--- !u!114 &633004339099957913
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 968058e39ac537c4ea8c1992cf293acc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  MyShieldObj: {fileID: 1436927845370548, guid: 83b1cb8cba1ecf6468c29061ebf5b3d5,
+    type: 3}
+  MyShield: {fileID: 0}
+  cooldowntime: 5
+  skillavaliable: 0
+  maxtime: 2
 --- !u!114 &1806875113310399451
 MonoBehaviour:
   m_ObjectHideFlags: 0

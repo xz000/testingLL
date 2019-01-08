@@ -19,10 +19,9 @@ public class SkillC2 : MonoBehaviour
         currentcooldown = cooldowntime;
     }
 	
-	// Update is called once per frame
-	void Update ()
+	void GoSkillC2()
     {
-        if (Input.GetButtonDown("FireC") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
@@ -51,8 +50,22 @@ public class SkillC2 : MonoBehaviour
         skillavaliable = false;
         MyShieldObj.GetComponent<ShieldScript>().sender = gameObject;
         MyShield = Instantiate(MyShieldObj, gameObject.transform.position, Quaternion.identity);
+        //MyShield.GetComponent<ShieldScript>().sender = gameObject;
+        MyShield.GetComponent<ShieldScript>().maxtime = maxtime;
         MyShield.layer = 2;
-        //MyShield.GetComponent<ShieldScript>().SetConf(gameObject.GetPhotonView().viewID, maxtime);
         gameObject.GetComponent<DoSkill>().DoClearJob();
+    }
+
+    void SkillC2SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
