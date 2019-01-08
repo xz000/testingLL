@@ -98,4 +98,12 @@ public class SkillC3 : MonoBehaviour
             return;
         GameObject.Destroy(MyShadow);
     }
+
+    void SkillC3SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
 }

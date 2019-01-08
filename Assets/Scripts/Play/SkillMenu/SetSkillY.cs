@@ -20,6 +20,7 @@ public class SetSkillY : MonoBehaviour
 
     public void SetY()
     {
+        AllYOff();
         IconY.GetComponent<CooldownImage>().enabled = true;
         if (Y1.isOn)
         {
@@ -27,12 +28,10 @@ public class SetSkillY : MonoBehaviour
             {
                 IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1>().CalcFA;
                 GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1;
-                Debug.Log(GetComponent<SkillsLink>().KeyYSkill);
                 return;
             }
             IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1b>().CalcFA;
             GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1b;
-                Debug.Log(GetComponent<SkillsLink>().KeyYSkill);
             return;
         }
         if (Y2.isOn && Y2a.isOn)

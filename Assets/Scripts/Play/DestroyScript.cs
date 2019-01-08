@@ -9,6 +9,6 @@ public class DestroyScript : MonoBehaviour
 
     public void Destroyself()
     {
-        GameObject.Destroy(this.gameObject);
+        Destroy(gameObject);
     }
 }

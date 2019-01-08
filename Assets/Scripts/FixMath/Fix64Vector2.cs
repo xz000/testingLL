@@ -62,9 +62,10 @@ namespace FixMath
 
         public static Fix64Vector2 MirrorBy(Fix64Vector2 origin,Fix64Vector2 mirror)
         {
-            Fix64 pl = DotMulti(origin, mirror);
-            Fix64Vector2 mp = mirror.normalized() * pl;
-            return mp * (Fix64)2 - origin;
+            Fix64Vector2 mn = mirror.normalized();
+            Fix64 pl = DotMulti(origin, mn);
+            Fix64Vector2 m2p = mn * pl * (Fix64)2;
+            return m2p - origin;
         }
 
         public static explicit operator Vector2(Fix64Vector2 v)
