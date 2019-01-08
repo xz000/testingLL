@@ -45,7 +45,7 @@ public class BombExplode : MonoBehaviour
             explforce = (Fix64Vector2)rb.position - (Fix64Vector2)selfrb.position;
             collision.gameObject.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)bombpower, pushtime);
             //hp.GetKicked(explforce.normalized * bombpower);
-            hp.GetHurt(bombdamage);
+            hp.GetHurt((Fix64)bombdamage);
         }
         if (selfbreak)
             gameObject.GetComponent<DestroyScript>().Destroyself();

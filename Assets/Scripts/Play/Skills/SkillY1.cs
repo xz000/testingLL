@@ -32,7 +32,7 @@ public class SkillY1 : MonoBehaviour
                 MyLine.GetComponent<DestroyScript>().Destroyself();
             MyLine = Instantiate(MyLineObj, gameObject.transform.position, Quaternion.identity);
             MyLine.GetComponent<BlueLineScript>().sender = GetComponent<Rigidbody2D>();
-            MyLine.GetComponent<BlueLineScript>().SetBSC(speed, damage, maxtime);
+            MyLine.GetComponent<BlueLineScript>().SetBSC(speed, (Fix64)damage, maxtime);
             GetComponent<DoSkill>().Fire = Skill;
         }
     }

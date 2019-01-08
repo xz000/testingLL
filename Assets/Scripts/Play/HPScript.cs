@@ -1,17 +1,17 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class HPScript : MonoBehaviour
 {
-    public float maxHP;
-    public float currentHP;
+    public Fix64 maxHP;
+    public Fix64 currentHP;
     //private GameObject safeground;
-    float outhurt = 2;
+    Fix64 outhurt = (Fix64)2;
     bool boost = false;
-    public float boostnow = 0;
-    public float boostmax = 25;
+    public Fix64 boostnow = (Fix64)0;
+    public Fix64 boostmax = (Fix64)25;
 
     // Use this for initialization
     void Start () {
@@ -29,19 +29,19 @@ public class HPScript : MonoBehaviour
             currentHP -= outhurt * Time.fixedDeltaTime;
         }
     }*/
-
-    void LateUpdate () {
-		if(currentHP <= 0)
+    private void FixedUpdate()
+    {
+        if (currentHP <= Fix64.Zero)
         {
             gameObject.GetComponent<DoSkill>().DoClearJob();
             gameObject.GetComponent<DoSkill>().DestroyClean();
             gameObject.GetComponent<DestroyScript>().Destroyself();
         }
-        if(currentHP > maxHP)
+        if (currentHP > maxHP)
         {
             currentHP = maxHP;
         }
-	}
+    }
 
     private void OnDestroy()
     {
@@ -56,23 +56,26 @@ public class HPScript : MonoBehaviour
         GetComponent<Rigidbody2D>().position = destination;
     }
 
-    public void GetHurt(float damage)
+    public void GetHurt(Fix64 damage)
     {
         currentHP -= damage;
         if (boost)
         {
-            float boostvalue = Mathf.Min(boostmax - boostnow, damage / 2);
+            Fix64 halfdamage = damage / (Fix64)2;
+            Fix64 boostvalue = boostmax - boostnow;
+            if (boostmax - boostnow >= halfdamage)
+                boostvalue = halfdamage;
             currentHP += boostvalue;
             boostnow += boostvalue;
-            GetComponent<MoveScript>().movespeed += boostvalue / 50;
+            GetComponent<MoveScript>().movespeed += (float)boostvalue / 50;
         }
     }
 
     public void boostend()
     {
         boost = false;
-        GetComponent<MoveScript>().movespeed -= boostnow / 50;
-        boostnow = 0;
+        GetComponent<MoveScript>().movespeed -= (float)boostnow / 50;
+        boostnow = Fix64.Zero;
     }
 
     public void booststart()

@@ -51,7 +51,7 @@ public class SelfExplodeScript : MonoBehaviour
             {
                 if (hit == gameObject.GetComponent<Collider2D>())
                 {
-                    hp.GetHurt(Mathf.Min(10, hp.currentHP - 1));
+                    hp.GetHurt((Fix64)Mathf.Min(10, (float)hp.currentHP - 1));
                 }
                 else
                 {
@@ -60,7 +60,7 @@ public class SelfExplodeScript : MonoBehaviour
                     Fix64Vector2 explforce = rbpf - apf;
                     if (explforce.LengthSquare() > rfix)
                         continue;
-                    hp.GetHurt(10);
+                    hp.GetHurt((Fix64)10);
                     hit.GetComponent<RBScript>().GetPushed(explforce.normalized() * (Fix64)9, 1f);
                 }
             }

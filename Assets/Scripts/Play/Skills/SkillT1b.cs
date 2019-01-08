@@ -63,7 +63,7 @@ public class SkillT1b : MonoBehaviour
         fireball.GetComponent<LeebScript>().sender = gameObject;
         fireball.GetComponent<LeebScript>().speed = bulletspeed;
         bullet = Instantiate(fireball, fireplace, Quaternion.identity);
-        bullet.GetComponent<LeebScript>().Damage = damage;
+        bullet.GetComponent<LeebScript>().Damage = (Fix64)damage;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
     }
 }

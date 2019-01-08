@@ -1,13 +1,13 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class RollScript : MonoBehaviour
 {
     public Vector2 v;
     public Rigidbody2D selfRB;
-    public float rolldamage = 2;
+    public Fix64 rolldamage = (Fix64)2;
 
     private void FixedUpdate()
     {
@@ -27,7 +27,7 @@ public class RollScript : MonoBehaviour
             HPScript hp = hit.GetComponent<HPScript>();
             if (hp != null)
             {
-                hp.GetHurt(rolldamage * Time.fixedDeltaTime);
+                hp.GetHurt(rolldamage * (Fix64)Time.fixedDeltaTime);
             }
         }
     }

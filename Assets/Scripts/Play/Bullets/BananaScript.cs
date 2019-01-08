@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class BananaScript : MonoBehaviour
 {
@@ -12,7 +12,7 @@ public class BananaScript : MonoBehaviour
     float pasttime = 0;
     public float bombpower = 5;
     public float pushtime = 1;
-    public float bombdamage = 5;
+    public Fix64 bombdamage = (Fix64)5;
 
     void FixedUpdate()
     {

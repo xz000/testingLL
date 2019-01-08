@@ -9,7 +9,7 @@ public class ColliderScript : MonoBehaviour
     bool CanDo = false;
     float pushpower = 0;
     float pushtime = 1;
-    float pushdamage = 0;
+    Fix64 pushdamage = Fix64.Zero;
     float currenttime;
     float maxtime = 1;
 
@@ -29,7 +29,7 @@ public class ColliderScript : MonoBehaviour
         CanDo = true;
     }
 
-    public void SetPower(float power, float time, float damage)
+    public void SetPower(float power, float time, Fix64 damage)
     {
         pushpower = power;
         pushtime = time;

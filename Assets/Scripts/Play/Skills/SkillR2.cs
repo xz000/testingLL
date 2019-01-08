@@ -64,7 +64,7 @@ public class SkillR2 : MonoBehaviour
             currentcooldown = 0;
             skillavaliable = false;
             float TimeR2 = (float)((Fix64)realdistance / (Fix64)SpeedR2);
-            gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, pushDamage);
+            gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, (Fix64)pushDamage);
             gameObject.GetComponent<ColliderScript>().StartKick(TimeR2);
             gameObject.GetComponent<RBScript>().GetPushed(skilldirection.normalized() * (Fix64)SpeedR2, TimeR2);
         }
