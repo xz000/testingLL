@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillC4 : MonoBehaviour
 {
@@ -59,14 +59,14 @@ public class SkillC4 : MonoBehaviour
         if (!faking)
             return;
         faking = false;
-        Vector2 Realv2 = (Worldv2 - selfRB.position).normalized * 2;
-        Vector2 center = selfRB.position;
+        Fix64Vector2 center = (Fix64Vector2)selfRB.position;
+        Fix64Vector2 Realv2 = ((Fix64Vector2)Worldv2 - center).normalized() * (Fix64)2;
         gameObject.GetComponent<DoSkill>().DoClearJob();
-        selfRB.position += Realv2;
+        selfRB.position += Realv2.ToV2();
         for (int i = 0; i < 2; i++)
         {
-            Realv2 = Quaternion.AngleAxis(120, Vector3.forward) * Realv2;
-            GameObject nm = Instantiate(Faker, center + Realv2, Quaternion.identity);
+            Realv2 = Realv2.CCWTurn((Fix64)2 * Fix64.Pi / (Fix64)3);
+            GameObject nm = Instantiate(Faker, (center + Realv2).ToV2(), Quaternion.identity);
             nm.GetComponent<FakeCircleScript>().Beauty = selfRB;
             nm.GetComponent<FakeCircleScript>().maxtime = maxfaketime-currentfaketime;
         }
