@@ -19,9 +19,9 @@ public class SkillC1 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillC1()
     {
-        if (Input.GetButtonDown("FireC") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
@@ -49,10 +49,23 @@ public class SkillC1 : MonoBehaviour
         currentcooldown = 0;
         skillavaliable = false;
         MyBoostObj.GetComponent<BoostScript>().sender = gameObject;
-        //GameObject MyBoost = PhotonNetwork.Instantiate(MyBoostObj.name, gameObject.transform.position, Quaternion.identity, 0);
-        //MyBoost.layer = 2;
+        GameObject MyBoost = Instantiate(MyBoostObj, transform.position, Quaternion.identity);
+        MyBoost.layer = 2;
         GetComponent<HPScript>().booststart();
-        //MyBoost.GetComponent<BoostScript>().SetConf(gameObject.GetPhotonView().viewID, maxtime);
-        //gameObject.GetComponent<DoSkill>().DoClearJob();
+        MyBoostObj.GetComponent<BoostScript>().maxtime = maxtime;
+        gameObject.GetComponent<DoSkill>().DoClearJob();
+    }
+
+    void SkillC1SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

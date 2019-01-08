@@ -28,16 +28,4 @@ public class BoostScript : MonoBehaviour
     {
         timepsd += Time.fixedDeltaTime;
     }
-
-    public void SetConf(int ids, float maxt)
-    {
-        //photonView.RPC("SetBConf", PhotonTargets.All, ids, maxt);
-    }
-
-    //[PunRPC]
-    void SetBConf(int senderID, float maxT)
-    {
-        //sender = PhotonView.Find(senderID).gameObject;
-        maxtime = maxT;
-    }
 }

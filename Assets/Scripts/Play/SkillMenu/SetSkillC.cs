@@ -18,7 +18,7 @@ public class SetSkillC : MonoBehaviour
         IconC.GetComponent<CooldownImage>().enabled = true;
         if (C1.isOn)
         {
-            sls.mySoldier.GetComponent<SkillC1>().MyImageScript = IconC.GetComponent<CooldownImage>();
+            IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC1>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC1;
             return;
         }

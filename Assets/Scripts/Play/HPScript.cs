@@ -31,6 +31,7 @@ public class HPScript : MonoBehaviour
     }*/
     private void FixedUpdate()
     {
+        return;
         if (currentHP <= Fix64.Zero)
         {
             gameObject.GetComponent<DoSkill>().DoClearJob();
