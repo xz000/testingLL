@@ -22,17 +22,12 @@ public class SkillC4 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillC4()
     {
-        if (Input.GetButtonDown("FireC") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
-        }
-        if (faking && Input.GetMouseButtonDown(1))
-        {
-            Vector2 rightclickplace = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            DoFake(rightclickplace);
         }
     }
 
@@ -59,8 +54,10 @@ public class SkillC4 : MonoBehaviour
         }
     }
 
-    void DoFake(Vector2 Worldv2)
+    public void DoFake(Vector2 Worldv2)
     {
+        if (!faking)
+            return;
         faking = false;
         Vector2 Realv2 = (Worldv2 - selfRB.position).normalized * 2;
         Vector2 center = selfRB.position;
