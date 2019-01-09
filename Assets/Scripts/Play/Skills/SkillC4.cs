@@ -67,6 +67,8 @@ public class SkillC4 : MonoBehaviour
         {
             Realv2 = Realv2.CCWTurn((Fix64)2 * Fix64.Pi / (Fix64)3);
             GameObject nm = Instantiate(Faker, (center + Realv2).ToV2(), Quaternion.identity);
+            if (GetComponent<MoveScript>().isme)
+                nm.GetComponent<SpriteRenderer>().color = Color.yellow;
             nm.GetComponent<FakeCircleScript>().Beauty = selfRB;
             nm.GetComponent<FakeCircleScript>().maxtime = maxfaketime-currentfaketime;
         }

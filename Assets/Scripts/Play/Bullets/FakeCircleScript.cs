@@ -1,7 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
 
 public class FakeCircleScript : MonoBehaviour
 {
@@ -12,15 +11,11 @@ public class FakeCircleScript : MonoBehaviour
     float currenttime = 0;
 
 	// Use this for initialization
-	void Start ()
+	/*void Start ()
     {
-        if (GetComponent<MoveScript>().isme)
-        {
-            GetComponent<SpriteRenderer>().color = Color.yellow;
-            //v = selfRB.position - Beauty.position;
-            GetComponent<HPScript>().currentHP = Beauty.gameObject.GetComponent<HPScript>().currentHP;
-        }
-    }
+        //v = selfRB.position - Beauty.position;
+        GetComponent<HPScript>().currentHP = Beauty.gameObject.GetComponent<HPScript>().currentHP;
+    }*/
 
     private void FixedUpdate()
     {
