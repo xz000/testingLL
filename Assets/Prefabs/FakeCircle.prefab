@@ -12,6 +12,8 @@ GameObject:
   - component: {fileID: 212961016570096882}
   - component: {fileID: 50189459580006508}
   - component: {fileID: 58757718345209540}
+  - component: {fileID: 3511466812337094153}
+  - component: {fileID: 4516068808989023392}
   m_Layer: 0
   m_Name: FakeCircle
   m_TagString: Untagged
@@ -120,6 +122,35 @@ CircleCollider2D:
   m_Offset: {x: 0, y: 0}
   serializedVersion: 2
   m_Radius: 0.5
+--- !u!114 &3511466812337094153
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1021165268865954}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90be31823d84d2b40a2041b42be13ad5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  Beauty: {fileID: 0}
+  selfRB: {fileID: 0}
+  maxtime: 3
+--- !u!114 &4516068808989023392
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1021165268865954}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef0e20ca971360545b0782b520c96b75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  breakable: 0
+  selfprotect: 0
 --- !u!1 &1309704480523806
 GameObject:
   m_ObjectHideFlags: 0
