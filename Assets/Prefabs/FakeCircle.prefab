@@ -135,7 +135,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   Beauty: {fileID: 0}
-  selfRB: {fileID: 0}
+  selfRB: {fileID: 50189459580006508}
   maxtime: 3
 --- !u!114 &4516068808989023392
 MonoBehaviour:

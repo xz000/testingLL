@@ -42,7 +42,6 @@ public class SkillC4 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
         if (faking)
         {
@@ -82,5 +81,18 @@ public class SkillC4 : MonoBehaviour
         skillavaliable = false;
         currentfaketime = 0;
         faking = true;
+    }
+
+    void SkillC4SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
