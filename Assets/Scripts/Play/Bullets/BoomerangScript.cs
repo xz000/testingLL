@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class BoomerangScript : MonoBehaviour
 {
@@ -10,8 +10,6 @@ public class BoomerangScript : MonoBehaviour
     public Rigidbody2D selfRB;
 	
 	void FixedUpdate() {
-         //if (!photonView.isMine)
-            return;
         selfRB.velocity += (senderRB.position - selfRB.position) * a * Time.fixedDeltaTime;
 	}
 
