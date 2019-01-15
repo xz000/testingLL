@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 58757718345209540}
   - component: {fileID: 3511466812337094153}
   - component: {fileID: 4516068808989023392}
+  - component: {fileID: 5940736757950739517}
   m_Layer: 0
   m_Name: FakeCircle
   m_TagString: Untagged
@@ -151,6 +152,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   breakable: 0
   selfprotect: 0
+--- !u!114 &5940736757950739517
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1021165268865954}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e9154fd5ab8cd824ca8d1d850e66ec0f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyInfoText: {fileID: 3928609820575930937, guid: 8e94f8917243cd7449849ed55f5b149f,
+    type: 3}
 --- !u!1 &1309704480523806
 GameObject:
   m_ObjectHideFlags: 0
