@@ -46,26 +46,25 @@ public class SkillD2 : MonoBehaviour
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.71f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
+        DoFire(singplace + (Fix64)0.76 * skilldirection.normalized(), skilldirection.normalized() * (Fix64)bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;
     }
 
-    void DoFire(Vector2 fireplace, Vector2 speed2d)
+    void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d)
     {
         GameObject bullet;
         fireball.GetComponent<BombExplode>().sender = gameObject;
         fireball.GetComponent<BoomerangScript>().senderRB = GetComponent<Rigidbody2D>();
-        bullet = Instantiate(fireball, fireplace, Quaternion.identity);
+        bullet = Instantiate(fireball, fireplace.ToV2(), Quaternion.identity);
         //bullet.GetComponent<BombExplode>().bombpower = force;
         bullet.GetComponent<BombExplode>().bombdamage = damage;
-        bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
+        bullet.GetComponent<Rigidbody2D>().velocity = speed2d.ToV2();
         //bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
     }
 
