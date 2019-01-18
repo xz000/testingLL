@@ -15,12 +15,8 @@ public class BoomerangScript : MonoBehaviour
 
     void OnCollisionEnter2D(Collision2D collision)
     {
-        if (GetComponent<DestroyScript>().selfprotect)
-            return;
-        Vector2 sp = selfRB.velocity;
-        Vector2 vp = collision.transform.position - transform.position;
-        float angel12 = Vector2.Angle(sp, vp);
-        selfRB.velocity = Quaternion.AngleAxis(180 - angel12 * 2, Vector3.Cross(vp, sp)) * sp;
-        //selfRB.velocity = -selfRB.velocity;
+        Fix64Vector2 sp = -(Fix64Vector2)selfRB.velocity;
+        Fix64Vector2 vp = (Fix64Vector2)(Vector2)(collision.transform.position - transform.position);
+        selfRB.velocity = Fix64Vector2.MirrorBy(sp, vp).ToV2();
     }
 }

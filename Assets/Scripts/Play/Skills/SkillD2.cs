@@ -19,14 +19,12 @@ public class SkillD2 : MonoBehaviour
     void Start()
     {
         currentcooldown = cooldowntime;
-        fireball.GetComponent<BombExplode>().sender = gameObject;
-        fireball.GetComponent<BoomerangScript>().senderRB = GetComponent<Rigidbody2D>();
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillD2()
     {
-        if (Input.GetButtonDown("FireD") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -59,15 +57,28 @@ public class SkillD2 : MonoBehaviour
         skillavaliable = false;
     }
 
-    //[PunRPC]
     void DoFire(Vector2 fireplace, Vector2 speed2d)
     {
         GameObject bullet;
-        //fireball.GetComponent<BombExplode>().sender = gameObject;
+        fireball.GetComponent<BombExplode>().sender = gameObject;
+        fireball.GetComponent<BoomerangScript>().senderRB = GetComponent<Rigidbody2D>();
         bullet = Instantiate(fireball, fireplace, Quaternion.identity);
         //bullet.GetComponent<BombExplode>().bombpower = force;
         bullet.GetComponent<BombExplode>().bombdamage = damage;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         //bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
+    }
+
+    void SkillD2SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
