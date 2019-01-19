@@ -21,9 +21,9 @@ public class SkillD3 : MonoBehaviour
     }
 	
 	// Update is called once per frame
-	void Update ()
+	void GoSkillD3()
     {
-        if (Input.GetButtonDown("FireD") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -79,7 +79,6 @@ public class SkillD3 : MonoBehaviour
         return closest;
     }
 
-    //[PunRPC]
     void DoFire(Vector2 fireplace, Vector2 speed2d, GameObject target)
     {
         GameObject bullet;
@@ -92,5 +91,18 @@ public class SkillD3 : MonoBehaviour
         if (target != null)
             bullet.GetComponent<MissileScript>().Target = target.GetComponent<Rigidbody2D>();
         bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
+    }
+
+    void SkillD3SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
