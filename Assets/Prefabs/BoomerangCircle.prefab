@@ -13,9 +13,10 @@ GameObject:
   - component: {fileID: 58319367314693334}
   - component: {fileID: 50923122482667540}
   - component: {fileID: 5823155162055178491}
-  - component: {fileID: 191939435383841255}
+  - component: {fileID: 1763051561530043864}
+  - component: {fileID: 669272071351022724}
   m_Layer: 0
-  m_Name: BombCircle
+  m_Name: BoomerangCircle
   m_TagString: bullet
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -73,7 +74,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: 5a0c7954c7899134f9a15ff90b3c1f3e, type: 3}
-  m_Color: {r: 0, g: 0, b: 0.7411765, a: 1}
+  m_Color: {r: 0.42542937, g: 0.7411765, b: 0, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -137,8 +138,8 @@ MonoBehaviour:
   bombpower: 5
   bombdamage: 0
   sender: {fileID: 0}
-  selfbreak: 1
---- !u!114 &191939435383841255
+  selfbreak: 0
+--- !u!114 &1763051561530043864
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -150,5 +151,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ef0e20ca971360545b0782b520c96b75, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  breakable: 1
+  breakable: 0
   selfprotect: 1
+--- !u!114 &669272071351022724
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1197206318659480}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27a89e766437b01479e85730d67cc505, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  a: 0.6
+  senderRB: {fileID: 0}
+  selfRB: {fileID: 50923122482667540}

@@ -99,4 +99,17 @@ public class TestSkillLightning : MonoBehaviour
         line.SetPosition(0, Vector3.zero);
         line.SetPosition(1, Vector3.zero);
     }
+
+    void TestSkillLightningSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }

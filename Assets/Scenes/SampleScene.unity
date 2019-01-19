@@ -7686,11 +7686,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dde01861ec5ed624dbdbc50cc2dd82ad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  D1: {fileID: 0}
-  D2: {fileID: 0}
-  D3: {fileID: 0}
-  D4: {fileID: 0}
-  IconD: {fileID: 0}
+  D1: {fileID: 882907104}
+  D2: {fileID: 1547897449}
+  D3: {fileID: 2124925003}
+  D4: {fileID: 1267156076}
+  IconD: {fileID: 1480504930}
+  sls: {fileID: 392646559}
 --- !u!114 &392646564
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7715,7 +7716,7 @@ MonoBehaviour:
   E4: {fileID: 0}
   E4a: {fileID: 0}
   E4b: {fileID: 0}
-  IconE: {fileID: 0}
+  IconE: {fileID: 1600852164}
 --- !u!114 &392646565
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7737,7 +7738,7 @@ MonoBehaviour:
   R3: {fileID: 0}
   R3a: {fileID: 0}
   R3b: {fileID: 0}
-  IconR: {fileID: 0}
+  IconR: {fileID: 999316379}
 --- !u!114 &392646566
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7759,7 +7760,7 @@ MonoBehaviour:
   T3: {fileID: 0}
   T3a: {fileID: 0}
   T3b: {fileID: 0}
-  IconT: {fileID: 0}
+  IconT: {fileID: 791903124}
 --- !u!114 &392646567
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7798,7 +7799,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ck: {fileID: 0}
   G1: {fileID: 0}
-  IconG: {fileID: 0}
+  IconG: {fileID: 1486736899}
 --- !u!1 &394915640
 GameObject:
   m_ObjectHideFlags: 0
@@ -16729,7 +16730,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6

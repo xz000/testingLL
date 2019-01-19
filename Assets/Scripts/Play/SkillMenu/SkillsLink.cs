@@ -24,7 +24,7 @@ public class SkillsLink : MonoBehaviour
     public void alphaset()
     {
         gameObject.GetComponent<SetSkillC>().SetC();
-        //gameObject.GetComponent<SetSkillD>().SetD();
+        gameObject.GetComponent<SetSkillD>().SetD();
         //gameObject.GetComponent<SetSkillE>().SetE();
         //gameObject.GetComponent<SetSkillF>().SetF();
         //gameObject.GetComponent<SetSkillG>().SetG();
