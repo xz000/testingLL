@@ -59,4 +59,17 @@ public class SkillE1 : MonoBehaviour
         currentcooldown = 0;
         skillavaliable = false;
     }
+
+    void SkillE1SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }

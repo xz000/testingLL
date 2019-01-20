@@ -6759,7 +6759,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6
@@ -7704,18 +7704,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5e38fde5d6dc2aa49a4753dacf3a4ad7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  E1: {fileID: 0}
-  E1a: {fileID: 0}
-  E1b: {fileID: 0}
-  E2: {fileID: 0}
-  E2a: {fileID: 0}
-  E2b: {fileID: 0}
-  E3: {fileID: 0}
-  E3a: {fileID: 0}
-  E3b: {fileID: 0}
-  E4: {fileID: 0}
-  E4a: {fileID: 0}
-  E4b: {fileID: 0}
+  E1: {fileID: 343655579}
+  E1a: {fileID: 1636689535}
+  E1b: {fileID: 870350983}
+  E2: {fileID: 1439011535}
+  E2a: {fileID: 1968523120}
+  E2b: {fileID: 1150822777}
+  E3: {fileID: 1674982073}
+  E3a: {fileID: 1026434864}
+  E3b: {fileID: 893720775}
+  E4: {fileID: 1016560132}
+  E4a: {fileID: 317538395}
+  E4b: {fileID: 1952497147}
   IconE: {fileID: 1600852164}
 --- !u!114 &392646565
 MonoBehaviour:
