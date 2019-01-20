@@ -68,4 +68,17 @@ public class SkillE1b : MonoBehaviour
         bullet.GetComponent<RollScript>().v = speed2d;
         //bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
     }
+
+    void SkillE1bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }

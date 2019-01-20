@@ -23,19 +23,18 @@ public class SetSkillE : MonoBehaviour
 
     public void SetE()
     {
-        if (Soldier == null)
-            Soldier = gameObject.GetComponent<SkillsLink>().mySoldier;
         AllEOff();
+        IconE.GetComponent<CooldownImage>().enabled = true;
         if (E1.isOn && E1a.isOn)
         {
-            Soldier.GetComponent<SkillE1>().MyImageScript = IconE.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillE1>().enabled = true;
+            IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE1>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE1;
             return;
         }
         if (E1.isOn && E1b.isOn)
         {
-            Soldier.GetComponent<SkillE1b>().MyImageScript = IconE.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillE1b>().enabled = true;
+            IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE1b>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE1b;
             return;
         }
         if (E2.isOn && E2a.isOn)
@@ -67,18 +66,6 @@ public class SetSkillE : MonoBehaviour
     public void AllEOff()
     {
         IconE.GetComponent<CooldownImage>().enabled = false;
-        Soldier.GetComponent<SkillE1>().enabled = false;
-        Soldier.GetComponent<SkillE1>().MyImageScript = null;
-        Soldier.GetComponent<SkillE1b>().enabled = false;
-        Soldier.GetComponent<SkillE1b>().MyImageScript = null;
-        Soldier.GetComponent<SkillE2>().enabled = false;
-        Soldier.GetComponent<SkillE2>().MyImageScript = null;
-        Soldier.GetComponent<SkillE2b>().enabled = false;
-        Soldier.GetComponent<SkillE2b>().MyImageScript = null;
-        Soldier.GetComponent<SkillE3>().enabled = false;
-        Soldier.GetComponent<SkillE3>().MyImageScript = null;
-        Soldier.GetComponent<SkillE3b>().enabled = false;
-        Soldier.GetComponent<SkillE3b>().MyImageScript = null;
-        Soldier.GetComponent<StealthScript>().StealthEnd();
+        GetComponent<SkillsLink>().KeyESkill = null;
     }
 }
