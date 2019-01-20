@@ -23,9 +23,9 @@ public class SkillD4 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillD4()
     {
-        if (Input.GetButtonDown("FireD") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -47,12 +47,11 @@ public class SkillD4 : MonoBehaviour
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        float realdistance = Mathf.Min(skilldirection.magnitude, maxdistance);
+        Fix64Vector2 singplace = (Fix64Vector2)(Vector2)transform.position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
+        float realdistance = Mathf.Min((float)skilldirection.Length(), maxdistance);
         if (realdistance <= 0.51)
         {
             return;
@@ -61,26 +60,38 @@ public class SkillD4 : MonoBehaviour
         currentcooldown = 0;
         skillavaliable = false;
         bulletspeed = realdistance * 1.13f / (maxtime - 0.5f);
-        Vector2 fp1 = Quaternion.AngleAxis(45, Vector3.forward) * skilldirection.normalized;
-        DoFire(singplace, fp1 * bulletspeed, true);
-        fp1 = Quaternion.AngleAxis(-45, Vector3.forward) * skilldirection.normalized;
-        DoFire(singplace, fp1 * bulletspeed, false);
+        Fix64Vector2 fp1 = skilldirection.normalized().CCWTurn(Fix64.Pi / (Fix64)4);
+        DoFire(singplace, fp1 * (Fix64)bulletspeed, false);
+        fp1 = fp1.CCWTurn(-Fix64.Pi / (Fix64)2);
+        DoFire(singplace, fp1 * (Fix64)bulletspeed, true);
     }
 
-    //[PunRPC]
-    void DoFire(Vector2 fireplace, Vector2 speed2d, bool a)
+    void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d, bool a)
     {
         
         fireball.GetComponent<BananaScript>().sender = gameObject;
         fireball.GetComponent<BananaScript>().bombdamage = (Fix64)damage;
         fireball.GetComponent<BananaScript>().maxtime = maxtime;
+        GameObject bullet = Instantiate(fireball, fireplace.ToV2(), Quaternion.identity);
+        bullet.GetComponent<Rigidbody2D>().velocity = speed2d.ToV2();
         if (a)
-            fireball.GetComponent<BananaScript>().turnangle = 90;
+            bullet.GetComponent<BananaScript>().setmm(2);
         else
-            fireball.GetComponent<BananaScript>().turnangle = -90;
-        GameObject bullet = Instantiate(fireball, fireplace, Quaternion.identity);
+            bullet.GetComponent<BananaScript>().setmm(-2);
         //bullet.GetComponent<BombExplode>().bombpower = force;
-        bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         //bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
+    }
+
+    void SkillD4SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

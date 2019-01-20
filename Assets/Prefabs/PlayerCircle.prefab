@@ -203,6 +203,8 @@ GameObject:
   - component: {fileID: 1806875113310399451}
   - component: {fileID: 2591142973404216433}
   - component: {fileID: 2486314245097723050}
+  - component: {fileID: 107512356438507162}
+  - component: {fileID: 8593354186907937254}
   - component: {fileID: 2847731694559201477}
   - component: {fileID: 2342278634341086658}
   - component: {fileID: 4445758486764450412}
@@ -664,6 +666,46 @@ MonoBehaviour:
   MyImageScript: {fileID: 0}
   bulletspeed: 5
   fireball: {fileID: 1197206318659480, guid: 6b24d7037597f70419973e6d7eaf82f8, type: 3}
+  force: 15
+  damage: 10
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &107512356438507162
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2fa0f0a260d6c734594c2bc3e0b75289, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 15
+  bulletspeed: 5
+  Missile: {fileID: 1453930264023322, guid: 9e5f1c48bbbc6db4eaf774f268dfb59a, type: 3}
+  damage: 10
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &8593354186907937254
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6ab8133410371234bbb907da57c92405, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 10
+  maxtime: 2.5
+  bulletspeed: 5
+  fireball: {fileID: 1879315621552482, guid: 7995a1fd21ab2a04492bff041278de7f, type: 3}
   force: 15
   damage: 10
   cooldowntime: 3

@@ -7,24 +7,31 @@ public class BananaScript : MonoBehaviour
 {
     public Rigidbody2D selfRB;
     public GameObject sender;
-    public float turnangle;
     public float maxtime = 2;
     float pasttime = 0;
     public float bombpower = 5;
     public float pushtime = 1;
     public Fix64 bombdamage = (Fix64)5;
+    Fix64Vector2 nextv;
+    Fix64 magicn;
 
     void FixedUpdate()
     {
-        /*if (!photonView.isMine)
-            return;*/
         pasttime += Time.fixedDeltaTime;
         if (pasttime >= maxtime)
         {
             gameObject.GetComponent<DestroyScript>().Destroyself();
             return;
         }
-        selfRB.velocity = Quaternion.AngleAxis(turnangle * Time.fixedDeltaTime / (maxtime - 0.5f), Vector3.back) * selfRB.velocity;
+        nextv= (Fix64Vector2)selfRB.velocity;
+        Debug.Log("m" + (float)magicn);
+        selfRB.velocity = nextv.CCWTurn(magicn).ToV2();
+    }
+
+    public void setmm(int turnangle)
+    {
+        magicn = (Fix64)(Time.fixedDeltaTime / (turnangle * (maxtime - 0.5f))) * Fix64.Pi;
+        enabled = true;
     }
 
     private void OnCollisionEnter2D(Collision2D collision)

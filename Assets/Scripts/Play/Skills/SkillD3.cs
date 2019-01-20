@@ -45,22 +45,22 @@ public class SkillD3 : MonoBehaviour
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
         GameObject SkillTarget = FindClosestEnemy(actionplace);
         if (SkillTarget != null)
-            actionplace = SkillTarget.transform.position;
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.5f * skilldirection.normalized, skilldirection.normalized * bulletspeed, SkillTarget);
+            actionplace = (Fix64Vector2)(Vector2)SkillTarget.transform.position;
+        Fix64Vector2 singplace = (Fix64Vector2)(Vector2)transform.position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
+        DoFire(singplace + (Fix64)0.76 * skilldirection.normalized(), skilldirection.normalized() * (Fix64)bulletspeed, SkillTarget);
         currentcooldown = 0;
         skillavaliable = false;
     }
 
-    GameObject FindClosestEnemy(Vector2 findingplace)
+    GameObject FindClosestEnemy(Fix64Vector2 findingplacef)
     {
+        Vector2 findingplace = findingplacef.ToV2();
         GameObject closest = null;  // GameObject.FindWithTag("Player");
         GameObject[] Allthem = GameObject.FindGameObjectsWithTag("Player");
         float sqrdis = Mathf.Infinity;
@@ -79,15 +79,15 @@ public class SkillD3 : MonoBehaviour
         return closest;
     }
 
-    void DoFire(Vector2 fireplace, Vector2 speed2d, GameObject target)
+    void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d, GameObject target)
     {
         GameObject bullet;
         Missile.GetComponent<BombExplode>().sender = gameObject;
-        bullet = Instantiate(Missile, fireplace, Quaternion.identity);
+        bullet = Instantiate(Missile, fireplace.ToV2(), Quaternion.identity);
         bullet.GetComponent<MissileScript>().Speed = bulletspeed;
         //bullet.GetComponent<BombExplode>().bombpower = force;
         bullet.GetComponent<BombExplode>().bombdamage = damage;
-        bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
+        bullet.GetComponent<Rigidbody2D>().velocity = speed2d.ToV2();
         if (target != null)
             bullet.GetComponent<MissileScript>().Target = target.GetComponent<Rigidbody2D>();
         bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
