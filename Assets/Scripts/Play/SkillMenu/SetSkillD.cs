@@ -31,18 +31,18 @@ public class SetSkillD : MonoBehaviour
             sls.KeyDSkill = SkillCode.SkillD2;
             return;
         }
-        /*if (D3.isOn)
+        if (D3.isOn)
         {
-            Soldier.GetComponent<SkillD3>().MyImageScript = IconD.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillD3>().enabled = true;
+            IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD3>().CalcFA;
+            sls.KeyDSkill = SkillCode.SkillD3;
             return;
         }
         if (D4.isOn)
         {
-            Soldier.GetComponent<SkillD4>().MyImageScript = IconD.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillD4>().enabled = true;
+            IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD4>().CalcFA;
+            sls.KeyDSkill = SkillCode.SkillD4;
             return;
-        }*/
+        }
     }
 
     public void AllDOff()
