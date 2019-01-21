@@ -15,6 +15,8 @@ public class SkillE2b : MonoBehaviour
     public float cooldowntime = 5;
     public bool skillavaliable;
     public bool working = false;
+    bool reworkb = false;
+    float rwtime = 0;
     float worktime;
     MoveScript MS;
 
@@ -42,6 +44,15 @@ public class SkillE2b : MonoBehaviour
             worktime += Time.fixedDeltaTime;
             if (worktime >= maxTimeE2)
                 working = false;
+        }
+        if (reworkb)
+        {
+            rwtime += Time.fixedDeltaTime;
+            if (rwtime >= 0.2f)
+            {
+                reworkb = false;
+                mywork();
+            }
         }
         if (skillavaliable)
             return;
@@ -71,7 +82,7 @@ public class SkillE2b : MonoBehaviour
         gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, (FixMath.Fix64)pushDamage);
         gameObject.GetComponent<ColliderScript>().StartKick(maxTimeE2);
         gameObject.GetComponent<StealthScript>().StealthByTime(maxTimeE2, false);
-        StealthScript.Speed = 1;
+        gameObject.GetComponent<StealthScript>().Speed = 1;
         worktime = 0;
     }
 
@@ -81,29 +92,15 @@ public class SkillE2b : MonoBehaviour
             working = false;
         if (!working)
             return;
-        StartCoroutine(rework());
-    }
-
-    IEnumerator rework()
-    {
-        if (working)
-        {
-            yield return new WaitForSeconds(0.2f);
-            mywork();
-        }
+        reworkb = true;
     }
 
     public void lighthit()
     {
-        //photonView.RPC("lightninghit", PhotonTargets.All);
-    }
-
-    //[PunRPC]
-    public void lightninghit()
-    {
-        if (!working)
+        if (!working && !reworkb)
             return;
         GetComponent<ColliderScript>().StopKick();
         working = false;
+        reworkb = false;
     }
 }

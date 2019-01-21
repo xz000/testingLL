@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SkillE2 : MonoBehaviour
 {
@@ -24,9 +24,9 @@ public class SkillE2 : MonoBehaviour
     }
 	
 	// Update is called once per frame
-	void Update ()
+	void GoSkillE2()
     {
-        if (Input.GetButtonDown("FireE") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
@@ -44,7 +44,6 @@ public class SkillE2 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -54,9 +53,22 @@ public class SkillE2 : MonoBehaviour
         MS.controllable = true;
         currentcooldown = 0;
         skillavaliable = false;
-        gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, (FixMath.Fix64)pushDamage);
+        gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, (Fix64)pushDamage);
         gameObject.GetComponent<ColliderScript>().StartKick(maxTimeE2);
         gameObject.GetComponent<StealthScript>().StealthByTime(maxTimeE2, false);
-        StealthScript.Speed = 1;
+        GetComponent<StealthScript>().Speed = 1;
+    }
+
+    void SkillE2SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

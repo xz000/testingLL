@@ -14,7 +14,7 @@ public class ShowMyName : MonoBehaviour
         Canvas TheCanvas = GameObject.FindObjectOfType<Canvas>();
         MyName = GameObject.Instantiate(MyNameText, TheCanvas.gameObject.transform);
         //MyName.GetComponent<Text>().text = photonView.owner.NickName;
-        GetComponent<StealthScript>().MyName = MyName;
+        //GetComponent<StealthScript>().MyName = MyName;
     }
 
     private void Update()

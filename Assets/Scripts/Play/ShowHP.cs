@@ -16,7 +16,7 @@ public class ShowHP : MonoBehaviour
         Canvas TheCanvas = FindObjectOfType<Canvas>();
         MyHP = Instantiate(MyHPGO, TheCanvas.gameObject.transform);
         MyHPText = MyHP.gameObject.GetComponentInChildren<Text>();
-        GetComponent<StealthScript>().BarSR = MyHP;
+        //GetComponent<StealthScript>().BarSR = MyHP;
     }
 	
 	// Update is called once per frame
