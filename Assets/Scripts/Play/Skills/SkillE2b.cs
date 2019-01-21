@@ -48,7 +48,7 @@ public class SkillE2b : MonoBehaviour
         if (reworkb)
         {
             rwtime += Time.fixedDeltaTime;
-            if (rwtime >= 0.2f)
+            if (rwtime >= 0.3f)
             {
                 reworkb = false;
                 mywork();
