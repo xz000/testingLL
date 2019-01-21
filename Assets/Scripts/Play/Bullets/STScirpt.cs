@@ -31,7 +31,7 @@ public class STScirpt : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        finalv = (Fix64Vector2)gameObject.GetComponent<Rigidbody2D>().velocity;
+        finalv = (Fix64)0.4 * ((Fix64Vector2)GetComponent<Rigidbody2D>().velocity).normalized();
     }
 
     private void OnDestroy()
@@ -41,13 +41,13 @@ public class STScirpt : MonoBehaviour
 
     void FFF(Fix64Vector2 direction)
     {
-        direction = direction.CCWTurn(-Fix64.Pi / (Fix64)10).normalized() * (Fix64)0.4;
+        direction = direction.CCWTurn(-Fix64.Pi / (Fix64)10);
         fireball.GetComponent<SABulletScript>().sender = null;
         Fix64Vector2 spv2 = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
         for (int bnum = 0; bnum < 8; bnum++)
         {
             DoFire((spv2 + direction).ToV2(), (direction.normalized()*(Fix64)BulletSpeed).ToV2());
-            direction = direction.CCWTurn(Fix64.Pi / (Fix64)40).normalized();
+            direction = direction.CCWTurn(Fix64.Pi / (Fix64)40);
         }
     }
 

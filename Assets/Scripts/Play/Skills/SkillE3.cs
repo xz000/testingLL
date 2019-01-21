@@ -65,7 +65,7 @@ public class SkillE3 : MonoBehaviour
         bullet = Instantiate(ST, fireplace, Quaternion.identity);
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         bullet.GetComponent<STScirpt>().maxtime = maxtime;
-        bullet.GetComponent<STScirpt>().finalv = (Fix64Vector2)speed2d;
+        bullet.GetComponent<STScirpt>().finalv = (Fix64)0.4 * ((Fix64Vector2)speed2d).normalized();
     }
 
     void SkillE3SetLevel(int i)
