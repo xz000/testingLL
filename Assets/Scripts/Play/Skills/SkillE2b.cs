@@ -28,9 +28,9 @@ public class SkillE2b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillE2b()
     {
-        if (Input.GetButtonDown("FireE") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
@@ -102,5 +102,18 @@ public class SkillE2b : MonoBehaviour
         GetComponent<ColliderScript>().StopKick();
         working = false;
         reworkb = false;
+    }
+
+    void SkillE2bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
