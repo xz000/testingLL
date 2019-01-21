@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class STScirpt : MonoBehaviour
 {
@@ -11,7 +11,7 @@ public class STScirpt : MonoBehaviour
     public GameObject fireball;
     //public Rigidbody2D selfRB2D;
     public GameObject sender;
-    public Vector2 finalv;
+    public Fix64Vector2 finalv;
 
     void FixedUpdate()
     {
@@ -31,7 +31,7 @@ public class STScirpt : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        finalv = gameObject.GetComponent<Rigidbody2D>().velocity;
+        finalv = (Fix64Vector2)gameObject.GetComponent<Rigidbody2D>().velocity;
     }
 
     private void OnDestroy()
@@ -39,16 +39,15 @@ public class STScirpt : MonoBehaviour
         FFF(finalv);
     }
 
-    void FFF(Vector2 direction)
+    void FFF(Fix64Vector2 direction)
     {
-        direction = Quaternion.AngleAxis(17.5f, Vector3.forward) * direction;
+        direction = direction.CCWTurn(-Fix64.Pi / (Fix64)10).normalized() * (Fix64)0.4;
         fireball.GetComponent<SABulletScript>().sender = null;
-        int bnum = 0;
-        while (bnum < 8)
+        Fix64Vector2 spv2 = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        for (int bnum = 0; bnum < 8; bnum++)
         {
-            DoFire(gameObject.GetComponent<Rigidbody2D>().position + 0.4f * direction.normalized, direction.normalized * BulletSpeed);
-            direction = Quaternion.AngleAxis(-5, Vector3.forward) * direction;
-            bnum++;
+            DoFire((spv2 + direction).ToV2(), (direction.normalized()*(Fix64)BulletSpeed).ToV2());
+            direction = direction.CCWTurn(Fix64.Pi / (Fix64)40).normalized();
         }
     }
 

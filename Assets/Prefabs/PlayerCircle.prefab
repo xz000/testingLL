@@ -213,6 +213,7 @@ GameObject:
   - component: {fileID: 3793272048746978422}
   - component: {fileID: 3687368231931402236}
   - component: {fileID: 2482719857123933681}
+  - component: {fileID: 6836535113801176804}
   - component: {fileID: 4115436644824893292}
   - component: {fileID: 3275582692835829541}
   - component: {fileID: 4733701610128381578}
@@ -858,6 +859,25 @@ MonoBehaviour:
   cooldowntime: 5
   skillavaliable: 0
   working: 0
+--- !u!114 &6836535113801176804
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8d4397d3684ad51499b9be9176545fbc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 15
+  maxtime: 2
+  ST: {fileID: 1841121462876242, guid: cf018673af1c4ef4bb60ea383f1b2160, type: 3}
+  damage: 3
+  cooldowntime: 3
+  skillavaliable: 0
 --- !u!114 &4115436644824893292
 MonoBehaviour:
   m_ObjectHideFlags: 0

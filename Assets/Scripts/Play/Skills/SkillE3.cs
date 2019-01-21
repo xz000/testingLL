@@ -23,9 +23,9 @@ public class SkillE3 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillE3()
     {
-        if (Input.GetButtonDown("FireE") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -53,12 +53,11 @@ public class SkillE3 : MonoBehaviour
         GetComponent<DoSkill>().BeforeSkill();
         Vector2 singplace = transform.position;
         Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.51f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
+        DoFire(singplace + 0.76f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;
     }
 
-    //[PunRPC]
     void DoFire(Vector2 fireplace, Vector2 speed2d)
     {
         GameObject bullet;
@@ -66,6 +65,19 @@ public class SkillE3 : MonoBehaviour
         bullet = Instantiate(ST, fireplace, Quaternion.identity);
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         bullet.GetComponent<STScirpt>().maxtime = maxtime;
-        bullet.GetComponent<STScirpt>().finalv = speed2d;
+        bullet.GetComponent<STScirpt>().finalv = (Fix64Vector2)speed2d;
+    }
+
+    void SkillE3SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
