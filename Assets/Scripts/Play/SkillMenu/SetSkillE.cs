@@ -37,19 +37,19 @@ public class SetSkillE : MonoBehaviour
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE1b;
             return;
         }
-        /*if (E2.isOn && E2a.isOn)
+        if (E2.isOn && E2a.isOn)
         {
-            Soldier.GetComponent<SkillE2>().MyImageScript = IconE.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillE2>().enabled = true;
+            IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE2>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE2;
             return;
         }
         if (E2.isOn && E2b.isOn)
         {
-            Soldier.GetComponent<SkillE2b>().MyImageScript = IconE.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillE2b>().enabled = true;
+            IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE2b>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE2b;
             return;
         }
-        if (E3.isOn && E3a.isOn)
+        /*if (E3.isOn && E3a.isOn)
         {
             Soldier.GetComponent<SkillE3>().MyImageScript = IconE.GetComponent<CooldownImage>();
             Soldier.GetComponent<SkillE3>().enabled = true;

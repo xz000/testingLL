@@ -24,11 +24,9 @@ public class STScirpt : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D collision)
     {
-         //if (!photonView.isMine)
+        if (GetComponent<DestroyScript>().selfprotect && collision.gameObject == sender)
             return;
-        if (gameObject.GetComponent<DestroyScript>().selfprotect && collision.gameObject == sender)
-            return;
-        gameObject.GetComponent<DestroyScript>().Destroyself();
+        GetComponent<DestroyScript>().Destroyself();
     }
 
     private void OnTriggerEnter2D(Collider2D collision)
@@ -38,8 +36,6 @@ public class STScirpt : MonoBehaviour
 
     private void OnDestroy()
     {
-         //if (!photonView.isMine)
-            return;
         FFF(finalv);
     }
 

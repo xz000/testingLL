@@ -211,6 +211,8 @@ GameObject:
   - component: {fileID: 2342278634341086658}
   - component: {fileID: 4445758486764450412}
   - component: {fileID: 3793272048746978422}
+  - component: {fileID: 3687368231931402236}
+  - component: {fileID: 2482719857123933681}
   - component: {fileID: 4115436644824893292}
   - component: {fileID: 3275582692835829541}
   - component: {fileID: 4733701610128381578}
@@ -546,7 +548,7 @@ MonoBehaviour:
   MyMarkicon: {fileID: 1049491708436648}
   MyColorMark: {fileID: 1865538166631764}
   BigSR: {fileID: 212469445371272452}
-  ColorChangeTo: {r: 0, g: 0, b: 0, a: 0}
+  ColorChangeTo: {r: 0, g: 0.6862745, b: 1, a: 1}
   Speed: 0
 --- !u!114 &91555293648209813
 MonoBehaviour:
@@ -817,6 +819,45 @@ MonoBehaviour:
   fireball: {fileID: 1759941245943736, guid: 05ecbbcfd88464e43b4d2e10df6441c2, type: 3}
   cooldowntime: 3
   skillavaliable: 0
+--- !u!114 &3687368231931402236
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 342030b2b3bb1e84cab723a568e36b1d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxTimeE2: 5
+  pushPower: 1
+  pushTime: 1
+  pushDamage: 0
+  cooldowntime: 5
+  skillavaliable: 0
+--- !u!114 &2482719857123933681
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d55389b6f170264993bbb6cd66144cd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxTimeE2: 5
+  pushPower: 2
+  pushTime: 1
+  pushDamage: 2
+  cooldowntime: 5
+  skillavaliable: 0
+  working: 0
 --- !u!114 &4115436644824893292
 MonoBehaviour:
   m_ObjectHideFlags: 0
