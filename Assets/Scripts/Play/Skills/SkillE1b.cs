@@ -22,9 +22,9 @@ public class SkillE1b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillE1b()
     {
-        if (Input.GetButtonDown("FireE") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -42,7 +42,6 @@ public class SkillE1b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

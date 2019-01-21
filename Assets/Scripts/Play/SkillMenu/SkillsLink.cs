@@ -25,7 +25,7 @@ public class SkillsLink : MonoBehaviour
     {
         gameObject.GetComponent<SetSkillC>().SetC();
         gameObject.GetComponent<SetSkillD>().SetD();
-        //gameObject.GetComponent<SetSkillE>().SetE();
+        gameObject.GetComponent<SetSkillE>().SetE();
         //gameObject.GetComponent<SetSkillF>().SetF();
         //gameObject.GetComponent<SetSkillG>().SetG();
         //gameObject.GetComponent<SetSkillR>().SetR();

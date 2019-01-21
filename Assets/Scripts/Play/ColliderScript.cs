@@ -62,25 +62,13 @@ public class ColliderScript : MonoBehaviour
 
     public void LSDSatAll()
     {
-        //photonView.RPC("LSDS", PhotonTargets.All);
-    }
-
-    //[PunRPC]
-    void LSDS()
-    {
         MyCollider2D.enabled = false;
     }
 
     public void DSWLatAll()
     {
         if (!MyCollider2D.enabled)
-            //photonView.RPC("DSWL", PhotonTargets.All);
+            MyCollider2D.enabled = true;
         GetComponent<RBScript>().PushEnd();
-    }
-
-    //[PunRPC]
-    void DSWL()
-    {
-        MyCollider2D.enabled = true;
     }
 }

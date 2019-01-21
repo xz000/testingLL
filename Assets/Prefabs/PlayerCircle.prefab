@@ -194,6 +194,8 @@ GameObject:
   - component: {fileID: 8245036407187783964}
   - component: {fileID: 7399405042454718834}
   - component: {fileID: 2291859324425342231}
+  - component: {fileID: 193410655773012348}
+  - component: {fileID: 8236991445602732269}
   - component: {fileID: 91555293648209813}
   - component: {fileID: 668343940938574434}
   - component: {fileID: 3667270247323410806}
@@ -208,6 +210,7 @@ GameObject:
   - component: {fileID: 2847731694559201477}
   - component: {fileID: 2342278634341086658}
   - component: {fileID: 4445758486764450412}
+  - component: {fileID: 3793272048746978422}
   - component: {fileID: 4115436644824893292}
   - component: {fileID: 3275582692835829541}
   - component: {fileID: 4733701610128381578}
@@ -515,6 +518,36 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d3e4f5329ad7ea846bfca3e998a64ad1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &193410655773012348
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6c2feb47fd0d273478f686a408627f09, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyCollider2D: {fileID: 58970719070418754}
+--- !u!114 &8236991445602732269
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9aaa894125dff90408a995df67e25be7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyMarkicon: {fileID: 1049491708436648}
+  MyColorMark: {fileID: 1865538166631764}
+  BigSR: {fileID: 212469445371272452}
+  ColorChangeTo: {r: 0, g: 0, b: 0, a: 0}
+  Speed: 0
 --- !u!114 &91555293648209813
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -764,6 +797,24 @@ MonoBehaviour:
   maxdistance: 5
   damage: 10
   bombforce: 8
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &3793272048746978422
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86ed9e3270b3411429ae1c7577455c0a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 15
+  bulletspeed: 3
+  fireball: {fileID: 1759941245943736, guid: 05ecbbcfd88464e43b4d2e10df6441c2, type: 3}
   cooldowntime: 3
   skillavaliable: 0
 --- !u!114 &4115436644824893292

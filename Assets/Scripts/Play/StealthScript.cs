@@ -6,18 +6,18 @@ using UnityEngine;
 public class StealthScript : MonoBehaviour
 {
     public GameObject MyMarkicon;
-    public GameObject MyHealthbar;
+    //public GameObject MyHealthbar;
     public GameObject MyColorMark;
     public SpriteRenderer BigSR;
     SpriteRenderer SmallSR;
-    public GameObject BarSR;
+    //public GameObject BarSR;
     SpriteRenderer ColorSR;
-    public GameObject MyName;
+    //public GameObject MyName;
     Color ColorBefore;
     public Color ColorChangeTo;
     float currenttime;
     float maxtime = 1;
-    public static float Speed = 0;
+    public float Speed = 0;
     bool WindWalkByTime = false;
     bool UCME = false;
 
@@ -38,33 +38,31 @@ public class StealthScript : MonoBehaviour
             StealthEnd();
     }
 
-    //[PunRPC]
     void Vanish()
     {
-        if (true)
+        if (GetComponent<MoveScript>().isme)
             SelfChange();
         else
         {
             BigSR.enabled = false;
             SmallSR.enabled = false;
-            BarSR.SetActive(false);
+            //BarSR.SetActive(false);
             ColorSR.enabled = false;
-            MyName.SetActive(false);
+            //MyName.SetActive(false);
         }
     }
 
-    //[PunRPC]
     void Appear()
     {
-        if (true)
+        if (GetComponent<MoveScript>().isme)
             SelfChangeBack();
         else
         {
             BigSR.enabled = true;
             SmallSR.enabled = true;
-            BarSR.SetActive(true);
+            //BarSR.SetActive(true);
             ColorSR.enabled = true;
-            MyName.SetActive(true);
+            //MyName.SetActive(true);
         }
     }
 
@@ -94,7 +92,7 @@ public class StealthScript : MonoBehaviour
     public void StealthStart()
     {
         UCME = true;
-        //photonView.RPC("Vanish", PhotonTargets.All);
+        Vanish();
     }
 
     public void StealthEnd()
@@ -103,7 +101,7 @@ public class StealthScript : MonoBehaviour
             return;
         WindWalkByTime = false;
         GetComponent<ColliderScript>().DSWLatAll();
-        //photonView.RPC("Appear", PhotonTargets.All);
+        Appear();
         Speed = 0;
         UCME = false;
     }

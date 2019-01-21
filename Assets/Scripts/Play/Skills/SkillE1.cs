@@ -41,7 +41,6 @@ public class SkillE1 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

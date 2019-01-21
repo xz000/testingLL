@@ -11,8 +11,6 @@ public class RollScript : MonoBehaviour
 
     private void FixedUpdate()
     {
-         //if (!photonView.isMine)
-            return;
         selfRB.velocity = v;
         rollSkill();
     }
