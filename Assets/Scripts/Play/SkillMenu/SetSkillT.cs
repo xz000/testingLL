@@ -20,22 +20,21 @@ public class SetSkillT : MonoBehaviour
 
     public void SetT()
     {
-        if (Soldier == null)
-            Soldier = gameObject.GetComponent<SkillsLink>().mySoldier;
         AllTOff();
+        IconT.GetComponent<CooldownImage>().enabled = true;
         if (T1.isOn && T1a.isOn)
         {
-            Soldier.GetComponent<TestSkillLeech>().MyImageScript = IconT.GetComponent<CooldownImage>();
-            Soldier.GetComponent<TestSkillLeech>().enabled = true;
+            IconT.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkillLeech>().CalcFA;
+            GetComponent<SkillsLink>().KeyTSkill = SkillCode.TestSkillLeech;
             return;
         }
         if (T1.isOn && T1b.isOn)
         {
-            Soldier.GetComponent<SkillT1b>().MyImageScript = IconT.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillT1b>().enabled = true;
+            IconT.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillT1b>().CalcFA;
+            GetComponent<SkillsLink>().KeyTSkill = SkillCode.SkillT1b;
             return;
         }
-        if (T2.isOn && T2a.isOn)
+        /*if (T2.isOn && T2a.isOn)
         {
             Soldier.GetComponent<SkillT2>().MyImageScript = IconT.GetComponent<CooldownImage>();
             Soldier.GetComponent<SkillT2>().enabled = true;
@@ -58,23 +57,12 @@ public class SetSkillT : MonoBehaviour
             Soldier.GetComponent<SkillT3b>().MyImageScript = IconT.GetComponent<CooldownImage>();
             Soldier.GetComponent<SkillT3b>().enabled = true;
             return;
-        }
+        }*/
     }
 
     public void AllTOff()
     {
         IconT.GetComponent<CooldownImage>().enabled = false;
-        Soldier.GetComponent<TestSkillLeech>().enabled = false;
-        Soldier.GetComponent<TestSkillLeech>().MyImageScript = null;
-        Soldier.GetComponent<SkillT1b>().enabled = false;
-        Soldier.GetComponent<SkillT1b>().MyImageScript = null;
-        Soldier.GetComponent<SkillT2>().enabled = false;
-        Soldier.GetComponent<SkillT2>().MyImageScript = null;
-        Soldier.GetComponent<SkillT2b>().enabled = false;
-        Soldier.GetComponent<SkillT2b>().MyImageScript = null;
-        Soldier.GetComponent<SkillT3>().enabled = false;
-        Soldier.GetComponent<SkillT3>().MyImageScript = null;
-        Soldier.GetComponent<SkillT3b>().enabled = false;
-        Soldier.GetComponent<SkillT3b>().MyImageScript = null;
+        GetComponent<SkillsLink>().KeyTSkill = null;
     }
 }
