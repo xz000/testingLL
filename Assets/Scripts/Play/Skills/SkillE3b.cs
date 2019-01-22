@@ -22,9 +22,9 @@ public class SkillE3b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillE3b()
     {
-        if (Input.GetButtonDown("FireE") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -68,5 +68,18 @@ public class SkillE3b : MonoBehaviour
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         bullet.GetComponent<SAScript>().maxtime = maxtime;
         bullet.GetComponent<SAScript>().StartFire();
+    }
+
+    void SkillE3bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

@@ -1,7 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-///using Photon;
+using FixMath;
 
 public class SAScript : MonoBehaviour
 {
@@ -12,6 +12,9 @@ public class SAScript : MonoBehaviour
     public GameObject fireball;
     public GameObject sender;
     public Rigidbody2D selfRB2D;
+    float firetime = 0.2f;
+    Fix64Vector2 drt;
+    bool firestart = false;
 
     void FixedUpdate()
     {
@@ -20,25 +23,24 @@ public class SAScript : MonoBehaviour
         {
             gameObject.GetComponent<DestroyScript>().Destroyself();
         }
+        if (firestart && firetime >= 0.2f)
+            FFF();
+        firetime += Time.fixedDeltaTime;
     }
 
     public void StartFire()
     {
-        StartCoroutine(FFF(0.2f));
+        drt = ((Fix64Vector2)selfRB2D.velocity).normalized();
+        firestart = true;
     }
 
-    IEnumerator FFF(float waittime)
+    public void FFF()
     {
-        Vector2 direction = selfRB2D.velocity;
-        while (true)
-        {
-            DoFire(direction.normalized * BulletSpeed);
-            direction = Quaternion.AngleAxis(50, Vector3.forward) * direction;
-            yield return new WaitForSeconds(waittime);
-        }
+        DoFire((drt * (Fix64)BulletSpeed).ToV2());
+        drt = drt.CCWTurn((Fix64)1);
+        firetime -= 0.2f;
     }
 
-    //[PunRPC]
     void DoFire(Vector2 speed2d)
     {
         fireball.GetComponent<SABulletScript>().sender = sender;

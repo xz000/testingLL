@@ -20,19 +20,18 @@ public class SetSkillR : MonoBehaviour
 
     public void SetR()
     {
-        if (Soldier == null)
-            Soldier = gameObject.GetComponent<SkillsLink>().mySoldier;
         AllROff();
+        IconR.GetComponent<CooldownImage>().enabled = true;
         if (R1.isOn && R1a.isOn)
         {
-            Soldier.GetComponent<SkillR1>().MyImageScript = IconR.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillR1>().enabled = true;
+            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR1>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillR1;
             return;
         }
         if (R1.isOn && R1b.isOn)
         {
-            Soldier.GetComponent<SkillR1b>().MyImageScript = IconR.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillR1b>().enabled = true;
+            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR1b>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillR1b;
             return;
         }
         if (R2.isOn && R2a.isOn)
@@ -49,8 +48,8 @@ public class SetSkillR : MonoBehaviour
         }
         if (R3.isOn && R3a.isOn)
         {
-            Soldier.GetComponent<TestSkill02>().MyImageScript = IconR.GetComponent<CooldownImage>();
-            Soldier.GetComponent<TestSkill02>().enabled = true;
+            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill02>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.TestSkill02;
             return;
         }
         if (R3.isOn && R3b.isOn)
