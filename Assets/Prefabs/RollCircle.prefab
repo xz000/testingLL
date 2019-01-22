@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 3939635670709285077}
   - component: {fileID: 2803168305039336968}
   - component: {fileID: 7986912908213793006}
+  - component: {fileID: 7611614590653969419}
   m_Layer: 0
   m_Name: RollCircle
   m_TagString: Untagged
@@ -163,3 +164,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   breakable: 0
   selfprotect: 1
+--- !u!114 &7611614590653969419
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1759941245943736}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ea9da5d46bd0d4408c566c2f15af9fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

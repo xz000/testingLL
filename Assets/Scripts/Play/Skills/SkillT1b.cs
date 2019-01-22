@@ -7,7 +7,7 @@ public class SkillT1b : MonoBehaviour
 {
     public CooldownImage MyImageScript;
     //public float maxdistance;
-    public float bulletspeed = 20;
+    public float bulletspeed = 12;
     public GameObject fireball;
     public float damage = 5;
     private float currentcooldown;
@@ -21,9 +21,9 @@ public class SkillT1b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillT1b()
     {
-        if (Input.GetButtonDown("FireT") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -41,7 +41,6 @@ public class SkillT1b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -56,7 +55,6 @@ public class SkillT1b : MonoBehaviour
         skillavaliable = false;
     }
 
-    //[PunRPC]
     void DoFire(Vector2 fireplace, Vector2 speed2d)
     {
         GameObject bullet;
@@ -65,5 +63,18 @@ public class SkillT1b : MonoBehaviour
         bullet = Instantiate(fireball, fireplace, Quaternion.identity);
         bullet.GetComponent<LeebScript>().Damage = (Fix64)damage;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
+    }
+
+    void SkillT1bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

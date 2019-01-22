@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 2246019029983716559}
   - component: {fileID: 7169420032973008319}
   - component: {fileID: 2463573708969575337}
+  - component: {fileID: 553813995270950659}
   m_Layer: 0
   m_Name: MissileCircle
   m_TagString: Untagged
@@ -167,3 +168,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   breakable: 1
   selfprotect: 1
+--- !u!114 &553813995270950659
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1453930264023322}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ea9da5d46bd0d4408c566c2f15af9fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

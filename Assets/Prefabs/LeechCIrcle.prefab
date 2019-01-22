@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 191939435383841255}
   - component: {fileID: 1763051561530043864}
   - component: {fileID: 8565972504758240541}
+  - component: {fileID: 358372915612421264}
   m_Layer: 0
   m_Name: LeechCIrcle
   m_TagString: bullet
@@ -162,6 +163,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxtime: 3
-  leechdamage: 5
   sender: {fileID: 0}
   turntime: 0
+--- !u!114 &358372915612421264
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1197206318659480}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ea9da5d46bd0d4408c566c2f15af9fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

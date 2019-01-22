@@ -7751,15 +7751,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 20a862ad6066a2a46bd4db764216a4d4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  T1: {fileID: 0}
-  T1a: {fileID: 0}
-  T1b: {fileID: 0}
-  T2: {fileID: 0}
-  T2a: {fileID: 0}
-  T2b: {fileID: 0}
-  T3: {fileID: 0}
-  T3a: {fileID: 0}
-  T3b: {fileID: 0}
+  T1: {fileID: 939871596}
+  T1a: {fileID: 1149169259}
+  T1b: {fileID: 261996997}
+  T2: {fileID: 1055581268}
+  T2a: {fileID: 1824330645}
+  T2b: {fileID: 2070723866}
+  T3: {fileID: 1083649954}
+  T3a: {fileID: 1279325950}
+  T3b: {fileID: 1552995699}
   IconT: {fileID: 791903124}
 --- !u!114 &392646567
 MonoBehaviour:
@@ -18218,7 +18218,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6

@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 50351130327712290}
   - component: {fileID: 707863479369089298}
   - component: {fileID: 604274094615481159}
+  - component: {fileID: 4924918187712893307}
   m_Layer: 0
   m_Name: STCircle
   m_TagString: bullet
@@ -136,7 +137,6 @@ MonoBehaviour:
   BulletSpeed: 6
   fireball: {fileID: 1944082475636718, guid: 1c437ff1415bb2d4b9147dc32e990427, type: 3}
   sender: {fileID: 0}
-  finalv: {x: 0, y: 0}
 --- !u!114 &604274094615481159
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -151,3 +151,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   breakable: 1
   selfprotect: 1
+--- !u!114 &4924918187712893307
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1841121462876242}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ea9da5d46bd0d4408c566c2f15af9fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

@@ -67,4 +67,17 @@ public class TestSkillLeech : MonoBehaviour
         currentcooldown = 0;
         skillavaliable = false;
     }
+
+    void TestSkillLeechSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }

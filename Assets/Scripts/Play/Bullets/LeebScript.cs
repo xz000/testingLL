@@ -16,8 +16,6 @@ public class LeebScript : MonoBehaviour
     
     void FixedUpdate()
     {
-         //if (!photonView.isMine)
-            return;
         currenttime += Time.fixedDeltaTime;
         if (currenttime >= maxtime)
             gameObject.GetComponent<DestroyScript>().Destroyself();
@@ -25,8 +23,6 @@ public class LeebScript : MonoBehaviour
     
     private void OnTriggerEnter2D(Collider2D other)
     {
-         //if (!photonView.isMine)
-            return;
         if (other.gameObject.GetComponent<DestroyScript>() != null && other.gameObject.GetComponent<DestroyScript>().breakable)
         {
             other.gameObject.GetComponent<DestroyScript>().Destroyself();

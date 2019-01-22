@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 50956122517233430}
   - component: {fileID: 2374387045197619917}
   - component: {fileID: 273993828148185753}
+  - component: {fileID: 4146994636485212294}
   m_Layer: 0
   m_Name: BombCircleS
   m_TagString: bullet
@@ -152,3 +153,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   breakable: 1
   selfprotect: 1
+--- !u!114 &4146994636485212294
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1680992960079014}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ea9da5d46bd0d4408c566c2f15af9fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

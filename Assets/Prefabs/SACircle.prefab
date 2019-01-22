@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 50793956633133398}
   - component: {fileID: 8533004832793213960}
   - component: {fileID: 6723534975459521682}
+  - component: {fileID: 4924087688539378574}
   m_Layer: 0
   m_Name: SACircle
   m_TagString: Untagged
@@ -134,3 +135,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   breakable: 0
   selfprotect: 1
+--- !u!114 &4924087688539378574
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1796281269702032}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ea9da5d46bd0d4408c566c2f15af9fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
