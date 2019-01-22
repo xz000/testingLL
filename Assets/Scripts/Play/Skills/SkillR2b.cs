@@ -11,13 +11,11 @@ public class SkillR2b : MonoBehaviour
     public bool skillavaliable;
     public float LDspeed = 15;
     bool ImLSDS = false;
-    MoveScript MS;
 
     // Use this for initialization
     void Start ()
     {
         currentcooldown = cooldowntime;
-        MS = GetComponent<MoveScript>();
     }
 
     // Update is called once per frame
@@ -59,7 +57,7 @@ public class SkillR2b : MonoBehaviour
         Vector2 singplace = transform.position;
         Vector2 skilldirection = actionplace - singplace;
         GetComponent<DoSkill>().BeforeSkill();
-        MS.controllable = true;
+        GetComponent<MoveScript>().controllable = true;
         currentcooldown = 0;
         skillavaliable = false;
         ImLSDS = true;

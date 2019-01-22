@@ -218,6 +218,7 @@ GameObject:
   - component: {fileID: 7694644733648090254}
   - component: {fileID: 5533595518541923385}
   - component: {fileID: 3013136809732272227}
+  - component: {fileID: 892854500498841465}
   - component: {fileID: 6901329828262106907}
   - component: {fileID: 4115436644824893292}
   - component: {fileID: 3275582692835829541}
@@ -951,10 +952,26 @@ MonoBehaviour:
   SpeedR2: 8
   maxdistance: 10
   pushPower: 5
-  pushTime: 0
+  pushTime: 1
   pushDamage: 5
   cooldowntime: 3
   skillavaliable: 0
+--- !u!114 &892854500498841465
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1928cf7864697c34cac7f1def8d14510, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  cooldowntime: 5
+  skillavaliable: 0
+  LDspeed: 15
 --- !u!114 &6901329828262106907
 MonoBehaviour:
   m_ObjectHideFlags: 0
