@@ -21,9 +21,9 @@ public class SkillR3b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillR3b()
     {
-        if (Input.GetButtonDown("FireR") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -41,7 +41,6 @@ public class SkillR3b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -68,5 +67,18 @@ public class SkillR3b : MonoBehaviour
             realplace = selfrb2d.position + maxdistance * skilldirection.normalized;
             transform.position = realplace;
         }
+    }
+
+    void SkillR3bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

@@ -24,9 +24,9 @@ public class SkillR2 : MonoBehaviour
     }
 	
 	// Update is called once per frame
-	void Update ()
+	void GoSkillR2()
     {
-        if (Input.GetButtonDown("FireR") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -44,7 +44,6 @@ public class SkillR2 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -68,5 +67,18 @@ public class SkillR2 : MonoBehaviour
             gameObject.GetComponent<ColliderScript>().StartKick(TimeR2);
             gameObject.GetComponent<RBScript>().GetPushed(skilldirection.normalized() * (Fix64)SpeedR2, TimeR2);
         }
+    }
+
+    void SkillR2SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
