@@ -216,6 +216,9 @@ GameObject:
   - component: {fileID: 6836535113801176804}
   - component: {fileID: 6612969951219703435}
   - component: {fileID: 7694644733648090254}
+  - component: {fileID: 5533595518541923385}
+  - component: {fileID: 3013136809732272227}
+  - component: {fileID: 6901329828262106907}
   - component: {fileID: 4115436644824893292}
   - component: {fileID: 3275582692835829541}
   - component: {fileID: 4733701610128381578}
@@ -915,6 +918,60 @@ MonoBehaviour:
   maxdistance: 0
   cooldowntime: 3
   skillavaliable: 0
+--- !u!114 &5533595518541923385
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 118e9b904134c1a4f849d767797f60e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 5
+  cooldowntime: 6
+  skillavaliable: 0
+  scdtime: 2
+--- !u!114 &3013136809732272227
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 50d5dba103e09ff49b54fe028c31584a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  SpeedR2: 8
+  maxdistance: 10
+  pushPower: 5
+  pushTime: 0
+  pushDamage: 5
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &6901329828262106907
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 327c45c02de62f145b768c0f7dd4b68b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 6
+  cooldowntime: 3
+  skillavaliable: 0
+  SelfR: 0.51
 --- !u!114 &4115436644824893292
 MonoBehaviour:
   m_ObjectHideFlags: 0

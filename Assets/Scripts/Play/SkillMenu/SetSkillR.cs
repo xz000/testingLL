@@ -36,14 +36,14 @@ public class SetSkillR : MonoBehaviour
         }
         if (R2.isOn && R2a.isOn)
         {
-            Soldier.GetComponent<SkillR2>().MyImageScript = IconR.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillR2>().enabled = true;
+            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR2>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillR2;
             return;
         }
         if (R2.isOn && R2b.isOn)
         {
-            Soldier.GetComponent<SkillR2b>().MyImageScript = IconR.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillR2b>().enabled = true;
+            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR2b>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillR2b;
             return;
         }
         if (R3.isOn && R3a.isOn)
@@ -54,8 +54,8 @@ public class SetSkillR : MonoBehaviour
         }
         if (R3.isOn && R3b.isOn)
         {
-            Soldier.GetComponent<SkillR3b>().MyImageScript = IconR.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillR3b>().enabled = true;
+            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR3b>().CalcFA;
+            GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillR3b;
             return;
         }
     }
@@ -63,17 +63,6 @@ public class SetSkillR : MonoBehaviour
     public void AllROff()
     {
         IconR.GetComponent<CooldownImage>().enabled = false;
-        Soldier.GetComponent<SkillR1>().enabled = false;
-        Soldier.GetComponent<SkillR1>().MyImageScript = null;
-        Soldier.GetComponent<SkillR1b>().enabled = false;
-        Soldier.GetComponent<SkillR1b>().MyImageScript = null;
-        Soldier.GetComponent<SkillR2>().enabled = false;
-        Soldier.GetComponent<SkillR2>().MyImageScript = null;
-        Soldier.GetComponent<SkillR2b>().enabled = false;
-        Soldier.GetComponent<SkillR2b>().MyImageScript = null;
-        Soldier.GetComponent<TestSkill02>().enabled = false;
-        Soldier.GetComponent<TestSkill02>().MyImageScript = null;
-        Soldier.GetComponent<SkillR3b>().enabled = false;
-        Soldier.GetComponent<SkillR3b>().MyImageScript = null;
+        GetComponent<SkillsLink>().KeyRSkill = null;
     }
 }
