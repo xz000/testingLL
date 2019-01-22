@@ -22,20 +22,17 @@ public class SkillR1b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillR1b()
     {
-        if (Input.GetButtonDown("FireR"))
+        if (skillavaliable)
         {
-            if (skillavaliable)
-            {
-                GetComponent<DoSkill>().singing = 0;
-                gameObject.GetComponent<DoSkill>().Fire = Skill;
-            }
-            else if (doscd)
-            {
-                GetComponent<DoSkill>().singing = 0;
-                gameObject.GetComponent<DoSkill>().Fire = Skillscd;
-            }
+            GetComponent<DoSkill>().singing = 0;
+            gameObject.GetComponent<DoSkill>().Fire = Skill;
+        }
+        else if (doscd)
+        {
+            GetComponent<DoSkill>().singing = 0;
+            gameObject.GetComponent<DoSkill>().Fire = Skillscd;
         }
     }
 
@@ -56,7 +53,6 @@ public class SkillR1b : MonoBehaviour
                 if (scd >= scdtime)
                     doscd = false;
             }
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
@@ -104,5 +100,18 @@ public class SkillR1b : MonoBehaviour
             transform.position = realplace;
             doscd = false;
         }
+    }
+
+    void SkillR1bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

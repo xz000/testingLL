@@ -90,4 +90,17 @@ public class TestSkill02 : MonoBehaviour
             }
         }
     }
+
+    void TestSkill02SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }
