@@ -9,14 +9,14 @@ public class SkillT2 : MonoBehaviour
     public float maxdistance;
     public float bulletspeed;
     public GameObject fireball;
-    public int bulletamount;
     public float force;
     public float damage;
     private float currentcooldown;
     public float cooldowntime = 3;
     public bool skillavaliable;
     float firetime = 0.1f;
-    float maxfiretime = 0.7f;
+    int firetimes = 0;
+    public int maxfiretime = 7;
     Fix64Vector2 drt;
     bool firestart = false;
 
@@ -27,7 +27,6 @@ public class SkillT2 : MonoBehaviour
         fireball.GetComponent<BombExplode>().sender = gameObject;
     }
 
-    // Update is called once per frame
     void GoSkillT2()
     {
         if (skillavaliable)
@@ -42,38 +41,38 @@ public class SkillT2 : MonoBehaviour
         if (skillavaliable)
             return;
         if (currentcooldown >= cooldowntime)
-        {
             skillavaliable = true;
-        }
         else
-        {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+        if (firestart)
+        {
+            firetime += Time.fixedDeltaTime;
+            if (firetime >= 0.1f)
+                FFF();
         }
-        if (firestart && firetime >= 0.1f)
-            FFF(drt.ToV2());
-        firetime += Time.fixedDeltaTime;
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
         currentcooldown = 0;
         skillavaliable = false;
-        Vector2 skilldirection = actionplace - gameObject.GetComponent<Rigidbody2D>().position;
+        drt = (actionplace - (Fix64Vector2)GetComponent<Rigidbody2D>().position).normalized().CCWTurn((Fix64)maxfiretime * Fix64.Pi / (Fix64)90);
+        firetimes = 0;
+        firestart = true;
     }
 
-    public void FFF(Vector2 direction)
+    public void FFF()
     {
-        direction = Quaternion.AngleAxis(2 * (bulletamount - 2), Vector3.forward) * direction;
-        int bnum = 0;
-        while (bnum < bulletamount)
+        DoFire(((Fix64Vector2)GetComponent<Rigidbody2D>().position + (Fix64)0.6 * drt).ToV2(), (drt * (Fix64)bulletspeed).ToV2());
+        firetime -= 0.1f;
+        if (firetimes > maxfiretime)
         {
-            DoFire(gameObject.GetComponent<Rigidbody2D>().position + 0.5f * direction.normalized, direction.normalized * bulletspeed);
-            direction = Quaternion.AngleAxis(-2, Vector3.forward) * direction;
-            bnum++;
+            firestart = false;
+            return;
         }
+        firetimes++;
+        drt = drt.CCWTurn(-Fix64.Pi / (Fix64)90);
     }
 
     void DoFire(Vector2 fireplace, Vector2 speed2d)
