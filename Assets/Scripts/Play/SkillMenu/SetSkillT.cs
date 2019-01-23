@@ -34,13 +34,13 @@ public class SetSkillT : MonoBehaviour
             GetComponent<SkillsLink>().KeyTSkill = SkillCode.SkillT1b;
             return;
         }
-        /*if (T2.isOn && T2a.isOn)
+        if (T2.isOn && T2a.isOn)
         {
-            Soldier.GetComponent<SkillT2>().MyImageScript = IconT.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillT2>().enabled = true;
+            IconT.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillT2>().CalcFA;
+            GetComponent<SkillsLink>().KeyTSkill = SkillCode.SkillT2;
             return;
         }
-        if (T2.isOn && T2b.isOn)
+        /*if (T2.isOn && T2b.isOn)
         {
             Soldier.GetComponent<SkillT2b>().MyImageScript = IconT.GetComponent<CooldownImage>();
             Soldier.GetComponent<SkillT2b>().enabled = true;
