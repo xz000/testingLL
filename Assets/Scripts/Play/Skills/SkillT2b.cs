@@ -16,6 +16,7 @@ public class SkillT2b : MonoBehaviour
     private float currentcooldown;
     public float cooldowntime = 3;
     public bool skillavaliable;
+    Fix64Vector2 spf;
 
     // Use this for initialization
     void Start()
@@ -24,10 +25,9 @@ public class SkillT2b : MonoBehaviour
         fireball.GetComponent<BombExplode>().sender = gameObject;
     }
 
-    // Update is called once per frame
-    void Update()
+    void GoSkillT2b()
     {
-        if (Input.GetButtonDown("FireT") && skillavaliable)
+        if (skillavaliable)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -49,25 +49,23 @@ public class SkillT2b : MonoBehaviour
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
         currentcooldown = 0;
         skillavaliable = false;
-        Vector2 skilldirection = actionplace - gameObject.GetComponent<Rigidbody2D>().position;
+        spf = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = (actionplace - spf).normalized();
         FFF(skilldirection);
     }
 
-    void FFF(Vector2 direction)
+    void FFF(Fix64Vector2 direction)
     {
-        direction = Quaternion.AngleAxis(30, Vector3.forward) * direction;
-        int bnum = 0;
-        while (bnum < bulletamount)
+        direction = direction.CCWTurn(-Fix64.Pi / (Fix64)6);
+        for (int bnum = 0; bnum < bulletamount; bnum++)
         {
-            DoFire(gameObject.GetComponent<Rigidbody2D>().position + 0.5f * direction.normalized, direction.normalized * bulletspeed);
-            direction = Quaternion.AngleAxis(-20, Vector3.forward) * direction;
-            bnum++;
+            DoFire((spf + (direction * (Fix64)0.6)).ToV2(), (direction * (Fix64)bulletspeed).ToV2());
+            direction = direction.CCWTurn(Fix64.Pi / (Fix64)8);
         }
     }
 
@@ -80,5 +78,18 @@ public class SkillT2b : MonoBehaviour
         bullet.GetComponent<BombExplode>().bombdamage = damage;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         //bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
+    }
+
+    void SkillT2bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
