@@ -22,9 +22,9 @@ public class SkillY3 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillY3()
     {
-        if (Input.GetButtonDown("FireY") && skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -42,28 +42,39 @@ public class SkillY3 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.51f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = (actionplace - singplace).normalized();
+        DoFire(singplace + skilldirection / (Fix64)2, skilldirection * (Fix64)bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;
     }
 
-    //[PunRPC]
-    void DoFire(Vector2 fireplace, Vector2 speed2d)
+    void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d)
     {
         GameObject bullet;
-        bullet = Instantiate(fireball, fireplace, Quaternion.identity);
-        bullet.GetComponent<CountdownScript>().maxtime = maxtime;
-        bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
+        bullet = Instantiate(fireball, fireplace.ToV2(), Quaternion.identity);
+        bullet.GetComponent<CentrallyConstentField>().sender = gameObject;
         bullet.GetComponent<CentrallyConstentField>().setspeed(force);
+        bullet.GetComponent<CountdownScript>().maxtime = maxtime;
+        bullet.GetComponent<Rigidbody2D>().velocity = speed2d.ToV2();
+    }
+
+    void SkillY3SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

@@ -65,4 +65,17 @@ public class TestSkill01 : MonoBehaviour
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d.ToV2();
         //bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
     }
+
+    void TestSkill01SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }

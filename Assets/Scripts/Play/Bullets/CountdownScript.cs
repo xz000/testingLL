@@ -10,8 +10,6 @@ public class CountdownScript : MonoBehaviour
 
     private void FixedUpdate()
     {
-         //if (!photonView.isMine)
-            return;
         currenttime += Time.fixedDeltaTime;
         if (currenttime >= maxtime)
             GetComponent<DestroyScript>().Destroyself();

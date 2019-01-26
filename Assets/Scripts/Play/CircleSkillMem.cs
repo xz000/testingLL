@@ -8,7 +8,7 @@ public class CircleSkillMem : MonoBehaviour
     public void SetCircleSL(int[] sld)
     {
         csm = sld;
-        int max = (int)SkillCode.FireStop;
+        int max = (int)SkillCode.SelfExplodeScript;
         for (int i = 0; i < max; i++)
         {
             SkillCode sc = (SkillCode)i;

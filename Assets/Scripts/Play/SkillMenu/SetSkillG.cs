@@ -6,20 +6,19 @@ using UnityEngine.UI;
 
 public class SetSkillG : MonoBehaviour
 {
-    public CatcherKeys ck;
+    //public CatcherKeys ck;
     public Toggle G1;
     public Image IconG;
     GameObject Soldier;
 
     public void SetG()
     {
-        if (Soldier == null)
-            Soldier = gameObject.GetComponent<SkillsLink>().mySoldier;
         AllGOff();
+        IconG.GetComponent<CooldownImage>().enabled = true;
         if (G1.isOn)
         {
-            //Soldier.GetComponent<TestSkill01>().MyImageScript = IconG.GetComponent<CooldownImage>();
-            Soldier.GetComponent<TestSkill01>().enabled = true;
+            IconG.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill01>().CalcFA;
+            GetComponent<SkillsLink>().KeyGSkill = SkillCode.TestSkill01;
             return;
         }
     }
@@ -27,7 +26,6 @@ public class SetSkillG : MonoBehaviour
     public void AllGOff()
     {
         IconG.GetComponent<CooldownImage>().enabled = false;
-        Soldier.GetComponent<TestSkill01>().enabled = false;
-        //Soldier.GetComponent<TestSkill01>().MyImageScript = null;
+        GetComponent<SkillsLink>().KeyGSkill = null;
     }
 }

@@ -6,6 +6,7 @@ using UnityEngine;
 public class CentrallyConstentField : MonoBehaviour
 {
     public Rigidbody2D center;
+    public GameObject sender;
     public float speed;
 
     public void AddConstentCentrallyVelocity(Rigidbody2D victim,MoveScript worker)
@@ -18,8 +19,8 @@ public class CentrallyConstentField : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        //if (photonView.isMine)
-            //return;
+        if (collision.gameObject == sender)
+            return;
         MoveScript MS = collision.GetComponent<MoveScript>();
         MS.cook += AddConstentCentrallyVelocity;
     }
@@ -32,12 +33,6 @@ public class CentrallyConstentField : MonoBehaviour
 
     public void setspeed(float spd)
     {
-        //photonView.RPC("speedset", PhotonTargets.All, spd);
-    }
-
-    //[PunRPC]
-    void speedset(float s)
-    {
-        speed = s;
+        speed = spd;
     }
 }
