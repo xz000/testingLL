@@ -21,7 +21,7 @@ public class SkillY2b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillY2b()
     {
         if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {

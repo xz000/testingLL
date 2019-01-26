@@ -229,6 +229,8 @@ GameObject:
   - component: {fileID: 3275582692835829541}
   - component: {fileID: 89078710107210139}
   - component: {fileID: 4556681053814860432}
+  - component: {fileID: 3917910602572135595}
+  - component: {fileID: 3746148921775217563}
   - component: {fileID: 4733701610128381578}
   m_Layer: 0
   m_Name: PlayerCircle
@@ -1169,6 +1171,44 @@ MonoBehaviour:
   MySuite: {fileID: 0}
   maxdistance: 10
   cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &3917910602572135595
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e1aa77331ef54040999f5a7eb126588, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxtime: 4
+  bulletspeed: 4
+  fireball: {fileID: 1498595659494272, guid: 7a17a554723a4f24e8226dec268d915b, type: 3}
+  force: 1.5
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &3746148921775217563
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27cbfcf0510b3c3449827a6cec85db50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  TheStar: {fileID: 1698348655819118, guid: 55ef2281363bb97428f4763a79711fc9, type: 3}
+  maxdistance: 6
+  powerpersecond: 2
+  maxtime: 4
+  cooldowntime: 10
   skillavaliable: 0
 --- !u!114 &4733701610128381578
 MonoBehaviour:

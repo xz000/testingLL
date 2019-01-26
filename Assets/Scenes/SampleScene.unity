@@ -7654,8 +7654,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6c5b79f77cb25134390a7382211af9d9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  F1: {fileID: 0}
-  IconF: {fileID: 0}
+  F1: {fileID: 2124025209}
+  IconF: {fileID: 1151998369}
 --- !u!114 &392646562
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7797,8 +7797,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a08c01657f686b74eb2ac63c1a2c9783, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ck: {fileID: 0}
-  G1: {fileID: 0}
+  G1: {fileID: 2025468225}
   IconG: {fileID: 1486736899}
 --- !u!1 &394915640
 GameObject:
@@ -10835,7 +10834,7 @@ Camera:
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 2
-  m_BackGroundColor: {r: 0.73333335, g: 0.49056602, b: 0.49056602, a: 0}
+  m_BackGroundColor: {r: 0.5941171, g: 0.6917768, b: 0.745283, a: 0.7254902}
   m_projectionMatrixMode: 1
   m_SensorSize: {x: 36, y: 24}
   m_LensShift: {x: 0, y: 0}
@@ -40351,7 +40350,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6
@@ -42295,7 +42294,7 @@ MonoBehaviour:
   LevelText: {fileID: 0}
   LevelPriceText: {fileID: 0}
   SkillToggle: {fileID: 0}
-  SkillLevel: 0
+  SkillLevel: 1
   BottomLevel: 0
   TopLevel: 6
   TopLevel00: 6

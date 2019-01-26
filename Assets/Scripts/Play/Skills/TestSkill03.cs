@@ -42,6 +42,20 @@ public class TestSkill03 : MonoBehaviour
         }
     }
 
+    void TestSkill03SetLevel(int i)
+    {
+        if (i == 0)
+        {
+            enabled = false;
+            SES.enabled = false;
+        }
+        else
+        {
+            enabled = true;
+            SES.enabled = true;
+        }
+    }
+
     public void Skill()
     {
         DS.BeforeSkill();

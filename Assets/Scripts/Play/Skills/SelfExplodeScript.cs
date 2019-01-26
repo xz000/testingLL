@@ -65,4 +65,9 @@ public class SelfExplodeScript : MonoBehaviour
             }
         }
     }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
+    }
 }

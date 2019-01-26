@@ -26,8 +26,8 @@ public class SkillsLink : MonoBehaviour
         gameObject.GetComponent<SetSkillC>().SetC();
         gameObject.GetComponent<SetSkillD>().SetD();
         gameObject.GetComponent<SetSkillE>().SetE();
-        //gameObject.GetComponent<SetSkillF>().SetF();
-        //gameObject.GetComponent<SetSkillG>().SetG();
+        gameObject.GetComponent<SetSkillF>().SetF();
+        gameObject.GetComponent<SetSkillG>().SetG();
         gameObject.GetComponent<SetSkillR>().SetR();
         gameObject.GetComponent<SetSkillT>().SetT();
         gameObject.GetComponent<SetSkillY>().SetY();
@@ -38,7 +38,7 @@ public class SkillsLink : MonoBehaviour
     {
         SkillData lsd = new SkillData();
         lsd.cNum = Sender.clientNum;
-        int max = (int)SkillCode.FireStop;
+        int max = (int)SkillCode.SelfExplodeScript;
         lsd.SLs = new int[max];
         for (int i = 0; i < max; i++)
         {

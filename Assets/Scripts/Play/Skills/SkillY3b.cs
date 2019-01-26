@@ -21,9 +21,9 @@ public class SkillY3b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillY3b()
     {
-        if (Input.GetButtonDown("FireY") && skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -41,22 +41,35 @@ public class SkillY3b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = actionplace - singplace;
         GetComponent<DoSkill>().BeforeSkill();
-        if (skilldirection.magnitude > maxdistance)
-            actionplace = singplace + skilldirection.normalized * maxdistance;
-        GameObject MyRock = Instantiate(TheStar, actionplace, Quaternion.identity);
+        Fix64 mdfx = (Fix64)maxdistance;
+        if (skilldirection.Length() > mdfx)
+            actionplace = singplace + skilldirection.normalized() * mdfx;
+        GameObject MyRock = Instantiate(TheStar, actionplace.ToV2(), Quaternion.identity);
+        MyRock.GetComponent<StarScript>().sender = gameObject;
         MyRock.GetComponent<StarScript>().powerpers = (Fix64)powerpersecond;
         MyRock.GetComponent<CountdownScript>().maxtime = maxtime;
         currentcooldown = 0;
         skillavaliable = false;
+    }
+
+    void SkillY3bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }
