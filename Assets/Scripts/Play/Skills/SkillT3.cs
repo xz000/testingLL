@@ -21,9 +21,9 @@ public class SkillT3 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillT3()
     {
-        if (Input.GetButtonDown("FireT") && skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -41,22 +41,19 @@ public class SkillT3 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.81f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = (actionplace - singplace).normalized();
+        DoFire((singplace + (Fix64)0.81 * skilldirection).ToV2(), (skilldirection * (Fix64)bulletspeed).ToV2());
         currentcooldown = 0;
         skillavaliable = false;
     }
 
-    //[PunRPC]
     void DoFire(Vector2 fireplace, Vector2 speed2d)
     {
         GameObject bullet;
@@ -64,5 +61,18 @@ public class SkillT3 : MonoBehaviour
         bullet = Instantiate(fireball, fireplace, Quaternion.identity);
         bullet.GetComponent<JumpBulletScript>().Damage = (Fix64)damage;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
+    }
+
+    void SkillT3SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

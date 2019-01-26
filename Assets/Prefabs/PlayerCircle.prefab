@@ -223,8 +223,12 @@ GameObject:
   - component: {fileID: 6813940257835651575}
   - component: {fileID: 7327710764662956209}
   - component: {fileID: 4234033266581063387}
+  - component: {fileID: 1105816426396797184}
+  - component: {fileID: 2387930508992674080}
   - component: {fileID: 4115436644824893292}
   - component: {fileID: 3275582692835829541}
+  - component: {fileID: 89078710107210139}
+  - component: {fileID: 4556681053814860432}
   - component: {fileID: 4733701610128381578}
   m_Layer: 0
   m_Name: PlayerCircle
@@ -506,6 +510,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   singing: 0
+  CanSing: 1
 --- !u!114 &7399405042454718834
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1052,6 +1057,42 @@ MonoBehaviour:
   damage: 5
   cooldowntime: 3
   skillavaliable: 0
+--- !u!114 &1105816426396797184
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 97409386d0b89bf468caa8ab518f612f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  bulletspeed: 20
+  fireball: {fileID: 1376816417721550, guid: 389be35446680d946b4bdc094bb7d461, type: 3}
+  damage: 5
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &2387930508992674080
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e2ca0471eb87efe459323a2b2e148d8b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  bulletspeed: 15
+  fireball: {fileID: 1695034717852674, guid: 746e824dfb4b5424094a8e543fa10bb4, type: 3}
+  damage: 5
+  cooldowntime: 3
+  skillavaliable: 0
 --- !u!114 &4115436644824893292
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1092,6 +1133,43 @@ MonoBehaviour:
   speed: 2
   damage: 0
   maxtime: 2
+--- !u!114 &89078710107210139
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6eed25b0bafe4d44ab1ce74600f76ac6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  maxdistance: 15
+  bulletspeed: 10
+  DisBall: {fileID: 1243331948380450, guid: 20f3be0aedfd9d4468df1cfda6bdf04a, type: 3}
+  DisTime: 2
+  cooldowntime: 3
+  skillavaliable: 0
+--- !u!114 &4556681053814860432
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1408053086481752}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ff811fdafba9dd4787d511333e9a4fb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyImageScript: {fileID: 0}
+  MySuiteObj: {fileID: 1758492616619336, guid: c37a14511e1f0ab40b2a689fc146800e, type: 3}
+  MySuite: {fileID: 0}
+  maxdistance: 10
+  cooldowntime: 3
+  skillavaliable: 0
 --- !u!114 &4733701610128381578
 MonoBehaviour:
   m_ObjectHideFlags: 0

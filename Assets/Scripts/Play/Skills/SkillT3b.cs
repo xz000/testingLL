@@ -22,9 +22,9 @@ public class SkillT3b : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillT3b()
     {
-        if (Input.GetButtonDown("FireT") && skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -42,17 +42,15 @@ public class SkillT3b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.51f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = (actionplace - singplace).normalized();
+        DoFire((singplace + (Fix64)0.81 * skilldirection).ToV2(), (skilldirection * (Fix64)bulletspeed).ToV2());
         currentcooldown = 0;
         skillavaliable = false;
     }
@@ -69,6 +67,18 @@ public class SkillT3b : MonoBehaviour
     public void ResetCD()
     {
         currentcooldown = cooldowntime;
-        //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
+    }
+
+    void SkillT3bSetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

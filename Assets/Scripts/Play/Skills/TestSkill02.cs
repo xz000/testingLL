@@ -21,7 +21,7 @@ public class TestSkill02 : MonoBehaviour
 	
 	public void GoTestSkill02()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;

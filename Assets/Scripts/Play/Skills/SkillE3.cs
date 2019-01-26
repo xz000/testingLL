@@ -25,7 +25,7 @@ public class SkillE3 : MonoBehaviour
     // Update is called once per frame
     void GoSkillE3()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;

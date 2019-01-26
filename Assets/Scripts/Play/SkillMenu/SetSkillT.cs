@@ -46,18 +46,18 @@ public class SetSkillT : MonoBehaviour
             GetComponent<SkillsLink>().KeyTSkill = SkillCode.SkillT2b;
             return;
         }
-        /*if (T3.isOn && T3a.isOn)
+        if (T3.isOn && T3a.isOn)
         {
-            Soldier.GetComponent<SkillT3>().MyImageScript = IconT.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillT3>().enabled = true;
+            IconT.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillT3>().CalcFA;
+            GetComponent<SkillsLink>().KeyTSkill = SkillCode.SkillT3;
             return;
         }
         if (T3.isOn && T3b.isOn)
         {
-            Soldier.GetComponent<SkillT3b>().MyImageScript = IconT.GetComponent<CooldownImage>();
-            Soldier.GetComponent<SkillT3b>().enabled = true;
+            IconT.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillT3b>().CalcFA;
+            GetComponent<SkillsLink>().KeyTSkill = SkillCode.SkillT3b;
             return;
-        }*/
+        }
     }
 
     public void AllTOff()

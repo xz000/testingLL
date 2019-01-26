@@ -21,9 +21,9 @@ public class SkillY2 : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void GoSkillY2()
     {
-        if (Input.GetButtonDown("FireY") && skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
@@ -44,13 +44,12 @@ public class SkillY2 : MonoBehaviour
         }
     }
 
-    public void Skill(Fix64Vector2 actionplacef)
+    public void Skill(Fix64Vector2 actionplace)
     {
-        Vector2 actionplace = actionplacef.ToV2();
         GetComponent<DoSkill>().BeforeSkill();
-        Vector2 singplace = transform.position;
-        Vector2 skilldirection = actionplace - singplace;
-        DoFire(singplace + 0.66f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
+        Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
+        Fix64Vector2 skilldirection = (actionplace - singplace).normalized();
+        DoFire((singplace + (Fix64)0.66 * skilldirection).ToV2(), (skilldirection * (Fix64)bulletspeed).ToV2());
         currentcooldown = 0;
         skillavaliable = false;
     }
@@ -63,5 +62,18 @@ public class SkillY2 : MonoBehaviour
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
         bullet.GetComponent<BombExplode>().pushtime = DisTime;
         bullet.GetComponent<BombExplode>().maxtime = maxdistance / bulletspeed;
+    }
+
+    void SkillY2SetLevel(int i)
+    {
+        if (i == 0)
+            enabled = false;
+        else
+            enabled = true;
+    }
+
+    public float CalcFA()
+    {
+        return currentcooldown / cooldowntime;
     }
 }

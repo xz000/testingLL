@@ -21,7 +21,7 @@ public class SkillC2 : MonoBehaviour
 	
 	void GoSkillC2()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();

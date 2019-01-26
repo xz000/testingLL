@@ -32,7 +32,7 @@ public class SkillC3 : MonoBehaviour
         {
             BackToShadow();
         }
-        else if (skillavaliable)
+        else if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();

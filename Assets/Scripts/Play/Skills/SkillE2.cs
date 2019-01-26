@@ -26,7 +26,7 @@ public class SkillE2 : MonoBehaviour
 	// Update is called once per frame
 	void GoSkillE2()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
