@@ -30,7 +30,7 @@ public class SkillE2b : MonoBehaviour
     // Update is called once per frame
     void GoSkillE2b()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             Skill();
@@ -63,7 +63,6 @@ public class SkillE2b : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

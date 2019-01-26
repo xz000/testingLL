@@ -25,7 +25,7 @@ public class SkillY1 : MonoBehaviour
     // Update is called once per frame
     void GoSkillY1()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             if (MyLine != null)
@@ -48,7 +48,6 @@ public class SkillY1 : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

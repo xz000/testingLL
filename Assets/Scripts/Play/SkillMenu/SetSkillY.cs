@@ -34,16 +34,16 @@ public class SetSkillY : MonoBehaviour
             GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1b;
             return;
         }
-        if (Y2.isOn && Y2a.isOn)
+        if (Y2.isOn)
         {
-            //Soldier.GetComponent<SkillY2>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            //Soldier.GetComponent<SkillY2>().enabled = true;
-            return;
-        }
-        if (Y2.isOn && Y2b.isOn)
-        {
-            //Soldier.GetComponent<SkillY2b>().MyImageScript = IconY.GetComponent<CooldownImage>();
-            //Soldier.GetComponent<SkillY2b>().enabled = true;
+            if (Y2a.isOn)
+            {
+                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY2>().CalcFA;
+                GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY2;
+                return;
+            }
+            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY2b>().CalcFA;
+            GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY2b;
             return;
         }
         if (Y3.isOn && Y3a.isOn)

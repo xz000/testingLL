@@ -8,7 +8,7 @@ public class JumpBulletScript : MonoBehaviour
 
     public GameObject sender;
     GameObject Target;
-    public float speed;
+    public float speed = 20;
     public Rigidbody2D bulletRB2D;
     Rigidbody2D targetRB2D;
     public Fix64 Damage;
@@ -26,8 +26,6 @@ public class JumpBulletScript : MonoBehaviour
 	
 	void FixedUpdate ()
     {
-        //if (!photonView.isMine)
-            //return;
         currenttime += Time.fixedDeltaTime;
         if (currenttime >= maxtime)
             gameObject.GetComponent<DestroyScript>().Destroyself();
@@ -45,11 +43,9 @@ public class JumpBulletScript : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        //if (!photonView.isMine)
-            //return;
-        if(other.gameObject.GetComponent<DestroyScript>()!=null&& other.gameObject.GetComponent<DestroyScript>().breakable)
+        if (other.GetComponent<DestroyScript>() != null && other.GetComponent<DestroyScript>().breakable)
         {
-            other.gameObject.GetComponent<DestroyScript>().Destroyself();
+            other.GetComponent<DestroyScript>().Destroyself();
             gameObject.GetComponent<DestroyScript>().Destroyself();
             return;
         }

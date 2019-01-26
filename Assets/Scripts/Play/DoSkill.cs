@@ -11,12 +11,35 @@ public class DoSkill : MonoBehaviour
     public delegate void NoPointSkill();
     public NoPointSkill ClearDebuff;
     public NoPointSkill WorkBeforeDestroy;
+    public bool CanSing = true;
+    float timetostop;
+    float timepassed;
 
     // Use this for initialization
     void Start ()
     {
         Fire = null;
         ClearDebuff = null;
+    }
+
+    private void FixedUpdate()
+    {
+        if (CanSing)
+            return;
+        if (timepassed >= timetostop)
+        {
+            CanSing = true;
+        }
+        else
+            timepassed += Time.fixedDeltaTime;
+    }
+
+    public void GetTied(float time)
+    {
+        CanSing = false;
+        Fire = null;
+        timepassed = 0;
+        timetostop = time;
     }
 
     public void justdoit(Fix64Vector2 fv2)

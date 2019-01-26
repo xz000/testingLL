@@ -24,7 +24,7 @@ public class SkillR1b : MonoBehaviour
     // Update is called once per frame
     void GoSkillR1b()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;

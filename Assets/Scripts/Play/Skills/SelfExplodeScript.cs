@@ -28,7 +28,6 @@ public class SelfExplodeScript : MonoBehaviour
         else
         {
             currentcooldown += Time.fixedDeltaTime;
-            //MyImageScript.IconFillAmount = currentcooldown / cooldowntime;
         }
     }
 

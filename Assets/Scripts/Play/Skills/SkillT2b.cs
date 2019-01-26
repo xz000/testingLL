@@ -27,7 +27,7 @@ public class SkillT2b : MonoBehaviour
 
     void GoSkillT2b()
     {
-        if (skillavaliable)
+        if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
