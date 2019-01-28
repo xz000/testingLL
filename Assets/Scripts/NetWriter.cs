@@ -254,5 +254,6 @@ public class LoopList
             }
             bool3[i, 2] = false;
         }
+        GameObject.Find("Main Camera").GetComponent<CameraMove>().resetCam();
     }
 }

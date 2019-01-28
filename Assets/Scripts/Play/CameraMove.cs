@@ -7,6 +7,7 @@ public class CameraMove : MonoBehaviour
     Vector3 camspeed = new Vector3(0, 0, 0);
     Vector3 camspeed2 = new Vector3(0, 0, 0);
     Vector3 oriplace;
+    float orizoom;
     float speed2 = 7.5f;
     int edgewidth = 1;
 
@@ -14,7 +15,8 @@ public class CameraMove : MonoBehaviour
     void Start ()
     {
         oriplace = transform.position;
-	}
+        orizoom = Camera.main.orthographicSize;
+    }
 
     // Update is called once per frame
     private void Update()
@@ -48,13 +50,19 @@ public class CameraMove : MonoBehaviour
 
     void LateUpdate()
     {
-        Camera.main.orthographicSize -= Input.GetAxis("Mouse Scrollwheel");
+        Camera.main.orthographicSize -= Input.GetAxis("Mouse ScrollWheel");
         transform.position += camspeed + camspeed2;
-        if (Input.GetButtonDown("ResetCam"))
+        if (Input.GetKeyDown(KeyCode.Alpha1))
         {
             transform.position = oriplace;
         }
         if (Camera.main.orthographicSize < 1)
             Camera.main.orthographicSize = 1;
+    }
+
+    public void resetCam()
+    {
+        transform.position = oriplace;
+        Camera.main.orthographicSize = orizoom;
     }
 }

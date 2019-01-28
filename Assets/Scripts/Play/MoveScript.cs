@@ -76,7 +76,6 @@ public class MoveScript : MonoBehaviour {
     {
         Setselfvelocity();
         SetTotalVelocity();
-        //FixSelfPos();
     }
 
     void SetTotalVelocity()
@@ -92,21 +91,15 @@ public class MoveScript : MonoBehaviour {
         }
     }
 
-    /*void FixSelfPos()
+    private void LateUpdate()
     {
-        if (PlayerRb2d.position != Vector2.zero)
+        if (Input.GetKeyDown(KeyCode.Alpha2) && isme)
         {
-            fixposlater = true;
-            Debug.Log("ash");
-            return;
+            GameObject maincam = GameObject.Find("Main Camera");
+            followplace = new Vector3(PlayerRb2d.position.x, PlayerRb2d.position.y, maincam.transform.position.z);
+            maincam.transform.position = followplace;
         }
-        if (fixposlater)
-        {
-            PlayerRb2d.position = Fix256.F256v2(PlayerRb2d.position);
-            fixposlater = false;
-            Debug.Log("Smash");
-        }
-    }*/
+    }
 
     public void stopwalking()
     {
