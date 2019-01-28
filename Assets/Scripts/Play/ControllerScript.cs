@@ -39,6 +39,7 @@ public class ControllerScript : MonoBehaviour
     public void CPCat(int Num, Vector2 place)
     {
         thePC[Num] = Instantiate(PlayerCircle, place, Quaternion.identity);
+        thePC[Num].name = Num.ToString();
         theMS[Num] = thePC[Num].GetComponent<MoveScript>();
         theDS[Num] = thePC[Num].GetComponent<DoSkill>();
         if (Num == Sender.clientNum)

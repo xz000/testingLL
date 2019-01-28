@@ -19,7 +19,7 @@ public class ShowMyInfo : MonoBehaviour
 
     private void Update()
     {
-        MyInfo.transform.position = Camera.main.WorldToScreenPoint(transform.position + Vector3.down * 0.8f);
+        MyInfo.transform.position = Camera.main.WorldToScreenPoint(transform.position + Vector3.down * 0.2f);
         MyInfo.GetComponent<Text>().text = rb2d.position.x + "," + rb2d.position.y;
     }
 
