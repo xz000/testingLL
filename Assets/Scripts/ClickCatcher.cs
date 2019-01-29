@@ -98,7 +98,10 @@ public class ClickCatcher : MonoBehaviour {
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             ClickData cd = new ClickData();
-            cd.Msetdata(MButton.left, mp.x, mp.y);
+            if (Physics2D.OverlapPoint(mp) && Physics2D.OverlapPoint(mp).GetComponent<HPScript>() != null)
+                cd.Ssetdata(Physics2D.OverlapPoint(mp).gameObject.name);
+            else
+                cd.Msetdata(MButton.left, mp.x, mp.y);
             theNW.L2S.Add(cd);
         }
         if (Input.GetMouseButtonDown(1))
