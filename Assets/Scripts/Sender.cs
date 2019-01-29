@@ -176,12 +176,18 @@ public class ClickData
     public float? yPos;
     [Id(3)]
     public SkillCode? SC;
+    [Id(4)]
+    public string gn = string.Empty;
 
     public void Msetdata(MButton b, float? x, float? y)
     {
         blr = b;
         xPos = x;
         yPos = y;
+    }
+    public void Ssetdata(string n)
+    {
+        gn = n;
     }
     public void Ksetdata(SkillCode? k)
     {

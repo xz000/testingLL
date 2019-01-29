@@ -32,6 +32,11 @@ public class ControllerScript : MonoBehaviour
                         break;
                 }
             }
+            if (CD.gn != string.Empty)
+            {
+                Fix64Vector2 v2s = (Fix64Vector2)GameObject.Find(CD.gn).GetComponent<Rigidbody2D>().position;
+                theDS[PNO].justdoit(v2s);
+            }
         }
         LCD.Clear();
     }

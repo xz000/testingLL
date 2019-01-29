@@ -15,6 +15,8 @@ GameObject:
   - component: {fileID: 3511466812337094153}
   - component: {fileID: 4516068808989023392}
   - component: {fileID: 5940736757950739517}
+  - component: {fileID: 1916352738619370155}
+  - component: {fileID: 8906175441216641924}
   m_Layer: 0
   m_Name: FakeCircle
   m_TagString: Untagged
@@ -166,6 +168,35 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   MyInfoText: {fileID: 3928609820575930937, guid: 8e94f8917243cd7449849ed55f5b149f,
     type: 3}
+--- !u!114 &1916352738619370155
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1021165268865954}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9aaa894125dff90408a995df67e25be7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  MyMarkicon: {fileID: 1470958247986798}
+  MyColorMark: {fileID: 1309704480523806}
+  BigSR: {fileID: 212961016570096882}
+  ColorChangeTo: {r: 0, g: 0, b: 0, a: 0}
+  Speed: 0
+--- !u!114 &8906175441216641924
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1021165268865954}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 129b342d7b138e74fb9609e95c0dec93, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1309704480523806
 GameObject:
   m_ObjectHideFlags: 0
