@@ -12,6 +12,10 @@ public class TestSteamworks : MonoBehaviour
     // Use this for initialization
     void Start ()
     {
+        if (SteamAPI.Init())
+            Debug.Log("Steam API init -- SUCCESS!");
+        else
+            Debug.Log("Steam API init -- failure ...");
         ///SteamAPI.Init();
         /*if (PhotonNetwork.room.Name != null)
         {

@@ -30,21 +30,17 @@ public class TestMenu01 : MonoBehaviour
     protected Callback<LobbyEnter_t> Callback_lobbyEnter;
     protected Callback<LobbyDataUpdate_t> Callback_lobbyInfo;
 
-    ulong current_lobbyID;
+    ///ulong current_lobbyID;
     List<CSteamID> lobbyIDS;
 
     void Start()
     {
+        ///Object.DontDestroyOnLoad(gameObject);
         lobbyIDS = new List<CSteamID>();
         Callback_lobbyCreated = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
         Callback_lobbyList = Callback<LobbyMatchList_t>.Create(OnGetLobbiesList);
         Callback_lobbyEnter = Callback<LobbyEnter_t>.Create(OnLobbyEntered);
         Callback_lobbyInfo = Callback<LobbyDataUpdate_t>.Create(OnGetLobbyInfo);
-
-        if (SteamAPI.Init())
-            Debug.Log("Steam API init -- SUCCESS!");
-        else
-            Debug.Log("Steam API init -- failure ...");
     }
 
     void OnLobbyCreated(LobbyCreated_t result)
@@ -53,10 +49,9 @@ public class TestMenu01 : MonoBehaviour
             Debug.Log("Lobby created -- SUCCESS!");
         else
             Debug.Log("Lobby created -- failure ...");
-
         string personalName = SteamFriends.GetPersonaName();
         string ntr = RoomName.text;
-        if (ntr != "")
+        if (ntr == "")
             ntr = personalName + "'s game";
         SteamMatchmaking.SetLobbyData((CSteamID)result.m_ulSteamIDLobby, "name", ntr);
     }
@@ -90,10 +85,10 @@ public class TestMenu01 : MonoBehaviour
 
     void OnLobbyEntered(LobbyEnter_t result)
     {
-        current_lobbyID = result.m_ulSteamIDLobby;
-
+        ///current_lobbyID = result.m_ulSteamIDLobby;
+        Menu02.GetComponent<TestMenu02>().roomid = (CSteamID)result.m_ulSteamIDLobby;
         if (result.m_EChatRoomEnterResponse == 1)
-            Debug.Log("Lobby joined!");
+            SwitchToMenu02();
         else
             Debug.Log("Failed to join lobby.");
     }
@@ -128,11 +123,6 @@ public class TestMenu01 : MonoBehaviour
     public void Refresh()
     {
         m_LobbyMatchListCallResult.Set(SteamMatchmaking.RequestLobbyList());
-    }
-
-    public void CreateLobby()
-    {
-
     }
 
     private void OnLobbyMatchList(LobbyMatchList_t pCallback, bool bIOFailure)
@@ -244,7 +234,6 @@ public class TestMenu01 : MonoBehaviour
             PhotonNetwork.JoinOrCreateRoom(RoomName.text, null, null);*/
         SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 2);
         //SteamMatchmaking.SetLobbyData(;
-        SwtichToMenu02();
     }
 
     //"上一页"按钮事件处理函数
@@ -269,7 +258,6 @@ public class TestMenu01 : MonoBehaviour
     public void ClickJoinRoomButton(CSteamID id)
     {
         SteamMatchmaking.JoinLobby(id);
-        SwtichToMenu02();
     }
 
     /*public void ClickBackButton()
@@ -278,14 +266,14 @@ public class TestMenu01 : MonoBehaviour
         SwtichToMenu00();
     }*/
 
-    /*public void SwtichToMenu00()
+    /*public void SwitchToMenu00()
     {
         gameObject.SetActive(false);
         Menu02.SetActive(false);
         Menu00.SetActive(true);
     }*/
 
-    public void SwtichToMenu02()
+    public void SwitchToMenu02()
     {
         ///Menu00.SetActive(false);
         gameObject.SetActive(false);
