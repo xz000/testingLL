@@ -18,10 +18,10 @@ public class ClientToggle : MonoBehaviour
     public int TargetNO;
     public int CChannelID;
     public int CntID;
-    int hostId;
+    //int hostId;
     public byte error;
-    ConnectionConfig CCcFIG;
-    HostTopology CosTT;
+    //ConnectionConfig CCcFIG;
+    //HostTopology CosTT;
 
     public void ClickCT()
     {
@@ -48,17 +48,17 @@ public class ClientToggle : MonoBehaviour
     {
         Sender.isServer = false;
         Sender.clientNum = 1;
-        NetworkTransport.Init();
+        //NetworkTransport.Init();
         SenderScript.StartSelf();
-        CCcFIG = new ConnectionConfig();
-        CChannelID = CCcFIG.AddChannel(QosType.Reliable);
-        NetWriter.channelID = CCcFIG.AddChannel(QosType.ReliableSequenced);
-        CosTT = new HostTopology(CCcFIG, 10);
-        hostId = NetworkTransport.AddHost(CosTT, SelfNO);
-        CntID = NetworkTransport.Connect(hostId, Ttext.text, TargetNO, 0, out error);
+        //CCcFIG = new ConnectionConfig();
+        //CChannelID = CCcFIG.AddChannel(QosType.Reliable);
+        //NetWriter.channelID = CCcFIG.AddChannel(QosType.ReliableSequenced);
+        //CosTT = new HostTopology(CCcFIG, 10);
+        //hostId = NetworkTransport.AddHost(CosTT, SelfNO);
+        //CntID = NetworkTransport.Connect(hostId, Ttext.text, TargetNO, 0, out error);
         CLabel.text = "From " + SelfNO.ToString() + " to " + TargetNO.ToString();
-        SenderScript.HTo = CosTT;
-        Sender.HSID = hostId;
+        //SenderScript.HTo = CosTT;
+        //Sender.HSID = hostId;
         Sender.CNID = CntID;
         SenderScript.CHANID = CChannelID;
     }
@@ -66,11 +66,11 @@ public class ClientToggle : MonoBehaviour
     void Cstop()
     {
         Cinput.interactable = true;
-        if (NetworkTransport.IsStarted)
+        /*if (NetworkTransport.IsStarted)
         {
             NetworkTransport.Disconnect(hostId, CntID, out error);
             NetworkTransport.Shutdown();
-        }
+        }*/
         CLabel.text = "Stoped";
         SenderScript.ResetSelf();
     }

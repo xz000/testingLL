@@ -8,6 +8,7 @@ using System;
 using System.Text;
 using System.Runtime.Serialization.Formatters.Binary;
 using Bond;
+using Steamworks;
 
 public class NetWriter : MonoBehaviour
 {
@@ -79,7 +80,11 @@ public class NetWriter : MonoBehaviour
             Bond.IO.Safe.OutputBuffer ob = new Bond.IO.Safe.OutputBuffer(64);
             Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer> bof = new Bond.Protocols.FastBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob);
             Serialize.To(bof, Fd2s);
-            NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, ob.Data.Array, ob.Data.Array.Length, out error);
+            ///NetworkTransport.Send(Sender.HSID, Sender.CNID, channelID, ob.Data.Array, ob.Data.Array.Length, out error);
+            byte[] sendBytes = new byte[ob.Data.Array.Length + 1];
+            sendBytes[0] = (byte)0;
+            ob.Data.Array.CopyTo(sendBytes, 1);
+            SteamNetworking.SendP2PPacket(Sender.TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
             //
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);

@@ -86,7 +86,7 @@ public class TestMenu01 : MonoBehaviour
     void OnLobbyEntered(LobbyEnter_t result)
     {
         ///current_lobbyID = result.m_ulSteamIDLobby;
-        Menu02.GetComponent<TestMenu02>().roomid = (CSteamID)result.m_ulSteamIDLobby;
+        Sender.roomid = (CSteamID)result.m_ulSteamIDLobby;
         if (result.m_EChatRoomEnterResponse == 1)
             SwitchToMenu02();
         else

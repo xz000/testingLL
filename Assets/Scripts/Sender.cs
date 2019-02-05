@@ -4,7 +4,9 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Networking;
 using System;
+using System.Linq;
 using Bond;
+using Steamworks;
 
 public class Sender : MonoBehaviour
 {
@@ -22,7 +24,7 @@ public class Sender : MonoBehaviour
     public static int clientNum;
     public GameObject SendButton;
     public NetWriter MyNS;
-    public HostTopology HTo;
+    //public HostTopology HTo;
     public static int HSID;
     public static int CNID;
     public int CHANID;
@@ -30,6 +32,8 @@ public class Sender : MonoBehaviour
     public int rcbfsz = 256;
     public Toggle CCToggle;
     public CanvasGroup MCG;
+    public static CSteamID roomid;
+    public static CSteamID TOmb;
 
     private void Start()
     {
@@ -51,12 +55,13 @@ public class Sender : MonoBehaviour
         CCToggle.isOn = false;
     }
 
-    void ConnectDo()
+    public void ConnectDo()
     {
         SignalLight.color = Color.green;
         SendButton.SetActive(true);
         MyNS.enabled = true;//开启netwriter
         CCToggle.isOn = true;
+        StartSelf();
         HideMC();
     }
 
@@ -78,7 +83,11 @@ public class Sender : MonoBehaviour
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
         Serialize.To(boc, sd);
-        NetworkTransport.Send(HSID, CNID, CHANID, ob2.Data.Array, ob2.Data.Array.Length, out error);
+        ///NetworkTransport.Send(HSID, CNID, CHANID, ob2.Data.Array, ob2.Data.Array.Length, out error);
+        byte[] sendBytes = new byte[ob2.Data.Array.Length + 1];
+        sendBytes[0] = (byte)1;
+        ob2.Data.Array.CopyTo(sendBytes, 1);
+        SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
     }
 
     public void ShowMC()
@@ -97,6 +106,7 @@ public class Sender : MonoBehaviour
 
     private void Update()
     {
+        SteamAPI.RunCallbacks();
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             if (MCG.interactable)
@@ -106,12 +116,13 @@ public class Sender : MonoBehaviour
         }
         if (!started)
             return;
-        SignalControl();
+        ///SignalControl();
+        SWControl();
     }
 
     public void SignalControl()
     {
-        int RecChanID;
+        /*int RecChanID;
         NetworkEventType recData = NetworkTransport.Receive(out HSID, out CNID, out RecChanID, rcbuffer, rcbfsz, out rcsz, out error);
         switch (recData)
         {
@@ -131,6 +142,37 @@ public class Sender : MonoBehaviour
             case NetworkEventType.DisconnectEvent:
                 DisconnectDo();
                 break;
+        }*/
+    }
+
+    public void SWControl()
+    {
+        //Recieve packets from other members in the lobby with us
+        uint msgSize;
+        while (SteamNetworking.IsP2PPacketAvailable(out msgSize))
+        {
+            byte[] packet = new byte[msgSize];
+            CSteamID steamIDRemote;
+            uint bytesRead = 0;
+            if (SteamNetworking.ReadP2PPacket(packet, msgSize, out bytesRead, out steamIDRemote))
+            {
+                int TYPE = packet[0];
+                rcbuffer = packet.Skip(1).Take(packet.Length - 1).ToArray();
+                switch (TYPE)
+                {
+                    case 0:
+                        DeSerializeReceived();
+                        break;
+                    case 1:
+                        SetSD();
+                        break;
+                    case 2:
+                        ConnectDo();
+                        Debug.Log("Hello");
+                        break;
+                    default: Debug.Log("BAD PACKET"); break;
+                }
+            }
         }
     }
 

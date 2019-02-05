@@ -12,14 +12,17 @@ public class TestMenu02 : MonoBehaviour
     public Toggle Readytoggle;
     public Toggle AutostartToggle;
 
+    public GameObject SenderPanel;
+    public Sender SenderSC;
+
     public Text PlayersJoined;
     public Text Notready;
     public Text Roomname;
-    public CSteamID roomid;
 
     protected Callback<LobbyKicked_t> Callback_LobbyKicked;
     protected Callback<LobbyChatUpdate_t> Callback_LobbyChatUpdate;
     protected Callback<LobbyDataUpdate_t> Callback_LobbyDataUpdate;
+    protected Callback<P2PSessionRequest_t> Callback_newConnection;
 
     ///public GameObject Menu00;
     public GameObject Menu01;
@@ -44,35 +47,78 @@ public class TestMenu02 : MonoBehaviour
         Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
         Callback_LobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
         Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
+        Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
     }
 
     void OnEnable()
     {
-        Roomname.text = SteamMatchmaking.GetLobbyData(roomid, "name");
-        PlayersJoined.text = SteamMatchmaking.GetNumLobbyMembers(roomid) + " players joined";
+        Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
+        SetBasic();
     }
 
     void OnLobbyKicked(LobbyKicked_t lobbyKicked_T)
     {
-        roomid = (CSteamID)lobbyKicked_T.m_ulSteamIDLobby;
+        Sender.roomid = (CSteamID)lobbyKicked_T.m_ulSteamIDLobby;
         SwitchToMenu01();
     }
 
     void OnLobbyDataUpdate(LobbyDataUpdate_t lobbyDataUpdate_T)
     {
-        roomid = (CSteamID)lobbyDataUpdate_T.m_ulSteamIDLobby;
-        Roomname.text = SteamMatchmaking.GetLobbyData(roomid, "name");
+        Sender.roomid = (CSteamID)lobbyDataUpdate_T.m_ulSteamIDLobby;
+        Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
     }
 
     void OnLobbyChatUpdate(LobbyChatUpdate_t lobbyChatUpdate_T)
     {
-        roomid = (CSteamID)lobbyChatUpdate_T.m_ulSteamIDLobby;
-        PlayersJoined.text = SteamMatchmaking.GetNumLobbyMembers(roomid) + " players joined";
+        Sender.roomid = (CSteamID)lobbyChatUpdate_T.m_ulSteamIDLobby;
+        SetBasic();
+    }
+
+    void SetBasic()
+    {
+        int Mcount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
+        PlayersJoined.text = Mcount + " players joined";
+        if (Mcount == 2)
+        {
+            CSteamID tid;
+            for (int i = 0; i < Mcount; i++)
+            {
+                tid = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
+                if (tid != SteamUser.GetSteamID())
+                    Sender.TOmb = tid;
+            }
+            if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+                Sender.clientNum = 0;
+            else
+                Sender.clientNum = 1;
+            SenderPanel.SetActive(true);
+            SayHello();
+        }
+    }
+
+    void OnNewConnection(P2PSessionRequest_t result)
+    {
+        Debug.Log("Wa");
+        if (Sender.TOmb == result.m_steamIDRemote)
+        {
+            SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
+            return;
+        }
+    }
+
+    void SayHello()
+    {
+        byte[] hello = new byte[1];
+        hello[0] = 2;
+        SteamNetworking.SendP2PPacket(Sender.TOmb, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
+        SenderSC.ConnectDo();
+        Debug.Log("Hi");
+        gameObject.SetActive(false);
     }
 
     void LeaveLobby()
     {
-        SteamMatchmaking.LeaveLobby(roomid);
+        SteamMatchmaking.LeaveLobby(Sender.roomid);
         SwitchToMenu01();
     }
 
