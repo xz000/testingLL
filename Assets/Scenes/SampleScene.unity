@@ -20725,11 +20725,11 @@ MonoBehaviour:
   Otherpanel: {fileID: 1662377176}
   Readytoggle: {fileID: 1355979345}
   AutostartToggle: {fileID: 158836237}
+  SenderPanel: {fileID: 1091925956}
+  SenderSC: {fileID: 1914587339}
   PlayersJoined: {fileID: 1874528153}
   Notready: {fileID: 1649733125}
   Roomname: {fileID: 1384698730}
-  roomid:
-    m_SteamID: 0
   Menu01: {fileID: 37478964}
 --- !u!1 &950859348
 GameObject:

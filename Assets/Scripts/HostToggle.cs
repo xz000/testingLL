@@ -16,8 +16,8 @@ public class HostToggle : MonoBehaviour
     public int HChannelID;
     public int hostId;
     public byte Herror;
-    ConnectionConfig CCFIG;
-    HostTopology HOSTTT;
+    //ConnectionConfig CCFIG;
+    //HostTopology HOSTTT;
 
     public void ClickHT()
     {
@@ -43,13 +43,13 @@ public class HostToggle : MonoBehaviour
     {
         Sender.isServer = true;
         Sender.clientNum = 0;
-        NetworkTransport.Init();
+        //NetworkTransport.Init();
         SenderScript.StartSelf();
-        CCFIG = new ConnectionConfig();
-        HChannelID = CCFIG.AddChannel(QosType.Reliable);
-        NetWriter.channelID = CCFIG.AddChannel(QosType.ReliableSequenced);
-        HOSTTT = new HostTopology(CCFIG, 10);
-        hostId = NetworkTransport.AddHost(HOSTTT, HostNO);
+        //CCFIG = new ConnectionConfig();
+        //HChannelID = CCFIG.AddChannel(QosType.Reliable);
+        //NetWriter.channelID = CCFIG.AddChannel(QosType.ReliableSequenced);
+        //HOSTTT = new HostTopology(CCFIG, 10);
+        //hostId = NetworkTransport.AddHost(HOSTTT, HostNO);
         SLabel.text = "Host on :" + HostNO.ToString();
         SenderScript.CHANID = HChannelID;
     }
@@ -57,11 +57,11 @@ public class HostToggle : MonoBehaviour
     void Hstop()
     {
         Hinput.interactable = true;
-        if (NetworkTransport.IsStarted)
+        /*if (NetworkTransport.IsStarted)
         {
             NetworkTransport.DisconnectNetworkHost(hostId, out Herror);
             NetworkTransport.Shutdown();
-        }
+        }*/
         SLabel.text = "Host Stoped";
         SenderScript.ResetSelf();
     }
