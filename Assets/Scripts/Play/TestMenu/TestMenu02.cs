@@ -22,7 +22,6 @@ public class TestMenu02 : MonoBehaviour
     protected Callback<LobbyKicked_t> Callback_LobbyKicked;
     protected Callback<LobbyChatUpdate_t> Callback_LobbyChatUpdate;
     protected Callback<LobbyDataUpdate_t> Callback_LobbyDataUpdate;
-    protected Callback<P2PSessionRequest_t> Callback_newConnection;
 
     ///public GameObject Menu00;
     public GameObject Menu01;
@@ -47,7 +46,6 @@ public class TestMenu02 : MonoBehaviour
         Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
         Callback_LobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
         Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
-        Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
     }
 
     void OnEnable()
@@ -88,21 +86,17 @@ public class TestMenu02 : MonoBehaviour
                     Sender.TOmb = tid;
             }
             if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+            {
+                //Sender.isServer = true;
                 Sender.clientNum = 0;
+            }
             else
+            {
+                //Sender.isServer = false;
                 Sender.clientNum = 1;
+            }
             SenderPanel.SetActive(true);
             SayHello();
-        }
-    }
-
-    void OnNewConnection(P2PSessionRequest_t result)
-    {
-        Debug.Log("Wa");
-        if (Sender.TOmb == result.m_steamIDRemote)
-        {
-            SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
-            return;
         }
     }
 
@@ -111,7 +105,7 @@ public class TestMenu02 : MonoBehaviour
         byte[] hello = new byte[1];
         hello[0] = 2;
         SteamNetworking.SendP2PPacket(Sender.TOmb, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
-        SenderSC.ConnectDo();
+        //SenderSC.ConnectDo();
         Debug.Log("Hi");
         gameObject.SetActive(false);
     }

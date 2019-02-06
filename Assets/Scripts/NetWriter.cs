@@ -97,12 +97,14 @@ public class NetWriter : MonoBehaviour
             L2S.Clear();
             //buffer2s = new byte[1024];
             LocalCurrentLength -= LocalFrameLength;
+            //Debug.Log("Wey: " + LocalFrameNum);
             LocalFrameNum++;
         }
     }
 
     private void OnEnable()
     {
+        Debug.Log("oe");
         //bf = new BinaryFormatter();
         theLL = new LoopList();
         theLL.init(GetComponent<ControllerScript>());

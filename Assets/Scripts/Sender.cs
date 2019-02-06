@@ -20,7 +20,7 @@ public class Sender : MonoBehaviour
     public int rcsz;
     public byte error;
     public bool started = false;
-    public static bool isServer;
+    //public static bool isServer;
     public static int clientNum;
     public GameObject SendButton;
     public NetWriter MyNS;
@@ -34,10 +34,22 @@ public class Sender : MonoBehaviour
     public CanvasGroup MCG;
     public static CSteamID roomid;
     public static CSteamID TOmb;
+    protected Callback<P2PSessionRequest_t> Callback_newConnection;
 
     private void Start()
     {
         ResetSelf();
+        Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
+    }
+
+    void OnNewConnection(P2PSessionRequest_t result)
+    {
+        //Debug.Log("Wa");
+        if (Sender.TOmb == result.m_steamIDRemote)
+        {
+            SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
+            return;
+        }
     }
 
     public void ResetSelf()
@@ -48,6 +60,7 @@ public class Sender : MonoBehaviour
 
     void ResetS2()
     {
+        Debug.Log("S2");
         SendButton.SetActive(false);
         SignalLight.color = Color.white;
         MyNS.isstarted = false;
@@ -57,11 +70,11 @@ public class Sender : MonoBehaviour
 
     public void ConnectDo()
     {
+        StartSelf();
         SignalLight.color = Color.green;
         SendButton.SetActive(true);
         MyNS.enabled = true;//开启netwriter
         CCToggle.isOn = true;
-        StartSelf();
         HideMC();
     }
 
@@ -114,9 +127,8 @@ public class Sender : MonoBehaviour
             else
                 ShowMC();
         }
-        if (!started)
-            return;
-        ///SignalControl();
+        /*if (!started)
+            return;*/
         SWControl();
     }
 
@@ -147,17 +159,27 @@ public class Sender : MonoBehaviour
 
     public void SWControl()
     {
+        //Debug.Log("Checking");
         //Recieve packets from other members in the lobby with us
         uint msgSize;
         while (SteamNetworking.IsP2PPacketAvailable(out msgSize))
         {
+            /*
+            rcbuffer = new byte[msgSize];
+            CSteamID steamIDRemote;
+            uint bytesRead = 0;
+            if (SteamNetworking.ReadP2PPacket(rcbuffer, msgSize, out bytesRead, out steamIDRemote))
+                DeSerializeReceived();
+            */
+            //Debug.Log(msgSize);
             byte[] packet = new byte[msgSize];
             CSteamID steamIDRemote;
             uint bytesRead = 0;
             if (SteamNetworking.ReadP2PPacket(packet, msgSize, out bytesRead, out steamIDRemote))
             {
+                //Debug.Log("Hello");
                 int TYPE = packet[0];
-                rcbuffer = packet.Skip(1).Take(packet.Length - 1).ToArray();
+                Array.Copy(packet, 1, rcbuffer, 0, packet.Length - 1);
                 switch (TYPE)
                 {
                     case 0:
@@ -168,7 +190,6 @@ public class Sender : MonoBehaviour
                         break;
                     case 2:
                         ConnectDo();
-                        Debug.Log("Hello");
                         break;
                     default: Debug.Log("BAD PACKET"); break;
                 }

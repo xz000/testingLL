@@ -41,7 +41,7 @@ public class HostToggle : MonoBehaviour
 
     void Hstart()
     {
-        Sender.isServer = true;
+        ///Sender.isServer = true;
         Sender.clientNum = 0;
         //NetworkTransport.Init();
         SenderScript.StartSelf();
