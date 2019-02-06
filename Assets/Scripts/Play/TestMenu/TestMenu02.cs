@@ -22,6 +22,7 @@ public class TestMenu02 : MonoBehaviour
     protected Callback<LobbyKicked_t> Callback_LobbyKicked;
     protected Callback<LobbyChatUpdate_t> Callback_LobbyChatUpdate;
     protected Callback<LobbyDataUpdate_t> Callback_LobbyDataUpdate;
+    protected Callback<P2PSessionRequest_t> Callback_newConnection;
 
     ///public GameObject Menu00;
     public GameObject Menu01;
@@ -46,6 +47,17 @@ public class TestMenu02 : MonoBehaviour
         Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
         Callback_LobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
         Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
+        Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
+    }
+
+    void OnNewConnection(P2PSessionRequest_t result)
+    {
+        //Debug.Log("Wa");
+        if (Sender.TOmb == result.m_steamIDRemote)
+        {
+            SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
+            return;
+        }
     }
 
     void OnEnable()
@@ -112,12 +124,16 @@ public class TestMenu02 : MonoBehaviour
 
     void LeaveLobby()
     {
+        GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
+        foreach (GameObject pc in pcs)
+            Destroy(pc);
         SteamMatchmaking.LeaveLobby(Sender.roomid);
         SwitchToMenu01();
     }
 
     public void SwitchToMenu01()
     {
+        SenderPanel.SetActive(false);
         gameObject.SetActive(false);
         Menu01.SetActive(true);
     }

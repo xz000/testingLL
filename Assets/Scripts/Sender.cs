@@ -34,22 +34,10 @@ public class Sender : MonoBehaviour
     public CanvasGroup MCG;
     public static CSteamID roomid;
     public static CSteamID TOmb;
-    protected Callback<P2PSessionRequest_t> Callback_newConnection;
 
     private void Start()
     {
         ResetSelf();
-        Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
-    }
-
-    void OnNewConnection(P2PSessionRequest_t result)
-    {
-        //Debug.Log("Wa");
-        if (Sender.TOmb == result.m_steamIDRemote)
-        {
-            SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
-            return;
-        }
     }
 
     public void ResetSelf()
@@ -122,7 +110,7 @@ public class Sender : MonoBehaviour
         SteamAPI.RunCallbacks();
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            if (MCG.interactable)
+            if (MCG.blocksRaycasts)
                 HideMC();
             else
                 ShowMC();
