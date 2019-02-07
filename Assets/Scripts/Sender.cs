@@ -23,6 +23,7 @@ public class Sender : MonoBehaviour
     //public static bool isServer;
     public static int clientNum;
     public GameObject SendButton;
+    public SkillsLink SPNL;
     public NetWriter MyNS;
     //public HostTopology HTo;
     public static int HSID;
@@ -63,6 +64,7 @@ public class Sender : MonoBehaviour
         SendButton.SetActive(true);
         MyNS.enabled = true;//开启netwriter
         CCToggle.isOn = true;
+        SPNL.alphaset();
         HideMC();
     }
 

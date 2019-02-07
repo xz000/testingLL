@@ -71,16 +71,7 @@ public class TestMenu01 : MonoBehaviour
 
     void OnGetLobbyInfo(LobbyDataUpdate_t result)
     {
-        /*
-        for (int i = 0; i < lobbyIDS.Count; i++)
-        {
-            if (lobbyIDS[i].m_SteamID == result.m_ulSteamIDLobby)
-            {
-                Debug.Log("Lobby " + i + " :: " + SteamMatchmaking.GetLobbyData((CSteamID)lobbyIDS[i].m_SteamID, "name"));
-                return;
-            }
-        }
-        */
+        ButtonControl();
     }
 
     void OnLobbyEntered(LobbyEnter_t result)
@@ -98,6 +89,7 @@ public class TestMenu01 : MonoBehaviour
     {
         m_LobbyMatchListCallResult = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
         m_LobbyMatchListCallResult.Set(SteamMatchmaking.RequestLobbyList());
+        SteamAPI.RunCallbacks();
         currentPageNumber = 1;              //初始化当前房间页
         maxPageNumber = 1;                  //初始化最大房间页	
 
@@ -112,7 +104,7 @@ public class TestMenu01 : MonoBehaviour
             roomMessage[i] = rectTransform.GetChild(i).gameObject;
             roomMessage[i].SetActive(false);            //禁用房间信息条目
         }
-        SteamAPI.RunCallbacks();
+        ButtonControl();
     }
 
     private void Update()
