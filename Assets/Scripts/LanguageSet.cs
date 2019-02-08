@@ -6,12 +6,12 @@ using Steamworks;
 public class LanguageSet : MonoBehaviour
 {
     public static string CurrentLanguage;
-    public GameObject CV2;
+    //public GameObject CV2;
 
-    void Start()
+    void Awake()
     {
         SteamAPI.Init();
         CurrentLanguage = SteamApps.GetCurrentGameLanguage();
-        CV2.SetActive(true);
+        //CV2.SetActive(true);
     }
 }
