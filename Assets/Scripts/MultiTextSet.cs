@@ -8,7 +8,7 @@ public class MultiTextSet : MonoBehaviour
     public string TextEn;
     public string TextCn;
 
-    private void OnEnable()
+    private void Start()
     {
         switch (LanguageSet.CurrentLanguage)
         {
