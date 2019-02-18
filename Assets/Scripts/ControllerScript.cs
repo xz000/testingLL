@@ -64,7 +64,7 @@ public class ControllerScript : MonoBehaviour
         Vector3 v3;
         for (int i = 0; i < MNum; i++)
         {
-            v3 = new Vector3(i * 3, 0, 0);
+            v3 = new Vector3(i * 6 - 3, 0, 0);
             CPCat(i, v3);
         }
     }
