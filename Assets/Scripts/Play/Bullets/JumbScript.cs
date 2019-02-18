@@ -10,7 +10,7 @@ public class JumbScript : MonoBehaviour
     public float maxtime;
     public float pushtime = 1;
     public float bombpower;
-    public Fix64 bombdamage;
+    public float bombdamage;
     public GameObject sender;
     public bool selfbreak = true;
     bool bonus = false;
@@ -65,12 +65,12 @@ public class JumbScript : MonoBehaviour
     {
         GameObject myrego = Instantiate(reGO, transform.position, Quaternion.identity);
         myrego.GetComponent<ReturnScript>().Target = sender.GetComponent<Rigidbody2D>();
-        sender.GetComponent<SkillT3b>().damageplus += (Fix64)3 / (Fix64)10;
+        sender.GetComponent<SkillT3b>().damageplus += 0.3f;
     }
 
     private void OnDestroy()
     {
         if (!bonus)
-            sender.GetComponent<SkillT3b>().damageplus = Fix64.Zero;
+            sender.GetComponent<SkillT3b>().damageplus = 0;
     }
 }

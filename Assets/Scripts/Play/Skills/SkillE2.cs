@@ -53,7 +53,7 @@ public class SkillE2 : MonoBehaviour
         MS.controllable = true;
         currentcooldown = 0;
         skillavaliable = false;
-        gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, (Fix64)pushDamage);
+        gameObject.GetComponent<ColliderScript>().SetPower(pushPower, pushTime, pushDamage);
         gameObject.GetComponent<ColliderScript>().StartKick(maxTimeE2);
         gameObject.GetComponent<StealthScript>().StealthByTime(maxTimeE2, false);
         GetComponent<StealthScript>().Speed = 1;

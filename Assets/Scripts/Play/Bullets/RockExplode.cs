@@ -5,7 +5,7 @@ using FixMath;
 
 public class RockExplode : MonoBehaviour
 {
-    public Fix64 damage = (Fix64)10;
+    public float damage = 10;
     public float bombforce = 8;
     public float pushtime = 1;
     private float timetosing = 2;

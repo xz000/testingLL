@@ -11,7 +11,7 @@ public class BananaScript : MonoBehaviour
     float pasttime = 0;
     public float bombpower = 5;
     public float pushtime = 1;
-    public Fix64 bombdamage = (Fix64)5;
+    public float bombdamage = 5;
     Fix64Vector2 nextv;
     Fix64 magicn;
 

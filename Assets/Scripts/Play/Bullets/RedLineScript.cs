@@ -10,7 +10,7 @@ public class RedLineScript : MonoBehaviour
     Vector2 centerpoint;
     public LineRenderer MyLine;
     public float speed = 2;
-    public Fix64 damage;
+    public float damage;
     public float maxtime = 2;
     float timepsd = 0;
     //public bool Idrag = false;
@@ -34,7 +34,7 @@ public class RedLineScript : MonoBehaviour
         if (pointalive)
         {
             centerpoint = receiver.position;
-            receiver.GetComponent<HPScript>().GetHurt(damage * (Fix64)Time.fixedDeltaTime);
+            receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         }
         Vector2 RayV2 = sender.position - centerpoint;
         RaycastHit2D[] Allhit = Physics2D.RaycastAll(centerpoint, RayV2);
@@ -42,13 +42,13 @@ public class RedLineScript : MonoBehaviour
         {
             if (hit.collider.gameObject == sender.gameObject || hit.collider.GetComponent<HPScript>() == null)//!hit.collider.gameObject.GetPhotonView().isMine || 
                 continue;
-            hit.collider.GetComponent<HPScript>().GetHurt(damage * (Fix64)Time.fixedDeltaTime);
+            hit.collider.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         }
         if (timepsd >= maxtime || sender == null)
             gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 
-    public void SetRSC(float spd, Fix64 dmg, float maxT)
+    public void SetRSC(float spd, float dmg, float maxT)
     {
         damage = dmg;
         speed = spd;

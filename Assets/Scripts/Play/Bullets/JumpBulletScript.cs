@@ -11,9 +11,9 @@ public class JumpBulletScript : MonoBehaviour
     public float speed = 20;
     public Rigidbody2D bulletRB2D;
     Rigidbody2D targetRB2D;
-    public Fix64 Damage;
-    private Fix64 damageRatio = Fix64.One;
-    private Fix64 damageMinus = Fix64.One / (Fix64)5;
+    public float Damage;
+    private float damageRatio = 1;
+    private float damageMinus = 0.2f;
     //public int maxjumptime;
     float currenttime = 0;
     public float maxtime = 1;
@@ -35,7 +35,7 @@ public class JumpBulletScript : MonoBehaviour
     {
         victim.GetComponent<HPScript>().GetHurt(Damage * damageRatio);
         damageRatio -= damageMinus;
-        if (damageRatio <= Fix64.Zero)
+        if (damageRatio <= 0)
             gameObject.GetComponent<DestroyScript>().Destroyself();
         bulletRB2D.position = targetRB2D.position;
         currenttime = 0;

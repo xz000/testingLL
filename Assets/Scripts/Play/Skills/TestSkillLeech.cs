@@ -58,7 +58,7 @@ public class TestSkillLeech : MonoBehaviour
         Fix64 turntime = (skilldirection.Length() - (Fix64)0.76) / bsf;
         leecher.GetComponent<LeechScript>().sender = gameObject;
         leecher.GetComponent<LeechScript>().turntime = (float)turntime;
-        leecher.GetComponent<LeechScript>().leechdamage = (Fix64)damage;
+        leecher.GetComponent<LeechScript>().leechdamage = damage;
         Fix64Vector2 sdnf = skilldirection.normalized();
         bullet = Instantiate(leecher, (singplace + (Fix64)0.76 * sdnf).ToV2(), Quaternion.identity);
         bullet.GetComponent<LeechScript>().speed = bsf;

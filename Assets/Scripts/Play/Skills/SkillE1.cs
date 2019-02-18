@@ -53,7 +53,7 @@ public class SkillE1 : MonoBehaviour
         if (skilldirection.LengthSquare() > mdf * mdf)
             actionplace = singplace + skilldirection.normalized() * mdf;
         GameObject MyRock = Instantiate(TheRock, actionplace.ToV2(), Quaternion.identity);
-        MyRock.GetComponent<RockExplode>().damage = (Fix64)damage;
+        MyRock.GetComponent<RockExplode>().damage = damage;
         MyRock.GetComponent<RockExplode>().bombforce = bombforce;
         currentcooldown = 0;
         skillavaliable = false;

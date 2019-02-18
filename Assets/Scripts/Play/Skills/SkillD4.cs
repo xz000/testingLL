@@ -70,7 +70,7 @@ public class SkillD4 : MonoBehaviour
     {
         
         fireball.GetComponent<BananaScript>().sender = gameObject;
-        fireball.GetComponent<BananaScript>().bombdamage = (Fix64)damage;
+        fireball.GetComponent<BananaScript>().bombdamage = damage;
         fireball.GetComponent<BananaScript>().maxtime = maxtime;
         GameObject bullet = Instantiate(fireball, fireplace.ToV2(), Quaternion.identity);
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d.ToV2();

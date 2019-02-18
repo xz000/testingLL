@@ -8,7 +8,7 @@ public class SABulletScript : MonoBehaviour
 
     public GameObject sender;
     //public Rigidbody2D bulletRB2D;
-    public Fix64 Damage = (Fix64)2;
+    public float Damage = 2;
     float currenttime = 0;
     public float maxtime = 2;
 

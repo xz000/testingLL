@@ -13,7 +13,7 @@ public class SkillT3b : MonoBehaviour
     private float currentcooldown;
     public float cooldowntime = 3;
     public bool skillavaliable;
-    public Fix64 damageplus = Fix64.Zero;
+    public float damageplus = 0;
 
     // Use this for initialization
     void Start()
@@ -60,7 +60,7 @@ public class SkillT3b : MonoBehaviour
         GameObject bullet;
         fireball.GetComponent<JumbScript>().sender = gameObject;
         bullet = Instantiate(fireball, fireplace, Quaternion.identity);
-        bullet.GetComponent<JumbScript>().bombdamage = (Fix64)damage + damageplus;
+        bullet.GetComponent<JumbScript>().bombdamage = damage + damageplus;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
     }
 
