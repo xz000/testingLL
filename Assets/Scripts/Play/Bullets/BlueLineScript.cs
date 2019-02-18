@@ -9,7 +9,7 @@ public class BlueLineScript : MonoBehaviour
     public Rigidbody2D receiver;
     public LineRenderer MyLine;
     public float speed = 2;
-    public Fix64 damage;
+    public float damage;
     public float maxtime = 2;
     float timepsd = 0;
     //public bool missed;
@@ -29,12 +29,12 @@ public class BlueLineScript : MonoBehaviour
     void FixedUpdate()
     {
         timepsd += Time.fixedDeltaTime;
-        receiver.GetComponent<HPScript>().GetHurt(damage * (Fix64)Time.fixedDeltaTime);
+        receiver.GetComponent<HPScript>().GetHurt(damage * Time.fixedDeltaTime);
         if (timepsd >= maxtime || receiver == null || sender == null)
             gameObject.GetComponent<DestroyScript>().Destroyself();
     }
 
-    public void SetBSC(float spd, Fix64 dmg, float maxT)
+    public void SetBSC(float spd, float dmg, float maxT)
     {
         damage = dmg;
         speed = spd;

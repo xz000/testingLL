@@ -10,7 +10,7 @@ public class LeebScript : MonoBehaviour
     public float speed;
     public Rigidbody2D bulletRB2D;
     Rigidbody2D targetRB2D;
-    public Fix64 Damage;
+    public float Damage;
     float currenttime = 0;
     public float maxtime = 1;
     

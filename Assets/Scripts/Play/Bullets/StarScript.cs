@@ -5,7 +5,7 @@ using FixMath;
 
 public class StarScript : MonoBehaviour
 {
-    public Fix64 powerpers = (Fix64)2;
+    public float powerpers = 2;
     public GameObject sender;
 
     private void FixedUpdate()
@@ -24,9 +24,9 @@ public class StarScript : MonoBehaviour
             if (hp != null)
             {
                 if (hp.gameObject == sender)
-                    hp.GetHurt(-powerpers * (Fix64)Time.fixedDeltaTime);
+                    hp.GetHurt(-powerpers * Time.fixedDeltaTime);
                 else
-                    hp.GetHurt(powerpers * (Fix64)Time.fixedDeltaTime);
+                    hp.GetHurt(powerpers * Time.fixedDeltaTime);
             }
         }
     }

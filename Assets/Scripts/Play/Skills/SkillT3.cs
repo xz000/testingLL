@@ -59,7 +59,7 @@ public class SkillT3 : MonoBehaviour
         GameObject bullet;
         fireball.GetComponent<JumpBulletScript>().sender = gameObject;
         bullet = Instantiate(fireball, fireplace, Quaternion.identity);
-        bullet.GetComponent<JumpBulletScript>().Damage = (Fix64)damage;
+        bullet.GetComponent<JumpBulletScript>().Damage = damage;
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
     }
 

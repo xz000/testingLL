@@ -54,7 +54,7 @@ public class SkillY3b : MonoBehaviour
             actionplace = singplace + skilldirection.normalized() * mdfx;
         GameObject MyRock = Instantiate(TheStar, actionplace.ToV2(), Quaternion.identity);
         MyRock.GetComponent<StarScript>().sender = gameObject;
-        MyRock.GetComponent<StarScript>().powerpers = (Fix64)powerpersecond;
+        MyRock.GetComponent<StarScript>().powerpers = powerpersecond;
         MyRock.GetComponent<CountdownScript>().maxtime = maxtime;
         currentcooldown = 0;
         skillavaliable = false;

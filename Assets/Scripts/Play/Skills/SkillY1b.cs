@@ -32,7 +32,7 @@ public class SkillY1b : MonoBehaviour
                 MyLine.GetComponent<DestroyScript>().Destroyself();
             MyLine = Instantiate(MyLineObj, gameObject.transform.position, Quaternion.identity);
             MyLine.GetComponent<RedLineScript>().sender = GetComponent<Rigidbody2D>();
-            MyLine.GetComponent<RedLineScript>().SetRSC(speed, (Fix64)damage, maxtime);
+            MyLine.GetComponent<RedLineScript>().SetRSC(speed, damage, maxtime);
             gameObject.GetComponent<DoSkill>().Fire = Skill;
         }
     }

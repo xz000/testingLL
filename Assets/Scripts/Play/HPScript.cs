@@ -5,13 +5,13 @@ using FixMath;
 
 public class HPScript : MonoBehaviour
 {
-    public Fix64 maxHP;
-    public Fix64 currentHP;
+    public float maxHP;
+    public float currentHP;
     //private GameObject safeground;
-    Fix64 outhurt = (Fix64)2;
+    float outhurt = 2;
     bool boost = false;
-    public Fix64 boostnow = (Fix64)0;
-    public Fix64 boostmax = (Fix64)25;
+    public float boostnow = 0;
+    public float boostmax = 25;
 
     // Use this for initialization
     void Start () {
@@ -57,13 +57,13 @@ public class HPScript : MonoBehaviour
         GetComponent<Rigidbody2D>().position = destination;
     }
 
-    public void GetHurt(Fix64 damage)
+    public void GetHurt(float damage)
     {
         currentHP -= damage;
         if (boost)
         {
-            Fix64 halfdamage = damage / (Fix64)2;
-            Fix64 boostvalue = boostmax - boostnow;
+            float halfdamage = damage / 2;
+            float boostvalue = boostmax - boostnow;
             if (boostmax - boostnow >= halfdamage)
                 boostvalue = halfdamage;
             currentHP += boostvalue;
@@ -76,7 +76,7 @@ public class HPScript : MonoBehaviour
     {
         boost = false;
         GetComponent<MoveScript>().movespeed -= (float)boostnow / 50;
-        boostnow = Fix64.Zero;
+        boostnow = 0;
     }
 
     public void booststart()
