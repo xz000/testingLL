@@ -31,17 +31,16 @@ public class HPScript : MonoBehaviour
     }*/
     private void FixedUpdate()
     {
-        /*
-        if (currentHP <= Fix64.Zero)
+        if (currentHP <= 0)
         {
-            gameObject.GetComponent<DoSkill>().DoClearJob();
-            gameObject.GetComponent<DoSkill>().DestroyClean();
-            gameObject.GetComponent<DestroyScript>().Destroyself();
+            GetComponent<DoSkill>().DoClearJob();
+            GetComponent<DoSkill>().DestroyClean();
+            GetComponent<DestroyScript>().Destroyself();
         }
         if (currentHP > maxHP)
         {
             currentHP = maxHP;
-        }*/
+        }
     }
 
     private void OnDestroy()
