@@ -10,6 +10,7 @@ public class MainSkillMenu : MonoBehaviour {
 	void Start ()
     {
         cg = GetComponent<CanvasGroup>();
+        OpenMainSkillMenu();
     }
 	
 	// Update is called once per frame
@@ -18,10 +19,7 @@ public class MainSkillMenu : MonoBehaviour {
         {
             if (cg.alpha == 0)
             {
-                cg.alpha = 1;
-                cg.interactable = true;
-                cg.blocksRaycasts = true;
-                //GetComponent<SkillsLink>().alphaset();
+                OpenMainSkillMenu();
             }
             else
                 CloseMainSkillMenu();
@@ -36,5 +34,13 @@ public class MainSkillMenu : MonoBehaviour {
         cg.interactable = false;
         cg.blocksRaycasts = false;
         GetComponent<SkillsLink>().alphaset();
+    }
+
+    public void OpenMainSkillMenu()
+    {
+        cg.alpha = 1;
+        cg.interactable = true;
+        cg.blocksRaycasts = true;
+        //GetComponent<SkillsLink>().alphaset();
     }
 }
