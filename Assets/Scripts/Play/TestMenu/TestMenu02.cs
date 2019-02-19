@@ -26,6 +26,7 @@ public class TestMenu02 : MonoBehaviour
 
     ///public GameObject Menu00;
     public GameObject Menu01;
+    public CanvasGroup RightGroup;
 
     bool isready = false;
 
@@ -136,6 +137,7 @@ public class TestMenu02 : MonoBehaviour
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
         Menu01.SetActive(true);
+        RightGroup.interactable = true;
     }
 
     /*public override void OnPhotonPlayerConnected(PhotonPlayer newPlayer)

@@ -24,6 +24,7 @@ public class TestMenu01 : MonoBehaviour
 
     ///public GameObject Menu00;
     public GameObject Menu02;
+    public CanvasGroup RightGroup;
 
     protected Callback<LobbyCreated_t> Callback_lobbyCreated;
     protected Callback<LobbyMatchList_t> Callback_lobbyList;
@@ -268,6 +269,7 @@ public class TestMenu01 : MonoBehaviour
     public void SwitchToMenu02()
     {
         ///Menu00.SetActive(false);
+        RightGroup.interactable = false;
         gameObject.SetActive(false);
         Menu02.SetActive(true);
     }
