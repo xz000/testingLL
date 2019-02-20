@@ -21,25 +21,29 @@ public class SetSkillD : MonoBehaviour
         IconD.GetComponent<CooldownImage>().enabled = true;
         if (D1.isOn)
         {
-            IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<TestSkillLightning>().CalcFA;
+            if (sls.mySoldier != null)
+                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<TestSkillLightning>().CalcFA;
             sls.KeyDSkill = SkillCode.TestSkillLightning;
             return;
         }
         if (D2.isOn)
         {
-            IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD2>().CalcFA;
+            if (sls.mySoldier != null)
+                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD2>().CalcFA;
             sls.KeyDSkill = SkillCode.SkillD2;
             return;
         }
         if (D3.isOn)
         {
-            IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD3>().CalcFA;
+            if (sls.mySoldier != null)
+                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD3>().CalcFA;
             sls.KeyDSkill = SkillCode.SkillD3;
             return;
         }
         if (D4.isOn)
         {
-            IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD4>().CalcFA;
+            if (sls.mySoldier != null)
+                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD4>().CalcFA;
             sls.KeyDSkill = SkillCode.SkillD4;
             return;
         }

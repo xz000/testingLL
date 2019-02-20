@@ -64,7 +64,7 @@ public class Sender : MonoBehaviour
         SendButton.SetActive(true);
         MyNS.enabled = true;//开启netwriter
         CCToggle.isOn = true;
-        SPNL.alphaset();
+        //SPNL.alphaset();
         HideMC();
     }
 
@@ -176,11 +176,13 @@ public class Sender : MonoBehaviour
                         DeSerializeReceived();
                         break;
                     case 1:
-                        SetSD();
-                        break;
-                    case 2:
                         ConnectDo();
+                        SetSD();
+                        SPNL.betaset();
                         break;
+                    /*case 2:
+                        ConnectDo();
+                        break;*/
                     default: Debug.Log("BAD PACKET"); break;
                 }
             }

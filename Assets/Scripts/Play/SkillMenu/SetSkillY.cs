@@ -26,11 +26,13 @@ public class SetSkillY : MonoBehaviour
         {
             if (Y1a.isOn)
             {
-                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1>().CalcFA;
+                if (GetComponent<SkillsLink>().mySoldier != null)
+                    IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1>().CalcFA;
                 GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1;
                 return;
             }
-            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1b>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY1b>().CalcFA;
             GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY1b;
             return;
         }
@@ -38,11 +40,13 @@ public class SetSkillY : MonoBehaviour
         {
             if (Y2a.isOn)
             {
-                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY2>().CalcFA;
+                if (GetComponent<SkillsLink>().mySoldier != null)
+                    IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY2>().CalcFA;
                 GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY2;
                 return;
             }
-            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY2b>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY2b>().CalcFA;
             GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY2b;
             return;
         }
@@ -50,11 +54,13 @@ public class SetSkillY : MonoBehaviour
         {
             if (Y3a.isOn)
             {
-                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY3>().CalcFA;
+                if (GetComponent<SkillsLink>().mySoldier != null)
+                    IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY3>().CalcFA;
                 GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY3;
                 return;
             }
-            IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY3b>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconY.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillY3b>().CalcFA;
             GetComponent<SkillsLink>().KeyYSkill = SkillCode.SkillY3b;
             return;
         }

@@ -14,6 +14,7 @@ public class TestMenu02 : MonoBehaviour
 
     public GameObject SenderPanel;
     public Sender SenderSC;
+    public SkillsLink SPNL;
 
     public Text PlayersJoined;
     public Text Notready;
@@ -26,6 +27,7 @@ public class TestMenu02 : MonoBehaviour
 
     ///public GameObject Menu00;
     public GameObject Menu01;
+    public GameObject BPanel;
     public CanvasGroup RightGroup;
 
     bool isready = false;
@@ -109,7 +111,10 @@ public class TestMenu02 : MonoBehaviour
                 Sender.clientNum = 1;
             }
             SenderPanel.SetActive(true);
-            SayHello();
+            //SayHello();
+            SPNL.alphaset();
+            //SPNL.betaset();
+            BPanel.SetActive(true);
         }
     }
 
@@ -136,6 +141,7 @@ public class TestMenu02 : MonoBehaviour
     {
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
+        BPanel.SetActive(false);
         Menu01.SetActive(true);
         RightGroup.interactable = true;
     }
