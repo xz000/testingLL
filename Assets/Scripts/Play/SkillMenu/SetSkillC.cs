@@ -18,25 +18,29 @@ public class SetSkillC : MonoBehaviour
         IconC.GetComponent<CooldownImage>().enabled = true;
         if (C1.isOn)
         {
-            IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC1>().CalcFA;
+            if (sls.mySoldier != null)
+                IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC1>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC1;
             return;
         }
         if (C2.isOn)
         {
-            IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC2>().CalcFA;
+            if (sls.mySoldier != null)
+                IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC2>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC2;
             return;
         }
         if (C3.isOn)
         {
-            IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC3>().CalcFA;
+            if (sls.mySoldier != null)
+                IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC3>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC3;
             return;
         }
         if (C4.isOn)
         {
-            sls.mySoldier.GetComponent<SkillC4>().MyImageScript = IconC.GetComponent<CooldownImage>();
+            if (sls.mySoldier != null)
+                sls.mySoldier.GetComponent<SkillC4>().MyImageScript = IconC.GetComponent<CooldownImage>();
             sls.KeyCSkill = SkillCode.SkillC4;
             return;
         }

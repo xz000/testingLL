@@ -17,7 +17,8 @@ public class SetSkillG : MonoBehaviour
         IconG.GetComponent<CooldownImage>().enabled = true;
         if (G1.isOn)
         {
-            IconG.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill01>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconG.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill01>().CalcFA;
             GetComponent<SkillsLink>().KeyGSkill = SkillCode.TestSkill01;
             return;
         }

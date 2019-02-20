@@ -16,7 +16,8 @@ public class SetSkillF : MonoBehaviour
         IconF.GetComponent<CooldownImage>().enabled = true;
         if (F1.isOn)
         {
-            IconF.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SelfExplodeScript>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconF.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SelfExplodeScript>().CalcFA;
             GetComponent<SkillsLink>().KeyFSkill = SkillCode.TestSkill03;
             return;
         }

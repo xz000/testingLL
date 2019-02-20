@@ -33,7 +33,7 @@ public class MainSkillMenu : MonoBehaviour {
         cg.alpha = 0;
         cg.interactable = false;
         cg.blocksRaycasts = false;
-        GetComponent<SkillsLink>().alphaset();
+        GetComponent<SkillsLink>().selfset();
     }
 
     public void OpenMainSkillMenu()

@@ -14,14 +14,15 @@ public class SkillsLink : MonoBehaviour
     public SkillCode? KeyTSkill = SkillCode.TestSkillLeech;
     public SkillCode? KeyYSkill = SkillCode.SkillY1;
     public Sender sds;
+    SkillData lsd;
 
     public void linktome(GameObject go)
     {
         mySoldier = go;
-        alphaset();
+        betaset();
     }
 
-    public void alphaset()
+    public void selfset()
     {
         gameObject.GetComponent<SetSkillC>().SetC();
         gameObject.GetComponent<SetSkillD>().SetD();
@@ -34,9 +35,19 @@ public class SkillsLink : MonoBehaviour
         Setlsd();
     }
 
+    public void alphaset()
+    {
+        sds.Sendlsd(lsd);
+    }
+
+    public void betaset()
+    {
+        sds.MyNS.GetComponent<ControllerScript>().SetSkillMem(lsd.cNum, lsd.SLs);
+    }
+
     void Setlsd()
     {
-        SkillData lsd = new SkillData();
+        lsd = new SkillData();
         lsd.cNum = Sender.clientNum;
         int max = (int)SkillCode.SelfExplodeScript;
         lsd.SLs = new int[max];
@@ -83,7 +94,5 @@ public class SkillsLink : MonoBehaviour
                 continue;
             }
         }
-        sds.Sendlsd(lsd);
-        sds.MyNS.GetComponent<ControllerScript>().SetSkillMem(lsd.cNum, lsd.SLs);
     }
 }

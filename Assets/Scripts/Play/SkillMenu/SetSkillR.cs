@@ -24,37 +24,43 @@ public class SetSkillR : MonoBehaviour
         IconR.GetComponent<CooldownImage>().enabled = true;
         if (R1.isOn && R1a.isOn)
         {
-            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR1>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR1>().CalcFA;
             GetComponent<SkillsLink>().KeyRSkill = SkillCode.SkillR1;
             return;
         }
         if (R1.isOn && R1b.isOn)
         {
-            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR1b>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR1b>().CalcFA;
             GetComponent<SkillsLink>().KeyRSkill = SkillCode.SkillR1b;
             return;
         }
         if (R2.isOn && R2a.isOn)
         {
-            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR2>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR2>().CalcFA;
             GetComponent<SkillsLink>().KeyRSkill = SkillCode.SkillR2;
             return;
         }
         if (R2.isOn && R2b.isOn)
         {
-            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR2b>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR2b>().CalcFA;
             GetComponent<SkillsLink>().KeyRSkill = SkillCode.SkillR2b;
             return;
         }
         if (R3.isOn && R3a.isOn)
         {
-            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill02>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill02>().CalcFA;
             GetComponent<SkillsLink>().KeyRSkill = SkillCode.TestSkill02;
             return;
         }
         if (R3.isOn && R3b.isOn)
         {
-            IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR3b>().CalcFA;
+            if (GetComponent<SkillsLink>().mySoldier != null)
+                IconR.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillR3b>().CalcFA;
             GetComponent<SkillsLink>().KeyRSkill = SkillCode.SkillR3b;
             return;
         }
