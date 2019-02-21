@@ -525,6 +525,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 129b342d7b138e74fb9609e95c0dec93, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  maxHP: 100
+  currentHP: 100
+  boostnow: 0
+  boostmax: 25
 --- !u!114 &2291859324425342231
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1095,6 +1099,7 @@ MonoBehaviour:
   damage: 5
   cooldowntime: 3
   skillavaliable: 0
+  damageplus: 0
 --- !u!114 &4115436644824893292
 MonoBehaviour:
   m_ObjectHideFlags: 0
