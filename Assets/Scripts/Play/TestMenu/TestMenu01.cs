@@ -253,6 +253,12 @@ public class TestMenu01 : MonoBehaviour
         SteamMatchmaking.JoinLobby(id);
     }
 
+    public void RefreshSelf()
+    {
+        gameObject.SetActive(false);
+        gameObject.SetActive(true);
+    }
+
     /*public void ClickBackButton()
     {
         ///PhotonNetwork.Disconnect();

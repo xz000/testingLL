@@ -57,6 +57,15 @@ public class Sender : MonoBehaviour
         CCToggle.isOn = false;
     }
 
+    public void EndBattle()
+    {
+        if (!started)
+            return;
+        Debug.Log("Battle End");
+        ResetS2();
+        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
+    }
+
     public void ConnectDo()
     {
         StartSelf();

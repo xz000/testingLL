@@ -476,7 +476,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   controllable: 0
-  movespeed: 5
+  movespeed: 3
   movedirection: {x: 0, y: 0}
   targetshadow: {fileID: 1107476559263946, guid: 5f8a3608f810a904388f4c1cf83f7fa3,
     type: 3}

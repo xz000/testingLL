@@ -48,6 +48,8 @@ public class HPScript : MonoBehaviour
         if (!gameObject.CompareTag("Player"))
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
+        if (PlayersLeft.Length <= 1)
+            GameObject.Find("SRER").GetComponent<Sender>().EndBattle();
     }
 
 
