@@ -13,7 +13,7 @@ public class MultiTextSet : MonoBehaviour
         switch (LanguageSet.CurrentLanguage)
         {
             case "schinese":
-                GetComponent<Text>().text = TextCn.Replace("//n", "/n");
+                GetComponent<Text>().text = TextCn.Replace("\\n", "\n");
                 break;
         }
     }
