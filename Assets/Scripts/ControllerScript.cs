@@ -47,6 +47,7 @@ public class ControllerScript : MonoBehaviour
         thePC[Num].name = Num.ToString();
         theMS[Num] = thePC[Num].GetComponent<MoveScript>();
         theDS[Num] = thePC[Num].GetComponent<DoSkill>();
+        thePC[Num].GetComponent<HPScript>().ser = GetComponent<Sender>();
         if (Num == Sender.clientNum)
             theMS[Num].itsme();
     }
