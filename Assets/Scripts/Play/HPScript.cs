@@ -7,6 +7,7 @@ public class HPScript : MonoBehaviour
 {
     public float maxHP;
     public float currentHP;
+    public Sender ser;
     //private GameObject safeground;
     float outhurt = 2;
     bool boost = false;
@@ -48,8 +49,8 @@ public class HPScript : MonoBehaviour
         if (!gameObject.CompareTag("Player"))
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
-        if (PlayersLeft.Length <= 1)
-            GameObject.Find("SRER").GetComponent<Sender>().EndBattle();
+        if (PlayersLeft.Length <= 1 && ser != null)
+            ser.EndBattle();
     }
 
 
