@@ -35,7 +35,7 @@ public class Sender : MonoBehaviour
     public CanvasGroup MCG;
     public static CSteamID roomid;
     public static CSteamID TOmb;
-    string sts;
+    EndData sts;
 
     private void Start()
     {
@@ -58,11 +58,11 @@ public class Sender : MonoBehaviour
         CCToggle.isOn = false;
     }
 
-    public void SendEnd(string se)
+    public void SendEnd(EndData se)
     {
         if (!started)
             return;
-        ResetS2();
+        ResetSelf();
         Debug.Log("Battle End");
         sts = se;
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
@@ -79,11 +79,12 @@ public class Sender : MonoBehaviour
     {
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
-        string Src = Deserialize<string>.From(cbr);
-        if (Src == sts)
+        EndData Src = Deserialize<EndData>.From(cbr);
+        if ((FixMath.Fix64)Src.epx == (FixMath.Fix64)sts.epx && (FixMath.Fix64)Src.epy == (FixMath.Fix64)sts.epy)
             Debug.Log("Same Result");
         else
-            Debug.Log("Different Result:\n" + "Sent string:" + sts + "\nReceived string:" + Src);
+            Debug.Log("Different Result:\n" + "Sent string:" + sts.epx + "," + sts.epy + "\nReceived string:" + Src.epx + "," + Src.epy);
+        ShowMC();
         GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
     }
 
@@ -280,7 +281,7 @@ public class ClickData
     }
 }
 
-[Serializable,Schema]
+[Serializable, Schema]
 public class Data2S
 {
     [Id(0)]
@@ -289,6 +290,17 @@ public class Data2S
     public int clientNum;
     [Id(2)]
     public List<ClickData> clickDatas;
+}
+
+[Serializable, Schema]
+public class EndData
+{
+    [Id(0)]
+    public int CircleID;
+    [Id(1)]
+    public float epx;
+    [Id(2)]
+    public float epy;
 }
 
 public enum MButton { left, right, skill };

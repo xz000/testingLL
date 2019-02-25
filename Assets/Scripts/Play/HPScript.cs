@@ -50,7 +50,13 @@ public class HPScript : MonoBehaviour
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
         if (PlayersLeft.Length <= 1 && ser != null)
-            ser.SendEnd(gameObject.name + ":" + GetComponent<Rigidbody2D>().position.ToString());
+        {
+            EndData endData = new EndData();
+            endData.CircleID = int.Parse(gameObject.name);
+            endData.epx = GetComponent<Rigidbody2D>().position.x;
+            endData.epy = GetComponent<Rigidbody2D>().position.y;
+            ser.SendEnd(endData);
+        }
     }
 
 
