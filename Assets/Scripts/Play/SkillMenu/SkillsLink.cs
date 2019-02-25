@@ -43,6 +43,7 @@ public class SkillsLink : MonoBehaviour
     public void betaset()
     {
         sds.MyNS.GetComponent<ControllerScript>().SetSkillMem(lsd.cNum, lsd.SLs);
+        selfset();//可以优化
     }
 
     void Setlsd()
