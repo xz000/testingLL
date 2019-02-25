@@ -50,7 +50,7 @@ public class HPScript : MonoBehaviour
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
         if (PlayersLeft.Length <= 1 && ser != null)
-            ser.EndBattle();
+            ser.SendEnd(gameObject.name + ":" + GetComponent<Rigidbody2D>().position.ToString());
     }
 
 

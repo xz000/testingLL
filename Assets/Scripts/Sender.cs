@@ -35,6 +35,7 @@ public class Sender : MonoBehaviour
     public CanvasGroup MCG;
     public static CSteamID roomid;
     public static CSteamID TOmb;
+    string sts;
 
     private void Start()
     {
@@ -57,12 +58,32 @@ public class Sender : MonoBehaviour
         CCToggle.isOn = false;
     }
 
-    public void EndBattle()
+    public void SendEnd(string se)
     {
         if (!started)
             return;
-        Debug.Log("Battle End");
         ResetS2();
+        Debug.Log("Battle End");
+        sts = se;
+        Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
+        Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
+        Serialize.To(boc, se);
+        ///NetworkTransport.Send(HSID, CNID, CHANID, ob2.Data.Array, ob2.Data.Array.Length, out error);
+        byte[] sendBytes = new byte[ob2.Data.Array.Length + 1];
+        sendBytes[0] = (byte)2;
+        ob2.Data.Array.CopyTo(sendBytes, 1);
+        SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+    }
+
+    public void EndBattle()
+    {
+        Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
+        Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
+        string Src = Deserialize<string>.From(cbr);
+        if (Src == sts)
+            Debug.Log("Same Result");
+        else
+            Debug.Log("Different Result:\n" + "Sent string:" + sts + "\nReceived string:" + Src);
         GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
     }
 
@@ -189,9 +210,9 @@ public class Sender : MonoBehaviour
                         SetSD();
                         SPNL.betaset();
                         break;
-                    /*case 2:
-                        ConnectDo();
-                        break;*/
+                    case 2:
+                        EndBattle();
+                        break;
                     default: Debug.Log("BAD PACKET"); break;
                 }
             }
