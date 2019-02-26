@@ -14,6 +14,7 @@ public class Sender : MonoBehaviour
     public Text TextReceived;
     public HostToggle theHT;
     public ClientToggle theCT;
+    public TestSteamworks tss;
     public Image SignalLight;
     public byte[] buffer;
     public int sz;
@@ -81,9 +82,15 @@ public class Sender : MonoBehaviour
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         EndData Src = Deserialize<EndData>.From(cbr);
         if ((FixMath.Fix64)Src.epx == (FixMath.Fix64)sts.epx && (FixMath.Fix64)Src.epy == (FixMath.Fix64)sts.epy)
+        {
+            tss.GameEndResultSet(true);
             Debug.Log("Same Result");
+        }
         else
+        {
+            tss.GameEndResultSet(false);
             Debug.Log("Different Result:\n" + "Sent string:" + sts.epx + "," + sts.epy + "\nReceived string:" + Src.epx + "," + Src.epy);
+        }
         ShowMC();
         GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
     }
@@ -140,7 +147,7 @@ public class Sender : MonoBehaviour
 
     private void Update()
     {
-        SteamAPI.RunCallbacks();
+        //SteamAPI.RunCallbacks();
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             if (MCG.blocksRaycasts)

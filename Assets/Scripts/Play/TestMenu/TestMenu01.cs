@@ -90,7 +90,6 @@ public class TestMenu01 : MonoBehaviour
     {
         m_LobbyMatchListCallResult = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
         m_LobbyMatchListCallResult.Set(SteamMatchmaking.RequestLobbyList());
-        SteamAPI.RunCallbacks();
         currentPageNumber = 1;              //初始化当前房间页
         maxPageNumber = 1;                  //初始化最大房间页	
 
@@ -108,10 +107,10 @@ public class TestMenu01 : MonoBehaviour
         ButtonControl();
     }
 
-    private void Update()
+    /*private void Update()
     {
         SteamAPI.RunCallbacks();
-    }
+    }*/
 
     public void Refresh()
     {
