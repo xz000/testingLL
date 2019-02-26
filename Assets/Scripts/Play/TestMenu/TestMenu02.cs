@@ -39,11 +39,11 @@ public class TestMenu02 : MonoBehaviour
         Roomname.text = PhotonNetwork.room.Name;
         if (PhotonNetwork.isMasterClient && !PhotonNetwork.room.IsOpen)
             PhotonNetwork.room.IsOpen = true;
-    }*/
+    }
     void Update()
     {
         SteamAPI.RunCallbacks();
-    }
+    }*/
     
     private void Start()
     {
