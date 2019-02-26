@@ -138,4 +138,11 @@ public class TestSteamworks : MonoBehaviour
             m_nTotalNumDR++;
         m_bStoreStats = true;
     }
+
+    private void OnDestroy()
+    {
+        if (!Initialized)
+            return;
+        SteamAPI.Shutdown();
+    }
 }
