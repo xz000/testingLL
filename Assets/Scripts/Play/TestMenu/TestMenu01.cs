@@ -25,6 +25,7 @@ public class TestMenu01 : MonoBehaviour
     ///public GameObject Menu00;
     public GameObject Menu02;
     public CanvasGroup RightGroup;
+    public Toggle AutoCreateToggle;
 
     protected Callback<LobbyCreated_t> Callback_lobbyCreated;
     protected Callback<LobbyMatchList_t> Callback_lobbyList;
@@ -105,6 +106,8 @@ public class TestMenu01 : MonoBehaviour
             roomMessage[i].SetActive(false);            //禁用房间信息条目
         }
         ButtonControl();
+        if (AutoCreateToggle.isOn)
+            ClickJoinOrCreateButton();
     }
 
     /*private void Update()
@@ -220,10 +223,6 @@ public class TestMenu01 : MonoBehaviour
     //"创建房间"按钮事件处理函数，启用创建房间面板
     public void ClickJoinOrCreateButton()
     {
-        /*if (RoomName.text == "")
-            PhotonNetwork.JoinOrCreateRoom("Room" + Random.Range(1, 9999), null, null);
-        else
-            PhotonNetwork.JoinOrCreateRoom(RoomName.text, null, null);*/
         SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 2);
         //SteamMatchmaking.SetLobbyData(;
     }
