@@ -142,8 +142,8 @@ public class TestMenu02 : MonoBehaviour
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
         BPanel.SetActive(false);
-        Menu01.SetActive(true);
         RightGroup.interactable = true;
+        Menu01.SetActive(true);
     }
 
     /*public override void OnPhotonPlayerConnected(PhotonPlayer newPlayer)

@@ -37,6 +37,7 @@ public class Sender : MonoBehaviour
     public static CSteamID roomid;
     public static CSteamID TOmb;
     EndData sts;
+    EndData Src;
 
     private void Start()
     {
@@ -64,7 +65,6 @@ public class Sender : MonoBehaviour
         if (!started)
             return;
         ResetSelf();
-        Debug.Log("Battle End");
         sts = se;
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
@@ -74,13 +74,24 @@ public class Sender : MonoBehaviour
         sendBytes[0] = (byte)2;
         ob2.Data.Array.CopyTo(sendBytes, 1);
         SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+        EndingCompare();
+        Debug.Log("End Sent");
     }
 
     public void EndBattle()
     {
+        Debug.Log("End Received");
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
-        EndData Src = Deserialize<EndData>.From(cbr);
+        Src = Deserialize<EndData>.From(cbr);
+        EndingCompare();
+    }
+
+    void EndingCompare()
+    {
+        if (Src == null || sts == null)
+            return;
+        Debug.Log("Compareing Ending Place");
         if ((FixMath.Fix64)Src.epx == (FixMath.Fix64)sts.epx && (FixMath.Fix64)Src.epy == (FixMath.Fix64)sts.epy)
         {
             tss.GameEndResultSet(true);
@@ -91,6 +102,8 @@ public class Sender : MonoBehaviour
             tss.GameEndResultSet(false);
             Debug.Log("Different Result:\n" + "Sent string:" + sts.epx + "," + sts.epy + "\nReceived string:" + Src.epx + "," + Src.epy);
         }
+        Src = null;
+        sts = null;
         ShowMC();
         GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
     }

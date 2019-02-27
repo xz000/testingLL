@@ -106,4 +106,9 @@ public class MoveScript : MonoBehaviour {
         GameObject.Destroy(targeticon);
         //GetComponent<SkillR2b>().IdoDSWL();
     }
+
+    private void OnDestroy()
+    {
+        Destroy(targeticon);
+    }
 }
