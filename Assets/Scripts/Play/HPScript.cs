@@ -8,7 +8,7 @@ public class HPScript : MonoBehaviour
     public float maxHP;
     public float currentHP;
     public Sender ser;
-    //private GameObject safeground;
+    private GameObject safeground;
     float outhurt = 2;
     bool boost = false;
     public float boostnow = 0;
@@ -17,21 +17,18 @@ public class HPScript : MonoBehaviour
     // Use this for initialization
     void Start () {
         currentHP = maxHP;
-        //safeground = GameObject.Find("GroundCircle");
+        safeground = GameObject.Find("GroundCircle");
         boost = false;
 	}
 
     // Update is called once per frame
 
-    /*private void FixedUpdate()
+    private void FixedUpdate()
     {
-        if (transform.position.magnitude > safeground.transform.lossyScale.x / 2)
+        if (transform.position.magnitude > safeground.GetComponent<AreaScript>().radius)
         {
             currentHP -= outhurt * Time.fixedDeltaTime;
         }
-    }*/
-    private void FixedUpdate()
-    {
         if (currentHP <= 0)
         {
             GetComponent<DoSkill>().DoClearJob();
