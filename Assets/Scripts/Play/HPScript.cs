@@ -17,7 +17,7 @@ public class HPScript : MonoBehaviour
     // Use this for initialization
     void Start () {
         currentHP = maxHP;
-        safeground = GameObject.Find("GroundCircle");
+        safeground = GameObject.FindGameObjectWithTag("Ground");
         boost = false;
 	}
 

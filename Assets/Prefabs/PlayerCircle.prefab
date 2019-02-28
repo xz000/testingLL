@@ -527,6 +527,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxHP: 100
   currentHP: 100
+  ser: {fileID: 0}
   boostnow: 0
   boostmax: 25
 --- !u!114 &2291859324425342231
