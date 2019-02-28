@@ -2,28 +2,35 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
+using FixMath;
 
 public class AreaScript : MonoBehaviour {
 
     // Use this for initialization
-    float waittime =5f;
-    float diameter;
-    float speed = 1f;
+    public int diameter;
+    public int radius = 10;
+    public int speed = 1;
+    float waittime =10f;
+    float gonetime = 0;
 
     // Use this for initialization
     void Start()
     {
-        diameter = transform.lossyScale.x;
-        StartCoroutine(Changeradius());
+        diameter = radius * 2;
+        Vector3 startscale = new Vector3(diameter, diameter, 1);
+        gameObject.transform.localScale = startscale;
     }
-    IEnumerator Changeradius()
+
+    private void FixedUpdate()
     {
-        while (diameter > 1.5 * speed)
+        if (gonetime >= waittime)
         {
-            diameter -= speed;
-            Vector3 nextscale = new Vector3(diameter, diameter, 1);
-            yield return new WaitForSeconds(waittime);
-            transform.localScale = nextscale;
+            radius -= speed;
+            diameter = radius * 2;
+            Vector3 startscale = new Vector3(diameter, diameter, 1);
+            gameObject.transform.localScale = startscale;
+            gonetime -= waittime;
         }
+        gonetime += Time.fixedDeltaTime;
     }
 }

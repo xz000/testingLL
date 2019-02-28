@@ -6,6 +6,7 @@ using FixMath;
 public class ControllerScript : MonoBehaviour
 {
     public GameObject PlayerCircle;
+    public GameObject GroundCircle;
     GameObject[] thePC;
     MoveScript[] theMS;
     DoSkill[] theDS;
@@ -62,12 +63,18 @@ public class ControllerScript : MonoBehaviour
 
     void PCBorn(int MNum)
     {
+        CreateGround();
         Vector3 v3;
         for (int i = 0; i < MNum; i++)
         {
             v3 = new Vector3(i * 6 - 3, 0, 0);
             CPCat(i, v3);
         }
+    }
+
+    void CreateGround()
+    {
+        Instantiate(GroundCircle, Vector3.zero, Quaternion.identity);
     }
 
     public void SetSkillMem(int cN, int[] cSL)
