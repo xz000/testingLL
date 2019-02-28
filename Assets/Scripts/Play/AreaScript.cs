@@ -30,6 +30,8 @@ public class AreaScript : MonoBehaviour {
             Vector3 startscale = new Vector3(diameter, diameter, 1);
             gameObject.transform.localScale = startscale;
             gonetime -= waittime;
+            if (radius <= 0)
+                enabled = false;
         }
         gonetime += Time.fixedDeltaTime;
     }
