@@ -43896,6 +43896,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   PlayerCircle: {fileID: 1408053086481752, guid: cfb6bab80d9567e40a2ca8c3ad2e145b,
     type: 3}
+  GroundCircle: {fileID: 429400514, guid: ce65d4de50b21024dbe3bc5dda412134, type: 3}
 --- !u!1 &1917239292
 GameObject:
   m_ObjectHideFlags: 0
