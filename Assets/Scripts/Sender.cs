@@ -61,6 +61,7 @@ public class Sender : MonoBehaviour
         for (int i = 0; i < cSL.Length; i++)
             theSLtemp[cN][i] = cSL[i];
         SLtb[cN] = true;
+        Debug.Log(cN + " " + SLtb[cN]);
         bool allok = true;
         for (int i = 0; i < SLtb.Length; i++)
             allok = allok & SLtb[i];
