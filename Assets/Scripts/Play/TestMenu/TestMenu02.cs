@@ -29,28 +29,17 @@ public class TestMenu02 : MonoBehaviour
     public GameObject Menu01;
     public GameObject BPanel;
     public CanvasGroup RightGroup;
+    Lobby m_CurrentLobby;
+    bool hassession;
 
-    bool isready = false;
-
-    /*public override void OnJoinedRoom()
-    {
-        setreadystatusonline();
-        showpanel();
-        Roomname.text = PhotonNetwork.room.Name;
-        if (PhotonNetwork.isMasterClient && !PhotonNetwork.room.IsOpen)
-            PhotonNetwork.room.IsOpen = true;
-    }
-    void Update()
-    {
-        SteamAPI.RunCallbacks();
-    }*/
+    //bool isready = false;
     
     private void Start()
     {
-        Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
+        //Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
         Callback_LobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
-        Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
         Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
+        Callback_LobbyDataUpdate = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdate);
     }
 
     void OnNewConnection(P2PSessionRequest_t result)
@@ -58,7 +47,7 @@ public class TestMenu02 : MonoBehaviour
         //Debug.Log("Wa");
         if (Sender.TOmb == result.m_steamIDRemote)
         {
-            SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
+            hassession = SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
             return;
         }
     }
@@ -69,22 +58,59 @@ public class TestMenu02 : MonoBehaviour
         SetBasic();
     }
 
-    void OnLobbyKicked(LobbyKicked_t lobbyKicked_T)
-    {
-        Sender.roomid = (CSteamID)lobbyKicked_T.m_ulSteamIDLobby;
-        SwitchToMenu01();
-    }
-
     void OnLobbyDataUpdate(LobbyDataUpdate_t lobbyDataUpdate_T)
     {
         Sender.roomid = (CSteamID)lobbyDataUpdate_T.m_ulSteamIDLobby;
+        UpdateLobbyInfo(ref m_CurrentLobby);
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
     }
 
     void OnLobbyChatUpdate(LobbyChatUpdate_t lobbyChatUpdate_T)
     {
         Sender.roomid = (CSteamID)lobbyChatUpdate_T.m_ulSteamIDLobby;
+        UpdateLobbyInfo(ref m_CurrentLobby);
         SetBasic();
+    }
+
+    void UpdateLobbyInfo(ref Lobby outLobby)
+    {
+        outLobby.m_SteamID = Sender.roomid;
+        outLobby.m_Owner = SteamMatchmaking.GetLobbyOwner(Sender.roomid);
+        outLobby.m_Members = new LobbyMembers[SteamMatchmaking.GetNumLobbyMembers(Sender.roomid)];
+        outLobby.m_MemberLimit = SteamMatchmaking.GetLobbyMemberLimit(Sender.roomid);
+
+        int nDataCount = SteamMatchmaking.GetLobbyDataCount(Sender.roomid);
+        outLobby.m_Data = new LobbyMetaData[nDataCount];
+        for (int i = 0; i < nDataCount; ++i)
+        {
+            bool lobby_data_ret = SteamMatchmaking.GetLobbyDataByIndex(Sender.roomid, i, out outLobby.m_Data[i].m_Key, Constants.k_nMaxLobbyKeyLength, out outLobby.m_Data[i].m_Value, Constants.k_cubChatMetadataMax);
+            if (lobby_data_ret) continue;
+            Debug.LogError("SteamMatchmaking.GetLobbyDataByIndex returned false.");
+            continue;
+        }
+        Notready.text = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, SteamUser.GetSteamID(), "key_ready");
+        int rc = 0;
+        for (int i = 0; i < outLobby.m_Members.Length; i++)
+        {
+            outLobby.m_Members[i].m_SteamID = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
+            outLobby.m_Members[i].m_Data = new LobbyMetaData[1];
+            LobbyMetaData lmd = new LobbyMetaData();
+            lmd.m_Key = "key_ready";
+            lmd.m_Value = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, outLobby.m_Members[i].m_SteamID, lmd.m_Key);
+            if (lmd.m_Value == "READY")
+                rc++;
+            outLobby.m_Members[i].m_Data[0] = lmd;
+        }
+        if (rc == 2)
+            GameStart();
+    }
+
+    public void SetReady()
+    {
+        if (Readytoggle.isOn)
+            SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "READY");
+        else
+            SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "NOT READY");
     }
 
     void SetBasic()
@@ -92,30 +118,33 @@ public class TestMenu02 : MonoBehaviour
         int Mcount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
         PlayersJoined.text = Mcount + " players joined";
         if (Mcount == 2)
+            GameStart();
+    }
+
+    void GameStart()
+    {
+        CSteamID tid;
+        for (int i = 0; i < 2; i++)
         {
-            CSteamID tid;
-            for (int i = 0; i < Mcount; i++)
-            {
-                tid = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
-                if (tid != SteamUser.GetSteamID())
-                    Sender.TOmb = tid;
-            }
-            if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
-            {
-                //Sender.isServer = true;
-                Sender.clientNum = 0;
-            }
-            else
-            {
-                //Sender.isServer = false;
-                Sender.clientNum = 1;
-            }
-            SenderPanel.SetActive(true);
-            //SayHello();
-            SPNL.alphaset();
-            //SPNL.betaset();
-            BPanel.SetActive(true);
+            tid = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
+            if (tid != SteamUser.GetSteamID())
+                Sender.TOmb = tid;
         }
+        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+        {
+            //Sender.isServer = true;
+            Sender.clientNum = 0;
+        }
+        else
+        {
+            //Sender.isServer = false;
+            Sender.clientNum = 1;
+        }
+        SenderPanel.SetActive(true);
+        //SayHello();
+        SPNL.alphaset();
+        //SPNL.betaset();
+        BPanel.SetActive(true);
     }
 
     void SayHello()
@@ -133,7 +162,13 @@ public class TestMenu02 : MonoBehaviour
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject pc in pcs)
             Destroy(pc);
+        if (hassession)
+        {
+            SteamNetworking.CloseP2PSessionWithUser(Sender.TOmb);
+            hassession = false;
+        }
         SteamMatchmaking.LeaveLobby(Sender.roomid);
+        Readytoggle.isOn = false;
         SwitchToMenu01();
     }
 
@@ -146,70 +181,9 @@ public class TestMenu02 : MonoBehaviour
         Menu01.SetActive(true);
     }
 
-    /*public override void OnPhotonPlayerConnected(PhotonPlayer newPlayer)
-    {
-        Updatetext();
-    }
-
-    public override void OnPhotonPlayerDisconnected(PhotonPlayer otherPlayer)
-    {
-        Updatetext();
-    }
-
-    public override void OnMasterClientSwitched(PhotonPlayer newMasterClient)
-    {
-        showpanel();
-    }*/
-
-    public void showmasterpanel()
-    {
-        Otherpanel.SetActive(false);
-        Masterpanel.SetActive(true);
-        isready = true;
-        setreadystatusonline();
-    }
-
-    public void showotherpanel()
-    {
-        Masterpanel.SetActive(false);
-        Otherpanel.SetActive(true);
-        isready = Readytoggle.isOn;
-        setreadystatusonline();
-    }
-
-    public void OnReadyToggleChanged()
-    {
-        isready = Readytoggle.isOn;
-        setreadystatusonline();
-    }
-
-    public void setreadystatusonline()
-    {
-        /*PhotonNetwork.player.SetCustomProperties(new ExitGames.Client.Photon.Hashtable()
-        {
-        {"ready", isready }
-        });
-        photonView.RPC("Updatetext", PhotonTargets.All);*/
-    }
-
-    public void ClickStartButton()
-    {
-        ///PhotonNetwork.room.IsOpen = false;
-        ///EnterCircleSence();
-        //photonView.RPC("EnterCircleSence", PhotonTargets.All);
-    }
-
     public void ClickBackButton()
     {
         LeaveLobby();
-    }
-
-    public void showpanel()
-    {
-        /*if (PhotonNetwork.isMasterClient)
-            showmasterpanel();
-        else
-            showotherpanel();*/
     }
 
     public void Updatetext()

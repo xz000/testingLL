@@ -34,7 +34,6 @@ public class TestMenu01 : MonoBehaviour
 
     ///ulong current_lobbyID;
     List<CSteamID> lobbyIDS;
-    Lobby m_CurrentLobby;
 
     void Start()
     {
@@ -109,11 +108,6 @@ public class TestMenu01 : MonoBehaviour
             ClickJoinOrCreateButton();
     }
 
-    /*private void Update()
-    {
-        SteamAPI.RunCallbacks();
-    }*/
-
     public void Refresh()
     {
         m_LobbyMatchListCallResult.Set(SteamMatchmaking.RequestLobbyList());
@@ -135,12 +129,12 @@ public class TestMenu01 : MonoBehaviour
         m_Lobbies = new Lobby[pCallback.m_nLobbiesMatching];
         for (var i = 0; i < pCallback.m_nLobbiesMatching; ++i)
         {
-            UpdateLobbyInfo(SteamMatchmaking.GetLobbyByIndex(i), ref m_Lobbies[i], false);
+            UpdateLobbyInfo(SteamMatchmaking.GetLobbyByIndex(i), ref m_Lobbies[i]);
         }
         RoomListUpdate();
     }
 
-    private static void UpdateLobbyInfo(CSteamID steamIDLobby, ref Lobby outLobby, bool ShowMemberDetails)
+    private static void UpdateLobbyInfo(CSteamID steamIDLobby, ref Lobby outLobby)
     {
         outLobby.m_SteamID = steamIDLobby;
         outLobby.m_Owner = SteamMatchmaking.GetLobbyOwner(steamIDLobby);
@@ -155,17 +149,6 @@ public class TestMenu01 : MonoBehaviour
             if (lobby_data_ret) continue;
             Debug.LogError("SteamMatchmaking.GetLobbyDataByIndex returned false.");
             continue;
-        }
-        if (!ShowMemberDetails)
-            return;
-        for(int i=0; i < outLobby.m_Members.Length; i++)
-        {
-            outLobby.m_Members[i].m_SteamID = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
-            outLobby.m_Members[i].m_Data = new LobbyMetaData[1];
-            LobbyMetaData lmd = new LobbyMetaData();
-            lmd.m_Key = "key_ready";
-            lmd.m_Key = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, outLobby.m_Members[i].m_SteamID, lmd.m_Key);
-            outLobby.m_Members[i].m_Data[0] = lmd;
         }
     }
 
@@ -267,15 +250,9 @@ public class TestMenu01 : MonoBehaviour
         gameObject.SetActive(true);
     }
 
-    void GetReady()
-    {
-        SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "ready");
-    }
-
     public void SwitchToMenu02()
     {
         ///Menu00.SetActive(false);
-        UpdateLobbyInfo(Sender.roomid, ref m_CurrentLobby, true);
         RightGroup.interactable = false;
         gameObject.SetActive(false);
         Menu02.SetActive(true);
