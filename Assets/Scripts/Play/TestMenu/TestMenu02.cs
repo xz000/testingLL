@@ -117,8 +117,7 @@ public class TestMenu02 : MonoBehaviour
     {
         int Mcount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
         PlayersJoined.text = Mcount + " players joined";
-        if (Mcount == 2)
-            GameStart();
+        //if (Mcount == 2) GameStart();
     }
 
     void GameStart()
