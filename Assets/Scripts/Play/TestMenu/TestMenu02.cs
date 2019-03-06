@@ -122,6 +122,7 @@ public class TestMenu02 : MonoBehaviour
 
     void GameStart()
     {
+        SenderSC.PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
         CSteamID tid;
         for (int i = 0; i < 2; i++)
         {

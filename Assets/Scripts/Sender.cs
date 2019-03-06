@@ -44,7 +44,7 @@ public class Sender : MonoBehaviour
     private void Start()
     {
         ResetSelf();
-        PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
+        //PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
     }
 
     public void PrepareTemp(int PlayersCount, int SkillsCount)
@@ -53,6 +53,7 @@ public class Sender : MonoBehaviour
         theSLtemp = new int[PlayersCount][];
         for (int i = 0; i < PlayersCount; i++)
             theSLtemp[i] = new int[SkillsCount];
+        Debug.Log("交错数组已经建立");
     }
 
     public void SetTempAndCheck(int cN, int[] cSL)
