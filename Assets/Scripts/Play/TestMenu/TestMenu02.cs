@@ -143,7 +143,6 @@ public class TestMenu02 : MonoBehaviour
         SenderPanel.SetActive(true);
         //SayHello();
         SPNL.alphaset();
-        SPNL.betaset();
         BPanel.SetActive(true);
     }
 

@@ -37,7 +37,9 @@ public class SkillsLink : MonoBehaviour
 
     public void alphaset()
     {
+        Setlsd();
         sds.Sendlsd(lsd);
+        betaset();
     }
 
     public void betaset()
