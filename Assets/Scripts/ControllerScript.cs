@@ -69,6 +69,7 @@ public class ControllerScript : MonoBehaviour
         {
             v3 = new Vector3(i * 6 - 3, 0, 0);
             CPCat(i, v3);
+            SetSkillMem(i, Sender.theSLtemp[i]);
         }
     }
 

@@ -44,7 +44,7 @@ public class HostToggle : MonoBehaviour
         ///Sender.isServer = true;
         Sender.clientNum = 0;
         //NetworkTransport.Init();
-        SenderScript.StartSelf();
+        //SenderScript.StartSelf();
         //CCFIG = new ConnectionConfig();
         //HChannelID = CCFIG.AddChannel(QosType.Reliable);
         //NetWriter.channelID = CCFIG.AddChannel(QosType.ReliableSequenced);
