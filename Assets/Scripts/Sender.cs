@@ -38,10 +38,33 @@ public class Sender : MonoBehaviour
     public static CSteamID TOmb;
     EndData sts;
     EndData Src;
+    public static int[][] theSLtemp;
+    bool[] SLtb;
 
     private void Start()
     {
         ResetSelf();
+        PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
+    }
+
+    public void PrepareTemp(int PlayersCount, int SkillsCount)
+    {
+        SLtb = new bool[PlayersCount];
+        theSLtemp = new int[PlayersCount][];
+        for (int i = 0; i < PlayersCount; i++)
+            theSLtemp[i] = new int[SkillsCount];
+    }
+
+    public void SetTempAndCheck(int cN, int[] cSL)
+    {
+        for (int i = 0; i < cSL.Length; i++)
+            theSLtemp[cN][i] = cSL[i];
+        SLtb[cN] = true;
+        bool allok = true;
+        for (int i = 0; i < SLtb.Length; i++)
+            allok = allok & SLtb[i];
+        if (allok)
+            ConnectDo();
     }
 
     public void ResetSelf()
@@ -53,7 +76,7 @@ public class Sender : MonoBehaviour
     void ResetS2()
     {
         Debug.Log("S2");
-        SendButton.SetActive(false);
+        //SendButton.SetActive(false);
         SignalLight.color = Color.white;
         MyNS.isstarted = false;
         MyNS.enabled = false;
@@ -110,11 +133,12 @@ public class Sender : MonoBehaviour
 
     public void ConnectDo()
     {
-        StartSelf();
+        //StartSelf();
+        started = true;
         SignalLight.color = Color.green;
-        SendButton.SetActive(true);
+        //SendButton.SetActive(true);
         MyNS.enabled = true;//开启netwriter
-        CCToggle.isOn = true;
+        CCToggle.isOn = true;//开启ClickCatcher
         //SPNL.alphaset();
         HideMC();
     }
@@ -126,11 +150,11 @@ public class Sender : MonoBehaviour
         ShowMC();
     }
 
-    public void StartSelf()
+    /*public void StartSelf()
     {
         started = true;
         SignalLight.color = Color.yellow;
-    }
+    }*/
 
     public void Sendlsd(SkillData sd)
     {
@@ -173,31 +197,6 @@ public class Sender : MonoBehaviour
         SWControl();
     }
 
-    public void SignalControl()
-    {
-        /*int RecChanID;
-        NetworkEventType recData = NetworkTransport.Receive(out HSID, out CNID, out RecChanID, rcbuffer, rcbfsz, out rcsz, out error);
-        switch (recData)
-        {
-            case NetworkEventType.Nothing:
-                break;
-            case NetworkEventType.BroadcastEvent:
-                break;
-            case NetworkEventType.ConnectEvent:
-                ConnectDo();
-                break;
-            case NetworkEventType.DataEvent:
-                if (RecChanID == CHANID)
-                    SetSD();
-                else
-                    DeSerializeReceived();
-                break;
-            case NetworkEventType.DisconnectEvent:
-                DisconnectDo();
-                break;
-        }*/
-    }
-
     public void SWControl()
     {
         //Debug.Log("Checking");
@@ -227,9 +226,9 @@ public class Sender : MonoBehaviour
                         DeSerializeReceived();
                         break;
                     case 1:
-                        ConnectDo();
+                        //ConnectDo();
                         SetSD();
-                        SPNL.betaset();
+                        //SPNL.betaset();
                         break;
                     case 2:
                         EndBattle();
@@ -245,7 +244,8 @@ public class Sender : MonoBehaviour
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         SkillData CDrc = Deserialize<SkillData>.From(cbr);
-        MyNS.GetComponent<ControllerScript>().SetSkillMem(CDrc.cNum, CDrc.SLs);
+        //MyNS.GetComponent<ControllerScript>().SetSkillMem(CDrc.cNum, CDrc.SLs);
+        SetTempAndCheck(CDrc.cNum, CDrc.SLs);
     }
 
     private void PrintReceived()

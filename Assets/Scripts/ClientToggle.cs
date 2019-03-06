@@ -49,7 +49,7 @@ public class ClientToggle : MonoBehaviour
         ///Sender.isServer = false;
         Sender.clientNum = 1;
         //NetworkTransport.Init();
-        SenderScript.StartSelf();
+        //SenderScript.StartSelf();
         //CCcFIG = new ConnectionConfig();
         //CChannelID = CCcFIG.AddChannel(QosType.Reliable);
         //NetWriter.channelID = CCcFIG.AddChannel(QosType.ReliableSequenced);

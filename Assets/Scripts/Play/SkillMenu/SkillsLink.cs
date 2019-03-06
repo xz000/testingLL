@@ -19,7 +19,7 @@ public class SkillsLink : MonoBehaviour
     public void linktome(GameObject go)
     {
         mySoldier = go;
-        betaset();
+        //betaset();
     }
 
     public void selfset()
@@ -42,8 +42,7 @@ public class SkillsLink : MonoBehaviour
 
     public void betaset()
     {
-        sds.MyNS.GetComponent<ControllerScript>().SetSkillMem(lsd.cNum, lsd.SLs);
-        selfset();//可以优化
+        sds.SetTempAndCheck(lsd.cNum, lsd.SLs);
     }
 
     void Setlsd()
