@@ -15,15 +15,17 @@ public class TestMenu02 : MonoBehaviour
     public GameObject SenderPanel;
     public Sender SenderSC;
     public SkillsLink SPNL;
+    public UserListScript ULS;
 
     public Text PlayersJoined;
-    public Text Notready;
+    //public Text Notready;
     public Text Roomname;
 
     protected Callback<LobbyKicked_t> Callback_LobbyKicked;
     protected Callback<LobbyChatUpdate_t> Callback_LobbyChatUpdate;
     protected Callback<LobbyDataUpdate_t> Callback_LobbyDataUpdate;
     protected Callback<P2PSessionRequest_t> Callback_newConnection;
+    protected Callback<AvatarImageLoaded_t> m_AvatarImageLoaded;
 
     ///public GameObject Menu00;
     public GameObject Menu01;
@@ -40,6 +42,7 @@ public class TestMenu02 : MonoBehaviour
         Callback_LobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
         Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
         Callback_LobbyDataUpdate = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdate);
+        m_AvatarImageLoaded = Callback<AvatarImageLoaded_t>.Create(OnAvatarImageLoaded);
     }
 
     void OnNewConnection(P2PSessionRequest_t result)
@@ -72,6 +75,11 @@ public class TestMenu02 : MonoBehaviour
         SetBasic();
     }
 
+    void OnAvatarImageLoaded(AvatarImageLoaded_t pCallback)
+    {
+        UpdateLobbyInfo(ref m_CurrentLobby);
+    }
+
     void UpdateLobbyInfo(ref Lobby outLobby)
     {
         outLobby.m_SteamID = Sender.roomid;
@@ -81,6 +89,9 @@ public class TestMenu02 : MonoBehaviour
 
         int nDataCount = SteamMatchmaking.GetLobbyDataCount(Sender.roomid);
         outLobby.m_Data = new LobbyMetaData[nDataCount];
+
+        int Ucount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
+        ULS.CreateDs(Ucount);
         for (int i = 0; i < nDataCount; ++i)
         {
             bool lobby_data_ret = SteamMatchmaking.GetLobbyDataByIndex(Sender.roomid, i, out outLobby.m_Data[i].m_Key, Constants.k_nMaxLobbyKeyLength, out outLobby.m_Data[i].m_Value, Constants.k_cubChatMetadataMax);
@@ -88,11 +99,12 @@ public class TestMenu02 : MonoBehaviour
             Debug.LogError("SteamMatchmaking.GetLobbyDataByIndex returned false.");
             continue;
         }
-        Notready.text = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, SteamUser.GetSteamID(), "key_ready");
+        //Notready.text = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, SteamUser.GetSteamID(), "key_ready");
         int rc = 0;
         for (int i = 0; i < outLobby.m_Members.Length; i++)
         {
             outLobby.m_Members[i].m_SteamID = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
+            ULS.UDs[i].GetComponent<UserDetailScript>().HomeWork(outLobby.m_Members[i].m_SteamID);
             outLobby.m_Members[i].m_Data = new LobbyMetaData[1];
             LobbyMetaData lmd = new LobbyMetaData();
             lmd.m_Key = "key_ready";
@@ -100,6 +112,7 @@ public class TestMenu02 : MonoBehaviour
             if (lmd.m_Value == "READY")
                 rc++;
             outLobby.m_Members[i].m_Data[0] = lmd;
+            ULS.UDs[i].GetComponent<UserDetailScript>().Uready.text = lmd.m_Value;
         }
         if (rc == 2)
             GameStart();
@@ -116,6 +129,11 @@ public class TestMenu02 : MonoBehaviour
     void SetBasic()
     {
         int Mcount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
+        ULS.CreateDs(Mcount);
+        for (int i = 0; i < Mcount; i++)
+        {
+            ULS.UDs[i].GetComponent<UserDetailScript>().HomeWork(SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i));
+        }
         PlayersJoined.text = Mcount + " players joined";
         //if (Mcount == 2) GameStart();
     }
