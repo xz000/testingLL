@@ -176,6 +176,8 @@ public class TestMenu02 : MonoBehaviour
 
     void LeaveLobby()
     {
+        GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
+        Destroy(safeground);
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject pc in pcs)
             Destroy(pc);
