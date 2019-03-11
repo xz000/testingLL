@@ -174,7 +174,12 @@ public class TestMenu02 : MonoBehaviour
         }
         CVS2.SetActive(true);
         BPanel.SetActive(true);
-        RoundStart();
+        EndData endData = new EndData();
+        endData.CircleID = 0;
+        endData.epx = 0;
+        endData.epy = 0;
+        SenderSC.SendEnd(endData);
+        //RoundStart();
     }
 
     void RoundStart()
