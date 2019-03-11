@@ -172,6 +172,7 @@ public class TestMenu02 : MonoBehaviour
             //Sender.isServer = false;
             Sender.clientNum = 1;
         }
+        SenderPanel.SetActive(true);
         CVS2.SetActive(true);
         BPanel.SetActive(true);
         EndData endData = new EndData();
@@ -179,12 +180,12 @@ public class TestMenu02 : MonoBehaviour
         endData.epx = 0;
         endData.epy = 0;
         SenderSC.SendEnd(endData);
+        Debug.Log("enddata sent");
         //RoundStart();
     }
 
     void RoundStart()
     {
-        SenderPanel.SetActive(true);
         SPNL.alphaset();
     }
 
