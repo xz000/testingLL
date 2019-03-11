@@ -140,7 +140,9 @@ public class Sender : MonoBehaviour
         sts = null;
         MSM.OpenMainSkillMenu();
         RoundsPassed++;
-        if (RoundsPassed >= TotalRounds)
+        if (RoundsPassed == 1)
+            ConnectDo();
+        if (RoundsPassed > TotalRounds)
         {
             ShowMC();
             GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
