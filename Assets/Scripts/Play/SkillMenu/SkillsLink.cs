@@ -37,6 +37,7 @@ public class SkillsLink : MonoBehaviour
 
     public void alphaset()
     {
+        GetComponent<MainSkillMenu>().CloseMainSkillMenu();
         Setlsd();
         sds.Sendlsd(lsd);
         betaset();

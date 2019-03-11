@@ -10,7 +10,7 @@ public class MainSkillMenu : MonoBehaviour {
 	void Start ()
     {
         cg = GetComponent<CanvasGroup>();
-        OpenMainSkillMenu();
+        //OpenMainSkillMenu();
     }
 	
 	// Update is called once per frame
@@ -41,6 +41,5 @@ public class MainSkillMenu : MonoBehaviour {
         cg.alpha = 1;
         cg.interactable = true;
         cg.blocksRaycasts = true;
-        //GetComponent<SkillsLink>().alphaset();
     }
 }

@@ -8597,7 +8597,7 @@ CanvasGroup:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 392646554}
   m_Enabled: 1
-  m_Alpha: 1
+  m_Alpha: 0
   m_Interactable: 0
   m_BlocksRaycasts: 0
   m_IgnoreParentGroups: 1
@@ -21564,6 +21564,7 @@ MonoBehaviour:
   Readytoggle: {fileID: 1355979345}
   AutostartToggle: {fileID: 158836237}
   SenderPanel: {fileID: 1091925956}
+  CVS2: {fileID: 1716205428}
   SenderSC: {fileID: 1914587339}
   SPNL: {fileID: 392646559}
   ULS: {fileID: 175355184}
@@ -39198,7 +39199,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1716205429
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -44383,6 +44384,7 @@ MonoBehaviour:
   rcbfsz: 1024
   CCToggle: {fileID: 238781325}
   MCG: {fileID: 167484878}
+  MSM: {fileID: 392646560}
 --- !u!114 &1914587340
 MonoBehaviour:
   m_ObjectHideFlags: 0
