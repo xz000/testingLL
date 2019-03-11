@@ -19,7 +19,7 @@ public class SkillsLink : MonoBehaviour
     public void linktome(GameObject go)
     {
         mySoldier = go;
-        //betaset();
+        selfset();
     }
 
     public void selfset()
@@ -32,15 +32,16 @@ public class SkillsLink : MonoBehaviour
         gameObject.GetComponent<SetSkillR>().SetR();
         gameObject.GetComponent<SetSkillT>().SetT();
         gameObject.GetComponent<SetSkillY>().SetY();
-        Setlsd();
     }
 
     public void alphaset()
     {
         GetComponent<MainSkillMenu>().CloseMainSkillMenu();
+        selfset();
         Setlsd();
         sds.Sendlsd(lsd);
         betaset();
+        Debug.Log("SL set");
     }
 
     public void betaset()
