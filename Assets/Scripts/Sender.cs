@@ -40,7 +40,7 @@ public class Sender : MonoBehaviour
     //public static GameState NowState;
     public static bool Learning = false;
     float TimeCount = 0;
-    public static float LearnTime;
+    public static float LearnTime = 5;
     int RoundsPassed = 0;
     public static int TotalRounds = 2;
     EndData sts;
