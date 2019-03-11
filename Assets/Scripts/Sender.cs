@@ -41,7 +41,7 @@ public class Sender : MonoBehaviour
     public static bool Learning = false;
     float TimeCount = 0;
     public static float LearnTime = 5;
-    int RoundsPassed = 0;
+    public int RoundNow = 0;
     public static int TotalRounds = 2;
     EndData sts;
     EndData Src;
@@ -96,7 +96,7 @@ public class Sender : MonoBehaviour
     {
         if (!started)
             return;
-        ResetSelf();
+        RoundNow++;
         sts = se;
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
@@ -113,16 +113,42 @@ public class Sender : MonoBehaviour
     public void EndBattle()
     {
         Debug.Log("End Received");
+        GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
+        Destroy(safeground);
+        GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
+        foreach (GameObject pc in pcs)
+            Destroy(pc);
         Learning = true;
+        MyNS.enabled = false;//关闭netwriter
+        CCToggle.isOn = false;//关闭ClickCatcher
+        Time.timeScale = 1;
         //NowState = GameState.Learning;
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         Src = Deserialize<EndData>.From(cbr);
         EndingCompare();
+        MSM.OpenMainSkillMenu();
+        Debug.Log("Round " + RoundNow);
+        if (RoundNow > TotalRounds)
+        {
+            //Time.timeScale = 0;
+            MSM.CloseMainSkillMenu();
+            ResetSelf();
+            ShowMC();
+            GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
+            Debug.Log("All Battle Finished" + RoundNow);
+        }
     }
 
     void EndingCompare()
     {
+        if (Src.CircleID == 666)
+        {
+            RoundNow = 1;
+            Src = null;
+            Debug.Log("received start message");
+            return;
+        }
         if (Src == null || sts == null)
             return;
         Debug.Log("Compareing Ending Place");
@@ -138,15 +164,6 @@ public class Sender : MonoBehaviour
         }
         Src = null;
         sts = null;
-        MSM.OpenMainSkillMenu();
-        RoundsPassed++;
-        if (RoundsPassed == 1)
-            ConnectDo();
-        if (RoundsPassed > TotalRounds)
-        {
-            ShowMC();
-            GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
-        }
     }
 
     public void ConnectDo()
@@ -231,7 +248,7 @@ public class Sender : MonoBehaviour
         }*/
         if (Learning)
         {
-            TimeCount += Time.fixedDeltaTime;
+            TimeCount += Time.fixedUnscaledDeltaTime;
             if (TimeCount >= LearnTime)
             {
                 SPNL.alphaset();

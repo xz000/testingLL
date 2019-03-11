@@ -12,19 +12,6 @@ public class MainSkillMenu : MonoBehaviour {
         cg = GetComponent<CanvasGroup>();
         //OpenMainSkillMenu();
     }
-	
-	// Update is called once per frame
-	void Update () {
-        if (Input.GetKeyDown(KeyCode.Tab))
-        {
-            if (cg.alpha == 0)
-            {
-                OpenMainSkillMenu();
-            }
-            else
-                CloseMainSkillMenu();
-        }
-	}
 
     public void CloseMainSkillMenu()
     {
@@ -33,7 +20,7 @@ public class MainSkillMenu : MonoBehaviour {
         cg.alpha = 0;
         cg.interactable = false;
         cg.blocksRaycasts = false;
-        GetComponent<SkillsLink>().selfset();
+        //GetComponent<SkillsLink>().selfset();
     }
 
     public void OpenMainSkillMenu()

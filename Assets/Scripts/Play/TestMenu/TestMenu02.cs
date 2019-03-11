@@ -176,12 +176,11 @@ public class TestMenu02 : MonoBehaviour
         CVS2.SetActive(true);
         BPanel.SetActive(true);
         EndData endData = new EndData();
-        endData.CircleID = 0;
+        endData.CircleID = 666;
         endData.epx = 0;
         endData.epy = 0;
         SenderSC.started = true;
         SenderSC.SendEnd(endData);
-        Debug.Log("enddata sent");
         //RoundStart();
     }
 
@@ -202,8 +201,6 @@ public class TestMenu02 : MonoBehaviour
 
     void LeaveLobby()
     {
-        GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
-        Destroy(safeground);
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject pc in pcs)
             Destroy(pc);
