@@ -179,6 +179,7 @@ public class TestMenu02 : MonoBehaviour
         endData.CircleID = 0;
         endData.epx = 0;
         endData.epy = 0;
+        SenderSC.started = true;
         SenderSC.SendEnd(endData);
         Debug.Log("enddata sent");
         //RoundStart();
