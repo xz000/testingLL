@@ -24,7 +24,7 @@ public class TestMenu01 : MonoBehaviour
 
     ///public GameObject Menu00;
     public GameObject Menu02;
-    public CanvasGroup RightGroup;
+    //public CanvasGroup RightGroup;
     public Toggle AutoCreateToggle;
 
     protected Callback<LobbyCreated_t> Callback_lobbyCreated;
@@ -252,8 +252,7 @@ public class TestMenu01 : MonoBehaviour
 
     public void SwitchToMenu02()
     {
-        ///Menu00.SetActive(false);
-        RightGroup.interactable = false;
+        //RightGroup.interactable = false;
         gameObject.SetActive(false);
         Menu02.SetActive(true);
     }

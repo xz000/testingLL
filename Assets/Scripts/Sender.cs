@@ -34,8 +34,15 @@ public class Sender : MonoBehaviour
     public int rcbfsz = 256;
     public Toggle CCToggle;
     public CanvasGroup MCG;
+    public MainSkillMenu MSM;
     public static CSteamID roomid;
     public static CSteamID TOmb;
+    //public static GameState NowState;
+    public static bool Learning = false;
+    float TimeCount = 0;
+    public static float LearnTime;
+    int RoundsPassed = 0;
+    public static int TotalRounds = 2;
     EndData sts;
     EndData Src;
     public static int[][] theSLtemp;
@@ -106,6 +113,8 @@ public class Sender : MonoBehaviour
     public void EndBattle()
     {
         Debug.Log("End Received");
+        Learning = true;
+        //NowState = GameState.Learning;
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         Src = Deserialize<EndData>.From(cbr);
@@ -129,8 +138,13 @@ public class Sender : MonoBehaviour
         }
         Src = null;
         sts = null;
-        ShowMC();
-        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
+        MSM.OpenMainSkillMenu();
+        RoundsPassed++;
+        if (RoundsPassed >= TotalRounds)
+        {
+            ShowMC();
+            GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
+        }
     }
 
     public void ConnectDo()
@@ -145,12 +159,12 @@ public class Sender : MonoBehaviour
         HideMC();
     }
 
-    void DisconnectDo()
+    /*void DisconnectDo()
     {
         ResetS2();
         SignalLight.color = Color.red;
         ShowMC();
-    }
+    }*/
 
     /*public void StartSelf()
     {
@@ -197,6 +211,32 @@ public class Sender : MonoBehaviour
         /*if (!started)
             return;*/
         SWControl();
+    }
+
+    private void FixedUpdate()
+    {
+        /*switch (NowState)
+        {
+            case GameState.Learning:
+                TimeCount += Time.fixedDeltaTime;
+                if (TimeCount >= LearnTime)
+                {
+                    SPNL.alphaset();
+                    NowState = GameState.Fighting;
+                    TimeCount = 0;
+                }
+                break;
+        }*/
+        if (Learning)
+        {
+            TimeCount += Time.fixedDeltaTime;
+            if (TimeCount >= LearnTime)
+            {
+                SPNL.alphaset();
+                Learning = false;
+                TimeCount = 0;
+            }
+        }
     }
 
     public void SWControl()
@@ -325,5 +365,6 @@ public class EndData
     public float epy;
 }
 
+public enum GameState { Learning, Fighting };
 public enum MButton { left, right, skill };
 public enum SkillCode { SkillC1, SkillC2, SkillC3, SkillC4, SkillD2, SkillD3, SkillD4, SkillE1, SkillE1b, SkillE2, SkillE2b, SkillE3, SkillE3b, SkillR1, SkillR1b, SkillR2, SkillR2b, SkillR3b, SkillT1b, SkillT2, SkillT2b, SkillT3, SkillT3b, SkillY1, SkillY1b, SkillY2, SkillY2b, SkillY3, SkillY3b, TestSkill01, TestSkill02, TestSkill03, TestSkillLeech, TestSkillLightning, SelfExplodeScript, FireStop };

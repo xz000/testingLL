@@ -13,6 +13,7 @@ public class TestMenu02 : MonoBehaviour
     public Toggle AutostartToggle;
 
     public GameObject SenderPanel;
+    public GameObject CVS2;
     public Sender SenderSC;
     public SkillsLink SPNL;
     public UserListScript ULS;
@@ -30,7 +31,7 @@ public class TestMenu02 : MonoBehaviour
     ///public GameObject Menu00;
     public GameObject Menu01;
     public GameObject BPanel;
-    public CanvasGroup RightGroup;
+    //public CanvasGroup RightGroup;
     Lobby m_CurrentLobby;
     bool hassession;
 
@@ -58,6 +59,7 @@ public class TestMenu02 : MonoBehaviour
     void OnEnable()
     {
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
+        CVS2.SetActive(true);
         SetBasic();
     }
 
@@ -126,6 +128,16 @@ public class TestMenu02 : MonoBehaviour
             SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "NOT READY");
     }
 
+    public void SetRoundNum(int n)
+    {
+        SteamMatchmaking.SetLobbyData(Sender.roomid, "Total_Rounds", n.ToString());
+    }
+
+    public void SetLearnTime(int n)
+    {
+        SteamMatchmaking.SetLobbyData(Sender.roomid, "Learn_Time", n.ToString());
+    }
+
     void SetBasic()
     {
         int Mcount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
@@ -140,7 +152,9 @@ public class TestMenu02 : MonoBehaviour
 
     void GameStart()
     {
+        //准备SkillCode交错数组
         SenderSC.PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
+        //设置clientNum
         CSteamID tid;
         for (int i = 0; i < 2; i++)
         {
@@ -158,13 +172,18 @@ public class TestMenu02 : MonoBehaviour
             //Sender.isServer = false;
             Sender.clientNum = 1;
         }
-        SenderPanel.SetActive(true);
-        //SayHello();
-        SPNL.alphaset();
+        CVS2.SetActive(true);
         BPanel.SetActive(true);
+        RoundStart();
     }
 
-    void SayHello()
+    void RoundStart()
+    {
+        SenderPanel.SetActive(true);
+        SPNL.alphaset();
+    }
+
+    /*void SayHello()
     {
         byte[] hello = new byte[1];
         hello[0] = 2;
@@ -172,7 +191,7 @@ public class TestMenu02 : MonoBehaviour
         //SenderSC.ConnectDo();
         Debug.Log("Hi");
         gameObject.SetActive(false);
-    }
+    }*/
 
     void LeaveLobby()
     {
@@ -196,7 +215,8 @@ public class TestMenu02 : MonoBehaviour
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
         BPanel.SetActive(false);
-        RightGroup.interactable = true;
+        GameObject.Find("Canvas2").SetActive(false);
+        //RightGroup.interactable = true;
         Menu01.SetActive(true);
     }
 
