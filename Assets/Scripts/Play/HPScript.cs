@@ -53,6 +53,7 @@ public class HPScript : MonoBehaviour
             endData.epx = GetComponent<Rigidbody2D>().position.x;
             endData.epy = GetComponent<Rigidbody2D>().position.y;
             ser.SendEnd(endData);
+            Debug.Log("awsl");
         }
     }
 

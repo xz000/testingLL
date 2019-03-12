@@ -105,7 +105,6 @@ public class NetWriter : MonoBehaviour
     private void OnEnable()
     {
         Debug.Log("oe");
-        //bf = new BinaryFormatter();
         theLL = new LoopList();
         theLL.init(GetComponent<ControllerScript>());
         PassedFrameNum = 0;
