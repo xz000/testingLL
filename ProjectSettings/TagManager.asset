@@ -6,6 +6,7 @@ TagManager:
   tags:
   - bullet
   - Ground
+  - LobbyDataShow
   layers:
   - Default
   - TransparentFX
