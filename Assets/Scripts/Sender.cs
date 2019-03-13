@@ -105,6 +105,8 @@ public class Sender : MonoBehaviour
         Debug.Log("End Sent");
         if (RoundNow > TotalRounds)
             BattlesFinish();
+        TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
+        LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
     }
 
     public void EndBattle()

@@ -217,7 +217,6 @@ public class TestMenu01 : MonoBehaviour
     public void ClickJoinOrCreateButton()
     {
         SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 2);
-        //SteamMatchmaking.SetLobbyData(;
     }
 
     //"上一页"按钮事件处理函数
