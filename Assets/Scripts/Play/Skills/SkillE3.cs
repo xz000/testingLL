@@ -53,6 +53,8 @@ public class SkillE3 : MonoBehaviour
         GetComponent<DoSkill>().BeforeSkill();
         Vector2 singplace = transform.position;
         Vector2 skilldirection = actionplace - singplace;
+        float stime = (skilldirection.magnitude - 0.76f) / bulletspeed;
+        ST.GetComponent<STScirpt>().maxtime = stime;
         DoFire(singplace + 0.76f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;

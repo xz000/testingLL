@@ -31,6 +31,8 @@ public class TestMenu02 : MonoBehaviour
     ///public GameObject Menu00;
     public GameObject Menu01;
     public GameObject BPanel;
+    public GameObject DPanel;
+    public GameObject MPanel;
     //public CanvasGroup RightGroup;
     Lobby m_CurrentLobby;
     bool hassession;
@@ -68,6 +70,13 @@ public class TestMenu02 : MonoBehaviour
         Sender.roomid = (CSteamID)lobbyDataUpdate_T.m_ulSteamIDLobby;
         UpdateLobbyInfo(ref m_CurrentLobby);
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
+        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+            MPanel.SetActive(true);
+        else
+            MPanel.SetActive(false);
+        DataShowScript[] dss = GetComponentsInChildren<DataShowScript>(DPanel);
+        foreach (DataShowScript d in dss)
+            d.GetMyData();
     }
 
     void OnLobbyChatUpdate(LobbyChatUpdate_t lobbyChatUpdate_T)
@@ -115,17 +124,46 @@ public class TestMenu02 : MonoBehaviour
                 rc++;
             outLobby.m_Members[i].m_Data[0] = lmd;
             ULS.UDs[i].GetComponent<UserDetailScript>().Uready.text = lmd.m_Value;
+            if (outLobby.m_Members[i].m_SteamID == SteamUser.GetSteamID())
+                MPControl(lmd.m_Value);
         }
         if (rc == 2)
             GameStart();
     }
 
+    void MPControl(string v)
+    {
+        if (v != "READY" && !Readytoggle.isOn)
+            MPanel.GetComponent<CanvasGroup>().interactable = true;
+    }
+
     public void SetReady()
     {
         if (Readytoggle.isOn)
-            SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "READY");
+        {
+            if (DataSheetDone())
+            {
+                MPanel.GetComponent<CanvasGroup>().interactable = false;
+                SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "READY");
+            }
+            else
+                Readytoggle.isOn = false;
+        }
         else
+        {
             SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "NOT READY");
+        }
+    }
+
+    bool DataSheetDone()
+    {
+        DataShowScript[] dss = GetComponentsInChildren<DataShowScript>(DPanel);
+        foreach (DataShowScript d in dss)
+        {
+            if (d.DataValueText.text == "")
+                return false;
+        }
+        return true;
     }
 
     public void SetRoundNum(int n)

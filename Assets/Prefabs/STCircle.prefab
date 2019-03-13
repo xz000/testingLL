@@ -150,7 +150,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   breakable: 1
-  selfprotect: 1
+  selfprotect: 0
 --- !u!114 &4924918187712893307
 MonoBehaviour:
   m_ObjectHideFlags: 0

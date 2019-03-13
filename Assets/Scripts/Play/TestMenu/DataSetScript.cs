@@ -1,18 +1,19 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
+using Steamworks;
 
 public class DataSetScript : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
+    public Text DataInput;
+    public string DataName;
 
-    // Update is called once per frame
-    void Update()
+    public void SetMyData()
     {
-        
+        if (!isActiveAndEnabled)
+            return;
+        gameObject.SetActive(false);
+        SteamMatchmaking.SetLobbyData(Sender.roomid, DataName, DataInput.text);
     }
 }
