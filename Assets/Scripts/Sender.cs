@@ -41,7 +41,7 @@ public class Sender : MonoBehaviour
     public static bool Learning = false;
     float TimeCount = 0;
     public static float LearnTime = 5;
-    public int RoundNow = 0;
+    public int RoundNow = -10;
     public static int TotalRounds = 2;
     EndData sts;
     EndData Src;
@@ -175,6 +175,7 @@ public class Sender : MonoBehaviour
 
     public void ConnectDo()
     {
+        SLtb = new bool[SLtb.Length];
         started = true;
         SignalLight.color = Color.green;
         MyNS.enabled = true;//开启netwriter

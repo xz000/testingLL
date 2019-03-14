@@ -16,6 +16,7 @@ public class UserDetailScript : MonoBehaviour
         theUser = tu;
         GetUserAvatar();
         Uname.text = SteamFriends.GetFriendPersonaName(tu);
+        Uready.text = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, tu, "key_ready");
     }
 
     void GetUserAvatar()

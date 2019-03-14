@@ -5,7 +5,7 @@ using FixMath;
 
 public class STScirpt : MonoBehaviour
 {
-    private float pasttime;
+    private float pasttime = 0;
     public float maxtime = 2;
     public float BulletSpeed = 6;
     public GameObject fireball;

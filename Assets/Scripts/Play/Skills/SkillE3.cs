@@ -8,6 +8,7 @@ public class SkillE3 : MonoBehaviour
     public CooldownImage MyImageScript;
     public float maxdistance = 15;
     public float maxtime = 2;
+    float thistime;
     public GameObject ST;
     //public GameObject STB;
     float bulletspeed = 5;
@@ -53,8 +54,7 @@ public class SkillE3 : MonoBehaviour
         GetComponent<DoSkill>().BeforeSkill();
         Vector2 singplace = transform.position;
         Vector2 skilldirection = actionplace - singplace;
-        float stime = (skilldirection.magnitude - 0.76f) / bulletspeed;
-        ST.GetComponent<STScirpt>().maxtime = stime;
+        thistime = (Mathf.Min(skilldirection.magnitude, maxdistance) - 0.76f) / bulletspeed;
         DoFire(singplace + 0.76f * skilldirection.normalized, skilldirection.normalized * bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;
@@ -66,7 +66,7 @@ public class SkillE3 : MonoBehaviour
         ST.GetComponent<STScirpt>().sender = gameObject;
         bullet = Instantiate(ST, fireplace, Quaternion.identity);
         bullet.GetComponent<Rigidbody2D>().velocity = speed2d;
-        bullet.GetComponent<STScirpt>().maxtime = maxtime;
+        bullet.GetComponent<STScirpt>().maxtime = thistime;
         bullet.GetComponent<STScirpt>().finalv = (Fix64)0.4 * ((Fix64Vector2)speed2d).normalized();
     }
 
