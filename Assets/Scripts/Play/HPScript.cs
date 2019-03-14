@@ -46,13 +46,14 @@ public class HPScript : MonoBehaviour
         if (!gameObject.CompareTag("Player"))
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
-        if (PlayersLeft.Length <= 1 && ser != null)
+        if (PlayersLeft.Length <= 1 && ser != null && Sender.CompareMe)
         {
             EndData endData = new EndData();
             endData.CircleID = int.Parse(gameObject.name);
             endData.epx = GetComponent<Rigidbody2D>().position.x;
             endData.epy = GetComponent<Rigidbody2D>().position.y;
             ser.SendEnd(endData);
+            Sender.CompareMe = false;
             Debug.Log("awsl");
         }
     }

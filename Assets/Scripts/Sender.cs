@@ -21,6 +21,7 @@ public class Sender : MonoBehaviour
     public int rcsz;
     public byte error;
     public bool started = false;
+    public static bool CompareMe = false;
     //public static bool isServer;
     public static int clientNum;
     public GameObject SendButton;
@@ -144,6 +145,7 @@ public class Sender : MonoBehaviour
         foreach (GameObject pc in pcs)
             Destroy(pc);
         RoundNow = 0;
+        CompareMe = false;
     }
 
     void EndingCompare()
@@ -181,6 +183,7 @@ public class Sender : MonoBehaviour
         MyNS.enabled = true;//开启netwriter
         CCToggle.isOn = true;//开启ClickCatcher
         HideMC();
+        CompareMe = true;
     }
 
     public void Sendlsd(SkillData sd)
