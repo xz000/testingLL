@@ -62,6 +62,7 @@ public class TestMenu02 : MonoBehaviour
     {
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
         CVS2.SetActive(true);
+        UpdateLobbyInfo(ref m_CurrentLobby);
         SetBasic();
     }
 
@@ -69,14 +70,7 @@ public class TestMenu02 : MonoBehaviour
     {
         Sender.roomid = (CSteamID)lobbyDataUpdate_T.m_ulSteamIDLobby;
         UpdateLobbyInfo(ref m_CurrentLobby);
-        Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
-        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
-            MPanel.SetActive(true);
-        else
-            MPanel.SetActive(false);
-        DataShowScript[] dss = GetComponentsInChildren<DataShowScript>(DPanel);
-        foreach (DataShowScript d in dss)
-            d.GetMyData();
+        SetBasic();
     }
 
     void OnLobbyChatUpdate(LobbyChatUpdate_t lobbyChatUpdate_T)
@@ -102,7 +96,7 @@ public class TestMenu02 : MonoBehaviour
         outLobby.m_Data = new LobbyMetaData[nDataCount];
 
         int Ucount = SteamMatchmaking.GetNumLobbyMembers(Sender.roomid);
-        ULS.CreateDs(Ucount);
+        //ULS.CreateDs(Ucount);
         for (int i = 0; i < nDataCount; ++i)
         {
             bool lobby_data_ret = SteamMatchmaking.GetLobbyDataByIndex(Sender.roomid, i, out outLobby.m_Data[i].m_Key, Constants.k_nMaxLobbyKeyLength, out outLobby.m_Data[i].m_Value, Constants.k_cubChatMetadataMax);
@@ -115,7 +109,7 @@ public class TestMenu02 : MonoBehaviour
         for (int i = 0; i < outLobby.m_Members.Length; i++)
         {
             outLobby.m_Members[i].m_SteamID = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
-            ULS.UDs[i].GetComponent<UserDetailScript>().HomeWork(outLobby.m_Members[i].m_SteamID);
+            //ULS.UDs[i].GetComponent<UserDetailScript>().HomeWork(outLobby.m_Members[i].m_SteamID);
             outLobby.m_Members[i].m_Data = new LobbyMetaData[1];
             LobbyMetaData lmd = new LobbyMetaData();
             lmd.m_Key = "key_ready";
@@ -123,7 +117,7 @@ public class TestMenu02 : MonoBehaviour
             if (lmd.m_Value == "READY")
                 rc++;
             outLobby.m_Members[i].m_Data[0] = lmd;
-            ULS.UDs[i].GetComponent<UserDetailScript>().Uready.text = lmd.m_Value;
+            //ULS.UDs[i].GetComponent<UserDetailScript>().Uready.text = lmd.m_Value;
             if (outLobby.m_Members[i].m_SteamID == SteamUser.GetSteamID())
                 MPControl(lmd.m_Value);
         }
@@ -185,6 +179,14 @@ public class TestMenu02 : MonoBehaviour
             ULS.UDs[i].GetComponent<UserDetailScript>().HomeWork(SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i));
         }
         PlayersJoined.text = Mcount + " players joined";
+        Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
+        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+            MPanel.SetActive(true);
+        else
+            MPanel.SetActive(false);
+        DataShowScript[] dss = GetComponentsInChildren<DataShowScript>(DPanel);
+        foreach (DataShowScript d in dss)
+            d.GetMyData();
         //if (Mcount == 2) GameStart();
     }
 
