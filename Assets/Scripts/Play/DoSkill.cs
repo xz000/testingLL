@@ -46,6 +46,7 @@ public class DoSkill : MonoBehaviour
     {
         if (Fire == null)
             return;
+        BeforeSkill();
         Fire(fv2);
         FireReset();
     }
