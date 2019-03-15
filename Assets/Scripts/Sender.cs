@@ -109,25 +109,29 @@ public class Sender : MonoBehaviour
         LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
     }
 
-    public void EndBattle()
+    void RealEnd()
     {
-        Debug.Log("End Received");
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         if (pcs.Length > 1)
             return;
+        Debug.Log("Real End");
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
         Destroy(safeground);
         MyNS.enabled = false;//关闭netwriter
         CCToggle.isOn = false;//关闭ClickCatcher
         Time.timeScale = 1;
+        Debug.Log("Round " + RoundNow);
+        foreach (GameObject pc in pcs)
+            Destroy(pc);
+    }
+
+    public void EndBattle()
+    {
         //NowState = GameState.Learning;
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         Src = Deserialize<EndData>.From(cbr);
         EndingCompare();
-        Debug.Log("Round " + RoundNow);
-        foreach (GameObject pc in pcs)
-            Destroy(pc);
     }
 
     void BattlesFinish()
@@ -158,6 +162,10 @@ public class Sender : MonoBehaviour
             RoundNow = 1;
             Src = null;
             sts = null;
+            MyNS.enabled = false;//关闭netwriter
+            CCToggle.isOn = false;//关闭ClickCatcher
+            Time.timeScale = 1;
+            Debug.Log("Round " + RoundNow);
             Debug.Log("received start message");
             return;
         }
@@ -174,6 +182,7 @@ public class Sender : MonoBehaviour
         }
         Src = null;
         sts = null;
+        RealEnd();
     }
 
     public void ConnectDo()
