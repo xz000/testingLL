@@ -2823,6 +2823,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   DataInput: {fileID: 76994640}
+  DataNow: {fileID: 1868192320}
   DataName: Learn_Time
 --- !u!224 &139974236
 RectTransform:
@@ -26625,6 +26626,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   DataInput: {fileID: 892780759}
+  DataNow: {fileID: 820559573}
   DataName: Total_Rounds
 --- !u!1 &1164651709
 GameObject:
