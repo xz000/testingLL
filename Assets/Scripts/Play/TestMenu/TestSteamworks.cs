@@ -106,6 +106,7 @@ public class TestSteamworks : MonoBehaviour
     private void OnUserStatsStored(UserStatsStored_t pCallback)
     {
         // we may get callbacks for other games' stats arriving, ignore them
+        /*
         if ((ulong)m_GameID == pCallback.m_nGameID)
         {
             if (EResult.k_EResultOK == pCallback.m_eResult)
@@ -128,6 +129,7 @@ public class TestSteamworks : MonoBehaviour
                 Debug.Log("StoreStats - failed, " + pCallback.m_eResult);
             }
         }
+        */
     }
 
     public void GameEndResultSet(bool a)

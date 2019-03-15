@@ -61,7 +61,6 @@ public class Sender : MonoBehaviour
         theSLtemp = new int[PlayersCount][];
         for (int i = 0; i < PlayersCount; i++)
             theSLtemp[i] = new int[SkillsCount];
-        Debug.Log("交错数组已经建立");
     }
 
     public void SetTempAndCheck(int cN, int[] cSL)
@@ -113,6 +112,9 @@ public class Sender : MonoBehaviour
     public void EndBattle()
     {
         Debug.Log("End Received");
+        GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
+        if (pcs.Length > 1)
+            return;
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
         Destroy(safeground);
         MyNS.enabled = false;//关闭netwriter
@@ -124,7 +126,6 @@ public class Sender : MonoBehaviour
         Src = Deserialize<EndData>.From(cbr);
         EndingCompare();
         Debug.Log("Round " + RoundNow);
-        GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject pc in pcs)
             Destroy(pc);
     }
@@ -144,7 +145,7 @@ public class Sender : MonoBehaviour
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject pc in pcs)
             Destroy(pc);
-        RoundNow = 0;
+        RoundNow = -10;
         CompareMe = false;
     }
 
