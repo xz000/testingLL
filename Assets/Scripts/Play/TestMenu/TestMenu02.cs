@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using System;
 using Steamworks;
+using Bond;
 
 public class TestMenu02 : MonoBehaviour
 {
@@ -21,11 +23,14 @@ public class TestMenu02 : MonoBehaviour
     public Text PlayersJoined;
     //public Text Notready;
     public Text Roomname;
+    public InputField MyWord;
+    UserWord theword;
 
     protected Callback<LobbyKicked_t> Callback_LobbyKicked;
     protected Callback<LobbyChatUpdate_t> Callback_LobbyChatUpdate;
     protected Callback<LobbyDataUpdate_t> Callback_LobbyDataUpdate;
     protected Callback<P2PSessionRequest_t> Callback_newConnection;
+    protected Callback<LobbyChatMsg_t> Callback_LobbyChatMsg;
     protected Callback<AvatarImageLoaded_t> m_AvatarImageLoaded;
 
     ///public GameObject Menu00;
@@ -45,6 +50,7 @@ public class TestMenu02 : MonoBehaviour
         Callback_LobbyChatUpdate = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
         Callback_newConnection = Callback<P2PSessionRequest_t>.Create(OnNewConnection);
         Callback_LobbyDataUpdate = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdate);
+        Callback_LobbyChatMsg = Callback<LobbyChatMsg_t>.Create(OnLobbyChatMsg);
         m_AvatarImageLoaded = Callback<AvatarImageLoaded_t>.Create(OnAvatarImageLoaded);
     }
 
@@ -271,26 +277,44 @@ public class TestMenu02 : MonoBehaviour
         LeaveLobby();
     }
 
-    public void Updatetext()
+    public void SendMyWord()
     {
-        /*PlayersJoined.text = PhotonNetwork.playerList.Length + " players joined";
-        int i = 0;
-        foreach (PhotonPlayer pp in PhotonNetwork.playerList)
-        {
-            if ((bool)pp.CustomProperties["ready"] == false)
-                i++;
-        }
-        Notready.text = i + " not ready";
-        if (PhotonNetwork.isMasterClient)
-        {
-            if (i == 0)
-            {
-                Startbutton.SetActive(true);
-                if (AutostartToggle.isOn && PhotonNetwork.playerList.Length > 1)
-                    ClickStartButton();
-            }
-            else
-                Startbutton.SetActive(false);
-        }*/
+        Bond.IO.Safe.OutputBuffer outputBuffer = new Bond.IO.Safe.OutputBuffer(4096);
+        Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> compactBinaryWriter = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(outputBuffer);
+        UserWord userWord = new UserWord();
+        userWord.myWord = MyWord.text;
+        MyWord.text = "";
+        Serialize.To(compactBinaryWriter, userWord);
+        SteamMatchmaking.SendLobbyChatMsg(Sender.roomid, outputBuffer.Data.Array, outputBuffer.Data.Array.Length);
     }
+
+    void OnLobbyChatMsg(LobbyChatMsg_t lobbyChatMsg_T)
+    {
+        CSteamID Sayer;
+        byte[] hua = new byte[4096];
+        EChatEntryType ctype;
+        if (Sender.roomid == (CSteamID)lobbyChatMsg_T.m_ulSteamIDLobby)
+        {
+            SteamMatchmaking.GetLobbyChatEntry(Sender.roomid, (int)lobbyChatMsg_T.m_iChatID, out Sayer, hua, hua.Length, out ctype);
+            Bond.IO.Safe.InputBuffer inputBuffer = new Bond.IO.Safe.InputBuffer(hua);
+            Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> compactBinaryReader = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(inputBuffer);
+            theword = Deserialize<UserWord>.From(compactBinaryReader);
+            foreach (GameObject a in ULS.UDs)
+            {
+                if (a.GetComponent<UserDetailScript>().ido(Sayer))
+                {
+                    a.GetComponent<UserDetailScript>().ClassWork(theword.myWord);
+                    theword = null;
+                    return;
+                }
+            }
+        }
+    }
+}
+
+[Serializable, Schema]
+public class UserWord
+{
+    [Id(0)]
+    public string myWord;
 }

@@ -10,6 +10,7 @@ public class UserDetailScript : MonoBehaviour
     public RawImage UAI;
     public Text Uname;
     public Text Uready;
+    public Text Uword;
 
     public void HomeWork(CSteamID tu)
     {
@@ -17,6 +18,17 @@ public class UserDetailScript : MonoBehaviour
         GetUserAvatar();
         Uname.text = SteamFriends.GetFriendPersonaName(tu);
         Uready.text = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, tu, "key_ready");
+    }
+
+    public bool ido(CSteamID tu)
+    {
+        return (tu == theUser);
+    }
+
+    public void ClassWork(string s)
+    {
+        Uword.text = s;
+        GameObject.Find("MessageListScroll").GetComponent<MessageListScript>().writeblacklist(theUser, s);
     }
 
     void GetUserAvatar()
