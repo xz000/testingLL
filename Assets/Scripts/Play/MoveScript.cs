@@ -67,7 +67,7 @@ public class MoveScript : MonoBehaviour {
         targeticon = Instantiate(targetshadow, rcplace, Quaternion.identity);
         if (isme)
             targeticon.GetComponent<SpriteRenderer>().color = new Color(1, 1, 1, 0.5f);
-        //DoSkill.singing = 0;
+        GetComponent<DoSkill>().singing = 0;
         GetComponent<SkillR2b>().IdoDSWL();
         GetComponent<SkillC4>().DoFake(rcplace);
     }
