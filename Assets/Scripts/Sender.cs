@@ -103,8 +103,6 @@ public class Sender : MonoBehaviour
         ob2.Data.Array.CopyTo(sendBytes, 1);
         SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
         Debug.Log("End Sent");
-        if (RoundNow > TotalRounds)
-            BattlesFinish();
         TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
         LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
     }
@@ -123,6 +121,8 @@ public class Sender : MonoBehaviour
         Debug.Log("Round " + RoundNow);
         foreach (GameObject pc in pcs)
             Destroy(pc);
+        if (RoundNow > TotalRounds)
+            BattlesFinish();
     }
 
     public void EndBattle()
