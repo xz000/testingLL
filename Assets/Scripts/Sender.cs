@@ -138,7 +138,7 @@ public class Sender : MonoBehaviour
     {
         Time.timeScale = 0;
         MSM.CloseMainSkillMenu();
-        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().ClickBackButton();
+        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();
         Learning = false;
         TimeCount = 0;
         Time.timeScale = 1;
@@ -151,6 +151,7 @@ public class Sender : MonoBehaviour
             Destroy(pc);
         RoundNow = -10;
         CompareMe = false;
+        TOmb = new CSteamID();
     }
 
     void EndingCompare()
@@ -205,6 +206,20 @@ public class Sender : MonoBehaviour
         sendBytes[0] = (byte)1;
         ob2.Data.Array.CopyTo(sendBytes, 1);
         SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+    }
+
+    public void SendQuit()
+    {
+        byte[] quitBytes = new byte[1];
+        quitBytes[0] = 9;
+        SteamNetworking.SendP2PPacket(TOmb, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+        BattlesFinish();
+    }
+
+    private void OnApplicationQuit()
+    {
+        if (enabled)
+            SendQuit();
     }
 
     public void ShowMC()
@@ -270,6 +285,8 @@ public class Sender : MonoBehaviour
             uint bytesRead = 0;
             if (SteamNetworking.ReadP2PPacket(packet, msgSize, out bytesRead, out steamIDRemote))
             {
+                if (steamIDRemote != TOmb)
+                    return;
                 int TYPE = packet[0];
                 Array.Copy(packet, 1, rcbuffer, 0, packet.Length - 1);
                 switch (TYPE)
@@ -283,10 +300,18 @@ public class Sender : MonoBehaviour
                     case 2:
                         EndBattle();
                         break;
+                    case 9:
+                        heQuit();
+                        break;
                     default: Debug.Log("BAD PACKET"); break;
                 }
             }
         }
+    }
+
+    void heQuit()
+    {
+        BattlesFinish();
     }
 
     void SetSD()

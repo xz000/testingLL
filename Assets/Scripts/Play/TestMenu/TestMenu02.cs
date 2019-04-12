@@ -245,7 +245,7 @@ public class TestMenu02 : MonoBehaviour
         gameObject.SetActive(false);
     }*/
 
-    void LeaveLobby()
+    public void LeaveLobby()
     {
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
         Destroy(safeground);
@@ -274,7 +274,7 @@ public class TestMenu02 : MonoBehaviour
 
     public void ClickBackButton()
     {
-        LeaveLobby();
+        SenderSC.SendQuit();
     }
 
     public void SendMyWord()
