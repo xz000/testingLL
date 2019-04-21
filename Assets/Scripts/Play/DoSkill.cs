@@ -82,7 +82,7 @@ public class DoSkill : MonoBehaviour
     public void BeforeSkill()
     {
         gameObject.GetComponent<MoveScript>().stopwalking(); //停止走动
-        //gameObject.GetComponent<StealthScript>().StealthEnd();
-        //gameObject.GetComponent<SkillE2b>().lightninghit();
+        gameObject.GetComponent<StealthScript>().StealthEnd();
+        gameObject.GetComponent<SkillE2b>().lighthit();
     }
 }
