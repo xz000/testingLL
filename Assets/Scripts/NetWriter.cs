@@ -30,6 +30,7 @@ public class NetWriter : MonoBehaviour
     //public bool Fstarted = false;
     public byte error;
     uint mn = 1;
+    public static int rs = 2;
     LoopList theLL;
 
     private void FixedUpdate()
@@ -84,8 +85,11 @@ public class NetWriter : MonoBehaviour
             byte[] sendBytes = new byte[ob.Data.Array.Length + 1];
             sendBytes[0] = (byte)0;
             ob.Data.Array.CopyTo(sendBytes, 1);
-            SteamNetworking.SendP2PPacket(Sender.TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
-            //
+            for (int i = 0; i < Sender.TOmb.Length; i++)
+            {
+                if (i != Sender.clientNum)
+                    SteamNetworking.SendP2PPacket(Sender.TOmb[i], sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+            }
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
             if (Time.timeScale == 0 && theLL.Numready(3))
@@ -106,7 +110,7 @@ public class NetWriter : MonoBehaviour
     {
         Debug.Log("oe");
         theLL = new LoopList();
-        theLL.init(GetComponent<ControllerScript>());
+        theLL.init(GetComponent<ControllerScript>(), rs);//rs
         PassedFrameNum = 0;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
@@ -153,6 +157,7 @@ public class LoopList
     private List<ClickData>[,] CDA2;
     private bool[,] bool3;
     private ControllerScript CTL;
+    private int rs;
 
     public void addat(int a, int b, List<ClickData> lcd)
     {
@@ -166,12 +171,17 @@ public class LoopList
             CDA2[a, b].Add(cd);
         }
         bool3[a, b] = true;
-        bool3[a, 2] = bool3[a, 0] && bool3[a, 1];
+        bool t = true;
+        for (int i = 0; i < rs; i++)
+        {
+            t = t && bool3[a, i];
+        }
+        bool3[a, rs] = t;
     }
 
     public bool headready()
     {
-        return bool3[headnum, 2];
+        return bool3[headnum, rs];
     }
 
     public bool Numready(uint u)
@@ -188,16 +198,17 @@ public class LoopList
     {
         if (i >= fullnum)
             i -= fullnum;
-        return bool3[i, 2];
+        return bool3[i, rs];
     }
 
     public void printhead()
     {
-        CTL.powerrr(0, CDA2[headnum, 0]);
-        CTL.powerrr(1, CDA2[headnum, 1]);
-        for (int n = 0; n < 3; n++)
+        int n = 0;
+        bool3[headnum, 0] = false;
+        while (n < rs)
         {
-            bool3[headnum, n] = false;
+            CTL.powerrr(n, CDA2[headnum, n]);
+            bool3[headnum, ++n] = false;
         }
         headnum++;
         if (headnum >= fullnum)
@@ -208,33 +219,33 @@ public class LoopList
     {
         int nextnum = fullnum * 2;
         int endingnum = fullnum + headnum;
-        List<ClickData>[,] CDA2a = new List<ClickData>[nextnum, 2];
-        bool[,] bool3a = new bool[nextnum, 3];
+        List<ClickData>[,] CDA2a = new List<ClickData>[nextnum, rs];
+        bool[,] bool3a = new bool[nextnum, rs + 1];
         for (int i = 0; i < nextnum; i++)
         {
-            for (int n = 0; n < 2; n++)
+            for (int n = 0; n < rs; n++)
             {
                 CDA2a[i, n] = new List<ClickData>();
                 bool3a[i, n] = false;
             }
-            bool3a[i, 2] = false;
+            bool3a[i, rs] = false;
         }
         for (int i = headnum; i < endingnum; i++)
         {
-            for (int n = 0; n < 2; n++)
+            for (int n = 0; n < rs; n++)
             {
                 if (i >= fullnum)
                 {
                     int m = i - fullnum;
                     CDA2a[i, n] = new List<ClickData>(CDA2[m, n]);
                     bool3a[i, n] = bool3[m, n];
-                    bool3a[i, 2] = bool3[m, 2];
+                    bool3a[i, rs] = bool3[m, rs];
                 }
                 else
                 {
                     CDA2a[i, n] = new List<ClickData>(CDA2[i, n]);
                     bool3a[i, n] = bool3[i, n];
-                    bool3a[i, 2] = bool3[i, 2];
+                    bool3a[i, rs] = bool3[i, rs];
                 }
             }
         }
@@ -243,22 +254,23 @@ public class LoopList
         fullnum = nextnum;
     }
 
-    public void init(ControllerScript TCS)
+    public void init(ControllerScript TCS, int r)
     {
+        rs = r;
         CTL = TCS;
-        CTL.createPCs(2);
+        CTL.createPCs(rs);
         headnum = 0;
         fullnum = 32;
-        CDA2 = new List<ClickData>[fullnum, 2];
-        bool3 = new bool[fullnum, 3];
+        CDA2 = new List<ClickData>[fullnum, rs];
+        bool3 = new bool[fullnum, rs + 1];
         for (int i = 0; i < fullnum; i++)
         {
-            for (int n = 0; n < 2; n++)
+            for (int n = 0; n < rs; n++)
             {
                 CDA2[i, n] = new List<ClickData>();
                 bool3[i, n] = false;
             }
-            bool3[i, 2] = false;
+            bool3[i, rs] = false;
         }
         GameObject.Find("Main Camera").GetComponent<CameraMove>().resetCam();
     }
