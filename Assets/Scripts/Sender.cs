@@ -37,7 +37,7 @@ public class Sender : MonoBehaviour
     public CanvasGroup MCG;
     public MainSkillMenu MSM;
     public static CSteamID roomid;
-    public static CSteamID TOmb;
+    public static CSteamID[] TOmb;
     //public static GameState NowState;
     public static bool Learning = false;
     float TimeCount = 0;
@@ -101,7 +101,11 @@ public class Sender : MonoBehaviour
         byte[] sendBytes = new byte[ob2.Data.Array.Length + 1];
         sendBytes[0] = (byte)2;
         ob2.Data.Array.CopyTo(sendBytes, 1);
-        SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+        foreach (CSteamID i in TOmb)
+        {
+            if (i != SteamUser.GetSteamID())
+                SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+        }
         Debug.Log("End Sent");
         TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
         LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
@@ -151,7 +155,7 @@ public class Sender : MonoBehaviour
             Destroy(pc);
         RoundNow = -10;
         CompareMe = false;
-        TOmb = new CSteamID();
+        TOmb = null;
     }
 
     void EndingCompare()
@@ -205,14 +209,25 @@ public class Sender : MonoBehaviour
         byte[] sendBytes = new byte[ob2.Data.Array.Length + 1];
         sendBytes[0] = (byte)1;
         ob2.Data.Array.CopyTo(sendBytes, 1);
-        SteamNetworking.SendP2PPacket(TOmb, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+        for (int i = 0; i < TOmb.Length; i++)
+        {
+            if (i != clientNum)
+                SteamNetworking.SendP2PPacket(TOmb[i], sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+        }
     }
 
     public void SendQuit()
     {
         byte[] quitBytes = new byte[1];
         quitBytes[0] = 9;
-        SteamNetworking.SendP2PPacket(TOmb, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+        if (TOmb != null)
+        {
+            Debug.Log(TOmb.Length);
+            foreach (CSteamID i in TOmb)
+            {
+                SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+            }
+        }
         BattlesFinish();
     }
 
@@ -285,7 +300,7 @@ public class Sender : MonoBehaviour
             uint bytesRead = 0;
             if (SteamNetworking.ReadP2PPacket(packet, msgSize, out bytesRead, out steamIDRemote))
             {
-                if (steamIDRemote != TOmb)
+                if (Array.IndexOf(TOmb, steamIDRemote) == -1)
                     return;
                 int TYPE = packet[0];
                 Array.Copy(packet, 1, rcbuffer, 0, packet.Length - 1);

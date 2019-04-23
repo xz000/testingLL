@@ -34,6 +34,7 @@ public class TestMenu01 : MonoBehaviour
 
     ///ulong current_lobbyID;
     List<CSteamID> lobbyIDS;
+    string GameVersion = "20190423";
 
     void Start()
     {
@@ -56,6 +57,7 @@ public class TestMenu01 : MonoBehaviour
         if (ntr == "")
             ntr = personalName + "'s game";
         SteamMatchmaking.SetLobbyData((CSteamID)result.m_ulSteamIDLobby, "name", ntr);
+        SteamMatchmaking.SetLobbyData((CSteamID)result.m_ulSteamIDLobby, "GameVersion", GameVersion);
     }
 
     void OnGetLobbiesList(LobbyMatchList_t result)
@@ -182,12 +184,15 @@ public class TestMenu01 : MonoBehaviour
             rectTransform.GetChild(1).GetComponent<Text>().text = roomName;             //显示房间名称
             rectTransform.GetChild(2).GetComponent<Text>().text
                 = m_Lobbies[i].m_Members.Length + "/" + m_Lobbies[i].m_MemberLimit;
-            Button button = rectTransform.GetChild(3).GetComponent<Button>();               //获取"进入房间"按钮组件
-            button.gameObject.SetActive(true);
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(delegate () {
-                ClickJoinRoomButton(LobbyID);
-            });
+            if(SteamMatchmaking.GetLobbyData(LobbyID, "GameVersion") == GameVersion)
+            {
+                Button button = rectTransform.GetChild(3).GetComponent<Button>();               //获取"进入房间"按钮组件
+                button.gameObject.SetActive(true);
+                button.onClick.RemoveAllListeners();
+                button.onClick.AddListener(delegate () {
+                    ClickJoinRoomButton(LobbyID);
+                });
+            }
             roomMessage[j].SetActive(true); //启用房间信息条目
         }
         //禁用不显示的房间信息条目

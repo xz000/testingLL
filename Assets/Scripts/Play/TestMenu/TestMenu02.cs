@@ -57,7 +57,7 @@ public class TestMenu02 : MonoBehaviour
     void OnNewConnection(P2PSessionRequest_t result)
     {
         //Debug.Log("Wa");
-        if (Sender.TOmb == result.m_steamIDRemote)
+        if (Array.IndexOf(Sender.TOmb, result.m_steamIDRemote) != -1)
         {
             hassession = SteamNetworking.AcceptP2PSessionWithUser(result.m_steamIDRemote);
             return;
@@ -128,7 +128,7 @@ public class TestMenu02 : MonoBehaviour
                 MPControl(lmd.m_Value);
         }
         if (rc == 2)
-            GameStart();
+            GameStart(rc);
     }
 
     void MPControl(string v)
@@ -196,27 +196,20 @@ public class TestMenu02 : MonoBehaviour
         //if (Mcount == 2) GameStart();
     }
 
-    void GameStart()
+    void GameStart(int r)
     {
+        NetWriter.rs = r;
         //准备SkillCode交错数组
-        SenderSC.PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
+        SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
         //设置clientNum
         CSteamID tid;
-        for (int i = 0; i < 2; i++)
+        Sender.TOmb = new CSteamID[r];
+        for (int i = 0; i < r; i++)
         {
             tid = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
-            if (tid != SteamUser.GetSteamID())
-                Sender.TOmb = tid;
-        }
-        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
-        {
-            //Sender.isServer = true;
-            Sender.clientNum = 0;
-        }
-        else
-        {
-            //Sender.isServer = false;
-            Sender.clientNum = 1;
+            Sender.TOmb[i] = tid;
+            if (tid == SteamUser.GetSteamID())
+                Sender.clientNum = i;
         }
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
@@ -254,7 +247,11 @@ public class TestMenu02 : MonoBehaviour
             Destroy(pc);
         if (hassession)
         {
-            SteamNetworking.CloseP2PSessionWithUser(Sender.TOmb);
+            for (int i = 0; i < Sender.TOmb.Length; i++)
+            {
+                if (Sender.TOmb[i] != SteamUser.GetSteamID())
+                    SteamNetworking.CloseP2PSessionWithUser(Sender.TOmb[i]);
+            }
             hassession = false;
         }
         SteamMatchmaking.LeaveLobby(Sender.roomid);
