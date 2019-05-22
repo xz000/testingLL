@@ -26,6 +26,7 @@ public class TestMenu01 : MonoBehaviour
     public GameObject Menu02;
     //public CanvasGroup RightGroup;
     public Toggle AutoCreateToggle;
+    public Text RoomSize;
 
     protected Callback<LobbyCreated_t> Callback_lobbyCreated;
     protected Callback<LobbyMatchList_t> Callback_lobbyList;
@@ -34,7 +35,7 @@ public class TestMenu01 : MonoBehaviour
 
     ///ulong current_lobbyID;
     List<CSteamID> lobbyIDS;
-    string GameVersion = "20190423";
+    string GameVersion = "20190522";
 
     void Start()
     {
@@ -221,7 +222,8 @@ public class TestMenu01 : MonoBehaviour
     //"创建房间"按钮事件处理函数，启用创建房间面板
     public void ClickJoinOrCreateButton()
     {
-        SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, 2);
+        int size = int.Parse(RoomSize.text);
+        SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, size);
     }
 
     //"上一页"按钮事件处理函数
