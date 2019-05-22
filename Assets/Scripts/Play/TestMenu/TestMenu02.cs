@@ -127,7 +127,7 @@ public class TestMenu02 : MonoBehaviour
             if (outLobby.m_Members[i].m_SteamID == SteamUser.GetSteamID())
                 MPControl(lmd.m_Value);
         }
-        if (rc == 2)
+        if (rc == outLobby.m_MemberLimit)
             GameStart(rc);
     }
 
