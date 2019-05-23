@@ -47,6 +47,8 @@ public class SkillsLink : MonoBehaviour
     public void betaset()
     {
         sds.SetTempAndCheck(lsd.cNum, lsd.SLs);
+        if (Sender.isTesting)
+            sds.SetTempAndCheck(1 - lsd.cNum, lsd.SLs);
     }
 
     void Setlsd()

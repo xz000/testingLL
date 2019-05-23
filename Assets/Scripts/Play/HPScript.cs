@@ -55,6 +55,11 @@ public class HPScript : MonoBehaviour
             ser.SendEnd(endData);
             Sender.CompareMe = false;
             Debug.Log("awsl");
+            if (Sender.isTesting)
+            {
+                ser.SendMessage("RealEnd");
+                ser.SendMessage("BattlesFinish");
+            }
         }
     }
 
