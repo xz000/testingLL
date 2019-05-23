@@ -128,7 +128,12 @@ public class TestMenu02 : MonoBehaviour
                 MPControl(lmd.m_Value);
         }
         if (rc == outLobby.m_MemberLimit)
-            GameStart(rc);
+        {
+            if (rc == 1)
+                TestStart();
+            else
+                GameStart(rc);
+        }
     }
 
     void MPControl(string v)
@@ -221,6 +226,32 @@ public class TestMenu02 : MonoBehaviour
         SenderSC.started = true;
         SenderSC.SendEnd(endData);
         //RoundStart();
+    }
+
+    void TestStart()
+    {
+        Debug.Log("Now Testing");
+        int r = 2;
+        NetWriter.rs = r;
+        //准备SkillCode交错数组
+        SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
+        //设置clientNum
+        Sender.TOmb = new CSteamID[r];
+        for (int i = 0; i < r; i++)
+        {
+            Sender.TOmb[i] = SteamUser.GetSteamID();
+        }
+        Sender.clientNum = 0;
+        SenderPanel.SetActive(true);
+        CVS2.SetActive(true);
+        BPanel.SetActive(true);
+        EndData endData = new EndData();
+        endData.CircleID = 666;
+        endData.epx = 0;
+        endData.epy = 0;
+        SenderSC.started = true;
+        SenderSC.SendEnd(endData);
+        Debug.Log("Test Started");
     }
 
     void RoundStart()
