@@ -22,7 +22,7 @@ public class Sender : MonoBehaviour
     public byte error;
     public bool started = false;
     public static bool CompareMe = false;
-    //public static bool isServer;
+    public static bool isTesting = false;
     public static int clientNum;
     public GameObject SendButton;
     public SkillsLink SPNL;
@@ -140,6 +140,7 @@ public class Sender : MonoBehaviour
 
     void BattlesFinish()
     {
+        isTesting = false;
         Time.timeScale = 0;
         MSM.CloseMainSkillMenu();
         GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();

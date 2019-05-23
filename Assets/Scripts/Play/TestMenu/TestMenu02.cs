@@ -230,6 +230,7 @@ public class TestMenu02 : MonoBehaviour
 
     void TestStart()
     {
+        Sender.isTesting = true;
         Debug.Log("Now Testing");
         int r = 2;
         NetWriter.rs = r;

@@ -92,6 +92,8 @@ public class NetWriter : MonoBehaviour
             }
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
+            if (Sender.isTesting)
+                theLL.addat(a, 1, L2S);
             if (Time.timeScale == 0 && theLL.Numready(3))
             {
                 //isstarted = false;
