@@ -103,7 +103,7 @@ public class Sender : MonoBehaviour
         ob2.Data.Array.CopyTo(sendBytes, 1);
         foreach (CSteamID i in TOmb)
         {
-            if (i != SteamUser.GetSteamID())
+            //if (i != SteamUser.GetSteamID())
                 SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
         }
         Debug.Log("End Sent");
