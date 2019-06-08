@@ -55,6 +55,12 @@ public class Sender : MonoBehaviour
         //PrepareTemp(2, (int)SkillCode.SelfExplodeScript);
     }
 
+    public void meStart()
+    {
+        ResetSelf();
+        gameObject.SetActive(false);
+    }
+
     public void PrepareTemp(int PlayersCount, int SkillsCount)
     {
         SLtb = new bool[PlayersCount];
@@ -81,7 +87,8 @@ public class Sender : MonoBehaviour
         started = false;
         SignalLight.color = Color.white;
         MyNS.isstarted = false;
-        MyNS.enabled = false;
+        //MyNS.enabled = false;
+        MyNS.meDisable();
         CCToggle.isOn = false;
     }
 
@@ -104,7 +111,7 @@ public class Sender : MonoBehaviour
         foreach (CSteamID i in TOmb)
         {
             //if (i != SteamUser.GetSteamID())
-                SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+            SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
         }
         Debug.Log("End Sent");
         TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
@@ -119,7 +126,8 @@ public class Sender : MonoBehaviour
         Debug.Log("Real End");
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
         Destroy(safeground);
-        MyNS.enabled = false;//关闭netwriter
+        //MyNS.enabled = false;
+        MyNS.meDisable();//关闭netwriter
         CCToggle.isOn = false;//关闭ClickCatcher
         Time.timeScale = 1;
         Debug.Log("Round " + RoundNow);
@@ -168,7 +176,8 @@ public class Sender : MonoBehaviour
             RoundNow = 1;
             Src = null;
             sts = null;
-            MyNS.enabled = false;//关闭netwriter
+            //MyNS.enabled = false;
+            MyNS.meDisable();//关闭netwriter
             CCToggle.isOn = false;//关闭ClickCatcher
             Time.timeScale = 1;
             Debug.Log("Round " + RoundNow);
@@ -196,7 +205,8 @@ public class Sender : MonoBehaviour
         SLtb = new bool[SLtb.Length];
         started = true;
         SignalLight.color = Color.green;
-        MyNS.enabled = true;//开启netwriter
+        //MyNS.enabled = true;
+        MyNS.meEnable();//开启netwriter
         CCToggle.isOn = true;//开启ClickCatcher
         HideMC();
         CompareMe = true;

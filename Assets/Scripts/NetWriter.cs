@@ -108,7 +108,7 @@ public class NetWriter : MonoBehaviour
         }
     }
 
-    private void OnEnable()
+    /*private void OnEnable()
     {
         Debug.Log("oe");
         theLL = new LoopList();
@@ -119,9 +119,22 @@ public class NetWriter : MonoBehaviour
         isstarted = true;
         //Fstarted = true;
         Time.timeScale = 0;
+    }*/
+
+    public void meEnable()
+    {
+        enabled = true;
+        Debug.Log("meEnable");
+        theLL = new LoopList();
+        theLL.init(GetComponent<ControllerScript>(), rs);//rs
+        PassedFrameNum = 0;
+        ReceivedFrameNum = 0;
+        LocalFrameNum = 1;
+        isstarted = true;
+        Time.timeScale = 0;
     }
 
-    private void OnDisable()
+    /*private void OnDisable()
     {
         isstarted = false;
         //Fstarted = false;
@@ -129,6 +142,15 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
         //theLL.stop();
+    }*/
+
+    public void meDisable()
+    {
+        isstarted = false;
+        PassedFrameNum = -1;
+        ReceivedFrameNum = 0;
+        LocalFrameNum = 1;
+        enabled = false;
     }
 
     Data2S bondbfd(byte[] bRC)
@@ -189,7 +211,7 @@ public class LoopList
     public bool Numready(uint u)
     {
         bool a = true;
-        for(int i= 0; i <= u; i++)
+        for (int i = 0; i <= u; i++)
         {
             a = a && intready(headnum + i);
         }
