@@ -130,6 +130,7 @@ GameObject:
   m_Component:
   - component: {fileID: 332789389}
   - component: {fileID: 332789390}
+  - component: {fileID: 332789388}
   m_Layer: 0
   m_Name: QiPan
   m_TagString: Untagged
@@ -137,6 +138,19 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
+--- !u!114 &332789388
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 332789387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de0c52f82c961da40a81bf89d81c372a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  qizi: {fileID: 1960684006787525821, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
 --- !u!4 &332789389
 Transform:
   m_ObjectHideFlags: 0
@@ -189,7 +203,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_Sprite: {fileID: 21300000, guid: dfb71c3692892df4f8bf7ec833053499, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 0.7490196, b: 0.24705882, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
