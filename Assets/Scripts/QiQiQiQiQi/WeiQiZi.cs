@@ -9,22 +9,19 @@ public class WeiQiZi : MonoBehaviour
     public SpriteRenderer srXiao;
     public int x;
     public int y;
-    public void Start()
-    {
-        srDa.color = srZhong.color = srXiao.color = WeiQi.PanColor;
-    }
 
     public void setXY(int a, int b)
     {
         x = a;
         y = b;
+        srDa.color = srZhong.color = srXiao.color = WeiQi.PanColor;
     }
 
     public void goWhite()
     {
         srZhong.color = Color.white;
     }
-    
+
     public void goBlack()
     {
         srZhong.color = Color.black;
