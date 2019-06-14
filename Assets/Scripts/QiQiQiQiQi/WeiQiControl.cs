@@ -4,10 +4,12 @@ using UnityEngine;
 
 public class WeiQiControl : MonoBehaviour
 {
+    public bool IBlack;
     public Color HeColor;
     public SpriteRenderer srDa;
     public SpriteRenderer srZhong;
     public SpriteRenderer srXiao;
+    public WeiQi qipan;
 
     void Start()
     {
@@ -22,5 +24,13 @@ public class WeiQiControl : MonoBehaviour
     private void OnMouseExit()
     {
         srDa.color = HeColor;
+    }
+
+    public void pickMe()
+    {
+        if (IBlack)
+            qipan.ToBlack();
+        else
+            qipan.ToWhite();
     }
 }

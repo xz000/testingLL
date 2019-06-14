@@ -34,7 +34,8 @@ public class WeiQiZi : MonoBehaviour
 
     private void OnMouseEnter()
     {
-        srDa.color = Color.red;
+        if (srZhong.color == WeiQi.PanColor)
+            srDa.color = Color.red;
     }
 
     private void OnMouseExit()
