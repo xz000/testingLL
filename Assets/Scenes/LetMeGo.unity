@@ -151,6 +151,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   qizi: {fileID: 1960684006787525821, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
+  blackEaten: {fileID: 0}
+  whiteEaten: {fileID: 0}
 --- !u!4 &332789389
 Transform:
   m_ObjectHideFlags: 0
@@ -243,22 +245,6 @@ MonoBehaviour:
   srZhong: {fileID: 1437762275}
   srXiao: {fileID: 2114762784}
   qipan: {fileID: 0}
---- !u!58 &1034275866
-CircleCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1034275864}
-  m_Enabled: 1
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IsTrigger: 0
-  m_UsedByEffector: 0
-  m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0}
-  serializedVersion: 2
-  m_Radius: 0.5
 --- !u!212 &1034275867 stripped
 SpriteRenderer:
   m_CorrespondingSourceObject: {fileID: 1856197605888693229, guid: 65455aa763d0f2f45a756e2c410f9bd5,
@@ -405,7 +391,6 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 1434876363209246105, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
-    - {fileID: 2010471153600096731, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
 --- !u!212 &1154369330 stripped
 SpriteRenderer:
@@ -437,22 +422,6 @@ MonoBehaviour:
   srZhong: {fileID: 1154369330}
   srXiao: {fileID: 445733581}
   qipan: {fileID: 0}
---- !u!58 &1174110505
-CircleCollider2D:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1174110503}
-  m_Enabled: 1
-  m_Density: 1
-  m_Material: {fileID: 0}
-  m_IsTrigger: 0
-  m_UsedByEffector: 0
-  m_UsedByComposite: 0
-  m_Offset: {x: 0, y: 0}
-  serializedVersion: 2
-  m_Radius: 0.5
 --- !u!212 &1174110506 stripped
 SpriteRenderer:
   m_CorrespondingSourceObject: {fileID: 1856197605888693229, guid: 65455aa763d0f2f45a756e2c410f9bd5,
@@ -573,7 +542,6 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 1434876363209246105, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
-    - {fileID: 2010471153600096731, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: 65455aa763d0f2f45a756e2c410f9bd5, type: 3}
 --- !u!212 &1349277258 stripped
 SpriteRenderer:
