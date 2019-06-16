@@ -7,9 +7,10 @@ public class WeiQi : MonoBehaviour
     private int[,] Chou = new int[19, 19];
     private int[,] Lon = new int[19, 19];
     bool nowBlack = false;
+    bool oneUnreal = false;
     public GameObject qizi;
-    public WeiQiControl blackEaten;
-    public WeiQiControl whiteEaten;
+    public WeiQiScore blackEaten;
+    public WeiQiScore whiteEaten;
     public static Color PanColor;
     // Start is called before the first frame update
     void Start()
@@ -154,12 +155,12 @@ public class WeiQi : MonoBehaviour
 
     public void eat1B()
     {
-
+        blackEaten.mePlusone();
     }
 
     public void eat1W()
     {
-
+        whiteEaten.mePlusone();
     }
 
     void CatchHim()
@@ -175,6 +176,7 @@ public class WeiQi : MonoBehaviour
                 setChou(hit.GetComponent<WeiQiZi>(), 1);
             else
                 setChou(hit.GetComponent<WeiQiZi>(), 2);
+            oneUnreal = false;
             jieLon();
             ChangeColor();
             jieLon();
@@ -183,5 +185,18 @@ public class WeiQi : MonoBehaviour
         {
             hit.GetComponent<WeiQiControl>().pickMe();
         }
+        if (hit.GetComponent<WeiQiScore>() && hit.GetComponent<WeiQiScore>().IBlack == nowBlack)
+        {
+            hit.GetComponent<WeiQiScore>().mePlusone();
+            ChangeColor();
+            if (oneUnreal)
+                endGame();
+            oneUnreal = true;
+        }
+    }
+
+    void endGame()
+    {
+        Debug.Log("Fin");
     }
 }
