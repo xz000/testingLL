@@ -25,6 +25,27 @@ public class WeiQi : MonoBehaviour
             CatchHim();
     }
 
+    private bool canSet(WeiQiZi qizi)
+    {
+        if (qizi.srZhong.color != WeiQi.PanColor)
+            return false;
+        int color = 1;
+        if (nowBlack)
+            color = 2;
+        int x = qizi.x + 9;
+        int y = qizi.y + 9;
+        for (int a = -1; a < 2; a += 2)
+        {
+            if (19 > x + a && x + a >= 0)
+                if (Chou[x + a, y] != color)
+                    return true;
+            if (19 > y + a && y + a >= 0)
+                if (Chou[x, y + a] != color)
+                    return true;
+        }
+        return false;
+    }
+
     public void setChou(WeiQiZi qizi, int color)
     {
         Chou[qizi.x + 9, qizi.y + 9] = color;
@@ -82,10 +103,10 @@ public class WeiQi : MonoBehaviour
         switch (Chou[i, j])
         {
             case 1:
-                eat1B();
+                blackEaten.mePlusone();
                 break;
             case 2:
-                eat1W();
+                whiteEaten.mePlusone();
                 break;
         }
         Chou[i, j] = 0;
@@ -153,16 +174,6 @@ public class WeiQi : MonoBehaviour
         nowBlack = false;
     }
 
-    public void eat1B()
-    {
-        blackEaten.mePlusone();
-    }
-
-    public void eat1W()
-    {
-        whiteEaten.mePlusone();
-    }
-
     void CatchHim()
     {
         Collider2D hit = Physics2D.OverlapPoint(Camera.main.ScreenToWorldPoint(Input.mousePosition));
@@ -170,7 +181,7 @@ public class WeiQi : MonoBehaviour
             return;
         if (hit.GetComponent<WeiQiZi>())
         {
-            if (hit.GetComponent<WeiQiZi>().srZhong.color != WeiQi.PanColor)
+            if (!canSet(hit.GetComponent<WeiQiZi>()))
                 return;
             if (nowBlack)
                 setChou(hit.GetComponent<WeiQiZi>(), 1);
