@@ -25,27 +25,6 @@ public class WeiQi : MonoBehaviour
             CatchHim();
     }
 
-    private bool canSet(WeiQiZi qizi)
-    {
-        if (qizi.srZhong.color != WeiQi.PanColor)
-            return false;
-        int color = 1;
-        if (nowBlack)
-            color = 2;
-        int x = qizi.x + 9;
-        int y = qizi.y + 9;
-        for (int a = -1; a < 2; a += 2)
-        {
-            if (19 > x + a && x + a >= 0)
-                if (Chou[x + a, y] != color)
-                    return true;
-            if (19 > y + a && y + a >= 0)
-                if (Chou[x, y + a] != color)
-                    return true;
-        }
-        return false;
-    }
-
     public void setChou(WeiQiZi qizi, int color)
     {
         Chou[qizi.x + 9, qizi.y + 9] = color;
@@ -63,13 +42,11 @@ public class WeiQi : MonoBehaviour
         }
     }
 
-    private void jieLon()
+    private bool jieLon(int color)
     {
-        int color = 1;
-        if (nowBlack)
-            color = 2;
         Lon = new int[19, 19];
         int n = 0;
+        int a = 0;
         for (int i = 0; i < 19; i++)
         {
             for (int j = 0; j < 19; j++)
@@ -79,23 +56,37 @@ public class WeiQi : MonoBehaviour
                 if (Chou[i, j] == color)
                 {
                     n++;
+                    bool notme = (color == 1 ^ nowBlack);
                     if (lianZhu(i, j, n))
-                        killNum(n);
+                        a += killNum(n);
                 }
             }
         }
+        if (color == 1 ^ nowBlack)
+            return false;
+        if (a == 1)
+        {
+            doUnreal();
+            return true;
+        }
+        return false;
     }
 
-    private void killNum(int n)
+    private int killNum(int n)
     {
+        int a = 0;
         for (int i = 0; i < 19; i++)
         {
             for (int j = 0; j < 19; j++)
             {
                 if (Lon[i, j] == n)
+                {
                     killSingle(i, j);
+                    a++;
+                }
             }
         }
+        return a;
     }
 
     private void killSingle(int i, int j)
@@ -181,16 +172,13 @@ public class WeiQi : MonoBehaviour
             return;
         if (hit.GetComponent<WeiQiZi>())
         {
-            if (!canSet(hit.GetComponent<WeiQiZi>()))
+            if (hit.GetComponent<WeiQiZi>().srZhong.color != WeiQi.PanColor)
                 return;
-            if (nowBlack)
-                setChou(hit.GetComponent<WeiQiZi>(), 1);
-            else
-                setChou(hit.GetComponent<WeiQiZi>(), 2);
-            oneUnreal = false;
-            jieLon();
+            int c = nowBlack ? 1 : 2;
+            setChou(hit.GetComponent<WeiQiZi>(), c);
+            jieLon(3 - c);
+            oneUnreal = jieLon(c);
             ChangeColor();
-            jieLon();
         }
         if (hit.GetComponent<WeiQiControl>())
         {
@@ -199,11 +187,16 @@ public class WeiQi : MonoBehaviour
         if (hit.GetComponent<WeiQiScore>() && hit.GetComponent<WeiQiScore>().IBlack == nowBlack)
         {
             hit.GetComponent<WeiQiScore>().mePlusone();
+            doUnreal();
             ChangeColor();
-            if (oneUnreal)
-                endGame();
-            oneUnreal = true;
         }
+    }
+
+    void doUnreal()
+    {
+        if (oneUnreal)
+            endGame();
+        oneUnreal = true;
     }
 
     void endGame()
