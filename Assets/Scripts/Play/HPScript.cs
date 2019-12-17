@@ -46,6 +46,7 @@ public class HPScript : MonoBehaviour
         if (!gameObject.CompareTag("Player"))
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
+        Debug.Log(PlayersLeft.Length + "Players Left Now.");
         if (PlayersLeft.Length <= 1 && ser != null && Sender.CompareMe)
         {
             EndData endData = new EndData();
