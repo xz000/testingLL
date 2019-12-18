@@ -47,7 +47,7 @@ public class HPScript : MonoBehaviour
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
         Debug.Log(PlayersLeft.Length + "Players Left Now.");
-        if (PlayersLeft.Length <= 1 && ser != null && Sender.CompareMe)
+        if (PlayersLeft.Length == 1 && ser != null && Sender.CompareMe)
         {
             EndData endData = new EndData();
             endData.CircleID = int.Parse(gameObject.name);
