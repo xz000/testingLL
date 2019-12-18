@@ -44,8 +44,8 @@ public class Sender : MonoBehaviour
     public static float LearnTime = 5;
     public int RoundNow = -10;
     public static int TotalRounds = 2;
-    EndData sts;
-    EndData Src;
+    //EndData sts;
+    EndData[] Src;
     public static int[][] theSLtemp;
     bool[] SLtb;
 
@@ -64,6 +64,7 @@ public class Sender : MonoBehaviour
     public void PrepareTemp(int PlayersCount, int SkillsCount)
     {
         SLtb = new bool[PlayersCount];
+        Src = new EndData[PlayersCount];
         theSLtemp = new int[PlayersCount][];
         for (int i = 0; i < PlayersCount; i++)
             theSLtemp[i] = new int[SkillsCount];
@@ -75,10 +76,7 @@ public class Sender : MonoBehaviour
             theSLtemp[cN][i] = cSL[i];
         SLtb[cN] = true;
         Debug.Log(cN + " " + SLtb[cN]);
-        bool allok = true;
-        for (int i = 0; i < SLtb.Length; i++)
-            allok = allok & SLtb[i];
-        if (allok)
+        if (AllOK())
             ConnectDo();
     }
 
@@ -100,7 +98,9 @@ public class Sender : MonoBehaviour
         Learning = true;
         MSM.OpenMainSkillMenu();
         Debug.Log("Round++,Now:" + RoundNow);
-        sts = se;
+        //sts = se;
+        Src[Sender.clientNum] = se;
+        SLtb[Sender.clientNum] = true;
         EndingCompare();
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
@@ -132,16 +132,17 @@ public class Sender : MonoBehaviour
         GameObject[] safeground = GameObject.FindGameObjectsWithTag("Ground");
         foreach (GameObject ground in safeground)
             Destroy(ground);
-        if (RoundNow > TotalRounds)
+        if (RoundNow >= TotalRounds)
             BattlesFinish();
     }
 
-    public void EndBattle()
+    public void EndBattle(int pos)
     {
         //NowState = GameState.Learning;
         Bond.IO.Safe.InputBuffer ib2 = new Bond.IO.Safe.InputBuffer(rcbuffer);
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
-        Src = Deserialize<EndData>.From(cbr);
+        Src[pos] = Deserialize<EndData>.From(cbr);
+        SLtb[pos] = true;
         EndingCompare();
     }
 
@@ -158,6 +159,7 @@ public class Sender : MonoBehaviour
         ShowMC();
         Debug.Log("All Battle Finished" + RoundNow);
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
+        Destroy(safeground);
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         foreach (GameObject pc in pcs)
             Destroy(pc);
@@ -168,15 +170,27 @@ public class Sender : MonoBehaviour
 
     public void ClearSArray()
     {
-        Src = null;
-        sts = null;
+        SLtb = new bool[SLtb.Length];
+        Src = new EndData[Src.Length];
+        //sts = null;
+    }
+
+    bool AllOK()
+    {
+        bool allok = true;
+        for (int i = 0; i < SLtb.Length; i++)
+        {
+            allok = allok & SLtb[i];
+            if(!allok) break;
+        }
+        return allok;
     }
 
     void EndingCompare()
     {
-        if (Src == null || sts == null)
+        if (!AllOK())
             return;
-        if (Src.CircleID == 666)
+        if (Src[0].CircleID == 666)
         {
             RoundNow = 1;
             ClearSArray();
@@ -188,7 +202,7 @@ public class Sender : MonoBehaviour
             return;
         }
         Debug.Log("Compareing Ending Place");
-        if ((FixMath.Fix64)Src.epx == (FixMath.Fix64)sts.epx && (FixMath.Fix64)Src.epy == (FixMath.Fix64)sts.epy)
+        if ((FixMath.Fix64)Src[0].epx == (FixMath.Fix64)Src[1].epx && (FixMath.Fix64)Src[0].epy == (FixMath.Fix64)Src[1].epy)
         {
             tss.GameEndResultSet(true);
             Debug.Log("Same Result");
@@ -196,7 +210,7 @@ public class Sender : MonoBehaviour
         else
         {
             tss.GameEndResultSet(false);
-            Debug.Log("Different Result:\n" + "Sent string:" + sts.epx + "," + sts.epy + "\nReceived string:" + Src.epx + "," + Src.epy);
+            Debug.Log("Different Result:\n" + "Sent string:" + Src[1].epx + "," + Src[1].epy + "\nReceived string:" + Src[0].epx + "," + Src[0].epy);
         }
         ClearSArray();
         RealEnd();
@@ -205,7 +219,9 @@ public class Sender : MonoBehaviour
     public void ConnectDo()
     {
         Debug.Log("Connect Do");
-        SLtb = new bool[SLtb.Length];
+        
+        //SLtb = new bool[SLtb.Length];
+
         started = true;
         SignalLight.color = Color.green;
         //MyNS.enabled = true;
@@ -328,7 +344,7 @@ public class Sender : MonoBehaviour
                         SetSD();
                         break;
                     case 2:
-                        EndBattle();
+                        EndBattle(Array.IndexOf(TOmb, steamIDRemote));
                         break;
                     case 9:
                         heQuit();
