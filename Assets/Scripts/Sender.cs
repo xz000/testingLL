@@ -121,18 +121,16 @@ public class Sender : MonoBehaviour
     void RealEnd()
     {
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
-        if (pcs.Length > 1)
-            return;
+        //if (pcs.Length > 1) return;
         Debug.Log("Real End");
-        GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
-        Destroy(safeground);
-        //MyNS.enabled = false;
         MyNS.meDisable();//关闭netwriter
         CCToggle.isOn = false;//关闭ClickCatcher
         Time.timeScale = 1;
         Debug.Log("Round " + RoundNow);
         foreach (GameObject pc in pcs)
             Destroy(pc);
+        GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
+        Destroy(safeground);
         if (RoundNow > TotalRounds)
             BattlesFinish();
     }
