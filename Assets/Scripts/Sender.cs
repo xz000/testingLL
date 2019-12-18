@@ -129,8 +129,9 @@ public class Sender : MonoBehaviour
         Debug.Log("Round " + RoundNow);
         foreach (GameObject pc in pcs)
             Destroy(pc);
-        GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
-        Destroy(safeground);
+        GameObject[] safeground = GameObject.FindGameObjectsWithTag("Ground");
+        foreach (GameObject ground in safeground)
+            Destroy(ground);
         if (RoundNow > TotalRounds)
             BattlesFinish();
     }
@@ -165,6 +166,12 @@ public class Sender : MonoBehaviour
         TOmb = null;
     }
 
+    public void ClearSArray()
+    {
+        Src = null;
+        sts = null;
+    }
+
     void EndingCompare()
     {
         if (Src == null || sts == null)
@@ -172,14 +179,12 @@ public class Sender : MonoBehaviour
         if (Src.CircleID == 666)
         {
             RoundNow = 1;
-            Src = null;
-            sts = null;
+            ClearSArray();
             //MyNS.enabled = false;
             MyNS.meDisable();//关闭netwriter
             CCToggle.isOn = false;//关闭ClickCatcher
             Time.timeScale = 1;
-            Debug.Log("Round " + RoundNow);
-            Debug.Log("received start message");
+            Debug.Log("received start message:\nRound " + RoundNow);
             return;
         }
         Debug.Log("Compareing Ending Place");
@@ -193,19 +198,20 @@ public class Sender : MonoBehaviour
             tss.GameEndResultSet(false);
             Debug.Log("Different Result:\n" + "Sent string:" + sts.epx + "," + sts.epy + "\nReceived string:" + Src.epx + "," + Src.epy);
         }
-        Src = null;
-        sts = null;
+        ClearSArray();
         RealEnd();
     }
 
     public void ConnectDo()
     {
+        Debug.Log("Connect Do");
         SLtb = new bool[SLtb.Length];
         started = true;
         SignalLight.color = Color.green;
         //MyNS.enabled = true;
         MyNS.meEnable();//开启netwriter
         CCToggle.isOn = true;//开启ClickCatcher
+        ClearSArray();
         HideMC();
         CompareMe = true;
     }
