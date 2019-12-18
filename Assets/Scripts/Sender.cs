@@ -154,9 +154,8 @@ public class Sender : MonoBehaviour
         GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();
         Learning = false;
         TimeCount = 0;
-        Time.timeScale = 1;
+        //Time.timeScale = 1;
         ResetSelf();
-        ShowMC();
         Debug.Log("All Battle Finished" + RoundNow);
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
         Destroy(safeground);
@@ -166,6 +165,8 @@ public class Sender : MonoBehaviour
         RoundNow = -10;
         CompareMe = false;
         TOmb = null;
+        ShowMC();
+        Time.timeScale = 1;
     }
 
     public void ClearSArray()
