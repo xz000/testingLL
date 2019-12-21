@@ -22,6 +22,21 @@ public class TestSteamworks : MonoBehaviour
     protected Callback<UserStatsReceived_t> m_UserStatsReceived;
     protected Callback<UserStatsStored_t> m_UserStatsStored;
 
+    private void Awake() {
+        try {
+            if (SteamAPI.RestartAppIfNecessary((AppId_t)908660)) {
+                    Application.Quit();
+                    return;
+                }
+            }
+        catch (System.DllNotFoundException e) {
+            Debug.LogError("[Steamworks.NET] Could not load [lib]steam_api.dll/so/dylib. It's likely not in the correct location. Refer to the README for more details.\n" + e, this);
+            Application.Quit();
+            return;
+        }
+        Debug.Log("Awaken");
+    }
+
     // Use this for initialization
     void Start ()
     {
@@ -146,5 +161,6 @@ public class TestSteamworks : MonoBehaviour
         if (!Initialized)
             return;
         SteamAPI.Shutdown();
+        Debug.Log("SteamAPI Shutdown");
     }
 }
