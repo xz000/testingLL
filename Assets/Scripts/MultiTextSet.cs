@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using Steamworks;
 
 public class MultiTextSet : MonoBehaviour
 {
@@ -10,7 +11,7 @@ public class MultiTextSet : MonoBehaviour
 
     private void Start()
     {
-        switch (LanguageSet.CurrentLanguage)
+        switch (SteamApps.GetCurrentGameLanguage())
         {
             case "schinese":
                 GetComponent<Text>().text = TextCn.Replace("\\n", "\n");
