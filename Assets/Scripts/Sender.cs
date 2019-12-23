@@ -94,7 +94,6 @@ public class Sender : MonoBehaviour
     {
         if (!started || Learning)
             return;
-        RoundNow++;
         Learning = true;
         MSM.OpenMainSkillMenu();
         Debug.Log("Round++,Now:" + RoundNow);
@@ -134,6 +133,8 @@ public class Sender : MonoBehaviour
             Destroy(ground);
         if (RoundNow >= TotalRounds)
             BattlesFinish();
+        else
+            RoundNow++;
     }
 
     public void EndBattle(int pos)
