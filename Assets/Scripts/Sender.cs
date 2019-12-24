@@ -84,7 +84,7 @@ public class Sender : MonoBehaviour
     {
         started = false;
         SignalLight.color = Color.white;
-        MyNS.isstarted = false;
+        //MyNS.isstarted = false;
         //MyNS.enabled = false;
         MyNS.meDisable();
         CCToggle.isOn = false;
@@ -166,7 +166,7 @@ public class Sender : MonoBehaviour
         RoundNow = -10;
         CompareMe = false;
         TOmb = null;
-        ShowMC();
+        //ShowMC();
         Time.timeScale = 1;
     }
 
@@ -230,7 +230,7 @@ public class Sender : MonoBehaviour
         MyNS.meEnable();//开启netwriter
         CCToggle.isOn = true;//开启ClickCatcher
         ClearSArray();
-        HideMC();
+        //HideMC();
         CompareMe = true;
     }
 

@@ -6,16 +6,15 @@ using UnityEngine.UI;
 public class ShowMyInfo : MonoBehaviour
 {
     public GameObject MyInfoText;
-    GameObject MyInfo;
     GameObject MyInfoHP;
     Rigidbody2D rb2d;
     HPScript hps;
+    bool notshow = false;
 
     // Use this for initialization
     void Start()
     {
         GameObject TheCanvas = GameObject.Find("Canvas2");
-        MyInfo = GameObject.Instantiate(MyInfoText, TheCanvas.transform);
         MyInfoHP = GameObject.Instantiate(MyInfoText, TheCanvas.transform);
         rb2d = GetComponent<Rigidbody2D>();
         hps = GetComponent<HPScript>();
@@ -23,15 +22,26 @@ public class ShowMyInfo : MonoBehaviour
 
     private void Update()
     {
-        MyInfo.transform.position = Camera.main.WorldToScreenPoint(transform.position + Vector3.down * 0.2f);
-        MyInfoHP.transform.position = Camera.main.WorldToScreenPoint(transform.position + Vector3.up * 0.2f);
-        MyInfo.GetComponent<Text>().text = rb2d.position.x + "," + rb2d.position.y;
-        MyInfoHP.GetComponent<Text>().text = hps.currentHP.ToString();
+        if(notshow)
+            return;
+        MyInfoHP.transform.position = Camera.main.WorldToScreenPoint(transform.position);
+        MyInfoHP.GetComponent<Text>().text = hps.currentHP.ToString("F1");
     }
 
     private void OnDestroy()
     {
-        Destroy(MyInfo);
         Destroy(MyInfoHP);
+    }
+
+    public void DoNotShow()
+    {
+        MyInfoHP.GetComponent<Text>().text = "";
+        notshow = true;
+    }
+
+    public void DoShow()
+    {
+        notshow = false;
+        MyInfoHP.GetComponent<Text>().text = hps.currentHP.ToString("F1");
     }
 }

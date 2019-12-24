@@ -48,6 +48,7 @@ public class StealthScript : MonoBehaviour
             SmallSR.enabled = false;
             //BarSR.SetActive(false);
             ColorSR.enabled = false;
+            GetComponent<ShowMyInfo>().DoNotShow();
             //MyName.SetActive(false);
         }
     }
@@ -62,6 +63,7 @@ public class StealthScript : MonoBehaviour
             SmallSR.enabled = true;
             //BarSR.SetActive(true);
             ColorSR.enabled = true;
+            GetComponent<ShowMyInfo>().DoShow();
             //MyName.SetActive(true);
         }
     }
