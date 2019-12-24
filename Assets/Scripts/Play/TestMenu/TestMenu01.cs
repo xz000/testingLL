@@ -35,7 +35,7 @@ public class TestMenu01 : MonoBehaviour
 
     ///ulong current_lobbyID;
     List<CSteamID> lobbyIDS;
-    string GameVersion = "20191217";
+    string GameVersion = "20191224";
 
     void Start()
     {
