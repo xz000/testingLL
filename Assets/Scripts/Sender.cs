@@ -166,7 +166,7 @@ public class Sender : MonoBehaviour
         RoundNow = -10;
         CompareMe = false;
         TOmb = null;
-        //ShowMC();
+        ShowMC();
         Time.timeScale = 1;
     }
 
@@ -199,6 +199,7 @@ public class Sender : MonoBehaviour
             //MyNS.enabled = false;
             MyNS.meDisable();//关闭netwriter
             CCToggle.isOn = false;//关闭ClickCatcher
+            HideMC();
             Time.timeScale = 1;
             Debug.Log("received start message:\nRound " + RoundNow);
             return;
