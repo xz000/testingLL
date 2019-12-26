@@ -46,13 +46,13 @@ public class TestSteamworks : MonoBehaviour
         else
             Debug.Log("Steam API init -- failure ...");
         m_GameID = new CGameID(SteamUtils.GetAppID());
-        Menu01.SetActive(true);
-        Menu02.SetActive(false);
         m_UserStatsReceived = Callback<UserStatsReceived_t>.Create(OnUserStatsReceived);
         m_UserStatsStored = Callback<UserStatsStored_t>.Create(OnUserStatsStored);
         m_bRequestedStats = false;
         m_bStatsValid = false;
         Initialized = ib;
+        Menu01.SetActive(true);
+        Menu02.SetActive(false);
     }
 
     private void Update()

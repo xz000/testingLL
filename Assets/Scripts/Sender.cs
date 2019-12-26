@@ -16,7 +16,7 @@ public class Sender : MonoBehaviour
     public ClientToggle theCT;
     public TestSteamworks tss;
     public Image SignalLight;
-    public byte[] buffer;
+    //public byte[] buffer;
     public int sz;
     public int rcsz;
     public byte error;
@@ -63,6 +63,7 @@ public class Sender : MonoBehaviour
 
     public void PrepareTemp(int PlayersCount, int SkillsCount)
     {
+        NetWriter.rs = PlayersCount;
         SLtb = new bool[PlayersCount];
         Src = new EndData[PlayersCount];
         theSLtemp = new int[PlayersCount][];
@@ -95,7 +96,6 @@ public class Sender : MonoBehaviour
         if (!started || Learning)
             return;
         Learning = true;
-        MSM.OpenMainSkillMenu();
         Debug.Log("Round++,Now:" + RoundNow);
         //sts = se;
         Src[Sender.clientNum] = se;
@@ -200,8 +200,14 @@ public class Sender : MonoBehaviour
             MyNS.meDisable();//关闭netwriter
             CCToggle.isOn = false;//关闭ClickCatcher
             HideMC();
+            MSM.OpenMainSkillMenu();
             Time.timeScale = 1;
             Debug.Log("received start message:\nRound " + RoundNow);
+            return;
+        }
+        if (Src[0].CircleID == 999)
+        {
+            
             return;
         }
         Debug.Log("Compareing Ending Place");
@@ -263,6 +269,19 @@ public class Sender : MonoBehaviour
             }
         }
         BattlesFinish();
+    }
+
+    public void SendHello(){
+        byte[] quitBytes = new byte[1];
+        quitBytes[0] = 3;
+        if (TOmb != null)
+        {
+            foreach (CSteamID i in TOmb)
+            {
+                SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+            }
+            Debug.Log("Hello Everybody~");
+        }
     }
 
     private void OnApplicationQuit()
@@ -348,6 +367,8 @@ public class Sender : MonoBehaviour
                         break;
                     case 2:
                         EndBattle(Array.IndexOf(TOmb, steamIDRemote));
+                        break;
+                    case 3:
                         break;
                     case 9:
                         heQuit();

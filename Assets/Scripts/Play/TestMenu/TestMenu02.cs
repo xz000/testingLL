@@ -89,6 +89,7 @@ public class TestMenu02 : MonoBehaviour
     void OnAvatarImageLoaded(AvatarImageLoaded_t pCallback)
     {
         UpdateLobbyInfo(ref m_CurrentLobby);
+        SetBasic();
     }
 
     void UpdateLobbyInfo(ref Lobby outLobby)
@@ -203,7 +204,7 @@ public class TestMenu02 : MonoBehaviour
 
     void GameStart(int r)
     {
-        NetWriter.rs = r;
+        //NetWriter.rs = r;
         //准备SkillCode交错数组
         SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
         //设置clientNum
@@ -233,7 +234,7 @@ public class TestMenu02 : MonoBehaviour
         Sender.isTesting = true;
         Debug.Log("Now Testing");
         int r = 2;
-        NetWriter.rs = r;
+        //NetWriter.rs = r;
         //准备SkillCode交错数组
         SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
         //设置clientNum
