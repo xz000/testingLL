@@ -8985,7 +8985,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0.000098467, y: -0.56257}
+  m_AnchoredPosition: {x: 0.000091552734, y: -0.5625763}
   m_SizeDelta: {x: 57.814, y: 39.099}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!225 &392646556
@@ -22060,6 +22060,7 @@ MonoBehaviour:
   BPanel: {fileID: 1481811810}
   DPanel: {fileID: 1371047806}
   MPanel: {fileID: 811309781}
+  InfoPanel: {fileID: 0}
 --- !u!1 &950859348
 GameObject:
   m_ObjectHideFlags: 0
@@ -46050,7 +46051,6 @@ MonoBehaviour:
   theCT: {fileID: 101273293}
   tss: {fileID: 1306829822}
   SignalLight: {fileID: 703651734}
-  buffer: 
   sz: 0
   rcsz: 0
   error: 0
