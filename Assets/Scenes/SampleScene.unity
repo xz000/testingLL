@@ -5363,7 +5363,6 @@ GameObject:
   - component: {fileID: 238781324}
   - component: {fileID: 238781325}
   - component: {fileID: 238781326}
-  - component: {fileID: 238781328}
   - component: {fileID: 238781327}
   m_Layer: 5
   m_Name: RecordToggle
@@ -5452,7 +5451,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cc8e21a021621c5418ef01a16ac9a83d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  CK: {fileID: 238781328}
   TotalSwitch: {fileID: 238781325}
   theNW: {fileID: 1914587340}
   SignalLight: {fileID: 703651734}
@@ -5469,18 +5467,6 @@ CanvasGroup:
   m_Interactable: 0
   m_BlocksRaycasts: 0
   m_IgnoreParentGroups: 0
---- !u!114 &238781328
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 238781323}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2389c0f3197e08e4c8a445043ac0cb0e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &239149069
 GameObject:
   m_ObjectHideFlags: 0
@@ -22060,7 +22046,6 @@ MonoBehaviour:
   BPanel: {fileID: 1481811810}
   DPanel: {fileID: 1371047806}
   MPanel: {fileID: 811309781}
-  InfoPanel: {fileID: 0}
 --- !u!1 &950859348
 GameObject:
   m_ObjectHideFlags: 0

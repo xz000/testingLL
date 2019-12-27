@@ -7,7 +7,7 @@ using System.IO;
 using System.Text;
 
 public class ClickCatcher : MonoBehaviour {
-    public CatcherKeys CK;
+    //public CatcherKeys CK;
     public Toggle TotalSwitch;
     public NetWriter theNW;
     public Image SignalLight;

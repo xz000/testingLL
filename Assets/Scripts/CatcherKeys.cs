@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class CatcherKeys : MonoBehaviour
+public class CatcherKeys
 {
     public SkillCode? CodeG;
     public SkillCode? CodeY;
