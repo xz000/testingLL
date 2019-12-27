@@ -124,7 +124,6 @@ public class Sender : MonoBehaviour
         Debug.Log("Real End");
         MyNS.meDisable();//关闭netwriter
         CCToggle.isOn = false;//关闭ClickCatcher
-        Time.timeScale = 1;
         Debug.Log("Round " + RoundNow);
         foreach (GameObject pc in pcs)
             Destroy(pc);
@@ -150,12 +149,9 @@ public class Sender : MonoBehaviour
     void BattlesFinish()
     {
         isTesting = false;
-        Time.timeScale = 0;
         MSM.CloseMainSkillMenu();
-        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();
         Learning = false;
         TimeCount = 0;
-        //Time.timeScale = 1;
         ResetSelf();
         Debug.Log("All Battle Finished" + RoundNow);
         GameObject safeground = GameObject.FindGameObjectWithTag("Ground");
@@ -167,7 +163,7 @@ public class Sender : MonoBehaviour
         CompareMe = false;
         TOmb = null;
         ShowMC();
-        Time.timeScale = 1;
+        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();
     }
 
     public void ClearSArray()
@@ -201,7 +197,6 @@ public class Sender : MonoBehaviour
             CCToggle.isOn = false;//关闭ClickCatcher
             HideMC();
             MSM.OpenMainSkillMenu();
-            Time.timeScale = 1;
             Debug.Log("received start message:\nRound " + RoundNow);
             return;
         }

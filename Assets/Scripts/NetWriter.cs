@@ -108,19 +108,6 @@ public class NetWriter : MonoBehaviour
         }
     }
 
-    /*private void OnEnable()
-    {
-        Debug.Log("oe");
-        theLL = new LoopList();
-        theLL.init(GetComponent<ControllerScript>(), rs);//rs
-        PassedFrameNum = 0;
-        ReceivedFrameNum = 0;
-        LocalFrameNum = 1;
-        isstarted = true;
-        //Fstarted = true;
-        Time.timeScale = 0;
-    }*/
-
     public void meEnable()
     {
         enabled = true;
@@ -134,16 +121,6 @@ public class NetWriter : MonoBehaviour
         Time.timeScale = 0;
     }
 
-    /*private void OnDisable()
-    {
-        isstarted = false;
-        //Fstarted = false;
-        PassedFrameNum = -1;
-        ReceivedFrameNum = 0;
-        LocalFrameNum = 1;
-        //theLL.stop();
-    }*/
-
     public void meDisable()
     {
         isstarted = false;
@@ -151,6 +128,7 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
         enabled = false;
+        Time.timeScale = 1;
     }
 
     Data2S bondbfd(byte[] bRC)
