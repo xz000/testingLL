@@ -68,6 +68,8 @@ public class TestMenu02 : MonoBehaviour
     {
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
         CVS2.SetActive(true);
+        Startbutton.gameObject.SetActive(false);
+        MPanel.GetComponent<CanvasGroup>().interactable = true;
         UpdateLobbyInfo(ref m_CurrentLobby);
         SetBasic();
     }
@@ -140,6 +142,7 @@ public class TestMenu02 : MonoBehaviour
         }
         if (gc == outLobby.m_MemberLimit && SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
         {
+            Debug.Log("All Players Green");
             Startbutton.interactable = true;
         }
     }
@@ -233,6 +236,8 @@ public class TestMenu02 : MonoBehaviour
         CVS2.SetActive(true);
         BPanel.SetActive(true);
         SenderSC.SendHello();
+        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+            Startbutton.gameObject.SetActive(true);
     }
 
     public void Send666()

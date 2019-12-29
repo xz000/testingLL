@@ -319,18 +319,6 @@ public class Sender : MonoBehaviour
 
     private void FixedUpdate()
     {
-        /*switch (NowState)
-        {
-            case GameState.Learning:
-                TimeCount += Time.fixedDeltaTime;
-                if (TimeCount >= LearnTime)
-                {
-                    SPNL.alphaset();
-                    NowState = GameState.Fighting;
-                    TimeCount = 0;
-                }
-                break;
-        }*/
         if (Learning)
         {
             TimeCount += Time.fixedDeltaTime;

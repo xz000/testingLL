@@ -5,13 +5,13 @@ using UnityEngine.UI;
 
 public class StartBattleButton : MonoBehaviour
 {
-    float countdown = 10;
+    float countdown = 20;
     public TestMenu02 tm02;
     public Text ButtonText;
     void OnEnable()
     {
         GetComponent<Button>().interactable = false;
-        countdown = 10;
+        countdown = 20;
     }
 
     private void Update()
@@ -34,7 +34,7 @@ public class StartBattleButton : MonoBehaviour
     {
         GetComponent<Button>().interactable = false;
         gameObject.SetActive(false);
-        countdown = 10;
+        countdown = 20;
         tm02.Send666();
     }
 }
