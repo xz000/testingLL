@@ -10,8 +10,7 @@ using Steamworks;
 
 public class Sender : MonoBehaviour
 {
-    public InputField TextToSend;
-    public Text TextReceived;
+    public TestMenu02 testMenu02;
     public HostToggle theHT;
     public ClientToggle theCT;
     public TestSteamworks tss;
@@ -48,6 +47,7 @@ public class Sender : MonoBehaviour
     EndData[] Src;
     public static int[][] theSLtemp;
     bool[] SLtb;
+    bool[] Cntb;
 
     private void Start()
     {
@@ -65,6 +65,7 @@ public class Sender : MonoBehaviour
     {
         NetWriter.rs = PlayersCount;
         SLtb = new bool[PlayersCount];
+        Cntb = new bool[PlayersCount];
         Src = new EndData[PlayersCount];
         theSLtemp = new int[PlayersCount][];
         for (int i = 0; i < PlayersCount; i++)
@@ -77,8 +78,16 @@ public class Sender : MonoBehaviour
             theSLtemp[cN][i] = cSL[i];
         SLtb[cN] = true;
         Debug.Log(cN + " " + SLtb[cN]);
-        if (AllOK())
+        if (AllOK(SLtb))
             ConnectDo();
+    }
+
+    public void SetCntbAndCheck(int cN)
+    {
+        Cntb[cN] = true;
+        Debug.Log(cN + " " + SLtb[cN]);
+        if (AllOK(Cntb))
+            testMenu02.SetGreen();
     }
 
     public void ResetSelf()
@@ -163,7 +172,7 @@ public class Sender : MonoBehaviour
         CompareMe = false;
         TOmb = null;
         ShowMC();
-        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();
+        testMenu02.LeaveLobby();
     }
 
     public void ClearSArray()
@@ -173,20 +182,20 @@ public class Sender : MonoBehaviour
         //sts = null;
     }
 
-    bool AllOK()
+    bool AllOK(bool[] ba)
     {
         bool allok = true;
-        for (int i = 0; i < SLtb.Length; i++)
+        for (int i = 0; i < ba.Length; i++)
         {
-            allok = allok & SLtb[i];
-            if(!allok) break;
+            allok = allok & ba[i];
+            if (!allok) break;
         }
         return allok;
     }
 
     void EndingCompare()
     {
-        if (!AllOK())
+        if (!AllOK(SLtb))
             return;
         if (Src[0].CircleID == 666)
         {
@@ -198,11 +207,6 @@ public class Sender : MonoBehaviour
             HideMC();
             MSM.OpenMainSkillMenu();
             Debug.Log("received start message:\nRound " + RoundNow);
-            return;
-        }
-        if (Src[0].CircleID == 999)
-        {
-            
             return;
         }
         Debug.Log("Compareing Ending Place");
@@ -223,7 +227,7 @@ public class Sender : MonoBehaviour
     public void ConnectDo()
     {
         Debug.Log("Connect Do");
-        
+
         //SLtb = new bool[SLtb.Length];
 
         started = true;
@@ -266,15 +270,17 @@ public class Sender : MonoBehaviour
         BattlesFinish();
     }
 
-    public void SendHello(){
-        byte[] quitBytes = new byte[1];
-        quitBytes[0] = 3;
+    public void SendHello()
+    {
+        byte[] hello = new byte[1];
+        hello[0] = 3;
         if (TOmb != null)
         {
             foreach (CSteamID i in TOmb)
             {
-                SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+                SteamNetworking.SendP2PPacket(i, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
             }
+            //TODO:May need to connect to self.
             Debug.Log("Hello Everybody~");
         }
     }
@@ -364,6 +370,8 @@ public class Sender : MonoBehaviour
                         EndBattle(Array.IndexOf(TOmb, steamIDRemote));
                         break;
                     case 3:
+                        testMenu02.ConnectedWho(steamIDRemote);
+                        SetCntbAndCheck(Array.IndexOf(TOmb, steamIDRemote));
                         break;
                     case 9:
                         heQuit();
@@ -385,12 +393,6 @@ public class Sender : MonoBehaviour
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         SkillData CDrc = Deserialize<SkillData>.From(cbr);
         SetTempAndCheck(CDrc.cNum, CDrc.SLs);
-    }
-
-    private void PrintReceived()
-    {
-        TextReceived.text = System.Text.Encoding.Unicode.GetString(rcbuffer);
-        rcbuffer = new byte[256];
     }
 
     void DeSerializeReceived()
