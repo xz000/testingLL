@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using UnityEngine;
 using FixMath;
 
-public delegate void CookVelo(Rigidbody2D victim,MoveScript worker);
+public delegate void CookVelo(Rigidbody2D victim, MoveScript worker);
 
-public class MoveScript : MonoBehaviour {
+public class MoveScript : MonoBehaviour
+{
 
     public bool controllable;
     //public bool cooking;
@@ -28,8 +29,8 @@ public class MoveScript : MonoBehaviour {
         worker.VelotoAdd = Vector2.zero;
     }
 
-	// Use this for initialization
-	void Start ()
+    // Use this for initialization
+    void Start()
     {
         PlayerRb2d = GetComponent<Rigidbody2D>();
         controllable = true;
@@ -110,5 +111,7 @@ public class MoveScript : MonoBehaviour {
     private void OnDestroy()
     {
         Destroy(targeticon);
+        if (isme)
+            GameObject.Find("Canvas2").GetComponentInChildren<SkillsLink>().BottomPanel.SetActive(false);
     }
 }

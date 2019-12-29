@@ -22,23 +22,27 @@ public class TestSteamworks : MonoBehaviour
     protected Callback<UserStatsReceived_t> m_UserStatsReceived;
     protected Callback<UserStatsStored_t> m_UserStatsStored;
 
-    private void Awake() {
-        try {
-            if (SteamAPI.RestartAppIfNecessary((AppId_t)908660)) {
-                    Application.Quit();
-                    return;
-                }
+    private void Awake()
+    {
+        try
+        {
+            if (SteamAPI.RestartAppIfNecessary((AppId_t)908660))
+            {
+                Application.Quit();
+                return;
             }
-        catch (System.DllNotFoundException e) {
+        }
+        catch (System.DllNotFoundException e)
+        {
             Debug.LogError("[Steamworks.NET] Could not load [lib]steam_api.dll/so/dylib. It's likely not in the correct location. Refer to the README for more details.\n" + e, this);
             Application.Quit();
             return;
         }
-        Debug.Log("Awaken");
+        //Debug.Log("Awaken");
     }
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         bool ib = SteamAPI.Init();
         if (ib)
@@ -104,7 +108,7 @@ public class TestSteamworks : MonoBehaviour
         {
             if (EResult.k_EResultOK == pCallback.m_eResult)
             {
-                Debug.Log("Received stats and achievements from Steam");
+                //Debug.Log("Received stats and achievements from Steam");
                 // load stats
                 SteamUserStats.GetStat("stat_SR", out m_nTotalNumSR);
                 SteamUserStats.GetStat("stat_DR", out m_nTotalNumDR);

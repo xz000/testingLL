@@ -35,7 +35,6 @@ public class TestMenu02 : MonoBehaviour
 
     ///public GameObject Menu00;
     public GameObject Menu01;
-    public GameObject BPanel;
     public GameObject DPanel;
     public GameObject MPanel;
     //public CanvasGroup RightGroup;
@@ -69,6 +68,7 @@ public class TestMenu02 : MonoBehaviour
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
         CVS2.SetActive(true);
         Startbutton.gameObject.SetActive(false);
+        Readytoggle.interactable = true;
         MPanel.GetComponent<CanvasGroup>().interactable = true;
         UpdateLobbyInfo(ref m_CurrentLobby);
         SetBasic();
@@ -221,6 +221,7 @@ public class TestMenu02 : MonoBehaviour
     {
         //NetWriter.rs = r;
         //准备SkillCode交错数组
+        Readytoggle.interactable = false;
         SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
         //设置clientNum
         CSteamID tid;
@@ -234,7 +235,6 @@ public class TestMenu02 : MonoBehaviour
         }
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
-        BPanel.SetActive(true);
         SenderSC.SendHello();
         if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
             Startbutton.gameObject.SetActive(true);
@@ -248,6 +248,7 @@ public class TestMenu02 : MonoBehaviour
         endData.epy = 0;
         SenderSC.started = true;
         SenderSC.SendEnd(endData);
+        Debug.Log("666 Sent");
     }
 
     void TestStart()
@@ -267,7 +268,6 @@ public class TestMenu02 : MonoBehaviour
         Sender.clientNum = 0;
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
-        BPanel.SetActive(true);
         EndData endData = new EndData();
         endData.CircleID = 666;
         endData.epx = 0;
@@ -302,7 +302,6 @@ public class TestMenu02 : MonoBehaviour
     {
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
-        BPanel.SetActive(false);
         GameObject.Find("Canvas2").SetActive(false);
         //RightGroup.interactable = true;
         Menu01.SetActive(true);

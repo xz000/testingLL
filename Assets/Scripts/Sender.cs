@@ -77,7 +77,7 @@ public class Sender : MonoBehaviour
         for (int i = 0; i < cSL.Length; i++)
             theSLtemp[cN][i] = cSL[i];
         SLtb[cN] = true;
-        Debug.Log(cN + " " + SLtb[cN]);
+        Debug.Log(cN + " SLtemp Status: " + SLtb[cN]);
         if (AllOK(SLtb))
             ConnectDo();
     }
@@ -85,7 +85,7 @@ public class Sender : MonoBehaviour
     public void SetCntbAndCheck(int cN)
     {
         Cntb[cN] = true;
-        Debug.Log(cN + " " + SLtb[cN]);
+        Debug.Log(cN + " Connection Status: " + Cntb[cN]);
         if (AllOK(Cntb))
             testMenu02.SetGreen();
     }
@@ -109,6 +109,7 @@ public class Sender : MonoBehaviour
         //sts = se;
         Src[Sender.clientNum] = se;
         SLtb[Sender.clientNum] = true;
+        Debug.Log("Src " + Sender.clientNum + " set");
         EndingCompare();
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
@@ -118,8 +119,8 @@ public class Sender : MonoBehaviour
         ob2.Data.Array.CopyTo(sendBytes, 1);
         foreach (CSteamID i in TOmb)
         {
-            //if (i != SteamUser.GetSteamID())
-            SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+            if (i != SteamUser.GetSteamID())
+                SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
         }
         Debug.Log("End Sent");
         TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
@@ -152,6 +153,7 @@ public class Sender : MonoBehaviour
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         Src[pos] = Deserialize<EndData>.From(cbr);
         SLtb[pos] = true;
+        Debug.Log("Src " + pos + " set");
         EndingCompare();
     }
 
@@ -173,6 +175,15 @@ public class Sender : MonoBehaviour
         TOmb = null;
         ShowMC();
         testMenu02.LeaveLobby();
+        uint msgSize;
+        while (SteamNetworking.IsP2PPacketAvailable(out msgSize))
+        {
+            byte[] packet = new byte[msgSize];
+            CSteamID steamIDRemote;
+            uint bytesRead = 0;
+            if (SteamNetworking.ReadP2PPacket(packet, msgSize, out bytesRead, out steamIDRemote))
+                Debug.Log("PACKET after Exit");
+        }
     }
 
     public void ClearSArray()
@@ -261,7 +272,7 @@ public class Sender : MonoBehaviour
         quitBytes[0] = 9;
         if (TOmb != null)
         {
-            Debug.Log(TOmb.Length);
+            Debug.Log("Total Members Length: " + TOmb.Length);
             foreach (CSteamID i in TOmb)
             {
                 SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
@@ -280,9 +291,8 @@ public class Sender : MonoBehaviour
             {
                 SteamNetworking.SendP2PPacket(i, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
             }
-            //TODO:May need to connect to self.
-            Debug.Log("Hello Everybody~");
         }
+        Debug.Log("Hello Everybody~");
     }
 
     private void OnApplicationQuit()

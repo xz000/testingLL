@@ -5,6 +5,7 @@ using UnityEngine;
 public class SkillsLink : MonoBehaviour
 {
     public GameObject mySoldier;
+    public GameObject BottomPanel;
     public SkillCode? KeyCSkill = SkillCode.SkillC3;
     public SkillCode? KeyDSkill = SkillCode.TestSkillLightning;
     public SkillCode? KeyESkill = SkillCode.SkillE1;
@@ -20,6 +21,7 @@ public class SkillsLink : MonoBehaviour
     {
         mySoldier = go;
         selfset();
+        BottomPanel.SetActive(true);
     }
 
     public void selfset()
@@ -41,7 +43,7 @@ public class SkillsLink : MonoBehaviour
         Setlsd();
         sds.Sendlsd(lsd);
         betaset();
-        Debug.Log("SL set");
+        Debug.Log("SL set and sent");
     }
 
     public void betaset()

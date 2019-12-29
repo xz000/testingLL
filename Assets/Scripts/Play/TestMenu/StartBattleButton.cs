@@ -36,5 +36,6 @@ public class StartBattleButton : MonoBehaviour
         gameObject.SetActive(false);
         countdown = 20;
         tm02.Send666();
+        Debug.Log("Clicked Start");
     }
 }
