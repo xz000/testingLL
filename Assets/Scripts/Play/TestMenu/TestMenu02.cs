@@ -240,17 +240,6 @@ public class TestMenu02 : MonoBehaviour
             Startbutton.gameObject.SetActive(true);
     }
 
-    public void Send666()
-    {
-        EndData endData = new EndData();
-        endData.CircleID = 666;
-        endData.epx = 0;
-        endData.epy = 0;
-        SenderSC.started = true;
-        SenderSC.SendEnd(endData);
-        Debug.Log("666 Sent");
-    }
-
     void TestStart()
     {
         Sender.isTesting = true;

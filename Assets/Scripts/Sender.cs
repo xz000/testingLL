@@ -281,6 +281,20 @@ public class Sender : MonoBehaviour
         BattlesFinish();
     }
 
+    public void SendStartSignal()
+    {
+        byte[] quitBytes = new byte[1];
+        quitBytes[0] = 4;
+        if (TOmb != null)
+        {
+            foreach (CSteamID i in TOmb)
+            {
+                SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+            }
+            Debug.Log("Total Members Length: " + TOmb.Length + ". Start signal sent");
+        }
+    }
+
     public void SendHello()
     {
         byte[] hello = new byte[1];
@@ -293,6 +307,17 @@ public class Sender : MonoBehaviour
             }
         }
         Debug.Log("Hello Everybody~");
+    }
+
+    public void Send666()
+    {
+        EndData endData = new EndData();
+        endData.CircleID = 666;
+        endData.epx = 0;
+        endData.epy = 0;
+        started = true;
+        SendEnd(endData);
+        Debug.Log("666 Sent");
     }
 
     private void OnApplicationQuit()
@@ -370,6 +395,9 @@ public class Sender : MonoBehaviour
                     case 3:
                         testMenu02.ConnectedWho(steamIDRemote);
                         SetCntbAndCheck(Array.IndexOf(TOmb, steamIDRemote));
+                        break;
+                    case 4:
+                        Send666();
                         break;
                     case 9:
                         heQuit();
