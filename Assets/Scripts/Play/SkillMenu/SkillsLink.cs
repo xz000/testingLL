@@ -50,7 +50,7 @@ public class SkillsLink : MonoBehaviour
         if (SettingSkillLevels)
         {
             TimeCount += Time.fixedDeltaTime;
-            if (TimeCount >= 3)
+            if (TimeCount >= 1)
             {
                 SettingSkillLevels = false;
                 TimeCount = 0;

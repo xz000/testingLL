@@ -51,9 +51,10 @@ public class NetWriter : MonoBehaviour
             {
                 Time.timeScale = 0;
                 mn = 1;
+                Debug.Log("Paused by TimeScale");
                 return;
             }
-            //Debug.Log("pfn:" + PassedFrameNum);
+            Debug.Log("pfn:" + PassedFrameNum);
         }
     }
 
@@ -98,6 +99,7 @@ public class NetWriter : MonoBehaviour
             {
                 //isstarted = false;
                 Time.timeScale = 1;
+                Debug.Log("TimeScale set to 1 by Update");
             }
             //
             L2S.Clear();
@@ -113,12 +115,16 @@ public class NetWriter : MonoBehaviour
         enabled = true;
         Debug.Log("meEnable");
         theLL = new LoopList();
-        theLL.init(GetComponent<ControllerScript>(), rs);//rs
         PassedFrameNum = 0;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
         isstarted = true;
         Time.timeScale = 0;
+    }
+
+    public void theInit()
+    {
+        theLL.init(GetComponent<ControllerScript>(), rs);
     }
 
     public void meDisable()
@@ -149,6 +155,7 @@ public class NetWriter : MonoBehaviour
         {
             //isstarted = false;
             Time.timeScale = 1;
+            Debug.Log("TimeScale set to 1 by Eat");
         }
     }
 }
