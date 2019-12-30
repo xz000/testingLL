@@ -31,7 +31,7 @@ public class NetWriter : MonoBehaviour
     public byte error;
     uint mn = 1;
     public static int rs = 2;
-    LoopList theLL;
+    LoopList theLL = new LoopList();
 
     private void FixedUpdate()
     {
@@ -114,17 +114,13 @@ public class NetWriter : MonoBehaviour
     {
         enabled = true;
         Debug.Log("meEnable");
-        theLL = new LoopList();
+        //theLL = new LoopList();
+        theLL.init(GetComponent<ControllerScript>(), rs);
         PassedFrameNum = 0;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
         isstarted = true;
         Time.timeScale = 0;
-    }
-
-    public void theInit()
-    {
-        theLL.init(GetComponent<ControllerScript>(), rs);
     }
 
     public void meDisable()

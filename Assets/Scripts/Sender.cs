@@ -66,7 +66,6 @@ public class Sender : MonoBehaviour
         theSLtemp = new int[PlayersCount][];
         for (int i = 0; i < PlayersCount; i++)
             theSLtemp[i] = new int[SkillsCount];
-        MyNS.meEnable();//开启netwriter
     }
 
     public void SetTempAndCheck(int cN, int[] cSL)
@@ -84,7 +83,7 @@ public class Sender : MonoBehaviour
             started = true;
             Learning = false;
             SignalLight.color = Color.green;
-            MyNS.theInit();
+            MyNS.meEnable();//开启netwriter
             //MyNS.enabled = true;
             CCToggle.isOn = true;//开启ClickCatcher
             Cntb = new bool[Cntb.Length];
