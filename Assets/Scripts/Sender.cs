@@ -10,21 +10,15 @@ using Steamworks;
 
 public class Sender : MonoBehaviour
 {
-    public InputField TextToSend;
-    public Text TextReceived;
+    public TestMenu02 testMenu02;
     public HostToggle theHT;
     public ClientToggle theCT;
     public TestSteamworks tss;
     public Image SignalLight;
     //public byte[] buffer;
-    public int sz;
-    public int rcsz;
-    public byte error;
     public bool started = false;
-    public static bool CompareMe = false;
     public static bool isTesting = false;
     public static int clientNum;
-    public GameObject SendButton;
     public SkillsLink SPNL;
     public NetWriter MyNS;
     //public HostTopology HTo;
@@ -39,7 +33,8 @@ public class Sender : MonoBehaviour
     public static CSteamID roomid;
     public static CSteamID[] TOmb;
     //public static GameState NowState;
-    public static bool Learning = false;
+    bool Learning = false;
+    bool WaitingSkillLevels;
     float TimeCount = 0;
     public static float LearnTime = 5;
     public int RoundNow = -10;
@@ -47,7 +42,8 @@ public class Sender : MonoBehaviour
     //EndData sts;
     EndData[] Src;
     public static int[][] theSLtemp;
-    bool[] SLtb;
+    bool[] SLtb;//Used by endingcompare
+    bool[] Cntb;//Used by Connection Status Check & SkillLevel Temp check
 
     private void Start()
     {
@@ -65,6 +61,7 @@ public class Sender : MonoBehaviour
     {
         NetWriter.rs = PlayersCount;
         SLtb = new bool[PlayersCount];
+        Cntb = new bool[PlayersCount];
         Src = new EndData[PlayersCount];
         theSLtemp = new int[PlayersCount][];
         for (int i = 0; i < PlayersCount; i++)
@@ -73,12 +70,48 @@ public class Sender : MonoBehaviour
 
     public void SetTempAndCheck(int cN, int[] cSL)
     {
+        if (!Learning)
+            return;
+        Debug.Log(cN + "set:" + cSL[0]);
         for (int i = 0; i < cSL.Length; i++)
             theSLtemp[cN][i] = cSL[i];
-        SLtb[cN] = true;
-        Debug.Log(cN + " " + SLtb[cN]);
-        if (AllOK())
-            ConnectDo();
+        Cntb[cN] = true;
+        Debug.Log(cN + " SLtemp Status: " + Cntb[cN]);
+        if (AllOK(Cntb))
+        {
+            SendHello(5);
+            Cntb = new bool[Cntb.Length];
+            Debug.Log("Local Skill Level Temp Set,Hello5 Sent");
+        }
+    }
+
+    public void SetCntbAndCheck(int cN)
+    {
+        Cntb[cN] = true;
+        Debug.Log(cN + " Connection Status: " + Cntb[cN]);
+        if (AllOK(Cntb))
+        {
+            testMenu02.SetGreen();
+            Cntb = new bool[Cntb.Length];
+        }
+    }
+
+    public void SetSLTempAndCheck(int cN)
+    {
+        Cntb[cN] = true;
+        Debug.Log(cN + " SkillLevel Temp Status: " + Cntb[cN]);
+        if (AllOK(Cntb))
+        {
+            Debug.Log("Connect Do");
+            started = true;
+            Learning = false;
+            SignalLight.color = Color.green;
+            MyNS.meEnable();//开启netwriter
+            //MyNS.enabled = true;
+            CCToggle.isOn = true;//开启ClickCatcher
+            Cntb = new bool[Cntb.Length];
+            //HideMC();
+        }
     }
 
     public void ResetSelf()
@@ -96,10 +129,12 @@ public class Sender : MonoBehaviour
         if (!started || Learning)
             return;
         Learning = true;
+        WaitingSkillLevels = true;
         Debug.Log("Round++,Now:" + RoundNow);
         //sts = se;
         Src[Sender.clientNum] = se;
         SLtb[Sender.clientNum] = true;
+        Debug.Log("End Message " + Sender.clientNum + " Set");
         EndingCompare();
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
@@ -109,15 +144,15 @@ public class Sender : MonoBehaviour
         ob2.Data.Array.CopyTo(sendBytes, 1);
         foreach (CSteamID i in TOmb)
         {
-            //if (i != SteamUser.GetSteamID())
-            SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
+            if (i != SteamUser.GetSteamID())
+                SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
         }
         Debug.Log("End Sent");
         TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
         LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
     }
 
-    void RealEnd()
+    public void RealEnd()
     {
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         //if (pcs.Length > 1) return;
@@ -143,6 +178,7 @@ public class Sender : MonoBehaviour
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         Src[pos] = Deserialize<EndData>.From(cbr);
         SLtb[pos] = true;
+        Debug.Log("End Message " + pos + "Received And Set");
         EndingCompare();
     }
 
@@ -151,6 +187,7 @@ public class Sender : MonoBehaviour
         isTesting = false;
         MSM.CloseMainSkillMenu();
         Learning = false;
+        WaitingSkillLevels = false;
         TimeCount = 0;
         ResetSelf();
         Debug.Log("All Battle Finished" + RoundNow);
@@ -160,10 +197,18 @@ public class Sender : MonoBehaviour
         foreach (GameObject pc in pcs)
             Destroy(pc);
         RoundNow = -10;
-        CompareMe = false;
         TOmb = null;
         ShowMC();
-        GameObject.Find("RoomPanel").GetComponent<TestMenu02>().LeaveLobby();
+        testMenu02.LeaveLobby();
+        uint msgSize;
+        while (SteamNetworking.IsP2PPacketAvailable(out msgSize))
+        {
+            byte[] packet = new byte[msgSize];
+            CSteamID steamIDRemote;
+            uint bytesRead = 0;
+            if (SteamNetworking.ReadP2PPacket(packet, msgSize, out bytesRead, out steamIDRemote))
+                Debug.Log("PACKET after Exit");
+        }
     }
 
     public void ClearSArray()
@@ -173,20 +218,20 @@ public class Sender : MonoBehaviour
         //sts = null;
     }
 
-    bool AllOK()
+    bool AllOK(bool[] ba)
     {
         bool allok = true;
-        for (int i = 0; i < SLtb.Length; i++)
+        for (int i = 0; i < ba.Length; i++)
         {
-            allok = allok & SLtb[i];
-            if(!allok) break;
+            allok = allok & ba[i];
+            if (!allok) break;
         }
         return allok;
     }
 
     void EndingCompare()
     {
-        if (!AllOK())
+        if (!AllOK(SLtb))
             return;
         if (Src[0].CircleID == 666)
         {
@@ -200,12 +245,8 @@ public class Sender : MonoBehaviour
             Debug.Log("received start message:\nRound " + RoundNow);
             return;
         }
-        if (Src[0].CircleID == 999)
-        {
-            
-            return;
-        }
         Debug.Log("Compareing Ending Place");
+        /*
         if ((FixMath.Fix64)Src[0].epx == (FixMath.Fix64)Src[1].epx && (FixMath.Fix64)Src[0].epy == (FixMath.Fix64)Src[1].epy)
         {
             tss.GameEndResultSet(true);
@@ -216,24 +257,9 @@ public class Sender : MonoBehaviour
             tss.GameEndResultSet(false);
             Debug.Log("Different Result:\n" + "Sent string:" + Src[1].epx + "," + Src[1].epy + "\nReceived string:" + Src[0].epx + "," + Src[0].epy);
         }
+        */
         ClearSArray();
-        RealEnd();
-    }
-
-    public void ConnectDo()
-    {
-        Debug.Log("Connect Do");
-        
-        //SLtb = new bool[SLtb.Length];
-
-        started = true;
-        SignalLight.color = Color.green;
-        //MyNS.enabled = true;
-        MyNS.meEnable();//开启netwriter
-        CCToggle.isOn = true;//开启ClickCatcher
-        ClearSArray();
-        //HideMC();
-        CompareMe = true;
+        MSM.OpenMainSkillMenu();
     }
 
     public void Sendlsd(SkillData sd)
@@ -257,7 +283,7 @@ public class Sender : MonoBehaviour
         quitBytes[0] = 9;
         if (TOmb != null)
         {
-            Debug.Log(TOmb.Length);
+            Debug.Log("Total Members Length: " + TOmb.Length);
             foreach (CSteamID i in TOmb)
             {
                 SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
@@ -266,17 +292,29 @@ public class Sender : MonoBehaviour
         BattlesFinish();
     }
 
-    public void SendHello(){
-        byte[] quitBytes = new byte[1];
-        quitBytes[0] = 3;
+    public void SendHello(byte hi)
+    {
+        byte[] hello = new byte[1];
+        hello[0] = hi;
         if (TOmb != null)
         {
             foreach (CSteamID i in TOmb)
             {
-                SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
+                SteamNetworking.SendP2PPacket(i, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
             }
-            Debug.Log("Hello Everybody~");
         }
+        Debug.Log("Hello Everybody~" + hi);
+    }
+
+    public void Send666()
+    {
+        EndData endData = new EndData();
+        endData.CircleID = 666;
+        endData.epx = 0;
+        endData.epy = 0;
+        started = true;
+        SendEnd(endData);
+        Debug.Log("666 Sent");
     }
 
     private void OnApplicationQuit()
@@ -313,25 +351,13 @@ public class Sender : MonoBehaviour
 
     private void FixedUpdate()
     {
-        /*switch (NowState)
-        {
-            case GameState.Learning:
-                TimeCount += Time.fixedDeltaTime;
-                if (TimeCount >= LearnTime)
-                {
-                    SPNL.alphaset();
-                    NowState = GameState.Fighting;
-                    TimeCount = 0;
-                }
-                break;
-        }*/
-        if (Learning)
+        if (WaitingSkillLevels)
         {
             TimeCount += Time.fixedDeltaTime;
             if (TimeCount >= LearnTime)
             {
+                WaitingSkillLevels = false;
                 SPNL.alphaset();
-                Learning = false;
                 TimeCount = 0;
             }
         }
@@ -364,6 +390,14 @@ public class Sender : MonoBehaviour
                         EndBattle(Array.IndexOf(TOmb, steamIDRemote));
                         break;
                     case 3:
+                        testMenu02.ConnectedWho(steamIDRemote);
+                        SetCntbAndCheck(Array.IndexOf(TOmb, steamIDRemote));
+                        break;
+                    case 4:
+                        Send666();
+                        break;
+                    case 5:
+                        SetSLTempAndCheck(Array.IndexOf(TOmb, steamIDRemote));
                         break;
                     case 9:
                         heQuit();
@@ -385,12 +419,6 @@ public class Sender : MonoBehaviour
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         SkillData CDrc = Deserialize<SkillData>.From(cbr);
         SetTempAndCheck(CDrc.cNum, CDrc.SLs);
-    }
-
-    private void PrintReceived()
-    {
-        TextReceived.text = System.Text.Encoding.Unicode.GetString(rcbuffer);
-        rcbuffer = new byte[256];
     }
 
     void DeSerializeReceived()

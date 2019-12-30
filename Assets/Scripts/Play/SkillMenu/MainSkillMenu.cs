@@ -2,12 +2,13 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class MainSkillMenu : MonoBehaviour {
+public class MainSkillMenu : MonoBehaviour
+{
 
     CanvasGroup cg;
 
-	// Use this for initialization
-	void Start ()
+    // Use this for initialization
+    void Start()
     {
         cg = GetComponent<CanvasGroup>();
         //OpenMainSkillMenu();
@@ -15,12 +16,18 @@ public class MainSkillMenu : MonoBehaviour {
 
     public void CloseMainSkillMenu()
     {
-        if (cg.alpha == 0)
+        if (!cg.interactable)
             return;
-        cg.alpha = 0;
         cg.interactable = false;
-        cg.blocksRaycasts = false;
+        cg.alpha = 0;
         //GetComponent<SkillsLink>().selfset();
+    }
+
+    public void UnblockRaycasts()
+    {
+        if (!cg.blocksRaycasts)
+            return;
+        cg.blocksRaycasts = false;
     }
 
     public void OpenMainSkillMenu()
