@@ -31,7 +31,7 @@ public class NetWriter : MonoBehaviour
     public byte error;
     uint mn = 1;
     public static int rs = 2;
-    LoopList theLL;
+    LoopList theLL = new LoopList();
 
     private void FixedUpdate()
     {
@@ -51,6 +51,7 @@ public class NetWriter : MonoBehaviour
             {
                 Time.timeScale = 0;
                 mn = 1;
+                Debug.Log("Paused by TimeScale");
                 return;
             }
             //Debug.Log("pfn:" + PassedFrameNum);
@@ -92,12 +93,14 @@ public class NetWriter : MonoBehaviour
             }
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
+            //Debug.Log("吃！");
             if (Sender.isTesting)
                 theLL.addat(a, 1, L2S);
-            if (Time.timeScale == 0 && theLL.Numready(3))
+            if (Time.timeScale < 0.6 && theLL.Numready(3))
             {
                 //isstarted = false;
                 Time.timeScale = 1;
+                Debug.Log("TimeScale set to 1 by Update");
             }
             //
             L2S.Clear();
@@ -112,8 +115,8 @@ public class NetWriter : MonoBehaviour
     {
         enabled = true;
         Debug.Log("meEnable");
-        theLL = new LoopList();
-        theLL.init(GetComponent<ControllerScript>(), rs);//rs
+        //theLL = new LoopList();
+        theLL.init(GetComponent<ControllerScript>(), rs);
         PassedFrameNum = 0;
         ReceivedFrameNum = 0;
         LocalFrameNum = 1;
@@ -145,11 +148,13 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
-        if (Time.timeScale == 0 && theLL.Numready(3))
+        if (Time.timeScale < 0.6 && theLL.Numready(3))
         {
             //isstarted = false;
             Time.timeScale = 1;
+            Debug.Log("TimeScale set to 1 by Eat");
         }
+        //Debug.Log("Ate");
     }
 }
 public class LoopList

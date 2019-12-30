@@ -13,8 +13,8 @@ public class TestBorn : MonoBehaviour
     GameObject safeground;
     public GameObject MyUI;
 
-	// Use this for initialization
-	void Start ()
+    // Use this for initialization
+    void Start()
     {
         //PhotonNetwork.automaticallySyncScene = false;
         GameObject localPlayer = Instantiate(PlayerCircle, Random.insideUnitCircle * 7, Quaternion.identity);
@@ -22,17 +22,18 @@ public class TestBorn : MonoBehaviour
         //MyUI.GetComponent<SkillsLink>().linktome();
         localPlayer.GetComponent<DoSkill>().enabled = true;
         localPlayer.GetComponent<MoveScript>().enabled = true;
-        MyUI.GetComponent<SkillsLink>().alphaset();
+        //MyUI.GetComponent<SkillsLink>().alphaset();
         localPlayer.GetComponent<SpriteRenderer>().color = new Color32(0, 191, 0, 255);
         safeground = GameObject.Find("GroundCircle");
         diameter = safeground.transform.lossyScale.x;
         StartCoroutine(Changeradius());
     }
-	
-	// Update is called once per frame
-	void Update () {
-		
-	}
+
+    // Update is called once per frame
+    void Update()
+    {
+
+    }
 
     IEnumerator Changeradius()
     {
@@ -48,7 +49,7 @@ public class TestBorn : MonoBehaviour
     void ShrinkGround(Vector3 scale)
     {
         //if (!PhotonNetwork.isMasterClient)
-            return;
+        return;
         //photonView.RPC("DoShrink", PhotonTargets.All, scale);
     }
 

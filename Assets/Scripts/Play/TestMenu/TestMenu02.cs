@@ -8,7 +8,7 @@ using Bond;
 
 public class TestMenu02 : MonoBehaviour
 {
-    public GameObject Startbutton;
+    public Button Startbutton;
     public GameObject Masterpanel;
     public GameObject Otherpanel;
     public Toggle Readytoggle;
@@ -35,7 +35,6 @@ public class TestMenu02 : MonoBehaviour
 
     ///public GameObject Menu00;
     public GameObject Menu01;
-    public GameObject BPanel;
     public GameObject DPanel;
     public GameObject MPanel;
     //public CanvasGroup RightGroup;
@@ -43,7 +42,7 @@ public class TestMenu02 : MonoBehaviour
     bool hassession;
 
     //bool isready = false;
-    
+
     private void Start()
     {
         //Callback_LobbyKicked = Callback<LobbyKicked_t>.Create(OnLobbyKicked);
@@ -68,6 +67,9 @@ public class TestMenu02 : MonoBehaviour
     {
         Roomname.text = SteamMatchmaking.GetLobbyData(Sender.roomid, "name");
         CVS2.SetActive(true);
+        Startbutton.gameObject.SetActive(false);
+        Readytoggle.interactable = true;
+        MPanel.GetComponent<CanvasGroup>().interactable = true;
         UpdateLobbyInfo(ref m_CurrentLobby);
         SetBasic();
     }
@@ -113,6 +115,7 @@ public class TestMenu02 : MonoBehaviour
         }
         //Notready.text = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, SteamUser.GetSteamID(), "key_ready");
         int rc = 0;
+        int gc = 0;
         for (int i = 0; i < outLobby.m_Members.Length; i++)
         {
             outLobby.m_Members[i].m_SteamID = SteamMatchmaking.GetLobbyMemberByIndex(Sender.roomid, i);
@@ -123,6 +126,8 @@ public class TestMenu02 : MonoBehaviour
             lmd.m_Value = SteamMatchmaking.GetLobbyMemberData(Sender.roomid, outLobby.m_Members[i].m_SteamID, lmd.m_Key);
             if (lmd.m_Value == "READY")
                 rc++;
+            if (lmd.m_Value == "GREEN")
+                gc++;
             outLobby.m_Members[i].m_Data[0] = lmd;
             //ULS.UDs[i].GetComponent<UserDetailScript>().Uready.text = lmd.m_Value;
             if (outLobby.m_Members[i].m_SteamID == SteamUser.GetSteamID())
@@ -135,11 +140,16 @@ public class TestMenu02 : MonoBehaviour
             else
                 GameStart(rc);
         }
+        if (gc == outLobby.m_MemberLimit && SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+        {
+            Debug.Log("All Players Green");
+            Startbutton.interactable = true;
+        }
     }
 
     void MPControl(string v)
     {
-        if (v != "READY" && !Readytoggle.isOn)
+        if (v == "NOT READY" && !Readytoggle.isOn)
             MPanel.GetComponent<CanvasGroup>().interactable = true;
     }
 
@@ -159,6 +169,11 @@ public class TestMenu02 : MonoBehaviour
         {
             SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "NOT READY");
         }
+    }
+
+    public void SetGreen()
+    {
+        SteamMatchmaking.SetLobbyMemberData(Sender.roomid, "key_ready", "GREEN");
     }
 
     bool DataSheetDone()
@@ -206,6 +221,7 @@ public class TestMenu02 : MonoBehaviour
     {
         //NetWriter.rs = r;
         //准备SkillCode交错数组
+        Readytoggle.interactable = false;
         SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
         //设置clientNum
         CSteamID tid;
@@ -219,14 +235,9 @@ public class TestMenu02 : MonoBehaviour
         }
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
-        BPanel.SetActive(true);
-        EndData endData = new EndData();
-        endData.CircleID = 666;
-        endData.epx = 0;
-        endData.epy = 0;
-        SenderSC.started = true;
-        SenderSC.SendEnd(endData);
-        //RoundStart();
+        SenderSC.SendHello(3);
+        if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
+            Startbutton.gameObject.SetActive(true);
     }
 
     void TestStart()
@@ -246,7 +257,6 @@ public class TestMenu02 : MonoBehaviour
         Sender.clientNum = 0;
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
-        BPanel.SetActive(true);
         EndData endData = new EndData();
         endData.CircleID = 666;
         endData.epx = 0;
@@ -255,21 +265,6 @@ public class TestMenu02 : MonoBehaviour
         SenderSC.SendEnd(endData);
         Debug.Log("Test Started");
     }
-
-    void RoundStart()
-    {
-        SPNL.alphaset();
-    }
-
-    /*void SayHello()
-    {
-        byte[] hello = new byte[1];
-        hello[0] = 2;
-        SteamNetworking.SendP2PPacket(Sender.TOmb, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
-        //SenderSC.ConnectDo();
-        Debug.Log("Hi");
-        gameObject.SetActive(false);
-    }*/
 
     public void LeaveLobby()
     {
@@ -296,7 +291,6 @@ public class TestMenu02 : MonoBehaviour
     {
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
-        BPanel.SetActive(false);
         GameObject.Find("Canvas2").SetActive(false);
         //RightGroup.interactable = true;
         Menu01.SetActive(true);
@@ -337,6 +331,19 @@ public class TestMenu02 : MonoBehaviour
                     theword = null;
                     return;
                 }
+            }
+        }
+    }
+
+    public void ConnectedWho(CSteamID cSteamID)
+    {
+        foreach (GameObject a in ULS.UDs)
+        {
+            if (a.GetComponent<UserDetailScript>().ido(cSteamID))
+            {
+                a.GetComponent<UserDetailScript>().Uready.text = "Connected";
+                a.GetComponent<UserDetailScript>().Uready.color = Color.green;
+                return;
             }
         }
     }

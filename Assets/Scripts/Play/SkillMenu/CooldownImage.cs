@@ -10,14 +10,14 @@ public class CooldownImage : MonoBehaviour
     public delef Fif;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         Icon = gameObject.GetComponent<Image>();
         enabled = false;
     }
-	
-	// Update is called once per frame
-	void Update ()
+
+    // Update is called once per frame
+    void Update()
     {
         Icon.fillAmount = Fif();
     }
