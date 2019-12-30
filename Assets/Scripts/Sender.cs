@@ -81,7 +81,6 @@ public class Sender : MonoBehaviour
         {
             SendHello(5);
             Cntb = new bool[Cntb.Length];
-            Learning = false;
             Debug.Log("Local Skill Level Temp Set,Hello5 Sent");
         }
     }
@@ -105,7 +104,7 @@ public class Sender : MonoBehaviour
         {
             Debug.Log("Connect Do");
             started = true;
-            //Learning = false;
+            Learning = false;
             SignalLight.color = Color.green;
             MyNS.meEnable();//开启netwriter
             //MyNS.enabled = true;
