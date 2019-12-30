@@ -16,14 +16,9 @@ public class Sender : MonoBehaviour
     public TestSteamworks tss;
     public Image SignalLight;
     //public byte[] buffer;
-    public int sz;
-    public int rcsz;
-    public byte error;
     public bool started = false;
-    public static bool CompareMe = false;
     public static bool isTesting = false;
     public static int clientNum;
-    public GameObject SendButton;
     public SkillsLink SPNL;
     public NetWriter MyNS;
     //public HostTopology HTo;
@@ -76,10 +71,19 @@ public class Sender : MonoBehaviour
     {
         for (int i = 0; i < cSL.Length; i++)
             theSLtemp[cN][i] = cSL[i];
-        SLtb[cN] = true;
+        Cntb[cN] = true;
         Debug.Log(cN + " SLtemp Status: " + SLtb[cN]);
-        if (AllOK(SLtb))
-            ConnectDo();
+        if (AllOK(Cntb))
+        {
+            Debug.Log("Connect Do");
+            started = true;
+            SignalLight.color = Color.green;
+            //MyNS.enabled = true;
+            MyNS.meEnable();//开启netwriter
+            CCToggle.isOn = true;//开启ClickCatcher
+            Cntb = new bool[Cntb.Length];
+            //HideMC();
+        }
     }
 
     public void SetCntbAndCheck(int cN)
@@ -87,7 +91,10 @@ public class Sender : MonoBehaviour
         Cntb[cN] = true;
         Debug.Log(cN + " Connection Status: " + Cntb[cN]);
         if (AllOK(Cntb))
+        {
             testMenu02.SetGreen();
+            Cntb = new bool[Cntb.Length];
+        }
     }
 
     public void ResetSelf()
@@ -127,7 +134,7 @@ public class Sender : MonoBehaviour
         LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
     }
 
-    void RealEnd()
+    public void RealEnd()
     {
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         //if (pcs.Length > 1) return;
@@ -171,7 +178,6 @@ public class Sender : MonoBehaviour
         foreach (GameObject pc in pcs)
             Destroy(pc);
         RoundNow = -10;
-        CompareMe = false;
         TOmb = null;
         ShowMC();
         testMenu02.LeaveLobby();
@@ -221,6 +227,7 @@ public class Sender : MonoBehaviour
             return;
         }
         Debug.Log("Compareing Ending Place");
+        /*
         if ((FixMath.Fix64)Src[0].epx == (FixMath.Fix64)Src[1].epx && (FixMath.Fix64)Src[0].epy == (FixMath.Fix64)Src[1].epy)
         {
             tss.GameEndResultSet(true);
@@ -231,24 +238,8 @@ public class Sender : MonoBehaviour
             tss.GameEndResultSet(false);
             Debug.Log("Different Result:\n" + "Sent string:" + Src[1].epx + "," + Src[1].epy + "\nReceived string:" + Src[0].epx + "," + Src[0].epy);
         }
+        */
         ClearSArray();
-        RealEnd();
-    }
-
-    public void ConnectDo()
-    {
-        Debug.Log("Connect Do");
-
-        //SLtb = new bool[SLtb.Length];
-
-        started = true;
-        SignalLight.color = Color.green;
-        //MyNS.enabled = true;
-        MyNS.meEnable();//开启netwriter
-        CCToggle.isOn = true;//开启ClickCatcher
-        ClearSArray();
-        //HideMC();
-        CompareMe = true;
     }
 
     public void Sendlsd(SkillData sd)

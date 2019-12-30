@@ -15,11 +15,12 @@ public class HPScript : MonoBehaviour
     public float boostmax = 25;
 
     // Use this for initialization
-    void Start () {
+    void Start()
+    {
         currentHP = maxHP;
         safeground = GameObject.FindGameObjectWithTag("Ground");
         boost = false;
-	}
+    }
 
     // Update is called once per frame
 
@@ -47,18 +48,18 @@ public class HPScript : MonoBehaviour
             return;
         GameObject[] PlayersLeft = GameObject.FindGameObjectsWithTag("Player");
         Debug.Log(PlayersLeft.Length + "Players Left Now.");
-        if (PlayersLeft.Length == 1 && ser != null && Sender.CompareMe)
+        if (PlayersLeft.Length == 1 && ser != null)
         {
+            ser.RealEnd();
             EndData endData = new EndData();
             endData.CircleID = int.Parse(gameObject.name);
             endData.epx = GetComponent<Rigidbody2D>().position.x;
             endData.epy = GetComponent<Rigidbody2D>().position.y;
             ser.SendEnd(endData);
-            Sender.CompareMe = false;
             Debug.Log("awsl");
             if (Sender.isTesting)
             {
-                ser.SendMessage("RealEnd");
+                ser.RealEnd();
                 ser.SendMessage("BattlesFinish");
             }
         }

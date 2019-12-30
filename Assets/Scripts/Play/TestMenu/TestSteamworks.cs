@@ -166,5 +166,6 @@ public class TestSteamworks : MonoBehaviour
             return;
         SteamAPI.Shutdown();
         Debug.Log("SteamAPI Shutdown");
+        Initialized = false;
     }
 }
