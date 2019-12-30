@@ -49,9 +49,9 @@ public class NetWriter : MonoBehaviour
             }
             else
             {
-                Time.timeScale /= 2;
+                Time.timeScale = 0;
                 mn = 1;
-                Debug.Log("Slow down by TimeScale");
+                Debug.Log("Paused by TimeScale");
                 return;
             }
             Debug.Log("pfn:" + PassedFrameNum);

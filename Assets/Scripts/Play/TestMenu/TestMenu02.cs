@@ -235,7 +235,7 @@ public class TestMenu02 : MonoBehaviour
         }
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
-        SenderSC.SendHello();
+        SenderSC.SendHello(3);
         if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
             Startbutton.gameObject.SetActive(true);
     }

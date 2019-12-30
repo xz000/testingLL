@@ -35,6 +35,6 @@ public class StartBattleButton : MonoBehaviour
         GetComponent<Button>().interactable = false;
         gameObject.SetActive(false);
         countdown = 20;
-        tm02.SenderSC.SendStartSignal();
+        tm02.SenderSC.SendHello(4);
     }
 }

@@ -42,7 +42,7 @@ public class Sender : MonoBehaviour
     //EndData sts;
     EndData[] Src;
     public static int[][] theSLtemp;
-    bool[] SLtb;
+    bool[] SLtb;//Used by endingcompare
     bool[] Cntb;
 
     private void Start()
@@ -78,17 +78,7 @@ public class Sender : MonoBehaviour
         Cntb[cN] = true;
         Debug.Log(cN + " SLtemp Status: " + Cntb[cN]);
         if (AllOK(Cntb))
-        {
-            Debug.Log("Connect Do");
-            started = true;
-            Learning = false;
-            SignalLight.color = Color.green;
-            MyNS.meEnable();//开启netwriter
-            //MyNS.enabled = true;
-            CCToggle.isOn = true;//开启ClickCatcher
-            Cntb = new bool[Cntb.Length];
-            //HideMC();
-        }
+            SendHello(5);
     }
 
     public void SetCntbAndCheck(int cN)
@@ -99,6 +89,24 @@ public class Sender : MonoBehaviour
         {
             testMenu02.SetGreen();
             Cntb = new bool[Cntb.Length];
+        }
+    }
+
+    public void SetSLTempAndCheck(int cN)
+    {
+        Cntb[cN] = true;
+        Debug.Log(cN + " SkillLevel Temp Status: " + Cntb[cN]);
+        if (AllOK(Cntb))
+        {
+            Debug.Log("Connect Do");
+            started = true;
+            Learning = false;
+            SignalLight.color = Color.green;
+            MyNS.meEnable();//开启netwriter
+            //MyNS.enabled = true;
+            CCToggle.isOn = true;//开启ClickCatcher
+            Cntb = new bool[Cntb.Length];
+            //HideMC();
         }
     }
 
@@ -280,24 +288,10 @@ public class Sender : MonoBehaviour
         BattlesFinish();
     }
 
-    public void SendStartSignal()
-    {
-        byte[] quitBytes = new byte[1];
-        quitBytes[0] = 4;
-        if (TOmb != null)
-        {
-            foreach (CSteamID i in TOmb)
-            {
-                SteamNetworking.SendP2PPacket(i, quitBytes, (uint)quitBytes.Length, EP2PSend.k_EP2PSendReliable);
-            }
-            Debug.Log("Total Members Length: " + TOmb.Length + ". Start signal sent");
-        }
-    }
-
-    public void SendHello()
+    public void SendHello(byte hi)
     {
         byte[] hello = new byte[1];
-        hello[0] = 3;
+        hello[0] = hi;
         if (TOmb != null)
         {
             foreach (CSteamID i in TOmb)
@@ -305,7 +299,7 @@ public class Sender : MonoBehaviour
                 SteamNetworking.SendP2PPacket(i, hello, (uint)hello.Length, EP2PSend.k_EP2PSendReliable);
             }
         }
-        Debug.Log("Hello Everybody~");
+        Debug.Log("Hello Everybody~" + hi);
     }
 
     public void Send666()
@@ -397,6 +391,9 @@ public class Sender : MonoBehaviour
                         break;
                     case 4:
                         Send666();
+                        break;
+                    case 5:
+                        SetSLTempAndCheck(Array.IndexOf(TOmb, steamIDRemote));
                         break;
                     case 9:
                         heQuit();
