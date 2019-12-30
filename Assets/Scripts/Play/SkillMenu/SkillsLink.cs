@@ -16,6 +16,8 @@ public class SkillsLink : MonoBehaviour
     public SkillCode? KeyYSkill = SkillCode.SkillY1;
     public Sender sds;
     SkillData lsd;
+    float TimeCount = 0;
+    bool SettingSkillLevels;
 
     public void linktome(GameObject go)
     {
@@ -38,12 +40,28 @@ public class SkillsLink : MonoBehaviour
 
     public void alphaset()
     {
-        GetComponent<MainSkillMenu>().CloseMainSkillMenu();
-        selfset();
-        Setlsd();
-        sds.Sendlsd(lsd);
-        betaset();
-        Debug.Log("SL set and sent");
+        GetComponent<MainSkillMenu>().UnblockRaycasts();
+        TimeCount = 0;
+        SettingSkillLevels = true;
+    }
+
+    private void FixedUpdate()
+    {
+        if (SettingSkillLevels)
+        {
+            TimeCount += Time.fixedDeltaTime;
+            if (TimeCount >= 3)
+            {
+                SettingSkillLevels = false;
+                TimeCount = 0;
+                selfset();
+                Setlsd();
+                sds.Sendlsd(lsd);
+                betaset();
+                GetComponent<MainSkillMenu>().CloseMainSkillMenu();
+                Debug.Log("SL set and sent");
+            }
+        }
     }
 
     public void betaset()

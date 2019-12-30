@@ -33,7 +33,8 @@ public class Sender : MonoBehaviour
     public static CSteamID roomid;
     public static CSteamID[] TOmb;
     //public static GameState NowState;
-    public static bool Learning = false;
+    bool Learning = false;
+    bool WaitingSkillLevels;
     float TimeCount = 0;
     public static float LearnTime = 5;
     public int RoundNow = -10;
@@ -69,14 +70,18 @@ public class Sender : MonoBehaviour
 
     public void SetTempAndCheck(int cN, int[] cSL)
     {
+        if (!Learning)
+            return;
+        Debug.Log(cN + "set:" + cSL[0]);
         for (int i = 0; i < cSL.Length; i++)
             theSLtemp[cN][i] = cSL[i];
         Cntb[cN] = true;
-        Debug.Log(cN + " SLtemp Status: " + SLtb[cN]);
+        Debug.Log(cN + " SLtemp Status: " + Cntb[cN]);
         if (AllOK(Cntb))
         {
             Debug.Log("Connect Do");
             started = true;
+            Learning = false;
             SignalLight.color = Color.green;
             //MyNS.enabled = true;
             MyNS.meEnable();//开启netwriter
@@ -112,11 +117,12 @@ public class Sender : MonoBehaviour
         if (!started || Learning)
             return;
         Learning = true;
+        WaitingSkillLevels = true;
         Debug.Log("Round++,Now:" + RoundNow);
         //sts = se;
         Src[Sender.clientNum] = se;
         SLtb[Sender.clientNum] = true;
-        Debug.Log("Src " + Sender.clientNum + " set");
+        Debug.Log("End Message " + Sender.clientNum + " Set");
         EndingCompare();
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
@@ -160,7 +166,7 @@ public class Sender : MonoBehaviour
         Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer> cbr = new Bond.Protocols.CompactBinaryReader<Bond.IO.Safe.InputBuffer>(ib2);
         Src[pos] = Deserialize<EndData>.From(cbr);
         SLtb[pos] = true;
-        Debug.Log("Src " + pos + " set");
+        Debug.Log("End Message " + pos + "Received And Set");
         EndingCompare();
     }
 
@@ -169,6 +175,7 @@ public class Sender : MonoBehaviour
         isTesting = false;
         MSM.CloseMainSkillMenu();
         Learning = false;
+        WaitingSkillLevels = false;
         TimeCount = 0;
         ResetSelf();
         Debug.Log("All Battle Finished" + RoundNow);
@@ -240,6 +247,7 @@ public class Sender : MonoBehaviour
         }
         */
         ClearSArray();
+        MSM.OpenMainSkillMenu();
     }
 
     public void Sendlsd(SkillData sd)
@@ -345,13 +353,13 @@ public class Sender : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (Learning)
+        if (WaitingSkillLevels)
         {
             TimeCount += Time.fixedDeltaTime;
             if (TimeCount >= LearnTime)
             {
+                WaitingSkillLevels = false;
                 SPNL.alphaset();
-                Learning = false;
                 TimeCount = 0;
             }
         }

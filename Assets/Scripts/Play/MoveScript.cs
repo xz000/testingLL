@@ -20,6 +20,7 @@ public class MoveScript : MonoBehaviour
     public Rigidbody2D PlayerRb2d;
     public bool isme = false;
     GameObject targeticon;
+    private SkillsLink SkillsLinkCS;
     private Vector3 followplace;
     public CookVelo cook;
     public bool fixposlater = false;
@@ -58,7 +59,8 @@ public class MoveScript : MonoBehaviour
     public void itsme()
     {
         isme = true;
-        GameObject.Find("Canvas2").GetComponentInChildren<SkillsLink>().linktome(gameObject);
+        SkillsLinkCS = GameObject.Find("Canvas2").GetComponentInChildren<SkillsLink>();
+        SkillsLinkCS.linktome(gameObject);
         GetComponent<SpriteRenderer>().color = Color.green;
     }
 
@@ -112,6 +114,6 @@ public class MoveScript : MonoBehaviour
     {
         Destroy(targeticon);
         if (isme)
-            GameObject.Find("Canvas2").GetComponentInChildren<SkillsLink>().BottomPanel.SetActive(false);
+            SkillsLinkCS.BottomPanel.SetActive(false);
     }
 }
