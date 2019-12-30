@@ -54,7 +54,7 @@ public class NetWriter : MonoBehaviour
                 Debug.Log("Paused by TimeScale");
                 return;
             }
-            Debug.Log("pfn:" + PassedFrameNum);
+            //Debug.Log("pfn:" + PassedFrameNum);
         }
     }
 
@@ -93,7 +93,7 @@ public class NetWriter : MonoBehaviour
             }
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
-            Debug.Log("吃！");
+            //Debug.Log("吃！");
             if (Sender.isTesting)
                 theLL.addat(a, 1, L2S);
             if (Time.timeScale < 0.6 && theLL.Numready(3))
@@ -154,7 +154,7 @@ public class NetWriter : MonoBehaviour
             Time.timeScale = 1;
             Debug.Log("TimeScale set to 1 by Eat");
         }
-        Debug.Log("Ate");
+        //Debug.Log("Ate");
     }
 }
 public class LoopList

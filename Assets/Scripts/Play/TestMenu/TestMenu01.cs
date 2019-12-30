@@ -35,7 +35,7 @@ public class TestMenu01 : MonoBehaviour
 
     ///ulong current_lobbyID;
     List<CSteamID> lobbyIDS;
-    string GameVersion = "20191224";
+    string GameVersion = "20191230WorkEasy";
 
     void Start()
     {
@@ -185,12 +185,13 @@ public class TestMenu01 : MonoBehaviour
             rectTransform.GetChild(1).GetComponent<Text>().text = roomName;             //显示房间名称
             rectTransform.GetChild(2).GetComponent<Text>().text
                 = m_Lobbies[i].m_Members.Length + "/" + m_Lobbies[i].m_MemberLimit;
-            if(SteamMatchmaking.GetLobbyData(LobbyID, "GameVersion") == GameVersion)
+            if (SteamMatchmaking.GetLobbyData(LobbyID, "GameVersion") == GameVersion)
             {
                 Button button = rectTransform.GetChild(3).GetComponent<Button>();               //获取"进入房间"按钮组件
                 button.gameObject.SetActive(true);
                 button.onClick.RemoveAllListeners();
-                button.onClick.AddListener(delegate () {
+                button.onClick.AddListener(delegate ()
+                {
                     ClickJoinRoomButton(LobbyID);
                 });
             }
