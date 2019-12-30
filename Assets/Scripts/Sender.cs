@@ -43,7 +43,7 @@ public class Sender : MonoBehaviour
     EndData[] Src;
     public static int[][] theSLtemp;
     bool[] SLtb;//Used by endingcompare
-    bool[] Cntb;
+    bool[] Cntb;//Used by Connection Status Check & SkillLevel Temp check
 
     private void Start()
     {
@@ -78,7 +78,11 @@ public class Sender : MonoBehaviour
         Cntb[cN] = true;
         Debug.Log(cN + " SLtemp Status: " + Cntb[cN]);
         if (AllOK(Cntb))
+        {
             SendHello(5);
+            Cntb = new bool[Cntb.Length];
+            Debug.Log("Local Skill Level Temp Set,Hello5 Sent");
+        }
     }
 
     public void SetCntbAndCheck(int cN)
