@@ -20,11 +20,13 @@ public class ClickCatcher : MonoBehaviour
             return;
         if (Input.GetKeyDown(KeyCode.G))
         {
+            Debug.Log("G Pressed");
             if (slink.KeyGSkill != null)
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyGSkill);
                 theNW.L2S.Add(cd);
+                Debug.Log("G Logged");
             }
         }
         if (Input.GetKeyDown(KeyCode.C))
