@@ -6,14 +6,16 @@ using System;
 using System.IO;
 using System.Text;
 
-public class ClickCatcher : MonoBehaviour {
+public class ClickCatcher : MonoBehaviour
+{
     //public CatcherKeys CK;
     public Toggle TotalSwitch;
     public NetWriter theNW;
     public Image SignalLight;
     public SkillsLink slink;
 
-    void Update () {
+    void Update()
+    {
         if (!TotalSwitch.isOn)
             return;
         if (Input.GetKeyDown(KeyCode.G))
@@ -101,7 +103,7 @@ public class ClickCatcher : MonoBehaviour {
             if (Physics2D.OverlapPoint(mp) && Physics2D.OverlapPoint(mp).GetComponent<HPScript>() != null)
                 cd.Ssetdata(Physics2D.OverlapPoint(mp).gameObject.name);
             else
-                cd.Msetdata(MButton.left, mp.x, mp.y);
+                cd.Msetdata(MButton.left, mp.x, mp.y); Debug.Log("MButton Left Clicked X:" + mp.x);
             theNW.L2S.Add(cd);
         }
         if (Input.GetMouseButtonDown(1))

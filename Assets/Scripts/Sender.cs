@@ -17,7 +17,6 @@ public class Sender : MonoBehaviour
     public Image SignalLight;
     //public byte[] buffer;
     public bool started = false;
-    public static bool isTesting = false;
     public static int clientNum;
     public SkillsLink SPNL;
     public NetWriter MyNS;
@@ -184,7 +183,6 @@ public class Sender : MonoBehaviour
 
     void BattlesFinish()
     {
-        isTesting = false;
         MSM.CloseMainSkillMenu();
         Learning = false;
         WaitingSkillLevels = false;
