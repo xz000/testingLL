@@ -48,6 +48,7 @@ public class DoSkill : MonoBehaviour
             return;
         BeforeSkill();
         Fire(fv2);
+        Debug.Log("Just Fired to " + fv2.ToV2().x);
         FireReset();
     }
 

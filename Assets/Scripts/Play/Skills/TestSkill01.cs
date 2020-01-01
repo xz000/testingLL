@@ -55,6 +55,7 @@ public class TestSkill01 : MonoBehaviour
         DoFire(singplace + (Fix64)0.76 * skilldirection.normalized(), skilldirection.normalized() * (Fix64)bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;
+        Debug.Log("TestSkill01 To" + actionplace.ToV2().x);
     }
 
     void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d)
