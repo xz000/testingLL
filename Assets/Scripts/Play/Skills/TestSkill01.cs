@@ -16,17 +16,19 @@ public class TestSkill01 : MonoBehaviour
     public bool skillavaliable;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
     }
 
     public void GoTestSkill01()
     {
+        Debug.Log("Wanna Go TestSkill01");
         if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
             GetComponent<DoSkill>().singing = 0;
             gameObject.GetComponent<DoSkill>().Fire = Skill;
+            Debug.Log("TestSkill01 Reached");
         }
     }
 
@@ -50,11 +52,11 @@ public class TestSkill01 : MonoBehaviour
         GetComponent<DoSkill>().BeforeSkill();
         Fix64Vector2 singplace = (Fix64Vector2)GetComponent<Rigidbody2D>().position;
         Fix64Vector2 skilldirection = actionplace - singplace;
-        DoFire (singplace + (Fix64)0.76 * skilldirection.normalized(), skilldirection.normalized() * (Fix64)bulletspeed);
+        DoFire(singplace + (Fix64)0.76 * skilldirection.normalized(), skilldirection.normalized() * (Fix64)bulletspeed);
         currentcooldown = 0;
         skillavaliable = false;
     }
-    
+
     void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d)
     {
         GameObject bullet;

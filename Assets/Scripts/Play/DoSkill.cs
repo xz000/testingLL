@@ -16,7 +16,7 @@ public class DoSkill : MonoBehaviour
     float timepassed;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         Fire = null;
         ClearDebuff = null;
