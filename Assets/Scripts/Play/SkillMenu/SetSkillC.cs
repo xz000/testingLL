@@ -14,41 +14,26 @@ public class SetSkillC : MonoBehaviour
 
     public void SetC()
     {
-        AllCOff();
-        IconC.GetComponent<CooldownImage>().enabled = true;
+        sls.KeyCSkill = null;
         if (C1.isOn)
         {
-            if (sls.mySoldier != null)
-                IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC1>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC1;
             return;
         }
         if (C2.isOn)
         {
-            if (sls.mySoldier != null)
-                IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC2>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC2;
             return;
         }
         if (C3.isOn)
         {
-            if (sls.mySoldier != null)
-                IconC.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillC3>().CalcFA;
             sls.KeyCSkill = SkillCode.SkillC3;
             return;
         }
         if (C4.isOn)
         {
-            if (sls.mySoldier != null)
-                sls.mySoldier.GetComponent<SkillC4>().MyImageScript = IconC.GetComponent<CooldownImage>();
             sls.KeyCSkill = SkillCode.SkillC4;
             return;
         }
-    }
-
-    public void AllCOff()
-    {
-        IconC.GetComponent<CooldownImage>().enabled = false;
-        sls.KeyCSkill = null;
     }
 }

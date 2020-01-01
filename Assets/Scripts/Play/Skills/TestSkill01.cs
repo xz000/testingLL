@@ -81,4 +81,10 @@ public class TestSkill01 : MonoBehaviour
     {
         return currentcooldown / cooldowntime;
     }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iG.Fif = CalcFA;
+    }
 }

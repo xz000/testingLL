@@ -60,7 +60,7 @@ public class MoveScript : MonoBehaviour
     {
         isme = true;
         SkillsLinkCS = GameObject.Find("Canvas2").GetComponentInChildren<SkillsLink>();
-        SkillsLinkCS.linktome(gameObject);
+        SendMessage("LinkToIcon");
         GetComponent<SpriteRenderer>().color = Color.green;
     }
 

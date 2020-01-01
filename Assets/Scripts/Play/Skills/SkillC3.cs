@@ -19,14 +19,14 @@ public class SkillC3 : MonoBehaviour
     float remaintime;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
         //ShadowCircle.GetComponent<CircleCollider2D>().enabled = false;
         //ShadowCircle.GetComponent<SpriteRenderer>().color = new Color32(255, 255, 255, 127);
     }
-	
-	public void GoSkillC3()
+
+    public void GoSkillC3()
     {
         if (HaveShadow)
         {
@@ -56,7 +56,7 @@ public class SkillC3 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
-    } 
+    }
 
     void Skill()
     {
@@ -105,5 +105,11 @@ public class SkillC3 : MonoBehaviour
             enabled = false;
         else
             enabled = true;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iC.Fif = CalcFA;
     }
 }

@@ -17,14 +17,14 @@ public class SkillE2 : MonoBehaviour
     MoveScript MS;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
         MS = GetComponent<MoveScript>();
     }
-	
-	// Update is called once per frame
-	void GoSkillE2()
+
+    // Update is called once per frame
+    void GoSkillE2()
     {
         if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
@@ -70,5 +70,11 @@ public class SkillE2 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iE.Fif = CalcFA;
     }
 }

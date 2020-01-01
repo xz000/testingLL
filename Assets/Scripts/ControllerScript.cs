@@ -44,17 +44,6 @@ public class ControllerScript : MonoBehaviour
         LCD.Clear();
     }
 
-    public void CPCat(int Num, Vector2 place)
-    {
-        thePC[Num] = Instantiate(PlayerCircle, place, Quaternion.identity);
-        thePC[Num].name = Num.ToString();
-        theMS[Num] = thePC[Num].GetComponent<MoveScript>();
-        theDS[Num] = thePC[Num].GetComponent<DoSkill>();
-        thePC[Num].GetComponent<HPScript>().ser = GetComponent<Sender>();
-        if (Num == Sender.clientNum)
-            theMS[Num].itsme();
-    }
-
     public void createPCs(int MaxNum)
     {
         thePC = new GameObject[MaxNum];
@@ -70,18 +59,19 @@ public class ControllerScript : MonoBehaviour
         for (int i = 0; i < MNum; i++)
         {
             v3 = new Vector3(i * 6 - 3, 0, 0);
-            CPCat(i, v3);
-            SetSkillMem(i, Sender.theSLtemp[i]);
+            thePC[i] = Instantiate(PlayerCircle, v3, Quaternion.identity);
+            thePC[i].name = i.ToString();
+            theMS[i] = thePC[i].GetComponent<MoveScript>();
+            theDS[i] = thePC[i].GetComponent<DoSkill>();
+            thePC[i].GetComponent<HPScript>().ser = GetComponent<Sender>();
+            thePC[i].GetComponent<CircleSkillMem>().SetCircleSL(Sender.theSLtemp[i]);
+            if (i == Sender.clientNum)
+                theMS[i].itsme();
         }
     }
 
     void CreateGround()
     {
         Instantiate(GroundCircle, Vector3.zero, Quaternion.identity);
-    }
-
-    public void SetSkillMem(int cN, int[] cSL)
-    {
-        thePC[cN].GetComponent<CircleSkillMem>().SetCircleSL(cSL);
     }
 }

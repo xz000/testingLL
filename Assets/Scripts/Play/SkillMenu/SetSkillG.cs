@@ -13,20 +13,11 @@ public class SetSkillG : MonoBehaviour
 
     public void SetG()
     {
-        AllGOff();
-        IconG.GetComponent<CooldownImage>().enabled = true;
+        GetComponent<SkillsLink>().KeyGSkill = null;
         if (G1.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconG.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<TestSkill01>().CalcFA;
             GetComponent<SkillsLink>().KeyGSkill = SkillCode.TestSkill01;
             return;
         }
-    }
-
-    public void AllGOff()
-    {
-        IconG.GetComponent<CooldownImage>().enabled = false;
-        GetComponent<SkillsLink>().KeyGSkill = null;
     }
 }

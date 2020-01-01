@@ -15,11 +15,11 @@ public class SkillE1 : MonoBehaviour
     public bool skillavaliable;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
     }
-	
+
     // Update is called once per frame
     void GoSkillE1()
     {
@@ -70,5 +70,11 @@ public class SkillE1 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iE.Fif = CalcFA;
     }
 }

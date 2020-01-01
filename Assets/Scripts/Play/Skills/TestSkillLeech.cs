@@ -13,13 +13,13 @@ public class TestSkillLeech : MonoBehaviour
     private float currentcooldown;
     public float cooldowntime = 3;
     public bool skillavaliable;
-    
+
     // Use this for initialization
     void Start()
     {
         currentcooldown = cooldowntime;
     }
-    
+
     // Update is called once per frame
     void GoTestSkillLeech()
     {
@@ -79,5 +79,11 @@ public class TestSkillLeech : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iT.Fif = CalcFA;
     }
 }

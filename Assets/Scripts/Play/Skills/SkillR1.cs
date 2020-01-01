@@ -74,4 +74,10 @@ public class SkillR1 : MonoBehaviour
     {
         return currentcooldown / cooldowntime;
     }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iR.Fif = CalcFA;
+    }
 }

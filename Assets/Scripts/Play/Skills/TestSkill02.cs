@@ -13,13 +13,13 @@ public class TestSkill02 : MonoBehaviour
     //MoveScript MS;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
         //MS = GetComponent<MoveScript>();
     }
-	
-	public void GoTestSkill02()
+
+    public void GoTestSkill02()
     {
         if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
@@ -102,5 +102,11 @@ public class TestSkill02 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iR.Fif = CalcFA;
     }
 }
