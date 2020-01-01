@@ -92,4 +92,10 @@ public class SkillT2b : MonoBehaviour
     {
         return currentcooldown / cooldowntime;
     }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iT.Fif = CalcFA;
+    }
 }

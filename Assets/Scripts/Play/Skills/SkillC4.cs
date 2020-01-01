@@ -70,7 +70,7 @@ public class SkillC4 : MonoBehaviour
             if (GetComponent<MoveScript>().isme)
                 nm.GetComponent<SpriteRenderer>().color = Color.yellow;
             nm.GetComponent<FakeCircleScript>().Beauty = selfRB;
-            nm.GetComponent<FakeCircleScript>().maxtime = maxfaketime-currentfaketime;
+            nm.GetComponent<FakeCircleScript>().maxtime = maxfaketime - currentfaketime;
         }
         GetComponent<MoveScript>().stopwalking();
     }
@@ -95,5 +95,11 @@ public class SkillC4 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iC.Fif = CalcFA;
     }
 }

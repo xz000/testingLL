@@ -15,13 +15,13 @@ public class SkillD3 : MonoBehaviour
     public bool skillavaliable;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
     }
-	
-	// Update is called once per frame
-	void GoSkillD3()
+
+    // Update is called once per frame
+    void GoSkillD3()
     {
         if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
@@ -104,5 +104,11 @@ public class SkillD3 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iD.Fif = CalcFA;
     }
 }

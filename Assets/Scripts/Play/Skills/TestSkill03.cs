@@ -61,4 +61,10 @@ public class TestSkill03 : MonoBehaviour
         DS.BeforeSkill();
         DS.singing = 3;
     }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iF.Fif = SES.CalcFA;
+    }
 }

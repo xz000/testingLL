@@ -22,7 +22,8 @@ public class SkillsLink : MonoBehaviour
     public void linktome(GameObject go)
     {
         mySoldier = go;
-        selfset();
+        //TODO:
+        //selfset();
         BottomPanel.SetActive(true);
     }
 

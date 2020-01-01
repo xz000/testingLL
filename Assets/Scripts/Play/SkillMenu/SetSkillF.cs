@@ -12,20 +12,11 @@ public class SetSkillF : MonoBehaviour
 
     public void SetF()
     {
-        AllFOff();
-        IconF.GetComponent<CooldownImage>().enabled = true;
+        GetComponent<SkillsLink>().KeyFSkill = null;
         if (F1.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconF.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SelfExplodeScript>().CalcFA;
             GetComponent<SkillsLink>().KeyFSkill = SkillCode.TestSkill03;
             return;
         }
-    }
-
-    void AllFOff()
-    {
-        IconF.GetComponent<CooldownImage>().enabled = false;
-        GetComponent<SkillsLink>().KeyFSkill = null;
     }
 }

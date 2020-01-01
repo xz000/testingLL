@@ -68,7 +68,7 @@ public class TestSkillLightning : MonoBehaviour
             else if (hit2D.collider.GetComponent<RollScript>() != null)
             {
                 //if (!hit2D.collider.GetComponent<PhotonView>().isMine)
-                    //hit2D.collider.GetComponent<DestroyScript>().Destroyself();
+                //hit2D.collider.GetComponent<DestroyScript>().Destroyself();
                 return;
             }
             else if (hit2D.collider.GetComponent<RBScript>() != null)
@@ -111,5 +111,11 @@ public class TestSkillLightning : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iD.Fif = CalcFA;
     }
 }

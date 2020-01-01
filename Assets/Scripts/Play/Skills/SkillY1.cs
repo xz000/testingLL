@@ -17,7 +17,7 @@ public class SkillY1 : MonoBehaviour
     public float maxtime;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
     }
@@ -36,7 +36,7 @@ public class SkillY1 : MonoBehaviour
             GetComponent<DoSkill>().Fire = Skill;
         }
     }
-    
+
     private void FixedUpdate()
     {
         if (skillavaliable)
@@ -89,5 +89,11 @@ public class SkillY1 : MonoBehaviour
             enabled = false;
         else
             enabled = true;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iY.Fif = CalcFA;
     }
 }

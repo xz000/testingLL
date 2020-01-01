@@ -54,7 +54,7 @@ public class SkillT3b : MonoBehaviour
         currentcooldown = 0;
         skillavaliable = false;
     }
-    
+
     void DoFire(Vector2 fireplace, Vector2 speed2d)
     {
         GameObject bullet;
@@ -80,5 +80,11 @@ public class SkillT3b : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iT.Fif = CalcFA;
     }
 }

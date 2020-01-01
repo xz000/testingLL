@@ -91,4 +91,10 @@ public class SkillY1b : MonoBehaviour
         else
             enabled = true;
     }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iY.Fif = CalcFA;
+    }
 }

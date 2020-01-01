@@ -23,55 +23,36 @@ public class SetSkillE : MonoBehaviour
 
     public void SetE()
     {
-        AllEOff();
-        IconE.GetComponent<CooldownImage>().enabled = true;
+        GetComponent<SkillsLink>().KeyESkill = null;
         if (E1.isOn && E1a.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE1>().CalcFA;
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE1;
             return;
         }
         if (E1.isOn && E1b.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE1b>().CalcFA;
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE1b;
             return;
         }
         if (E2.isOn && E2a.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE2>().CalcFA;
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE2;
             return;
         }
         if (E2.isOn && E2b.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE2b>().CalcFA;
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE2b;
             return;
         }
         if (E3.isOn && E3a.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE3>().CalcFA;
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE3;
             return;
         }
         if (E3.isOn && E3b.isOn)
         {
-            if (GetComponent<SkillsLink>().mySoldier != null)
-                IconE.GetComponent<CooldownImage>().Fif = GetComponent<SkillsLink>().mySoldier.GetComponent<SkillE3b>().CalcFA;
             GetComponent<SkillsLink>().KeyESkill = SkillCode.SkillE3b;
             return;
         }
-    }
-
-    public void AllEOff()
-    {
-        IconE.GetComponent<CooldownImage>().enabled = false;
-        GetComponent<SkillsLink>().KeyESkill = null;
     }
 }

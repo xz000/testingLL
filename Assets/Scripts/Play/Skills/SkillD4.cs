@@ -68,7 +68,7 @@ public class SkillD4 : MonoBehaviour
 
     void DoFire(Fix64Vector2 fireplace, Fix64Vector2 speed2d, bool a)
     {
-        
+
         fireball.GetComponent<BananaScript>().sender = gameObject;
         fireball.GetComponent<BananaScript>().bombdamage = damage;
         fireball.GetComponent<BananaScript>().maxtime = maxtime;
@@ -93,5 +93,11 @@ public class SkillD4 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iD.Fif = CalcFA;
     }
 }

@@ -14,12 +14,12 @@ public class SkillC2 : MonoBehaviour
     public float maxtime = 2;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         currentcooldown = cooldowntime;
     }
-	
-	void GoSkillC2()
+
+    void GoSkillC2()
     {
         if (skillavaliable && GetComponent<DoSkill>().CanSing)
         {
@@ -67,5 +67,11 @@ public class SkillC2 : MonoBehaviour
     public float CalcFA()
     {
         return currentcooldown / cooldowntime;
+    }
+
+    void LinkToIcon()
+    {
+        if (enabled)
+            GameObject.Find("Canvas2").GetComponent<BottomLink>().iC.Fif = CalcFA;
     }
 }

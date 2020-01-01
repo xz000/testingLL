@@ -17,41 +17,26 @@ public class SetSkillD : MonoBehaviour
 
     public void SetD()
     {
-        AllDOff();
-        IconD.GetComponent<CooldownImage>().enabled = true;
+        sls.KeyDSkill = null;
         if (D1.isOn)
         {
-            if (sls.mySoldier != null)
-                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<TestSkillLightning>().CalcFA;
             sls.KeyDSkill = SkillCode.TestSkillLightning;
             return;
         }
         if (D2.isOn)
         {
-            if (sls.mySoldier != null)
-                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD2>().CalcFA;
             sls.KeyDSkill = SkillCode.SkillD2;
             return;
         }
         if (D3.isOn)
         {
-            if (sls.mySoldier != null)
-                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD3>().CalcFA;
             sls.KeyDSkill = SkillCode.SkillD3;
             return;
         }
         if (D4.isOn)
         {
-            if (sls.mySoldier != null)
-                IconD.GetComponent<CooldownImage>().Fif = sls.mySoldier.GetComponent<SkillD4>().CalcFA;
             sls.KeyDSkill = SkillCode.SkillD4;
             return;
         }
-    }
-
-    public void AllDOff()
-    {
-        IconD.GetComponent<CooldownImage>().enabled = false;
-        sls.KeyDSkill = null;
     }
 }
