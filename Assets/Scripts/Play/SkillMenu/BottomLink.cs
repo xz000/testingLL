@@ -4,6 +4,7 @@ using UnityEngine;
 
 public class BottomLink : MonoBehaviour
 {
+    public GameObject BottomPanel;
     public CooldownImage iC;
     public CooldownImage iD;
     public CooldownImage iE;

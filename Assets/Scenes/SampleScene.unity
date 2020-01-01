@@ -40732,6 +40732,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e559bd6ab1522e74fb1051a1c7241903, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  BottomPanel: {fileID: 1481811810}
   iC: {fileID: 1880939853}
   iD: {fileID: 1480504932}
   iE: {fileID: 1600852166}
