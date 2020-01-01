@@ -13,7 +13,7 @@ public class CooldownImage : MonoBehaviour
     void Start()
     {
         Icon = gameObject.GetComponent<Image>();
-        enabled = false;
+        //enabled = false;
     }
 
     // Update is called once per frame
