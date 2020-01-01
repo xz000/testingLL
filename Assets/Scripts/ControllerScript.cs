@@ -13,7 +13,7 @@ public class ControllerScript : MonoBehaviour
 
     public void powerrr(int PNO, List<ClickData> LCD)
     {
-        foreach(ClickData CD in LCD)
+        foreach (ClickData CD in LCD)
         {
             if (CD.SC != null)
             {
@@ -32,6 +32,7 @@ public class ControllerScript : MonoBehaviour
                         theMS[PNO].SetTarget(v2r);
                         break;
                 }
+                Debug.Log(PNO + " Get " + CD.blr.ToString() + " " + CD.xPos.ToString());
             }
             if (CD.gn != string.Empty)
             {

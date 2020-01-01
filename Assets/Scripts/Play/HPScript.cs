@@ -57,11 +57,6 @@ public class HPScript : MonoBehaviour
             endData.epy = GetComponent<Rigidbody2D>().position.y;
             ser.SendEnd(endData);
             Debug.Log("awsl");
-            if (Sender.isTesting)
-            {
-                ser.RealEnd();
-                ser.SendMessage("BattlesFinish");
-            }
         }
     }
 

@@ -57,18 +57,11 @@ public class SkillsLink : MonoBehaviour
                 selfset();
                 Setlsd();
                 sds.Sendlsd(lsd);
-                betaset();
+                sds.SetTempAndCheck(lsd.cNum, lsd.SLs);
                 GetComponent<MainSkillMenu>().CloseMainSkillMenu();
                 Debug.Log("SL set and sent");
             }
         }
-    }
-
-    public void betaset()
-    {
-        sds.SetTempAndCheck(lsd.cNum, lsd.SLs);
-        if (Sender.isTesting)
-            sds.SetTempAndCheck(1 - lsd.cNum, lsd.SLs);
     }
 
     void Setlsd()

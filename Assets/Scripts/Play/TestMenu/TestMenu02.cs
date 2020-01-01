@@ -135,10 +135,7 @@ public class TestMenu02 : MonoBehaviour
         }
         if (rc == outLobby.m_MemberLimit)
         {
-            if (rc == 1)
-                TestStart();
-            else
-                GameStart(rc);
+            GameStart(rc);
         }
         if (gc == outLobby.m_MemberLimit && SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
         {
@@ -238,32 +235,6 @@ public class TestMenu02 : MonoBehaviour
         SenderSC.SendHello(3);
         if (SteamMatchmaking.GetLobbyOwner(Sender.roomid) == SteamUser.GetSteamID())
             Startbutton.gameObject.SetActive(true);
-    }
-
-    void TestStart()
-    {
-        Sender.isTesting = true;
-        Debug.Log("Now Testing");
-        int r = 2;
-        //NetWriter.rs = r;
-        //准备SkillCode交错数组
-        SenderSC.PrepareTemp(r, (int)SkillCode.SelfExplodeScript);
-        //设置clientNum
-        Sender.TOmb = new CSteamID[r];
-        for (int i = 0; i < r; i++)
-        {
-            Sender.TOmb[i] = SteamUser.GetSteamID();
-        }
-        Sender.clientNum = 0;
-        SenderPanel.SetActive(true);
-        CVS2.SetActive(true);
-        EndData endData = new EndData();
-        endData.CircleID = 666;
-        endData.epx = 0;
-        endData.epy = 0;
-        SenderSC.started = true;
-        SenderSC.SendEnd(endData);
-        Debug.Log("Test Started");
     }
 
     public void LeaveLobby()
