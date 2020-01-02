@@ -9,7 +9,7 @@ public class CentrallyConstentField : MonoBehaviour
     public GameObject sender;
     public float speed;
 
-    public void AddConstentCentrallyVelocity(Rigidbody2D victim,MoveScript worker)
+    public void AddConstentCentrallyVelocity(Rigidbody2D victim, MoveScript worker)
     {
         Vector2 vector = center.position - victim.position;
         if (vector.sqrMagnitude < 0.01)
@@ -19,6 +19,8 @@ public class CentrallyConstentField : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
+        if (collision.GetComponent<MoveScript>() == null)
+            return;
         if (collision.gameObject == sender)
             return;
         MoveScript MS = collision.GetComponent<MoveScript>();
@@ -27,6 +29,8 @@ public class CentrallyConstentField : MonoBehaviour
 
     private void OnTriggerExit2D(Collider2D collision)
     {
+        if (collision.GetComponent<MoveScript>() == null)
+            return;
         MoveScript MS = collision.GetComponent<MoveScript>();
         MS.cook -= AddConstentCentrallyVelocity;
     }
