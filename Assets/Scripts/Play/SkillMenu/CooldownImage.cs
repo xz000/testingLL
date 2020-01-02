@@ -24,6 +24,7 @@ public class CooldownImage : MonoBehaviour
 
     private void OnDisable()
     {
+        Fif = null;
         Icon.fillAmount = 1;
     }
 }
