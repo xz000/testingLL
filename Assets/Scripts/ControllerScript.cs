@@ -18,7 +18,7 @@ public class ControllerScript : MonoBehaviour
             if (CD.SC != null)
             {
                 thePC[PNO].SendMessage("Go" + CD.SC.ToString());
-                Debug.Log(PNO + " Go" + CD.SC.ToString());
+                //Debug.Log(PNO + " Go" + CD.SC.ToString());
             }
             if (CD.blr != null)
             {

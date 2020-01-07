@@ -20,13 +20,13 @@ public class ClickCatcher : MonoBehaviour
             return;
         if (Input.GetKeyDown(KeyCode.G))
         {
-            Debug.Log("G Pressed");
+            //Debug.Log("G Pressed");
             if (slink.KeyGSkill != null)
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyGSkill);
                 theNW.L2S.Add(cd);
-                Debug.Log("G Logged");
+                //Debug.Log("G Logged");
             }
         }
         if (Input.GetKeyDown(KeyCode.C))
@@ -105,7 +105,7 @@ public class ClickCatcher : MonoBehaviour
             if (Physics2D.OverlapPoint(mp) && Physics2D.OverlapPoint(mp).GetComponent<HPScript>() != null)
                 cd.Ssetdata(Physics2D.OverlapPoint(mp).gameObject.name);
             else
-                cd.Msetdata(MButton.left, mp.x, mp.y); Debug.Log("MButton Left Clicked X:" + mp.x);
+                cd.Msetdata(MButton.left, mp.x, mp.y); //Debug.Log("MButton Left Clicked X:" + mp.x);
             theNW.L2S.Add(cd);
         }
         if (Input.GetMouseButtonDown(1))
