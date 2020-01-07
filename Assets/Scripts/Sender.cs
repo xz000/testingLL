@@ -244,12 +244,12 @@ public class Sender : MonoBehaviour
             return;
         }
         Debug.Log("Compareing Ending Place");
-        /*
         if ((FixMath.Fix64)Src[0].epx == (FixMath.Fix64)Src[1].epx && (FixMath.Fix64)Src[0].epy == (FixMath.Fix64)Src[1].epy)
         {
             tss.GameEndResultSet(true);
-            Debug.Log("Same Result");
+            Debug.LogWarning("Same Result");
         }
+        /*
         else
         {
             tss.GameEndResultSet(false);

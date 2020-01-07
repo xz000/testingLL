@@ -79,7 +79,7 @@ public class LeechScript : MonoBehaviour
         Fix64Vector2 vector = (Fix64Vector2)GetComponent<Rigidbody2D>().velocity;
         foreach (GameObject Him in Allthem)
         {
-            Debug.Log(Him.name);
+            //Debug.Log(Him.name);
             if (Him == sender) continue;//跳过施法者
             Fix64Vector2 diff = ((Fix64Vector2)Him.GetComponent<Rigidbody2D>().position - position);
             Fix64 curDistance = diff.LengthSquare(); //向量距离平方
@@ -88,12 +88,12 @@ public class LeechScript : MonoBehaviour
                 sqrdis = curDistance;//更新最近距离
                 vector = diff;//更新向量
             }
-            Debug.Log(vector.LengthSquare());
+            //Debug.Log(vector.LengthSquare());
         }
         Fix64Vector2 v2r = (vector.normalized() * speed);
         return v2r;
     }
-    
+
     void SelfTurn(Fix64Vector2 vector)
     {
         GetComponent<Rigidbody2D>().velocity = vector.ToV2();
