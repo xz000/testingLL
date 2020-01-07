@@ -56,7 +56,7 @@ public class ControllerScript : MonoBehaviour
     {
         CreateGround();
         Fix64Vector2 fix64Vector2 = new Fix64Vector2((Fix64)0, (Fix64)3);
-        for (int i = MNum - 1; i >= 0; i++)
+        for (int i = MNum - 1; i >= 0; i--)
         {
             fix64Vector2 = fix64Vector2.CCWTurn(Fix64.PiTimes2 / (Fix64)MNum);
             thePC[i] = Instantiate(PlayerCircle, fix64Vector2.ToV2(), Quaternion.identity);
