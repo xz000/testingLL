@@ -164,10 +164,6 @@ public class Sender : MonoBehaviour
         GameObject[] safeground = GameObject.FindGameObjectsWithTag("Ground");
         foreach (GameObject ground in safeground)
             Destroy(ground);
-        if (RoundNow >= TotalRounds)
-            BattlesFinish();
-        else
-            RoundNow++;
     }
 
     public void EndBattle(int pos)
@@ -246,17 +242,22 @@ public class Sender : MonoBehaviour
         Debug.Log("Compareing Ending Place");
         if ((FixMath.Fix64)Src[0].epx == (FixMath.Fix64)Src[1].epx && (FixMath.Fix64)Src[0].epy == (FixMath.Fix64)Src[1].epy)
         {
-            tss.GameEndResultSet(true);
-            Debug.LogWarning("Same Result");
+            //tss.GameEndResultSet(true);
+            Debug.Log("Same Result");
         }
-        /*
         else
         {
-            tss.GameEndResultSet(false);
-            Debug.Log("Different Result:\n" + "Sent string:" + Src[1].epx + "," + Src[1].epy + "\nReceived string:" + Src[0].epx + "," + Src[0].epy);
+            //tss.GameEndResultSet(false);
+            Debug.LogWarning("Different Result:\n" + "Sent string:" + Src[1].epx + "," + Src[1].epy + "\nReceived string:" + Src[0].epx + "," + Src[0].epy);
         }
-        */
         ClearSArray();
+        if (RoundNow >= TotalRounds)
+        {
+            BattlesFinish();
+            return;
+        }
+        else
+            RoundNow++;
         MSM.OpenMainSkillMenu();
     }
 
