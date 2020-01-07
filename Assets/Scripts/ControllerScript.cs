@@ -55,11 +55,11 @@ public class ControllerScript : MonoBehaviour
     void PCBorn(int MNum)
     {
         CreateGround();
-        Vector3 v3;
-        for (int i = 0; i < MNum; i++)
+        Fix64Vector2 fix64Vector2 = new Fix64Vector2((Fix64)0, (Fix64)3);
+        for (int i = MNum - 1; i >= 0; i++)
         {
-            v3 = new Vector3(i * 6 - 3, 0, 0);
-            thePC[i] = Instantiate(PlayerCircle, v3, Quaternion.identity);
+            fix64Vector2 = fix64Vector2.CCWTurn(Fix64.PiTimes2 / (Fix64)MNum);
+            thePC[i] = Instantiate(PlayerCircle, fix64Vector2.ToV2(), Quaternion.identity);
             thePC[i].name = i.ToString();
             theMS[i] = thePC[i].GetComponent<MoveScript>();
             theDS[i] = thePC[i].GetComponent<DoSkill>();
