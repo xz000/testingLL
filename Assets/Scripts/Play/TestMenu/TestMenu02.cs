@@ -12,8 +12,6 @@ public class TestMenu02 : MonoBehaviour
     public GameObject Masterpanel;
     public GameObject Otherpanel;
     public Toggle Readytoggle;
-    public Toggle AutostartToggle;
-
     public GameObject SenderPanel;
     public GameObject CVS2;
     public Sender SenderSC;
@@ -72,6 +70,11 @@ public class TestMenu02 : MonoBehaviour
         MPanel.GetComponent<CanvasGroup>().interactable = true;
         UpdateLobbyInfo(ref m_CurrentLobby);
         SetBasic();
+    }
+
+    private void OnDisable()
+    {
+        MPanel.SetActive(false);
     }
 
     void OnLobbyDataUpdate(LobbyDataUpdate_t lobbyDataUpdate_T)
@@ -269,6 +272,7 @@ public class TestMenu02 : MonoBehaviour
 
     public void ClickBackButton()
     {
+        GameObject.Find("Main Camera").GetComponent<UISound>().PlayClickSound();
         SenderSC.SendQuit();
     }
 

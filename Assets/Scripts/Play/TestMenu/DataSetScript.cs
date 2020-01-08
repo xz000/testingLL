@@ -12,14 +12,20 @@ public class DataSetScript : MonoBehaviour
 
     public void SetMyData()
     {
-        if (!isActiveAndEnabled || DataInput.text == DataNow.text)
-            return;
-        gameObject.SetActive(false);
-        SteamMatchmaking.SetLobbyData(Sender.roomid, DataName, DataInput.text);
+        GameObject.Find("Main Camera").GetComponent<UISound>().PlayClickSound();
+        SetData();
     }
 
-    private void Start()
+    private void OnEnable()
     {
-        SetMyData();
+        SetData();
+    }
+
+    private void SetData()
+    {
+        if (!isActiveAndEnabled)
+            return;
+        gameObject.GetComponent<CanvasGroup>().interactable = false;
+        SteamMatchmaking.SetLobbyData(Sender.roomid, DataName, DataInput.text);
     }
 }

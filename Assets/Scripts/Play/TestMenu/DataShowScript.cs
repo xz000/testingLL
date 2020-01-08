@@ -16,7 +16,7 @@ public class DataShowScript : MonoBehaviour
         DataValueText.text = SteamMatchmaking.GetLobbyData(Sender.roomid, DataName);
         if (MPanel.activeInHierarchy)
         {
-            SetObject.SetActive(true);
+            SetObject.GetComponent<CanvasGroup>().interactable = true;
         }
     }
 }

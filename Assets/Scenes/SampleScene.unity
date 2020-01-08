@@ -3126,6 +3126,7 @@ GameObject:
   m_Component:
   - component: {fileID: 139974236}
   - component: {fileID: 139974235}
+  - component: {fileID: 139974237}
   m_Layer: 5
   m_Name: LobbyDataSet (1)
   m_TagString: Untagged
@@ -3169,6 +3170,18 @@ RectTransform:
   m_AnchoredPosition: {x: 132.00003, y: -150}
   m_SizeDelta: {x: 264, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
+--- !u!225 &139974237
+CanvasGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 139974234}
+  m_Enabled: 1
+  m_Alpha: 1
+  m_Interactable: 1
+  m_BlocksRaycasts: 1
+  m_IgnoreParentGroups: 0
 --- !u!1 &146723092
 GameObject:
   m_ObjectHideFlags: 0
@@ -12764,6 +12777,7 @@ GameObject:
   - component: {fileID: 519420031}
   - component: {fileID: 519420029}
   - component: {fileID: 519420030}
+  - component: {fileID: 519420033}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -12848,6 +12862,19 @@ Transform:
   m_Father: {fileID: 0}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &519420033
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 519420028}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d154d3defefd1914a8f73767bee66e18, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  SoundClick: {fileID: 8300000, guid: f5ab874fd1f4a4c7cb3ff691b729fbfa, type: 3}
 --- !u!1 &519713468
 GameObject:
   m_ObjectHideFlags: 0
@@ -22032,7 +22059,6 @@ MonoBehaviour:
   Masterpanel: {fileID: 811309781}
   Otherpanel: {fileID: 1662377176}
   Readytoggle: {fileID: 1355979345}
-  AutostartToggle: {fileID: 0}
   SenderPanel: {fileID: 1091925956}
   CVS2: {fileID: 1716205428}
   SenderSC: {fileID: 1914587339}
@@ -25609,6 +25635,17 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &1111754308
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -26808,6 +26845,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1161936668}
   - component: {fileID: 1161936669}
+  - component: {fileID: 1161936670}
   m_Layer: 5
   m_Name: LobbyDataSet
   m_TagString: Untagged
@@ -26851,6 +26889,18 @@ MonoBehaviour:
   DataInput: {fileID: 892780759}
   DataNow: {fileID: 820559573}
   DataName: Total_Rounds
+--- !u!225 &1161936670
+CanvasGroup:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1161936667}
+  m_Enabled: 1
+  m_Alpha: 1
+  m_Interactable: 1
+  m_BlocksRaycasts: 1
+  m_IgnoreParentGroups: 0
 --- !u!1 &1164651709
 GameObject:
   m_ObjectHideFlags: 0
@@ -31620,6 +31670,17 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   m_IsOn: 0
 --- !u!1 &1365167131
 GameObject:
@@ -35813,6 +35874,17 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 37478968}
         m_MethodName: ClickJoinOrCreateButton
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
