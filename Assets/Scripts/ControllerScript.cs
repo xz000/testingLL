@@ -33,7 +33,7 @@ public class ControllerScript : MonoBehaviour
                         theMS[PNO].SetTarget(v2r);
                         break;
                 }
-                Debug.Log(PNO + " Get " + CD.blr.ToString() + " " + CD.xPos.ToString());
+                //Debug.Log(PNO + " Get " + CD.blr.ToString() + " " + CD.xPos.ToString());
             }
             if (CD.gn != string.Empty)
             {
