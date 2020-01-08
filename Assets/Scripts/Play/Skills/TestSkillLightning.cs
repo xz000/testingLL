@@ -13,6 +13,7 @@ public class TestSkillLightning : MonoBehaviour
     public float SelfR = 0.51f;
     Fix64 SRF;
     public LineRenderer line;
+    public AudioClip SoundLightning;
 
     // Use this for initialization
     void Start()
@@ -84,6 +85,7 @@ public class TestSkillLightning : MonoBehaviour
             rpv2 = selfrb2d.position + maxdistance * skilldirection.ToV2().normalized;
             Drawline(rpv2);
         }
+        AudioSource.PlayClipAtPoint(SoundLightning, rpv2);
     }
 
     void Drawline(Vector2 destn)
