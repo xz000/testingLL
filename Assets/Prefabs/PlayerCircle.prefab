@@ -793,7 +793,7 @@ MonoBehaviour:
   skillavaliable: 0
   SelfR: 0.51
   line: {fileID: 120367070304518420}
-  SoundLightning: {fileID: 8300000, guid: b8e3eda48b89e41d5a1160d451db0ee9, type: 3}
+  SoundLightning: {fileID: 8300000, guid: c1f8c36ebdb20024ea8a59ec457d582c, type: 3}
 --- !u!114 &2342278634341086658
 MonoBehaviour:
   m_ObjectHideFlags: 0

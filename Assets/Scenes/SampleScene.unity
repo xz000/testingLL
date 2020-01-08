@@ -1768,8 +1768,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -5665,12 +5665,11 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 238781323}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cc8e21a021621c5418ef01a16ac9a83d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  TotalSwitch: {fileID: 238781325}
   theNW: {fileID: 1914587340}
   SignalLight: {fileID: 703651734}
   slink: {fileID: 392646559}
@@ -9253,7 +9252,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5736a04facb1a574ebcc7b63140f16ce, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mySoldier: {fileID: 0}
   BottomPanel: {fileID: 1481811810}
   sds: {fileID: 1914587339}
 --- !u!114 &392646560
@@ -10193,8 +10191,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -12875,6 +12873,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   SoundClick: {fileID: 8300000, guid: f5ab874fd1f4a4c7cb3ff691b729fbfa, type: 3}
+  SoundGold: {fileID: 8300000, guid: e66c05008dfd54b65a39750fb4ca35be, type: 3}
 --- !u!1 &519713468
 GameObject:
   m_ObjectHideFlags: 0
@@ -17085,7 +17084,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &767807296
 RectTransform:
   m_ObjectHideFlags: 0
@@ -25085,8 +25084,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -28595,8 +28594,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -33023,8 +33022,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -33927,8 +33926,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -36340,8 +36339,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -46269,6 +46268,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   testMenu02: {fileID: 946273253}
+  catcher: {fileID: 238781326}
   theHT: {fileID: 1267686063}
   theCT: {fileID: 101273293}
   tss: {fileID: 1306829822}
@@ -50681,8 +50681,8 @@ MonoBehaviour:
   onValueChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_MethodName: OnOffSwitch
+      - m_Target: {fileID: 519420033}
+        m_MethodName: PlayClickSound
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}

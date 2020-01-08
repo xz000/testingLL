@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class SingleSkillSetting : MonoBehaviour {
+public class SingleSkillSetting : MonoBehaviour
+{
 
     public GameObject GoldObj;
     public Button MinusButton;
@@ -23,9 +24,10 @@ public class SingleSkillSetting : MonoBehaviour {
     public int Level1Price = 11;
     public int Level2Price = 3;
     public int MultiInt = 1;
+    private bool playsound = false;
 
     // Use this for initialization
-    void Start ()
+    void Start()
     {
         GoldObj = GameObject.Find("TextGold");
         SkillToggle = GetComponent<Toggle>();
@@ -38,6 +40,7 @@ public class SingleSkillSetting : MonoBehaviour {
         PlusButton.onClick.AddListener(ClickPlusButton);
         TopLevel = 1;//Under Construction
         UpdatePrice();
+        playsound = true;
     }
 
     public void SkillToggleCtrl(bool a)
@@ -89,6 +92,8 @@ public class SingleSkillSetting : MonoBehaviour {
         LevelText.text = "Lv" + SkillLevel;
         LevelPriceText.text = "Price:" + LevelPrice;
         SetButtons();
+        if (playsound)
+            GameObject.Find("Main Camera").GetComponent<UISound>().PlayGoldSound();
     }
 
     void SetButtons()
