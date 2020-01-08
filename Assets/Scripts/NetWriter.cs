@@ -94,7 +94,7 @@ public class NetWriter : MonoBehaviour
             int a = LocalFrameNum - PassedFrameNum - 1;
             theLL.addat(a, Sender.clientNum, L2S);
             //Debug.Log("吃！");
-            if (Time.timeScale < 0.6 && theLL.Numready(3))
+            if (Time.timeScale < 0.6 && theLL.Numready(1))
             {
                 //isstarted = false;
                 Time.timeScale = 1;
@@ -152,7 +152,7 @@ public class NetWriter : MonoBehaviour
         ReceivedFrameNum = datarc.frameNum;
         int a = ReceivedFrameNum - PassedFrameNum - 1;
         theLL.addat(a, datarc.clientNum, datarc.clickDatas);
-        if (Time.timeScale < 0.6 && theLL.Numready(3))
+        if (Time.timeScale < 0.6 && theLL.Numready(1))
         {
             //isstarted = false;
             Time.timeScale = 1;
