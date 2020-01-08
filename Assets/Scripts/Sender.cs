@@ -43,6 +43,7 @@ public class Sender : MonoBehaviour
     public static int[][] theSLtemp;
     bool[] SLtb;//Used by endingcompare
     bool[] Cntb;//Used by Connection Status Check & SkillLevel Temp check
+    public AudioClip SoundAtStart;
 
     private void Start()
     {
@@ -307,6 +308,7 @@ public class Sender : MonoBehaviour
 
     public void Send666()
     {
+        AudioSource.PlayClipAtPoint(SoundAtStart, GameObject.Find("Main Camera").transform.position);
         EndData endData = new EndData();
         endData.CircleID = 666;
         endData.epx = 0;
