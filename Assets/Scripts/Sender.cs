@@ -11,6 +11,7 @@ using Steamworks;
 public class Sender : MonoBehaviour
 {
     public TestMenu02 testMenu02;
+    public ClickCatcher catcher;
     public HostToggle theHT;
     public ClientToggle theCT;
     public TestSteamworks tss;
@@ -108,6 +109,7 @@ public class Sender : MonoBehaviour
             SignalLight.color = Color.green;
             MyNS.meEnable();//开启netwriter
             //MyNS.enabled = true;
+            catcher.enabled = true;
             CCToggle.isOn = true;//开启ClickCatcher
             Cntb = new bool[Cntb.Length];
             //HideMC();
@@ -120,6 +122,7 @@ public class Sender : MonoBehaviour
         SignalLight.color = Color.white;
         //MyNS.isstarted = false;
         //MyNS.enabled = false;
+        catcher.enabled = false;
         MyNS.meDisable();
         CCToggle.isOn = false;
     }
@@ -157,6 +160,7 @@ public class Sender : MonoBehaviour
         GameObject[] pcs = GameObject.FindGameObjectsWithTag("Player");
         //if (pcs.Length > 1) return;
         Debug.Log("Real End");
+        catcher.enabled = false;
         MyNS.meDisable();//关闭netwriter
         CCToggle.isOn = false;//关闭ClickCatcher
         Debug.Log("Round " + RoundNow);
@@ -232,7 +236,7 @@ public class Sender : MonoBehaviour
         {
             RoundNow = 1;
             ClearSArray();
-            //MyNS.enabled = false;
+            catcher.enabled = false;
             MyNS.meDisable();//关闭netwriter
             CCToggle.isOn = false;//关闭ClickCatcher
             HideMC();

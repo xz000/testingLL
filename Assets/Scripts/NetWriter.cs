@@ -22,13 +22,13 @@ public class NetWriter : MonoBehaviour
     public int LocalFrameNum = 1;
     public float LocalFrameLength = 0.06f;
     public float LocalCurrentLength = 0;
-    public List<ClickData> L2S = new List<ClickData>();
-    public static int channelID;
+    private List<ClickData> L2S = new List<ClickData>();
+    //public static int channelID;
     //byte[] buffer2s;// = new byte[1024];
     public bool isstarted = false;
     //BinaryFormatter bf;
     //public bool Fstarted = false;
-    public byte error;
+    //public byte error;
     uint mn = 1;
     public static int rs = 2;
     LoopList theLL = new LoopList();
@@ -130,6 +130,12 @@ public class NetWriter : MonoBehaviour
         LocalFrameNum = 1;
         enabled = false;
         Time.timeScale = 1;
+    }
+
+    public void AddClickData(ClickData clickData)
+    {
+        if (isstarted)
+            L2S.Add(clickData);
     }
 
     Data2S bondbfd(byte[] bRC)

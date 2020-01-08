@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class SkillsLink : MonoBehaviour
 {
-    public GameObject mySoldier;
+    //public GameObject mySoldier;
     public GameObject BottomPanel;
     public SkillCode? KeyCSkill = SkillCode.SkillC3;
     public SkillCode? KeyDSkill = SkillCode.TestSkillLightning;
@@ -19,6 +19,7 @@ public class SkillsLink : MonoBehaviour
     float TimeCount = 0;
     bool SettingSkillLevels;
 
+    /*
     public void linktome(GameObject go)
     {
         mySoldier = go;
@@ -26,6 +27,7 @@ public class SkillsLink : MonoBehaviour
         //selfset();
         BottomPanel.SetActive(true);
     }
+    */
 
     public void selfset()
     {

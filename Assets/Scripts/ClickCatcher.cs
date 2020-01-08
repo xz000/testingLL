@@ -9,15 +9,13 @@ using System.Text;
 public class ClickCatcher : MonoBehaviour
 {
     //public CatcherKeys CK;
-    public Toggle TotalSwitch;
+    //public Toggle TotalSwitch;
     public NetWriter theNW;
     public Image SignalLight;
     public SkillsLink slink;
 
     void Update()
     {
-        if (!TotalSwitch.isOn)
-            return;
         if (Input.GetKeyDown(KeyCode.G))
         {
             //Debug.Log("G Pressed");
@@ -25,7 +23,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyGSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
                 //Debug.Log("G Logged");
             }
         }
@@ -35,7 +33,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyCSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.R))
@@ -44,7 +42,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyRSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.T))
@@ -53,7 +51,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyTSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.F))
@@ -62,7 +60,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyFSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.D))
@@ -71,7 +69,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyDSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.E))
@@ -80,7 +78,7 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyESkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.Y))
@@ -89,14 +87,14 @@ public class ClickCatcher : MonoBehaviour
             {
                 ClickData cd = new ClickData();
                 cd.Ksetdata(slink.KeyYSkill);
-                theNW.L2S.Add(cd);
+                theNW.AddClickData(cd);
             }
         }
         if (Input.GetKeyDown(KeyCode.S))
         {
             ClickData cd = new ClickData();
             cd.Ksetdata(SkillCode.FireStop);
-            theNW.L2S.Add(cd);
+            theNW.AddClickData(cd);
         }
         if (Input.GetMouseButtonDown(0))
         {
@@ -106,14 +104,14 @@ public class ClickCatcher : MonoBehaviour
                 cd.Ssetdata(Physics2D.OverlapPoint(mp).gameObject.name);
             else
                 cd.Msetdata(MButton.left, mp.x, mp.y); //Debug.Log("MButton Left Clicked X:" + mp.x);
-            theNW.L2S.Add(cd);
+            theNW.AddClickData(cd);
         }
         if (Input.GetMouseButtonDown(1))
         {
             Vector2 mp = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             ClickData cd = new ClickData();
             cd.Msetdata(MButton.right, mp.x, mp.y);
-            theNW.L2S.Add(cd);
+            theNW.AddClickData(cd);
         }
     }
 }
