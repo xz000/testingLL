@@ -138,7 +138,6 @@ public class Sender : MonoBehaviour
         Src[Sender.clientNum] = se;
         SLtb[Sender.clientNum] = true;
         Debug.Log("End Message " + Sender.clientNum + " Set");
-        EndingCompare();
         Bond.IO.Safe.OutputBuffer ob2 = new Bond.IO.Safe.OutputBuffer(128);
         Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer> boc = new Bond.Protocols.CompactBinaryWriter<Bond.IO.Safe.OutputBuffer>(ob2);
         Serialize.To(boc, se);
@@ -151,6 +150,7 @@ public class Sender : MonoBehaviour
                 SteamNetworking.SendP2PPacket(i, sendBytes, (uint)sendBytes.Length, EP2PSend.k_EP2PSendReliable);
         }
         Debug.Log("End Sent");
+        EndingCompare();
         TotalRounds = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Total_Rounds"));
         LearnTime = int.Parse(SteamMatchmaking.GetLobbyData(Sender.roomid, "Learn_Time"));
     }
