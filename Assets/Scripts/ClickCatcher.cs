@@ -13,10 +13,32 @@ public class ClickCatcher : MonoBehaviour
     public NetWriter theNW;
     public Image SignalLight;
     public SkillsLink slink;
+    private KeyCode Code_G;
+    private KeyCode Code_C;
+    private KeyCode Code_R;
+    private KeyCode Code_T;
+    private KeyCode Code_F;
+    private KeyCode Code_D;
+    private KeyCode Code_E;
+    private KeyCode Code_Y;
+    private KeyCode Code_S;
+
+    private void OnEnable()
+    {
+        Code_G = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_G", "G"));
+        Code_C = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_C", "C"));
+        Code_R = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_R", "R"));
+        Code_T = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_T", "T"));
+        Code_F = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_F", "F"));
+        Code_D = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_D", "D"));
+        Code_E = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_E", "E"));
+        Code_Y = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_Y", "Y"));
+        Code_S = (KeyCode)System.Enum.Parse(typeof(KeyCode), PlayerPrefs.GetString("Mapped_S", "S"));
+    }
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.G))
+        if (Input.GetKeyDown(Code_G))
         {
             //Debug.Log("G Pressed");
             if (slink.KeyGSkill != null)
@@ -27,7 +49,7 @@ public class ClickCatcher : MonoBehaviour
                 //Debug.Log("G Logged");
             }
         }
-        if (Input.GetKeyDown(KeyCode.C))
+        if (Input.GetKeyDown(Code_C))
         {
             if (slink.KeyCSkill != null)
             {
@@ -36,7 +58,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.R))
+        if (Input.GetKeyDown(Code_R))
         {
             if (slink.KeyRSkill != null)
             {
@@ -45,7 +67,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.T))
+        if (Input.GetKeyDown(Code_T))
         {
             if (slink.KeyTSkill != null)
             {
@@ -54,7 +76,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.F))
+        if (Input.GetKeyDown(Code_F))
         {
             if (slink.KeyFSkill != null)
             {
@@ -63,7 +85,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.D))
+        if (Input.GetKeyDown(Code_D))
         {
             if (slink.KeyDSkill != null)
             {
@@ -72,7 +94,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.E))
+        if (Input.GetKeyDown(Code_E))
         {
             if (slink.KeyESkill != null)
             {
@@ -81,7 +103,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.Y))
+        if (Input.GetKeyDown(Code_Y))
         {
             if (slink.KeyYSkill != null)
             {
@@ -90,7 +112,7 @@ public class ClickCatcher : MonoBehaviour
                 theNW.AddClickData(cd);
             }
         }
-        if (Input.GetKeyDown(KeyCode.S))
+        if (Input.GetKeyDown(Code_S))
         {
             ClickData cd = new ClickData();
             cd.Ksetdata(SkillCode.FireStop);
