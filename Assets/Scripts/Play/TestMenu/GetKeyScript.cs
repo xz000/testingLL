@@ -18,7 +18,7 @@ public class GetKeyScript : MonoBehaviour
         GetComponentInChildren<Text>().text = GetName();
     }
 
-    private void Start()
+    private void OnEnable()
     {
         SetText();
     }
