@@ -28,7 +28,6 @@ public class SetKeyScript : MonoBehaviour
             GetComponent<Toggle>().isOn = false;
             keySetToggleScript.FindExistAndHandle(e.keyCode.ToString(), GetComponent<GetKeyScript>().GetName());
             SetPref(e.keyCode.ToString());
-            Debug.Log("Key Pressed");
         }
     }
 }

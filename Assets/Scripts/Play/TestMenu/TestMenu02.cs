@@ -265,7 +265,7 @@ public class TestMenu02 : MonoBehaviour
     {
         SenderPanel.SetActive(false);
         gameObject.SetActive(false);
-        GameObject.Find("Canvas2").SetActive(false);
+        CVS2.SetActive(false);
         //RightGroup.interactable = true;
         Menu01.SetActive(true);
     }
