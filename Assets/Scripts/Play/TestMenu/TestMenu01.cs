@@ -25,8 +25,9 @@ public class TestMenu01 : MonoBehaviour
     ///public GameObject Menu00;
     public GameObject Menu02;
     //public CanvasGroup RightGroup;
-    public Toggle AutoCreateToggle;
-    public Text RoomSize;
+    //public Toggle AutoCreateToggle;
+    public Slider SizeSlider;
+    public InputField SizeInputField;
 
     protected Callback<LobbyCreated_t> Callback_lobbyCreated;
     protected Callback<LobbyMatchList_t> Callback_lobbyList;
@@ -45,6 +46,18 @@ public class TestMenu01 : MonoBehaviour
         Callback_lobbyList = Callback<LobbyMatchList_t>.Create(OnGetLobbiesList);
         Callback_lobbyEnter = Callback<LobbyEnter_t>.Create(OnLobbyEntered);
         Callback_lobbyInfo = Callback<LobbyDataUpdate_t>.Create(OnGetLobbyInfo);
+        SizeSlider.onValueChanged.AddListener(OnSizeSlided);
+        SizeInputField.onValueChanged.AddListener(OnSizeInputed);
+    }
+
+    void OnSizeInputed(string sizetext)
+    {
+        SizeSlider.value = int.Parse(sizetext);
+    }
+
+    void OnSizeSlided(float sizevalue)
+    {
+        SizeInputField.text = ((int)sizevalue).ToString();
     }
 
     void OnLobbyCreated(LobbyCreated_t result)
@@ -107,8 +120,7 @@ public class TestMenu01 : MonoBehaviour
             roomMessage[i].SetActive(false);            //禁用房间信息条目
         }
         ButtonControl();
-        if (AutoCreateToggle.isOn)
-            ClickJoinOrCreateButton();
+        //if (AutoCreateToggle.isOn)ClickJoinOrCreateButton();
     }
 
     public void Refresh()
@@ -223,7 +235,7 @@ public class TestMenu01 : MonoBehaviour
     //"创建房间"按钮事件处理函数，启用创建房间面板
     public void ClickJoinOrCreateButton()
     {
-        int size = int.Parse(RoomSize.text);
+        int size = int.Parse(SizeInputField.text);
         SteamMatchmaking.CreateLobby(ELobbyType.k_ELobbyTypePublic, size);
     }
 
