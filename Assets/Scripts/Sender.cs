@@ -45,6 +45,7 @@ public class Sender : MonoBehaviour
     bool[] SLtb;//Used by endingcompare
     bool[] Cntb;//Used by Connection Status Check & SkillLevel Temp check
     public AudioClip SoundAtStart;
+    public static Sprite[] theAvatars;
 
     private void Start()
     {
@@ -56,6 +57,15 @@ public class Sender : MonoBehaviour
     {
         ResetSelf();
         gameObject.SetActive(false);
+    }
+
+    public void PrepareAvatars()
+    {
+        theAvatars = new Sprite[TOmb.Length];
+        for (int i = 0; i < TOmb.Length; i++)
+        {
+            theAvatars[i] = Sprite.Create(UserListScript.GetSteamImageAsTexture2D(SteamFriends.GetMediumFriendAvatar(TOmb[i])), new Rect(0, 0, 64, 64), new Vector2(0.5f, 0.5f), 64);
+        }
     }
 
     public void PrepareTemp(int PlayersCount, int SkillsCount)

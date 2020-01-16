@@ -65,6 +65,7 @@ public class ControllerScript : MonoBehaviour
             theDS[i] = thePC[i].GetComponent<DoSkill>();
             thePC[i].GetComponent<HPScript>().ser = GetComponent<Sender>();
             thePC[i].GetComponent<CircleSkillMem>().SetCircleSL(Sender.theSLtemp[i]);
+            thePC[i].GetComponent<StealthScript>().PaintSmall(i);
             if (i == Sender.clientNum)
                 theMS[i].itsme();
         }

@@ -62,11 +62,16 @@ public class SkillC4 : MonoBehaviour
         Fix64Vector2 Realv2 = ((Fix64Vector2)Worldv2 - center).normalized() * (Fix64)2;
         gameObject.GetComponent<DoSkill>().DoClearJob();
         selfRB.position += Realv2.ToV2();
+        int Num = int.Parse(gameObject.name);
+
         for (int i = 0; i < 2; i++)
         {
             Realv2 = Realv2.CCWTurn((Fix64)2 * Fix64.Pi / (Fix64)3);
             GameObject nm = Instantiate(Faker, (center + Realv2).ToV2(), Quaternion.identity);
-            nm.name = gameObject.name + "f" + i;
+            nm.name = Num + "f" + i;
+            nm.GetComponent<StealthScript>().PaintSmall(Num);
+            nm.GetComponent<HPScript>().maxHP = GetComponent<HPScript>().maxHP;
+            nm.GetComponent<HPScript>().currentHP = GetComponent<HPScript>().currentHP;
             if (GetComponent<MoveScript>().isme)
                 nm.GetComponent<SpriteRenderer>().color = Color.yellow;
             nm.GetComponent<FakeCircleScript>().Beauty = selfRB;

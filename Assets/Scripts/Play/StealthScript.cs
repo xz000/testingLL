@@ -11,7 +11,7 @@ public class StealthScript : MonoBehaviour
     public SpriteRenderer BigSR;
     SpriteRenderer SmallSR;
     //public GameObject BarSR;
-    SpriteRenderer ColorSR;
+    public SpriteRenderer ColorSR;
     //public GameObject MyName;
     Color ColorBefore;
     public Color ColorChangeTo;
@@ -22,11 +22,17 @@ public class StealthScript : MonoBehaviour
     bool UCME = false;
 
     // Use this for initialization
-    void Start () {
+    void Start()
+    {
         SmallSR = MyMarkicon.GetComponent<SpriteRenderer>();
         //BarSR = MyHealthbar.GetComponent<SpriteRenderer>();
-        ColorSR = MyColorMark.GetComponent<SpriteRenderer>();
+        //ColorSR = MyColorMark.GetComponent<SpriteRenderer>();
         //MyName = GetComponent<ShowMyName>();
+    }
+
+    public void PaintSmall(int paintNum)
+    {
+        ColorSR.sprite = Sender.theAvatars[paintNum];
     }
 
     void FixedUpdate()

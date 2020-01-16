@@ -233,6 +233,7 @@ public class TestMenu02 : MonoBehaviour
             if (tid == SteamUser.GetSteamID())
                 Sender.clientNum = i;
         }
+        SenderSC.PrepareAvatars();
         SenderPanel.SetActive(true);
         CVS2.SetActive(true);
         SenderSC.SendHello(3);
