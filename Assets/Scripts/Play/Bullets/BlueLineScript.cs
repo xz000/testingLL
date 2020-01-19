@@ -15,15 +15,17 @@ public class BlueLineScript : MonoBehaviour
     //public bool missed;
     //public bool Idrag = false;
 
-	// Use this for initialization
-	void Start () {
+    // Use this for initialization
+    void Start()
+    {
         timepsd = 0;
     }
-	
-	// Update is called once per frame
-	void Update ()
+
+    // Update is called once per frame
+    void Update()
     {
         drawmyline(sender.position, receiver.position);
+        transform.position = sender.position;
     }
 
     void FixedUpdate()
@@ -70,8 +72,8 @@ public class BlueLineScript : MonoBehaviour
             receiver.GetComponent<DoSkill>().ClearDebuff -= gameObject.GetComponent<DestroyScript>().Destroyself;
         }
     }
-            
-    void drawmyline(Vector2 v21,Vector2 v22)
+
+    void drawmyline(Vector2 v21, Vector2 v22)
     {
         MyLine.SetPosition(0, v21);
         MyLine.SetPosition(1, v22);

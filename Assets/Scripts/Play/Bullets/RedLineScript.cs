@@ -26,6 +26,7 @@ public class RedLineScript : MonoBehaviour
     void Update()
     {
         drawmyline(sender.position, centerpoint);
+        transform.position = sender.position;
     }
 
     void FixedUpdate()
