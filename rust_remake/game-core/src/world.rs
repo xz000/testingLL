@@ -18,6 +18,9 @@ pub const MIN_RADIUS: f64 = 3.0;
 pub const OUT_HURT: f64 = 5.0;
 /// 玩家相互挤压（重叠）时受到的伤害 / 秒。
 pub const OVERLAP_DAMAGE: f64 = 2.0;
+/// E3/E3b 撒出的扇形子弹（原版 `SABulletScript`）的伤害与射程。
+pub const SABULLET_DAMAGE: f64 = 2.0;
+pub const SABULLET_RANGE: f64 = 6.0;
 
 /// 每个玩家当前帧的输入。
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -78,6 +81,21 @@ pub enum ProjectileKind {
         radius: Fix64,
         remaining: Fix64,
     },
+    /// 滚动火球（E1b 掷弹 StoneShot）：沿定速直线滚动，接触范围内的敌人持续掉血（DoT）。
+    Rolling {
+        dir: Vec2,
+        speed: Fix64,
+        damage_per_sec: Fix64,
+        radius: Fix64,
+        remaining: Fix64, // 剩余飞行距离（射程）
+    },
+    /// 撒弹线（E3/E3b）：沿方向飞行的线，到目标/沿途把扇形弹撒出去。
+    ScatterLine {
+        dir: Vec2,
+        speed: Fix64,
+        remaining: Fix64, // 剩余飞行距离
+        scatter: ScatterKind,
+    },
     /// 持续伤害线：一端在施法者，朝目标方向延伸，扫过即伤（LineBeam）。
     Beam {
         dir: Vec2,
@@ -85,6 +103,21 @@ pub enum ProjectileKind {
         width: Fix64,
         damage_per_sec: Fix64,
         remaining: Fix64,
+    },
+}
+
+/// 撒弹线的撒弹方式。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ScatterKind {
+    /// E3：到终点一次性撒出一个扇形（`count` 发，角度步进 `step_rad`）。
+    Burst { count: u32, step_rad: Fix64, bullet_speed: Fix64 },
+    /// E3b：飞行途中每 `interval` 秒撒一发并让方向转 `turn_rad`。
+    Periodic {
+        count: u32,
+        interval: Fix64,
+        elapsed: Fix64,
+        bullet_speed: Fix64,
+        turn_rad: Fix64,
     },
 }
 
@@ -352,6 +385,7 @@ impl World {
             if !p.alive {
                 continue;
             }
+            let mut hit_wall = false;
             for o in self.obstacles.iter() {
                 let delta = p.pos - o.pos;
                 let dist_sq = delta.length_squared();
@@ -365,7 +399,13 @@ impl World {
                     };
                     let overlap = min - dist;
                     p.pos += dir * overlap;
+                    hit_wall = true;
                 }
+            }
+            // E2b 潜行踢·连推：携带 kick 又撞到障碍 → 排一个 0.3s 后的重新踢击（若总窗口还有）。
+            if hit_wall && p.ricochet_window > Fix64::ZERO && p.ricochet_kick.is_some() {
+                p.ricochet_pending = Some(Fix64::from_num(0.3));
+                p.kick = None; // 撞墙即消耗本次踢击，等待重新触发
             }
         }
     }
@@ -394,6 +434,9 @@ impl World {
         // 本地工作副本（Projectile 是 Copy），在其上推进位移/倒计时并判定命中。
         let mut ps = std::mem::take(&mut self.projectiles);
         let n = self.players.len();
+        // 撒弹线/滚动火球产出的扇形子弹收集：(owner, pos, dir, bulletspeed)
+        let mut spawn: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
+        let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
         for pr in ps.iter_mut() {
@@ -413,8 +456,47 @@ impl World {
                 ProjectileKind::Bullet { dir, speed, remaining, .. } => {
                     pr.pos += *dir * (*speed * dt);
                     *remaining -= *speed * dt;
-                    if *remaining <= Fix64::ZERO {
+                    if *remaining < eps {
                         pr.alive = false;
+                    }
+                }
+                ProjectileKind::Rolling { dir, speed, remaining, .. } => {
+                    // 滚动火球：沿定速直线滚动，范围耗尽则消失。
+                    pr.pos += *dir * (*speed * dt);
+                    *remaining -= *speed * dt;
+                    if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::ScatterLine { dir, speed, remaining, scatter } => {
+                    // 撒弹线：沿方向飞行；到终点(E3 Burst)或沿途(E3b Periodic)撒扇形弹。
+                    pr.pos += *dir * (*speed * dt);
+                    *remaining -= *speed * dt;
+                    let expired = *remaining < eps;
+                    if expired {
+                        pr.alive = false;
+                    }
+                    match scatter {
+                        ScatterKind::Burst { count, step_rad, bullet_speed } => {
+                            // 到终点一次性撒一个扇形（从 -count/2 步进到 +count/2）
+                            if expired {
+                                let mut bdir = *dir;
+                                bdir = crate::fix::rotate_ccw(bdir, -*step_rad * Fix64::from_num(*count as f64 / 2.0));
+                                for _ in 0..*count {
+                                    spawn.push((pr.owner, pr.pos, bdir, *bullet_speed));
+                                    bdir = crate::fix::rotate_ccw(bdir, *step_rad);
+                                }
+                            }
+                        }
+                        ScatterKind::Periodic { interval, elapsed, bullet_speed, turn_rad, .. } => {
+                            // 每 interval 撒一发，并让方向转过 turn_rad
+                            *elapsed += dt;
+                            while *elapsed >= *interval {
+                                *elapsed -= *interval;
+                                spawn.push((pr.owner, pr.pos, *dir, *bullet_speed));
+                                *dir = crate::fix::rotate_ccw(*dir, *turn_rad);
+                            }
+                        }
                     }
                 }
                 ProjectileKind::Missile { dir, speed, turn, remaining, .. } => {
@@ -424,7 +506,7 @@ impl World {
                     }
                     pr.pos += *dir * (*speed * dt);
                     *remaining -= *speed * dt;
-                    if *remaining <= Fix64::ZERO {
+                    if *remaining < eps {
                         pr.alive = false;
                     }
                 }
@@ -508,6 +590,20 @@ impl World {
                         });
                     }
                 }
+                ProjectileKind::Rolling { dir, damage_per_sec, radius, .. } => {
+                    // 滚动火球：覆盖到的敌人每帧持续掉血（DoT）
+                    for j in 0..n {
+                        let p = &self.players[j];
+                        if !p.alive || p.id == pr.owner {
+                            continue;
+                        }
+                        let rr = *radius + p.radius;
+                        if (p.pos - pr.pos).length_squared() <= rr * rr {
+                            events.push((p.id, *damage_per_sec * dt, Some(pr.owner)));
+                        }
+                    }
+                    let _ = dir;
+                }
                 ProjectileKind::Beam { dir, length, width, damage_per_sec, .. } => {
                     // 持续伤害线：对线段内敌人造成每帧伤害
                     for j in 0..n {
@@ -525,7 +621,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } => {}
+                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } => {}
             }
         }
 
@@ -545,6 +641,22 @@ impl World {
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
         for (victim, amount, from) in events {
             self.damage_player(victim, amount, from);
+        }
+
+        // 4b) 应用撒弹线/扇形弹的产出（作为新的直射 Bullet 加入）
+        for (owner, pos, dir, bspeed) in spawn.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::Bullet {
+                    dir,
+                    speed: bspeed,
+                    damage: Fix64::from_num(SABULLET_DAMAGE),
+                    radius: Fix64::from_num(0.6),
+                    remaining: Fix64::from_num(SABULLET_RANGE),
+                },
+                pos,
+                alive: true,
+            });
         }
 
         // 5) 写回并清除已死亡/失效的弹体
@@ -774,7 +886,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::LineBeam { length, width, damage, duration } => {
+            SkillEffect::RollProjectile { speed, damage_per_sec, radius, range } => {
+                // 滚动火球（E1b）：沿方向直线滚动，接触范围内持续掉血。
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = match target {
                         Some(t) => {
@@ -789,12 +902,76 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     };
                     world.projectiles.push(Projectile {
                         owner: idx,
-                        kind: ProjectileKind::Beam {
+                        kind: ProjectileKind::Rolling {
                             dir,
-                            length,
-                            width,
-                            damage_per_sec: damage,
-                            remaining: duration,
+                            speed,
+                            damage_per_sec,
+                            radius,
+                            remaining: range,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::ScatterBurst { speed, range, count, step_rad, bullet_speed } => {
+                // 撒弹线（E3）：到终点爆散一个扇形。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = match target {
+                        Some(t) => {
+                            let d = t - p.pos;
+                            if d.length() > Fix64::ZERO {
+                                d.normalized()
+                            } else {
+                                Vec2::new(Fix64::ONE, Fix64::ZERO)
+                            }
+                        }
+                        None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    };
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::ScatterLine {
+                            dir,
+                            speed,
+                            remaining: range,
+                            scatter: ScatterKind::Burst {
+                                count,
+                                step_rad: Fix64::from_num(step_rad),
+                                bullet_speed,
+                            },
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::ScatterPeriodic { speed, range, count, interval, bullet_speed, turn_rad } => {
+                // 撒弹线（E3b）：飞行途中周期性散射击并旋转。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = match target {
+                        Some(t) => {
+                            let d = t - p.pos;
+                            if d.length() > Fix64::ZERO {
+                                d.normalized()
+                            } else {
+                                Vec2::new(Fix64::ONE, Fix64::ZERO)
+                            }
+                        }
+                        None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    };
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::ScatterLine {
+                            dir,
+                            speed,
+                            remaining: range,
+                            scatter: ScatterKind::Periodic {
+                                count,
+                                interval: Fix64::from_num(interval),
+                                elapsed: Fix64::ZERO,
+                                bullet_speed,
+                                turn_rad: Fix64::from_num(turn_rad),
+                            },
                         },
                         pos: p.pos,
                         alive: true,
@@ -912,16 +1089,32 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::StealthPush { .. } => {
-                // 潜行踢：隐身 + 接触踢击，持续一段时间
+            SkillEffect::StealthPush { duration, .. } => {
+                // 潜行踢：隐身 + 接触踢击，持续一段时间（时长来自技能效果定义，非 growth）
                 if let Some(p) = world.players.get_mut(idx as usize) {
-                    p.add_buff(BuffKind::Stealth, stats.duration.to_num::<f64>());
+                    p.add_buff(BuffKind::Stealth, duration.to_num::<f64>());
                     p.kick = Some(Kick {
                         push_power: stats.push_power,
                         push_time: stats.push_time,
                         push_damage: stats.push_damage,
-                        remaining: stats.duration,
+                        remaining: duration,
                     });
+                }
+            }
+            SkillEffect::StealthPush2 { duration, .. } => {
+                // 潜行踢·连推（E2b）：撞障碍后 0.3s 重新触发踢击（总窗口内可反复）。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let k = Kick {
+                        push_power: stats.push_power,
+                        push_time: stats.push_time,
+                        push_damage: stats.push_damage,
+                        remaining: duration,
+                    };
+                    p.add_buff(BuffKind::Stealth, duration.to_num::<f64>());
+                    p.kick = Some(k);
+                    p.ricochet_kick = Some(k);
+                    p.ricochet_window = duration;
+                    p.ricochet_pending = None;
                 }
             }
             SkillEffect::Shadow => {
@@ -946,6 +1139,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     p.fake_active = Some(max_time); // 存的是剩余最长等待时间
                     p.move_target = None; // 施法会取消当前移动命令
                 }
+            }
+            SkillEffect::LineBeam { .. } => {
+                // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
             }
             SkillEffect::Unimplemented => {
                 // 未实现技能的占位：不落地效果（仅消耗施法与冷却）
@@ -1436,15 +1632,25 @@ mod tests {
         }
         assert!(world.players[0].shield(), "护盾应已激活");
         let hp0 = world.players[0].hp;
-        // p1 朝 (0,0) 放 StoneShot（会命中带护盾的 p0）
+        // p1 朝 (0,0) 放 D2Fireball（Bullet 直射弹，会命中带护盾的 p0 并被反射）
         let shoot = vec![
             PlayerInput::default(),
-            PlayerInput { cast: Some((SkillId::StoneShot, Some(Vec2::ZERO))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::ZERO))), ..Default::default() },
         ];
-        for _ in 0..30 {
+        let mut reflected = false;
+        for _ in 0..40 {
             world.step(shoot.clone(), dt);
+            // 若出现方向与初始方向(向+x)相反的 Bullet，说明被反射了
+            for pr in world.projectiles.iter() {
+                if let ProjectileKind::Bullet { dir, .. } = pr.kind {
+                    if dir.x < Fix64::ZERO {
+                        reflected = true;
+                    }
+                }
+            }
         }
         assert_eq!(world.players[0].hp, hp0, "反弹护盾应弹开直射弹，不扣血");
+        assert!(reflected, "直射弹应被护盾反向反射");
         // 等护盾过期
         for _ in 0..240 {
             world.step(none.clone(), dt);
@@ -1541,21 +1747,68 @@ mod tests {
     }
 
     #[test]
-    fn line_beam_damages_enemy_in_line() {
-        let mut world = World::new(2, 44);
+    fn scatter_line_fans_bullets_at_end() {
+        // 单玩家，无敌人干扰，验证撒弹线到终点会爆散出多个扇形子弹。
+        let mut world = World::new(1, 44);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        world.players[1].pos = Vec2::new(Fix64::from_num(4.0), Fix64::ZERO); // 正前方在线上
+        world.players[0].move_target = None;
+        let cast_only = vec![
+            PlayerInput { cast: Some((SkillId::LineBeam, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))), ..Default::default() },
+        ];
+        // 只施放一次，之后空输入推进。撒弹线约 1.33s 到终点爆散。
+        world.step(cast_only, dt);
+        let none = vec![PlayerInput::default()];
+        let mut max_bullets = 0usize;
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            let b = world.projectiles.iter().filter(|pr| matches!(pr.kind, ProjectileKind::Bullet { .. })).count();
+            max_bullets = max_bullets.max(b);
+        }
+        assert!(max_bullets >= 8, "撒弹线到终点应爆散出 8 个扇形子弹，实际峰值 {}", max_bullets);
+    }
+
+    #[test]
+    fn stealth_push2_ricochets_off_obstacle() {
+        let mut world = World::new(1, 46);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.obstacles.clear();
+        world.players[0].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        // 在 (0,0) 放一根半径 2 的柱子：施放连推后玩家重叠其上会触发重新踢击
+        world.obstacles.push(Obstacle::new(Vec2::ZERO, 2.0));
+        let cast = vec![PlayerInput { cast: Some((SkillId::StealthPush2, None)), ..Default::default() }];
+        world.step(cast, dt);
+        let none = vec![PlayerInput::default()];
+        // windup 0.25s 后 kick 生效并撞墙消耗 → 应进入 ricochet_pending
+        for _ in 0..20 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.players[0].ricochet_window > Fix64::ZERO,
+            "连推应处于可重踢窗口"
+        );
+    }
+
+    #[test]
+    fn rolling_fireball_dots_enemy_on_contact() {
+        let mut world = World::new(2, 45);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人挡在滚动路径上
+        world.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
         let hp1 = world.players[1].hp;
         let input = vec![
-            PlayerInput { cast: Some((SkillId::LineBeam, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::StoneShot, Some(Vec2::new(Fix64::from_num(20.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ];
-        // windup 0.1s + 持续线 1.2s，跑 1s
+        // windup 0.15s + 滚动火球持续接触，跑 1s
         for _ in 0..60 {
             world.step(input.clone(), dt);
         }
-        assert!(world.players[1].hp < hp1, "激光线应持续伤害线上的敌人");
+        assert!(world.players[1].hp < hp1, "滚动火球接触应持续掉血（DoT）");
     }
 
     #[test]
