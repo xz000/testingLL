@@ -161,6 +161,41 @@ pub enum ProjectileKind {
         push_time: Fix64,
         owner: u32,
     },
+    /// 回拉/束缚线（Y1/Y1b）：记录绑定的目标玩家，每帧把它拉向施法者并持续掉血（beam 时额外扫射）。
+    Tether {
+        owner: u32,
+        target: u32,
+        damage_per_sec: Fix64,
+        pull_speed: Fix64,
+        remaining: Fix64,
+        beam: bool,
+    },
+    /// 引力场（Y3）：飞行场持续把附近敌人吸向场中心。
+    Gravity {
+        dir: Vec2,
+        speed: Fix64,
+        radius: Fix64,
+        pull_speed: Fix64,
+        remaining: Fix64,
+    },
+    /// 星域持续伤（Y3b）：静态区域，范围内敌掉血、对施法者回血。
+    Star {
+        owner: u32,
+        radius: Fix64,
+        damage_per_sec: Fix64,
+        heal_per_sec: Fix64,
+        remaining: Fix64,
+    },
+    /// 束缚线（Y2b）：两点反向收拢；交汇成线时线上的敌人被束缚。
+    BindLine {
+        dir: Vec2,
+        speed: Fix64,
+        count: u32,
+        fired: u32,
+        bind_time: Fix64,
+        from: Vec2,
+        end: Vec2,
+    },
 }
 
 /// 撒弹线的撒弹方式。
@@ -433,7 +468,43 @@ impl World {
     }
     ///
     /// 各区域类技能（Y3 引力场、Y1 回拉线）接入时在此累加 `p.pull`。目前为空实现。
-    fn step_area_forces(&mut self, _dt: Fix64) {}
+    /// 场效应（引力场 / 回拉线）对本帧附加速度的贡献：把要移动的力累加进各玩家 `pull`。
+    fn step_area_forces(&mut self, _dt: Fix64) {
+        // 引力场（Y3）：把半径内存活敌人吸向场中心
+        for pr in self.projectiles.iter() {
+            if !pr.alive {
+                continue;
+            }
+            match pr.kind {
+                ProjectileKind::Gravity { radius, pull_speed, .. } => {
+                    for p in self.players.iter_mut() {
+                        if !p.alive {
+                            continue;
+                        }
+                        let d = pr.pos - p.pos;
+                        let dsq = d.length_squared();
+                        if dsq > Fix64::ZERO && dsq <= (radius + p.radius) * (radius + p.radius) {
+                            p.pull += d.normalized() * pull_speed;
+                        }
+                    }
+                }
+                ProjectileKind::Tether { owner, target, pull_speed, .. } => {
+                    // 回拉线：把绑定目标拉向施法者（owner/target 为 u32 值绑定）
+                    let from = self.players.get(owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
+                    if let Some(t) = self.players.get_mut(target as usize) {
+                        if t.alive {
+                            let d = from - t.pos;
+                            let dsq = d.length_squared();
+                            if dsq > Fix64::from_num(1.1) {
+                                t.pull += d.normalized() * pull_speed;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 
     /// T2 扇扫连射：每个带 `sweep` 状态的玩家按心率发射一枚扇形弹，发射完清状态。
     fn step_sweep(&mut self, dt: Fix64) {
@@ -656,6 +727,36 @@ impl World {
                         }
                     }
                     pr.pos += *dir * (*speed * dt);
+                }
+                ProjectileKind::Tether { remaining, .. } => {
+                    *remaining -= dt;
+                    if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::Gravity { dir, speed, remaining, .. } => {
+                    // 引力场缓慢前移，随后原地鼓动（简化：只前移一小段后停住）
+                    pr.pos += *dir * (*speed * dt * Fix64::from_num(0.5));
+                    *remaining -= dt;
+                    if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::Star { remaining, .. } => {
+                    *remaining -= dt;
+                    if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::BindLine { dir, speed, fired, count, end, .. } => {
+                    // 束缚线：后一点向前收拢（简化：从起点向 end 移动一点）
+                    if *fired < *count {
+                        pr.pos += *dir * (*speed * dt);
+                        let d = *end - pr.pos;
+                        if d.length_squared() <= (*speed * dt) * (*speed * dt) {
+                            *fired = *count; // 收拢到位
+                        }
+                    }
                 }
                 ProjectileKind::Beam { remaining, .. } => {
                     *remaining -= dt;
@@ -908,7 +1009,61 @@ impl World {
                         returners.push((*owner, pr.pos, bdir, Fix64::from_num(14.0)));
                     }
                 }
-                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } => {}
+                ProjectileKind::Tether { owner, target, damage_per_sec, beam, .. } => {
+                    // 回拉线：绑定目标持续掉血（伤害已含进 pull）；beam=Y1b 沿路径扫射
+                    events.push((*target, *damage_per_sec * dt, Some(*owner)));
+                    if *beam {
+                        // 沿施法者→目标线段扫射经过的所有敌人
+                        let from = self.players.get(*owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
+                        let to = self.players.get(*target as usize).map(|p| p.pos).unwrap_or(from);
+                        for j in 0..n {
+                            let p = &self.players[j];
+                            if !p.alive || p.id == *owner || p.id == *target {
+                                continue;
+                            }
+                            if point_near_segment(p.pos, from, to, p.radius) {
+                                events.push((p.id, *damage_per_sec * dt, Some(*owner)));
+                            }
+                        }
+                    }
+                }
+                ProjectileKind::Star { owner, radius, damage_per_sec, heal_per_sec, .. } => {
+                    // 星域：范围内敌掉血、对施法者回血
+                    for j in 0..n {
+                        let p = &self.players[j];
+                        if !p.alive {
+                            continue;
+                        }
+                        let rr = *radius + p.radius;
+                        if (p.pos - pr.pos).length_squared() <= rr * rr && p.id != *owner {
+                            events.push((p.id, *damage_per_sec * dt, Some(*owner)));
+                        }
+                    }
+                    if let Some(o) = self.players.get_mut(*owner as usize) {
+                        if o.alive {
+                            o.hp = (o.hp + *heal_per_sec * dt).min(o.max_hp);
+                        }
+                    }
+                }
+                ProjectileKind::BindLine { bind_time, from, end, .. } => {
+                    // 束缚线：起点到终点整条线上的敌人被束缚（禁施法）
+                    let mut to_bind: Vec<u32> = Vec::new();
+                    for j in 0..n {
+                        let p = &self.players[j];
+                        if !p.alive {
+                            continue;
+                        }
+                        if point_near_segment(p.pos, *from, *end, p.radius + Fix64::from_num(0.2)) {
+                            to_bind.push(p.id);
+                        }
+                    }
+                    for id in to_bind {
+                        if let Some(pp) = self.players.get_mut(id as usize) {
+                            pp.add_buff(BuffKind::Tied, bind_time.to_num::<f64>());
+                        }
+                    }
+                }
+                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } | ProjectileKind::Gravity { .. } => {}
             }
         }
 
@@ -1688,6 +1843,114 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
+            SkillEffect::Tether { damage, pull_speed, duration, beam } => {
+                // 回拉线（Y1/Y1b）：锁定点击处最近目标，拉向施法者并持续掉血
+                let ppos = world.players[idx as usize].pos;
+                let anchor = target.unwrap_or(ppos);
+                let tgt = world.nearest_other_enemy(anchor, idx);
+                if let Some(tpos) = tgt {
+                    let tid = world
+                        .players
+                        .iter()
+                        .find(|p| p.alive && p.id != idx && (p.pos - tpos).length_squared() < Fix64::from_num(0.01))
+                        .map(|p| p.id)
+                        .unwrap_or(u32::MAX);
+                    if tid != u32::MAX {
+                        world.projectiles.push(Projectile {
+                            owner: idx,
+                            kind: ProjectileKind::Tether {
+                                owner: idx,
+                                target: tid,
+                                damage_per_sec: damage,
+                                pull_speed,
+                                remaining: duration,
+                                beam,
+                            },
+                            pos: ppos,
+                            alive: true,
+                        });
+                    }
+                }
+            }
+            SkillEffect::PushShot { speed, damage, push_power, push_time, range } => {
+                // 撞击迟缓（Y2）：直线弹命中伤（击退以 push 表达）
+                let _ = (push_power, push_time);
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = towards(p.pos, target);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Bullet {
+                            dir,
+                            speed,
+                            damage,
+                            radius: Fix64::from_num(0.6),
+                            remaining: range,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::BindLine { speed, count, bind_time } => {
+                // 束缚线（Y2b）：制造一段朝目标推进、收拢后束缚线上敌人的线
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = towards(p.pos, target);
+                    let end = p.pos + dir * Fix64::from_num(6.0);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::BindLine {
+                            dir,
+                            speed,
+                            count,
+                            fired: 0,
+                            bind_time: Fix64::from_num(bind_time),
+                            from: p.pos,
+                            end,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::GravityZone { speed, pull_speed, radius, life, range } => {
+                // 引力场（Y3）：在点击处/朝目标方向发射一个吸引附近敌人的场
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = towards(p.pos, target);
+                    let range = Fix64::from_num(range.to_num::<f64>().max(1.0));
+                    let place = if let Some(t) = target { t } else { p.pos + dir * range };
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Gravity {
+                            dir,
+                            speed,
+                            radius,
+                            pull_speed,
+                            remaining: Fix64::from_num(life),
+                        },
+                        pos: place,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::StarZone { damage_per_sec, heal_per_sec, radius, duration, range } => {
+                // 星域（Y3b）：在点击处放一颗持续伤/回血的星
+                let _ = range;
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let place = target.unwrap_or(p.pos);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Star {
+                            owner: idx,
+                            radius,
+                            damage_per_sec,
+                            heal_per_sec,
+                            remaining: Fix64::from_num(duration),
+                        },
+                        pos: place,
+                        alive: true,
+                    });
+                }
+            }
             SkillEffect::LineBeam { .. } => {
                 // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
             }
@@ -1781,6 +2044,18 @@ fn towards(from: Vec2, target: Option<Vec2>) -> Vec2 {
         }
         None => Vec2::new(Fix64::ONE, Fix64::ZERO),
     }
+}
+
+/// 点 `p` 是否在线段 [a, b] 附近（距离 <= width）。供束缚线/回拉线扫射判定。
+fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
+    let ab = b - a;
+    let len_sq = ab.length_squared();
+    if len_sq <= Fix64::ZERO {
+        return (p - a).length_squared() <= width * width;
+    }
+    let t = ((p - a).dot(ab) / len_sq).clamp(Fix64::ZERO, Fix64::ONE);
+    let proj = a + ab * t;
+    (p - proj).length_squared() <= width * width
 }
 
 /// 两个圆球是否相交。保留供画线/技能判定等逻辑复用。
@@ -2623,5 +2898,87 @@ mod tests {
         // 回返镖应已飞回施法者并刷新其技能冷却（可立即再发）
         let cd = world.players[0].caster.cooldown_remaining(crate::skill::SkillId::T3Fast2);
         assert!(cd <= Fix64::ZERO, "回返镖到家应刷新蓄力跳弹冷却");
+    }
+
+    #[test]
+    fn y1_tether_pulls_and_dots() {
+        let mut world = World::new(2, 80);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        // 施放蓝线回拉，点击在敌人附近锁定它
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::Y1BlueLine, Some(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "回拉线应持续掉血");
+        // 敌人应被拉近施法者
+        let dist = (world.players[1].pos - world.players[0].pos).length().to_num::<f64>();
+        assert!(dist < 7.5, "回拉线应把敌人拉向施法者，实际距离 {}", dist);
+    }
+
+    #[test]
+    fn y2_pushshot_damages_enemy() {
+        let mut world = World::new(2, 81);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        let hp1 = world.players[1].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::Y2Delay, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        for _ in 0..40 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "撞击迟缓弹应命中造成伤害");
+    }
+
+    #[test]
+    fn y2b_bind_line_binds_enemy() {
+        let mut world = World::new(2, 82);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::Y2Suite, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].tied(), "束缚线应把线上敌人束缚（禁施法）");
+    }
+
+    #[test]
+    fn y3b_star_zone_heals_owner_and_hurts_enemy() {
+        let mut world = World::new(2, 83);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].hp = Fix64::from_num(40.0);
+        world.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO); // 与星域重叠
+        let hp0 = world.players[0].hp;
+        let hp1 = world.players[1].hp;
+        // 星域放在 (1,0) 附近覆盖敌人且为施法者回血
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::Y3Zone2, Some(Vec2::new(Fix64::from_num(1.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "星域应让范围内的敌人掉血");
+        assert!(world.players[0].hp > hp0, "星域应给施法者回血");
     }
 }
