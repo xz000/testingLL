@@ -1980,6 +1980,39 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
+            SkillEffect::SelfExplode { radius, self_stay, damage, kick, kick_time } => {
+                // 蓄力自爆（F）：以施法者为中心 AOE；自己扣到残血、范围内敌人受伤并踢开。
+                let ppos = world.players[idx as usize].pos;
+                // 施法者自残：扣到 self_stay（若当前更低则不扣）
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    if p.hp > self_stay {
+                        p.hp = self_stay.max(Fix64::ZERO);
+                    }
+                }
+                // 范围内其他敌人：伤害 + 沿连线踢开
+                let mut kick_map: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (id, dir, power, time)
+                for i in 0..world.players.len() {
+                    let pid = world.players[i].id;
+                    if pid == idx || !world.players[i].alive {
+                        continue;
+                    }
+                    let d = world.players[i].pos - ppos;
+                    let dsq = d.length_squared();
+                    if dsq <= (radius * radius) && dsq > Fix64::ZERO {
+                        kick_map.push((pid, d.normalized(), kick, kick_time));
+                    } else if dsq <= (radius * radius) {
+                        kick_map.push((pid, Vec2::new(Fix64::ONE, Fix64::ZERO), kick, kick_time));
+                    }
+                }
+                for (pid, dir, power, t) in kick_map {
+                    world.damage_player(pid, damage, Some(idx));
+                    if let Some(p) = world.players.get_mut(pid as usize) {
+                        if p.alive {
+                            p.push(dir * power, t.to_num::<f64>());
+                        }
+                    }
+                }
+            }
             SkillEffect::LineBeam { .. } => {
                 // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
             }
@@ -3012,5 +3045,43 @@ mod tests {
         }
         assert!(world.players[1].hp < hp1, "星域应让范围内的敌人掉血");
         assert!(world.players[0].hp > hp0, "星域应给施法者回血");
+    }
+
+    #[test]
+    fn f_self_explode_hurts_enemies_and_self() {
+        let mut world = World::new(2, 90);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(1.5), Fix64::ZERO); // 在自爆半径内
+        world.players[1].move_target = None;
+        // 施放蓄力自爆（windup 1s），随后空输入让它吟唱完成
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::Test03, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..80 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].hp < world.players[1].max_hp, "自爆应伤到范围内敌人");
+        assert!(world.players[0].hp <= Fix64::from_num(1.1), "施法者应扣到残血");
+    }
+
+    #[test]
+    fn g_straight_bomb_damages_enemy() {
+        let mut world = World::new(2, 91);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        let hp1 = world.players[1].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::Test01, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        for _ in 0..50 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "爆炸弹应命中造成伤害");
     }
 }
