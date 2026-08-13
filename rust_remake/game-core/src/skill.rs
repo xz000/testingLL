@@ -544,6 +544,11 @@ impl Caster {
         self.cooldowns[id.as_u32() as usize]
     }
 
+    /// 清零某个技能的冷却（供 T3b 回返镖到位刷新冷却等使用）。
+    pub fn reset_cooldown(&mut self, id: SkillId) {
+        self.cooldowns[id.as_u32() as usize] = Fix64::ZERO;
+    }
+
     /// 是否正处于施法/后摇中（不能再次施放）。
     pub fn is_busy(&self) -> bool {
         !matches!(self.phase, CastPhase::Idle)

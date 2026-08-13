@@ -73,7 +73,7 @@
 > - **R 树全部落地（复刻原版）**：R1b 二段闪（`blink2_window` 免冷却短闪）、R2b 冲刺斩（无限时长+隐身，**新移动命令解除**，非撞墙停）、R3b 闪到墙（射线命中障碍/玩家落其前，无则 MaxDist）。
 > - **E 树全部落地（复刻原版）**：E1b 掷弹=滚动火球 `Rolling`(接触 DoT)；E2b 潜行踢·连推 `ricochet`(撞障碍重踢)；E3/E3b 撒弹线 `ScatterLine`(Burst/Periodic 扇弹)；E1/E2 已就绪。
 > - **D 树全部落地（复刻原版）**：D2 回旋镖 `Boomerang`(速度矢量拉拽+撞障碍反弹，直接命中伤+击退)；D3 导弹 `Missile`(锁定点击处最近，全速直追+击退)；D4 香蕉弹 `Banana`(±对称曲线，命中伤+击退)。
-> - **T 树全部落地（复刻原版）**：新增 `Chain` 弹体（吸血链镖/跳弹衰减/转镖）；T2 扇扫 `SweepState` 发射器；T2b 扇面齐射 `Volley`；T3b 蓄力跳弹 `BonusChain`(+damageplus)。
+> - **T 树全部落地（复刻原版）**：新增 `Chain` 弹体（吸血链镖/跳弹衰减/转镖）；T2 扇扫 `SweepState` 发射器；T2b 扇面齐射 `Volley`；**T3b 蓄力跳弹严格复刻**：`BonusBomb`(直线炸弹)+`Returner`(回返镖) —— 命中 +damageplus/生回返镖，回返镖到家刷新技能冷却(`Caster::reset_cooldown`)，射程耗尽未命中→damageplus 归零。
 > - **直射弹 Bullet（E 树掷弹 StoneShot / D 树火球 D2Fireball）**：沿施法方向直线飞出，命中最近目标造成伤害（或被反弹护盾反射）。
 > - **追踪导弹 Missile（D 树 D3Missile）**：每帧朝最近敌人 `turn_toward` 转向，命中即 AOE 爆炸。
 > - **客户端**：弹体/导弹/激光线/障碍渲染、护盾外圈、技能冷却 HUD（对应阶段 2 待做第 4 项）。

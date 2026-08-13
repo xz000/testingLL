@@ -600,6 +600,21 @@ impl Game {
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(235, 90, 160))?;
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::BonusBomb { dir, .. } => {
+                    // 蓄力炸弹：橙红火球
+                    let d = dir;
+                    let tx = px + d.x.to_num::<f32>() * 10.0;
+                    let ty = py + d.y.to_num::<f32>() * 10.0;
+                    let tail = Mesh::new_line(&ctx.gfx, &[Point2 { x: px, y: py }, Point2 { x: tx, y: ty }], 3.0, Color::from_rgba(255, 160, 60, 220))?;
+                    canvas.draw(&tail, graphics::DrawParam::new());
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 6.0, 0.5, Color::from_rgb(255, 140, 60))?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::Returner { .. } => {
+                    // 回返镖：青色小回镖
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(120, 230, 220))?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
             }
         }
 

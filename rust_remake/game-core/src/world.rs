@@ -139,6 +139,28 @@ pub enum ProjectileKind {
         last_target: u32,  // 上次目标（避免立刻跳回），用 u32::MAX 表示无
         owner: u32,
     },
+    /// 蓄力跳弹·直线炸弹（T3b）：沿方向飞行，命中玩家→伤+推+累计 damageplus+生成回返镖；
+    /// 射程耗尽没命中→damageplus 归零。
+    BonusBomb {
+        dir: Vec2,
+        speed: Fix64,
+        damage: Fix64,
+        radius: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        remaining: Fix64,
+        owner: u32,
+    },
+    /// 回返镖（T3b）：全速向施法者返回，到位即刷新其蓄力跳弹的冷却并自毁。能命中敌人则伤+推。
+    Returner {
+        dir: Vec2,
+        speed: Fix64,
+        damage: Fix64,
+        radius: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        owner: u32,
+    },
 }
 
 /// 撒弹线的撒弹方式。
@@ -510,6 +532,8 @@ impl World {
         let n = self.players.len();
         // 撒弹线/滚动火球产出的扇形子弹收集：(owner, pos, dir, bulletspeed)
         let mut spawn: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
+        // T3b 命中的子弹生成的回返镖：(owner, pos, dir, speed)
+        let mut returners: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
@@ -615,6 +639,24 @@ impl World {
                         pr.alive = false;
                     }
                 }
+                ProjectileKind::BonusBomb { dir, speed, remaining, .. } => {
+                    // 蓄力炸弹：直线飞行，射程耗尽则消失
+                    pr.pos += *dir * (*speed * dt);
+                    *remaining -= *speed * dt;
+                    if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::Returner { dir, speed, owner, .. } => {
+                    // 回返镖：全速飞回施法者
+                    if let Some(p) = self.players.get(*owner as usize) {
+                        if p.alive {
+                            let want = (p.pos - pr.pos).normalized();
+                            *dir = if want.length_squared() == Fix64::ZERO { *dir } else { want };
+                        }
+                    }
+                    pr.pos += *dir * (*speed * dt);
+                }
                 ProjectileKind::Beam { remaining, .. } => {
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
@@ -673,6 +715,12 @@ impl World {
                         bomb_force,
                     });
                 }
+                // 蓄力炸弹射程耗尽未命中 → 施法者 damageplus 归零（原版 JumbScript.OnDestroy　!bonus）
+                if let ProjectileKind::BonusBomb { owner, .. } = pr.kind {
+                    if let Some(p) = self.players.get_mut(owner as usize) {
+                        p.damageplus = 0.0;
+                    }
+                }
                 continue;
             }
             // 链镖/跳弹族单独处理（需改动 Chain 内部状态以完成跳跃，交给可变分支）
@@ -708,6 +756,38 @@ impl World {
                         }
                     }
                 }
+                continue;
+            }
+            // 回返镖（T3b）：回到施法者身边则刷新其 cd 并自毁；顺路命中其他敌人则伤+推
+            if matches!(pr.kind, ProjectileKind::Returner { .. }) {
+                let is_returner = matches!(pr.kind, ProjectileKind::Returner { .. });
+                let _ = is_returner;
+                let (owner, radius) = match pr.kind {
+                    ProjectileKind::Returner { owner, radius, damage, push_power, push_time, .. } => {
+                        // 碰到施法者
+                        if let Some(p) = self.players.get(owner as usize) {
+                            if p.alive {
+                                let rr = radius + p.radius;
+                                if (p.pos - pr.pos).length_squared() <= rr * rr {
+                                    if let Some(po) = self.players.get_mut(owner as usize) {
+                                        po.caster.reset_cooldown(crate::skill::SkillId::T3Fast2);
+                                    }
+                                    pr.alive = false;
+                                }
+                            }
+                        }
+                        // 顺路命中敌人
+                        if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, owner, radius) {
+                            events.push((victim, damage, Some(owner)));
+                            if dd.length_squared() > Fix64::ZERO {
+                                pushes.push((victim, dd.normalized() * push_power, push_time.to_num::<f64>()));
+                            }
+                        }
+                        (owner, radius)
+                    }
+                    _ => unreachable!(),
+                };
+                let _ = (owner, radius);
                 continue;
             }
             match &pr.kind {
@@ -811,7 +891,24 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } => {}
+                ProjectileKind::BonusBomb { damage, radius, push_power, push_time, owner, .. } => {
+                    // 蓄力炸弹命中：伤+推+damageplus+生成回返镖
+                    if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, *owner, *radius) {
+                        pr.alive = false;
+                        events.push((victim, *damage, Some(*owner)));
+                        if dd.length_squared() > Fix64::ZERO {
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                        }
+                        if let Some(p) = self.players.get_mut(*owner as usize) {
+                            p.damageplus += 0.3;
+                        }
+                        // 原地生成回返镖（朝 owner 方向）
+                        let back = self.players[*owner as usize].pos - pr.pos;
+                        let bdir = if back.length_squared() == Fix64::ZERO { Vec2::new(Fix64::ONE, Fix64::ZERO) } else { back.normalized() };
+                        returners.push((*owner, pr.pos, bdir, Fix64::from_num(14.0)));
+                    }
+                }
+                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } => {}
             }
         }
 
@@ -851,6 +948,23 @@ impl World {
                     damage: Fix64::from_num(SABULLET_DAMAGE),
                     radius: Fix64::from_num(0.6),
                     remaining: Fix64::from_num(SABULLET_RANGE),
+                },
+                pos,
+                alive: true,
+            });
+        }
+        // 4c) 应用蓄力炸弹生成的回返镖
+        for (owner, pos, dir, speed) in returners.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::Returner {
+                    dir,
+                    speed,
+                    damage: Fix64::from_num(0.0),
+                    radius: Fix64::from_num(0.6),
+                    push_power: Fix64::from_num(5.0),
+                    push_time: Fix64::from_num(1.0),
+                    owner,
                 },
                 pos,
                 alive: true,
@@ -1552,22 +1666,21 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::BonusChain { speed, damage, range: _ } => {
-                // T3b 蓄力跳弹：命中 +damageplus 并以回返镖刷新冷却
+            SkillEffect::BonusChain { speed, damage, range } => {
+                // T3b 蓄力跳弹：发射一枚直线炸弹（伤害含累计 damageplus）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dmg = damage + Fix64::from_num(p.damageplus);
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
                         owner: idx,
-                        kind: ProjectileKind::Chain {
+                        kind: ProjectileKind::BonusBomb {
                             dir,
                             speed,
                             damage: dmg,
-                            heal: Fix64::ZERO,
-                            ratio: Fix64::ONE,
-                            ratio_decay: Fix64::ZERO,
-                            life: Fix64::from_num(2.0),
-                            last_target: u32::MAX,
+                            radius: Fix64::from_num(0.8),
+                            push_power: Fix64::from_num(6.0),
+                            push_time: Fix64::from_num(1.0),
+                            remaining: range,
                             owner: idx,
                         },
                         pos: p.pos,
@@ -2497,13 +2610,18 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
-        let input = vec![
+        // 只施放一次，随后空输入推进（否则每帧重施放会不断重置冷却）
+        world.step(vec![
             PlayerInput { cast: Some((SkillId::T3Fast2, Some(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
-        ];
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
         for _ in 0..40 {
-            world.step(input.clone(), dt);
+            world.step(none.clone(), dt);
         }
         assert!(world.players[0].damageplus > 0.0, "蓄力跳弹命中应累计额外伤害");
+        // 回返镖应已飞回施法者并刷新其技能冷却（可立即再发）
+        let cd = world.players[0].caster.cooldown_remaining(crate::skill::SkillId::T3Fast2);
+        assert!(cd <= Fix64::ZERO, "回返镖到家应刷新蓄力跳弹冷却");
     }
 }
