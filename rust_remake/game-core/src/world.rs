@@ -196,6 +196,16 @@ pub enum ProjectileKind {
         from: Vec2,
         end: Vec2,
     },
+    /// 撞击迟缓弹（Y2）：直线飞行，命中→伤害 + 沿弹-目标方向以 `push_time` 强推。
+    PushBullet {
+        dir: Vec2,
+        speed: Fix64,
+        damage: Fix64,
+        radius: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        remaining: Fix64,
+    },
 }
 
 /// 撒弹线的撒弹方式。
@@ -758,6 +768,14 @@ impl World {
                         }
                     }
                 }
+                ProjectileKind::PushBullet { dir, speed, remaining, .. } => {
+                    // 撞击迟缓弹：直线飞行
+                    pr.pos += *dir * (*speed * dt);
+                    *remaining -= *speed * dt;
+                    if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
                 ProjectileKind::Beam { remaining, .. } => {
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
@@ -1060,6 +1078,16 @@ impl World {
                     for id in to_bind {
                         if let Some(pp) = self.players.get_mut(id as usize) {
                             pp.add_buff(BuffKind::Tied, bind_time.to_num::<f64>());
+                        }
+                    }
+                }
+                ProjectileKind::PushBullet { damage, radius, push_power, push_time, .. } => {
+                    // 撞击迟缓弹：命中最近玩家 → 伤害 + 沿弹-目标方向强推 push_time
+                    if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, pr.owner, *radius) {
+                        pr.alive = false;
+                        events.push((victim, *damage, Some(pr.owner)));
+                        if dd.length_squared() > Fix64::ZERO {
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
                         }
                     }
                 }
@@ -1873,17 +1901,18 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::PushShot { speed, damage, push_power, push_time, range } => {
-                // 撞击迟缓（Y2）：直线弹命中伤（击退以 push 表达）
-                let _ = (push_power, push_time);
+                // 撞击迟缓（Y2）：直线弹命中→伤害 + 强推 push_time
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
                         owner: idx,
-                        kind: ProjectileKind::Bullet {
+                        kind: ProjectileKind::PushBullet {
                             dir,
                             speed,
                             damage,
                             radius: Fix64::from_num(0.6),
+                            push_power,
+                            push_time,
                             remaining: range,
                         },
                         pos: p.pos,
@@ -2930,15 +2959,18 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
         let hp1 = world.players[1].hp;
         let input = vec![
             PlayerInput { cast: Some((SkillId::Y2Delay, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ];
-        for _ in 0..40 {
+        for _ in 0..50 {
             world.step(input.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "撞击迟缓弹应命中造成伤害");
+        // 命中后应把敌人沿弹-目标方向推离施法者
+        assert!(world.players[1].pos.x > Fix64::from_num(3.0), "撞击迟缓弹应把敌人推离");
     }
 
     #[test]
