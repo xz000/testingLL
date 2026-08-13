@@ -6,8 +6,6 @@
 //!
 //! 玩法逻辑全部在 `game-core` 的 `World` 中，本文件只负责输入采集与渲染。
 
-use std::path::PathBuf;
-
 use game_core::fix::{cos, sin, Fix64, Vec2};
 use game_core::meta::{MatchConfig, MatchPhase, MatchState};
 use game_core::rng::Rng;
@@ -70,8 +68,8 @@ struct Game {
 
 impl Game {
     fn new(ctx: &mut Context) -> GameResult<Self> {
-        // 注册中文字体（assets/fonts/cjk.ttf），供 draw_text 使用以显示中文。
-        let font = ggez::graphics::FontData::from_path(ctx, "fonts/cjk.ttf")?;
+        // 注册中文字体：用 include_bytes 内嵌，避免资源路径/VFS 解析问题。
+        let font = ggez::graphics::FontData::from_slice(include_bytes!("../../assets/fonts/cjk.ttf"))?;
         ctx.gfx.add_font("cjk", font);
 
         let player_count = 1 + BOTS;
@@ -945,7 +943,6 @@ fn draw_text(
 
 fn main() -> GameResult {
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
-        .add_resource_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets"))
         .window_setup(ggez::conf::WindowSetup::default().title("帧同步圆球竞技场 — 阶段1"))
         .window_mode(
             ggez::conf::WindowMode::default()

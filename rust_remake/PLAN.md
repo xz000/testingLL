@@ -78,7 +78,7 @@
 > - **F/G 树落地**：F Test03 蓄力自爆 `SelfExplode`（windup 1s 后自身 AOE，自扣残血、范围内敌伤+踢开）；G Test01 普通爆炸弹 `PushShot`。
 > - **至此 8 棵树全部按原版复刻完成**。
 > - **竞技场缩到 0（修正）**：复刻原版 `AreaScript`，场地半径持续缩到 0（不再停在旧阈值 3.0）。`arena_shrinks_to_zero` 测试锁定。
-> - **中文字体（修正）**：ggez 默认字体无 CJK 字形；已内置 `assets/fonts/cjk.ttf`（SimHei），`Game::new` 注册 `cjk` 字体，`draw_text` 用 `TextFragment::font("cjk")` 渲染中文。
+> - **中文字体（修正）**：ggez 默认字体无 CJK 字形；已内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体（Noto Sans CJK SC，SIL OFL 协议，可自由分发）**，用 fontTools 子集约 941 个本源码用到的字形 → 仅 168KB。`Game::new` 用 `include_bytes!` 内嵌 + `FontData::from_slice` 注册 `cjk` 字体（避免资源路径/VFS 解析问题），`draw_text` 用 `TextFragment::font("cjk")` 渲染中文。**已实测客户端可运行、不崩、中文正常。**
 > - **直射弹 Bullet（E 树掷弹 StoneShot / D 树火球 D2Fireball）**：沿施法方向直线飞出，命中最近目标造成伤害（或被反弹护盾反射）。
 > - **追踪导弹 Missile（D 树 D3Missile）**：每帧朝最近敌人 `turn_toward` 转向，命中即 AOE 爆炸。
 > - **客户端**：弹体/导弹/激光线/障碍渲染、护盾外圈、技能冷却 HUD（对应阶段 2 待做第 4 项）。
