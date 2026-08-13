@@ -5,7 +5,7 @@
 
 ## 当前状态（2026-08-13，全部全绿）
 - **单测 64 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
-- **中文显示**：内置 `assets/fonts/cjk.ttf`（SimHei），客户端注册 `cjk` 字体渲染中文。
+- **中文显示**：内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体(Noto Sans CJK SC, SIL OFL)**，子集约 941 字形 168KB。客户端 `include_bytes!` 内嵌 + `from_slice` 注册 `cjk` 字体渲染中文。已实测运行正常。
 - **场地缩小到 0**：复刻原版 `AreaScript`，半径持续缩到 0（不再停阈值 3.0）。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪（后续帧同步直接用）。
