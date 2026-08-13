@@ -224,6 +224,48 @@ impl SkillId {
             _SelfExplode => 33,
         }
     }
+
+    /// `as_u32` 的逆映射（网络编解码用）。越界返回 `_Reserved`。
+    pub fn from_u32(v: u32) -> SkillId {
+        use SkillId::*;
+        match v {
+            0 => Boost,
+            1 => Shield,
+            2 => Shadow,
+            3 => Fake,
+            4 => Blink,
+            5 => Blink2,
+            6 => DashStrike,
+            7 => DashSlash,
+            8 => BlinkToWall,
+            9 => Rock,
+            10 => StoneShot,
+            11 => StealthPush,
+            12 => StealthPush2,
+            13 => LineBeam,
+            14 => LineExplode,
+            15 => D2Fireball,
+            16 => D3Missile,
+            17 => D4Fireball,
+            18 => TLeech,
+            19 => T2Shot,
+            20 => T2Volley,
+            21 => T3Fast,
+            22 => T3Fast2,
+            23 => TestLeech,
+            24 => Y1BlueLine,
+            25 => Y1BlueLine2,
+            26 => Y2Delay,
+            27 => Y2Suite,
+            28 => Y3Zone,
+            29 => Y3Zone2,
+            30 => Test01,
+            31 => Test03,
+            32 => _Reserved,
+            33 => _SelfExplode,
+            _ => _Reserved,
+        }
+    }
 }
 
 /// 技能效果类型（决定 `World` 施法完成后的处理方式）。
