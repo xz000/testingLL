@@ -38,12 +38,12 @@
 ### E 远程树
 | 槽 | 名称 | 原版机制 | 当前 Rust |
 |----|------|----------|-----------|
-| E1 | Rock 掷石 | 落点延时爆炸 AOE（伤害+击退） | ✓ 吻合 |
-| E1b | StoneShot 掷弹 | 直线滚动火球，**接触持续 DoT**(rolldamage*dt)，非一次性命中 | ⚠ 现为一次性命中 |
-| E2 | StealthPush 潜行踢 | 隐身+踢击窗口（maxTimeE2） | ✓ 吻合 |
-| E2b | StealthPush2 潜行踢·连推 | 同 E2，但**撞墙/障碍后 0.3s 重新触发踢击**（窗口内可反复） | ❌ 未实现 |
-| E3 | LineBeam 线·撒弹 | 打出一条线（ST），命中后**爆裂 8 个扇弹**逆时针扫出 | ⚠ 现为"持续激光线"，不符 |
-| E3b | LineExplode 线·散射 | 打出一条线（SA），沿途**周期性(0.2s)散射扇形弹** | ❌ 未实现 |
+| E1 | Rock 掷石 | 落点延时爆炸 AOE（伤害+击退） | ✅ 吻合 |
+| E1b | StoneShot 掷弹 | 直线滚动火球，**接触持续 DoT**(rolldamage*dt) | ✅ 改用 `Rolling` 弹体（接触 DoT） |
+| E2 | StealthPush 潜行踢 | 隐身+踢击窗口（maxTimeE2） | ✅ 吻合 |
+| E2b | StealthPush2 潜行踢·连推 | 同 E2，撞**障碍**后 0.3s 重新触发踢击（窗口内可反复） | ✅ `ricochet_pending`/`ricochet_kick` 重踢；配合障碍系统 |
+| E3 | LineBeam 线·撒弹 | 打出一条线（ST），到终点**爆裂 8 个扇弹** | ✅ `ScatterLine`(Burst) |
+| E3b | LineExplode 线·散射 | 打出一条线（SA），沿途**周期性(0.2s)散射弹**并旋转 | ✅ `ScatterLine`(Periodic) |
 
 ### D 弹幕树
 | 槽 | 名称 | 原版机制 | 当前 Rust |

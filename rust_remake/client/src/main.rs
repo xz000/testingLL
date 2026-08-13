@@ -550,6 +550,26 @@ impl Game {
                     )?;
                     canvas.draw(&beam, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::Rolling { dir, radius, .. } => {
+                    // 滚动火球：暖色球 + 旋转小拖尾（示意在滚动）
+                    let d = dir;
+                    let tx = px + d.x.to_num::<f32>() * 10.0;
+                    let ty = py + d.y.to_num::<f32>() * 10.0;
+                    let tail = Mesh::new_line(&ctx.gfx, &[Point2 { x: px, y: py }, Point2 { x: tx, y: ty }], 3.0, Color::from_rgba(255, 140, 60, 180))?;
+                    canvas.draw(&tail, graphics::DrawParam::new());
+                    let ball = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, (radius.to_num::<f32>() * self.scale).max(5.0), 0.5, Color::from_rgb(240, 120, 60))?;
+                    canvas.draw(&ball, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::ScatterLine { dir, .. } => {
+                    // 撒弹线：亮蓝移动小球 + 前方指示
+                    let d = dir;
+                    let tipx = px + d.x.to_num::<f32>() * 14.0;
+                    let tipy = py + d.y.to_num::<f32>() * 14.0;
+                    let tl = Mesh::new_line(&ctx.gfx, &[Point2 { x: px, y: py }, Point2 { x: tipx, y: tipy }], 4.0, Color::from_rgba(120, 200, 255, 220))?;
+                    canvas.draw(&tl, graphics::DrawParam::new());
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 6.0, 0.5, Color::from_rgb(90, 180, 255))?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
             }
         }
 

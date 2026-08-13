@@ -291,6 +291,37 @@ pub enum SkillEffect {
         push_time: Fix64,
         push_damage: Fix64,
     },
+    /// 潜行踢·连推（E2b）：同 E2，但撞到障碍后 0.3s 重新触发一次踢击（窗口内可反复）。
+    StealthPush2 {
+        duration: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        push_damage: Fix64,
+    },
+    /// 滚动火球（E1b）：沿定速直线滚动，接触范围内敌人持续掉血。
+    RollProjectile {
+        speed: Fix64,
+        damage_per_sec: Fix64,
+        radius: Fix64,
+        range: Fix64,
+    },
+    /// 撒弹线·E3：沿方向飞行的线，到终点一次性撒扇形弹。
+    ScatterBurst {
+        speed: Fix64,
+        range: Fix64,
+        count: u32,
+        step_rad: f64,
+        bullet_speed: Fix64,
+    },
+    /// 撒弹线·E3b：飞行途中每 `interval` 秒撒一发并旋转方向。
+    ScatterPeriodic {
+        speed: Fix64,
+        range: Fix64,
+        count: u32,
+        interval: f64,
+        bullet_speed: Fix64,
+        turn_rad: f64,
+    },
     /// 尚未实现/占位：契约上存在但暂不落地效果（绑定后施法会被消耗，但不产生作用）。
     Unimplemented,
 }
@@ -704,16 +735,16 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // E 树：掷弹 / 直射弹（StoneShot、火球共用 Bullet 效果）
+            // E 树：掷弹 = 滚动火球（持续接触 DoT）；火球（D 树）用 Bullet。
             SkillId::StoneShot => SkillDef {
                 id,
                 tree: SkillTree::E,
                 name: "掷弹",
                 needs_point: true,
-                effect: Bullet {
-                    speed: Fix64::from_num(9.0),
-                    damage: Fix64::from_num(8.0),
-                    radius: Fix64::from_num(0.8),
+                effect: RollProjectile {
+                    speed: Fix64::from_num(6.0),
+                    damage_per_sec: Fix64::from_num(2.0),
+                    radius: Fix64::from_num(0.7),
                     range: Fix64::from_num(12.0),
                 },
                 growth: SkillGrowth {
@@ -721,36 +752,77 @@ impl DefTable {
                     recovery_base: 0.1,
                     cooldown_base: 3.0,
                     cooldown_delta: -0.2,
-                    damage_base: 8.0,
-                    damage_delta: 2.0,
-                    speed_base: 9.0,
+                    damage_base: 2.0,
+                    damage_delta: 0.5,
+                    speed_base: 6.0,
                     range_base: 12.0,
                     max_distance_delta: 1.0,
                     ..DEF_ZERO
                 },
             },
-            // E 树：持续伤害线
+            // E 树：潜行踢·连推（撞障碍后重新触发）。
+            SkillId::StealthPush2 => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "潜行踢·连推",
+                needs_point: false,
+                effect: StealthPush2 {
+                    duration: Fix64::from_num(2.0),
+                    push_power: Fix64::from_num(4.0),
+                    push_time: Fix64::from_num(0.5),
+                    push_damage: Fix64::from_num(5.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.25,
+                    recovery_base: 0.15,
+                    cooldown_base: 5.0,
+                    push_damage_base: 5.0,
+                    push_damage_delta: 1.5,
+                    ..DEF_ZERO
+                },
+            },
+            // E 树：撒弹线（E3 = 到终点爆散射击）。
             SkillId::LineBeam => SkillDef {
                 id,
                 tree: SkillTree::E,
-                name: "激光线",
+                name: "撒弹线",
                 needs_point: true,
-                effect: LineBeam {
-                    length: Fix64::from_num(8.0),
-                    width: Fix64::from_num(0.9),
-                    damage: Fix64::from_num(3.0),
-                    duration: Fix64::from_num(1.2),
+                effect: ScatterBurst {
+                    speed: Fix64::from_num(6.0),
+                    range: Fix64::from_num(8.0),
+                    count: 8,
+                    step_rad: std::f64::consts::FRAC_PI_4 * 0.11, // 8 发小步进
+                    bullet_speed: Fix64::from_num(6.0),
                 },
                 growth: SkillGrowth {
                     windup_base: 0.1,
                     recovery_base: 0.1,
                     cooldown_base: 6.0,
                     cooldown_delta: -0.3,
-                    damage_base: 3.0,
-                    damage_delta: 0.5,
                     range_base: 8.0,
-                    duration_base: 1.2,
-                    extra_base: 0.9, // 线宽
+                    ..DEF_ZERO
+                },
+            },
+            // E 树：撒弹线·E3b（沿途周期性散射击）。
+            SkillId::LineExplode => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "散射弹线",
+                needs_point: true,
+                effect: ScatterPeriodic {
+                    speed: Fix64::from_num(6.0),
+                    range: Fix64::from_num(8.0),
+                    count: 10,
+                    interval: 0.2,
+                    bullet_speed: Fix64::from_num(6.0),
+                    turn_rad: 0.1,
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 6.0,
+                    cooldown_delta: -0.3,
+                    range_base: 8.0,
                     ..DEF_ZERO
                 },
             },

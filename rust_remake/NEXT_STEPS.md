@@ -4,7 +4,7 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13，全部全绿）
-- **单测 49 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+- **单测 51 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪（后续帧同步直接用）。
 - 工作区 `rust_remake/` 已纳入 git（首提交 `a8926fc`）。
@@ -19,13 +19,14 @@
   - **障碍系统（方案 A）**：独立圆形障碍 `Obstacle` + `raycast_first`(射线-圆求交，同时命中障碍与其他玩家) + 玩家-圆盘分离；客户端渲染柱子。
   - **R 树已复刻**：R1b 二段闪(`blink2_window` 免冷却短闪)、R2b 冲刺斩(无限时长+隐身，
     新移动命令解除，非撞墙停)、R3b 闪到墙(射线命中障碍/玩家落其前)。R1/R2 早已就绪。
-  - **已有占位/半实现技能**（后续要修到原版机制）：E1掷石、E1b掷弹、E2潜行踢、
-    直射弹 Bullet(D2/D3 等)、导弹 Missile、Beam 线。
+  - **E 树已复刻**：E1b 掷弹=`Rolling`滚动火球(接触 DoT)；E2b 潜行踢·连推=`ricochet`(撞障碍重踢)；
+    E3/E3b 撒弹线=`ScatterLine`(Burst/Periodic 扇弹)；E1/E2 早已就绪。
+  - **已有半实现技能**（后续修到原版机制）：D2/D3 目前是直射 Bullet/导弹（原版为回旋镖/追踪+推）。
 - **meta 多局循环**：MatchState/金币/升级/洗点/键绑定 + 客户端学习阶段 UI + 冷却 HUD。
 
 ## 当前未完成 / 待办（按优先级）
 1. **施法前摇/后摇的手感层**：windup/recovery 已实现；但**客户端未显式消费**（已有 windup 圆环提示）。已实现部分见 PLAN 的「网络手感/延迟掩盖设计」✅。
-2. **其余技能树按 `SKILL_SPEC.md` 落地**（顺序建议 R→E→D→T→Y→F/G）：
+2. **其余技能树按 `SKILL_SPEC.md` 落地**（顺序建议 D→T→Y→F/G）：
    - 这些技能需要新增的通用机制（按 SKILL_SPEC「通用系统」表）：
      - 链式/跳弹（T1b/T3 吸血链、跳弹衰减）
      - 曲线/回旋镖（D2 回旋镖、D4 香蕉）
@@ -56,6 +57,6 @@ cargo run  -p client                    # 本机跑 demo（需图形环境）
 
 ## 如何续接（建议顺序）
 1. 先读 `PLAN.md` 的「网络手感/延迟掩盖设计」+ `SKILL_SPEC.md` 复核机制。
-2. 继续按 `SKILL_SPEC.md` 逐棵树落地，每棵树一批 + 单测（顺序 E→D→T→Y→F/G）。
+2. 继续按 `SKILL_SPEC.md` 逐棵树落地，每棵树一批 + 单测（顺序 D→T→Y→F/G）。
 3. 再做 shift 指令队列（阶段 2 待做第 5 项）。
 4. 进阶段 3。

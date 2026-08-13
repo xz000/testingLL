@@ -131,6 +131,12 @@ pub struct Player {
     pub dash_active: bool,
     /// 冲刺斩的位移速度（单位 / 秒），`dash_active` 时按此直线移动。
     pub dash_vel: Vec2,
+    /// 潜行踢·连推（E2b）：撞障碍后需延迟重新踢击的时间；`None` = 无待重踢。
+    pub ricochet_pending: Option<Fix64>,
+    /// 潜行踢·连推：碰撞障碍时重放的踢击参数。
+    pub ricochet_kick: Option<Kick>,
+    /// 潜行踢·连推：可重踢的总窗口剩余时间（撞障碍后递减）。
+    pub ricochet_window: Fix64,
     pub alive: bool,
 }
 
@@ -159,6 +165,9 @@ impl Player {
             blink2_window: None,
             dash_active: false,
             dash_vel: Vec2::ZERO,
+            ricochet_pending: None,
+            ricochet_kick: None,
+            ricochet_window: Fix64::ZERO,
             alive: true,
         }
     }
@@ -393,6 +402,26 @@ impl Player {
                 self.blink2_window = None;
             }
         }
+        // 潜行踢·连推（E2b）：总窗口倒计时；撞障碍后 delay 结束则重新踢击。
+        if self.ricochet_window > Fix64::ZERO {
+            self.ricochet_window = (self.ricochet_window - dt).max(Fix64::ZERO);
+            if let Some(t) = &mut self.ricochet_pending {
+                *t = (*t - dt).max(Fix64::ZERO);
+                if *t < eps {
+                    let pending_kick = self.ricochet_kick; // Copy
+                    if let Some(k) = pending_kick {
+                        self.kick = Some(k);
+                        self.add_buff(BuffKind::Stealth, self.ricochet_window.to_num::<f64>().max(0.1));
+                    }
+                    self.ricochet_pending = None;
+                }
+            }
+            if self.ricochet_window < eps {
+                self.ricochet_window = Fix64::ZERO;
+                self.ricochet_pending = None;
+                self.ricochet_kick = None;
+            }
+        }
         // 注：冲刺斩不靠计时到期，而是由「玩家给出新的移动命令」触发解除（见 world.step）。
     }
 
@@ -418,6 +447,9 @@ impl Player {
         self.blink2_window = None;
         self.dash_active = false;
         self.dash_vel = Vec2::ZERO;
+        self.ricochet_pending = None;
+        self.ricochet_kick = None;
+        self.ricochet_window = Fix64::ZERO;
         self.caster = Caster::new();
     }
 
