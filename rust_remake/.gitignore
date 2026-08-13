@@ -1,0 +1,6 @@
+# Rust 构建产物
+/target/
+**/*.rs.bk
+
+# 运行时生成/调试文件
+/input_log.txt

@@ -1,0 +1,9 @@
+[package]
+name = "game-core"
+version = "0.1.0"
+edition = "2021"
+description = "帧同步圆球竞技场 - 确定性的纯逻辑核心（无引擎依赖）"
+
+[dependencies]
+fixed = "=1.28.0"
+cordic = "0.1"
