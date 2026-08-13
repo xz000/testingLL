@@ -88,11 +88,30 @@ pub enum ProjectileKind {
     },
 }
 
+/// 静态圆形障碍（原版 demo 里实际用作"墙/柱子"的碰撞体）。
+/// 用圆盘描述，几何与玩家一致，但不参与名次/击杀/死亡判定。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Obstacle {
+    pub pos: Vec2,
+    pub radius: Fix64,
+}
+
+impl Obstacle {
+    pub fn new(pos: Vec2, radius: f64) -> Self {
+        Obstacle {
+            pos,
+            radius: Fix64::from_num(radius),
+        }
+    }
+}
+
 /// 确定性对局核心。
 #[derive(Clone, Debug)]
 pub struct World {
     pub players: Vec<Player>,
     pub arena_radius: Fix64,
+    /// 场景里的静态圆形障碍（柱子/墙）
+    pub obstacles: Vec<Obstacle>,
     /// 场上飞行物 / 延时区域
     pub projectiles: Vec<Projectile>,
     /// 按死亡先后记录的玩家 id（用于本局名次结算）
@@ -116,9 +135,12 @@ impl World {
             let pos = Vec2::new(r * crate::fix::cos(angle), r * crate::fix::sin(angle));
             players.push(Player::new(id, pos, Fix64::from_num(crate::player::DEFAULT_RADIUS)));
         }
+        let mut obstacles = Vec::new();
+        _layout_obstacles(&mut obstacles, &mut rng, arena_radius);
         World {
             players,
             arena_radius,
+            obstacles,
             projectiles: Vec::new(),
             eliminated_order: Vec::new(),
             kills_this_round: Vec::new(),
@@ -152,6 +174,13 @@ impl World {
                 }
                 continue;
             }
+            // R2b 冲刺斩：给新的移动目标 → 解除冲刺并现身（原版 `IdoDSWL`）。
+            if pi.set_target.is_some() && p.dash_active {
+                p.dash_active = false;
+                p.dash_vel = Vec2::ZERO;
+                p.control = None; // 若有残留强制态也一并清除
+                p.remove_buff(BuffKind::Stealth);
+            }
             p.move_target = pi.set_target;
         }
         for (pid, target) in fake_locs {
@@ -174,6 +203,8 @@ impl World {
 
         // 5) 玩家之间的碰撞
         resolve_player_collisions(&mut self.players, dt);
+        // 5b) 玩家与障碍（圆形柱子）的分离
+        self.resolve_obstacles(dt);
 
         // 6) 飞行物 / 延时区域
         self.step_projectiles(dt);
@@ -223,6 +254,25 @@ impl World {
                     let anchor = p.shadow_anchor.take().unwrap();
                     p.pos = anchor;
                     p.shadow_window = Fix64::ZERO;
+                    p.move_target = None;
+                    just_cast[idx] = true;
+                    continue;
+                }
+                // R1b 二段闪·第二段：窗口内再按 = 免冷却短闪一次（原版 `Skillscd`，距离 4）
+                if skill == SkillId::Blink2 && p.blink2_window.is_some() {
+                    p.blink2_window = None;
+                    if let Some(t) = target {
+                        let d = t - p.pos;
+                        let dist = d.length();
+                        if dist > Fix64::ZERO {
+                            let md = Fix64::from_num(4.0); // 短闪距离
+                            if dist > md {
+                                p.pos += d.normalized() * md;
+                            } else {
+                                p.pos = t;
+                            }
+                        }
+                    }
                     p.move_target = None;
                     just_cast[idx] = true;
                     continue;
@@ -292,6 +342,33 @@ impl World {
     ///
     /// 各区域类技能（Y3 引力场、Y1 回拉线）接入时在此累加 `p.pull`。目前为空实现。
     fn step_area_forces(&mut self, _dt: Fix64) {}
+
+    /// 玩家与圆形障碍的分离：把重叠进柱子的玩家沿圆心连线推出去（纯位置修正，无伤害）。
+    fn resolve_obstacles(&mut self, _dt: Fix64) {
+        if self.obstacles.is_empty() {
+            return;
+        }
+        for p in self.players.iter_mut() {
+            if !p.alive {
+                continue;
+            }
+            for o in self.obstacles.iter() {
+                let delta = p.pos - o.pos;
+                let dist_sq = delta.length_squared();
+                let min = p.radius + o.radius;
+                if dist_sq < min * min {
+                    let dist = dist_sq.sqrt();
+                    let dir = if dist == Fix64::ZERO {
+                        Vec2::new(Fix64::ONE, Fix64::ZERO)
+                    } else {
+                        delta / dist
+                    };
+                    let overlap = min - dist;
+                    p.pos += dir * overlap;
+                }
+            }
+        }
+    }
 
     /// 对一位玩家施加一笔伤害。有护盾 buff 先吸收，再扣真血；记录击杀来源。
     fn damage_player(&mut self, id: u32, amount: Fix64, from: Option<u32>) {
@@ -490,6 +567,32 @@ impl World {
         best.map(|(_, v)| v)
     }
 
+    /// 从 `origin` 沿单位方向 `dir` 以 `max_dist` 做射线，找最近的圆形障碍/其他玩家（排除 `owner`）。
+    ///
+    /// 返回命中点（落在该圆表面的位置）。无命中时返回 `None`。
+    /// 用于 R3b 闪到墙、以及将来的阻挡判定。
+    fn raycast_first(&self, origin: Vec2, dir: Vec2, max_dist: Fix64, owner: u32) -> Option<Vec2> {
+        let mut best_t: Option<Fix64> = None;
+        for o in self.obstacles.iter() {
+            if let Some(t) = ray_circle_hit(origin, dir, o.pos, o.radius) {
+                if t <= max_dist && best_t.map(|bt| t < bt).unwrap_or(true) {
+                    best_t = Some(t);
+                }
+            }
+        }
+        for p in self.players.iter() {
+            if !p.alive || p.id == owner {
+                continue;
+            }
+            if let Some(t) = ray_circle_hit(origin, dir, p.pos, p.radius) {
+                if t <= max_dist && best_t.map(|bt| t < bt).unwrap_or(true) {
+                    best_t = Some(t);
+                }
+            }
+        }
+        best_t.map(|t| origin + dir * t) // 命中点（圆表面）
+    }
+
     /// 在 (pos) 处半径 `radius` 的爆炸：对范围内玩家造成伤害并按中心连线击退。
     fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64) {
         let r_sq = radius * radius;
@@ -569,6 +672,22 @@ impl World {
         for p in self.players.iter_mut() {
             p.reset_state();
         }
+    }
+}
+
+/// 用确定性 RNG 布几根圆形柱子（障碍）：在内圈(距圆心约 arena*0.4)等角分布并加小幅抖动。
+/// 玩家出生在 arena*0.6 的环上，和 0.4 内圈的柱子不重叠。
+fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64) {
+    let ring_r = arena_radius * Fix64::from_num(0.4);
+    let count = 5u32;
+    for i in 0..count {
+        let base_angle = Fix64::from_num(std::f64::consts::TAU) * Fix64::from_num(i as f64 / count as f64);
+        let jitter = (rng.next_fix() - Fix64::from_num(0.5)) * Fix64::from_num(1.2); // ±0.6 rad 抖动
+        let angle = base_angle + jitter;
+        // 每根柱子半径在 1.1~1.6 之间确定性波动
+        let r = Fix64::from_num(1.1) + rng.next_fix() * Fix64::from_num(0.5);
+        let pos = Vec2::new(ring_r * crate::fix::cos(angle), ring_r * crate::fix::sin(angle));
+        out.push(Obstacle::new(pos, r.to_num::<f64>()));
     }
 }
 
@@ -697,6 +816,68 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                 }
             }
+            SkillEffect::Blink2 { .. } => {
+                // 二段闪·第一段：同普通闪烁，随后开启一段可免冷却再闪一次的窗口。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    if let Some(t) = target {
+                        let d = t - p.pos;
+                        let dist = d.length();
+                        let md = stats.max_distance;
+                        if dist > md {
+                            p.pos += d.normalized() * md;
+                        } else {
+                            p.pos = t;
+                        }
+                    }
+                    p.blink2_window = Some(stats.duration); // duration = 二段可用窗口
+                }
+            }
+            SkillEffect::DashSlash { .. } => {
+                // 冲刺斩：进入无限时长 + 全程隐身直线冲刺，直到玩家给新移动命令（IdoDSWL）。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = match target {
+                        Some(t) => {
+                            let d = t - p.pos;
+                            if d.length() > Fix64::ZERO {
+                                d.normalized()
+                            } else {
+                                Vec2::new(Fix64::ONE, Fix64::ZERO)
+                            }
+                        }
+                        None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    };
+                    p.dash_active = true;
+                    p.dash_vel = dir * stats.speed.max(Fix64::ONE);
+                    p.add_buff(BuffKind::Stealth, 3600.0); // 长期隐身，直到 IdoDSWL 移除
+                }
+            }
+            SkillEffect::BlinkToWall { .. } => {
+                // 闪到墙：先以不可变借读取起点/方向/命中，再落点，避免与修改 pos 冲突。
+                let (ppos, pradius) = {
+                    let p = &world.players[idx as usize];
+                    (p.pos, p.radius)
+                };
+                let dir = match target {
+                    Some(t) => {
+                        let d = t - ppos;
+                        if d.length() > Fix64::ZERO {
+                            d.normalized()
+                        } else {
+                            Vec2::new(Fix64::ONE, Fix64::ZERO)
+                        }
+                    }
+                    None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                };
+                let origin = ppos + dir * pradius;
+                let maxd = stats.max_distance;
+                let land = match world.raycast_first(origin, dir, maxd, idx) {
+                    Some(hit) => hit - dir * pradius, // 落在命中点前空一格
+                    None => ppos + dir * maxd,
+                };
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    p.pos = land;
+                }
+            }
             SkillEffect::Rock { .. } => {
                 // 生成一个延时爆炸的石头
                 if let Some(t) = target {
@@ -796,6 +977,30 @@ fn turn_toward(cur: Vec2, want: Vec2, max_turn: Fix64) -> Vec2 {
     };
     let ang = a.to_num::<f64>() + step;
     Vec2::new(cos(Fix64::from_num(ang)), sin(Fix64::from_num(ang)))
+}
+
+/// 射线 `o + t*dir`（`dir` 已单位化）与圆心 `c` 半径 `r` 的首次交点的 `t`。
+/// 无交点或从内部出发时返回 `None`。视 dir 单位化以确保 t 即距离。
+fn ray_circle_hit(o: Vec2, dir: Vec2, c: Vec2, r: Fix64) -> Option<Fix64> {
+    let f = o - c;
+    let b = dir.dot(f); // 2b 相当于 -2*(d·(c-o)) 的推导
+    let c_dot = f.length_squared() - r * r;
+    // t² + 2bt + c = 0
+    let disc = b * b - c_dot;
+    if disc <= Fix64::ZERO {
+        return None;
+    }
+    let sq = disc.sqrt();
+    let t1 = -b - sq;
+    let t2 = -b + sq;
+    // 取正向且最小的交点（忽略负 t，即物体在起点后方）
+    if t1 >= Fix64::ZERO {
+        Some(t1)
+    } else if t2 >= Fix64::ZERO {
+        Some(t2)
+    } else {
+        None
+    }
 }
 
 /// 两个圆球是否相交。保留供画线/技能判定等逻辑复用。
@@ -1351,5 +1556,96 @@ mod tests {
             world.step(input.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "激光线应持续伤害线上的敌人");
+    }
+
+    #[test]
+    fn obstacle_pushes_player_out() {
+        let mut world = World::new(1, 50);
+        world.obstacles.clear();
+        world.players[0].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        // 在 (0,0) 放一根半径 2 的柱子，玩家在 (2,0) 会与柱子重叠
+        world.obstacles.push(Obstacle::new(Vec2::ZERO, 2.0));
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.step(vec![PlayerInput::default()], dt);
+        // 玩家半径 1 + 柱子半径 2 = 3；重叠应从 (2,0) 被推到 >= (3,0)
+        assert!(
+            world.players[0].pos.x >= Fix64::from_num(2.99),
+            "玩家应从柱子里被推出，pos = {:?}",
+            world.players[0].pos
+        );
+    }
+
+    #[test]
+    fn blink2_second_stage_is_free_short_blink() {
+        let mut world = World::new(1, 51);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        let cast = |skill: SkillId, t: Vec2| vec![PlayerInput { cast: Some((skill, Some(t))), ..Default::default() }];
+        // 第一段：普通闪烁到 max_distance(5)
+        world.step(cast(SkillId::Blink2, far), dt);
+        let none = vec![PlayerInput::default()];
+        // 等前摇(0)+后摇完成，令窗口仍活着
+        for _ in 0..20 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].blink2_window.is_some(), "第一段后应开启二段窗口");
+        let x1 = world.players[0].pos.x.to_num::<f64>();
+        assert!(x1 > 4.9, "第一段应闪 ~5，实际 {}", x1);
+        // 第二段：窗口内再施放 = 免冷却短闪 4
+        let x_before = world.players[0].pos.x;
+        world.step(cast(SkillId::Blink2, far), dt);
+        let dx = (world.players[0].pos.x - x_before).to_num::<f64>();
+        assert!(dx > 3.9 && dx < 4.1, "第二段应短闪 ~4，实际 {}", dx);
+        assert!(world.players[0].blink2_window.is_none(), "第二段后窗口应清空");
+    }
+
+    #[test]
+    fn dashslash_moves_invisibly_and_stops_on_new_target() {
+        let mut world = World::new(1, 52);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        // 施放冲刺斩朝 (100,0)
+        world.step(vec![PlayerInput { cast: Some((SkillId::DashSlash, Some(far))), ..Default::default() }], dt);
+        let none = vec![PlayerInput::default()];
+        // 冲刺斩有 windup 0.1s：跑几帧让施法完成并进入冲刺
+        for _ in 0..10 {
+            world.step(none.clone(), dt);
+        }
+        // 冲刺中：应处于隐身且持续位移
+        assert!(world.players[0].dash_active, "冲刺斩应激活");
+        assert!(world.players[0].stealth(), "冲刺斩应全程隐身");
+        let x0 = world.players[0].pos.x;
+        for _ in 0..10 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].pos.x > x0, "冲刺应持续前进");
+        // 给出新的移动命令 → 解除冲刺 + 现身
+        world.step(vec![PlayerInput { set_target: Some(Vec2::new(Fix64::from_num(30.0), Fix64::from_num(30.0))), ..Default::default() }], dt);
+        assert!(!world.players[0].dash_active, "新移动命令应解除冲刺");
+        assert!(!world.players[0].stealth(), "解除冲刺应现身");
+    }
+
+    #[test]
+    fn blinktowall_lands_in_front_of_obstacle() {
+        let mut world = World::new(1, 53);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.obstacles.clear();
+        world.players[0].pos = Vec2::ZERO;
+        // 在正前方 (10,0) 放一根半径 1 的柱子
+        world.obstacles.push(Obstacle::new(Vec2::new(Fix64::from_num(10.0), Fix64::ZERO), 1.0));
+        // 朝 (30,0) 闪到墙：射线应命中柱子，落在柱子前（比 10 更近）
+        world.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        let x = world.players[0].pos.x.to_num::<f64>();
+        assert!(x > 1.0 && x < 9.9, "闪到墙应落在障碍前（<10），实际 {}", x);
+
+        // 无障碍方向：闪 max_distance(6)
+        let mut world2 = World::new(1, 54);
+        world2.obstacles.clear();
+        world2.players[0].pos = Vec2::ZERO;
+        world2.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        let x2 = world2.players[0].pos.x.to_num::<f64>();
+        assert!(x2 > 5.9 && x2 < 6.1, "无障碍应闪 max_distance(6)，实际 {}", x2);
     }
 }

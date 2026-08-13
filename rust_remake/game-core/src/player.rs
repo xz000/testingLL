@@ -125,6 +125,12 @@ pub struct Player {
     /// 幻象（C4）「待幻」状态：存在时表示已施放但尚未在点击处留下假身；
     /// 记录已过时间用于计算剩余假身时长。`None` = 未处于待幻。
     pub fake_active: Option<Fix64>,
+    /// 二段闪（R1b）可用窗口：第一次闪后其内可再免冷却短闪一次。`None` = 无窗口。
+    pub blink2_window: Option<Fix64>,
+    /// 冲刺斩（R2b）激活中：无限时长 + 隐身直冲，直到玩家给出新的移动命令才解除（原版 `IdoDSWL`）。
+    pub dash_active: bool,
+    /// 冲刺斩的位移速度（单位 / 秒），`dash_active` 时按此直线移动。
+    pub dash_vel: Vec2,
     pub alive: bool,
 }
 
@@ -150,6 +156,9 @@ impl Player {
             kick: None,
             boost_soaked: Fix64::ZERO,
             fake_active: None,
+            blink2_window: None,
+            dash_active: false,
+            dash_vel: Vec2::ZERO,
             alive: true,
         }
     }
@@ -289,6 +298,13 @@ impl Player {
         if !self.alive {
             return;
         }
+        // 0) 冲刺斩：无限时长直线冲刺，优先级最高（直到新移动命令解除）。
+        if self.dash_active {
+            self.cur_vel = Vec2::ZERO;
+            self.pos += self.dash_vel * dt;
+            self.pos += self.pull * dt;
+            return;
+        }
         // 1) 强制位移：定格速推进，重置自走惯性。
         if let Some(c) = &self.control {
             self.cur_vel = Vec2::ZERO;
@@ -370,6 +386,14 @@ impl Player {
                 self.fake_active = None;
             }
         }
+        // 二段闪窗口计时（到期失效）
+        if let Some(t) = &mut self.blink2_window {
+            *t = (*t - dt).max(Fix64::ZERO);
+            if *t < eps {
+                self.blink2_window = None;
+            }
+        }
+        // 注：冲刺斩不靠计时到期，而是由「玩家给出新的移动命令」触发解除（见 world.step）。
     }
 
     /// 清空本帧的附加速度（世界在每帧移动前清零）。
@@ -391,6 +415,9 @@ impl Player {
         self.shadow_window = Fix64::ZERO;
         self.boost_soaked = Fix64::ZERO;
         self.fake_active = None;
+        self.blink2_window = None;
+        self.dash_active = false;
+        self.dash_vel = Vec2::ZERO;
         self.caster = Caster::new();
     }
 

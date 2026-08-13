@@ -239,6 +239,13 @@ pub enum SkillEffect {
     FakeSetup { max_time: Fix64 },
     /// 闪烁闪身：朝目标方向移动至多 `max_distance` 的单位。
     Blink { max_distance: Fix64 },
+    /// 二段闪（R1b）：一次普通闪烁后，进入一个可免冷却再闪一次（更短距离）的窗口。
+    /// 直接施放 = 第一次闪；窗口内再施放 = 第二次短闪。
+    Blink2 { max_distance: Fix64 },
+    /// 冲刺斩（R2b）：进入无限时长 + 全程隐身的直线冲刺，直到玩家给出新的移动命令才解除。
+    DashSlash { speed: Fix64 },
+    /// 闪到墙（R3b）：沿目标方向射线找最近的障碍/玩家，落在其前；无障碍则闪 `max_distance`。
+    BlinkToWall { max_distance: Fix64 },
     /// 高速冲锋：朝目标方向冲锋，期间撞击造成踢击伤害。
     DashStrike {
         speed: Fix64,
@@ -628,6 +635,30 @@ impl DefTable {
                     push_damage_delta: 2.0,
                     ..DEF_ZERO
                 },
+            },
+            SkillId::Blink2 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "二段闪",
+                needs_point: true,
+                effect: Blink2 { max_distance: Fix64::from_num(5.0) },
+                growth: SkillGrowth { cooldown_base: 6.0, max_distance_base: 5.0, duration_base: 2.0, ..DEF_ZERO }, // duration = 二段可用窗口
+            },
+            SkillId::DashSlash => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "冲刺斩",
+                needs_point: true,
+                effect: DashSlash { speed: Fix64::from_num(15.0) },
+                growth: SkillGrowth { windup_base: 0.1, recovery_base: 0.1, cooldown_base: 5.0, speed_base: 15.0, ..DEF_ZERO },
+            },
+            SkillId::BlinkToWall => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "闪到墙",
+                needs_point: true,
+                effect: BlinkToWall { max_distance: Fix64::from_num(6.0) },
+                growth: SkillGrowth { cooldown_base: 3.0, max_distance_base: 6.0, ..DEF_ZERO },
             },
             SkillId::Rock => SkillDef {
                 id,
