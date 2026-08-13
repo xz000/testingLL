@@ -4,10 +4,10 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13，全部全绿）
-- **单测 45 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+- **单测 49 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪（后续帧同步直接用）。
-- 工作区 `rust_remake/` 尚未纳入 git 提交（整个目录 untracked），已有 `.gitignore` 忽略 `target/`。
+- 工作区 `rust_remake/` 已纳入 git（首提交 `a8926fc`）。
 
 ## 已完成（到本时刻）
 - **阶段 0/1**：骨架 + 核心单机 demo（缩圈、移动、碰撞、HP）。
@@ -16,8 +16,11 @@
     `cur_vel` 移动**渐加速/渐减速**、`mirror_by` 反射、`soak_boost` 生命偷取。
   - **C 树已全部复刻**：C1 疾跑(生命偷取+移速成长)、C2 反弹护盾(Reflect+镜向)、
     C3 影身(锚点+窗口+召回免冷却+到期自动回归)、C4 幻象(两段式：待幻→定位触发留2假身+瞬移)。
-  - **已有占位/半实现技能**（后续要修到原版机制）：E1掷石、E1b掷弹、E2潜行踢、R1闪烁、
-    R2冲锋、直射弹 Bullet(D2/D3 等)、导弹 Missile、Beam 线。
+  - **障碍系统（方案 A）**：独立圆形障碍 `Obstacle` + `raycast_first`(射线-圆求交，同时命中障碍与其他玩家) + 玩家-圆盘分离；客户端渲染柱子。
+  - **R 树已复刻**：R1b 二段闪(`blink2_window` 免冷却短闪)、R2b 冲刺斩(无限时长+隐身，
+    新移动命令解除，非撞墙停)、R3b 闪到墙(射线命中障碍/玩家落其前)。R1/R2 早已就绪。
+  - **已有占位/半实现技能**（后续要修到原版机制）：E1掷石、E1b掷弹、E2潜行踢、
+    直射弹 Bullet(D2/D3 等)、导弹 Missile、Beam 线。
 - **meta 多局循环**：MatchState/金币/升级/洗点/键绑定 + 客户端学习阶段 UI + 冷却 HUD。
 
 ## 当前未完成 / 待办（按优先级）
@@ -35,18 +38,17 @@
    - 前置：确定 `PlayerInput` 最终形态（要等 shift 队列定形）。
 5. **阶段 4/5**：美术（Cell-Graph-Risk）、粒子、音效、菜单、房间/结算/打包。
 
-## 已确认但尚未解决的设计决策（回到时最先看这里）
+## 已确认的设计决策（回看用）
 1. **移动加减速已补齐**（ACCEL=20 / DECEL=40，`cur_vel` 积分），手感数值（加速度/减速度斜率、
    BASE_SPEED）属「纯数值调优」，按用户判断可放阶段 3 之后。
-2. **场地障碍问题**：R3b 闪到墙、C2 反弹、Y2b 束缚、R2b 无限冲刺等强依赖「墙/障碍实体」。
-   当前 `World` 只有空场地 + 收缩圈。**尚未决定**是否引入「场地障碍」概念（或用 Arena 边界代替）。
-   → 落地 R 树的 R3b 前必须拍板。
+2. **场地障碍已拍板：方案 A**：独立圆形障碍 `Obstacle`（pos+radius）+ `raycast_first`
+   射线求交（同时命中障碍与其他玩家）+ 玩家-圆盘分离。R3b 因此可闪墙/闪人。已落地。
 3. **SKILL_SPEC.md 是依据原版源码核对的权威机制表**，凡标 `⚠` 的已实现技能与原版机制不符，
-   需要按表修正（例如 C 树已修完；E/D/T/Y 仍有 `⚠`/`❌`）。
+   需要按表修正（C/R 树已修完；E/D/T/Y 仍有 `⚠`/`❌`）。
 
 ## 常用命令
 ```
-cargo test  -p game-core                # 跑逻辑单测（45 个）
+cargo test  -p game-core                # 跑逻辑单测（49 个）
 cargo build -p client                   # 编客户端（ggez 窗口）
 cargo clippy --workspace                # 静态检查（应无警告）
 cargo run  -p client                    # 本机跑 demo（需图形环境）
@@ -54,7 +56,6 @@ cargo run  -p client                    # 本机跑 demo（需图形环境）
 
 ## 如何续接（建议顺序）
 1. 先读 `PLAN.md` 的「网络手感/延迟掩盖设计」+ `SKILL_SPEC.md` 复核机制。
-2. 拍板「场地障碍」决策（上述未决第 2 点）。
-3. 继续按 `SKILL_SPEC.md` 逐棵树落地，每棵树一批 + 单测（顺序 R→E→D→T→Y→F/G）。
-4. 再做 shift 指令队列。
-5. 进阶段 3。
+2. 继续按 `SKILL_SPEC.md` 逐棵树落地，每棵树一批 + 单测（顺序 E→D→T→Y→F/G）。
+3. 再做 shift 指令队列（阶段 2 待做第 5 项）。
+4. 进阶段 3。

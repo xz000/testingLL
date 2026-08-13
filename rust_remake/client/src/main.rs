@@ -351,6 +351,31 @@ impl Game {
         )?;
         canvas.draw(&fence, graphics::DrawParam::new());
 
+        // 障碍（圆形柱子：实心浅色圆 + 描边）
+        for o in self.world.obstacles.iter() {
+            let ox = o.pos.x.to_num::<f32>() * self.scale + self.offset.x;
+            let oy = o.pos.y.to_num::<f32>() * self.scale + self.offset.y;
+            let or = (o.radius.to_num::<f32>() * self.scale).max(3.0);
+            let pillar = Mesh::new_circle(
+                &ctx.gfx,
+                DrawMode::fill(),
+                Point2 { x: ox, y: oy },
+                or,
+                0.5,
+                Color::from_rgb(70, 76, 96),
+            )?;
+            canvas.draw(&pillar, graphics::DrawParam::new());
+            let pillar_edge = Mesh::new_circle(
+                &ctx.gfx,
+                DrawMode::stroke(2.0),
+                Point2 { x: ox, y: oy },
+                or,
+                0.5,
+                Color::from_rgb(120, 130, 160),
+            )?;
+            canvas.draw(&pillar_edge, graphics::DrawParam::new());
+        }
+
         // 玩家圆与 HP 条
         for p in self.world.players.iter() {
             if !p.alive {

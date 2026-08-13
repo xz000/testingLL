@@ -13,6 +13,7 @@
 | 束缚 `DoSkill.GetTied(time)` | DoSkill | `CanSing=false`，无法施法/被清火点，持续 `time` |
 | 移动速度附加 `VelotoAdd` / `cook` | MoveScript / CentrallyConstentField / Blue/RedLine | 每物理帧向 `VelotoAdd` 累加一个向量（例如引力拉拽） |
 | 反弹反射 `MirrorBy(sp,vp)` | Fix64Vector2 / ShieldScript / BoomerangScript | 按法线反射速度（护盾、回旋镖撞墙用） |
+| 障碍（墙/柱子） | 场景碰撞体（LetMeGo 里只有 `CircleCollider2D`、无墙） | 原版没有专门墙体；重写以**独立圆形障碍 `Obstacle`** 表示，配套 **射线-圆求交 `raycast_first`**（R3b 闪墙、将来子弹挡墙/束缚用）与**玩家-圆盘分离**。`raycast_first` 同时命中障碍和其他玩家，贴原版 |
 | 点目标地图 `targetshadow` | MoveScript | 右键设移动目标；`SetTarget` 同时触发 R2b 现身、C4 放置假身 |
 
 ## 各技能真值表（按 8 棵树）
@@ -29,10 +30,10 @@
 | 槽 | 名称 | 原版机制 | 当前 Rust |
 |----|------|----------|-----------|
 | R1 | Blink 闪烁 | 朝目标瞬移 ≤maxdist（目标过近不施法） | ✓ 吻合 |
-| R1b | Blink2 二段闪 | 闪一次后 **2s 内可再免cd短闪**(maxdist=4) | ❌ 未实现（≠锚点） |
-| R2 | DashStrike 冲锋推 | 朝目标以 SpeedR2 冲锋，撞击→踢飞+伤害（TimeR2=距离/速度） | ✓ 吻合 |
-| R2b | DashSlash 冲刺斩 | 以 LDspeed=15 朝目标**无限距离冲刺+全程隐身(关碰撞)**，直到撞墙或给新移动命令才现身 | ❌ 未实现 |
-| R3b | BlinkToWall 闪到墙 | 朝目标方向射线找墙/遮挡，传送到墙边；无墙→MaxDist=6 | ❌ 未实现（需场地障碍） |
+| R1b | Blink2 二段闪 | 闪一次后 **2s 内可再免cd短闪**(maxdist=4) | ✅ 完成：`blink2_window` 窗口 + 免冷却短闪 |
+| R2 | DashStrike 冲锋推 | 朝目标以 SpeedR2 冲锋，撞击→踢飞+伤害（TimeR2=距离/速度） | ✓ 吻合（`push` 模型） |
+| R2b | DashSlash 冲刺斩 | 以 LDspeed=15 朝目标**无限距离冲刺+全程隐身**，**给新移动命令才解除**（原版 `IdoDSWL`，非撞墙停） | ✅ 完成：`dash_active`+隐身；新移动命令解除 |
+| R3b | BlinkToWall 闪到墙 | 沿目标方向射线找最近碰撞体（玩家/障碍），落其前；无→MaxDist=6 | ✅ 完成：`raycast_first` 命中障碍/玩家；配合圆形障碍系统 |
 
 ### E 远程树
 | 槽 | 名称 | 原版机制 | 当前 Rust |
