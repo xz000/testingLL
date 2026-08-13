@@ -615,6 +615,34 @@ impl Game {
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(120, 230, 220))?;
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::Tether { .. } => {
+                    // 回拉线：蓝紫节点
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(120, 140, 255))?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::Gravity { radius, .. } => {
+                    // 引力场：半透明浅紫圈
+                    let r = (radius.to_num::<f32>() * self.scale).max(8.0);
+                    let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, r, 0.4, Color::from_rgba(170, 130, 255, 190))?;
+                    canvas.draw(&ring, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::Star { radius, .. } => {
+                    // 星域：金色星形节点 + 半径
+                    let r = (radius.to_num::<f32>() * self.scale).max(6.0);
+                    let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, r, 0.4, Color::from_rgba(255, 220, 120, 190))?;
+                    canvas.draw(&ring, graphics::DrawParam::new());
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(255, 220, 120))?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::BindLine { from, end, .. } => {
+                    // 束缚线：一条束形线段
+                    let fx = from.x.to_num::<f32>() * self.scale + self.offset.x;
+                    let fy = from.y.to_num::<f32>() * self.scale + self.offset.y;
+                    let ex = end.x.to_num::<f32>() * self.scale + self.offset.x;
+                    let ey = end.y.to_num::<f32>() * self.scale + self.offset.y;
+                    let line = Mesh::new_line(&ctx.gfx, &[Point2 { x: fx, y: fy }, Point2 { x: ex, y: ey }], 4.0, Color::from_rgba(200, 120, 255, 200))?;
+                    canvas.draw(&line, graphics::DrawParam::new());
+                }
             }
         }
 

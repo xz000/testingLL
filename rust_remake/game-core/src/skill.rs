@@ -350,6 +350,43 @@ pub enum SkillEffect {
         damage: Fix64,
         range: Fix64,
     },
+    /// 回拉线（Y1/Y1b）：命中目标后拉向施法者并持续掉血；`beam`=Y1b 沿路径额外扫射。
+    Tether {
+        damage: Fix64,
+        pull_speed: Fix64,
+        duration: Fix64,
+        beam: bool,
+    },
+    /// 撞击迟缓弹（Y2）：直线弹命中后把目标推离一定时长。
+    PushShot {
+        speed: Fix64,
+        damage: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        range: Fix64,
+    },
+    /// 束缚线（Y2b）：施法者身后两点反向收拢成线，线上的敌人被束缚（禁施法）。
+    BindLine {
+        speed: Fix64,
+        count: u32,
+        bind_time: f64,
+    },
+    /// 引力场（Y3）：飞行场持续把附近敌人吸向场中心。
+    GravityZone {
+        speed: Fix64,
+        pull_speed: Fix64,
+        radius: Fix64,
+        life: f64,
+        range: Fix64,
+    },
+    /// 星域持续伤（Y3b）：目标点放一颗星，范围内敌持续掉血、对施法者回血。
+    StarZone {
+        damage_per_sec: Fix64,
+        heal_per_sec: Fix64,
+        radius: Fix64,
+        duration: f64,
+        range: Fix64,
+    },
     /// 潜行踢：隐身并在持续时间内对撞击目标造成踢击伤害。
     StealthPush {
         duration: Fix64,
@@ -1106,6 +1143,130 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 10.0,
                     damage_delta: 2.0,
+                    ..DEF_ZERO
+                },
+            },
+            // Y 树：蓝线回拉（Y1）
+            SkillId::Y1BlueLine => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "蓝线回拉",
+                needs_point: true,
+                effect: Tether {
+                    damage: Fix64::from_num(2.0),
+                    pull_speed: Fix64::from_num(2.0),
+                    duration: Fix64::from_num(2.0),
+                    beam: false,
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 2.0,
+                    damage_delta: 0.4,
+                    ..DEF_ZERO
+                },
+            },
+            // Y 树：红线回拉+扇伤（Y1b）
+            SkillId::Y1BlueLine2 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "红线回拉",
+                needs_point: true,
+                effect: Tether {
+                    damage: Fix64::from_num(2.0),
+                    pull_speed: Fix64::from_num(2.0),
+                    duration: Fix64::from_num(2.0),
+                    beam: true,
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 2.0,
+                    damage_delta: 0.4,
+                    ..DEF_ZERO
+                },
+            },
+            // Y 树：撞击迟缓（Y2）
+            SkillId::Y2Delay => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "撞击迟缓",
+                needs_point: true,
+                effect: PushShot {
+                    speed: Fix64::from_num(10.0),
+                    damage: Fix64::from_num(8.0),
+                    push_power: Fix64::from_num(9.0),
+                    push_time: Fix64::from_num(2.0),
+                    range: Fix64::from_num(12.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 8.0,
+                    damage_delta: 1.5,
+                    ..DEF_ZERO
+                },
+            },
+            // Y 树：束缚线（Y2b）
+            SkillId::Y2Suite => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "束缚线",
+                needs_point: true,
+                effect: BindLine {
+                    speed: Fix64::from_num(8.0),
+                    count: 2,
+                    bind_time: 3.0,
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 6.0,
+                    ..DEF_ZERO
+                },
+            },
+            // Y 树：引力场（Y3）
+            SkillId::Y3Zone => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "引力场",
+                needs_point: true,
+                effect: GravityZone {
+                    speed: Fix64::from_num(4.0),
+                    pull_speed: Fix64::from_num(2.0),
+                    radius: Fix64::from_num(2.5),
+                    life: 4.0,
+                    range: Fix64::from_num(10.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 4.0,
+                    ..DEF_ZERO
+                },
+            },
+            // Y 树：星域持续伤（Y3b）
+            SkillId::Y3Zone2 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "星域",
+                needs_point: true,
+                effect: StarZone {
+                    damage_per_sec: Fix64::from_num(2.0),
+                    heal_per_sec: Fix64::from_num(2.0),
+                    radius: Fix64::from_num(1.6),
+                    duration: 4.0,
+                    range: Fix64::from_num(6.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 10.0,
+                    damage_base: 2.0,
+                    damage_delta: 0.3,
                     ..DEF_ZERO
                 },
             },
