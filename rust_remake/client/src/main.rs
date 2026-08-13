@@ -247,10 +247,12 @@ impl Game {
         let shift = ctx.keyboard.active_modifiers.shift_key();
 
         // 1) 技能键：按下 → 施放该键绑定的技能（shift 时入列）
+        // 注意：winit 对 shift+字母会给大写逻辑字符，故按大小写都匹配，否则 shift+技能无法触发。
         for (letter, key) in KEY_LETTERS {
-            let just = ctx
-                .keyboard
-                .is_logical_key_just_pressed(&Key::Character(letter.into()));
+            let lower = letter.to_string();
+            let upper = letter.to_uppercase().to_string();
+            let just = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(lower.into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(upper.into()));
             if just {
                 if let Some(skill) = bound_for(key) {
                     if game_core::skill::DefTable::def(skill).needs_point {
@@ -270,8 +272,10 @@ impl Game {
                 }
             }
         }
-        // S: 停止移动 + 清空 shift 队列（含 World 里的队列）
-        if ctx.keyboard.is_logical_key_pressed(&Key::Character("s".into())) {
+        // S: 停止移动 + 清空 shift 队列（含 World 里的队列）—— 同样大小写都匹配
+        let s_pressed = ctx.keyboard.is_logical_key_pressed(&Key::Character("s".into()))
+            || ctx.keyboard.is_logical_key_pressed(&Key::Character("S".into()));
+        if s_pressed {
             self.player_target = None;
             self.pending_skill = None;
             self.pending_cast = None;
