@@ -4,7 +4,9 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13，全部全绿）
-- **单测 63 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+- **单测 64 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+- **中文显示**：内置 `assets/fonts/cjk.ttf`（SimHei），客户端注册 `cjk` 字体渲染中文。
+- **场地缩小到 0**：复刻原版 `AreaScript`，半径持续缩到 0（不再停阈值 3.0）。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪（后续帧同步直接用）。
 - 工作区 `rust_remake/` 已纳入 git（首提交 `a8926fc`）。

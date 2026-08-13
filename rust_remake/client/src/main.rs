@@ -6,6 +6,8 @@
 //!
 //! 玩法逻辑全部在 `game-core` 的 `World` 中，本文件只负责输入采集与渲染。
 
+use std::path::PathBuf;
+
 use game_core::fix::{cos, sin, Fix64, Vec2};
 use game_core::meta::{MatchConfig, MatchPhase, MatchState};
 use game_core::rng::Rng;
@@ -68,6 +70,10 @@ struct Game {
 
 impl Game {
     fn new(ctx: &mut Context) -> GameResult<Self> {
+        // 注册中文字体（assets/fonts/cjk.ttf），供 draw_text 使用以显示中文。
+        let font = ggez::graphics::FontData::from_path(ctx, "fonts/cjk.ttf")?;
+        ctx.gfx.add_font("cjk", font);
+
         let player_count = 1 + BOTS;
         let seed = 20260812u64;
         let world = World::new(player_count, seed);
@@ -924,7 +930,7 @@ fn draw_text(
 ) -> GameResult {
     use ggez::graphics::{Text, TextFragment};
     use ggez::mint::Vector2;
-    let fragment = TextFragment::new(text).color(color).scale(size);
+    let fragment = TextFragment::new(text).color(color).scale(size).font("cjk".to_string());
     let mut t = Text::new(fragment);
     t.set_bounds(Vector2 { x: 2000.0, y: 200.0 });
     // 手动粗略居中：先量尺寸
@@ -939,6 +945,7 @@ fn draw_text(
 
 fn main() -> GameResult {
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
+        .add_resource_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets"))
         .window_setup(ggez::conf::WindowSetup::default().title("帧同步圆球竞技场 — 阶段1"))
         .window_mode(
             ggez::conf::WindowMode::default()

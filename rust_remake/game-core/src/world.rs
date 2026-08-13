@@ -12,8 +12,6 @@ use crate::skill::{SkillEffect, SkillId, DefTable};
 /// 场地收缩参数（复刻原版 `AreaScript` 的量级，稍加快以体现压迫感）。
 pub const START_RADIUS: f64 = 20.0;
 pub const SHRINK_SPEED: f64 = 0.35; // 半径减少量 / 秒
-/// 场地最小半径（不会缩到比玩家更小）。
-pub const MIN_RADIUS: f64 = 3.0;
 /// 出界伤害：球心距圆点 > 圈半径时，每帧扣除的 HP / 秒。
 pub const OUT_HURT: f64 = 5.0;
 /// 玩家相互挤压（重叠）时受到的伤害 / 秒。
@@ -443,9 +441,9 @@ impl World {
 
     fn shrink_arena(&mut self, dt: Fix64) {
         self.arena_radius -= Fix64::from_num(SHRINK_SPEED) * dt;
-        let min = Fix64::from_num(MIN_RADIUS);
-        if self.arena_radius < min {
-            self.arena_radius = min;
+        // 复刻原版 AreaScript：缩到 0 才停（不留最小半径阈值），但用极小值避免归负。
+        if self.arena_radius < Fix64::ZERO {
+            self.arena_radius = Fix64::ZERO;
         }
     }
 
@@ -3045,6 +3043,18 @@ mod tests {
         }
         assert!(world.players[1].hp < hp1, "星域应让范围内的敌人掉血");
         assert!(world.players[0].hp > hp0, "星域应给施法者回血");
+    }
+
+    #[test]
+    fn arena_shrinks_to_zero() {
+        let mut world = World::new(1, 92);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 缩到 0 需要 20/0.35 ≈ 57s ≈ 3429 帧；跑够久确认能缩到 0（而非停在旧阈值 3.0）。
+        let none = vec![PlayerInput::default()];
+        for _ in 0..3600 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.arena_radius <= Fix64::from_num(0.01), "场地应缩到 0，实际 {:?}", world.arena_radius);
     }
 
     #[test]
