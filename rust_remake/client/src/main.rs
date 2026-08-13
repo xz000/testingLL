@@ -52,6 +52,10 @@ struct Game {
     pending_cast: Option<(SkillId, Option<Vec2>)>,
     /// 当前等左键确认的点目标技能（技能键按下后稳定保持，直到左键确认/右键/S 取消）
     pending_skill: Option<SkillId>,
+    /// shift 键按住时压入的待执行指令队列（每帧把队首注入 PlayerInput.queued）
+    queued_cmds: std::collections::VecDeque<game_core::player::Cmd>,
+    /// shift 键按住点目标技能时，等左键确认的技能
+    pending_shift_skill: Option<SkillId>,
     /// 学习阶段当前选中的键（用于从该键的树里选技能/升级）
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 机器人的当前目标点
@@ -98,6 +102,8 @@ impl Game {
             player_target: None,
             pending_cast: None,
             pending_skill: None,
+            queued_cmds: std::collections::VecDeque::new(),
+            pending_shift_skill: None,
             learn_tree_key: None,
             bot_targets: vec![None; BOTS as usize],
             bot_rngs,
@@ -234,7 +240,10 @@ impl Game {
                 .and_then(|p| p.bound_skill(key))
         };
 
-        // 1) 技能键：按下 → 施放该键绑定的技能
+        // shift 按住 = 预排队列模式（winit ModifiersState::shift_key()）。
+        let shift = ctx.keyboard.active_modifiers.shift_key();
+
+        // 1) 技能键：按下 → 施放该键绑定的技能（shift 时入列）
         for (letter, key) in KEY_LETTERS {
             let just = ctx
                 .keyboard
@@ -242,35 +251,52 @@ impl Game {
             if just {
                 if let Some(skill) = bound_for(key) {
                     if game_core::skill::DefTable::def(skill).needs_point {
-                        self.pending_skill = Some(skill); // 等左键确认
+                        if shift {
+                            self.pending_shift_skill = Some(skill);
+                        } else {
+                            self.pending_skill = Some(skill); // 等左键确认
+                        }
+                    } else if shift {
+                        self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, None));
                     } else {
                         self.pending_cast = Some((skill, None)); // 无需目标，直接施放
                     }
                 }
             }
         }
-        // S: 停止移动（FireStop），取消待发施法
+        // S: 停止移动 + 清空 shift 队列
         if ctx.keyboard.is_logical_key_pressed(&Key::Character("s".into())) {
             self.player_target = None;
             self.pending_skill = None;
             self.pending_cast = None;
+            self.pending_shift_skill = None;
+            self.queued_cmds.clear();
         }
 
         // 2) 左键：确认点目标技能（cursor 位置作为落点）
         if ctx.mouse.button_just_pressed(MouseButton::Left) {
+            let m = ctx.mouse.position();
+            let world = self.screen_to_world(m.x, m.y);
             if let Some(skill) = self.pending_skill.take() {
                 self.player_target = None;
-                let m = ctx.mouse.position();
-                self.pending_cast = Some((skill, Some(self.screen_to_world(m.x, m.y))));
+                self.pending_cast = Some((skill, Some(world)));
+            } else if let Some(skill) = self.pending_shift_skill.take() {
+                self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, Some(world)));
             }
         }
 
-        // 3) 右键：设置移动目标
+        // 3) 右键：设置移动目标（shift 时入列）
         if ctx.mouse.button_just_pressed(MouseButton::Right) {
             self.pending_skill = None;
             self.pending_cast = None;
+            self.pending_shift_skill = None;
             let m = ctx.mouse.position();
-            self.player_target = Some(self.screen_to_world(m.x, m.y));
+            let world = self.screen_to_world(m.x, m.y);
+            if shift {
+                self.queued_cmds.push_back(game_core::player::Cmd::Move(world));
+            } else {
+                self.player_target = Some(world);
+            }
         }
     }
 
@@ -283,10 +309,13 @@ impl Game {
             .map(|_| PlayerInput::default())
             .collect();
 
-        // 玩家本人：移动目标 + 施法命令（施法命令持续发送，直到世界已进入前摇才清除）
+        // 玩家本人：移动目标 + 施法命令 + 本帧注入一条 shift 队列指令
         let p0 = &mut inputs[PLAYER_ID as usize];
         p0.set_target = self.player_target;
         p0.cast = self.pending_cast;
+        if let Some(cmd) = self.queued_cmds.pop_front() {
+            p0.queued = Some(cmd);
+        }
 
         // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
         let arena = self.world.arena_radius;
@@ -726,6 +755,12 @@ impl Game {
                         }
                     }
                 }
+                // 操作提示：shift 连招队列
+                draw_text(
+                    canvas, ctx,
+                    "Shift+右键 排移动 / Shift+技能(Shift+左键点目标) 排施法 / S 清空指令队列",
+                    16.0, Color::from_rgba(170, 180, 200, 220),
+                    Point2 { x: sw / 2.0, y: sh - 92.0 }, true)?;
             }
             MatchPhase::Learning => {
                 // 半透明遮罩

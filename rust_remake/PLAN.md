@@ -77,6 +77,8 @@
 > - **Y 树全部落地（复刻原版）**：Y1/Y1b 回拉线 `Tether`（场效应 `pull` 拉向施法者 + DoT，Y1b 沿线段扫射）；Y2 撞击迟缓 `PushBullet`（命中伤 + 沿方向强推 push_time）；Y2b 束缚线 `BindLine`（线段束缚 Tied 禁施法）；Y3 引力场 `Gravity`（场效应吸附）；Y3b 星域 `Star`（范围敌 DoT + 施法者回血）。此时 `step_area_forces`（原先空的场效应钩子）正式接入。
 > - **F/G 树落地**：F Test03 蓄力自爆 `SelfExplode`（windup 1s 后自身 AOE，自扣残血、范围内敌伤+踢开）；G Test01 普通爆炸弹 `PushShot`。
 > - **至此 8 棵树全部按原版复刻完成**。
+> - **shift 指令队列（阶段 2 待做第 5 项）**：新增 `player::Cmd`（Move/Cast/Stop）+`Player::cmd_queue`（固定数组，保持 Player 为 Copy）+`PlayerInput.queued`。`World::step` 先把本帧 `queued` 入队，再在 `step_command_queue` 里于玩家空闲（不施法/无移动目标/不在强制态）时逐个弹出队头执行（行走完/施法做完再执行下一个）。客户端实现 **Shift+右键排移动 / Shift+技能(Shift+左键点目标) 排施法 / S 清空队列**；用 winit `ModifiersState::shift_key()` 检测 shift。
+> - **阶段 2 待做 5 项全部完成** ✅。
 > - **竞技场缩到 0（修正）**：复刻原版 `AreaScript`，场地半径持续缩到 0（不再停在旧阈值 3.0）。`arena_shrinks_to_zero` 测试锁定。
 > - **中文字体（修正）**：ggez 默认字体无 CJK 字形；已内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体（Noto Sans CJK SC，SIL OFL 协议，可自由分发）**，用 fontTools 子集约 941 个本源码用到的字形 → 仅 168KB。`Game::new` 用 `include_bytes!` 内嵌 + `FontData::from_slice` 注册 `cjk` 字体（避免资源路径/VFS 解析问题），`draw_text` 用 `TextFragment::font("cjk")` 渲染中文。**已实测客户端可运行、不崩、中文正常。**
 > - **直射弹 Bullet（E 树掷弹 StoneShot / D 树火球 D2Fireball）**：沿施法方向直线飞出，命中最近目标造成伤害（或被反弹护盾反射）。

@@ -13,6 +13,20 @@
 use crate::fix::{Fix64, Vec2};
 use crate::skill::{Caster, SkillId};
 
+/// shift 指令类型（War3 式预排指令，入队后依次执行）。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Cmd {
+    /// 移动到目标点。
+    Move(Vec2),
+    /// 施放技能（含点目标）。
+    Cast(SkillId, Option<Vec2>),
+    /// 停手/停止移动（清移动目标）。
+    Stop,
+}
+
+/// 命令队列长度上限。
+pub const MAX_CMDS: usize = 8;
+
 /// 玩家常量（与原版数值相符的量级）。
 pub const BASE_SPEED: f64 = 3.2;
 pub const DEFAULT_RADIUS: f64 = 1.0;
@@ -159,6 +173,10 @@ pub struct Player {
     pub sweep: Option<SweepState>,
     /// 蓄力跳弹（T3b）累计的额外伤害（每命中 +0.3，miss 归零）。
     pub damageplus: f64,
+    /// 固定数组实现的 shift 指令队列（保持 `Player` 为 Copy）。
+    pub cmd_buf: [Cmd; MAX_CMDS],
+    pub cmd_head: usize,
+    pub cmd_len: usize,
     pub alive: bool,
 }
 
@@ -192,6 +210,9 @@ impl Player {
             ricochet_window: Fix64::ZERO,
             sweep: None,
             damageplus: 0.0,
+            cmd_buf: [Cmd::Cast(crate::skill::SkillId::Boost, None); MAX_CMDS],
+            cmd_head: 0,
+            cmd_len: 0,
             alive: true,
         }
     }
@@ -476,7 +497,51 @@ impl Player {
         self.ricochet_window = Fix64::ZERO;
         self.sweep = None;
         self.damageplus = 0.0;
+        self.cmd_head = 0;
+        self.cmd_len = 0;
         self.caster = Caster::new();
+    }
+
+    // ---- shift 指令队列（固定数组） ----
+
+    /// 队列是否空。
+    pub fn cmd_empty(&self) -> bool {
+        self.cmd_len == 0
+    }
+
+    /// 队头指令（若队列非空）。
+    pub fn cmd_peek(&self) -> Option<Cmd> {
+        if self.cmd_len == 0 {
+            None
+        } else {
+            Some(self.cmd_buf[self.cmd_head])
+        }
+    }
+
+    /// 队尾入队一条指令（满则忽略）。
+    pub fn cmd_push(&mut self, c: Cmd) {
+        if self.cmd_len >= MAX_CMDS {
+            return;
+        }
+        let tail = (self.cmd_head + self.cmd_len) % MAX_CMDS;
+        self.cmd_buf[tail] = c;
+        self.cmd_len += 1;
+    }
+
+    /// 弹出队头指令。
+    pub fn cmd_pop(&mut self) -> Option<Cmd> {
+        let c = self.cmd_peek();
+        if c.is_some() {
+            self.cmd_head = (self.cmd_head + 1) % MAX_CMDS;
+            self.cmd_len -= 1;
+        }
+        c
+    }
+
+    /// 清空队列。
+    pub fn cmd_clear(&mut self) {
+        self.cmd_head = 0;
+        self.cmd_len = 0;
     }
 
     /// C1 疾跑：受击时若在 Boost buff 内，返回**实际应扣到 HP 上的净伤害**（返回一半作为回血，
