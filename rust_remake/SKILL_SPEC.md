@@ -75,8 +75,8 @@
 ### F / G / 预留
 | 槽 | 名称 | 原版机制 | 当前 Rust |
 |----|------|----------|-----------|
-| F Test03 | 蓄力自爆 | 吟唱 1s（singing=3）→ SelfExplode：以自身(2半径)炸，自己扣到剩1血、范围内敌-10并推开9 | ❌ 未实现 |
-| G Test01 | 普通爆炸弹 | 同 BombExplode 直射（测试占位） | ❌ 未实现 |
+| F Test03 | 蓄力自爆 | 吟唱 1s → SelfExplode：以自身(2半径)炸，自己扣到残血、范围内敌伤并踢开 | ✅ `SelfExplode`：windup 1s 后 AOE；自扣残血、范围内敌伤+踢开 |
+| G Test01 | 普通爆炸弹 | 同 BombExplode 直射（测试占位） | ✅ `PushShot` 直射弹（命中伤+推） |
 | 预留 _SelfExplode | 同上 | — | 预留 |
 | 预留 _Reserved | — | — | 预留 |
 

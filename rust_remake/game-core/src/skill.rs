@@ -425,6 +425,14 @@ pub enum SkillEffect {
         bullet_speed: Fix64,
         turn_rad: f64,
     },
+    /// 蓄力自爆（F Test03）：吟唱结束后以自身为圆心 AOE 爆炸，自己扣到残血、范围内敌人掉血+踢开。
+    SelfExplode {
+        radius: Fix64,
+        self_stay: Fix64,
+        damage: Fix64,
+        kick: Fix64,
+        kick_time: Fix64,
+    },
     /// 尚未实现/占位：契约上存在但暂不落地效果（绑定后施法会被消耗，但不产生作用）。
     Unimplemented,
 }
@@ -1267,6 +1275,48 @@ impl DefTable {
                     cooldown_base: 10.0,
                     damage_base: 2.0,
                     damage_delta: 0.3,
+                    ..DEF_ZERO
+                },
+            },
+            // F 树：蓄力自爆（Test03）
+            SkillId::Test03 => SkillDef {
+                id,
+                tree: SkillTree::F,
+                name: "蓄力自爆",
+                needs_point: false,
+                effect: SelfExplode {
+                    radius: Fix64::from_num(2.0),
+                    self_stay: Fix64::from_num(1.0),
+                    damage: Fix64::from_num(10.0),
+                    kick: Fix64::from_num(9.0),
+                    kick_time: Fix64::from_num(1.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 1.0, // 吟唱 1s
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    ..DEF_ZERO
+                },
+            },
+            // G 树：普通爆炸弹（Test01）
+            SkillId::Test01 => SkillDef {
+                id,
+                tree: SkillTree::G,
+                name: "爆炸弹",
+                needs_point: true,
+                effect: PushShot {
+                    speed: Fix64::from_num(8.0),
+                    damage: Fix64::from_num(10.0),
+                    push_power: Fix64::from_num(8.0),
+                    push_time: Fix64::from_num(1.0),
+                    range: Fix64::from_num(12.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 10.0,
+                    damage_delta: 2.0,
                     ..DEF_ZERO
                 },
             },
