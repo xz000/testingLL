@@ -4,7 +4,7 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13，全部全绿）
-- **单测 53 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+- **单测 57 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪（后续帧同步直接用）。
 - 工作区 `rust_remake/` 已纳入 git（首提交 `a8926fc`）。
@@ -23,11 +23,13 @@
     E3/E3b 撒弹线=`ScatterLine`(Burst/Periodic 扇弹)；E1/E2 早已就绪。
   - **D 树已复刻**：D2 回旋镖=`Boomerang`(速度拉拽+撞障碍反弹)；D3 导弹=`Missile`(锁定点击处最近+击退)；
     D4 香蕉弹=`Banana`(±对称曲线+击退)。
+  - **T 树已复刻**：T1b 吸血链镖=`Chain`(命中回血+跳链)；T2 扇扫=`SweepState`发射器；T2b 扇面=`Volley`(fan)；
+    T3 跳弹=`Chain`(衰减)；T3b 蓄力跳弹=`BonusChain`(+damageplus)；TestLeech 转镖=`Chain`。
 - **meta 多局循环**：MatchState/金币/升级/洗点/键绑定 + 客户端学习阶段 UI + 冷却 HUD。
 
 ## 当前未完成 / 待办（按优先级）
 1. **施法前摇/后摇的手感层**：windup/recovery 已实现；但**客户端未显式消费**（已有 windup 圆环提示）。已实现部分见 PLAN 的「网络手感/延迟掩盖设计」✅。
-2. **其余技能树按 `SKILL_SPEC.md` 落地**（顺序建议 T→Y→F/G）：
+2. **其余技能树按 `SKILL_SPEC.md` 落地**（顺序建议 Y→F/G）：
    - 这些技能需要新增的通用机制（按 SKILL_SPEC「通用系统」表）：
      - 链式/跳弹（T1b/T3 吸血链、跳弹衰减）
      - 曲线/回旋镖（D2 回旋镖、D4 香蕉）
@@ -58,6 +60,6 @@ cargo run  -p client                    # 本机跑 demo（需图形环境）
 
 ## 如何续接（建议顺序）
 1. 先读 `PLAN.md` 的「网络手感/延迟掩盖设计」+ `SKILL_SPEC.md` 复核机制。
-2. 继续按 `SKILL_SPEC.md` 逐棵树落地，每棵树一批 + 单测（顺序 T→Y→F/G）。
+2. 继续按 `SKILL_SPEC.md` 逐棵树落地，每棵树一批 + 单测（顺序 Y→F/G）。
 3. 再做 shift 指令队列（阶段 2 待做第 5 项）。
 4. 进阶段 3。

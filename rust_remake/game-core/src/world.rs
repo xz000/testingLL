@@ -127,6 +127,18 @@ pub enum ProjectileKind {
         damage_per_sec: Fix64,
         remaining: Fix64,
     },
+    /// 链式/跳弹镖（T1b/T3/TestLeech）：全速直追最近敌人，命中后跳跃到下一个（或吸血、衰减伤害）。
+    Chain {
+        dir: Vec2,
+        speed: Fix64,
+        damage: Fix64,
+        heal: Fix64,       // 每次命中给施法者的回血量（T1b/TestLeech；0=无）
+        ratio: Fix64,      // 本次命中伤害倍率（T3 衰减用；1 起）
+        ratio_decay: Fix64,// 每次跳跃衰减量（T3；0=不衰减）
+        life: Fix64,       // 剩余飞行时间/总生存（跳跃会重置）
+        last_target: u32,  // 上次目标（避免立刻跳回），用 u32::MAX 表示无
+        owner: u32,
+    },
 }
 
 /// 撒弹线的撒弹方式。
@@ -249,6 +261,8 @@ impl World {
         }
         // 3b) 场效应贡献本帧附加速度（引力场 / 回拉线等；暂为空，各技能接入）
         self.step_area_forces(dt);
+        // 3c) T2 扇扫连射：按心率依次发射
+        self.step_sweep(dt);
         for p in self.players.iter_mut() {
             p.step_velocity(dt);
             p.tick_buffs(dt);
@@ -398,6 +412,43 @@ impl World {
     ///
     /// 各区域类技能（Y3 引力场、Y1 回拉线）接入时在此累加 `p.pull`。目前为空实现。
     fn step_area_forces(&mut self, _dt: Fix64) {}
+
+    /// T2 扇扫连射：每个带 `sweep` 状态的玩家按心率发射一枚扇形弹，发射完清状态。
+    fn step_sweep(&mut self, dt: Fix64) {
+        let mut spawn: Vec<(Vec2, Vec2, Fix64, Fix64)> = Vec::new(); // (pos, dir, speed, damage)
+        for p in self.players.iter_mut() {
+            if !p.alive {
+                continue;
+            }
+            if let Some(s) = &mut p.sweep {
+                s.elapsed += dt.to_num::<f64>();
+                let cad = s.cadence.max(1e-3);
+                while s.elapsed >= cad && s.remaining > 0 {
+                    s.elapsed -= cad;
+                    spawn.push((p.pos, s.dir, s.bullet_speed, s.damage));
+                    s.remaining -= 1;
+                    s.dir = crate::fix::rotate_ccw(s.dir, Fix64::from_num(s.turn_step));
+                }
+                if s.remaining == 0 {
+                    p.sweep = None;
+                }
+            }
+        }
+        for (pos, dir, speed, damage) in spawn {
+            self.projectiles.push(Projectile {
+                owner: 0,
+                kind: ProjectileKind::Bullet {
+                    dir,
+                    speed,
+                    damage,
+                    radius: Fix64::from_num(0.5),
+                    remaining: Fix64::from_num(SABULLET_RANGE),
+                },
+                pos,
+                alive: true,
+            });
+        }
+    }
 
     /// 玩家与圆形障碍的分离：把重叠进柱子的玩家沿圆心连线推出去（纯位置修正，无伤害）。
     fn resolve_obstacles(&mut self, _dt: Fix64) {
@@ -552,6 +603,18 @@ impl World {
                         pr.alive = false;
                     }
                 }
+                ProjectileKind::Chain { dir, speed, life, last_target, owner, .. } => {
+                    // 链镖：锁定最近敌人（排除上一个已命中目标与施法者）全速直追。
+                    if let Some(tgt) = self.nearest_enemy_excl(pr.pos, *owner, *last_target) {
+                        let want = (tgt - pr.pos).normalized();
+                        *dir = if want.length_squared() == Fix64::ZERO { *dir } else { want };
+                    }
+                    pr.pos += *dir * (*speed * dt);
+                    *life -= dt;
+                    if *life < eps {
+                        pr.alive = false;
+                    }
+                }
                 ProjectileKind::Beam { remaining, .. } => {
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
@@ -609,6 +672,41 @@ impl World {
                         damage,
                         bomb_force,
                     });
+                }
+                continue;
+            }
+            // 链镖/跳弹族单独处理（需改动 Chain 内部状态以完成跳跃，交给可变分支）
+            if matches!(pr.kind, ProjectileKind::Chain { .. }) {
+                if let ProjectileKind::Chain { damage, heal, ratio, ratio_decay, life, last_target, owner, .. } = &mut pr.kind {
+                    let lt = *last_target;
+                    if let Some((victim, _dd)) =
+                        nearest_hit_with_skip(&self.players, pr.pos, *owner, Fix64::from_num(0.6), lt)
+                    {
+                        let dmg = *damage * *ratio;
+                        events.push((victim, dmg, Some(*owner)));
+                        if *heal > Fix64::ZERO {
+                            if let Some(p) = self.players.get_mut(*owner as usize) {
+                                if p.alive {
+                                    let healed = (p.max_hp - p.hp).min(*heal);
+                                    p.hp += healed;
+                                }
+                            }
+                        }
+                        // T3b 蓄力：命中一次 +0.3
+                        if *heal == Fix64::ZERO && *ratio_decay == Fix64::ZERO {
+                            if let Some(p) = self.players.get_mut(*owner as usize) {
+                                p.damageplus += 0.3;
+                            }
+                        }
+                        let next_ratio = *ratio - *ratio_decay;
+                        *last_target = victim;
+                        if next_ratio <= Fix64::ZERO {
+                            pr.alive = false;
+                        } else {
+                            *ratio = next_ratio;
+                            *life = Fix64::from_num(1.5);
+                        }
+                    }
                 }
                 continue;
             }
@@ -713,7 +811,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } => {}
+                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } => {}
             }
         }
 
@@ -787,6 +885,21 @@ impl World {
                 continue;
             }
             let d = (p.pos - anchor).length_squared();
+            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                best = Some((d, p.pos));
+            }
+        }
+        best.map(|(_, v)| v)
+    }
+
+    /// 距 `pos` 最近的非 `owner`、且 id != `skip` 的存活玩家（供链镖跳跃用）。
+    fn nearest_enemy_excl(&self, pos: Vec2, owner: u32, skip: u32) -> Option<Vec2> {
+        let mut best: Option<(Fix64, Vec2)> = None;
+        for p in self.players.iter() {
+            if !p.alive || p.id == owner || p.id == skip {
+                continue;
+            }
+            let d = (p.pos - pos).length_squared();
             if best.map(|(bd, _)| d < bd).unwrap_or(true) {
                 best = Some((d, p.pos));
             }
@@ -1333,6 +1446,135 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     p.move_target = None; // 施法会取消当前移动命令
                 }
             }
+            SkillEffect::ChainLeech { speed, damage, heal, range: _ } => {
+                // T1b 吸血链镖：命中吸血 + 链下一个
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = towards(p.pos, target);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Chain {
+                            dir,
+                            speed,
+                            damage,
+                            heal,
+                            ratio: Fix64::ONE,
+                            ratio_decay: Fix64::ZERO,
+                            life: Fix64::from_num(1.5),
+                            last_target: u32::MAX,
+                            owner: idx,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::TurnLeech { speed, damage, heal, turn_delay, range: _ } => {
+                // TestLeech 转镖吸血：命中吸血 + 链
+                let _ = turn_delay;
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = towards(p.pos, target);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Chain {
+                            dir,
+                            speed,
+                            damage,
+                            heal,
+                            ratio: Fix64::ONE,
+                            ratio_decay: Fix64::ZERO,
+                            life: Fix64::from_num(1.5),
+                            last_target: u32::MAX,
+                            owner: idx,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::JumpDecay { speed, damage, range: _, ratio_decay } => {
+                // T3 跳弹·衰减：命中后跳到下一个，伤害逐跳衰减
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dir = towards(p.pos, target);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Chain {
+                            dir,
+                            speed,
+                            damage,
+                            heal: Fix64::ZERO,
+                            ratio: Fix64::ONE,
+                            ratio_decay,
+                            life: Fix64::from_num(1.5),
+                            last_target: u32::MAX,
+                            owner: idx,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::Volley { bullet_speed, damage, count, spread_step } => {
+                // T2b 扇面齐射：从 -count/2 到 +count/2 一次喷出
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let base = towards(p.pos, target);
+                    let span = (count as f64 - 1.0) / 2.0 * spread_step;
+                    for i in 0..count {
+                        let off = (i as f64) * spread_step - span;
+                        let d = crate::fix::rotate_ccw(base, Fix64::from_num(off));
+                        world.projectiles.push(Projectile {
+                            owner: idx,
+                            kind: ProjectileKind::Bullet {
+                                dir: d,
+                                speed: bullet_speed,
+                                damage,
+                                radius: Fix64::from_num(0.5),
+                                remaining: Fix64::from_num(SABULLET_RANGE),
+                            },
+                            pos: p.pos,
+                            alive: true,
+                        });
+                    }
+                }
+            }
+            SkillEffect::Sweep { bullet_speed, damage, count, cadence, turn_step } => {
+                // T2 扇扫连射：设发射器状态，由世界逐帧依次发射
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let base = towards(p.pos, target);
+                    p.sweep = Some(crate::player::SweepState {
+                        dir: base,
+                        bullet_speed,
+                        damage,
+                        remaining: count,
+                        cadence,
+                        turn_step,
+                        elapsed: 0.0,
+                        id: idx,
+                    });
+                }
+            }
+            SkillEffect::BonusChain { speed, damage, range: _ } => {
+                // T3b 蓄力跳弹：命中 +damageplus 并以回返镖刷新冷却
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dmg = damage + Fix64::from_num(p.damageplus);
+                    let dir = towards(p.pos, target);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Chain {
+                            dir,
+                            speed,
+                            damage: dmg,
+                            heal: Fix64::ZERO,
+                            ratio: Fix64::ONE,
+                            ratio_decay: Fix64::ZERO,
+                            life: Fix64::from_num(2.0),
+                            last_target: u32::MAX,
+                            owner: idx,
+                        },
+                        pos: p.pos,
+                        alive: true,
+                    });
+                }
+            }
             SkillEffect::LineBeam { .. } => {
                 // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
             }
@@ -1348,6 +1590,32 @@ fn nearest_hit(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Opti
     let mut best: Option<(Fix64, u32)> = None;
     for p in players.iter() {
         if !p.alive || p.id == owner {
+            continue;
+        }
+        let d = p.pos - pos;
+        let d_sq = d.length_squared();
+        let rr = (radius + p.radius) * (radius + p.radius);
+        if d_sq <= rr && best.map(|(bd, _)| d_sq < bd).unwrap_or(true) {
+            best = Some((d_sq, p.id));
+        }
+    }
+    best.and_then(|(_, id)| {
+        let owner_idx = players.iter().position(|p| p.id == id)?;
+        Some((id, players[owner_idx].pos - pos))
+    })
+}
+
+/// 同 `nearest_hit`，但额外排除一个 `skip` id（供链镖跳跃：不命中上一个目标）。
+fn nearest_hit_with_skip(
+    players: &[Player],
+    pos: Vec2,
+    owner: u32,
+    radius: Fix64,
+    skip: u32,
+) -> Option<(u32, Vec2)> {
+    let mut best: Option<(Fix64, u32)> = None;
+    for p in players.iter() {
+        if !p.alive || p.id == owner || p.id == skip {
             continue;
         }
         let d = p.pos - pos;
@@ -1384,6 +1652,21 @@ fn ray_circle_hit(o: Vec2, dir: Vec2, c: Vec2, r: Fix64) -> Option<Fix64> {
         Some(t2)
     } else {
         None
+    }
+}
+
+/// 从 `from` 朝 `target`（可选）的单位方向；无目标或重合时默认 +X。
+fn towards(from: Vec2, target: Option<Vec2>) -> Vec2 {
+    match target {
+        Some(t) => {
+            let d = t - from;
+            if d.length() > Fix64::ZERO {
+                d.normalized()
+            } else {
+                Vec2::new(Fix64::ONE, Fix64::ZERO)
+            }
+        }
+        None => Vec2::new(Fix64::ONE, Fix64::ZERO),
     }
 }
 
@@ -2131,5 +2414,96 @@ mod tests {
             world.step(input.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "香蕉弹命中敌人应造成伤害");
+    }
+
+    #[test]
+    fn tleech_chains_and_heals() {
+        let mut world = World::new(3, 70);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].hp = Fix64::from_num(50.0); // 施法者先残血以观察回血
+        for i in 1..3 {
+            world.players[i].pos = Vec2::new(Fix64::from_num(3.0 + i as f64), Fix64::ZERO);
+        }
+        let hp0 = world.players[0].hp;
+        let hp1 = world.players[1].hp;
+        let hp2 = world.players[2].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::TLeech, Some(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ];
+        for _ in 0..90 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "吸血链镖应命中敌人1");
+        assert!(world.players[2].hp < hp2, "吸血链镖应链到敌人2");
+        assert!(world.players[0].hp > hp0, "吸血链镖应给施法者回血");
+    }
+
+    #[test]
+    fn t3_jump_decays_damage() {
+        let mut world = World::new(3, 71);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        for i in 1..3 {
+            world.players[i].pos = Vec2::new(Fix64::from_num(3.0 + i as f64), Fix64::ZERO);
+        }
+        let hp1 = world.players[1].hp;
+        let hp2 = world.players[2].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::T3Fast, Some(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ];
+        for _ in 0..90 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "跳弹应命中敌人1");
+        assert!(world.players[2].hp < hp2, "跳弹应链到敌人2");
+    }
+
+    #[test]
+    fn t2_volley_and_sweep_spawn_many() {
+        // T2b 扇面齐射：一次喷出 4 发
+        let mut w1 = World::new(1, 72);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w1.players[0].pos = Vec2::ZERO;
+        w1.step(vec![PlayerInput { cast: Some((SkillId::T2Volley, Some(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        let none = vec![PlayerInput::default()];
+        for _ in 0..20 {
+            w1.step(none.clone(), dt);
+        }
+        let bullets = w1.projectiles.iter().filter(|pr| matches!(pr.kind, ProjectileKind::Bullet { .. })).count();
+        assert!(bullets >= 4, "扇面齐射应喷出 4 发，实际 {}", bullets);
+
+        // T2 扇扫连射：随时间依次发射，统计峰值弹数
+        let mut w2 = World::new(1, 73);
+        w2.players[0].pos = Vec2::ZERO;
+        w2.step(vec![PlayerInput { cast: Some((SkillId::T2Shot, Some(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        let mut peak = 0usize;
+        for _ in 0..90 {
+            w2.step(none.clone(), dt);
+            peak = peak.max(w2.projectiles.iter().filter(|pr| matches!(pr.kind, ProjectileKind::Bullet { .. })).count());
+        }
+        assert!(peak >= 2, "扇扫连射应先后发射多发自爆弹，峰值 {}", peak);
+        // 全部发完后清空发射状态
+        assert!(w2.players[0].sweep.is_none(), "发射完应清空扇扫状态");
+    }
+
+    #[test]
+    fn t3b_bonus_chain_accumulates_damage() {
+        let mut world = World::new(2, 74);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::T3Fast2, Some(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        for _ in 0..40 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[0].damageplus > 0.0, "蓄力跳弹命中应累计额外伤害");
     }
 }

@@ -89,6 +89,24 @@ impl BuffKind {
     }
 }
 
+/// T2 扇扫连射的发射状态（施法者上的持久发射器）。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SweepState {
+    pub dir: Vec2,
+    pub bullet_speed: Fix64,
+    pub damage: Fix64,
+    /// 剩余要发射的弹数
+    pub remaining: u32,
+    /// 每发间隔（秒）
+    pub cadence: f64,
+    /// 每发角度步进（弧度）
+    pub turn_step: f64,
+    /// 距上次发射累计时间
+    pub elapsed: f64,
+    /// 上次发射的 id（用于归零判定，当前仅判断是否还有剩余）
+    pub id: u32,
+}
+
 /// 单个玩家的确定性状态。
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Player {
@@ -137,6 +155,10 @@ pub struct Player {
     pub ricochet_kick: Option<Kick>,
     /// 潜行踢·连推：可重踢的总窗口剩余时间（撞障碍后递减）。
     pub ricochet_window: Fix64,
+    /// 扇扫连射（T2）：正在进行的依次发射状态。`None` = 未在发射。
+    pub sweep: Option<SweepState>,
+    /// 蓄力跳弹（T3b）累计的额外伤害（每命中 +0.3，miss 归零）。
+    pub damageplus: f64,
     pub alive: bool,
 }
 
@@ -168,6 +190,8 @@ impl Player {
             ricochet_pending: None,
             ricochet_kick: None,
             ricochet_window: Fix64::ZERO,
+            sweep: None,
+            damageplus: 0.0,
             alive: true,
         }
     }
@@ -450,6 +474,8 @@ impl Player {
         self.ricochet_pending = None;
         self.ricochet_kick = None;
         self.ricochet_window = Fix64::ZERO;
+        self.sweep = None;
+        self.damageplus = 0.0;
         self.caster = Caster::new();
     }
 

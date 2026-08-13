@@ -306,6 +306,50 @@ pub enum SkillEffect {
         damage: Fix64,
         duration: Fix64,
     },
+    /// 吸血链镖（T1b）：命中敌人吸血回己，并自动跳到最近的下一个敌人（链式吸血）。
+    ChainLeech {
+        speed: Fix64,
+        damage: Fix64,
+        heal: Fix64,
+        range: Fix64,
+    },
+    /// 跳弹·衰减（T3）：高速镖，命中后跳到最近下一个，伤害逐跳衰减。
+    JumpDecay {
+        speed: Fix64,
+        damage: Fix64,
+        range: Fix64,
+        ratio_decay: Fix64,
+    },
+    /// 转镖吸血（TestLeech）：直线飞行一段后折向最近敌人，命中吸血回己。
+    TurnLeech {
+        speed: Fix64,
+        damage: Fix64,
+        heal: Fix64,
+        turn_delay: Fix64,
+        range: Fix64,
+    },
+    /// 扇面齐射（T2b）：同时喷出若干发扇形爆炸弹。
+    Volley {
+        bullet_speed: Fix64,
+        damage: Fix64,
+        count: u32,
+        spread_step: f64,
+    },
+    /// 扇扫连射（T2）：朝目标方向依次喷出若干发爆炸弹（每发角度微转）。
+    Sweep {
+        bullet_speed: Fix64,
+        damage: Fix64,
+        count: u32,
+        cadence: f64,   // 每发间隔（秒）
+        turn_step: f64, // 每发角度步进（弧度）
+    },
+    /// 跳弹·蓄力（T3b）：命中→爆炸伤+推并原地留一个回返镖；返回施法者即刷新技能冷却，
+    /// 且累计的 `damageplus` 让后续伤害更高。
+    BonusChain {
+        speed: Fix64,
+        damage: Fix64,
+        range: Fix64,
+    },
     /// 潜行踢：隐身并在持续时间内对撞击目标造成踢击伤害。
     StealthPush {
         duration: Fix64,
@@ -927,6 +971,136 @@ impl DefTable {
                     damage_delta: 2.0,
                     speed_base: 8.0,
                     push_power_base: 5.0,
+                    ..DEF_ZERO
+                },
+            },
+            // T 树：吸血链镖（T1b）
+            SkillId::TLeech => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "吸血链镖",
+                needs_point: true,
+                effect: ChainLeech {
+                    speed: Fix64::from_num(12.0),
+                    damage: Fix64::from_num(5.0),
+                    heal: Fix64::from_num(5.0),
+                    range: Fix64::from_num(12.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 5.0,
+                    damage_delta: 1.0,
+                    speed_base: 12.0,
+                    ..DEF_ZERO
+                },
+            },
+            // T 树：扇扫连射（T2）
+            SkillId::T2Shot => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "扇扫连射",
+                needs_point: true,
+                effect: Sweep {
+                    bullet_speed: Fix64::from_num(8.0),
+                    damage: Fix64::from_num(8.0),
+                    count: 8,
+                    cadence: 0.1,
+                    turn_step: 0.1,
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 4.0,
+                    damage_base: 8.0,
+                    damage_delta: 1.5,
+                    ..DEF_ZERO
+                },
+            },
+            // T 树：扇面齐射（T2b）
+            SkillId::T2Volley => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "扇面齐射",
+                needs_point: true,
+                effect: Volley {
+                    bullet_speed: Fix64::from_num(8.0),
+                    damage: Fix64::from_num(8.0),
+                    count: 4,
+                    spread_step: std::f64::consts::FRAC_PI_8,
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 8.0,
+                    damage_delta: 1.5,
+                    ..DEF_ZERO
+                },
+            },
+            // T 树：跳弹·衰减（T3）
+            SkillId::T3Fast => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "跳弹",
+                needs_point: true,
+                effect: JumpDecay {
+                    speed: Fix64::from_num(20.0),
+                    damage: Fix64::from_num(5.0),
+                    range: Fix64::from_num(12.0),
+                    ratio_decay: Fix64::from_num(0.2),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 5.0,
+                    damage_delta: 1.0,
+                    speed_base: 20.0,
+                    ..DEF_ZERO
+                },
+            },
+            // T 树：跳弹·蓄力（T3b）
+            SkillId::T3Fast2 => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "蓄力跳弹",
+                needs_point: true,
+                effect: BonusChain {
+                    speed: Fix64::from_num(15.0),
+                    damage: Fix64::from_num(5.0),
+                    range: Fix64::from_num(12.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 5.0,
+                    damage_delta: 1.0,
+                    speed_base: 15.0,
+                    ..DEF_ZERO
+                },
+            },
+            // T 树：转镖吸血（TestLeech）
+            SkillId::TestLeech => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "转镖",
+                needs_point: true,
+                effect: TurnLeech {
+                    speed: Fix64::from_num(6.0),
+                    damage: Fix64::from_num(10.0),
+                    heal: Fix64::from_num(10.0),
+                    turn_delay: Fix64::ZERO,
+                    range: Fix64::from_num(12.0),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 10.0,
+                    damage_delta: 2.0,
                     ..DEF_ZERO
                 },
             },
