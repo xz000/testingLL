@@ -509,6 +509,16 @@ impl Game {
                     )?;
                     canvas.draw(&b, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::PushBullet { dir, radius, .. } => {
+                    // 撞击迟缓弹：暖橙龟球 + 大效果提示
+                    let d = dir;
+                    let tx = px + d.x.to_num::<f32>() * 8.0;
+                    let ty = py + d.y.to_num::<f32>() * 8.0;
+                    let tail = Mesh::new_line(&ctx.gfx, &[Point2 { x: px, y: py }, Point2 { x: tx, y: ty }], 3.0, Color::from_rgba(255, 150, 60, 190))?;
+                    canvas.draw(&tail, graphics::DrawParam::new());
+                    let b = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, (radius.to_num::<f32>() * self.scale).max(5.0), 0.5, Color::from_rgb(255, 160, 80))?;
+                    canvas.draw(&b, graphics::DrawParam::new());
+                }
                 game_core::world::ProjectileKind::Missile { dir, radius, .. } => {
                     // 追踪导弹：深色大球 + 朝向小三角
                     let m = Mesh::new_circle(
