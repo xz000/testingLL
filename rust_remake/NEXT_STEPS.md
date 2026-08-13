@@ -4,7 +4,7 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13，全部全绿）
-- **单测 67 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+- **单测 70 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
 - **中文显示**：内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体(Noto Sans CJK SC, SIL OFL)**，子集约 941 字形 168KB。客户端 `include_bytes!` 内嵌 + `from_slice` 注册 `cjk` 字体渲染中文。已实测运行正常。
 - **场地缩小到 0**：复刻原版 `AreaScript`，半径持续缩到 0（不再停阈值 3.0）。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
@@ -37,7 +37,10 @@
 
 ## 当前未完成 / 待办（按优先级）
 1. **阶段 2 已全部完成**：8 棵技能树 + shift 指令队列 + 手感层（windup/recovery/加减速）。
-2. **阶段 3 帧同步联网**（核心逻辑确定性已具备；`PlayerInput` 已含 `queued` 指令字段，可直接用于网络包）。
+2. **阶段 3 帧同步联网（进行中）**：
+   - ✅ `game-core::netcode`：`PlayerInput`（含队列）字节编解码 + 确定性回放单测（两 World 逐位一致）。
+   - ⏳ `net/` crate：UDP 帧同步（主机收集+广播、客户端收发喂 World）。
+   - ⏳ client 接入 net（联网模式，本地 UDP 多开）。
    - 这些技能需要新增的通用机制（按 SKILL_SPEC「通用系统」表）：
      - 链式/跳弹（T1b/T3 吸血链、跳弹衰减）
      - 曲线/回旋镖（D2 回旋镖、D4 香蕉）

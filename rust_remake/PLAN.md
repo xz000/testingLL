@@ -127,6 +127,8 @@
 - **输入缓冲 / 本地预测 / 乐观同步**：属于阶段 3 帧同步的延迟掩盖，时机在阶段 3。
 - **shift 指令队列**：阶段 2 待做第 5 项（预排移动/施法，兼作输入缓冲）。
 - [ ] **阶段 3 — 帧同步联网**：核心逻辑确定性模拟 + UDP 广播输入 + 本机多开联调（输入缓冲 + 本地预测 + 乐观同步，不停摆等待最慢玩家）
+  - ✅ **已完成第一步（确定性地基 + 编解码）**：新增 `game-core::netcode`（`PlayerInput`（含 shift 队列 Vec）的字节编解码，Fix64 以位模式往返，大端定长；`SkillId::from_u32` 逆映射）。单测锁定：`roundtrip_preserves_all_fields`、`truncated_input_fails_gracefully`、`two_clients_with_same_inputs_replay_identically`（**帧同步铁证**：两台独立 World 用相同输入流回放后逐位一致）。
+  - ⏳ 待做：`net/` crate（UDP 帧同步：主机收集+广播输入、客户端收发喂 World）；client 接入 net 联网模式（本地 UDP 多开）。
 - [ ] **阶段 4 — 表现层打磨**：Cell-Graph-Risk 美术、粒子、音效、菜单
 - [ ] **阶段 5 — 完成品**：房间系统、结算、材质打磨、打包
 
