@@ -5,7 +5,7 @@
 //! 这是后续帧同步（lockstep）联网的基础。
 
 use crate::fix::{Fix64, Vec2};
-use crate::player::{BuffKind, Kick, Player};
+use crate::player::{BuffKind, Cmd, Kick, Player};
 use crate::rng::Rng;
 use crate::skill::{SkillEffect, SkillId, DefTable};
 
@@ -27,6 +27,8 @@ pub struct PlayerInput {
     pub set_target: Option<Vec2>,
     /// 若为 `Some((skill, target))`，则尝试对该技能施法（target 为点目标/朝向）。
     pub cast: Option<(SkillId, Option<Vec2>)>,
+    /// 本帧新压入的 shift 指令（队尾）；由 `World` 入队，随后按施法节奏依次执行。
+    pub queued: Option<Cmd>,
 }
 
 /// 一整帧里所有玩家的输入。
@@ -290,6 +292,13 @@ impl World {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
 
+        // 0) 把本帧新压入的 shift 指令追加到各玩家队列（队尾）
+        for (p, pi) in self.players.iter_mut().zip(input.iter()) {
+            if let Some(c) = pi.queued {
+                p.cmd_push(c);
+            }
+        }
+
         // 1) 技能：处理施法输入 → 推进施法状态机 → 结算完成的效果
         let just_cast = self.handle_casts(&input, dt);
 
@@ -314,7 +323,10 @@ impl World {
                 p.control = None; // 若有残留强制态也一并清除
                 p.remove_buff(BuffKind::Stealth);
             }
-            p.move_target = pi.set_target;
+            // 仅在有新移动目标时更新 move_target；None 表示“本帧没有新目标”，不覆盖（让 shift 队列的移动得以保留）。
+            if let Some(t) = pi.set_target {
+                p.move_target = Some(t);
+            }
         }
         for (pid, target) in fake_locs {
             self.fake_locate(pid, target);
@@ -367,6 +379,59 @@ impl World {
         }
         self.eliminated_order.extend(new_deaths);
         self.kills_this_round.extend(new_kills);
+
+        // 8) shift 指令队列：空闲时逐个执行队头指令（行走完/施法做完再执行下一个）。
+        self.step_command_queue();
+    }
+
+    /// shift 指令队列：玩家空闲（不施法、无移动目标、不在强制位移/冲刺）时，弹出队头指令执行。
+    fn step_command_queue(&mut self) {
+        for i in 0..self.players.len() {
+            loop {
+                if !self.players[i].alive {
+                    break;
+                }
+                // 空闲判定
+                let idle = self.players[i].caster.phase() == crate::skill::CastPhase::Idle
+                    && self.players[i].move_target.is_none()
+                    && self.players[i].control.is_none()
+                    && !self.players[i].dash_active;
+                if !idle {
+                    break;
+                }
+                let Some(cmd) = self.players[i].cmd_peek() else {
+                    break;
+                };
+                match cmd {
+                    Cmd::Move(t) => {
+                        self.players[i].cmd_pop();
+                        self.players[i].move_target = Some(t);
+                        break; // 开始移动：本帧停止级联，等到达后再执行下一个
+                    }
+                    Cmd::Cast(skill, target) => {
+                        let def = crate::skill::DefTable::def(skill);
+                        let lv = self.players[i].skill_level(skill);
+                        let pos = self.players[i].pos;
+                        let r = self.players[i].radius;
+                        let ok = self.players[i]
+                            .caster
+                            .try_cast(&def, lv, target, pos, r)
+                            .is_ok();
+                        self.players[i].cmd_pop(); // 无论成败均消耗该指令
+                        if ok {
+                            // 施法开始（会取消移动）；施法状态机由下一帧 handle_casts 推进并结算效果。
+                            self.players[i].move_target = None;
+                        }
+                        break; // 本帧不再继续执行后续指令（若施成功则进入 busy，若不成功则丢弃）
+                    }
+                    Cmd::Stop => {
+                        self.players[i].cmd_pop();
+                        self.players[i].move_target = None;
+                        // 停止后继续尝试执行队列里下一个指令
+                    }
+                }
+            }
+        }
     }
 
     /// 施法流程：
@@ -2355,6 +2420,7 @@ mod tests {
             start = vec![PlayerInput {
                 cast: None,
                 set_target: Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)),
+                ..Default::default()
             }];
         }
         assert!(
@@ -2375,6 +2441,7 @@ mod tests {
         let first = vec![PlayerInput {
             set_target: Some(far),
             cast: Some((SkillId::Blink, Some(far))),
+            ..Default::default()
         }];
         world.step(first, dt);
         // 之后（正确客户端）不再下发旧移动目标。
@@ -3093,5 +3160,58 @@ mod tests {
             world.step(input.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "爆炸弹应命中造成伤害");
+    }
+
+    #[test]
+    fn shift_queue_move_then_move() {
+        let mut world = World::new(1, 100);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        // 压入两条移动指令：先到 (4,0)，再到 (8,0)
+        world.step(vec![PlayerInput { queued: Some(Cmd::Move(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO))), ..Default::default() }], dt);
+        world.step(vec![PlayerInput { queued: Some(Cmd::Move(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO))), ..Default::default() }], dt);
+        let none = vec![PlayerInput::default()];
+        // 跑足够久让两条移动都走完
+        for _ in 0..300 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].cmd_empty(), "指令应全部执行完");
+        assert!(near(world.players[0].pos.x, 8.0, 0.5), "应先到 4 再到 8，实际 {:?}", world.players[0].pos);
+    }
+
+    #[test]
+    fn shift_queue_move_then_cast() {
+        let mut world = World::new(2, 101);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(6.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        // 压入：先移动到 (3,0)，再朝 (6,0) 施放掷弹(Rock)
+        world.step(vec![
+            PlayerInput { queued: Some(Cmd::Move(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        world.step(vec![
+            PlayerInput { queued: Some(Cmd::Cast(SkillId::Rock, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..240 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].cmd_empty(), "指令应全部执行完");
+        assert!(world.players[1].hp < hp1, "队列里的施法指令应真正施放并生效");
+    }
+
+    #[test]
+    fn s_clears_command_queue() {
+        // S 清空队列：压入几条指令后手动清空
+        let mut p = crate::player::Player::new(0, Vec2::ZERO, Fix64::ONE);
+        p.cmd_push(Cmd::Move(Vec2::new(Fix64::ONE, Fix64::ZERO)));
+        p.cmd_push(Cmd::Cast(SkillId::Boost, None));
+        assert_eq!(p.cmd_len, 2);
+        p.cmd_clear();
+        assert!(p.cmd_empty());
     }
 }
