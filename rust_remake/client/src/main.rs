@@ -252,11 +252,13 @@ impl Game {
                 if let Some(skill) = bound_for(key) {
                     if game_core::skill::DefTable::def(skill).needs_point {
                         if shift {
+                            self.player_target = None; // 队列操作：放弃即时移动目标，避免覆盖队列移动
                             self.pending_shift_skill = Some(skill);
                         } else {
                             self.pending_skill = Some(skill); // 等左键确认
                         }
                     } else if shift {
+                        self.player_target = None;
                         self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, None));
                     } else {
                         self.pending_cast = Some((skill, None)); // 无需目标，直接施放
@@ -281,11 +283,12 @@ impl Game {
                 self.player_target = None;
                 self.pending_cast = Some((skill, Some(world)));
             } else if let Some(skill) = self.pending_shift_skill.take() {
+                self.player_target = None;
                 self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, Some(world)));
             }
         }
 
-        // 3) 右键：设置移动目标（shift 时入列）
+        // 3) 右键：设置移动目标（shift 时入列；普通右键即时移动会打断队列）
         if ctx.mouse.button_just_pressed(MouseButton::Right) {
             self.pending_skill = None;
             self.pending_cast = None;
@@ -293,8 +296,10 @@ impl Game {
             let m = ctx.mouse.position();
             let world = self.screen_to_world(m.x, m.y);
             if shift {
+                self.player_target = None; // 放弃即时移动，改为排队列
                 self.queued_cmds.push_back(game_core::player::Cmd::Move(world));
             } else {
+                self.queued_cmds.clear(); // 普通即时移动：打断并清空之前排的队列
                 self.player_target = Some(world);
             }
         }
@@ -309,13 +314,11 @@ impl Game {
             .map(|_| PlayerInput::default())
             .collect();
 
-        // 玩家本人：移动目标 + 施法命令 + 本帧注入一条 shift 队列指令
+        // 玩家本人：移动目标 + 施法命令 + 本帧把 shift 队列一次全部注入（批量）
         let p0 = &mut inputs[PLAYER_ID as usize];
         p0.set_target = self.player_target;
         p0.cast = self.pending_cast;
-        if let Some(cmd) = self.queued_cmds.pop_front() {
-            p0.queued = Some(cmd);
-        }
+        p0.queued = self.queued_cmds.drain(..).collect();
 
         // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
         let arena = self.world.arena_radius;
