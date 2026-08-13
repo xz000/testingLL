@@ -269,13 +269,35 @@ pub enum SkillEffect {
         radius: Fix64,
         range: Fix64,
     },
-    /// 追踪导弹：朝最近敌人缓慢转向并从命中目标处爆炸（AOE）。
+    /// 追踪导弹：朝点击处最近的敌人全速直追（命中爆炸伤+击退）。
     Missile {
         speed: Fix64,
-        turn: Fix64,
         radius: Fix64,
         damage: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
         range: Fix64,
+    },
+    /// 回旋镖（D2）：持续朝施法者加速回飞 + 撞障碍反弹，命中敌人爆炸伤+击退。
+    Boomerang {
+        speed: Fix64,
+        accelerate: Fix64,
+        radius: Fix64,
+        damage: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        life: Fix64,
+    },
+    /// 双香蕉曲线弹（D4）：朝 ±45° 各打一发曲线飞行弹，命中爆炸伤+击退。
+    Banana {
+        count: u32,
+        turn_rad: f64,
+        speed: Fix64,
+        radius: Fix64,
+        damage: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        life: Fix64,
     },
     /// 持续伤害线：短时向前延伸的杀伤段，碰到即伤（原版 E 树线/弹）。
     LineBeam {
@@ -826,17 +848,20 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // D 树：火球（直射弹）
+            // D 树：回旋镖火球（D2）
             SkillId::D2Fireball => SkillDef {
                 id,
                 tree: SkillTree::D,
-                name: "火球",
+                name: "回旋镖",
                 needs_point: true,
-                effect: Bullet {
-                    speed: Fix64::from_num(12.0),
-                    damage: Fix64::from_num(12.0),
+                effect: Boomerang {
+                    speed: Fix64::from_num(8.0),
+                    accelerate: Fix64::from_num(0.2),
                     radius: Fix64::from_num(1.0),
-                    range: Fix64::from_num(14.0),
+                    damage: Fix64::from_num(12.0),
+                    push_power: Fix64::from_num(8.0),
+                    push_time: Fix64::from_num(1.0),
+                    life: Fix64::from_num(3.0),
                 },
                 growth: SkillGrowth {
                     windup_base: 0.12,
@@ -845,24 +870,24 @@ impl DefTable {
                     cooldown_delta: -0.2,
                     damage_base: 12.0,
                     damage_delta: 3.0,
-                    speed_base: 12.0,
-                    range_base: 14.0,
-                    max_distance_delta: 1.0,
+                    speed_base: 8.0,
+                    push_power_base: 8.0,
                     ..DEF_ZERO
                 },
             },
-            // D 树：追踪导弹
+            // D 树：追踪导弹（锁定点击处最近）
             SkillId::D3Missile => SkillDef {
                 id,
                 tree: SkillTree::D,
                 name: "导弹",
-                needs_point: false,
+                needs_point: true,
                 effect: Missile {
                     speed: Fix64::from_num(7.0),
-                    turn: Fix64::from_num(6.0),
                     radius: Fix64::from_num(1.6),
                     damage: Fix64::from_num(18.0),
-                    range: Fix64::from_num(10.0),
+                    push_power: Fix64::from_num(9.0),
+                    push_time: Fix64::from_num(1.0),
+                    range: Fix64::from_num(12.0),
                 },
                 growth: SkillGrowth {
                     windup_base: 0.2,
@@ -874,6 +899,34 @@ impl DefTable {
                     radius_base: 1.6,
                     radius_delta: 0.1,
                     speed_base: 7.0,
+                    push_power_base: 9.0,
+                    ..DEF_ZERO
+                },
+            },
+            // D 树：双香蕉曲线弹（D4）
+            SkillId::D4Fireball => SkillDef {
+                id,
+                tree: SkillTree::D,
+                name: "香蕉弹",
+                needs_point: true,
+                effect: Banana {
+                    count: 2,
+                    turn_rad: std::f64::consts::FRAC_PI_4,
+                    speed: Fix64::from_num(8.0),
+                    radius: Fix64::from_num(1.0),
+                    damage: Fix64::from_num(10.0),
+                    push_power: Fix64::from_num(5.0),
+                    push_time: Fix64::from_num(1.0),
+                    life: Fix64::from_num(2.5),
+                },
+                growth: SkillGrowth {
+                    windup_base: 0.15,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 10.0,
+                    damage_delta: 2.0,
+                    speed_base: 8.0,
+                    push_power_base: 5.0,
                     ..DEF_ZERO
                 },
             },
