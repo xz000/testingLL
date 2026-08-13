@@ -56,6 +56,8 @@ struct Game {
     queued_cmds: std::collections::VecDeque<game_core::player::Cmd>,
     /// shift 键按住点目标技能时，等左键确认的技能
     pending_shift_skill: Option<SkillId>,
+    /// 本帧是否要给 World 下发"清空命令队列"信号（S / 普通即时操作打断）
+    pending_clear_signal: bool,
     /// 学习阶段当前选中的键（用于从该键的树里选技能/升级）
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 机器人的当前目标点
@@ -104,6 +106,7 @@ impl Game {
             pending_skill: None,
             queued_cmds: std::collections::VecDeque::new(),
             pending_shift_skill: None,
+            pending_clear_signal: false,
             learn_tree_key: None,
             bot_targets: vec![None; BOTS as usize],
             bot_rngs,
@@ -262,17 +265,19 @@ impl Game {
                         self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, None));
                     } else {
                         self.pending_cast = Some((skill, None)); // 无需目标，直接施放
+                        self.pending_clear_signal = true; // 普通施法打断已排的队列
                     }
                 }
             }
         }
-        // S: 停止移动 + 清空 shift 队列
+        // S: 停止移动 + 清空 shift 队列（含 World 里的队列）
         if ctx.keyboard.is_logical_key_pressed(&Key::Character("s".into())) {
             self.player_target = None;
             self.pending_skill = None;
             self.pending_cast = None;
             self.pending_shift_skill = None;
             self.queued_cmds.clear();
+            self.pending_clear_signal = true; // 让 World 也清空其命令队列
         }
 
         // 2) 左键：确认点目标技能（cursor 位置作为落点）
@@ -282,6 +287,7 @@ impl Game {
             if let Some(skill) = self.pending_skill.take() {
                 self.player_target = None;
                 self.pending_cast = Some((skill, Some(world)));
+                self.pending_clear_signal = true; // 普通施法打断已排的队列
             } else if let Some(skill) = self.pending_shift_skill.take() {
                 self.player_target = None;
                 self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, Some(world)));
@@ -300,6 +306,7 @@ impl Game {
                 self.queued_cmds.push_back(game_core::player::Cmd::Move(world));
             } else {
                 self.queued_cmds.clear(); // 普通即时移动：打断并清空之前排的队列
+                self.pending_clear_signal = true; // 也让 World 清空其队列
                 self.player_target = Some(world);
             }
         }
@@ -319,6 +326,8 @@ impl Game {
         p0.set_target = self.player_target;
         p0.cast = self.pending_cast;
         p0.queued = self.queued_cmds.drain(..).collect();
+        p0.clear_queue = self.pending_clear_signal;
+        self.pending_clear_signal = false;
 
         // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
         let arena = self.world.arena_radius;

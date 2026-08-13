@@ -146,6 +146,7 @@ pub fn encode_player_input(p: &PlayerInput) -> Vec<u8> {
     for c in p.queued.iter() {
         w.cmd(*c);
     }
+    w.u8(if p.clear_queue { 1 } else { 0 });
     w.finish()
 }
 
@@ -167,10 +168,12 @@ pub fn decode_player_input(b: &[u8]) -> Result<PlayerInput, &'static str> {
     for _ in 0..n {
         queued.push(r.cmd()?);
     }
+    let clear_queue = r.u8()? != 0;
     Ok(PlayerInput {
         set_target,
         cast,
         queued,
+        clear_queue,
     })
 }
 
@@ -188,6 +191,7 @@ mod tests {
                 Cmd::Cast(SkillId::Blink, None),
                 Cmd::Stop,
             ],
+            clear_queue: seed % 2 == 0,
         };
         let _ = seed;
         // 让字段有变化以覆盖 None 分支
