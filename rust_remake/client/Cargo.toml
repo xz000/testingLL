@@ -1,0 +1,9 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+description = "帧同步圆球竞技场 - ggez 客户端（渲染/输入/UI）"
+
+[dependencies]
+game-core = { path = "../game-core" }
+ggez = "0.10"
