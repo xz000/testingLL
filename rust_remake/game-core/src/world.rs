@@ -29,6 +29,8 @@ pub struct PlayerInput {
     pub cast: Option<(SkillId, Option<Vec2>)>,
     /// 本帧新压入的 shift 指令（可批量）；由 `World` 全部入队，随后按施法节奏依次执行。
     pub queued: Vec<Cmd>,
+    /// 若为 true，则本帧先清空该玩家在 `World` 中的命令队列（S 清队 / 普通即时操作打断）。
+    pub clear_queue: bool,
 }
 
 /// 一整帧里所有玩家的输入。
@@ -292,8 +294,11 @@ impl World {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
 
-        // 0) 把本帧新压入的 shift 指令（可批量）全部追加到各玩家队列（队尾）
+        // 0) 先按 clear_queue 清空各玩家队列，再把本帧新压入的 shift 指令（可批量）全部入队
         for (p, pi) in self.players.iter_mut().zip(input.iter()) {
+            if pi.clear_queue {
+                p.cmd_clear();
+            }
             for c in pi.queued.iter().copied() {
                 p.cmd_push(c);
             }
@@ -3204,6 +3209,36 @@ mod tests {
         }
         assert!(world.players[0].cmd_empty(), "指令应全部执行完");
         assert!(world.players[1].hp < hp1, "队列里的施法指令应真正施放并生效");
+    }
+
+    #[test]
+    fn clear_queue_signal_empties_world_queue() {
+        let mut world = World::new(1, 103);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        // 先排队两条移动
+        world.step(vec![PlayerInput {
+            queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO))],
+            ..Default::default()
+        }], dt);
+        // 再排第二条 + 同帧清队列 → 队列应只剩第二条之后的（此处 clear 后第二条被清掉）
+        world.step(vec![PlayerInput {
+            queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO))],
+            clear_queue: true,
+            ..Default::default()
+        }], dt);
+        // 跑很长远航不到 8（因为队列被清空，第二条未执行）
+        let none = vec![PlayerInput::default()];
+        for _ in 0..300 {
+            world.step(none.clone(), dt);
+        }
+        // 第一条到 5 后队列已空，玩家不应继续走到 8
+        assert!(world.players[0].cmd_empty(), "clear_queue 后队列应为空");
+        assert!(
+            world.players[0].pos.x.to_num::<f64>() < 7.0,
+            "clear_queue 应阻止第二条移动，实际 x={:?}",
+            world.players[0].pos
+        );
     }
 
     #[test]
