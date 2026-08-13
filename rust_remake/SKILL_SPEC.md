@@ -59,7 +59,7 @@
 | T2 | T2Shot 扇扫连射 | 朝目标方向 **~8 发按角度微转**（每 0.1s 一发） | ✅ `SweepState` 发射器逐帧依次发射并旋转 |
 | T2b | T2Volley 扇面齐射 | 同时喷 **N 发扇形**爆炸弹 | ✅ `Volley`：一次喷出 count 发（fan） |
 | T3 | T3Fast 跳弹·衰减 | 高速镖，命中→**跳到最近下一个**，伤害逐跳衰减 | ✅ `Chain`(decay)：命中后跳并衰减倍率 |
-| T3b | T3Fast2 跳弹·蓄力 | 命中→累计 `damageplus`(+0.3)；越多后续伤害越高 | ✅ `BonusChain`：命中 +damageplus、下次基础伤更高 |
+| T3b | T3Fast2 跳弹·蓄力 | 命中→爆炸伤+推+生回返镖 + `damageplus`(+0.3)；**回返镖到家→刷新技能冷却**；miss→damageplus 归零 | ✅ `BonusBomb`(直线炸弹)+`Returner`(回返镖)：命中+damageplus/生成回返镖，回返镖到家刷新 cd，射程耗尽未命中→归零 |
 | TestLeech | 转镖吸血 | 直射镖，折向最近敌人，命中吸血回己 | ✅ `Chain`(heal>0) 复用（当前即转链） |
 
 ### Y 控场树

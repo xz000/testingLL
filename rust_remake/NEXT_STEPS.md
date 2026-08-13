@@ -24,7 +24,8 @@
   - **D 树已复刻**：D2 回旋镖=`Boomerang`(速度拉拽+撞障碍反弹)；D3 导弹=`Missile`(锁定点击处最近+击退)；
     D4 香蕉弹=`Banana`(±对称曲线+击退)。
   - **T 树已复刻**：T1b 吸血链镖=`Chain`(命中回血+跳链)；T2 扇扫=`SweepState`发射器；T2b 扇面=`Volley`(fan)；
-    T3 跳弹=`Chain`(衰减)；T3b 蓄力跳弹=`BonusChain`(+damageplus)；TestLeech 转镖=`Chain`。
+    T3 跳弹=`Chain`(衰减)；T3b 蓄力跳弹严格复刻=`BonusBomb`(直线炸弹)+`Returner`(回返镖，
+    命中+damageplus/生成回返镖→到家刷新cd/miss归零)；TestLeech 转镖=`Chain`。
 - **meta 多局循环**：MatchState/金币/升级/洗点/键绑定 + 客户端学习阶段 UI + 冷却 HUD。
 
 ## 当前未完成 / 待办（按优先级）
