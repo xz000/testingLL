@@ -3,13 +3,13 @@
 > 本文件用于在中断后快速恢复上下文。配合 `PLAN.md`（总计划 + 网络手感状态核实）与
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
-## 当前状态（2026-08-13，全部全绿）
-- **单测 70 全绿**，`cargo build --workspace` 通过，`cargo clippy --workspace` 无警告。
+## 当前状态（2026-08-13 晚，全部全绿）
+- **单测 72 全绿**，`cargo build --workspace`、`cargo clippy --workspace` 均通过无警告。
 - **中文显示**：内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体(Noto Sans CJK SC, SIL OFL)**，子集约 941 字形 168KB。客户端 `include_bytes!` 内嵌 + `from_slice` 注册 `cjk` 字体渲染中文。已实测运行正常。
 - **场地缩小到 0**：复刻原版 `AreaScript`，半径持续缩到 0（不再停阈值 3.0）。
-- 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。
-- 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪（后续帧同步直接用）。
-- 工作区 `rust_remake/` 已纳入 git（首提交 `a8926fc`）。
+- 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。（`net/` crate 待建）
+- 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪。
+- 工作区 `rust_remake/` 已纳入 git。**醒来续接的里程碑：git HEAD 应在 `f8b717a`（含 shift 停止修复 + 前摇UI + 瞄准线）；上一提交 `7fcf180` 记录了待议决策；再上一 `8ea8d8d` 是阶段3第一步(netcode+确定性)。**
 
 ## 已完成（到本时刻）
 - **阶段 0/1**：骨架 + 核心单机 demo（缩圈、移动、碰撞、HP）。
@@ -36,22 +36,23 @@
 - **meta 多局循环**：MatchState/金币/升级/洗点/键绑定 + 客户端学习阶段 UI + 冷却 HUD。
 
 ## 当前未完成 / 待办（按优先级）
-1. **阶段 2 已全部完成**：8 棵技能树 + shift 指令队列 + 手感层（windup/recovery/加减速）。
-2. **阶段 3 帧同步联网（进行中）**：
-   - ✅ `game-core::netcode`：`PlayerInput`（含队列）字节编解码 + 确定性回放单测（两 World 逐位一致）。
-   - ⏳ `net/` crate：UDP 帧同步（主机收集+广播、客户端收发喂 World）。
+1. **阶段 2 已全部完成** ✅：8 棵技能树 + shift 指令队列 + 手感层（windup/recovery/加减速）+ 冷却 HUD。
+2. **阶段 3 帧同步联网（进行中，下一步入口）**：
+   - ✅ `game-core::netcode`：`PlayerInput`（含队列/clear_queue/stop_move）字节编解码 + 确定性回放单测（两 World 逐位一致）。
+   - ⏳ **`net/` crate：UDP 帧同步（本轮要做）**。架构见下「阶段 3 网络架构选型」。
    - ⏳ client 接入 net（联网模式，本地 UDP 多开）。
-   - 这些技能需要新增的通用机制（按 SKILL_SPEC「通用系统」表）：
-     - 链式/跳弹（T1b/T3 吸血链、跳弹衰减）
-     - 曲线/回旋镖（D2 回旋镖、D4 香蕉）
-     - 扇面齐射/扫射（T2/T2b、E3/E3b）
-     - 线/区域（Y1/Y1b 回拉线、Y2b 束缚、Y3 引力场、Y3b 星区）—— 引力/回拉用已有 `pull`
-     - 位移（R1b 二段闪、R2b 无限隐身冲刺、R3b 闪到墙）
-     - 特殊（F 蓄力自爆）
-3. **stage 2 待做第 5 项：shift 指令队列**（War3 式移动+施法完整队列，兼作输入缓冲）。
-4. **阶段 3：帧同步联网**（core 确定性已具备；本地 UDP + 输入缓冲 + 本地预测 + 乐观同步）。
-   - 前置：确定 `PlayerInput` 最终形态（要等 shift 队列定形）。
-5. **阶段 4/5**：美术（Cell-Graph-Risk）、粒子、音效、菜单、房间/结算/打包。
+   - ⏳ （后续）Steamworks 接入：用 `Steam Networking` 替换底层 Transport。
+
+## 阶段 3 网络架构选型（已确认，2026-08-13 晚）
+- **模型：主机-客户端（host 同时当一个玩家）**，即“房主开房当 host + 其余 client 连入”。
+  - 与 Steamworks 常见形态（房间：房主=host，玩家加入）无缝衔接。
+  - 便于以后过渡到专用服务器 / Steam 中继。
+- **人数：设计上限 8 人**（`MatchConfig` 可配；本地测试默认 2~4）。大逃杀收缩圈向，8 人合适。
+- **`net/` 层做「传输无关」抽象**：定义 `trait Transport { send/recv }`，本地用 `StdUdpTransport`，
+  将来接 Steamworks 时用 `SteamTransport` 替换，网络逻辑（帧同步/编解码）不动。
+- 帧同步：host 每 tick 收齐各 client 输入（`netcode` 编解码）→ 广播整合包 → 各端喂本地 `World`。
+- 验证：`net/` 层写“单进程内 host + 两 client（不同端口）”的本机 UDP 单测，验证收发与回放一致；
+  两个 ggez 窗口对战仍需有图形环境手动跑 `cargo run -p client` 验证。
 
 ## 待议 / 搁置决策（详见 PLAN.md「待议 / 搁置决策」）
 - 升级流程 UI 是否改（数字=绑定 vs `=`=升级）。
