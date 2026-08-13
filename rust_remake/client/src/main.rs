@@ -58,6 +58,8 @@ struct Game {
     pending_shift_skill: Option<SkillId>,
     /// 本帧是否要给 World 下发"清空命令队列"信号（S / 普通即时操作打断）
     pending_clear_signal: bool,
+    /// 本帧是否要给 World 下发"停止移动"信号（S 停手）
+    pending_stop_signal: bool,
     /// 学习阶段当前选中的键（用于从该键的树里选技能/升级）
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 机器人的当前目标点
@@ -107,6 +109,7 @@ impl Game {
             queued_cmds: std::collections::VecDeque::new(),
             pending_shift_skill: None,
             pending_clear_signal: false,
+            pending_stop_signal: false,
             learn_tree_key: None,
             bot_targets: vec![None; BOTS as usize],
             bot_rngs,
@@ -282,6 +285,7 @@ impl Game {
             self.pending_shift_skill = None;
             self.queued_cmds.clear();
             self.pending_clear_signal = true; // 让 World 也清空其命令队列
+            self.pending_stop_signal = true;  // 让 World 停止当前移动
         }
 
         // 2) 左键：确认点目标技能（cursor 位置作为落点）
@@ -331,7 +335,9 @@ impl Game {
         p0.cast = self.pending_cast;
         p0.queued = self.queued_cmds.drain(..).collect();
         p0.clear_queue = self.pending_clear_signal;
+        p0.stop_move = self.pending_stop_signal;
         self.pending_clear_signal = false;
+        self.pending_stop_signal = false;
 
         // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
         let arena = self.world.arena_radius;
@@ -361,7 +367,7 @@ impl Game {
         let mut canvas = Canvas::from_frame(ctx, Color::from_rgb(18, 22, 34));
 
         // 瞄准指示：从玩家到鼠标的画一条线（点目标技能待左键确认）。
-        if self.pending_skill.is_some() {
+        if self.pending_skill.is_some() || self.pending_shift_skill.is_some() {
             if let Some(p) = self.world.players.get(PLAYER_ID as usize) {
                 let pfx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
                 let pfy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
@@ -766,6 +772,14 @@ impl Game {
                                     )?;
                                     canvas.draw(&shade, graphics::DrawParam::new());
                                     draw_text(canvas, ctx, &format!("{:.1}", rem.to_num::<f32>()), 20.0, Color::from_rgb(120, 200, 255), Point2 { x: bx + slot_w / 2.0, y: y0 + slot_h / 2.0 }, true)?;
+                                }
+                            }
+                            // 前摇提示：该技能正在蓄力（Windup）时高亮描边 + 提示字
+                            if let game_core::skill::CastPhase::Windup { id, .. } = me_player.caster.phase() {
+                                if id == s {
+                                    let wring = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(3.0), rect, Color::from_rgb(255, 180, 80))?;
+                                    canvas.draw(&wring, graphics::DrawParam::new());
+                                    draw_text(canvas, ctx, "蓄力中", 15.0, Color::from_rgb(255, 200, 120), Point2 { x: bx + slot_w / 2.0, y: y0 + slot_h - 14.0 }, true)?;
                                 }
                             }
                         }

@@ -31,6 +31,8 @@ pub struct PlayerInput {
     pub queued: Vec<Cmd>,
     /// 若为 true，则本帧先清空该玩家在 `World` 中的命令队列（S 清队 / 普通即时操作打断）。
     pub clear_queue: bool,
+    /// 若为 true，则本帧清除该玩家的移动目标（停止移动；S 停手）。
+    pub stop_move: bool,
 }
 
 /// 一整帧里所有玩家的输入。
@@ -294,10 +296,13 @@ impl World {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
 
-        // 0) 先按 clear_queue 清空各玩家队列，再把本帧新压入的 shift 指令（可批量）全部入队
+        // 0) 先按 clear_queue 清空各玩家队列、按 stop_move 清移动目标，再入队新 shift 指令
         for (p, pi) in self.players.iter_mut().zip(input.iter()) {
             if pi.clear_queue {
                 p.cmd_clear();
+            }
+            if pi.stop_move {
+                p.move_target = None;
             }
             for c in pi.queued.iter().copied() {
                 p.cmd_push(c);
@@ -3239,6 +3244,23 @@ mod tests {
             "clear_queue 应阻止第二条移动，实际 x={:?}",
             world.players[0].pos
         );
+    }
+
+    #[test]
+    fn stop_move_clears_move_target_in_world() {
+        let mut world = World::new(1, 104);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        // 让玩家朝远处移动
+        world.step(vec![PlayerInput { set_target: Some(Vec2::new(Fix64::from_num(50.0), Fix64::ZERO)), ..Default::default() }], dt);
+        // 几帧后 stop_move 应清掉 move_target
+        let none = vec![PlayerInput::default()];
+        for _ in 0..6 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].move_target.is_some(), "移动中应有目标");
+        world.step(vec![PlayerInput { stop_move: true, ..Default::default() }], dt);
+        assert!(world.players[0].move_target.is_none(), "stop_move 应清除 move_target");
     }
 
     #[test]
