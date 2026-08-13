@@ -4,7 +4,7 @@
 //! 所有规则均为纯整数定点运算，因此相同输入可产生完全一致的结果，
 //! 这是后续帧同步（lockstep）联网的基础。
 
-use crate::fix::{atan2, cos, sin, Fix64, Vec2};
+use crate::fix::{Fix64, Vec2};
 use crate::player::{BuffKind, Kick, Player};
 use crate::rng::Rng;
 use crate::skill::{SkillEffect, SkillId, DefTable};
@@ -72,14 +72,37 @@ pub enum ProjectileKind {
         radius: Fix64,
         remaining: Fix64, // 剩余飞行距离（射程）
     },
-    /// 追踪导弹：每帧朝最近敌人转向，命中（或射程耗尽）后在其位置爆炸。
+    /// 追踪导弹：每帧朝目标全速直追，命中（或射程耗尽）后在其位置爆炸伤+击退。
     Missile {
         dir: Vec2,
         speed: Fix64,
-        turn: Fix64,
         damage: Fix64,
         radius: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
         remaining: Fix64,
+    },
+    /// 回旋镖（D2）：持有速度矢量，每帧朝施法者加速回飞（原版 BoomerangScript）；撞障碍反弹；命中爆炸伤+击退。
+    Boomerang {
+        vel: Vec2,
+        accelerate: Fix64,
+        damage: Fix64,
+        radius: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        life: Fix64,
+        owner_pos: Vec2, // 用于回飞拉拽的施法者位置
+    },
+    /// 双香蕉曲线弹（D4）：沿方向飞行并朝固定角速度旋转（曲线），命中爆炸伤+击退。
+    Banana {
+        dir: Vec2,
+        speed: Fix64,
+        turn: Fix64, // 每帧旋转角（弧度），为正则顺时针、负则逆时针
+        damage: Fix64,
+        radius: Fix64,
+        push_power: Fix64,
+        push_time: Fix64,
+        life: Fix64,
     },
     /// 滚动火球（E1b 掷弹 StoneShot）：沿定速直线滚动，接触范围内的敌人持续掉血（DoT）。
     Rolling {
@@ -499,14 +522,33 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Missile { dir, speed, turn, remaining, .. } => {
-                    // 追踪导弹：朝最近敌人转向，再向前
+                ProjectileKind::Missile { dir, speed, remaining, .. } => {
+                    // 追踪导弹：锁定最近敌人全速直追（原版 `velocity = dir*Speed`）
                     if let Some(tgt) = self.nearest_enemy(pr.pos, pr.owner) {
-                        *dir = turn_toward(*dir, (tgt - pr.pos).normalized(), *turn * dt);
+                        let want = (tgt - pr.pos).normalized();
+                        *dir = if want.length_squared() == Fix64::ZERO { *dir } else { want };
                     }
                     pr.pos += *dir * (*speed * dt);
                     *remaining -= *speed * dt;
                     if *remaining < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::Boomerang { vel, accelerate, life, owner_pos, .. } => {
+                    // 回旋镖：速度矢量每帧朝施法者拉拽（原版 `velocity += (sender-pos)*a`）
+                    *vel += (*owner_pos - pr.pos) * (*accelerate * dt);
+                    pr.pos += *vel * dt;
+                    *life -= dt;
+                    if *life < eps {
+                        pr.alive = false;
+                    }
+                }
+                ProjectileKind::Banana { dir, speed, turn, life, .. } => {
+                    // 双香蕉：沿方向并以固定角速度旋转（曲线飞行）
+                    pr.pos += *dir * (*speed * dt);
+                    *dir = crate::fix::rotate_ccw(*dir, *turn * dt);
+                    *life -= dt;
+                    if *life < eps {
                         pr.alive = false;
                     }
                 }
@@ -519,10 +561,41 @@ impl World {
             }
         }
 
+        // 1b) 回旋镖撞障碍：反射其速度（原版 BoomerangScript 撞墙 MirrorBy）。
+        for pr in ps.iter_mut() {
+            if !pr.alive {
+                continue;
+            }
+            let bounce: Option<Vec2> = if let ProjectileKind::Boomerang { vel, radius, .. } = pr.kind {
+                let mut hit_wall: Option<Vec2> = None;
+                for o in self.obstacles.iter() {
+                    let delta = pr.pos - o.pos;
+                    let dist = delta.length();
+                    let min = radius + o.radius;
+                    if dist > Fix64::ZERO && dist < min {
+                        let normal = delta / dist;
+                        // 把速度沿接触法线镜向（反弹）
+                        hit_wall = Some(crate::fix::mirror_by(vel, normal));
+                        pr.pos = o.pos + normal * min; // 位置推出
+                        break;
+                    }
+                }
+                hit_wall
+            } else {
+                None
+            };
+            if let Some(nv) = bounce {
+                if let ProjectileKind::Boomerang { vel, .. } = &mut pr.kind {
+                    *vel = nv;
+                }
+            }
+        }
+
         // 2) 判定与收集对玩家的影响：命中伤害 / AOE / 持续伤害 / 爆炸。
         // 每个 (伤害, 来源) 事件在 4) 统一结算；被反弹护盾命中的直射弹只反射方向。
         let mut events: Vec<(u32, Fix64, Option<u32>)> = Vec::new();
         let mut explode: Vec<ProjExplosion> = Vec::new();
+        let mut pushes: Vec<(u32, Vec2, f64)> = Vec::new(); // (受害者 id, 击退方向, 时长)
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
 
         for (pi, pr) in ps.iter_mut().enumerate() {
@@ -565,15 +638,14 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Missile { damage, radius, .. } => {
-                    // 导弹：命中即 AOE
+                ProjectileKind::Missile { damage, radius, push_power, .. } => {
+                    // 导弹：命中即爆炸伤+击退
                     let mut hit_any = false;
                     for j in 0..n {
                         let p = &self.players[j];
                         if !p.alive || p.id == pr.owner {
                             continue;
                         }
-                        // 与 explode_at 一致：爆炸中心到玩家球心距离 <= radius 才命中
                         if (p.pos - pr.pos).length_squared() <= *radius * *radius {
                             hit_any = true;
                             break;
@@ -586,8 +658,28 @@ impl World {
                             owner: pr.owner,
                             radius: *radius,
                             damage: *damage,
-                            bomb_force: Fix64::from_num(4.0),
+                            bomb_force: *push_power,
                         });
+                    }
+                }
+                ProjectileKind::Boomerang { damage, radius, push_time, push_power, .. } => {
+                    // 回旋镖：命中最近玩家 → 直接伤害 + 沿弹体方向击退（原版 BombExplode）
+                    if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, pr.owner, *radius) {
+                        pr.alive = false;
+                        events.push((victim, *damage, Some(pr.owner)));
+                        if dd.length_squared() > Fix64::ZERO {
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                        }
+                    }
+                }
+                ProjectileKind::Banana { damage, radius, push_time, push_power, .. } => {
+                    // 香蕉弹：命中即直接伤害 + 击退
+                    if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, pr.owner, *radius) {
+                        pr.alive = false;
+                        events.push((victim, *damage, Some(pr.owner)));
+                        if dd.length_squared() > Fix64::ZERO {
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                        }
                     }
                 }
                 ProjectileKind::Rolling { dir, damage_per_sec, radius, .. } => {
@@ -642,6 +734,14 @@ impl World {
         for (victim, amount, from) in events {
             self.damage_player(victim, amount, from);
         }
+        // 4a) 结算弹体直接命中的击退（回旋镖 / 香蕉）
+        for (victim, vel, time) in pushes {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive {
+                    p.push(vel, time);
+                }
+            }
+        }
 
         // 4b) 应用撒弹线/扇形弹的产出（作为新的直射 Bullet 加入）
         for (owner, pos, dir, bspeed) in spawn.drain(..) {
@@ -672,6 +772,21 @@ impl World {
                 continue;
             }
             let d = (p.pos - pos).length_squared();
+            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                best = Some((d, p.pos));
+            }
+        }
+        best.map(|(_, v)| v)
+    }
+
+    /// 距 `anchor` 最近的非 `owner` 存活玩家（用于 D3 导弹锁定点击处最近目标）。
+    fn nearest_other_enemy(&self, anchor: Vec2, owner: u32) -> Option<Vec2> {
+        let mut best: Option<(Fix64, Vec2)> = None;
+        for p in self.players.iter() {
+            if !p.alive || p.id == owner {
+                continue;
+            }
+            let d = (p.pos - anchor).length_squared();
             if best.map(|(bd, _)| d < bd).unwrap_or(true) {
                 best = Some((d, p.pos));
             }
@@ -857,8 +972,47 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Missile { speed, turn, radius, damage, range } => {
-                // 追踪导弹：朝最近敌人方向发射（无目标时可让它在原地自动转向）。
+            SkillEffect::Missile { speed, radius, damage, push_power, push_time, range } => {
+                // 追踪导弹：锁定点击处最近的敌人全速直追；命中爆炸伤+击退。
+                let ppos = world.players[idx as usize].pos;
+                // 找出点击出发点（target 或施法者位置）最近的非施法者敌人
+                let anchor = target.unwrap_or(ppos);
+                let aim = world.nearest_other_enemy(anchor, idx);
+                let dir = match aim {
+                    Some(epos) => {
+                        let d = epos - ppos;
+                        if d.length() > Fix64::ZERO {
+                            d.normalized()
+                        } else {
+                            Vec2::new(Fix64::ONE, Fix64::ZERO)
+                        }
+                    }
+                    None => {
+                        let d = anchor - ppos;
+                        if d.length() > Fix64::ZERO {
+                            d.normalized()
+                        } else {
+                            Vec2::new(Fix64::ONE, Fix64::ZERO)
+                        }
+                    }
+                };
+                world.projectiles.push(Projectile {
+                    owner: idx,
+                    kind: ProjectileKind::Missile {
+                        dir,
+                        speed,
+                        damage,
+                        radius,
+                        push_power,
+                        push_time,
+                        remaining: range,
+                    },
+                    pos: ppos,
+                    alive: true,
+                });
+            }
+            SkillEffect::Boomerang { speed, accelerate, radius, damage, push_power, push_time, life } => {
+                // 回旋镖（D2）：朝目标方向飞出，随后持续向施法者加速回飞；撞障碍反弹；命中爆炸伤+击退。
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = match target {
                         Some(t) => {
@@ -873,17 +1027,56 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     };
                     world.projectiles.push(Projectile {
                         owner: idx,
-                        kind: ProjectileKind::Missile {
-                            dir,
-                            speed,
-                            turn,
+                        kind: ProjectileKind::Boomerang {
+                            vel: dir * speed,
+                            accelerate,
                             damage,
                             radius,
-                            remaining: range,
+                            push_power,
+                            push_time,
+                            life,
+                            owner_pos: p.pos,
                         },
                         pos: p.pos,
                         alive: true,
                     });
+                }
+            }
+            SkillEffect::Banana { count, turn_rad, speed, radius, damage, push_power, push_time, life } => {
+                // 双香蕉曲线弹（D4）：朝施法方向两侧各打一发曲线弹，命中爆炸伤+击退。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let base_dir = match target {
+                        Some(t) => {
+                            let d = t - p.pos;
+                            if d.length() > Fix64::ZERO {
+                                d.normalized()
+                            } else {
+                                Vec2::new(Fix64::ONE, Fix64::ZERO)
+                            }
+                        }
+                        None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    };
+                    let span = (count as f64 - 1.0) / 2.0; // 居中分布
+                    for i in 0..count {
+                        // 原版 D4：两发呈 ±45° 对称曲线（BananaScript setmm 相反符号）
+                        let off = (i as f64 - span) * 0.5; // count=2 → -0.25 / +0.25
+                        let start_dir = crate::fix::rotate_ccw(base_dir, Fix64::from_num(off));
+                        world.projectiles.push(Projectile {
+                            owner: idx,
+                            kind: ProjectileKind::Banana {
+                                dir: start_dir,
+                                speed,
+                                turn: Fix64::from_num(turn_rad * if off < 0.0 { 1.0 } else { -1.0 }),
+                                damage,
+                                radius,
+                                push_power,
+                                push_time,
+                                life,
+                            },
+                            pos: p.pos,
+                            alive: true,
+                        });
+                    }
                 }
             }
             SkillEffect::RollProjectile { speed, damage_per_sec, radius, range } => {
@@ -1150,29 +1343,24 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
     }
 }
 
-/// 把当前方向 `cur` 朝目标方向 `want` 旋转，单帧最多转 `max_turn` 弧度（保持单位长）。
-fn turn_toward(cur: Vec2, want: Vec2, max_turn: Fix64) -> Vec2 {
-    let cur = if cur.length_squared() == Fix64::ZERO { Vec2::new(Fix64::ONE, Fix64::ZERO) } else { cur };
-    let want = want.normalized();
-    // 计算两方向夹角（通过 atan2 得到绝对角再求差，角度差在 [-pi, pi]）。
-    let a = atan2(cur.y, cur.x);
-    let b = atan2(want.y, want.x);
-    let mut diff = (b - a).to_num::<f64>();
-    // 归一化到 (-pi, pi]
-    while diff > std::f64::consts::PI {
-        diff -= std::f64::consts::TAU;
+/// 返回 `pos` 处半径 `radius` 内最近的存活玩家（排除 `owner`），给出 `(玩家 id, 指向玩家的方向向量)`。
+fn nearest_hit(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Option<(u32, Vec2)> {
+    let mut best: Option<(Fix64, u32)> = None;
+    for p in players.iter() {
+        if !p.alive || p.id == owner {
+            continue;
+        }
+        let d = p.pos - pos;
+        let d_sq = d.length_squared();
+        let rr = (radius + p.radius) * (radius + p.radius);
+        if d_sq <= rr && best.map(|(bd, _)| d_sq < bd).unwrap_or(true) {
+            best = Some((d_sq, p.id));
+        }
     }
-    while diff <= -std::f64::consts::PI {
-        diff += std::f64::consts::TAU;
-    }
-    let dt = max_turn.to_num::<f64>();
-    let step = if diff.abs() <= dt {
-        diff
-    } else {
-        diff.signum() * dt
-    };
-    let ang = a.to_num::<f64>() + step;
-    Vec2::new(cos(Fix64::from_num(ang)), sin(Fix64::from_num(ang)))
+    best.and_then(|(_, id)| {
+        let owner_idx = players.iter().position(|p| p.id == id)?;
+        Some((id, players[owner_idx].pos - pos))
+    })
 }
 
 /// 射线 `o + t*dir`（`dir` 已单位化）与圆心 `c` 半径 `r` 的首次交点的 `t`。
@@ -1615,34 +1803,37 @@ mod tests {
 
     #[test]
     fn shield_reflects_and_expires() {
-        let mut world = World::new(2, 40);
+        let mut world = World::new(1, 40);
         let dt = Fix64::from_num(1.0 / 60.0);
-        // p0 开反弹护盾；p1 朝 p0 放直射弹（StoneShot）。
+        // p0 开反弹护盾。
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(Fix64::from_num(-3.0), Fix64::ZERO);
-        world.players[1].move_target = None;
-        world.step(vec![
-            PlayerInput { cast: Some((SkillId::Shield, None)), ..Default::default() },
-            PlayerInput::default(),
-        ], dt);
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        world.step(vec![PlayerInput { cast: Some((SkillId::Shield, None)), ..Default::default() }], dt);
+        let none = vec![PlayerInput::default()];
         for _ in 0..8 {
             world.step(none.clone(), dt);
         }
         assert!(world.players[0].shield(), "护盾应已激活");
         let hp0 = world.players[0].hp;
-        // p1 朝 (0,0) 放 D2Fireball（Bullet 直射弹，会命中带护盾的 p0 并被反射）
-        let shoot = vec![
-            PlayerInput::default(),
-            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::ZERO))), ..Default::default() },
-        ];
+        // 手动注入一枚朝 p0 (+x 方向) 飞的 Bullet（owner 用不存在的 99，使它能命中 p0(id=0)），
+        // 命中带护盾的 p0 应被反射、不扣血。
+        world.projectiles.push(Projectile {
+            owner: 99,
+            kind: ProjectileKind::Bullet {
+                dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                speed: Fix64::from_num(6.0),
+                damage: Fix64::from_num(10.0),
+                radius: Fix64::from_num(0.6),
+                remaining: Fix64::from_num(20.0),
+            },
+            pos: Vec2::new(Fix64::from_num(-2.0), Fix64::ZERO),
+            alive: true,
+        });
         let mut reflected = false;
-        for _ in 0..40 {
-            world.step(shoot.clone(), dt);
-            // 若出现方向与初始方向(向+x)相反的 Bullet，说明被反射了
-            for pr in world.projectiles.iter() {
-                if let ProjectileKind::Bullet { dir, .. } = pr.kind {
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+            if let Some(p) = world.projectiles.iter().find(|pr| matches!(pr.kind, ProjectileKind::Bullet { .. })) {
+                if let ProjectileKind::Bullet { dir, .. } = p.kind {
                     if dir.x < Fix64::ZERO {
                         reflected = true;
                     }
@@ -1734,12 +1925,13 @@ mod tests {
         world.players[0].pos = Vec2::ZERO;
         world.players[1].pos = Vec2::new(Fix64::from_num(5.0), Fix64::from_num(5.0));
         let hp1 = world.players[1].hp;
-        // 导弹无需点目标，会自动锁定最近敌人
+        // 导弹点目标：以点击处(敌人附近)锁定最近敌人
+        let click = Vec2::new(Fix64::from_num(5.0), Fix64::from_num(5.0));
         let input = vec![
-            PlayerInput { cast: Some((SkillId::D3Missile, None)), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::D3Missile, Some(click))), ..Default::default() },
             PlayerInput::default(),
         ];
-        // windup 0.2s + 转向/飞行 + 爆炸，跑 2s
+        // windup 0.2s + 全速直追 + 爆炸，跑 2s
         for _ in 0..120 {
             world.step(input.clone(), dt);
         }
@@ -1900,5 +2092,44 @@ mod tests {
         world2.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
         let x2 = world2.players[0].pos.x.to_num::<f64>();
         assert!(x2 > 5.9 && x2 < 6.1, "无障碍应闪 max_distance(6)，实际 {}", x2);
+    }
+
+    #[test]
+    fn boomerang_fireball_spawns_and_returns() {
+        let mut world = World::new(2, 60);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::new(Fix64::from_num(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        // 回旋镖应命中挡路的敌人并造成伤害+击退
+        for _ in 0..60 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "回旋镖命中敌人应造成伤害");
+    }
+
+    #[test]
+    fn banana_curve_shots_hit_enemy() {
+        let mut world = World::new(2, 61);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::D4Fireball, Some(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        for _ in 0..80 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "香蕉弹命中敌人应造成伤害");
     }
 }

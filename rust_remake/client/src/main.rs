@@ -570,6 +570,26 @@ impl Game {
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 6.0, 0.5, Color::from_rgb(90, 180, 255))?;
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::Boomerang { vel, radius, .. } => {
+                    // 回旋镖：绿色球 + 沿速度方向的拖尾
+                    let dv = vel;
+                    let tx = px + dv.x.to_num::<f32>() * 0.4;
+                    let ty = py + dv.y.to_num::<f32>() * 0.4;
+                    let tail = Mesh::new_line(&ctx.gfx, &[Point2 { x: px, y: py }, Point2 { x: tx, y: ty }], 3.0, Color::from_rgba(120, 230, 140, 200))?;
+                    canvas.draw(&tail, graphics::DrawParam::new());
+                    let b = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, (radius.to_num::<f32>() * self.scale).max(5.0), 0.5, Color::from_rgb(90, 200, 110))?;
+                    canvas.draw(&b, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::Banana { dir, radius, .. } => {
+                    // 香蕉弹：黄绿色曲线弹
+                    let d = dir;
+                    let tx = px + d.x.to_num::<f32>() * 12.0;
+                    let ty = py + d.y.to_num::<f32>() * 12.0;
+                    let tail = Mesh::new_line(&ctx.gfx, &[Point2 { x: px, y: py }, Point2 { x: tx, y: ty }], 3.0, Color::from_rgba(255, 220, 90, 200))?;
+                    canvas.draw(&tail, graphics::DrawParam::new());
+                    let b = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, (radius.to_num::<f32>() * self.scale).max(5.0), 0.5, Color::from_rgb(240, 200, 60))?;
+                    canvas.draw(&b, graphics::DrawParam::new());
+                }
             }
         }
 
