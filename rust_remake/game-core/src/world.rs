@@ -21,14 +21,14 @@ pub const SABULLET_DAMAGE: f64 = 2.0;
 pub const SABULLET_RANGE: f64 = 6.0;
 
 /// 每个玩家当前帧的输入。
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlayerInput {
     /// 若为 `Some(pos)`，则令该玩家朝 `pos` 直线移动。
     pub set_target: Option<Vec2>,
     /// 若为 `Some((skill, target))`，则尝试对该技能施法（target 为点目标/朝向）。
     pub cast: Option<(SkillId, Option<Vec2>)>,
-    /// 本帧新压入的 shift 指令（队尾）；由 `World` 入队，随后按施法节奏依次执行。
-    pub queued: Option<Cmd>,
+    /// 本帧新压入的 shift 指令（可批量）；由 `World` 全部入队，随后按施法节奏依次执行。
+    pub queued: Vec<Cmd>,
 }
 
 /// 一整帧里所有玩家的输入。
@@ -292,9 +292,9 @@ impl World {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
 
-        // 0) 把本帧新压入的 shift 指令追加到各玩家队列（队尾）
+        // 0) 把本帧新压入的 shift 指令（可批量）全部追加到各玩家队列（队尾）
         for (p, pi) in self.players.iter_mut().zip(input.iter()) {
-            if let Some(c) = pi.queued {
+            for c in pi.queued.iter().copied() {
                 p.cmd_push(c);
             }
         }
@@ -3167,9 +3167,11 @@ mod tests {
         let mut world = World::new(1, 100);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        // 压入两条移动指令：先到 (4,0)，再到 (8,0)
-        world.step(vec![PlayerInput { queued: Some(Cmd::Move(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO))), ..Default::default() }], dt);
-        world.step(vec![PlayerInput { queued: Some(Cmd::Move(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO))), ..Default::default() }], dt);
+        // 在同一帧批量压入两条移动指令：先到 (4,0)，再到 (8,0)
+        world.step(vec![PlayerInput { queued: vec![
+            Cmd::Move(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO)),
+            Cmd::Move(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO)),
+        ], ..Default::default() }], dt);
         let none = vec![PlayerInput::default()];
         // 跑足够久让两条移动都走完
         for _ in 0..300 {
@@ -3189,11 +3191,11 @@ mod tests {
         let hp1 = world.players[1].hp;
         // 压入：先移动到 (3,0)，再朝 (6,0) 施放掷弹(Rock)
         world.step(vec![
-            PlayerInput { queued: Some(Cmd::Move(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO))), ..Default::default() },
+            PlayerInput { queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO))], ..Default::default() },
             PlayerInput::default(),
         ], dt);
         world.step(vec![
-            PlayerInput { queued: Some(Cmd::Cast(SkillId::Rock, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { queued: vec![Cmd::Cast(SkillId::Rock, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))], ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
