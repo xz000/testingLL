@@ -76,32 +76,41 @@ struct Game {
     offset: Point2<f32>,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
     net_link: Option<netlink::NetLink>,
+    /// 联网模式：开房作 host（自身=player 0）；`None` = 非 host。
+    net_host: Option<net::session::HostSession<net::transport::StdUdpTransport>>,
 }
 
 impl Game {
-    fn new(ctx: &mut Context, join: Option<std::net::SocketAddr>) -> GameResult<Self> {
+    fn new(ctx: &mut Context, mode: NetMode) -> GameResult<Self> {
         // 注册中文字体：用 include_bytes 内嵌，避免资源路径/VFS 解析问题。
         let font = ggez::graphics::FontData::from_slice(include_bytes!("../../assets/fonts/cjk.ttf"))?;
         ctx.gfx.add_font("cjk", font);
 
-        // 联网模式下接入 host；否则单机（含本地 AI 机器人）。
+        // 联网：加入 host 或开房作 host；否则单机（含本地 AI 机器人）。
         let mut net_link = None;
-        if let Some(addr) = join {
-            let mut link = netlink::NetLink::connect(addr).map_err(ggez::GameError::from)?;
-            // 与 host 握手直到拿到序号/人数（对端 HostSession::poll_join 在跑）
-            for _ in 0..500 {
-                if link.join_handshake().map_err(ggez::GameError::from)? {
-                    break;
+        let mut net_host = None;
+        let mut player_count: u32 = 1 + BOTS;
+        match mode {
+            NetMode::Local => {}
+            NetMode::Join(addr) => {
+                let mut link = netlink::NetLink::connect(addr).map_err(ggez::GameError::from)?;
+                for _ in 0..60 {
+                    if link.join_handshake().map_err(ggez::GameError::from)? {
+                        break;
+                    }
                 }
+                player_count = link.player_count().max(1) as u32;
+                net_link = Some(link);
             }
-            net_link = Some(link);
+            NetMode::Host { port, total } => {
+                let t =
+                    net::transport::StdUdpTransport::bind(&format!("0.0.0.0:{port}")).map_err(ggez::GameError::from)?;
+                let mut hs = net::session::HostSession::new(t, (total as usize).saturating_sub(1));
+                hs.host_participates(total.max(1) as u8);
+                player_count = total.max(1);
+                net_host = Some(hs);
+            }
         }
-
-        let player_count: u32 = if let Some(l) = &net_link {
-            l.player_count().max(1) as u32
-        } else {
-            1 + BOTS
-        };
         let seed = 20260812u64;
         let world = World::new(player_count.max(1), seed);
         // 整场对抗：3 小局，所有玩家都纳入档案
@@ -144,6 +153,7 @@ impl Game {
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             net_link,
+            net_host,
         })
     }
 
@@ -350,7 +360,7 @@ impl Game {
         }
     }
 
-    /// 本机玩家在该次对局中的序号：单机恒为 `PLAYER_ID`(0)，联网为握手分配到的 `my_index`。
+    /// 本机玩家在该次对局中的序号：单机/host 恒为 0，加入者为握手分配到的 `my_index`。
     fn self_index(&self) -> u32 {
         match &self.net_link {
             Some(l) => l.my_index() as u32,
@@ -966,8 +976,33 @@ impl event::EventHandler for Game {
                 self.poll_input(ctx);
                 self.accumulator += dt.min(0.25);
                 let ticking = Fix64::from_num(TICK);
-                if let Some(mut link) = std::mem::take(&mut self.net_link) {
-                    // 联网：本机玩家输入上行 → 收整帧 → 喂 World（不再用本地 AI）
+                if let Some(mut host) = std::mem::take(&mut self.net_host) {
+                    // 联网 · 开房作 host：先接受 client 加入，收齐后合帧广播并推进本端 World。
+                    let mut host_rcv = vec![0u8; 4096];
+                    host.poll_join(&mut host_rcv);
+                    if host.joined >= host.expected() {
+                        while self.accumulator >= TICK {
+                            let me = self.local_player_input();
+                            let enc = game_core::netcode::encode_player_input(&me);
+                            host.set_local_input(Some(enc));
+                            let frame = host.collect_inputs(&mut host_rcv);
+                            // host 先自己喂这整帧（确定性地回放），再广播给各 client
+                            let n = self.world.players.len();
+                            let mut inputs = vec![PlayerInput::default(); n];
+                            for (idx, bytes) in frame.iter() {
+                                if (*idx as usize) < n {
+                                    inputs[*idx as usize] =
+                                        game_core::netcode::decode_player_input(bytes).unwrap_or_default();
+                                }
+                            }
+                            self.world.step(inputs, ticking);
+                            host.broadcast_frame(&frame);
+                            self.accumulator -= TICK;
+                        }
+                    }
+                    self.net_host = Some(host);
+                } else if let Some(mut link) = std::mem::take(&mut self.net_link) {
+                    // 联网：加入者 —— 本机玩家输入上行 → 收整帧 → 喂 World（不再用本地 AI）
                     while self.accumulator >= TICK {
                         let me = self.local_player_input();
                         let _ = link.step_tick(&me, &mut self.world, ticking);
@@ -1071,16 +1106,39 @@ fn draw_text(
     Ok(())
 }
 
+/// 本局运行模式：单机 / 加入 host / 开房作 host（自身也当作一个玩家）。
+enum NetMode {
+    Local,
+    Join(std::net::SocketAddr),
+    Host { port: u16, total: u32 },
+}
+
 fn main() -> GameResult {
-    // 解析命令行：--join <host:port> 进入联网模式（加入 host）。
+    // 解析命令行：--join <host:port> 加入 host；--host <port> [--players N] 开房（宿主=玩家0）。
     let args: Vec<String> = std::env::args().collect();
-    let mut join_opt: Option<std::net::SocketAddr> = None;
+    let mut mode = NetMode::Local;
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--join" && i + 1 < args.len() {
-            join_opt = args[i + 1].parse().ok();
+        match args[i].as_str() {
+            "--join" if i + 1 < args.len() => {
+                if let Ok(a) = args[i + 1].parse() {
+                    mode = NetMode::Join(a);
+                }
+                i += 2;
+            }
+            "--host" if i + 1 < args.len() => {
+                let port: u16 = args[i + 1].parse().unwrap_or(0);
+                mode = NetMode::Host { port, total: 4 };
+                i += 2;
+            }
+            "--players" if i + 1 < args.len() => {
+                if let NetMode::Host { total, .. } = &mut mode {
+                    *total = args[i + 1].parse().unwrap_or(4);
+                }
+                i += 2;
+            }
+            _ => i += 1,
         }
-        i += 1;
     }
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
@@ -1092,6 +1150,6 @@ fn main() -> GameResult {
         )
         .build()?;
 
-    let game = Game::new(&mut ctx, join_opt)?;
+    let game = Game::new(&mut ctx, mode)?;
     event::run(ctx, event_loop, game)
 }

@@ -130,7 +130,8 @@
   - ✅ **已完成第一步（确定性地基 + 编解码）**：新增 `game-core::netcode`（`PlayerInput`（含 shift 队列 Vec）的字节编解码，Fix64 以位模式往返，大端定长；`SkillId::from_u32` 逆映射）。单测锁定：`roundtrip_preserves_all_fields`、`truncated_input_fails_gracefully`、`two_clients_with_same_inputs_replay_identically`（**帧同步铁证**：两台独立 World 用相同输入流回放后逐位一致）。
   - ✅ **已完成第二步（net/ UDP 帧同步 + session 建连）**：新增 `net/` crate：`Transport` trait + `StdUdpTransport`（传输无关，日后可换 Steam）；`frame`（上行/整帧广播字节封装）；`session`（`HostSession`/`ClientSession`：建连握手分配玩家序号 + 每帧收输入合帧广播客户端收发）。单测：`lockstep_over_udp_reaches_identical_worlds`、`session_lockstep_over_udp`（真 UDP 三端锁步、两端 World 逐位一致）。
   - ✅ **已完成第三步（client 接入 net，联网加入模式）**：client 支持 `--join <host:port>` 加入 host；新增 `client::netlink::NetLink`（无 ggez 依赖、可无头单测）：每帧把本机 `PlayerInput` 上行、收整帧解码喂 `World`。`Game` 联网时按握手序号作为本机玩家、禁用本地 AI；`compute_inputs` 抽成 `local_player_input`。自动化测试：`client::netlink::tests::two_client_links_stay_synced`（host + 2 个 NetLink 真 UDP 各帧 World 一致）。
-  - ⏳ 待做：host 窗口（`--host`，让 host 也作为玩家窗口）、meta 多局联网、本地 UDP 多开手测；后续 Steam 接底层 `Transport`。
+  - ✅ **已完成第四步（`--host` 开房作玩家窗口）**：client 支持 `--host <port> [--players N]`，host 绑端口、自身作为 player 0，接受其余 client 加入；每帧 `HostSession::set_local_input`(自身输入)+`collect_inputs`(含自身+clients)+`broadcast_frame`，host 自己也按同一帧回放。自动化测试：`net::host_participates_as_player_zero`（host=player0 + 2 client，三端 World 逐位一致）。至此可本地多开 `--host` + `--join` 对战。
+  - ⏳ 待做：meta 多局联网（当前用单 World 连胜多局循环所需状态未联动网络）、本地 UDP 多开手测手感；后续 Steam 接底层 `Transport`。
 - [ ] **阶段 4 — 表现层打磨**：Cell-Graph-Risk 美术、粒子、音效、菜单
 - [ ] **阶段 5 — 完成品**：房间系统、结算、材质打磨、打包
 
