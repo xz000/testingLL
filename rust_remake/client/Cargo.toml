@@ -6,4 +6,5 @@ description = "帧同步圆球竞技场 - ggez 客户端（渲染/输入/UI）"
 
 [dependencies]
 game-core = { path = "../game-core" }
+net = { path = "../net" }
 ggez = "0.10"

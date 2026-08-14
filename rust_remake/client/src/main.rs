@@ -16,6 +16,8 @@ use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh};
 use ggez::mint::Point2;
 use ggez::{Context, GameResult};
 
+mod netlink;
+
 /// 机器人数量（不含玩家本人）
 const BOTS: u32 = 7;
 /// 固定步长模拟（帧率）
@@ -72,17 +74,36 @@ struct Game {
     scale: f32,
     /// 相机偏移（竞技场中心在画面中央）
     offset: Point2<f32>,
+    /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
+    net_link: Option<netlink::NetLink>,
 }
 
 impl Game {
-    fn new(ctx: &mut Context) -> GameResult<Self> {
+    fn new(ctx: &mut Context, join: Option<std::net::SocketAddr>) -> GameResult<Self> {
         // 注册中文字体：用 include_bytes 内嵌，避免资源路径/VFS 解析问题。
         let font = ggez::graphics::FontData::from_slice(include_bytes!("../../assets/fonts/cjk.ttf"))?;
         ctx.gfx.add_font("cjk", font);
 
-        let player_count = 1 + BOTS;
+        // 联网模式下接入 host；否则单机（含本地 AI 机器人）。
+        let mut net_link = None;
+        if let Some(addr) = join {
+            let mut link = netlink::NetLink::connect(addr).map_err(ggez::GameError::from)?;
+            // 与 host 握手直到拿到序号/人数（对端 HostSession::poll_join 在跑）
+            for _ in 0..500 {
+                if link.join_handshake().map_err(ggez::GameError::from)? {
+                    break;
+                }
+            }
+            net_link = Some(link);
+        }
+
+        let player_count: u32 = if let Some(l) = &net_link {
+            l.player_count().max(1) as u32
+        } else {
+            1 + BOTS
+        };
         let seed = 20260812u64;
-        let world = World::new(player_count, seed);
+        let world = World::new(player_count.max(1), seed);
         // 整场对抗：3 小局，所有玩家都纳入档案
         let mut meta = MatchState::new(MatchConfig::default(), &(0..player_count).collect::<Vec<_>>(), 8);
         // 默认绑定：每个键绑定其树的首个技能，保证开局即可用（玩家可在学习阶段改）
@@ -95,9 +116,15 @@ impl Game {
             }
         }
 
-        let bot_rngs = (1..player_count)
-            .map(|id| Rng::new(seed ^ (id as u64).wrapping_mul(0x9E3779B97F4A7C15)))
-            .collect();
+        let net_mode = net_link.is_some();
+        let bot_rngs = if net_mode {
+            Vec::new()
+        } else {
+            (1..player_count)
+                .map(|id| Rng::new(seed ^ (id as u64).wrapping_mul(0x9E3779B97F4A7C15)))
+                .collect()
+        };
+        let bot_targets = if net_mode { Vec::new() } else { vec![None; BOTS as usize] };
 
         let (w, h) = ctx.gfx.drawable_size();
         Ok(Game {
@@ -111,11 +138,12 @@ impl Game {
             pending_clear_signal: false,
             pending_stop_signal: false,
             learn_tree_key: None,
-            bot_targets: vec![None; BOTS as usize],
+            bot_targets,
             bot_rngs,
             accumulator: 0.0,
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
+            net_link,
         })
     }
 
@@ -218,8 +246,9 @@ impl Game {
 
     /// 进入下一局前：把玩家的技能等级从档案同步到世界，并重置世界。
     fn teardown_round_end(&mut self) {
-        if let Some(profile) = self.meta.profiles.iter().find(|pr| pr.player_id == PLAYER_ID) {
-            if let Some(p) = self.world.players.get_mut(PLAYER_ID as usize) {
+        let me = self.self_index();
+        if let Some(profile) = self.meta.profiles.iter().find(|pr| pr.player_id == me) {
+            if let Some(p) = self.world.players.get_mut(me as usize) {
                 for i in 0..p.skill_levels.len().min(profile.skill_levels.len()) {
                     p.skill_levels[i] = profile.skill_levels[i];
                 }
@@ -238,11 +267,12 @@ impl Game {
         use ggez::input::mouse::MouseButton;
 
         // 玩家档案（本帧只读绑定的技能）
+        let me = self.self_index();
         let bound_for = |key: game_core::skill::CastKey| -> Option<SkillId> {
             self.meta
                 .profiles
                 .iter()
-                .find(|pr| pr.player_id == PLAYER_ID)
+                .find(|pr| pr.player_id == me)
                 .and_then(|p| p.bound_skill(key))
         };
 
@@ -320,7 +350,34 @@ impl Game {
         }
     }
 
-    /// 生成本（模拟）帧内所有玩家的输入。
+    /// 本机玩家在该次对局中的序号：单机恒为 `PLAYER_ID`(0)，联网为握手分配到的 `my_index`。
+    fn self_index(&self) -> u32 {
+        match &self.net_link {
+            Some(l) => l.my_index() as u32,
+            None => PLAYER_ID,
+        }
+    }
+
+    /// 生成本（本机玩家）这一帧要下达的命令（移动 / 施法 / shift 队列 / 清队 / 停止）。
+    /// 单机模式把它放到 `PLAYER_ID`；联网模式由 `NetLink` 上行给 host、按我的序号归位。
+    fn local_player_input(&mut self) -> PlayerInput {
+        let set_target = self.player_target;
+        let cast = self.pending_cast;
+        let queued = self.queued_cmds.drain(..).collect();
+        let clear_queue = self.pending_clear_signal;
+        let stop_move = self.pending_stop_signal;
+        self.pending_clear_signal = false;
+        self.pending_stop_signal = false;
+        PlayerInput {
+            set_target,
+            cast,
+            queued,
+            clear_queue,
+            stop_move,
+        }
+    }
+
+    /// 生成本（模拟）帧内所有玩家的输入（单机：本机玩家 + 本地 AI 机器人）。
     fn compute_inputs(&mut self) -> Vec<PlayerInput> {
         let mut inputs: Vec<PlayerInput> = self
             .world
@@ -329,15 +386,9 @@ impl Game {
             .map(|_| PlayerInput::default())
             .collect();
 
-        // 玩家本人：移动目标 + 施法命令 + 本帧把 shift 队列一次全部注入（批量）
-        let p0 = &mut inputs[PLAYER_ID as usize];
-        p0.set_target = self.player_target;
-        p0.cast = self.pending_cast;
-        p0.queued = self.queued_cmds.drain(..).collect();
-        p0.clear_queue = self.pending_clear_signal;
-        p0.stop_move = self.pending_stop_signal;
-        self.pending_clear_signal = false;
-        self.pending_stop_signal = false;
+        // 玩家本人
+        let me = self.local_player_input();
+        inputs[PLAYER_ID as usize] = me;
 
         // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
         let arena = self.world.arena_radius;
@@ -368,7 +419,7 @@ impl Game {
 
         // 瞄准指示：从玩家到鼠标的画一条线（点目标技能待左键确认）。
         if self.pending_skill.is_some() || self.pending_shift_skill.is_some() {
-            if let Some(p) = self.world.players.get(PLAYER_ID as usize) {
+            if let Some(p) = self.world.players.get(self.self_index() as usize) {
                 let pfx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
                 let pfy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
                 let mouse = ctx.mouse.position();
@@ -432,6 +483,7 @@ impl Game {
         }
 
         // 玩家圆与 HP 条
+        let me_idx = self.self_index();
         for p in self.world.players.iter() {
             if !p.alive {
                 continue;
@@ -439,7 +491,7 @@ impl Game {
             let fx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
             let fy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
             let r = p.radius.to_num::<f32>() * self.scale;
-            let mut color = player_color(p.id);
+            let mut color = player_color(p.id, me_idx);
             // 潜行：半透明（潜行踢 / 隐蔽效果）
             if p.stealth() {
                 color.a = 0.4;
@@ -725,9 +777,10 @@ impl Game {
         match self.meta.phase {
             MatchPhase::Fighting => {
                 // 技能冷却 HUD：底部一排 8 个键位槽，显示绑定技能图标/名称 + 冷却遮罩
+                let self_idx = self.self_index();
                 if let (Some(me), Some(me_player)) = (
-                    self.meta.profiles.iter().find(|p| p.player_id == PLAYER_ID),
-                    self.world.players.get(PLAYER_ID as usize),
+                    self.meta.profiles.iter().find(|p| p.player_id == self_idx),
+                    self.world.players.get(self_idx as usize),
                 ) {
                     let slot_w = 56.0;
                     let slot_h = 56.0;
@@ -810,7 +863,7 @@ impl Game {
                 y += 64.0;
 
                 // 我的档案：金币 / 击杀 / 最佳名次
-                if let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == PLAYER_ID) {
+                if let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
                     let info = format!(
                         "金币 {}   击杀 {}   最佳名次 #{}",
                         me.gold, me.total_kills, me.best_placement
@@ -912,10 +965,22 @@ impl event::EventHandler for Game {
                 // 每帧轮询输入（技能键 / 鼠标）
                 self.poll_input(ctx);
                 self.accumulator += dt.min(0.25);
-                while self.accumulator >= TICK {
-                    let inputs = self.compute_inputs();
-                    self.world.step(inputs, Fix64::from_num(TICK));
-                    self.accumulator -= TICK;
+                let ticking = Fix64::from_num(TICK);
+                if let Some(mut link) = std::mem::take(&mut self.net_link) {
+                    // 联网：本机玩家输入上行 → 收整帧 → 喂 World（不再用本地 AI）
+                    while self.accumulator >= TICK {
+                        let me = self.local_player_input();
+                        let _ = link.step_tick(&me, &mut self.world, ticking);
+                        self.accumulator -= TICK;
+                    }
+                    self.net_link = Some(link);
+                } else {
+                    // 单机：本机玩家 + 本地 AI 机器人
+                    while self.accumulator >= TICK {
+                        let inputs = self.compute_inputs();
+                        self.world.step(inputs, ticking);
+                        self.accumulator -= TICK;
+                    }
                 }
                 // 一旦世界已进入前摇（施法被接受），清除待发送的施法命令，避免重复发送。
                 if self.pending_cast.is_some() {
@@ -950,8 +1015,8 @@ impl event::EventHandler for Game {
     }
 }
 
-fn player_color(id: u32) -> Color {
-    if id == PLAYER_ID {
+fn player_color(id: u32, me: u32) -> Color {
+    if id == me {
         Color::from_rgb(90, 200, 160)
     } else {
         const PALETTE: [[u8; 3]; 10] = [
@@ -1007,6 +1072,17 @@ fn draw_text(
 }
 
 fn main() -> GameResult {
+    // 解析命令行：--join <host:port> 进入联网模式（加入 host）。
+    let args: Vec<String> = std::env::args().collect();
+    let mut join_opt: Option<std::net::SocketAddr> = None;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--join" && i + 1 < args.len() {
+            join_opt = args[i + 1].parse().ok();
+        }
+        i += 1;
+    }
+
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
         .window_setup(ggez::conf::WindowSetup::default().title("帧同步圆球竞技场 — 阶段1"))
         .window_mode(
@@ -1016,6 +1092,6 @@ fn main() -> GameResult {
         )
         .build()?;
 
-    let game = Game::new(&mut ctx)?;
+    let game = Game::new(&mut ctx, join_opt)?;
     event::run(ctx, event_loop, game)
 }
