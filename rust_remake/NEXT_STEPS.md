@@ -4,7 +4,7 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13 晚，全部全绿）
-- **单测 76 全绿**（game-core 72 + net 4），`cargo build --workspace`、`cargo clippy --workspace` 均通过无警告。
+- **单测 78 全绿**（game-core 72 + net 5 + client 1），`cargo build --workspace`、`cargo clippy --workspace` 均通过无警告。
 - **中文显示**：内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体(Noto Sans CJK SC, SIL OFL)**，子集约 941 字形 168KB。客户端 `include_bytes!` 内嵌 + `from_slice` 注册 `cjk` 字体渲染中文。已实测运行正常。
 - **场地缩小到 0**：复刻原版 `AreaScript`，半径持续缩到 0（不再停阈值 3.0）。
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。（`net/` crate 待建）
@@ -40,7 +40,8 @@
 2. **阶段 3 帧同步联网（进行中，下一步入口）**：
    - ✅ `game-core::netcode`：`PlayerInput`（含队列/clear_queue/stop_move）字节编解码 + 确定性回放单测（两 World 逐位一致）。
    - ✅ **`net/` crate**：`Transport`(trait) + `StdUdpTransport` + `frame`(上行/整帧) + `session`(`HostSession`/`ClientSession` 建连握手+每帧合帧广播)。真 UDP 三端锁步单测：`lockstep_over_udp_reaches_identical_worlds`、`session_lockstep_over_udp`（两端 World 逐位一致）。
-   - ⏳ client 接入 net（联网模式，本地 UDP 多开）。
+   - ✅ **client 接入 net（联网加入模式）**：`--join <host:port>` 加入 host；`client::netlink::NetLink` 每帧上行本机输入/收整帧喂 World（可无头单测 `two_client_links_stay_synced`）。联网时禁用本地 AI、按握手序号作为本机玩家。
+   - ⏳ host 窗口（`--host`，host 也当玩家窗口）+ meta 多局联网 + 本地 UDP 多开手测。
    - ⏳ （后续）Steamworks 接入：用 `Steam Networking` 替换底层 Transport（实现 `Transport` trait 即可）。
 
 ## 阶段 3 网络架构选型（已确认，2026-08-13 晚）
