@@ -275,5 +275,78 @@ mod tests {
         assert_eq!(w0.players, w1.players, "session 锁步两端 World 必须一致");
         assert_eq!(w0.arena_radius, w1.arena_radius);
     }
+
+    /// host 自身作为 player 0 参与：host 提供本地输入，结合 2 名 client(player 1/2) 合帧，
+    /// 三端 World 应一致。
+    #[test]
+    fn host_participates_as_player_zero() {
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut host = HostSession::new(ht, 2); // 收 2 名 client
+        host.host_participates(3); // 自身=player0
+        let (t1, _) = StdUdpTransport::bind_loopback().unwrap();
+        let (t2, _) = StdUdpTransport::bind_loopback().unwrap();
+        let host_peer = Peer::Udp(host_addr);
+        let mut rcv = [0u8; 4096];
+        let mut c1 = ClientSession::connected(t1, 1, 3);
+        let mut c2 = ClientSession::connected(t2, 2, 3);
+        // 建连（host 分配 client 序号 1,2）
+        for _ in 0..100 {
+            let _ = c1.send_join(&host_peer);
+            let _ = c2.send_join(&host_peer);
+            host.poll_join(&mut rcv);
+            if c1.recv_join_ack(&mut rcv).unwrap_or(false) && c2.recv_join_ack(&mut rcv).unwrap_or(false) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(c1.my_index, 1);
+        assert_eq!(c2.my_index, 2);
+        assert_eq!(c1.players, 3);
+
+        let mut wh = World::new(3, 9); // host 的 World（3 玩家）
+        let mut w1 = World::new(3, 9);
+        let mut w2 = World::new(3, 9);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        for tick in 0..90 {
+            let ih = sample_input(0);
+            let i1 = sample_input(1);
+            let i2 = sample_input(2);
+            host.set_local_input(Some(encode_player_input(&ih)));
+            let _ = c1.send_input(&encode_player_input(&i1), &host_peer);
+            let _ = c2.send_input(&encode_player_input(&i2), &host_peer);
+            let frame = host.collect_inputs(&mut rcv);
+            host.broadcast_frame(&frame);
+            // host 自身充当的 player0 输入应出现在合帧里
+            assert!(frame.iter().any(|(p, _)| *p == 0), "合帧应含 host 的 player0 输入");
+            // 等到两 client 都收到本帧才推进（这样三端用同一帧，保证逐位一致）
+            let mut in1: Option<Vec<PlayerInput>> = None;
+            let mut in2: Option<Vec<PlayerInput>> = None;
+            for _ in 0..10 {
+                if let Some(f) = c1.recv_frame(&mut rcv).unwrap() {
+                    let mut v = vec![PlayerInput::default(); 3];
+                    for (p, b) in f { v[p as usize] = decode_player_input(&b).unwrap_or_default(); }
+                    in1 = Some(v);
+                }
+                if let Some(f) = c2.recv_frame(&mut rcv).unwrap() {
+                    let mut v = vec![PlayerInput::default(); 3];
+                    for (p, b) in f { v[p as usize] = decode_player_input(&b).unwrap_or_default(); }
+                    in2 = Some(v);
+                }
+                if in1.is_some() && in2.is_some() {
+                    break;
+                }
+            }
+            if let (Some(i1), Some(i2)) = (in1, in2) {
+                // host 用同一份 frame 推进（与 client 收到的一致）
+                let mut in_h = vec![PlayerInput::default(); 3];
+                for (p, b) in &frame { in_h[*p as usize] = decode_player_input(b).unwrap_or_default(); }
+                wh.step(in_h, dt);
+                w1.step(i1, dt);
+                w2.step(i2, dt);
+                assert_eq!(wh.players, w1.players, "tick {} host 与 client1 World 应一致", tick);
+                assert_eq!(wh.players, w2.players, "tick {} host 与 client2 World 应一致", tick);
+            }
+        }
+    }
 }
 

@@ -25,11 +25,16 @@ pub const MAX_PLAYERS: u8 = 8;
 pub type FrameData = Vec<(u8, Vec<u8>)>;
 
 /// host 端会话：等待 N 个 client 加入；每帧收齐输入后合帧广播。
+/// host 自身也可作为一个玩家（玩家序号 0），通过 `set_local_input` 提供本机输入。
 pub struct HostSession<T: Transport> {
     transport: T,
     expected: usize,
-    acked: Vec<Option<Peer>>, // 下标=玩家序号
+    acked: Vec<Option<Peer>>, // 下标=玩家序号（0 若是 host 自身则不含 peer）
     pub joined: usize,
+    /// host 自身的玩家输入（player 0，已编码）；`None` 表示 host 不参与对局。
+    local: Option<Vec<u8>>,
+    /// host 参与对局时为 1（自身占 player 0），否则为 0；client 序号从该基址分配。
+    local_base: u8,
 }
 
 impl<T: Transport> HostSession<T> {
@@ -39,7 +44,23 @@ impl<T: Transport> HostSession<T> {
             expected: expected_players,
             acked: vec![None; expected_players],
             joined: 0,
+            local: None,
+            local_base: 0,
         }
+    }
+
+    /// host 也作为 player 0 参与对局（并把总玩家人数传入以正确配号）。
+    pub fn host_participates(&mut self, total_players: u8) {
+        self.local_base = 1; // host=player0
+        self.expected = (total_players as usize).saturating_sub(1);
+        if self.acked.len() < total_players as usize {
+            self.acked.resize(total_players as usize, None);
+        }
+    }
+
+    /// 设置 host 自身的玩家 0 输入（已编码）。`None` 表示本帧不提供。
+    pub fn set_local_input(&mut self, enc: Option<Vec<u8>>) {
+        self.local = enc;
     }
 
     /// 建连阶段：轮询一次，收 join 并给 client 分配/确认序号。
@@ -48,14 +69,17 @@ impl<T: Transport> HostSession<T> {
         while self.joined < self.expected {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) if n >= 1 && rcv[0] == TAG_JOIN => {
-                    let idx = self.joined;
-                    self.acked[idx] = Some(from);
+                    let idx = self.local_base + self.joined as u8; // 若 host=player0，client 从 1 起
+                    if (idx as usize) < self.acked.len() {
+                        self.acked[idx as usize] = Some(from);
+                    }
                     self.joined += 1;
                     // 发 ack：给该 client 序号 + 总人数
+                    let total = self.local_base + self.expected as u8;
                     let mut ack = Vec::with_capacity(4);
                     ack.push(TAG_ACK);
-                    ack.push(self.expected as u8);
-                    ack.push(idx as u8);
+                    ack.push(total);
+                    ack.push(idx);
                     let _ = self.transport.send_to(&ack, &from);
                 }
                 Ok(_) => {} // 忽略非 join 包
@@ -65,10 +89,13 @@ impl<T: Transport> HostSession<T> {
         self.joined >= self.expected
     }
 
-    /// 每帧：收集各 client 上行输入（TAG_INPUT），返回 `(玩家序号, 输入字节)` 列表。
-    /// 轮询直到当前无包。若某 client 未在本次收齐，由调用方决定是否等/回退。
+    /// 每帧：收集各 client 上行输入（TAG_INPUT）+ host 自身（player 0）输入，
+    /// 返回 `(玩家序号, 输入字节)` 列表。轮询直到当前无包。
     pub fn collect_inputs(&mut self, rcv: &mut [u8]) -> Vec<(u8, Vec<u8>)> {
         let mut out: Vec<(u8, Vec<u8>)> = Vec::new();
+        if let Some(enc) = self.local.take() {
+            out.push((0, enc)); // host 自身作为 player 0
+        }
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) if n >= 1 && rcv[0] == TAG_INPUT => {
