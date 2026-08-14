@@ -1,0 +1,8 @@
+[package]
+name = "net"
+version = "0.1.0"
+edition = "2021"
+description = "帧同步网络层：传输无关抽象 + 本地 UDP 实现（阶段 3）"
+
+[dependencies]
+game-core = { path = "../game-core" }

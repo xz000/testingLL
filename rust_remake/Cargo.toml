@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["game-core", "client"]
+members = ["game-core", "client", "net"]
 
 [profile.dev]
 opt-level = 1
