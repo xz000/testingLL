@@ -10,6 +10,7 @@
 //! - `pull`：本帧累计的附加速度（引力场 / 回拉线等持续力）。
 //! - [`Buff`]：统一的自buff/减益（加速、护盾、隐身、束缚……），可加减、计时、到期回收。
 
+use crate::balance::Balance;
 use crate::fix::{Fix64, Vec2};
 use crate::skill::{Caster, SkillId};
 
@@ -27,14 +28,14 @@ pub enum Cmd {
 /// 命令队列长度上限。
 pub const MAX_CMDS: usize = 8;
 
-/// 玩家常量（与原版数值相符的量级）。
-pub const BASE_SPEED: f64 = 3.2;
-pub const DEFAULT_RADIUS: f64 = 1.0;
-pub const MAX_HP: f64 = 100.0;
+/// 玩家常量（与原版数值相符的量级）。数值权威源见 [`crate::balance::Balance`]。
+pub const BASE_SPEED: f64 = Balance::default().base_speed;
+pub const DEFAULT_RADIUS: f64 = Balance::default().default_radius;
+pub const MAX_HP: f64 = Balance::default().max_hp;
 /// 自走起步的加速度（速度/秒²）。决定起步多快到达满速。
-pub const ACCEL: f64 = 20.0;
+pub const ACCEL: f64 = Balance::default().accel;
 /// 自走刹停的减速度（速度/秒²）。决定松手/到达后多快停下。
-pub const DECEL: f64 = 40.0;
+pub const DECEL: f64 = Balance::default().decel;
 /// 每位玩家可同时叠加的 buff 数量上限。
 pub const MAX_BUFFS: usize = 16;
 

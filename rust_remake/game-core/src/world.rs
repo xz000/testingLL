@@ -4,21 +4,22 @@
 //! 所有规则均为纯整数定点运算，因此相同输入可产生完全一致的结果，
 //! 这是后续帧同步（lockstep）联网的基础。
 
+use crate::balance::Balance;
 use crate::fix::{Fix64, Vec2};
 use crate::player::{BuffKind, Cmd, Kick, Player};
 use crate::rng::Rng;
 use crate::skill::{SkillEffect, SkillId, DefTable};
 
-/// 场地收缩参数（复刻原版 `AreaScript` 的量级，稍加快以体现压迫感）。
-pub const START_RADIUS: f64 = 20.0;
-pub const SHRINK_SPEED: f64 = 0.35; // 半径减少量 / 秒
+/// 场地收缩参数（复刻原版 `AreaScript` 的量级，稍加快以体现压迫感）。数值权威源见 [`crate::balance::Balance`]。
+pub const START_RADIUS: f64 = Balance::default().start_radius;
+pub const SHRINK_SPEED: f64 = Balance::default().shrink_speed; // 半径减少量 / 秒
 /// 出界伤害：球心距圆点 > 圈半径时，每帧扣除的 HP / 秒。
-pub const OUT_HURT: f64 = 5.0;
+pub const OUT_HURT: f64 = Balance::default().out_hurt;
 /// 玩家相互挤压（重叠）时受到的伤害 / 秒。
-pub const OVERLAP_DAMAGE: f64 = 2.0;
+pub const OVERLAP_DAMAGE: f64 = Balance::default().overlap_damage;
 /// E3/E3b 撒出的扇形子弹（原版 `SABulletScript`）的伤害与射程。
-pub const SABULLET_DAMAGE: f64 = 2.0;
-pub const SABULLET_RANGE: f64 = 6.0;
+pub const SABULLET_DAMAGE: f64 = Balance::default().sabullet_damage;
+pub const SABULLET_RANGE: f64 = Balance::default().sabullet_range;
 
 /// 每个玩家当前帧的输入。
 #[derive(Clone, Debug, Default, PartialEq)]
