@@ -173,6 +173,7 @@ impl<T: Transport> ClientHandshake<T> {
     }
 
     /// 发 READY。
+    /// （注：此后 transport 通常会移交给 lockstep；README 发送改由 lockstep 的 send_ctrl 完成。）
     pub fn send_ready(&mut self, host: &Peer) -> io::Result<()> {
         let Some(t) = self.transport.as_mut() else {
             return Err(io::Error::other("transport taken"));

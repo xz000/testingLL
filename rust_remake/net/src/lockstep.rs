@@ -191,6 +191,13 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(())
     }
 
+    /// 向 host 上报 READY（用于 host 知道 client 已就绪；host 可按此或首帧决定开始）。
+    pub fn send_ready(&mut self) -> io::Result<()> {
+        let pkt = Packet::Ready;
+        self.transport.send_to(&pkt.encode(), &self.host)?;
+        Ok(())
+    }
+
     /// 请求补发 `missing_seq`。
     pub fn request_frame(&mut self, missing_seq: u64) -> io::Result<()> {
         let pkt = Packet::ReqFrame { seq: missing_seq };

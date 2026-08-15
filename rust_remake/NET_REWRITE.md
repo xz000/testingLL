@@ -70,7 +70,8 @@
    - 注：`proto.rs` 含 `FrameData` 类型别名；lockstep 依赖 proto 的静态 `FrameData`（非 `session` 的，session 将重构）。
 5. [x] 6.5 建 `handshake` 层（`net/src/handshake.rs`）：HostHandshake / ClientHandshake，只管 JOIN→ACK→READY→GO，产出统一起始 seq；`into_transport()` 把传输交给 lockstep。
 6. [x] 6.6 接入：`client/netlink.rs` 用 ClientHandshake+ClientLockstep；`client/main.rs` host 用 HostHandshake→HostLockstep。新增 `netlink::tests::host_and_two_clients_sync_over_udp`（host+2 client 真 UDP 三端逐位一致）通过。
-7. [ ] 6.7 真机多开 `multi-launch.ps1 -Players 3` 手测验证不再卡死/不同步。
+   - ⚠ 6.6 修正（白屏/卡死修复）：真机 3 窗口“第三个白屏、另两个卡住”，根因是【READY/GO 易失 + client 依赖 GO 才上行】→ 丢 GO 的 client 不上行 → host 等不齐 → 全队卡。改为：**握手后立即把 transport 移交给 ClientLockstep，client 每帧无条件 `upload` 上行；host 一次收齐输入即产首帧（首帧=统一起始信号，替代易失的 GO）；client 收到首帧即 started 推进，丢帧由 lockstep REQ_FRAME 补发**。README/GO 不再是硬门槛（host 改为 poll_join 收齐就移交，去 READY/GO 门槛）。
+7. [ ] 6.7 真机多开 `multi-launch.ps1 -Players 3` 手测验证不再卡死/不同步（待你实测确认）。
 8. [ ] 6.8 更新文档 + 提交。
 
 ## 7. 验证基线（一直要保持）
