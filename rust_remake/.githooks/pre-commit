@@ -1,0 +1,43 @@
+#!/bin/sh
+# 提交前回归门禁：跑 check.ps1（build + test + clippy -D warnings，三项当前全绿）。
+# - 任一检查失败 → 以非零退出，阻止本次提交。
+# - 想要临时跳过：  SKIP_HOOKS=1 git commit ...
+# - 钩子由 git 在工作目录=仓库根目录下执行。
+# - 注意：cargo fmt 不在门禁内（历史代码未按 rustfmt 归一，开它误报）。
+#
+# 需 PowerShell（v5+）。若找不到 powershell 则放行并提示（避免误阻断提交）。
+
+# 逃生阀：显式 SKIP_HOOKS=1 可临时跳过。
+if [ "$SKIP_HOOKS" = "1" ]; then
+  echo "[hooks] SKIP_HOOKS=1，跳过提交前检查。"
+  exit 0
+fi
+
+# 定位项目根（check.ps1 在仓库根）。
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$repo_root" ]; then
+  echo "[hooks] 无法定位仓库根，放行。"
+  exit 0
+fi
+check_ps1="$repo_root/check.ps1"
+if [ ! -f "$check_ps1" ]; then
+  echo "[hooks] 未找到 $check_ps1，放行。"
+  exit 0
+fi
+
+if ! command -v powershell >/dev/null 2>&1; then
+  echo "[hooks] 未找到 PowerShell，放行。（说明：本环境无法自动跑回归。）"
+  exit 0
+fi
+
+echo "[hooks] 提交前回归检查启动（build + fmt + test + clippy）..."
+cd "$repo_root" || exit 1
+powershell -NoProfile -ExecutionPolicy Bypass -File "check.ps1"
+status=$?
+if [ $status -ne 0 ]; then
+  echo "[hooks] ❌ 回归检查未通过（退出码 $status）。提交已阻止。"
+  echo "      如需强制提交：SKIP_HOOKS=1 git commit ..."
+  exit 1
+fi
+echo "[hooks] ✅ 回归通过，继续提交。"
+exit 0
