@@ -3,6 +3,10 @@
 > 本文件用于在中断后快速恢复上下文。配合 `PLAN.md`（总计划 + 网络手感状态核实）与
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 > **📋 帧同步基座稳固计划见 `LOCKSTEP_FOUNDATION.md`**（2026-08-15 新增：把「⚠ 修复」后续收口成可执行步骤）。
+> **🛠 本地无人值守回归（2026-08-15 已建成并验证）：`check.ps1` + `.githooks/pre-commit` + `install-hooks.ps1`**
+>    - `check.ps1`：一键 build + test(80) + clippy(-D warnings)，失败即非零退出。
+>    - `pre-commit`：每次 `git commit` 前自动跑 check.ps1，坏代码提交不出去；`SKIP_HOOKS=1` 可临时跳过。用 `powershell -File install-hooks.ps1` 安装。
+>    - ⚠ 大坑（务必记住）：git 仓库根在**上级 `testingLL/`**，`rust_remake/` 只是其子目录。故 `core.hooksPath` 必须用**绝对路径**（指向 `.../rust_remake/.githooks`），且钩子用 `$0` 定位项目根（不能靠 `git rev-parse --show-toplevel`，它会返回 testingLL/）。已端到端验证：真编译错误能拦提交，干净提交放行。
 
 ## 当前状态（2026-08-13 晚，全部全绿）
 > **2026-08-15 重要修复（网络层帧同步 tag 丢失 bug）见下节「⚠ 2026-08-15 修复」**
