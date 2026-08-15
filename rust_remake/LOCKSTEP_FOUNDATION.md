@@ -65,10 +65,11 @@
 - 回归：`lockstep_over_udp_reaches_identical_worlds`、`frame_roundtrip`、`frame_packet_roundtrip` + 全部 session 测试全绿。
 - 验收：`cargo test --workspace` 80 全绿；`cargo clippy --workspace -- -D warnings` 无警告。✅
 
-### 4.3 引「数值平衡层 Balance」解耦手感  【⏳ 待做，属稳健性，不紧急】
-- 现状：`ACCEL=20/DECEL=40`、`START_RADIUS` 等纯数值常量硬编码在 `game-core` 各处，且被 PLAN 标记"纯数值调优可后做"。问题是：**改手感数值＝改 game-core → 破坏两端同版本确定性**。
-- 改法：把全部手感/玩法数值收敛进一个 `Balance`（/`Tuning`) 结构体，随帧同步**版本号**一起同步；调手感改数据不改逻辑。
-- 验收：调一个数值后，若两端用同一 Balance 版本，锁步仍逐位一致。
+### 4.3 引「数值平衡层 Balance」解耦手感  【✅ 已完成 2026-08-15】
+- 现状：`ACCEL=20/DECEL=40`、`START_RADIUS` 等纯数值常量硬编码在 `game-core` 各处 → 改手感＝改确定核心，破坏两端同版本确定性。
+- 已做：新增 `game-core::balance::Balance`（`const fn default()`，全 f64，Copy），把玩家手感（base_speed/accel/decel/max_hp/default_radius）与场地/世界（start_radius/shrink_speed/out_hurt/overlap_damage/sabullet_*）的**权威值**收敛到一处；`player.rs`/`world.rs` 的原 `pub const` 改为 `Balance::default().<field>`（值不变，纯重构不改结构/签名/玩法）。
+- 验收：`cargo test --workspace` 83 全绿（含 balance 单测），原有 72 玩法测试全过（行为完全不变）；clippy 干净。
+- 后续（未做，可另立）：“运行时可注入” —— 让 `World` 持 `Balance` 并带版本哈希，两端锁步前校验一致；以及技能 `SkillGrowth`（windup/recovery/cooldown/speed 等）收敛。
 
 ### 4.4 厘清「延迟掩盖」与「手感」目标  【✅ 判定已定，待写入 NEXT_STEPS 决策区】
 - 判定：**当前纯 lockstep 阶段，KPI 是「本地/内网多开不阻塞、逐位一致」，不背负"在显示上掩盖延迟"**。

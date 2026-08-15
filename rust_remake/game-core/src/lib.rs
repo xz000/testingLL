@@ -3,6 +3,7 @@
 //! 该 crate 只包含游戏规则与确定性模拟：定点数、玩家、场地、碰撞、技能。
 //! 渲染与输入在 `client` crate 中处理；联网在阶段 3 接入。
 
+pub mod balance;
 pub mod fix;
 pub mod meta;
 pub mod netcode;
