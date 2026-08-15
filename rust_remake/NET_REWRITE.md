@@ -71,7 +71,9 @@
 5. [x] 6.5 建 `handshake` 层（`net/src/handshake.rs`）：HostHandshake / ClientHandshake，只管 JOIN→ACK→READY→GO，产出统一起始 seq；`into_transport()` 把传输交给 lockstep。
 6. [x] 6.6 接入：`client/netlink.rs` 用 ClientHandshake+ClientLockstep；`client/main.rs` host 用 HostHandshake→HostLockstep。新增 `netlink::tests::host_and_two_clients_sync_over_udp`（host+2 client 真 UDP 三端逐位一致）通过。
    - ⚠ 6.6 修正（白屏/卡死修复）：真机 3 窗口“第三个白屏、另两个卡住”，根因是【READY/GO 易失 + client 依赖 GO 才上行】→ 丢 GO 的 client 不上行 → host 等不齐 → 全队卡。改为：**握手后立即把 transport 移交给 ClientLockstep，client 每帧无条件 `upload` 上行；host 一次收齐输入即产首帧（首帧=统一起始信号，替代易失的 GO）；client 收到首帧即 started 推进，丢帧由 lockstep REQ_FRAME 补发**。README/GO 不再是硬门槛（host 改为 poll_join 收齐就移交，去 READY/GO 门槛）。
-7. [ ] 6.7 真机多开 `multi-launch.ps1 -Players 3` 手测验证不再卡死/不同步（待你实测确认）。
+7. [x] 6.7 真机多开验证（2026-08-15）：`multi-launch.ps1 -Players 4` 四窗口全正常。
+   - ⚠ 白屏/卡死修复（根因）：`poll_join` 曾按「收到 JOIN 的顺序」分配序号且不按来源去重，而 client 在握手期每 ~5ms 重发 JOIN → host 把同一 client 的重复 JOIN 当成新玩家，joined/序号被撑爆，late client 收不到 ACK → 白屏。已改为**按来源 Peer 去重**（新 Peer 才分配/计数；重复 JOIN 重发已分配 ACK）。
+   - 真机日志实证：3 个 client 全部 `join_handshake OK my_index=1/2/3` + `FIRST FRAME started`；host 持续 `emit seq`(n_entries=4)，四端锁步正常、无白屏/卡死。
 8. [ ] 6.8 更新文档 + 提交。
 
 ## 7. 验证基线（一直要保持）
