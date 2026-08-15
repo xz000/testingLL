@@ -208,4 +208,123 @@ mod tests {
         assert!(stepped > 0, "应至少推进过（防假绿）");
         assert_ne!(whost.players, World::new(3, 55).players, "输入应真实作用于 World");
     }
+
+    /// 把配置条目 `(player_index, PlayerConfig 编码)` 应用到 World 的 `skill_levels`。
+    fn apply_cfgs(world: &mut World, entries: &[(u8, Vec<u8>)]) {
+        for (idx, bytes) in entries {
+            if let Some(cfg) = game_core::progress::PlayerConfig::decode(bytes) {
+                if let Some(p) = world.players.get_mut(*idx as usize) {
+                    for i in 0..p.skill_levels.len().min(cfg.skill_levels.len()) {
+                        p.skill_levels[i] = cfg.skill_levels[i];
+                    }
+                }
+            }
+        }
+    }
+
+    /// 构造一个只有 `skills[slot] = level`、其余 1 的 PlayerConfig 编码。
+    fn make_cfg(slot: usize, level: u32) -> Vec<u8> {
+        use game_core::progress::PlayerConfig;
+        let mut levels = vec![1u32; 34];
+        levels[slot] = level;
+        PlayerConfig { skill_levels: levels, key_slots: [None; 8], gold: 0, gold_spent: 0 }.encode()
+    }
+
+    /// 端到端多局：host+2 client 第一局跑帧 → 学习+配置同步（host 收齐广播）→ 各端重建下一局
+    /// World（应用同步后的技能等级）→ 第二局继续锁步 → 三端逐位一致、技能等级反映升级。
+    /// 这模拟 Dota2 式 learning→ready→下一局，证明跨局技能配置不会造成分叉。
+    #[test]
+    fn meta_round_sync_keeps_worlds_identical() {
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut hs = HostHandshake::new(ht, 3, true);
+        let mut a = NetLink::connect(host_addr).unwrap();
+        let mut b = NetLink::connect(host_addr).unwrap();
+        let mut rcv = [0u8; 8192];
+
+        for _ in 0..100 {
+            let _ = a.handshake.as_mut().unwrap().send_join(&a.host);
+            let _ = b.handshake.as_mut().unwrap().send_join(&b.host);
+            hs.poll_join(&mut rcv);
+            if a.join_handshake().unwrap() && b.join_handshake().unwrap() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(a.my_index(), 1);
+        assert_eq!(b.my_index(), 2);
+
+        let mut host = HostLockstep::new(hs.into_transport(), 3, true);
+        let mut whost = World::new(3, 55);
+        let mut wa = World::new(3, 55);
+        let mut wb = World::new(3, 55);
+        let dt = Fix64::from_num(1.0 / 60.0);
+
+        // 第一局：跑 30 帧。
+        for _ in 0..30 {
+            a.upload(&encode_player_input(&sample_input())).unwrap();
+            b.upload(&encode_player_input(&sample_input())).unwrap();
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            host.poll(&mut rcv);
+            if let Some((_, frame)) = host.try_emit() {
+                let mut in_h = vec![PlayerInput::default(); 3];
+                for (idx, bytes) in &frame {
+                    in_h[*idx as usize] = decode_player_input(bytes).unwrap();
+                }
+                whost.step(in_h, dt);
+            }
+            let _ = a.step_frame(&mut wa, dt).unwrap();
+            let _ = b.step_frame(&mut wb, dt).unwrap();
+            assert_eq!(whost.players, wa.players, "第一局 host 与 a 应一致");
+            assert_eq!(whost.players, wb.players, "第一局 host 与 b 应一致");
+        }
+
+        // 学习结束：各端生成自己的升级配置（本机操作，各不相问）。
+        let host_cfg = make_cfg(0, 5); // host(玩家0)把技能0升到5
+        let cfg_a = make_cfg(1, 3);    // client A(玩家1)把技能1升到3
+        let cfg_b = make_cfg(2, 4);    // client B(玩家2)把技能2升到4
+        host.set_local_cfg(host_cfg.clone());
+        a.upload_cfg(&cfg_a).unwrap();
+        b.upload_cfg(&cfg_b).unwrap();
+        host.poll_cfg(&mut rcv);
+        assert!(host.all_cfgs(), "host 应收齐自身+两端配置");
+        let all = host.collect_cfgs().expect("收齐");
+        host.broadcast_cfgs(&all);
+        let got_a = a.recv_cfg_all().unwrap().expect("client A 应收到完整配置");
+        let got_b = b.recv_cfg_all().unwrap().expect("client B 应收到完整配置");
+        assert_eq!(all, got_a, "host/端A 应持有相同完整配置");
+        assert_eq!(all, got_b, "host/端B 应持有相同完整配置");
+
+        // 重建下一局 World（同 seed），并应用同步后的技能等级。
+        let mut w2host = World::new(3, 55);
+        let mut w2a = World::new(3, 55);
+        let mut w2b = World::new(3, 55);
+        apply_cfgs(&mut w2host, &all);
+        apply_cfgs(&mut w2a, &all);
+        apply_cfgs(&mut w2b, &all);
+        // 技能等级应反映升级：玩家0技能0=5、玩家1技能1=3、玩家2技能2=4（所有端一致）。
+        assert_eq!(w2host.players[0].skill_levels[0], 5);
+        assert_eq!(w2a.players[0].skill_levels[0], 5);
+        assert_eq!(w2a.players[1].skill_levels[1], 3);
+        assert_eq!(w2b.players[2].skill_levels[2], 4);
+        host.reset_cfgs(); // 下一局复用
+
+        // 第二局：继续锁步跑 30 帧，三端逐位一致（分叉即失败）。
+        for _ in 0..30 {
+            a.upload(&encode_player_input(&sample_input())).unwrap();
+            b.upload(&encode_player_input(&sample_input())).unwrap();
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            host.poll(&mut rcv);
+            if let Some((_, frame)) = host.try_emit() {
+                let mut in_h = vec![PlayerInput::default(); 3];
+                for (idx, bytes) in &frame {
+                    in_h[*idx as usize] = decode_player_input(bytes).unwrap();
+                }
+                w2host.step(in_h, dt);
+            }
+            let _ = a.step_frame(&mut w2a, dt).unwrap();
+            let _ = b.step_frame(&mut w2b, dt).unwrap();
+            assert_eq!(w2host.players, w2a.players, "第二局 host 与 a 应逐位一致");
+            assert_eq!(w2host.players, w2b.players, "第二局 host 与 b 应逐位一致");
+        }
+    }
 }
