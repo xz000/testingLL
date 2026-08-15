@@ -129,9 +129,15 @@ impl Game {
             }
         }
         let seed = 20260812u64;
-        let world = World::new(player_count.max(1), seed);
+        let mut world = World::new(player_count.max(1), seed);
         // 整场对抗：3 小局，所有玩家都纳入档案
         let mut meta = MatchState::new(MatchConfig::default(), &(0..player_count).collect::<Vec<_>>(), 8);
+        // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
+        if std::env::var("FASTROUND").is_ok() {
+            world.arena_radius = game_core::fix::Fix64::from_num(3.0);
+            meta.config.learn_time_secs = 1.0;
+            meta.config.total_rounds = 4;
+        }
         // 默认绑定：每个键绑定其树的首个技能，保证开局即可用（玩家可在学习阶段改）
         for p in meta.profiles.iter_mut() {
             for key in game_core::skill::CastKey::ALL {
@@ -1006,10 +1012,13 @@ impl event::EventHandler for Game {
                 // 若学习结束，准备进入下一局：联网需先做「配置同步」
                 if self.meta.phase == MatchPhase::Fighting {
                     if self.net_link.is_some() {
+                        eprintln!("[meta] round {} learning done -> ClientWait (config sync)", self.meta.round);
                         self.net_cfg = NetCfgSync::ClientWait;
                     } else if self.net_host_ls.is_some() {
+                        eprintln!("[meta] round {} learning done -> HostGather (config sync)", self.meta.round);
                         self.net_cfg = NetCfgSync::HostGather;
                     } else {
+                        eprintln!("[meta] round {} learning done -> next round (single)", self.meta.round);
                         self.teardown_round_end();
                     }
                 }
@@ -1047,6 +1056,7 @@ impl event::EventHandler for Game {
                         if host.all_cfgs() {
                             let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
                             host.broadcast_cfgs(&all);
+                            eprintln!("[meta] host synced {} player configs -> next round (round {})", all.len(), self.meta.round + 1);
                             self.apply_player_cfgs(&all);
                             self.teardown_round_end();
                             host.reset_cfgs(); // 为下一局复用
@@ -1088,6 +1098,7 @@ impl event::EventHandler for Game {
                             link.upload_cfg(&cfg_bytes)?;
                         }
                         if let Some(all) = link.recv_cfg_all()? {
+                            eprintln!("[meta] client got {} player configs -> next round (round {})", all.len(), self.meta.round + 1);
                             self.apply_player_cfgs(&all);
                             self.teardown_round_end();
                             self.net_cfg = NetCfgSync::Idle;
