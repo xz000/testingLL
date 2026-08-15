@@ -125,6 +125,7 @@ mod tests {
         let mut wb = World::new(2, 55);
         let dt = Fix64::from_num(1.0 / 60.0);
         let mut rcv2 = [0u8; 4096];
+        let mut stepped = 0u32;
         for _ in 0..120 {
             // a/b 各发自己输入；host 合帧广播
             let ia = sample_input();
@@ -134,11 +135,93 @@ mod tests {
             a.session.send_input(&ea, &a.host).unwrap();
             b.session.send_input(&eb, &b.host).unwrap();
             let collected = host.collect_inputs(&mut rcv2);
+            assert!(collected.len() >= 2, "合帧应含两端输入（实际 {}", collected.len());
             host.broadcast_frame(&collected);
-            let _ = a.step_tick(&ia, &mut wa, dt);
-            let _ = b.step_tick(&ib, &mut wb, dt);
+            if a.step_tick(&ia, &mut wa, dt).unwrap() && b.step_tick(&ib, &mut wb, dt).unwrap() {
+                stepped += 1;
+            }
             // 逐帧核对
             assert_eq!(wa.players, wb.players);
         }
+        assert!(stepped > 0, "应至少真实推进过 1 帧（防网络静默丢弃导致的假通过）");
+        assert_ne!(wa.players, World::new(2, 55).players, "联网输入应真实作用于 World（防假通过）");
+    }
+
+    /// 完整一局：host 作为 player0(残血冲刺出圈死亡)，一个 NetLink 作为 player1(存活)。
+    /// 跑到底，验证 host 自身 World 与 client World 全程一致、且能分出胜者。
+    #[test]
+    fn full_round_host_and_client_consistent_with_winner() {
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut host = HostSession::new(ht, 1);
+        host.host_participates(2); // host=player0, 1 名 client=player1
+        let mut client = NetLink::connect(host_addr).unwrap();
+        let host_peer = Peer::Udp(host_addr);
+        let mut rcv = [0u8; 4096];
+        // 握手
+        for _ in 0..100 {
+            client.session.send_join(&host_peer).ok();
+            host.poll_join(&mut rcv);
+            if client.session.recv_join_ack(&mut rcv).unwrap_or(false) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(client.my_index(), 1);
+
+        let mut whost = World::new(2, 77);
+        let mut wcli = World::new(2, 77);
+        // 残血让 player0 快速出界死亡
+        whost.players[0].hp = Fix64::ONE;
+        wcli.players[0].hp = Fix64::ONE;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let p0_in = PlayerInput {
+            cast: Some((SkillId::DashSlash, Some(Vec2::new(Fix64::from_num(1000.0), Fix64::from_num(1000.0))))),
+            ..Default::default()
+        };
+        let p1_in = PlayerInput::default();
+
+        let mut ticks = 0;
+        while !wcli.round_over() && ticks < 600 {
+            // 轮询直到 host 收齐本帧（player0 local + player1）—— 真实锁步 host 会等齐所有输入。
+            let mut frame: Option<Vec<(u8, Vec<u8>)>> = None;
+            for _ in 0..2000 {
+                host.set_local_input(Some(encode_player_input(&p0_in)));
+                client.session.send_input(&encode_player_input(&p1_in), &host_peer).unwrap_or(());
+                let f = host.collect_inputs(&mut rcv);
+                if f.iter().any(|(i, _)| *i == 0) && f.iter().any(|(i, _)| *i == 1) {
+                    frame = Some(f);
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let frame = frame.expect("host 收齐本帧超时");
+            // host 按同一帧回放自身 World
+            let n = whost.players.len();
+            let mut ins = vec![PlayerInput::default(); n];
+            for (idx, bytes) in &frame {
+                if (*idx as usize) < n {
+                    ins[*idx as usize] = decode_player_input(bytes).ok().unwrap_or_default();
+                }
+            }
+            whost.step(ins, dt);
+            host.broadcast_frame(&frame);
+            // client 轮询收帧并推进（保证拿到本帧再 step）
+            let mut stepped = false;
+            for _ in 0..2000 {
+                if client.step_tick(&p1_in, &mut wcli, dt).unwrap() {
+                    stepped = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            assert!(stepped, "tick {} client 收帧超时", ticks);
+            assert_eq!(whost.players, wcli.players, "tick {} host 与 client World 应一致", ticks);
+            assert_eq!(whost.arena_radius, wcli.arena_radius);
+            ticks += 1;
+        }
+        assert!(wcli.round_over(), "对局应能打完（出局者死亡）");
+        assert!(!wcli.players[0].alive, "出界者(player0)应死亡");
+        assert_eq!(whost.placement(), wcli.placement(), "两端名次判定一致");
+        assert_eq!(whost.placement()[0], 1, "胜者应为 player1");
     }
 }

@@ -115,9 +115,11 @@ impl<T: Transport> HostSession<T> {
     /// 每帧：把整帧广播给所有已加入 client（跳过 None 槽）。
     pub fn broadcast_frame(&mut self, entries: &[(u8, Vec<u8>)]) {
         let refs: Vec<(u8, &[u8])> = entries.iter().map(|(i, b)| (*i, b.as_slice())).collect();
-        let mut pkt = Vec::with_capacity(2048);
+        let mut body = Vec::with_capacity(2048);
+        frame_packet(&refs, &mut body); // [count][entries...]
+        let mut pkt = Vec::with_capacity(1 + body.len());
         pkt.push(TAG_FRAME);
-        frame_packet(&refs, &mut pkt);
+        pkt.extend_from_slice(&body);
         for peer in self.acked.iter().flatten() {
             let _ = self.transport.send_to(&pkt, peer);
         }
@@ -168,9 +170,11 @@ impl<T: Transport> ClientSession<T> {
 
     /// 每帧：把本机输入（已编码）发给 host。
     pub fn send_input(&mut self, encoded: &[u8], host: &Peer) -> io::Result<()> {
-        let mut up = Vec::with_capacity(64 + encoded.len());
+        let mut body = Vec::with_capacity(64 + encoded.len());
+        up_packet(self.my_index, encoded, &mut body); // [index][payload]
+        let mut up = Vec::with_capacity(1 + body.len());
         up.push(TAG_INPUT);
-        up_packet(self.my_index, encoded, &mut up);
+        up.extend_from_slice(&body);
         self.transport.send_to(&up, host)?;
         Ok(())
     }

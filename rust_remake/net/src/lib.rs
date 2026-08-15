@@ -180,6 +180,7 @@ mod tests {
         // 简单确定性 agent：自己的玩家朝固定方向移动/施法
         let script_a = sample_input(0);
         let script_b = sample_input(1);
+        let mut stepped = 0u32;
         // 跑固定 240 tick 的联网对战，逐帧核对两端一致（不强求本局结束——名次判定逻辑已由 game-core 单测覆盖）。
         for _ in 0..240 {
             let ea = encode_player_input(&script_a);
@@ -187,6 +188,7 @@ mod tests {
             let _ = c0.send_input(&ea, &host_peer);
             let _ = c1.send_input(&eb, &host_peer);
             let collected = host.collect_inputs(&mut rcv);
+            assert!(collected.len() >= 2, "合帧应含两端输入（实际 {}", collected.len());
             host.broadcast_frame(&collected);
             let mut fa = None;
             let mut fb = None;
@@ -202,11 +204,14 @@ mod tests {
                 for (p, body) in eb { ib[p as usize] = decode_player_input(&body).unwrap(); }
                 wa.step(ia, dt);
                 wb.step(ib, dt);
+                stepped += 1;
                 // 逐帧核对两 client World 位一致（这是帧同步的核心不变量）
                 assert_eq!(wa.players, wb.players, "联网各帧两端 World 必须一致");
                 assert_eq!(wa.arena_radius, wb.arena_radius);
             }
         }
+        assert!(stepped > 0, "应至少真实推进过 1 帧（防网络静默丢弃导致的假通过）");
+        assert_ne!(wa.players, World::new(2, 123).players, "联网输入应真实作用于 World（防假通过）");
         // 若某端已本局结束，名次判定也应一致
         if wa.round_over() {
             assert_eq!(wa.placement(), wb.placement(), "两端名次判定必须一致");
@@ -244,6 +249,7 @@ mod tests {
         let mut w0 = World::new(2, 7);
         let mut w1 = World::new(2, 7);
         let dt = Fix64::from_num(1.0 / 60.0);
+        let mut stepped = 0u32;
 
         for _ in 0..60 {
             // client 上行输入
@@ -254,6 +260,7 @@ mod tests {
             let _ = c1.send_input(&e1, &host_peer);
             // host 收集 + 合帧广播
             let collected = host.collect_inputs(&mut rcv);
+            assert!(collected.len() >= 2, "合帧应含两端输入（实际 {}", collected.len());
             host.broadcast_frame(&collected);
             // client 收帧
             let mut f0 = None;
@@ -270,8 +277,13 @@ mod tests {
                 for (p, body) in e1 { in1[p as usize] = decode_player_input(&body).unwrap(); }
                 w0.step(in0, dt);
                 w1.step(in1, dt);
+                stepped += 1;
             }
         }
+        assert!(stepped > 0, "应至少真实推进过 1 帧（防网络静默丢弃导致的假通过）");
+        // 证明输入真的生效了（若传输被静默丢弃，World 不会离开初始状态的默认布局）
+        let initial = World::new(2, 7);
+        assert_ne!(w0.players, initial.players, "客户端输入应真实作用于 World（防假通过）");
         assert_eq!(w0.players, w1.players, "session 锁步两端 World 必须一致");
         assert_eq!(w0.arena_radius, w1.arena_radius);
     }
@@ -307,6 +319,7 @@ mod tests {
         let mut w1 = World::new(3, 9);
         let mut w2 = World::new(3, 9);
         let dt = Fix64::from_num(1.0 / 60.0);
+        let mut stepped = 0u32;
         for tick in 0..90 {
             let ih = sample_input(0);
             let i1 = sample_input(1);
@@ -315,9 +328,12 @@ mod tests {
             let _ = c1.send_input(&encode_player_input(&i1), &host_peer);
             let _ = c2.send_input(&encode_player_input(&i2), &host_peer);
             let frame = host.collect_inputs(&mut rcv);
-            host.broadcast_frame(&frame);
-            // host 自身充当的 player0 输入应出现在合帧里
             assert!(frame.iter().any(|(p, _)| *p == 0), "合帧应含 host 的 player0 输入");
+            assert!(
+                frame.iter().any(|(p, _)| *p == 1) && frame.iter().any(|(p, _)| *p == 2),
+                "合帧应含两端 client 输入（实际 {:?}", frame.iter().map(|(p,_)| *p).collect::<Vec<_>>()
+            );
+            host.broadcast_frame(&frame);
             // 等到两 client 都收到本帧才推进（这样三端用同一帧，保证逐位一致）
             let mut in1: Option<Vec<PlayerInput>> = None;
             let mut in2: Option<Vec<PlayerInput>> = None;
@@ -343,10 +359,14 @@ mod tests {
                 wh.step(in_h, dt);
                 w1.step(i1, dt);
                 w2.step(i2, dt);
+                stepped += 1;
                 assert_eq!(wh.players, w1.players, "tick {} host 与 client1 World 应一致", tick);
                 assert_eq!(wh.players, w2.players, "tick {} host 与 client2 World 应一致", tick);
             }
         }
+        assert!(stepped > 0, "应至少真实推进过 1 帧（防网络静默丢弃导致的假通过）");
+        let initial = World::new(3, 9);
+        assert_ne!(wh.players, initial.players, "联网输入应真实作用于 World（防假通过）");
     }
 }
 

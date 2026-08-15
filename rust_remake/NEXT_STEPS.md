@@ -4,14 +4,34 @@
 > `SKILL_SPEC.md`（依据原版源码核对的技能全量真值表）一起看。
 
 ## 当前状态（2026-08-13 晚，全部全绿）
-- **单测 79 全绿**（game-core 72 + net 6 + client 1），`cargo build --workspace`、`cargo clippy --workspace` 均通过无警告。
+> **2026-08-15 重要修复（网络层帧同步 tag 丢失 bug）见下节「⚠ 2026-08-15 修复」**
+- **单测 80 全绿**（game-core 72 + net 6 + client 2），`cargo build --workspace`、`cargo clippy --workspace` 均通过无警告。
 - **中文显示**：内置 `assets/fonts/cjk.ttf` —— **开源的思源黑体(Noto Sans CJK SC, SIL OFL)**，子集约 941 字形 168KB。客户端 `include_bytes!` 内嵌 + `from_slice` 注册 `cjk` 字体渲染中文。已实测运行正常。
 - **场地缩小到 0**：复刻原版 `AreaScript`，半径持续缩到 0（不再停阈值 3.0）。
-- 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）。（`net/` crate 待建）
+- 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）+ `net`（传输无关，本地 UDP / 日后 Steam）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪。
 - 工作区 `rust_remake/` 已纳入 git。**醒来续接的里程碑：git HEAD 应在 `f8b717a`（含 shift 停止修复 + 前摇UI + 瞄准线）；上一提交 `7fcf180` 记录了待议决策；再上一 `8ea8d8d` 是阶段3第一步(netcode+确定性)。**
 
+## ⚠ 2026-08-15 修复：网络层帧同步 tag 丢失 + 测试假通过（重点备份）
+
+**现象**：工作区新增的 `client::netlink::tests::full_round_host_and_client_consistent_with_winner` 跑 `cargo test` 无限卡死（数小时无结果）。
+
+**根因（两个同类 bug）`net/src/session.rs`**：`up_packet` 与 `frame_packet` 开头都执行 `out.clear()`；而 `ClientSession::send_input` 与 `HostSession::broadcast_frame` 是先 `push(TAG_INPUT/TAG_FRAME)` 再调用它们 —— 结果 `clear()` 把刚 push 的 tag 首字节抹掉：
+- `send_input` 实际发出 `[my_index][payload]`（首字节=玩家序号，而非 TAG_INPUT=3）。
+- `broadcast_frame` 实际发出 `[count高字节][...]`（首字节=帧计数而非 TAG_FRAME=4）。
+
+于是对端 `collect_inputs`(按 `rcv[0]==TAG_INPUT`) 与 `recv_frame`(按 `rcv[0]==TAG_FRAME`) 永远匹配不上 → **client 输入在网络上被静默丢弃**。新增的完整对局测试因 host 永远收不到 client 输入而卡在内层 `loop`。
+
+**为何旧 net 测试“全绿”其实在假通过**：`session_lockstep_over_udp` / `host_participates_as_player_zero` / `full_online_match_identical_worlds` / `two_client_links_stay_synced` 在收不到帧时 `if let` 直接跳过 `world.step`，两 World 都停在初始默认状态，`assert_eq!(wa.players, wb.players)` 恒成立 —— **网络其实一行真实输入都没传，测试却“通过”**。这是本次排查最重要的教训：帧同步不变量测试必须证明“确实推进过、输入确实生效”，否则会在协议悄悄坏掉时假绿。
+
+**修复**：`send_input`/`broadcast_frame` 先单独产 body（`up_packet`/`frame_packet` 写入独立 `body`），再把 tag 前缀拼上再发。
+
+**加固**：四类 session 联网测试均加 `collected.len() >= N`、`stepped > 0`、`world != 初始World` 断言 —— 网络若再静默丢输入会立即炸红而非假绿。新增的完整对局测试改为**有界重试循环**（`0..2000` 次 + `expect` 超时 panic），永不再无限 hang。
+
+**验证**：`cargo test --workspace` 80 全绿（含上述非假通过断言）、`cargo clippy --workspace` 无警告。
+
 ## 已完成（到本时刻）
+
 - **阶段 0/1**：骨架 + 核心单机 demo（缩圈、移动、碰撞、HP）。
 - **阶段 2 的一部分**：
   - **通用系统地基**（`player.rs`）：`control` 强制位移、`pull` 附加速度、统一 `Buff` 系统、
