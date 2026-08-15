@@ -52,13 +52,10 @@
 
 ## 4. 待做工作（按优先级，标记 ✅/⏳ 状态）
 
-### 4.1 固化「帧同步测试防假绿」纪律  【✅ 核心已做，待写入文档】
-- 已做：`session_lockstep_over_udp` / `host_participates_as_player_zero` / `full_online_match_identical_worlds` / `two_client_links_stay_synced` 均加了：
-  - `collected.len() >= N`（host 确实合到了 N 端输入）
-  - `stepped > 0`（确实推进过帧）
-  - `world != 初始World`（输入真实生效）
-- 待做（文档化）：把这条纪律写进 NEXT_STEPS / PLAN 的「测试约定」，所有未来帧同步测试都必须附带上述三条断言。
-- 验收：任何「静默丢数据」的协议回归都会当场炸红。
+### 4.1 固化「帧同步测试防假绿」纪律  【✅ 已完成 2026-08-15】
+- 代码层（已做）：`session_lockstep_over_udp` / `host_participates_as_player_zero` / `full_online_match_identical_worlds` / `two_client_links_stay_synced` 均加了：`collected.len() >= N`、`stepped > 0`、`world != 初始World`。
+- 文档层（已做）：`PLAN.md` 新增「🧪 测试约定（防假绿）」节，作为长期评审准则；NEXT_STEPS 顶部也点了一句。
+- 验收：任何「静默丢数据」的协议回归都会当场炸红。✅
 
 ### 4.2 重构帧封装 —— 消除 `out.clear()` 副作用  【✅ 已做 2026-08-15】
 做法：
