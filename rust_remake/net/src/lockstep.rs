@@ -347,7 +347,7 @@ mod tests {
     /// 丢帧自愈：host 首次广播 seq=1 时被丢，client 应收齐逐帧推进（请求补发）。
     #[test]
     fn client_recovers_missing_frame_via_request() {
-        let (mut ht, mut ct) = pair();
+        let (mut ht, ct) = pair();
         ht.drop_seqs = vec![1]; // host 首次广播 seq1 丢包
         let mut host = HostLockstep::new(ht, 2, true);
         let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
