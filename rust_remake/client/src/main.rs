@@ -1113,11 +1113,20 @@ impl event::EventHandler for Game {
                         let enc = game_core::netcode::encode_player_input(&me);
                         // 无条件上行（无论是否已收到首帧）。
                         link.upload(&enc)?;
-                        // 收到帧才推进；没收到返回 None → 不扣时间、不推进，等下一帧。
+                        // 收到权威帧则按权威推进（校正）；没收到则本地预测：用本机输入乐观推进，
+                        // 让操作立即上屏、消除“等帧冻结”。
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.accumulator -= TICK;
                         } else {
-                            break;
+                            // 本地预测（乐观）：用本机输入推进，其他玩家用默认输入。
+                            eprintln!("[pred] no authority frame, local predict tick");
+                            let n = self.world.players.len();
+                            let mut inputs = vec![PlayerInput::default(); n];
+                            if (self.self_index() as usize) < n {
+                                inputs[self.self_index() as usize] = me;
+                            }
+                            self.world.step(inputs, ticking);
+                            self.accumulator -= TICK;
                         }
                     }
                     self.net_link = Some(link);
