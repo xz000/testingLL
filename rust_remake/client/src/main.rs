@@ -76,8 +76,10 @@ struct Game {
     offset: Point2<f32>,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
     net_link: Option<netlink::NetLink>,
-    /// 联网模式：开房作 host（自身=player 0）；`None` = 非 host。
-    net_host: Option<net::session::HostSession<net::transport::StdUdpTransport>>,
+    /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
+    net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
+    /// 联网模式：开房作 host，运行阶段。
+    net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>>,
     /// 联网：是否已完成 READY/GO 统一起始（可开始推进）。host=已广播 GO；client=已收 GO。
     net_ready: bool,
 }
@@ -89,8 +91,9 @@ impl Game {
         ctx.gfx.add_font("cjk", font);
 
         // 联网：加入 host 或开房作 host；否则单机（含本地 AI 机器人）。
-        let mut net_link = None;
-        let mut net_host = None;
+        let mut net_link: Option<netlink::NetLink> = None;
+        let mut net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>> = None;
+        let net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>> = None;
         let mut player_count: u32 = 1 + BOTS;
         match mode {
             NetMode::Local => {}
@@ -109,8 +112,7 @@ impl Game {
             NetMode::Host { port, total } => {
                 let t =
                     net::transport::StdUdpTransport::bind(&format!("0.0.0.0:{port}")).map_err(ggez::GameError::from)?;
-                let mut hs = net::session::HostSession::new(t, (total as usize).saturating_sub(1));
-                hs.host_participates(total.max(1) as u8);
+                let hs = net::handshake::HostHandshake::new(t, total.max(1) as usize, true);
                 player_count = total.max(1);
                 net_host = Some(hs);
             }
@@ -158,6 +160,7 @@ impl Game {
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             net_link,
             net_host,
+            net_host_ls,
             net_ready: false,
         })
     }
@@ -981,49 +984,57 @@ impl event::EventHandler for Game {
                 self.poll_input(ctx);
                 self.accumulator += dt.min(0.25);
                 let ticking = Fix64::from_num(TICK);
-                if let Some(mut host) = std::mem::take(&mut self.net_host) {
-                    // 联网 · 开房作 host：接受 client 加入 → 收齐 → READY/GO 统一起始 → 等齐输入带 seq 推帧广播。
+                if let Some(mut hs) = std::mem::take(&mut self.net_host) {
+                    // 联网 · 开房作 host：建连/统一阶段（JOIN→ACK→READY→GO）。
                     let mut host_rcv = vec![0u8; 4096];
-                    host.poll_join(&mut host_rcv);
-                    if host.joined >= host.expected() && !self.net_ready {
-                        host.poll_ready(&mut host_rcv);
-                        if host.all_ready() {
-                            host.broadcast_go(); // 各 client 从该 seq 起统一起始
+                    hs.poll_join(&mut host_rcv);
+                    if hs.joined >= hs.expected() && !self.net_ready {
+                        hs.poll_ready(&mut host_rcv);
+                        if hs.all_ready() {
+                            hs.broadcast_go(); // 各 client 从该 seq 起统一起始
                             self.net_ready = true;
                         }
                     }
                     if self.net_ready {
-                        while self.accumulator >= TICK {
-                            let me = self.local_player_input();
-                            let enc = game_core::netcode::encode_player_input(&me);
-                            host.set_local_input(Some(enc));
-                            // 等齐 N 端输入才推帧（collect_inputs 收齐才返回 Some）。
-                            let Some((fseq, frame)) = host.collect_inputs(&mut host_rcv) else {
-                                break; // 未收齐：本 tick 不推帧、不广播、不扣时间，等下一帧
-                            };
+                        // 把 transport 移交给 HostLockstep，进入运行态（一次性）。
+                        let n = self.world.players.len();
+                        let transport = hs.into_transport();
+                        self.net_host_ls = Some(net::lockstep::HostLockstep::new(transport, n, true));
+                    } else {
+                        self.net_host = Some(hs); // 尚未收齐/GO，放回等待
+                    }
+                } else if let Some(mut host) = std::mem::take(&mut self.net_host_ls) {
+                    // 联网 · host 运行：等齐 N 端输入才产 seq 帧（try_emit Some），用同帧喂自己 world 并广播。
+                    let mut host_rcv = vec![0u8; 4096];
+                    while self.accumulator >= TICK {
+                        let me = self.local_player_input();
+                        host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
+                        host.poll(&mut host_rcv);
+                        if let Some((_, frame)) = host.try_emit() {
                             let n = self.world.players.len();
                             let mut inputs = vec![PlayerInput::default(); n];
-                            for (idx, bytes) in frame.iter() {
-                                if (*idx as usize) < n {
-                                    inputs[*idx as usize] =
-                                        game_core::netcode::decode_player_input(bytes).unwrap_or_default();
+                            for (idx, bytes) in frame {
+                                if (idx as usize) < n {
+                                    inputs[idx as usize] =
+                                        game_core::netcode::decode_player_input(&bytes).unwrap_or_default();
                                 }
                             }
                             self.world.step(inputs, ticking);
-                            host.broadcast_frame(fseq, &frame);
                             self.accumulator -= TICK;
+                        } else {
+                            break; // 未收齐本帧：停在此 tick，下一帧 host.poll 会再收、补发缺失帧
                         }
                     }
-                    self.net_host = Some(host);
+                    self.net_host_ls = Some(host);
                 } else if let Some(mut link) = std::mem::take(&mut self.net_link) {
-                    // 联网：加入者 —— 等 GO 后，以收到带 seq 帧为推进锚点；没收到帧不推进、不盲扣时间。
+                    // 联网：加入者 —— 收 GO 后进入运行；以收到带 seq 帧为推进锚点，丢帧由 lockstep 自动补发。
                     if !self.net_ready && link.recv_go()? {
                         self.net_ready = true;
                     }
                     if self.net_ready {
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
-                            // 没收到帧返回 None → 不扣时间、不推进，等下一帧对齐 host。
+                            // 没收到帧返回 None → 不扣时间、不推进，等下一帧/补发对齐 host。
                             if link.step_frame(&me, &mut self.world, ticking)?.is_none() {
                                 break;
                             }
