@@ -11,6 +11,8 @@
 //! 本模块只依赖 std UDP + `game_core`，不依赖 ggez，故可无头单测。
 
 pub mod frame;
+pub mod lockstep;
+pub mod proto;
 pub mod session;
 pub mod transport;
 
