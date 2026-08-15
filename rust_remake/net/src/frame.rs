@@ -1,6 +1,7 @@
 //! 帧同步的帧封装：定义“客户端→主机”的单个输入包，以及“主机→客户端”的整帧广播包。
 //!
 //! 帧内只携带字节 blob（每个 `PlayerInput` 已由 `game_core::netcode` 编码），这里只做组装/拆解。
+#![allow(clippy::type_complexity)] // 网络二进制签名的复杂元组类型：属协议固有，允许。
 
 use std::io;
 
@@ -28,13 +29,15 @@ pub fn parse_up(buf: &[u8]) -> Option<(u8, &[u8])> {
     Some((idx, rest))
 }
 
-/// 把“整帧”：若干 `(player_index, input_bytes)` 编码为下行广播包：
-/// `[count: u16][(idx: u8)(len: u16)(bytes)...]`，返回独立缓冲。
+/// 把“整帧”：若干 `(player_index, input_bytes)` 编码为下行广播包，返回独立缓冲。
+/// 格式：`[seq: u64][count: u16][(idx: u8)(len: u16)(bytes)...]`。
+/// `seq` 为帧序号，供 client 锚定推进（同一起点 + 丢帧检测 + 缓冲对齐）。
 ///
 /// 纯函数：不接收外部 buffer、不做原地 clear。
-pub fn frame_packet(entries: &[(u8, &[u8])]) -> Vec<u8> {
-    let total: usize = 2 + entries.iter().map(|e| 1 + 2 + e.1.len()).sum::<usize>();
+pub fn frame_packet(seq: u64, entries: &[(u8, &[u8])]) -> Vec<u8> {
+    let total: usize = 8 + 2 + entries.iter().map(|e| 1 + 2 + e.1.len()).sum::<usize>();
     let mut out = Vec::with_capacity(total);
+    out.extend_from_slice(&seq.to_be_bytes());
     out.extend_from_slice(&(entries.len() as u16).to_be_bytes());
     for (idx, bytes) in entries {
         out.push(*idx);
@@ -44,11 +47,15 @@ pub fn frame_packet(entries: &[(u8, &[u8])]) -> Vec<u8> {
     out
 }
 
-/// 解析下行广播包，返回逐条 `(player_index, input_bytes)`。
-pub fn parse_frame(buf: &[u8]) -> io::Result<Vec<(u8, &[u8])>> {
-    if buf.len() < 2 {
+/// 解析下行广播包，返回 `(frame_seq, 逐条 (player_index, input_bytes))`。
+pub fn parse_frame(buf: &[u8]) -> io::Result<(u64, Vec<(u8, &[u8])>)> {
+    if buf.len() < 8 + 2 {
         return Err(io::Error::other("frame too short"));
     }
+    let mut seq_bytes = [0u8; 8];
+    seq_bytes.copy_from_slice(&buf[0..8]);
+    let seq = u64::from_be_bytes(seq_bytes);
+    let buf = &buf[8..];
     let count = u16::from_be_bytes([buf[0], buf[1]]) as usize;
     let mut pos = 2;
     let mut out = Vec::with_capacity(count);
@@ -66,5 +73,5 @@ pub fn parse_frame(buf: &[u8]) -> io::Result<Vec<(u8, &[u8])>> {
         out.push((idx, &buf[pos..pos + len]));
         pos += len;
     }
-    Ok(out)
+    Ok((seq, out))
 }

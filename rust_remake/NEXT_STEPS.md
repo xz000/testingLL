@@ -8,6 +8,7 @@
 >    - `check.ps1`：一键 build + test(80) + clippy(-D warnings)，失败即非零退出。
 >    - `pre-commit`：每次 `git commit` 前自动跑 check.ps1，坏代码提交不出去；`SKIP_HOOKS=1` 可临时跳过。用 `powershell -File install-hooks.ps1` 安装。
 >    - ⚠ 大坑（务必记住）：git 仓库根在**上级 `testingLL/`**，`rust_remake/` 只是其子目录。故 `core.hooksPath` 必须用**绝对路径**（指向 `.../rust_remake/.githooks`），且钩子用 `$0` 定位项目根（不能靠 `git rev-parse --show-toplevel`，它会返回 testingLL/）。已端到端验证：真编译错误能拦提交，干净提交放行。
+> **🧨 2026-08-15 完整锁步修复（三窗口不同步）见下节「⚠ 2026-08-15 完整锁步修复」**
 
 ## 当前状态（2026-08-13 晚，全部全绿）
 > **2026-08-15 重要修复（网络层帧同步 tag 丢失 bug）见下节「⚠ 2026-08-15 修复」**
@@ -17,6 +18,25 @@
 - 技术栈：workspace = `game-core`（纯逻辑/定点，确定性）+ `client`（ggez）+ `net`（传输无关，本地 UDP / 日后 Steam）。
 - 定点数 `fixed =1.28`，三角 `cordic`；确定性基座已就绪。
 - 工作区 `rust_remake/` 已纳入 git。**醒来续接的里程碑：git HEAD 应在 `f8b717a`（含 shift 停止修复 + 前摇UI + 瞄准线）；上一提交 `7fcf180` 记录了待议决策；再上一 `8ea8d8d` 是阶段3第一步(netcode+确定性)。**
+
+## ⚠ 2026-08-15 完整锁步修复（三窗口不同步）
+
+**现象**：本地多开 `--host` + `--join` 后，三窗口虽各自操作不同角色，但运行状态不同、加载完成时间不同、画面不同步。
+
+**根因（帧同步正确性的三个硬伤）**：
+1. **host 不等齐 N 端就推帧广播**：旧 `collect_inputs` “收到多少返回多少”，某个 client 输入未到就用缺人帧推进并广播 → 各端收到不同内容的帧 → 状态分叉。
+2. **client 没收到帧也盲扣时间**：旧客户端 `while accumulator>=TICK` 里 `step_tick` 返回 false 仍 `-1=tick`，导致 client 帧数落后 host → 永久漂移。
+3. **无统一起始**：host 一满足 `joined>=expected` 就开推，各端开始时刻不同（加载时间不同）→ 时间轴对不上。
+
+**修复（协议 + 两侧闭环）**：
+- **帧带 seq**：`net/src/frame.rs` 的 `frame_packet(seq, entries)` / `parse_frame -> (seq, entries)`。
+- **READY/GO 统一起始**：`net/src/session.rs` 新增 `TAG_READY=5` / `TAG_GO=6`；client 握手后 `send_ready`，host `poll_ready`+`all_ready` 后 `broadcast_go` 带起始 seq，client `recv_go` 拿到起点。
+- **host 等齐门槛**：`collect_inputs` 只有收齐全部 client 输入才返回 `Some((seq, frame))`；未齐返回 `None`（不推帧不广播）。
+- **client 帧锚定推进**：`netlink::step_frame` 收到带 seq 帧才推进并返回 `Some(seq)`；`None` 表示未到，client 端不扣时间、不推进（与 host 帧对齐）。
+- **collect_inputs 追加去重**：同一 client 序号保留最新一份输入，防 UDP 重复/乱序重复入帧。
+- client/main.rs 联网段同步改造（host 收齐才推 + READY/GO；client 以 seq 锚定、没收到帧不扣时间）。
+
+**验证**：`cargo test --workspace` 81 全绿（含重写后的 `session_lockstep_over_udp`、`host_participates_as_player_zero`、`full_online_match_identical_worlds`、`lockstep_8_player_max_capacity_smoke` 都走 READY/GO + seq）；`cargo clippy --workspace -- -D warnings` 无警告。**仍需你在多开里真机手测确认不再不同步**（用 `multi-launch.ps1 -Players 3`）。
 
 ## ⚠ 2026-08-15 修复：网络层帧同步 tag 丢失 + 测试假通过（重点备份）
 

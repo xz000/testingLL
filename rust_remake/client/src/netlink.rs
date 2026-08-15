@@ -1,7 +1,11 @@
 //! client 侧的联网连接（纯粹、无 ggez 依赖，可无头单测）。
 //!
-//! 一个 `NetLink` 对应一个“加入 host 的玩家窗口”：每帧把自己的 `PlayerInput` 编码上行到 host，
-//! 收整帧解码成所有玩家的 `PlayerInput` 并喂给本端 `World`（帧同步确定性回放）。
+//! 一个 `NetLink` 对应一个“加入 host 的玩家窗口”：先 `join_handshake` 握手拿序号，再经
+//! `ready` + `recv_go` 完成 READY/GO 统一起始，之后每帧用 `step_frame` 把本机 `PlayerInput`
+//! 上行、收 host 广播的带 `seq` 整帧、推进本端 `World`。
+//!
+//! 关键约束：只有收到帧才推进（`step_frame` 返回 `None` 表示本帧未到，调用方不得盲扣时间/盲推进），
+//! 且按收到帧的 `seq` 锚定推进——与 host 用同一帧回放，保证两端逐位一致。
 
 use game_core::netcode::{decode_player_input, encode_player_input};
 use game_core::world::{PlayerInput, World};
@@ -15,16 +19,22 @@ pub struct NetLink {
     session: ClientSession<StdUdpTransport>,
     host: Peer,
     rcv: Vec<u8>,
+    /// 是否已收到 GO（统一起始）。
+    pub started: bool,
+    /// GO 携带的起始 seq。
+    pub start_seq: u64,
 }
 
 impl NetLink {
-    /// 绑定本端并向 `host` 加入（须与对端 `HostSession::poll_join` 协同，见 crate::netlink::tests）。,
+    /// 绑定本端并向 `host` 加入（须与对端 `HostSession::poll_join` 协同，见 crate::netlink::tests）。
     pub fn connect(host: SocketAddr) -> io::Result<NetLink> {
         let (t, _) = StdUdpTransport::bind_loopback()?;
         Ok(NetLink {
             session: ClientSession::connected(t, 0, 0),
             host: Peer::Udp(host),
             rcv: vec![0u8; 4096],
+            started: false,
+            start_seq: 0,
         })
     }
 
@@ -40,6 +50,22 @@ impl NetLink {
         Ok(false)
     }
 
+    /// 准备：向 host 上报 READY（表示已加入并准备好开始）。
+    pub fn ready(&mut self) -> io::Result<()> {
+        self.session.send_ready(&self.host)
+    }
+
+    /// 尝试收 GO：收到则记录 started+start_seq 并返回 true；未到返回 false。
+    pub fn recv_go(&mut self) -> io::Result<bool> {
+        if let Some(seq) = self.session.recv_go(&mut self.rcv)? {
+            self.started = true;
+            self.start_seq = seq;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// 我的玩家序号（握手后有效）。
     pub fn my_index(&self) -> u8 {
         self.session.my_index
@@ -50,33 +76,31 @@ impl NetLink {
         self.session.players
     }
 
-    /// 每帧：把本机输入上行，收整帧解码后喂给 `world`。
-    /// 返回是否成功推进了一帧（收到合帧并 step 成功）。
-    pub fn step_tick(&mut self, my_input: &PlayerInput, world: &mut World, dt: game_core::fix::Fix64) -> io::Result<bool> {
-        // 上行本机输入
+    /// 每帧：把本机输入上行，收带 seq 的整帧；收到则推进 `world` 并返回 `Some(seq)`，
+    /// 没收到帧返回 `None`（调用方本 tick 不应推进、不应盲扣 accumulator，以保持与 host 帧对齐）。
+    pub fn step_frame(
+        &mut self,
+        my_input: &PlayerInput,
+        world: &mut World,
+        dt: game_core::fix::Fix64,
+    ) -> io::Result<Option<u64>> {
         let enc = encode_player_input(my_input);
         self.session.send_input(&enc, &self.host)?;
-        // 收整帧（轮询几次直到拿到）
-        let mut frame: Option<Vec<(u8, Vec<u8>)>> = None;
-        for _ in 0..5 {
-            if let Some(f) = self.session.recv_frame(&mut self.rcv)? {
-                frame = Some(f);
-                break;
+        // 有界轮询收一帧；只推进一次（seq 锚定，避免重推）。
+        for _ in 0..8 {
+            if let Some((seq, entries)) = self.session.recv_frame(&mut self.rcv)? {
+                let n = world.players.len();
+                let mut inputs = vec![PlayerInput::default(); n];
+                for (idx, bytes) in entries {
+                    if (idx as usize) < n {
+                        inputs[idx as usize] = decode_player_input(&bytes).map_err(io::Error::other)?;
+                    }
+                }
+                world.step(inputs, dt);
+                return Ok(Some(seq));
             }
         }
-        let Some(entries) = frame else {
-            return Ok(false);
-        };
-        // 解码成所有玩家输入（按索引对齐 world.players）
-        let n = world.players.len();
-        let mut inputs = vec![PlayerInput::default(); n];
-        for (idx, bytes) in entries {
-            if (idx as usize) < n {
-                inputs[idx as usize] = decode_player_input(&bytes).map_err(io::Error::other)?;
-            }
-        }
-        world.step(inputs, dt);
-        Ok(true)
+        Ok(None)
     }
 }
 
@@ -88,6 +112,7 @@ mod tests {
     use game_core::skill::SkillId;
     use net::session::HostSession;
     use net::transport::StdUdpTransport;
+    use std::time::Duration;
 
     fn sample_input() -> PlayerInput {
         PlayerInput {
@@ -100,48 +125,74 @@ mod tests {
     }
 
     /// 无头：host + 两个 NetLink（客户端逻辑）跑真 UDP，验证各端 World 一致。
-    /// 这直接驱动 client 所使用的 `NetLink` 路径，是 client 联网逻辑的自动化测试。,
     #[test]
     fn two_client_links_stay_synced() {
         let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
         let mut host = HostSession::new(ht, 2);
         let mut rcv = [0u8; 4096];
-        // 建两个 NetLink 并握手
+        let host_peer = Peer::Udp(host_addr);
+
+        // 建两个 NetLink 并握手（交替驱动：client 发 JOIN，host poll_join，client 收 ACK）
         let mut a = NetLink::connect(host_addr).unwrap();
         let mut b = NetLink::connect(host_addr).unwrap();
         for _ in 0..100 {
             let _ = a.session.send_join(&a.host);
             let _ = b.session.send_join(&b.host);
             host.poll_join(&mut rcv);
-            if a.session.recv_join_ack(&mut rcv).unwrap_or(false) && b.session.recv_join_ack(&mut rcv).unwrap_or(false) {
+            if a.session.recv_join_ack(&mut rcv).unwrap_or(false)
+                && b.session.recv_join_ack(&mut rcv).unwrap_or(false)
+            {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            std::thread::sleep(Duration::from_millis(2));
         }
+        // READY + GO
+        for _ in 0..100 {
+            let _ = a.ready();
+            let _ = b.ready();
+            host.poll_ready(&mut rcv);
+            if host.all_ready() {
+                host.broadcast_go();
+            }
+            if a.recv_go().unwrap() && b.recv_go().unwrap() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(a.started && b.started, "两端都应收 GO");
         assert_eq!(a.my_index(), 0);
         assert_eq!(b.my_index(), 1);
 
         let mut wa = World::new(2, 55);
         let mut wb = World::new(2, 55);
         let dt = Fix64::from_num(1.0 / 60.0);
-        let mut rcv2 = [0u8; 4096];
         let mut stepped = 0u32;
         for _ in 0..120 {
-            // a/b 各发自己输入；host 合帧广播
             let ia = sample_input();
             let ib = sample_input();
-            let ea = encode_player_input(&ia);
-            let eb = encode_player_input(&ib);
-            a.session.send_input(&ea, &a.host).unwrap();
-            b.session.send_input(&eb, &b.host).unwrap();
-            let collected = host.collect_inputs(&mut rcv2);
-            assert!(collected.len() >= 2, "合帧应含两端输入（实际 {}", collected.len());
-            host.broadcast_frame(&collected);
-            if a.step_tick(&ia, &mut wa, dt).unwrap() && b.step_tick(&ib, &mut wb, dt).unwrap() {
+            // host 收集：每轮重发 a/b 输入，直到 collect_inputs 收齐两端（等齐门槛）。
+            let (fseq, entries) = loop {
+                a.session.send_input(&encode_player_input(&ia), &host_peer).unwrap();
+                b.session.send_input(&encode_player_input(&ib), &host_peer).unwrap();
+                if let Some(f) = host.collect_inputs(&mut rcv) {
+                    break f;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            assert_eq!(
+                entries.len(),
+                2,
+                "合帧应含两端输入（实际 len={}, idxs={:?}）",
+                entries.len(),
+                entries.iter().map(|(p, _)| *p).collect::<Vec<_>>()
+            );
+            host.broadcast_frame(fseq, &entries);
+            if a.step_frame(&ia, &mut wa, dt).unwrap().is_some()
+                && b.step_frame(&ib, &mut wb, dt).unwrap().is_some()
+            {
                 stepped += 1;
             }
-            // 逐帧核对
-            assert_eq!(wa.players, wb.players);
+            assert_eq!(wa.players, wb.players, "两端 World 必须一致");
         }
         assert!(stepped > 0, "应至少真实推进过 1 帧（防网络静默丢弃导致的假通过）");
         assert_ne!(wa.players, World::new(2, 55).players, "联网输入应真实作用于 World（防假通过）");
@@ -154,23 +205,35 @@ mod tests {
         let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
         let mut host = HostSession::new(ht, 1);
         host.host_participates(2); // host=player0, 1 名 client=player1
-        let mut client = NetLink::connect(host_addr).unwrap();
         let host_peer = Peer::Udp(host_addr);
         let mut rcv = [0u8; 4096];
-        // 握手
+        let mut client = NetLink::connect(host_addr).unwrap();
+        // 握手（交替驱动：client JOIN，host poll，client 收 ACK）
         for _ in 0..100 {
-            client.session.send_join(&host_peer).ok();
+            let _ = client.session.send_join(&client.host);
             host.poll_join(&mut rcv);
             if client.session.recv_join_ack(&mut rcv).unwrap_or(false) {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            std::thread::sleep(Duration::from_millis(2));
         }
         assert_eq!(client.my_index(), 1);
+        // READY + GO
+        for _ in 0..100 {
+            let _ = client.ready();
+            host.poll_ready(&mut rcv);
+            if host.all_ready() {
+                host.broadcast_go();
+            }
+            if client.recv_go().unwrap() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(client.started);
 
         let mut whost = World::new(2, 77);
         let mut wcli = World::new(2, 77);
-        // 残血让 player0 快速出界死亡
         whost.players[0].hp = Fix64::ONE;
         wcli.players[0].hp = Fix64::ONE;
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -182,20 +245,15 @@ mod tests {
 
         let mut ticks = 0;
         while !wcli.round_over() && ticks < 600 {
-            // 轮询直到 host 收齐本帧（player0 local + player1）—— 真实锁步 host 会等齐所有输入。
-            let mut frame: Option<Vec<(u8, Vec<u8>)>> = None;
-            for _ in 0..2000 {
-                host.set_local_input(Some(encode_player_input(&p0_in)));
-                client.session.send_input(&encode_player_input(&p1_in), &host_peer).unwrap_or(());
-                let f = host.collect_inputs(&mut rcv);
-                if f.iter().any(|(i, _)| *i == 0) && f.iter().any(|(i, _)| *i == 1) {
-                    frame = Some(f);
-                    break;
+            // host 收集（等齐 p0 local + p1）并带 seq 推进+广播。
+            host.set_local_input(Some(encode_player_input(&p0_in)));
+            client.session.send_input(&encode_player_input(&p1_in), &host_peer).unwrap();
+            let (fseq, frame) = loop {
+                if let Some(f) = host.collect_inputs(&mut rcv) {
+                    break f;
                 }
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-            let frame = frame.expect("host 收齐本帧超时");
-            // host 按同一帧回放自身 World
+                std::thread::sleep(Duration::from_millis(1));
+            };
             let n = whost.players.len();
             let mut ins = vec![PlayerInput::default(); n];
             for (idx, bytes) in &frame {
@@ -204,17 +262,10 @@ mod tests {
                 }
             }
             whost.step(ins, dt);
-            host.broadcast_frame(&frame);
-            // client 轮询收帧并推进（保证拿到本帧再 step）
-            let mut stepped = false;
-            for _ in 0..2000 {
-                if client.step_tick(&p1_in, &mut wcli, dt).unwrap() {
-                    stepped = true;
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-            assert!(stepped, "tick {} client 收帧超时", ticks);
+            host.broadcast_frame(fseq, &frame);
+            // client 只推进一次（收到带 seq 帧）。
+            let stepped = client.step_frame(&p1_in, &mut wcli, dt).unwrap().is_some();
+            assert!(stepped, "tick {} client 应收到并推进本帧", ticks);
             assert_eq!(whost.players, wcli.players, "tick {} host 与 client World 应一致", ticks);
             assert_eq!(whost.arena_radius, wcli.arena_radius);
             ticks += 1;
