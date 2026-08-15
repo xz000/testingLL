@@ -29,7 +29,11 @@ Pop-Location
 
 $host_args = @("--host", "$Port", "--players", "$Players")
 Write-Host "启动 host（玩家 0）：client $($host_args -join ' ')" -ForegroundColor Green
-Start-Process -FilePath $exe -ArgumentList $host_args
+$logdir = Join-Path $PSScriptRoot "netlogs"
+New-Item -ItemType Directory -Force -Path $logdir | Out-Null
+$host_stdout = Join-Path $logdir "host_out.txt"
+$host_stderr = Join-Path $logdir "host_err.txt"
+Start-Process -FilePath $exe -ArgumentList $host_args -RedirectStandardOutput $host_stdout -RedirectStandardError $host_stderr
 
 # 留一点时间让 host 先开房
 Start-Sleep -Milliseconds 600
@@ -38,12 +42,15 @@ for ($p = 1; $p -lt $Players; $p++) {
     $addr = "127.0.0.1:$Port"
     $join_args = @("--join", "$addr")
     Write-Host "启动 client（玩家 $p）：--join $addr" -ForegroundColor Cyan
-    Start-Process -FilePath $exe -ArgumentList $join_args
+    $co = Join-Path $logdir ("client{0}_out.txt" -f $p)
+    $ce = Join-Path $logdir ("client{0}_err.txt" -f $p)
+    Start-Process -FilePath $exe -ArgumentList $join_args -RedirectStandardOutput $co -RedirectStandardError $ce
     Start-Sleep -Milliseconds 400
 }
 
 Write-Host ""
 Write-Host "已启动 $Players 个窗口（1 host + $($Players-1) clients）。手测要点："
+Write-Host "日志已写入 netlogs/（host_out/err, client1..N_out/err）"
 Write-Host "  - 帧同步不应阻塞（大家都顺畅、无人等最慢者卡死）。"
 Write-Host "  - 各窗口画面/位置一致（锁步正确）。"
 Write-Host "  - 关闭窗口后进程自动结束。"

@@ -987,7 +987,9 @@ impl event::EventHandler for Game {
                     // 由“host 收齐输入即产首帧”自然统一起始。）。
                     let mut host_rcv = vec![0u8; 4096];
                     hs.poll_join(&mut host_rcv);
+                    eprintln!("[host] poll_join: joined={} expected={}", hs.joined, hs.expected());
                     if hs.joined >= hs.expected() {
+                        eprintln!("[host] ALL {} clients joined -> hand to HostLockstep", hs.joined);
                         let n = self.world.players.len();
                         let transport = hs.into_transport();
                         self.net_host_ls = Some(net::lockstep::HostLockstep::new(transport, n, true));
@@ -1002,7 +1004,8 @@ impl event::EventHandler for Game {
                         let me = self.local_player_input();
                         host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                         host.poll(&mut host_rcv);
-                        if let Some((_, frame)) = host.try_emit() {
+                        if let Some((seq, frame)) = host.try_emit() {
+                            eprintln!("[host] emit seq={} (n_entries={})", seq, frame.len());
                             let n = self.world.players.len();
                             let mut inputs = vec![PlayerInput::default(); n];
                             for (idx, bytes) in frame {
