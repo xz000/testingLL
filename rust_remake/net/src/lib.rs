@@ -364,5 +364,116 @@ mod tests {
         let initial = World::new(3, 9);
         assert_ne!(wh.players, initial.players, "联网输入应真实作用于 World（防假通过）");
     }
+
+    /// 冒烟：host + 7 名 client（共 8 人，达上限）用真 UDP 跑若干帧，验证锁步同步到上限不崩。
+    /// 泛化实现：client 用 Vec 管理，避免手写 c1..c7。严格遵循 4.1 防假绿断言。
+    #[test]
+    fn lockstep_8_player_max_capacity_smoke() {
+        const N: usize = 8; // 达设计上限。
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut host = HostSession::new(ht, N - 1); // 收 N-1 名 client
+        host.host_participates(N as u8); // 自身=player0
+        let host_peer = Peer::Udp(host_addr);
+        let mut rcv = [0u8; 8192];
+
+        // 建 N-1 个 client（各自 transport + session + 独立 World）。
+        let mut clients: Vec<(ClientSession<StdUdpTransport>, World)> = Vec::new();
+        for _ in 0..N - 1 {
+            let (t, _) = StdUdpTransport::bind_loopback().unwrap();
+            let sess = ClientSession::connected(t, 0, 0);
+            // 各端必须用【相同 seed】，否则初始布局不同，锁步逐位比对必失败。
+            let w = World::new(N as u32, 9001);
+            clients.push((sess, w));
+        }
+
+        // 握手：各 client 反复发 join，host 轮询直到收齐 N-1 个、分配好序号。
+        let mut handshake_ok = false;
+        for _ in 0..300 {
+            for (sess, _) in clients.iter_mut() {
+                let _ = sess.send_join(&host_peer);
+            }
+            host.poll_join(&mut rcv);
+            // 检查是否所有 client 都拿到 ack 且 host 收齐。
+            let mut all_acked = true;
+            for (sess, _) in clients.iter_mut() {
+                if !sess.recv_join_ack(&mut rcv).unwrap_or(false) {
+                    all_acked = false;
+                }
+            }
+            if all_acked && host.joined == N - 1 {
+                handshake_ok = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(handshake_ok, "握手应收齐 {} 名 client", N - 1);
+        // 确认 host 分配的序号是从 1 起的连续 N-1 个。
+        let mut idxs: Vec<u8> = clients.iter().map(|(s, _)| s.my_index).collect();
+        idxs.sort();
+        assert_eq!(idxs, (1u8..N as u8).collect::<Vec<u8>>(), "client 序号应从 1 连续到 {}", N - 1);
+        for (s, _) in clients.iter() {
+            assert_eq!(s.players, N as u8, "客户端应知道总人数 {}", N);
+        }
+
+        // host 的 World（N 玩家）。
+        let mut whost = World::new(N as u32, 9001);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut stepped = 0u32;
+
+        for tick in 0..40 {
+            // host 本地输入 + 各 client 上行。
+            host.set_local_input(Some(encode_player_input(&sample_input(0))));
+            for (i, (sess, _)) in clients.iter_mut().enumerate() {
+                let inp = sample_input((i + 1) as u8);
+                let _ = sess.send_input(&encode_player_input(&inp), &host_peer);
+            }
+            let frame = host.collect_inputs(&mut rcv);
+            // 防假绿①：合帧应包含全部 N 个玩家输入。
+            assert_eq!(frame.len(), N, "tick {} 合帧应收齐 {} 端输入（实际 {}", tick, N, frame.len());
+            host.broadcast_frame(&frame);
+
+            // 等所有 client 收到本帧才推进（有界轮询）。
+            let mut frames_map: Vec<Option<Vec<PlayerInput>>> = vec![None; clients.len()];
+            for _ in 0..20 {
+                for (ci, (sess, _)) in clients.iter_mut().enumerate() {
+                    if frames_map[ci].is_none() {
+                        if let Some(f) = sess.recv_frame(&mut rcv).unwrap() {
+                            let mut v = vec![PlayerInput::default(); N];
+                            for (p, b) in f {
+                                v[p as usize] = decode_player_input(&b).unwrap_or_default();
+                            }
+                            frames_map[ci] = Some(v);
+                        }
+                    }
+                }
+                if frames_map.iter().all(|x| x.is_some()) {
+                    break;
+                }
+            }
+            assert!(
+                frames_map.iter().all(|x| x.is_some()),
+                "tick {} 各 client 都应收到本帧",
+                tick
+            );
+
+            // host 用同一份 frame 推进，各 client 也用收到的 frame 推进。
+            let mut in_h = vec![PlayerInput::default(); N];
+            for (p, b) in &frame {
+                in_h[*p as usize] = decode_player_input(b).unwrap_or_default();
+            }
+            whost.step(in_h, dt);
+            for (ci, (_, world)) in clients.iter_mut().enumerate() {
+                world.step(frames_map[ci].take().unwrap(), dt);
+                // 防假绿④：host 与每个 client 逐位一致。
+                assert_eq!(whost.players, world.players, "tick {} host 与 client{} World 应一致", tick, ci);
+                assert_eq!(whost.arena_radius, world.arena_radius, "tick {} 场地半径应一致", tick);
+            }
+            stepped += 1;
+        }
+
+        // 防假绿②③：真实推进过、且输入真实生效。
+        assert!(stepped > 0, "应至少真实推进过 1 帧");
+        assert_ne!(whost.players, World::new(N as u32, 9001).players, "联网输入应真实作用于 World（防假通过）");
+    }
 }
 

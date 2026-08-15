@@ -76,9 +76,12 @@
 - 真正的延迟掩盖（输入缓冲 / 本地预测 / 乐观回滚）→ **划为一个独立、完整的后续分支**，叠在 `net` 之上，不污染 `game-core` 确定性。
 - 待做（文档化）：在 PLAN.md / NEXT_STEPS 的「待议决策」里明确写清这条边界，避免后续用错误指标验收阶段 3。
 
-### 4.5 本地 lockstep 多开稳定性手测  【⏳ 待做】
-- 用真 UDP 多开 `--host` + `--join`（本地 2～4 窗口），实际打一局，验证：不阻塞、帧率稳定、两端画面一致。
-- 这是 4.1-4.4 之外最接近"真机手感"的一步，也能回来再驱动 4.2/4.3 的数值调整。
+### 4.5 本地 lockstep 多开稳定性手测  【辅助已做 ✅；真机手测 ⏳ 需人工】
+**自动化辅助（✅ 已做 2026-08-15）：**
+- **无头冒烟测试**：`net::tests::lockstep_8_player_max_capacity_smoke` —— host + 7 名 client（共 8 人，达上限）用真 UDP 跑 40 帧，验证到上限都锁步同步；严格带防假绿断言（合帧收齐 N / 逐位一致 / stepped / 输入生效），且有界循环。**注意测试内各端必须用相同 seed，否则初始布局不同、比对必败。**
+- **一键多开脚本** `multi-launch.ps1` —— `powershell -File multi-launch.ps1 -Players N -Port P`，自动 build 后开 1 个 `--host` + (N-1) 个 `--join` 窗口，供真机手测。
+- 验证：`cargo test --workspace` 81 全绿（client 2 + game-core 72 + net 7）；`cargo clippy --workspace -- -D warnings` 无警告。
+**待你人工**：用 `multi-launch.ps1` 多开打一局，确认不阻塞、两端画面一致、手感顺滑。
 
 ### 4.6 （后续，明确独立）meta 多局联网     【⏳ 待做 —— 属玩法完整，不属基座】
 - 当前联网用单 World，多局经济/升级/洗点未入锁步帧。只有补上才能"联网打完整 meta"。
