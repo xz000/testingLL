@@ -9,6 +9,8 @@
 >    - `pre-commit`：每次 `git commit` 前自动跑 check.ps1，坏代码提交不出去；`SKIP_HOOKS=1` 可临时跳过。用 `powershell -File install-hooks.ps1` 安装。
 >    - ⚠ 大坑（务必记住）：git 仓库根在**上级 `testingLL/`**，`rust_remake/` 只是其子目录。故 `core.hooksPath` 必须用**绝对路径**（指向 `.../rust_remake/.githooks`），且钩子用 `$0` 定位项目根（不能靠 `git rev-parse --show-toplevel`，它会返回 testingLL/）。已端到端验证：真编译错误能拦提交，干净提交放行。
 > **🧨 2026-08-15 完整锁步修复（三窗口不同步）见下节「⚠ 2026-08-15 完整锁步修复」**
+> **🏁 网络层已按「正确 lockstep」完整重写并收尾：见 `NET_REWRITE.md`（proto+handshake+lockstep 三层，删旧 session.rs；真机 4 窗口验证通过）。**
+> **📊 测试：当前 82 全绿（client 1 + game-core 72 + net 9），`cargo test --workspace` / `cargo clippy --workspace -- -D warnings` 均绿。**
 
 ## 当前状态（2026-08-13 晚，全部全绿）
 > **2026-08-15 重要修复（网络层帧同步 tag 丢失 bug）见下节「⚠ 2026-08-15 修复」**
