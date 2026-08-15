@@ -11,7 +11,8 @@
 
 param(
     [int]$Players = 2,
-    [int]$Port = 5199
+    [int]$Port = 5199,
+    [switch]$Fast
 )
 
 if ($Players -lt 2) { $Players = 2 }
@@ -29,6 +30,7 @@ Pop-Location
 
 $host_args = @("--host", "$Port", "--players", "$Players")
 Write-Host "启动 host（玩家 0）：client $($host_args -join ' ')" -ForegroundColor Green
+if ($Fast) { $env:FASTROUND = '1' } else { Remove-Item Env:FASTROUND -ErrorAction SilentlyContinue }
 $logdir = Join-Path $PSScriptRoot "netlogs"
 New-Item -ItemType Directory -Force -Path $logdir | Out-Null
 $host_stdout = Join-Path $logdir "host_out.txt"
