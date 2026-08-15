@@ -68,8 +68,8 @@
 3. [x] 6.3 建 `lockstep` ClientLockstep（expect_seq + 缓冲 + REQ_FRAME）+ 单测。
 4. [x] 6.4 新增「假 transport 丢包/乱序/重复」确定性测试：`lockstep::tests::client_recovers_missing_frame_via_request`（丢 seq=1 → client 请求补发 → 追平）已通过。
    - 注：`proto.rs` 含 `FrameData` 类型别名；lockstep 依赖 proto 的静态 `FrameData`（非 `session` 的，session 将重构）。
-5. [ ] 6.5 简化 `session`（建连/READY/GO 状态机）。
-6. [ ] 6.6 改 `client/netlink.rs`、`client/main.rs` 接入新层；跑全量。
+5. [x] 6.5 建 `handshake` 层（`net/src/handshake.rs`）：HostHandshake / ClientHandshake，只管 JOIN→ACK→READY→GO，产出统一起始 seq；`into_transport()` 把传输交给 lockstep。
+6. [x] 6.6 接入：`client/netlink.rs` 用 ClientHandshake+ClientLockstep；`client/main.rs` host 用 HostHandshake→HostLockstep。新增 `netlink::tests::host_and_two_clients_sync_over_udp`（host+2 client 真 UDP 三端逐位一致）通过。
 7. [ ] 6.7 真机多开 `multi-launch.ps1 -Players 3` 手测验证不再卡死/不同步。
 8. [ ] 6.8 更新文档 + 提交。
 

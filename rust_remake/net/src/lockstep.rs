@@ -99,9 +99,9 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
-    /// 若已收齐全部 client（及 host 自身）输入，则合成一帧：入缓冲、广播，清空已用输入并返回 `Some(seq)`。
-    /// 未收齐返回 `None`（调用方不推帧）。
-    pub fn try_emit(&mut self) -> Option<u64> {
+    /// 若已收齐全部 client（及 host 自身）输入，则合成一帧：入缓冲、广播，清空已用输入，
+    /// 返回 `Some((seq, entries))`（供各端包括 host 自身喂给本地 World）；未收齐返回 `None`。
+    pub fn try_emit(&mut self) -> Option<(u64, crate::proto::FrameData)> {
         // 若 host 参与，总玩家数 = expected + 1；需 host 本地输入 + 全部 client。
         if !self.latest_input.iter().all(|x| x.is_some()) {
             return None;
@@ -129,7 +129,7 @@ impl<T: Transport> HostLockstep<T> {
             let _ = self.transport.send_to(&enc, peer);
         }
         // 入缓冲（供补发）。
-        self.frame_buf.push_back((seq, entries));
+        self.frame_buf.push_back((seq, entries.clone()));
         while self.frame_buf.len() > self.frame_buf_capacity {
             self.frame_buf.pop_front();
         }
@@ -138,7 +138,7 @@ impl<T: Transport> HostLockstep<T> {
         if self.local_base > 0 {
             self.local = None;
         }
-        Some(seq)
+        Some((seq, entries))
     }
 
     pub fn client_peer(&self, client_seq: u8) -> Option<Peer> {
@@ -336,8 +336,8 @@ mod tests {
             cli.send_input(&[i]).unwrap();
             host.poll(&mut rcv);
             host.set_local_input(Some(vec![i + 100]));
-            let seq = host.try_emit();
-            assert_eq!(seq, Some(i as u64), "host 应收齐后逐帧产 seq");
+            let (seq, _) = host.try_emit().expect("host 应收齐后逐帧产 seq");
+            assert_eq!(seq, i as u64, "host 应逐帧产 seq");
             let advanced = cli.step_frame(&mut rcv).unwrap();
             assert!(advanced.is_some(), "client 应收帧推进");
         }
