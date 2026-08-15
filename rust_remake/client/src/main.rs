@@ -104,8 +104,6 @@ impl Game {
                         break;
                     }
                 }
-                // 准备：上报 READY（GO 由 update 阶段轮询接收，因 host 需收齐所有 client）。
-                let _ = link.ready();
                 player_count = link.player_count().max(1) as u32;
                 net_link = Some(link);
             }
@@ -985,23 +983,17 @@ impl event::EventHandler for Game {
                 self.accumulator += dt.min(0.25);
                 let ticking = Fix64::from_num(TICK);
                 if let Some(mut hs) = std::mem::take(&mut self.net_host) {
-                    // 联网 · 开房作 host：建连/统一阶段（JOIN→ACK→READY→GO）。
+                    // 联网 · 开房作 host：等待所有 client 加入后移交 HostLockstep（不强制 READY/GO，
+                    // 由“host 收齐输入即产首帧”自然统一起始。）。
                     let mut host_rcv = vec![0u8; 4096];
                     hs.poll_join(&mut host_rcv);
-                    if hs.joined >= hs.expected() && !self.net_ready {
-                        hs.poll_ready(&mut host_rcv);
-                        if hs.all_ready() {
-                            hs.broadcast_go(); // 各 client 从该 seq 起统一起始
-                            self.net_ready = true;
-                        }
-                    }
-                    if self.net_ready {
-                        // 把 transport 移交给 HostLockstep，进入运行态（一次性）。
+                    if hs.joined >= hs.expected() {
                         let n = self.world.players.len();
                         let transport = hs.into_transport();
                         self.net_host_ls = Some(net::lockstep::HostLockstep::new(transport, n, true));
+                        self.net_ready = true;
                     } else {
-                        self.net_host = Some(hs); // 尚未收齐/GO，放回等待
+                        self.net_host = Some(hs); // 尚未收齐 client，继续等
                     }
                 } else if let Some(mut host) = std::mem::take(&mut self.net_host_ls) {
                     // 联网 · host 运行：等齐 N 端输入才产 seq 帧（try_emit Some），用同帧喂自己 world 并广播。
@@ -1027,18 +1019,18 @@ impl event::EventHandler for Game {
                     }
                     self.net_host_ls = Some(host);
                 } else if let Some(mut link) = std::mem::take(&mut self.net_link) {
-                    // 联网：加入者 —— 收 GO 后进入运行；以收到带 seq 帧为推进锚点，丢帧由 lockstep 自动补发。
-                    if !self.net_ready && link.recv_go()? {
-                        self.net_ready = true;
-                    }
-                    if self.net_ready {
-                        while self.accumulator >= TICK {
-                            let me = self.local_player_input();
-                            // 没收到帧返回 None → 不扣时间、不推进，等下一帧/补发对齐 host。
-                            if link.step_frame(&me, &mut self.world, ticking)?.is_none() {
-                                break;
-                            }
+                    // 联网：加入者 —— 每帧持续上行输入（让 host 能收齐并产首帧），并收帧推进。
+                    // 收到首帧即开始（started 首帧凭底）；丢帧由 lockstep 自动补发，不会永久不同步。
+                    while self.accumulator >= TICK {
+                        let me = self.local_player_input();
+                        let enc = game_core::netcode::encode_player_input(&me);
+                        // 无条件上行（无论是否已收到首帧）。
+                        link.upload(&enc)?;
+                        // 收到帧才推进；没收到返回 None → 不扣时间、不推进，等下一帧。
+                        if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.accumulator -= TICK;
+                        } else {
+                            break;
                         }
                     }
                     self.net_link = Some(link);
