@@ -60,15 +60,13 @@
 - 待做（文档化）：把这条纪律写进 NEXT_STEPS / PLAN 的「测试约定」，所有未来帧同步测试都必须附带上述三条断言。
 - 验收：任何「静默丢数据」的协议回归都会当场炸红。
 
-### 4.2 重构帧封装 —— 消除 `out.clear()` 副作用  【⏳ 未做，下一步主项】
-现状（`net/src/frame.rs` + `net/src/session.rs`）：`up_packet`/`frame_packet` 都 `out.clear()`，调用方曾「先 push tag 再被清」。虽已改成"先产 body 再拼 tag"，但函数签名仍是"写外部 buffer + clear"的隐患形态。
-- 改法（二选一）：
-  - **A. 改成纯函数**：`up_packet(index, payload) -> Vec<u8>`、`frame_packet(entries) -> Vec<u8>`，返回独立缓冲，从签名层面杜绝"外部 buffer 被 clear"。
-  - **B. 改名为 build_* 且内部 new 一个 Vec**（等价 A，但保留回调式）。
-  推荐 **A（纯函数返回 Vec）**，最直白、最少出错面。
-- 同时**把 tag 与 index 字段职责分离、按对齐布局**，让 `parse_up`/`parse_frame` 的解析更健壮、可演进。
-- 回归：`lockstep_over_udp_reaches_identical_worlds`、`frame_roundtrip`、`frame_packet_roundtrip` + 全部 session 测试必须仍绿。
-- 验收：`cargo test --workspace` 80 全绿；`cargo clippy --workspace` 无警告。
+### 4.2 重构帧封装 —— 消除 `out.clear()` 副作用  【✅ 已做 2026-08-15】
+做法：
+- 采纳原方案 A：`net/src/frame.rs` 的 `up_packet` → 返回 `Vec<u8>` 的纯函数，`frame_packet` → 返回 `Vec<u8>` 的纯函数；去掉 `out: &mut Vec<u8>` 参数与 `out.clear()`（签名层面杜绝“先 push tag 再被 clear”）。
+- `session.rs` 的 `send_input`/`broadcast_frame` 改为：先取纯函数返回的 body，再手动拼 `TAG_INPUT`/`TAG_FRAME` 前缀。
+- tag 与 index 职责在注释里写清：上行包 = `[TAG_INPUT][index][payload]`，下行帧 = `[TAG_FRAME][count][(idx)(len)(bytes)...]`。
+- 回归：`lockstep_over_udp_reaches_identical_worlds`、`frame_roundtrip`、`frame_packet_roundtrip` + 全部 session 测试全绿。
+- 验收：`cargo test --workspace` 80 全绿；`cargo clippy --workspace -- -D warnings` 无警告。✅
 
 ### 4.3 引「数值平衡层 Balance」解耦手感  【⏳ 待做，属稳健性，不紧急】
 - 现状：`ACCEL=20/DECEL=40`、`START_RADIUS` 等纯数值常量硬编码在 `game-core` 各处，且被 PLAN 标记"纯数值调优可后做"。问题是：**改手感数值＝改 game-core → 破坏两端同版本确定性**。

@@ -4,12 +4,15 @@
 
 use std::io;
 
-/// 把“单个玩家的输入包”编码为上行包：`[player_index: u8][input_bytes...]`。
+/// 把“单个玩家的输入包”编码为上行包：`[player_index: u8][input_bytes...]`，返回独立缓冲。
 /// `input_bytes` 长度由下层包边界决定（UDP 每包即一条，无需长度前缀）。
-pub fn up_packet(player_index: u8, input_bytes: &[u8], out: &mut Vec<u8>) {
-    out.clear();
+///
+/// 纯函数：不接收外部 buffer、不做原地 clear，调用方拿返回值即可，避免“先 push tag 再被 clear”的隐患。
+pub fn up_packet(player_index: u8, input_bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + input_bytes.len());
     out.push(player_index);
     out.extend_from_slice(input_bytes);
+    out
 }
 
 /// 解析上行包：返回 `(player_index, input_bytes 切片)`。
@@ -26,15 +29,19 @@ pub fn parse_up(buf: &[u8]) -> Option<(u8, &[u8])> {
 }
 
 /// 把“整帧”：若干 `(player_index, input_bytes)` 编码为下行广播包：
-/// `[count: u16][(idx: u8)(len: u16)(bytes)...]`
-pub fn frame_packet(entries: &[(u8, &[u8])], out: &mut Vec<u8>) {
-    out.clear();
+/// `[count: u16][(idx: u8)(len: u16)(bytes)...]`，返回独立缓冲。
+///
+/// 纯函数：不接收外部 buffer、不做原地 clear。
+pub fn frame_packet(entries: &[(u8, &[u8])]) -> Vec<u8> {
+    let total: usize = 2 + entries.iter().map(|e| 1 + 2 + e.1.len()).sum::<usize>();
+    let mut out = Vec::with_capacity(total);
     out.extend_from_slice(&(entries.len() as u16).to_be_bytes());
     for (idx, bytes) in entries {
         out.push(*idx);
         out.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
         out.extend_from_slice(bytes);
     }
+    out
 }
 
 /// 解析下行广播包，返回逐条 `(player_index, input_bytes)`。

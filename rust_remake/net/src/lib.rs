@@ -67,8 +67,7 @@ mod tests {
             for (t, paddr) in [(&mut c0, c0_addr), (&mut c1, c1_addr)] {
                 let pi = sample_input(if paddr == c0_addr { 0 } else { 1 });
                 let bytes = encode_player_input(&pi);
-                let mut up = Vec::new();
-                up_packet(if paddr == c0_addr { 0 } else { 1 }, &bytes, &mut up);
+                let up = up_packet(if paddr == c0_addr { 0 } else { 1 }, &bytes); // [index][payload]
                 t.send_to(&up, &Peer::Udp(host_addr)).unwrap();
             }
 
@@ -89,8 +88,7 @@ mod tests {
             // 排序保证确定性顺序，汇成整帧并广播给两个 client
             collected.sort_by_key(|(pid, _)| *pid);
             let refs: Vec<(u8, &[u8])> = collected.iter().map(|(p, b)| (*p, b.as_slice())).collect();
-            let mut frame = Vec::new();
-            frame_packet(&refs, &mut frame);
+            let frame = frame_packet(&refs);
             host.send_to(&frame, &Peer::Udp(c0_addr)).unwrap();
             host.send_to(&frame, &Peer::Udp(c1_addr)).unwrap();
 
@@ -124,8 +122,7 @@ mod tests {
     fn frame_roundtrip() {
         let pi = sample_input(3);
         let enc = encode_player_input(&pi);
-        let mut up = Vec::new();
-        up_packet(3, &enc, &mut up);
+        let up = up_packet(3, &enc); // [index][payload]
         let (idx, body) = parse_up(&up).unwrap();
         assert_eq!(idx, 3);
         let dec = decode_player_input(body).unwrap();
@@ -137,8 +134,7 @@ mod tests {
         let e0 = encode_player_input(&sample_input(0));
         let e1 = encode_player_input(&sample_input(1));
         let entries: Vec<(u8, &[u8])> = vec![(0, &e0), (1, &e1)];
-        let mut p = Vec::new();
-        frame_packet(&entries, &mut p);
+        let p = frame_packet(&entries);
         let parsed = parse_frame(&p).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].0, 0);
