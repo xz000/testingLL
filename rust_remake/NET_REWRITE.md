@@ -74,7 +74,7 @@
 7. [x] 6.7 真机多开验证（2026-08-15）：`multi-launch.ps1 -Players 4` 四窗口全正常。
    - ⚠ 白屏/卡死修复（根因）：`poll_join` 曾按「收到 JOIN 的顺序」分配序号且不按来源去重，而 client 在握手期每 ~5ms 重发 JOIN → host 把同一 client 的重复 JOIN 当成新玩家，joined/序号被撑爆，late client 收不到 ACK → 白屏。已改为**按来源 Peer 去重**（新 Peer 才分配/计数；重复 JOIN 重发已分配 ACK）。
    - 真机日志实证：3 个 client 全部 `join_handshake OK my_index=1/2/3` + `FIRST FRAME started`；host 持续 `emit seq`(n_entries=4)，四端锁步正常、无白屏/卡死。
-8. [ ] 6.8 更新文档 + 提交。
+8. [x] 6.8 收尾：移除旧 `net/src/session.rs`（建连+每帧收发合一的过渡代码）及其依赖的 4 个旧测试；`net/` 收敛为 `proto`+`handshake`+`lockstep` 三层（每层有专测）。全量 82 绿（client 1 + game-core 72 + net 9），clippy 干净。真机 4 窗口验证通过。
 
 ## 7. 验证基线（一直要保持）
 - `cargo test --workspace` 全绿（当前 81，重写后应新增若干）。
