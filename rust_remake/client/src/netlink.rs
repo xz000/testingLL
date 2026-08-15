@@ -3,6 +3,7 @@
 //! 流程：`join_handshake`(握手拿序号，内部移交 transport 到 ClientLockstep) →
 //! 每帧 `upload` 持续上行输入 + `step_frame` 收带 seq 帧推进（首帧即开始，丢帧自动请求补发）。
 //! 只有收到帧才推进（`step_frame` 返回 `None` 表示本帧未到，调用方不得盲扣时间/盲推进）。
+#![allow(clippy::type_complexity)] // recv_cfg_all 等返回的复杂元组：协议固有，允许。
 
 use game_core::netcode::decode_player_input;
 use game_core::world::{PlayerInput, World};
@@ -77,6 +78,23 @@ impl NetLink {
         };
         ls.send_input(encoded)
     }
+
+    /// 上报本玩家最终配置（学习阶段结束/就绪时；载荷为 `PlayerConfig::encode()` 字节）。
+    pub fn upload_cfg(&mut self, cfg_bytes: &[u8]) -> io::Result<()> {
+        let Some(ls) = self.lockstep.as_mut() else {
+            return Ok(());
+        };
+        ls.send_cfg(cfg_bytes)
+    }
+
+    /// 尝试收 host 广播的 `PlayerCfgAll`（所有玩家完整配置）；当前没有则返回 None。
+    pub fn recv_cfg_all(&mut self) -> io::Result<Option<Vec<(u8, Vec<u8>)>>> {
+        let Some(ls) = self.lockstep.as_mut() else {
+            return Ok(None);
+        };
+        ls.recv_cfg_all(&mut self.rcv)
+    }
+
 
     /// 每帧：只收带 seq 帧并推进 `world`。收到并推进返回 `Some(seq)`，未到返回 `None`。
     /// 首次收到帧时自动置 `started`（首帧即统一起始信号）。上行由调用方逐帧 `upload`。

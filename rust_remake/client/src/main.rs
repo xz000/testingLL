@@ -38,6 +38,17 @@ const KEY_LETTERS: [(&str, game_core::skill::CastKey); 8] = [
     ("g", game_core::skill::CastKey::G),
 ];
 
+/// 联网多局：学习阶段结束后、进入下一局前的“配置同步”阶段。
+#[derive(Clone, Copy, PartialEq)]
+enum NetCfgSync {
+    /// 不处于同步（单机 / Fighting / Finished）。
+    Idle,
+    /// host：正在收齐各端配置（含自身），齐后广播 PlayerCfgAll 并完成。
+    HostGather,
+    /// client：已上传配置，正在等 host 广播 PlayerCfgAll。
+    ClientWait,
+}
+
 /// 升级到某个等级的价格（简单坡度，后期可调）
 fn upgrade_cost(current_level: u32) -> i32 {
     (current_level * 5 + 5) as i32
@@ -82,6 +93,8 @@ struct Game {
     net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>>,
     /// 联网：是否已完成 READY/GO 统一起始（可开始推进）。host=已广播 GO；client=已收 GO。
     net_ready: bool,
+    /// 联网多局：学习结束后「配置同步」阶段（见 `NetCfgSync`）。
+    net_cfg: NetCfgSync,
 }
 
 impl Game {
@@ -160,6 +173,7 @@ impl Game {
             net_host,
             net_host_ls,
             net_ready: false,
+            net_cfg: NetCfgSync::Idle,
         })
     }
 
@@ -262,12 +276,11 @@ impl Game {
 
     /// 进入下一局前：把玩家的技能等级从档案同步到世界，并重置世界。
     fn teardown_round_end(&mut self) {
-        let me = self.self_index();
-        if let Some(profile) = self.meta.profiles.iter().find(|pr| pr.player_id == me) {
-            if let Some(p) = self.world.players.get_mut(me as usize) {
-                for i in 0..p.skill_levels.len().min(profile.skill_levels.len()) {
-                    p.skill_levels[i] = profile.skill_levels[i];
-                }
+        // 把 meta.profiles 全量同步到 world.players，使所有端下一局的技能等级一致。
+        // （联网下 profiles 已经由 host 广播的完整配置统一；单机下按本地各玩家档案设置。）
+        for (profile, p) in self.meta.profiles.iter().zip(self.world.players.iter_mut()) {
+            for i in 0..p.skill_levels.len().min(profile.skill_levels.len()) {
+                p.skill_levels[i] = profile.skill_levels[i];
             }
         }
         self.world.reset_round();
@@ -275,6 +288,17 @@ impl Game {
         self.pending_cast = None;
         self.pending_skill = None;
         self.accumulator = 0.0;
+    }
+
+    /// 把 host 广播的完整玩家配置（`PlayerCfgAll` entries）应用回本地 `meta.profiles`。
+    fn apply_player_cfgs(&mut self, entries: &[(u8, Vec<u8>)]) {
+        for (player_index, bytes) in entries {
+            if let Some(cfg) = game_core::progress::PlayerConfig::decode(bytes) {
+                if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == *player_index as u32) {
+                    cfg.apply_to(profile);
+                }
+            }
+        }
     }
 
     /// 每帧统一轮询输入（键盘 + 鼠标都用 ggez 的 just-pressed 边沿检测）。
@@ -371,6 +395,15 @@ impl Game {
         match &self.net_link {
             Some(l) => l.my_index() as u32,
             None => PLAYER_ID,
+        }
+    }
+
+    /// 生成「本机玩家最终配置快照」的编码字节（学习阶段结束/就绪时上报给 host）。
+    fn local_player_cfg(&self) -> Vec<u8> {
+        let me = self.self_index();
+        match self.meta.profiles.iter().find(|pr| pr.player_id == me) {
+            Some(p) => game_core::progress::PlayerConfig::from_profile(p).encode(),
+            None => Vec::new(), // 异常：不应发生；空配置
         }
     }
 
@@ -970,9 +1003,15 @@ impl event::EventHandler for Game {
                 // 学习阶段：轮询购买升级输入 + 计时
                 self.poll_learning(ctx);
                 let now = self.meta.tick_learning(dt.min(0.25));
-                // 若学习结束，进入下一局
+                // 若学习结束，准备进入下一局：联网需先做「配置同步」
                 if self.meta.phase == MatchPhase::Fighting {
-                    self.teardown_round_end();
+                    if self.net_link.is_some() {
+                        self.net_cfg = NetCfgSync::ClientWait;
+                    } else if self.net_host_ls.is_some() {
+                        self.net_cfg = NetCfgSync::HostGather;
+                    } else {
+                        self.teardown_round_end();
+                    }
                 }
                 let _ = now;
                 Ok(())
@@ -997,6 +1036,25 @@ impl event::EventHandler for Game {
                         self.net_host = Some(hs); // 尚未收齐 client，继续等
                     }
                 } else if let Some(mut host) = std::mem::take(&mut self.net_host_ls) {
+                    // 多于局：学习结束后的「配置同步」阶段——收齐各端配置(含自身) → 广播 PlayerCfgAll → 完成。
+                    if self.net_cfg == NetCfgSync::HostGather {
+                        let mut g_rcv = vec![0u8; 8192];
+                        host.poll_cfg(&mut g_rcv);
+                        let cfg_bytes = self.local_player_cfg();
+                        if !cfg_bytes.is_empty() {
+                            host.set_local_cfg(cfg_bytes);
+                        }
+                        if host.all_cfgs() {
+                            let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
+                            host.broadcast_cfgs(&all);
+                            self.apply_player_cfgs(&all);
+                            self.teardown_round_end();
+                            host.reset_cfgs(); // 为下一局复用
+                            self.net_cfg = NetCfgSync::Idle;
+                        }
+                        self.net_host_ls = Some(host);
+                        return Ok(()); // 同步阶段不推进战斗
+                    }
                     // 联网 · host 运行：等齐 N 端输入才产 seq 帧（try_emit Some），用同帧喂自己 world 并广播。
                     let mut host_rcv = vec![0u8; 4096];
                     while self.accumulator >= TICK {
@@ -1023,6 +1081,20 @@ impl event::EventHandler for Game {
                     }
                     self.net_host_ls = Some(host);
                 } else if let Some(mut link) = std::mem::take(&mut self.net_link) {
+                    // 多于局：学习结束后的「配置同步」阶段——上报我的配置，等 host 广播 PlayerCfgAll 后完成。
+                    if self.net_cfg == NetCfgSync::ClientWait {
+                        let cfg_bytes = self.local_player_cfg();
+                        if !cfg_bytes.is_empty() {
+                            link.upload_cfg(&cfg_bytes)?;
+                        }
+                        if let Some(all) = link.recv_cfg_all()? {
+                            self.apply_player_cfgs(&all);
+                            self.teardown_round_end();
+                            self.net_cfg = NetCfgSync::Idle;
+                        }
+                        self.net_link = Some(link);
+                        return Ok(()); // 同步阶段不推进战斗
+                    }
                     // 联网：加入者 —— 每帧持续上行输入（让 host 能收齐并产首帧），并收帧推进。
                     // 收到首帧即开始（started 首帧凭底）；丢帧由 lockstep 自动补发，不会永久不同步。
                     while self.accumulator >= TICK {

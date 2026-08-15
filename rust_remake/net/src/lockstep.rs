@@ -4,6 +4,7 @@
 //! `ClientLockstep` 负责 client 侧「严格按序接收 → 推进 → 漏帧请求补发」。
 //! 二者只依赖 `crate::transport::Transport` 抽象收发字节，故可在测试里注入
 //! 「丢包 / 乱序 / 重复」的假 transport，验证在丢帧下两端仍逐位一致。
+#![allow(clippy::type_complexity)] // 网络二进制签名的复杂元组类型：属协议固有，允许。
 //!
 //! 正确性要点：
 //! - host 必须等齐全部 client 输入才产生第 `seq` 帧（缺失时 `try_emit` 返回 None，不推残缺帧）。
@@ -35,6 +36,10 @@ pub struct HostLockstep<T: Transport> {
     frame_buf: VecDeque<(u64, FrameData)>,
     /// frame_buf 保留的帧数。
     pub frame_buf_capacity: usize,
+    /// 各 client 上报的玩家配置（`PlayerCfg` 字节；下标=client 序号 - local_base）。
+    cfgs: Vec<Option<Vec<u8>>>,
+    /// host 自身（player 0）上报的配置（学习阶段结束时设定）。
+    local_cfg: Option<Vec<u8>>,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -52,8 +57,82 @@ impl<T: Transport> HostLockstep<T> {
             next_seq: 0,
             frame_buf: VecDeque::new(),
             frame_buf_capacity: 60,
+            cfgs: vec![None; expected],
+            local_cfg: None,
         }
     }
+
+    /// 交给 host 自身的玩家配置（学习阶段结束后设定）。
+    pub fn set_local_cfg(&mut self, enc: Vec<u8>) {
+        self.local_cfg = Some(enc);
+    }
+
+    /// 收 client 上报的配置（`PlayerCfg`），按来源去重保存最新。
+    pub fn poll_cfg(&mut self, rcv: &mut [u8]) {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, from))) => {
+                    if let Some(Packet::PlayerCfg { index, bytes }) = Packet::decode(&rcv[..n]) {
+                        let c = index as usize - self.local_base as usize;
+                        if c < self.expected {
+                            if self.client_peers[c].is_none() {
+                                self.client_peers[c] = Some(from);
+                            }
+                            self.cfgs[c] = Some(bytes);
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+    }
+
+    /// 是否已收齐所有端（host 自身 + 全部 client）的配置。
+    pub fn all_cfgs(&self) -> bool {
+        if self.local_base > 0 && self.local_cfg.is_none() {
+            return false;
+        }
+        self.cfgs.iter().all(|x| x.is_some())
+    }
+
+    /// 合并所有端配置：`(player_index, bytes)`（host=0 在前，client 随后），收齐才 Some。
+    pub fn collect_cfgs(&self) -> Option<Vec<(u8, Vec<u8>)>> {
+        if !self.all_cfgs() {
+            return None;
+        }
+        let mut out: Vec<(u8, Vec<u8>)> = Vec::new();
+        if self.local_base > 0 {
+            if let Some(c) = &self.local_cfg {
+                out.push((0, c.clone()));
+            }
+        }
+        for (c, cfg) in self.cfgs.iter().enumerate() {
+            if let Some(b) = cfg {
+                out.push(((c + self.local_base as usize) as u8, b.clone()));
+            }
+        }
+        out.sort_by_key(|(i, _)| *i);
+        Some(out)
+    }
+
+    /// 广播 `PlayerCfgAll`（所有端完整配置）给所有 client。
+    pub fn broadcast_cfgs(&mut self, entries: &[(u8, Vec<u8>)]) {
+        let pkt = Packet::PlayerCfgAll { entries: entries.to_vec() };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
+    /// 清空已收集的配置（本局同步完成后调用，供下一局复用）。
+    pub fn reset_cfgs(&mut self) {
+        for c in self.cfgs.iter_mut() {
+            *c = None;
+        }
+        self.local_cfg = None;
+    }
+
 
     /// 交给 host 自身的本地输入（参与对局时）。`None` 表示本 tick 不提供。
     pub fn set_local_input(&mut self, enc: Option<Vec<u8>>) {
@@ -190,6 +269,30 @@ impl<T: Transport> ClientLockstep<T> {
         self.transport.send_to(&pkt.encode(), &self.host)?;
         Ok(())
     }
+
+    /// 向 host 上报本玩家最终配置（`PlayerCfg`，载荷为 `PlayerConfig::encode()` 字节）。
+    pub fn send_cfg(&mut self, bytes: &[u8]) -> io::Result<()> {
+        let pkt = Packet::PlayerCfg { index: self.my_index, bytes: bytes.to_vec() };
+        self.transport.send_to(&pkt.encode(), &self.host)?;
+        Ok(())
+    }
+
+    /// 尝试收 host 广播的 `PlayerCfgAll`（所有玩家完整配置）；当前没有则返回 None。
+    pub fn recv_cfg_all(&mut self, rcv: &mut [u8]) -> io::Result<Option<Vec<(u8, Vec<u8>)>>> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::PlayerCfgAll { entries }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some(entries));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
 
     /// 向 host 上报 READY（用于 host 知道 client 已就绪；host 可按此或首帧决定开始）。
     pub fn send_ready(&mut self) -> io::Result<()> {
@@ -378,6 +481,40 @@ mod tests {
         }
         assert!(cli.expect_seq() >= 5, "丢帧后 client 应依靠请求补发追平（实际推进 seq {}", cli.expect_seq());
         assert_eq!(cli.pending_len(), 0, "client 落点不应有未消费的乱序帧");
+    }
+
+    /// 配置收集/广播：client 上报 PlayerCfg → host 收齐(含自身) → 广播 PlayerCfgAll → client 收到完整配置。
+    #[test]
+    fn host_gathers_cfgs_and_broadcasts_all() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // host 自己的配置（player 0）
+        let host_cfg = vec![1, 0, 0, 2, 5]; // 任意字节（PlayerConfig 编码）
+        host.set_local_cfg(host_cfg.clone());
+        // client 上报配置（player 1）
+        let client_cfg = vec![1, 0, 0, 3, 9];
+        cli.send_cfg(&client_cfg).unwrap();
+        host.poll_cfg(&mut rcv);
+
+        // 未收齐时 collect_cfgs 应为 None（已设 host + client，这里应收齐）。
+        let all = host.collect_cfgs().expect("host 与 client 配置应收齐");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].0, 0);
+        assert_eq!(all[0].1, host_cfg);
+        assert_eq!(all[1].0, 1);
+        assert_eq!(all[1].1, client_cfg);
+
+        // host 广播 → client 收到完整配置
+        host.broadcast_cfgs(&all);
+        let got = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].0, 0);
+        assert_eq!(got[0].1, host_cfg);
+        assert_eq!(got[1].0, 1);
+        assert_eq!(got[1].1, client_cfg);
     }
 }
 
