@@ -46,11 +46,11 @@ pub enum Packet {
     Go { start_seq: u64 },
     /// client 请求补发缺失帧：`seq` 为缺失的那一帧。
     ReqFrame { seq: u64 },
-    /// client→host：上报本玩家最终技能等级向量（学习阶段结束/就绪时）。`levels` 长度=技能槽数。
-    Skill { index: u8, levels: Vec<u32> },
-    /// host→所有端：广播下一局所有玩家的最终技能等级（`entries` = (player_index, levels)），
-    /// 各端据此确定性初始化下一局 `World.players[].skill_levels`。
-    SkillAll { entries: Vec<(u8, Vec<u32>)> },
+    /// client→host：上报本玩家最终配置快照（编码后的 `game_core::progress::PlayerConfig` 字节）。
+    /// 学习阶段结束/就绪时发送。
+    PlayerCfg { index: u8, bytes: Vec<u8> },
+    /// host→所有端：广播下一局所有玩家的完整配置快照（各端据此确定性初始化下一局）。
+    PlayerCfgAll { entries: Vec<(u8, Vec<u8>)> },
 }
 
 impl Packet {
@@ -86,26 +86,22 @@ impl Packet {
                 v.extend_from_slice(&seq.to_be_bytes());
                 v
             }
-            Packet::Skill { index, levels } => {
-                let mut v = Vec::with_capacity(1 + 1 + 2 + levels.len() * 4);
+            Packet::PlayerCfg { index, bytes } => {
+                let mut v = Vec::with_capacity(1 + 1 + 2 + bytes.len());
                 v.push(TAG_SKILL);
                 v.push(*index);
-                v.extend_from_slice(&(levels.len() as u16).to_be_bytes());
-                for lvl in levels {
-                    v.extend_from_slice(&lvl.to_be_bytes());
-                }
+                v.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+                v.extend_from_slice(bytes);
                 v
             }
-            Packet::SkillAll { entries } => {
-                let mut v = Vec::with_capacity(1 + 2 + entries.len() * (1 + 2) + entries.iter().map(|(_, l)| l.len() * 4).sum::<usize>());
+            Packet::PlayerCfgAll { entries } => {
+                let mut v = Vec::with_capacity(1 + 2 + entries.iter().map(|(_, b)| 1 + 2 + b.len()).sum::<usize>());
                 v.push(TAG_SKILL_ALL);
                 v.extend_from_slice(&(entries.len() as u16).to_be_bytes());
-                for (idx, levels) in entries {
+                for (idx, bytes) in entries {
                     v.push(*idx);
-                    v.extend_from_slice(&(levels.len() as u16).to_be_bytes());
-                    for lvl in levels {
-                        v.extend_from_slice(&lvl.to_be_bytes());
-                    }
+                    v.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+                    v.extend_from_slice(bytes);
                 }
                 v
             }
@@ -141,17 +137,12 @@ impl Packet {
             }
             TAG_SKILL if buf.len() >= 4 => {
                 let index = buf[1];
-                let count = u16::from_be_bytes([buf[2], buf[3]]) as usize;
-                let mut levels = Vec::with_capacity(count);
-                let mut pos = 4;
-                for _ in 0..count {
-                    if pos + 4 > buf.len() {
-                        return None;
-                    }
-                    levels.push(u32::from_be_bytes(buf[pos..pos + 4].try_into().ok()?));
-                    pos += 4;
+                let len = u16::from_be_bytes([buf[2], buf[3]]) as usize;
+                let end = 4usize + len;
+                if end > buf.len() {
+                    return None;
                 }
-                Some(Packet::Skill { index, levels })
+                Some(Packet::PlayerCfg { index, bytes: buf[4..end].to_vec() })
             }
             TAG_SKILL_ALL if buf.len() >= 3 => {
                 let count = u16::from_be_bytes([buf[1], buf[2]]) as usize;
@@ -163,19 +154,15 @@ impl Packet {
                     }
                     let idx = buf[pos];
                     pos += 1;
-                    let lc = u16::from_be_bytes([buf[pos], buf[pos + 1]]) as usize;
+                    let len = u16::from_be_bytes([buf[pos], buf[pos + 1]]) as usize;
                     pos += 2;
-                    if pos + lc * 4 > buf.len() {
+                    if pos + len > buf.len() {
                         return None;
                     }
-                    let mut levels = Vec::with_capacity(lc);
-                    for _ in 0..lc {
-                        levels.push(u32::from_be_bytes(buf[pos..pos + 4].try_into().ok()?));
-                        pos += 4;
-                    }
-                    entries.push((idx, levels));
+                    entries.push((idx, buf[pos..pos + len].to_vec()));
+                    pos += len;
                 }
-                Some(Packet::SkillAll { entries })
+                Some(Packet::PlayerCfgAll { entries })
             }
             _ => None,
         }
@@ -205,9 +192,9 @@ mod tests {
                 entries: vec![(0, vec![9; 4]), (1, vec![8]), (2, vec![7, 7])],
             },
             Packet::ReqFrame { seq: 41 },
-            Packet::Skill { index: 2, levels: vec![1, 1, 5, 3] },
-            Packet::SkillAll {
-                entries: vec![(0, vec![1, 2, 3]), (1, vec![1, 1]), (2, vec![3])],
+            Packet::PlayerCfg { index: 2, bytes: vec![1, 2, 3, 4] },
+            Packet::PlayerCfgAll {
+                entries: vec![(0, vec![10, 20]), (1, vec![30]), (2, vec![])],
             },
         ];
         for p in cases {
