@@ -8,6 +8,7 @@ pub mod fix;
 pub mod meta;
 pub mod netcode;
 pub mod player;
+pub mod progress;
 pub mod rng;
 pub mod skill;
 pub mod world;
