@@ -42,7 +42,7 @@ impl NetLink {
     /// 握手：发 JOIN 并尝试收 ACK，直到拿到序号/人数；一旦拿到，立即把 transport 移交给
     /// ClientLockstep（此后 client 可持续上行输入，host 收齐输入即可产首帧＝统一起始）。
     pub fn join_handshake(&mut self) -> io::Result<bool> {
-        for _ in 0..100 {
+        for i in 0..100 {
             let Some(hs) = self.handshake.as_mut() else {
                 return Ok(true);
             };
@@ -53,10 +53,12 @@ impl NetLink {
                 // 移交 transport → lockstep。
                 let transport = self.handshake.take().unwrap().into_transport();
                 self.lockstep = Some(ClientLockstep::new(transport, self.my_index, self.host));
+                eprintln!("[netlink] join_handshake OK: my_index={} players={} (attempt {i})", self.my_index, self.players);
                 return Ok(true);
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+        eprintln!("[netlink] join_handshake TIMEOUT: no ACK after 100 attempts");
         Ok(false)
     }
 
@@ -86,11 +88,13 @@ impl NetLink {
         let Some(ls) = self.lockstep.as_mut() else {
             return Ok(None);
         };
+        let expect_before = ls.expect_seq();
         let n = world.players.len();
         match ls.step_frame(&mut self.rcv)? {
             Some(entries) => {
-                if !self.started {
-                    self.started = true;
+                let became_started = !self.started && { self.started = true; true };
+                if became_started {
+                    eprintln!("[netlink] FIRST FRAME: started, expect_seq->{expect_before}");
                 }
                 let mut inputs = vec![PlayerInput::default(); n];
                 for (idx, bytes) in entries {
