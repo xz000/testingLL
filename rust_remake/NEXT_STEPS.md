@@ -10,6 +10,7 @@
 >    - ⚠ 大坑（务必记住）：git 仓库根在**上级 `testingLL/`**，`rust_remake/` 只是其子目录。故 `core.hooksPath` 必须用**绝对路径**（指向 `.../rust_remake/.githooks`），且钩子用 `$0` 定位项目根（不能靠 `git rev-parse --show-toplevel`，它会返回 testingLL/）。已端到端验证：真编译错误能拦提交，干净提交放行。
 > **🧨 2026-08-15 完整锁步修复（三窗口不同步）见下节「⚠ 2026-08-15 完整锁步修复」**
 > **🏁 网络层已按「正确 lockstep」完整重写并收尾：见 `NET_REWRITE.md`（proto+handshake+lockstep 三层，删旧 session.rs；真机 4 窗口验证通过）。**
+> **🗺 三大功能规划见 `ROADMAP.md`（单机技能试验场 / 局域网对战 / Steamworks 对战）。技术专项：`LOCKSTEP_FOUNDATION`·`NET_REWRITE`·`LATENCY_MASKING`·`ATTRIBUTE_SYSTEM`。**
 > **⬚ 数值收敛层已完成：`game-core::balance::Balance` 统一起手感/场地数值权威源（4.3），详见 `LOCKSTEP_FOUNDATION.md`。**
 > **📊 测试：当前 83 全绿（client 1 + game-core 73 + net 9），`cargo test --workspace` / `cargo clippy --workspace -- -D warnings` 均绿。**
 
