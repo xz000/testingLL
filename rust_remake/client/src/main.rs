@@ -18,7 +18,8 @@ use ggez::{Context, GameResult};
 
 mod netlink;
 
-/// 机器人数量（不含玩家本人）
+/// 机器人数量（不含玩家本人）。当前 Solo/局域网均无本地 AI；保留该常量供将来“带 AI 测试”模式复用。
+#[allow(dead_code)]
 const BOTS: u32 = 7;
 /// 固定步长模拟（帧率）
 const TICK: f64 = 1.0 / 60.0;
@@ -47,6 +48,19 @@ enum NetCfgSync {
     HostGather,
     /// client：已上传配置，正在等 host 广播 PlayerCfgAll。
     ClientWait,
+}
+
+/// 顶层应用状态（主菜单 / 各对战模式）。命令行可直通某模式，也可进主菜单选择。
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum AppState {
+    /// 主菜单：从三大入口选择。
+    MainMenu,
+    /// 单机技能试验场（无 AI，一个玩家自由测技能/数值）。
+    Solo,
+    /// 局域网：开房间（host，自身=player0）。
+    LanHost { port: u16, total: u8 },
+    /// 局域网：加入（client）。
+    LanJoin { addr: std::net::SocketAddr },
 }
 
 /// 升级到某个等级的价格（简单坡度，后期可调）
@@ -95,10 +109,12 @@ struct Game {
     net_ready: bool,
     /// 联网多局：学习结束后「配置同步」阶段（见 `NetCfgSync`）。
     net_cfg: NetCfgSync,
+    /// 顶层应用状态（主菜单 / 各模式）。
+    app: AppState,
 }
 
 impl Game {
-    fn new(ctx: &mut Context, mode: NetMode) -> GameResult<Self> {
+    fn new(ctx: &mut Context, app: AppState) -> GameResult<Self> {
         // 注册中文字体：用 include_bytes 内嵌，避免资源路径/VFS 解析问题。
         let font = ggez::graphics::FontData::from_slice(include_bytes!("../../assets/fonts/cjk.ttf"))?;
         ctx.gfx.add_font("cjk", font);
@@ -107,10 +123,12 @@ impl Game {
         let mut net_link: Option<netlink::NetLink> = None;
         let mut net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>> = None;
         let net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>> = None;
-        let mut player_count: u32 = 1 + BOTS;
-        match mode {
-            NetMode::Local => {}
-            NetMode::Join(addr) => {
+        // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
+        let mut player_count: u32 = 1;
+        match app {
+            AppState::MainMenu => {}
+            AppState::Solo => {}
+            AppState::LanJoin { addr } => {
                 let mut link = netlink::NetLink::connect(addr).map_err(ggez::GameError::from)?;
                 for _ in 0..60 {
                     if link.join_handshake().map_err(ggez::GameError::from)? {
@@ -120,11 +138,11 @@ impl Game {
                 player_count = link.player_count().max(1) as u32;
                 net_link = Some(link);
             }
-            NetMode::Host { port, total } => {
+            AppState::LanHost { port, total } => {
                 let t =
                     net::transport::StdUdpTransport::bind(&format!("0.0.0.0:{port}")).map_err(ggez::GameError::from)?;
                 let hs = net::handshake::HostHandshake::new(t, total.max(1) as usize, true);
-                player_count = total.max(1);
+                player_count = total.max(1) as u32;
                 net_host = Some(hs);
             }
         }
@@ -148,15 +166,9 @@ impl Game {
             }
         }
 
-        let net_mode = net_link.is_some();
-        let bot_rngs = if net_mode {
-            Vec::new()
-        } else {
-            (1..player_count)
-                .map(|id| Rng::new(seed ^ (id as u64).wrapping_mul(0x9E3779B97F4A7C15)))
-                .collect()
-        };
-        let bot_targets = if net_mode { Vec::new() } else { vec![None; BOTS as usize] };
+        // 当前所有模式（Solo/Lan）都不带本地 AI 机器人：Solo 无对手，Lan 是真人玩家。
+        let bot_rngs: Vec<Rng> = Vec::new();
+        let bot_targets: Vec<Option<Vec2>> = Vec::new();
 
         let (w, h) = ctx.gfx.drawable_size();
         Ok(Game {
@@ -180,6 +192,7 @@ impl Game {
             net_host_ls,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
+            app,
         })
     }
 
@@ -999,6 +1012,23 @@ impl event::EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         let dt = ctx.time.delta().as_secs_f64();
 
+        // 主菜单：轮询选择，其余模式走 MatchPhase。
+        if self.app == AppState::MainMenu {
+            use ggez::input::keyboard::Key;
+            let just = |k: &str| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.into()));
+            if just("1") {
+                // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
+                eprintln!("[menu] -> Solo");
+                self.app = AppState::Solo;
+            } else if just("2") {
+                eprintln!("[menu] 局域网需命令行：/--host <port> --players N / 或 /--join <host:port>");
+            } else if just("3") {
+                eprintln!("[menu] Steam 对战敬请期待。");
+            }
+            self.accumulator = 0.0;
+            return Ok(());
+        }
+
         match self.meta.phase {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
@@ -1167,9 +1197,37 @@ impl event::EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        if self.app == AppState::MainMenu {
+            return self.draw_menu(ctx);
+        }
         self.draw_scene(ctx)
     }
 }
+
+impl Game {
+    /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 占位）。
+    fn draw_menu(&self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        let title = "帧同步圆球竞技场";
+        draw_text(&mut canvas, ctx, title, 52.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
+        draw_text(&mut canvas, ctx, "请选择模式（按数字键）", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.18 + 70.0 }, true)?;
+        let items = [
+            "1  单机技能试验场（无 AI）",
+            "2  局域网 · 开房间 / 加入（暂用命令行 --host / --join）",
+            "3  Steam 对战（敬请期待）",
+        ];
+        for (i, s) in items.iter().enumerate() {
+            let y = sh * 0.40 + (i as f32) * 46.0;
+            draw_text(&mut canvas, ctx, s, 26.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+        }
+        draw_text(&mut canvas, ctx, "也可用命令行直通：--solo / --host <port> / --join <host:port>", 16.0, graphics::Color::from_rgb(150, 155, 165), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+}
+
 
 fn player_color(id: u32, me: u32) -> Color {
     if id == me {
@@ -1227,33 +1285,31 @@ fn draw_text(
     Ok(())
 }
 
-/// 本局运行模式：单机 / 加入 host / 开房作 host（自身也当作一个玩家）。
-enum NetMode {
-    Local,
-    Join(std::net::SocketAddr),
-    Host { port: u16, total: u32 },
-}
-
+/// 本局运行模式已并入 `AppState`（主菜单 / Solo / 局域网主机 / 局域网加入）。
 fn main() -> GameResult {
-    // 解析命令行：--join <host:port> 加入 host；--host <port> [--players N] 开房（宿主=玩家0）。
+    // 解析命令行（可选直通入口）：--join <host:port> / --host <port> [--players N] / --solo。
+    // 若无任一参数 → 进主菜单选择。
     let args: Vec<String> = std::env::args().collect();
-    let mut mode = NetMode::Local;
+    let mut app = AppState::MainMenu;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--solo" => {
+                app = AppState::Solo;
+            }
             "--join" if i + 1 < args.len() => {
                 if let Ok(a) = args[i + 1].parse() {
-                    mode = NetMode::Join(a);
+                    app = AppState::LanJoin { addr: a };
                 }
                 i += 2;
             }
             "--host" if i + 1 < args.len() => {
                 let port: u16 = args[i + 1].parse().unwrap_or(0);
-                mode = NetMode::Host { port, total: 4 };
+                app = AppState::LanHost { port, total: 4 };
                 i += 2;
             }
             "--players" if i + 1 < args.len() => {
-                if let NetMode::Host { total, .. } = &mut mode {
+                if let AppState::LanHost { total, .. } = &mut app {
                     *total = args[i + 1].parse().unwrap_or(4);
                 }
                 i += 2;
@@ -1271,6 +1327,6 @@ fn main() -> GameResult {
         )
         .build()?;
 
-    let game = Game::new(&mut ctx, mode)?;
+    let game = Game::new(&mut ctx, app)?;
     event::run(ctx, event_loop, game)
 }
