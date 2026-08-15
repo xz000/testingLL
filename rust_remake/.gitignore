@@ -2,5 +2,6 @@
 /target/
 **/*.rs.bk
 
-# 运行时生成/调试文件
+# 运行时诊断/日志文件
 /input_log.txt
+/netlogs/

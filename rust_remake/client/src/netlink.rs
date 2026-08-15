@@ -56,7 +56,7 @@ impl NetLink {
                 eprintln!("[netlink] join_handshake OK: my_index={} players={} (attempt {i})", self.my_index, self.players);
                 return Ok(true);
             }
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(15));
         }
         eprintln!("[netlink] join_handshake TIMEOUT: no ACK after 100 attempts");
         Ok(false)

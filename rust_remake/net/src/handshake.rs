@@ -45,24 +45,35 @@ impl<T: Transport> HostHandshake<T> {
         self.total - self.local_base as usize
     }
 
-    /// 收 JOIN → 分配序号 → 回 ACK。返回是否已收齐所有 client。
+    /// 收 JOIN → 按来源 Peer 去重分配序号 → 回 ACK。返回是否已收齐所有（去重后的）client。
+    /// 关键：同一 Peer 重复发 JOIN 时【不重复计数/分配】，而是重发已分配的 ACK，
+    /// 否则 client 疯狂重发的 JOIN 会撑爆 joined/序号，导致其他 client 收不到 ACK。
     pub fn poll_join(&mut self, rcv: &mut [u8]) -> bool {
         let expected = self.expected();
         let (local_base, total) = (self.local_base, self.total);
         let Some(transport) = self.transport.as_mut() else {
             return false;
         };
-        while self.joined < expected {
+        loop {
             match transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
                     if let Some(Packet::Join) = Packet::decode(&rcv[..n]) {
-                        let idx = local_base + self.joined as u8; // 分配序号
-                        if (idx as usize) < self.peers.len() {
-                            self.peers[idx as usize] = Some(from);
+                        // 已经入的 Peer：重发它的 ACK，不重复计数。
+                        if let Some(idx) = self.peers.iter().position(|p| *p == Some(from)) {
+                            let ack = Packet::Ack { my_index: idx as u8, players: total as u8 };
+                            let _ = transport.send_to(&ack.encode(), &from);
+                            continue;
                         }
-                        self.joined += 1;
-                        let ack = Packet::Ack { my_index: idx, players: total as u8 };
-                        let _ = transport.send_to(&ack.encode(), &from);
+                        // 新 Peer：若还有空位则分配；否则忽略（已满）。
+                        if self.joined < expected {
+                            let idx = local_base + self.joined as u8;
+                            if (idx as usize) < self.peers.len() {
+                                self.peers[idx as usize] = Some(from);
+                            }
+                            self.joined += 1;
+                            let ack = Packet::Ack { my_index: idx, players: total as u8 };
+                            let _ = transport.send_to(&ack.encode(), &from);
+                        }
                     }
                 }
                 Ok(None) => break,
@@ -204,5 +215,56 @@ impl<T: Transport> ClientHandshake<T> {
     /// 释放 transport，交由上层（ClientLockstep）使用。
     pub fn into_transport(mut self) -> T {
         self.transport.take().expect("transport already taken")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::StdUdpTransport;
+    use std::time::Duration;
+
+    /// 多个 client 疯狂重发 JOIN 时，host 必须按来源 Peer 去重：每个 Peer 只分配一次序号并各回 ACK，
+    /// 且能收齐 expected 个【不同】client（不会因重复 JOIN 撑爆 joined 或漏发 ACK）。
+    #[test]
+    fn poll_join_dedups_peers_and_acks_all_clients() {
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut host = HostHandshake::new(ht, 4, true); // host=0 + 3 client
+        let host_peer = Peer::Udp(host_addr);
+
+        // 3 个 client，各自独立 transport + handshake。
+        let mut clients: Vec<ClientHandshake<StdUdpTransport>> = Vec::new();
+        for _ in 0..3 {
+            let (t, _) = StdUdpTransport::bind_loopback().unwrap();
+            clients.push(ClientHandshake::connected(t));
+        }
+        let mut rcv = [0u8; 4096];
+
+        // 循环：所有 client 反复发 JOIN，host poll_join，每 client 收 ACK，直到全部就绪。
+        let deadline = 300;
+        for _ in 0..deadline {
+            for c in clients.iter_mut() {
+                let _ = c.send_join(&host_peer);
+            }
+            host.poll_join(&mut rcv);
+            let all_acked = clients.iter_mut().all(|c| c.recv_join_ack(&mut rcv).unwrap_or(false));
+            if all_acked && host.joined >= host.expected() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+
+        // 断言：host 收齐 3 个不同 client，joined==expected。
+        assert_eq!(host.joined, host.expected(), "应只计入 3 个不同 client（重复 JOIN 不该撑爆）");
+        // 每个 client 应有不重复的正确序号。
+        let mut idxs: Vec<u8> = clients.iter().map(|c| c.my_index).collect();
+        idxs.sort();
+        let mut uniq: Vec<u8> = idxs.clone();
+        uniq.dedup();
+        assert_eq!(uniq.len(), 3, "三个 client 序号应互不相同");
+        assert_eq!(idxs, vec![1, 2, 3], "host 参与时 client 序号应为 1,2,3");
+        for c in clients.iter() {
+            assert_eq!(c.players, 4, "client 应知道总人数 4");
+        }
     }
 }
