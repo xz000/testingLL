@@ -78,6 +78,8 @@ struct Game {
     net_link: Option<netlink::NetLink>,
     /// 联网模式：开房作 host（自身=player 0）；`None` = 非 host。
     net_host: Option<net::session::HostSession<net::transport::StdUdpTransport>>,
+    /// 联网：是否已完成 READY/GO 统一起始（可开始推进）。host=已广播 GO；client=已收 GO。
+    net_ready: bool,
 }
 
 impl Game {
@@ -99,6 +101,8 @@ impl Game {
                         break;
                     }
                 }
+                // 准备：上报 READY（GO 由 update 阶段轮询接收，因 host 需收齐所有 client）。
+                let _ = link.ready();
                 player_count = link.player_count().max(1) as u32;
                 net_link = Some(link);
             }
@@ -154,6 +158,7 @@ impl Game {
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             net_link,
             net_host,
+            net_ready: false,
         })
     }
 
@@ -977,16 +982,25 @@ impl event::EventHandler for Game {
                 self.accumulator += dt.min(0.25);
                 let ticking = Fix64::from_num(TICK);
                 if let Some(mut host) = std::mem::take(&mut self.net_host) {
-                    // 联网 · 开房作 host：先接受 client 加入，收齐后合帧广播并推进本端 World。
+                    // 联网 · 开房作 host：接受 client 加入 → 收齐 → READY/GO 统一起始 → 等齐输入带 seq 推帧广播。
                     let mut host_rcv = vec![0u8; 4096];
                     host.poll_join(&mut host_rcv);
-                    if host.joined >= host.expected() {
+                    if host.joined >= host.expected() && !self.net_ready {
+                        host.poll_ready(&mut host_rcv);
+                        if host.all_ready() {
+                            host.broadcast_go(); // 各 client 从该 seq 起统一起始
+                            self.net_ready = true;
+                        }
+                    }
+                    if self.net_ready {
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             let enc = game_core::netcode::encode_player_input(&me);
                             host.set_local_input(Some(enc));
-                            let frame = host.collect_inputs(&mut host_rcv);
-                            // host 先自己喂这整帧（确定性地回放），再广播给各 client
+                            // 等齐 N 端输入才推帧（collect_inputs 收齐才返回 Some）。
+                            let Some((fseq, frame)) = host.collect_inputs(&mut host_rcv) else {
+                                break; // 未收齐：本 tick 不推帧、不广播、不扣时间，等下一帧
+                            };
                             let n = self.world.players.len();
                             let mut inputs = vec![PlayerInput::default(); n];
                             for (idx, bytes) in frame.iter() {
@@ -996,17 +1010,25 @@ impl event::EventHandler for Game {
                                 }
                             }
                             self.world.step(inputs, ticking);
-                            host.broadcast_frame(&frame);
+                            host.broadcast_frame(fseq, &frame);
                             self.accumulator -= TICK;
                         }
                     }
                     self.net_host = Some(host);
                 } else if let Some(mut link) = std::mem::take(&mut self.net_link) {
-                    // 联网：加入者 —— 本机玩家输入上行 → 收整帧 → 喂 World（不再用本地 AI）
-                    while self.accumulator >= TICK {
-                        let me = self.local_player_input();
-                        let _ = link.step_tick(&me, &mut self.world, ticking);
-                        self.accumulator -= TICK;
+                    // 联网：加入者 —— 等 GO 后，以收到带 seq 帧为推进锚点；没收到帧不推进、不盲扣时间。
+                    if !self.net_ready && link.recv_go()? {
+                        self.net_ready = true;
+                    }
+                    if self.net_ready {
+                        while self.accumulator >= TICK {
+                            let me = self.local_player_input();
+                            // 没收到帧返回 None → 不扣时间、不推进，等下一帧对齐 host。
+                            if link.step_frame(&me, &mut self.world, ticking)?.is_none() {
+                                break;
+                            }
+                            self.accumulator -= TICK;
+                        }
                     }
                     self.net_link = Some(link);
                 } else {

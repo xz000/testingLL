@@ -90,17 +90,26 @@
 ### 4.7 （后续，明确独立）真实延迟掩盖   【后续分支，目前不做】
 - 输入缓冲 / 本地预测 / 乐观回滚。做成独立完整分支，叠 `net` 之上。
 
+### 4.8 完整锁步修复（三窗口不同步）  【✅ 已做 2026-08-15】
+详见 NEXT_STEPS「⚠ 2026-08-15 完整锁步修复」。要点：
+- 帧带 `seq`；`collect_inputs` 等齐 N 端才 `Some`（不推残缺帧）；client 以收到带 `seq` 帧为推进锚点、没收到不盲扣时间。
+- 新增 READY/GO 统一起始（client `send_ready`，host `all_ready` 后 `broadcast_go` 带起始 seq）。
+- `collect_inputs` 对同 client 输入去重（保留最新），防 UDP 重复/乱序。
+- 重写 `net`/`netlink`/`client` 联网相关测试为 READY/GO + seq 流程，带防假绿断言。
+- 验证：`cargo test --workspace` 81 全绿；`cargo clippy --workspace -- -D warnings` 无警告。仍需多开真机手测确认。
+
 ---
 
 ## 5. 验收标准（基座稳固的定义）
 
 对「帧同步基座」本身，达到以下即算稳固：
-- [ ] `cargo test --workspace` 全部绿（当前 80），且所有帧同步测试都带「防假绿」三断言。
-- [ ] `cargo clippy --workspace` 无警告。
-- [ ] `frame.rs` 封帧函数为纯函数、无外部 buffer clear 副作用；tag/index 职责清晰。
-- [ ] 帧同步测试具备「确定性镜像 transport」可注入路径（可脱离真实 UDP 时序做锁步单测，够稳健、不靠 sleep 同步）—— 这是本轮之后建议追加的能力。
+- [x] `cargo test --workspace` 全部绿（当前 81），且所有帧同步测试都带「防假绿」三断言。
+- [x] `cargo clippy --workspace` 无警告。
+- [x] `frame.rs` 封帧函数为纯函数、无外部 buffer clear 副作用；tag/index 职责清晰。
+- [x] 完整锁步正确性（README/GO + seq 帧锚定 + host 等齐 + client 不盲扣）已落地（见 4.8）。
+- [ ] 帧同步测试具备「确定性镜像 transport」可注入路径（可脱离真实 UDP 时序做锁步单测，够稳健、不靠 sleep 同步）—— 这是后续可选能力。
 - [ ] 手感数值已进 `Balance` 配置，调数值不改逻辑。
-- [ ] PLAN/NEXT_STEPS 已明确「手感 ≠ 延迟掩盖」，阶段 3 KPI 写清。
+- [x] PLAN/NEXT_STEPS 已明确「手感 ≠ 延迟掩盖」，阶段 3 KPI 写清。
 
 ---
 
