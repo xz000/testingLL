@@ -60,6 +60,12 @@
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
 
+## 局域网开局卡住的根因修复（本次）—— pre-game 块拦截配置同步
+- 日志铁证：host 反复打 `pre-game done -> HostGather`（14 次），client1 打多次（重复按空格）；且 client1/client2 的 `[learn] bind ... digit='2'` 证明**数字绑技能其实生效**。
+- **根因**：`pre_game_config` 在联网开局保持 `true`，而开局前配置块 `if pre_game_config && app != MainMenu { ... return Ok() }` **每帧 return**，把 `Fighting` 分支里的 `HostGather`/`ClientWait` 配置同步逻辑**挡住了**——所以 host 按空格进 HostGather、client 进 ClientWait 后，配置同步**永远不推进 → 对局卡在开局，无法开始**。
+- **修复**：开局前配置块的条件改为 `... && net_cfg == Idle`——一旦进入配置同步（HostGather/ClientWait），本块放行到 `Fighting` 分支的同步处理，收齐后 `pre_game_config=false` 正常开第一局。也顺带消除了 host 反复 `finish_pre_game` 的重复调用。
+- 结论：**“按数字选不了技能”是误判**（日志多次证明 bind 生效）；真正卡住的是“无法开始对局”，即上面这个控制流 bug，已修复。
+
 ## 局域网开局：玩家准备状态显示（本次）—— 消“以为卡住”的困惑
 - 日志确认：“无法选技能”其实不成立（client2 的 `[learn] select/bind` 日志证明按键正常），卡住的是**多窗口焦点 + 每窗要按空格就绪**。
 - `HostLockstep` 新增就绪查询：`local_cfg_ready()` / `client_cfg_ready(idx)` / `cfg_ready_count()`。
