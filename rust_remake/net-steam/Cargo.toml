@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2021"
 description = "Steam 传输适配（可插拔附件）：把 SteamNetworkingSockets / 大厅实现为 net::Transport，复用 net 的 lockstep/多局/重连逻辑"
 
-# feature 说明：
-#   - 本 crate 默认（无 feature）只含『接口骨架 + 大厅→玩家槽位映射』，不依赖 steamworks，纯局域网/CI 可 build --workspace。
-#   - 将来在能解析 steamworks 的 registry 上，加：
-#         [features]
-#         steam = ["dep:steamworks"]
-#         [dependencies]
-#         steamworks = { version = "0.15", optional = true }   # 非 vendored，连系统 Steam（配合 steam_appid.txt）
-#     并把 transport_steam.rs 的真实接入（SteamAPI_Init / LobbyMatching / SteamNetworkingSockets）补上。
-#   当前环境（rsproxy 代理）无法解析 steamworks，故先不声明依赖，保证默认门禁不红。
+[features]
+# 默认关：无 Steam 环境（纯局域网/CI）时也能 build --workspace，net-steam 只是接口骨架。
+# 开 `--features net-steam/steam` 才引入 steamworks 依赖并编译真实接入。
+# 需要真机 Steam 客户端登录 + AppID（steam_appid.txt）+ 双账号才能端到端验收。
+default = []
+steam = ["dep:steamworks"]
 
 [dependencies]
 net = { path = "../net" }
 game-core = { path = "../game-core" }
+# 可选：仅在 `steam` feature 下启用。非 vendored = 连系统安装的 Steam runtime（配合 steam_appid.txt）。
+# 版本经确认 rsproxy/crates-io 可解析的稳定版为 0.13.1（rust-version 1.80）。
+steamworks = { version = "0.13", optional = true }
