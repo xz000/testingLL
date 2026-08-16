@@ -1153,7 +1153,10 @@ impl event::EventHandler for Game {
         }
 
         // 开局前的技能配置（Solo 试验场 / 局域网）：选/升级技能，按 Space/O 开始第一局。
-        if self.pre_game_config && self.app != AppState::MainMenu {
+        // 开局前的技能配置（Solo 试验场 / 局域网）：选/升级技能，按 Space/O 开始第一局。
+        // 注意：一旦进入配置同步（net_cfg != Idle，例如 host 按空格后 HostGather / client 上报后 ClientWait），
+        // 本块必须【放行】到下面 Fighting 分支的同步逻辑，否则会一直 return、同步永不推进 → 卡死。
+        if self.pre_game_config && self.app != AppState::MainMenu && self.net_cfg == NetCfgSync::Idle {
             // 局域网 host：开局配置阶段就同步接收 client 加入（不必等按了 Space 才开始收人），
             // 否则先到的 client 会因 host 未 poll_join 而握手超时。
             self.poll_host_join_phase();
