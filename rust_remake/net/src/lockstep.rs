@@ -352,6 +352,17 @@ impl<T: Transport> HostLockstep<T> {
                                     self.idle_ticks[c] = 0; // 收到输入 → 清零空闲计数
                                 }
                             }
+                            Packet::RoomState { index, ready, input_bytes } => {
+                                let c = index as usize - self.local_base as usize;
+                                if c < self.expected {
+                                    // 房间阶段合包：一次更新「在场 + 就绪 + 端点 + 空闲」。可靠的输入在场通道。
+                                    self.client_peers[c] = Some(from);
+                                    self.client_addr[c] = Some(from);
+                                    self.latest_input[c] = Some(input_bytes);
+                                    self.clients_ready[c] = ready;
+                                    self.idle_ticks[c] = 0;
+                                }
+                            }
                             Packet::PlayerReady { index, ready } => {
                                 let c = index as usize - self.local_base as usize;
                                 if c < self.expected {
@@ -520,6 +531,18 @@ impl<T: Transport> ClientLockstep<T> {
     /// 向 host 上报本机的就绪状态（可反复 toggle 以取消就绪）。`ready` = 当前是否就绪。
     pub fn send_ready_state(&mut self, ready: bool) -> io::Result<()> {
         let pkt = Packet::PlayerReady { index: self.my_index, ready };
+        self.transport.send_to(&pkt.encode(), &self.host)?;
+        Ok(())
+    }
+
+    /// 房间阶段：把「就绪 + 输入在场信号」合成单包持续上行给 host。
+    /// （P2P 下独立的 PlayerReady 包曾实测常丢，而输入在场包可靠；故把就绪折进同一在场包。）
+    pub fn send_room_state(&mut self, ready: bool, input_bytes: &[u8]) -> io::Result<()> {
+        let pkt = Packet::RoomState {
+            index: self.my_index,
+            ready,
+            input_bytes: input_bytes.to_vec(),
+        };
         self.transport.send_to(&pkt.encode(), &self.host)?;
         Ok(())
     }
@@ -871,6 +894,32 @@ mod tests {
         host.broadcast_roster_ready(true);
         let entries = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
         assert_eq!(entries, vec![(0, true), (1, false)]);
+    }
+
+    /// 房间「合包」：client 用 `send_room_state(ready, input)` 单包上行，host 一次更新「在场 + 就绪」。
+    #[test]
+    fn room_state_bundle_sets_both_presence_and_ready() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        assert!(!host.saw_all_clients());
+        assert!(!host.all_clients_ready());
+
+        // client 房间阶段单包上行：就绪 + 在场。
+        cli.send_room_state(true, &[7, 8, 9]).unwrap();
+        host.poll(&mut rcv);
+
+        assert!(host.saw_all_clients(), "RoomState 应同时标记在场");
+        assert!(host.all_clients_ready(), "RoomState 应同时标记就绪");
+        assert!(host.client_ready(1));
+
+        // 取消就绪（可撤销）：再发 ready=false。
+        cli.send_room_state(false, &[7, 8, 9]).unwrap();
+        host.poll(&mut rcv);
+        assert!(!host.all_clients_ready());
+        assert!(host.saw_all_clients(), "在场信号应保持");
     }
 
     /// 配置收集/广播：client 上报 PlayerCfg → host 收齐(含自身) → 广播 PlayerCfgAll → client 收到完整配置。
