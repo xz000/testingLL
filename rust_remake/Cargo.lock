@@ -1472,6 +1472,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "net-steam"
+version = "0.1.0"
+dependencies = [
+ "game-core",
+ "net",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

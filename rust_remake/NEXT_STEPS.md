@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 99 全绿 = game-core 79 + net 15 + client 5**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 101 全绿 = game-core 79 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -59,6 +59,19 @@
 ## 局域网体验补完（ROADMAP M2）—— 起步
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
+
+## Steam 传输适配 `net-steam`（方案丙：独立可插拔 crate）—— A1 已落
+- **workspace 新增第 4 个成员 `net-steam`**（依赖 `net` + `game-core`）。
+- **feature 门控**（丙的核心）：`steam` feature 默认关，且**当前先不声明 `steamworks` 依赖**（本环境 rsproxy 无法解析 steamworks）。
+  无 Steam 环境 `cargo build --workspace` / `check.ps1` 照常绿；将来 registry 能解时再加 `[features] steam=[dep:steamworks]` + 可选依赖 + `transport_steam.rs` 真实接入。
+- **A1 已交付（纯本地可编译可测）**：
+  - `lobby.rs`：`SteamLobby`/`LobbyPlayerTable`——**大厅成员名单→玩家槽位+稳定身份**的确定性映射（host 槽 0，其余按 SteamID 升序），
+    对接已有 `join_dedups_by_stable_identity`（按身份去重/找回槽）。不含 steamworks、可无 feature 单测。
+  - `transport_stub.rs`：`SteamTransport` 实现 `net::Transport`（占位），收发明确报“未启用 feature”错误（不 panic），
+    保持前端 `NetLink<T: Transport>` 类型关系可对上。
+  - 测试：lobby 映射确定性 + stub 占位（+2，共 101 全绿）。
+- **A2（待 `steam` feature + 双账号 + 能解析 steamworks 的环境）**：真实 `SteamAPI_Init` + `LobbyMatching` 大厅 + `SteamNetworkingSockets`，
+  用 `NetLink::from_transport` 注入 `SteamTransport`，握手/重连/多局逻辑零改动（本会话已铺好的全部地基：Peer::Steam、NetLink 泛型、稳定身份）。
 
 ## 对局分叉 / 右键疑似控双角色的修复（本次）—— 关掉局域网乐观预测
 - 日志确认：三端均已 `FIRST FRAME started`、host `emit seq=0`，开局/同步/进对局正常。
