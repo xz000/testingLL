@@ -126,18 +126,9 @@ impl SteamTransport {
         out
     }
 
-    /// 创建大厅（host）。`max_members` 含 host 自身；`cb` 在回调里拿到结果（需 run_callbacks 驱动）。
-    /// 单账号下创建后 host 即为唯一成员，可验证大厅链路。
-    pub fn create_lobby(
-        &mut self,
-        max_members: u32,
-        cb: impl FnOnce(Result<(), steamworks::SteamError>) + 'static + Send,
-    ) {
-        use steamworks::LobbyType;
-        let mm = self.client.matchmaking();
-        mm.create_lobby(LobbyType::Private, max_members, move |res| {
-            cb(res.map(|_| ()));
-        });
+    /// 大厅（Matchmaking）句柄；用 `create_lobby`/`join_lobby`/`lobby_members` 做成员→槽位。
+    pub fn matchmaking(&self) -> steamworks::Matchmaking {
+        self.client.matchmaking()
     }
 
     /// 设置大厅→玩家槽位表（host 从 `lobby_members` 建表，client 用同样名单建一致表）。
