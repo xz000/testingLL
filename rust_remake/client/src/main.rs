@@ -87,9 +87,9 @@ enum AppState {
     /// Steam：开厅作 host（自身=player0，其余由大厅成员按 SteamID 排序）。
     #[cfg(feature = "steam")]
     SteamHost { players: u8 },
-    /// Steam：按 matchkey 自动加入 host 大厅（client）。
+    /// Steam：按 matchkey 自动加入 host 大厅（client）；`Some(lobby_id)` = 手动指定 host 打印的 LobbyId（fallback）。
     #[cfg(feature = "steam")]
-    SteamJoin,
+    SteamJoin { lobby_id: Option<u64> },
 }
 
 /// 升级到某个等级的价格（简单坡度，后期可调）
@@ -201,10 +201,13 @@ impl Game {
                 player_count = n as u32;
             }
             #[cfg(feature = "steam")]
-            AppState::SteamJoin => {
+            AppState::SteamJoin { lobby_id } => {
                 let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
                     .map_err(ggez::GameError::from)?;
-                let lobby = sess.client_find_and_join(240).map_err(ggez::GameError::from)?;
+                let lobby = match lobby_id {
+                    Some(id) => sess.join_lobby_by_id(id, 240).map_err(ggez::GameError::from)?,
+                    None => sess.client_find_and_join(240).map_err(ggez::GameError::from)?,
+                };
                 sess.prepare_transport().map_err(ggez::GameError::from)?;
                 eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
@@ -1855,8 +1858,16 @@ fn parse_app_from_args(args: &[String]) -> AppState {
             }
             #[cfg(feature = "steam")]
             "--steam-join" => {
-                app = AppState::SteamJoin;
+                app = AppState::SteamJoin { lobby_id: None };
                 i += 1;
+                // 可选：后面跟一个 LobbyId（fallback 手动加入）。
+                #[cfg(feature = "steam")]
+                if i < args.len() && args[i].parse::<u64>().is_ok() {
+                    if let AppState::SteamJoin { lobby_id } = &mut app {
+                        *lobby_id = args[i].parse::<u64>().ok();
+                    }
+                    i += 1;
+                }
             }
             "--players" if i + 1 < args.len() => {
                 #[cfg(feature = "steam")]
