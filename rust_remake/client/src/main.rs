@@ -159,6 +159,9 @@ struct Game {
     #[cfg(feature = "steam")]
     #[allow(dead_code)]
     steam_all_ready: bool,
+    /// Steam：本机最近一次上报给 host 的就绪值（用于节流打印发送结果/变更）。
+    #[cfg(feature = "steam")]
+    steam_last_sent_ready: Option<bool>,
     /// Steam：房间阶段等待满员/就绪的累计帧数（用于节流打印诊断，避免每帧刷屏）。
     #[cfg(feature = "steam")]
     steam_lobby_wait_ticks: u32,
@@ -347,6 +350,8 @@ impl Game {
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
             steam_lobby_wait_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_last_sent_ready: None,
             #[cfg(feature = "steam")]
             steam_in_lobby: steam_in_lobby_flag,
             #[cfg(feature = "steam")]
@@ -1806,15 +1811,30 @@ impl Game {
             // client：每帧上行输入（在场信号，对齐局域网 upload —— 避免连接未建立时一次性包丢失）
             // + 上报当前就绪（幂等，host 始终有最新就绪态）；收 RosterReady/StartConfig。
             cli.send_input(&presence_enc).ok();
-            cli.send_ready_state(self.steam_local_ready).ok();
-            let mut rcv = [0u8; 8192];
-            if let Ok(Some(entries)) = cli.recv_roster_ready(&mut rcv) {
-                self.steam_roster_ready = entries;
+            let send_res = cli.send_ready_state(self.steam_local_ready);
+            if let Err(e) = send_res {
+                // 只有连接未建立时 send_ready_state 会失败；节流打印一条即可（连接建立后自然成功）。
+                if self.steam_last_sent_ready.is_none() {
+                    eprintln!("[steam-client] send_ready_state failed: {e:?}");
+                    self.steam_last_sent_ready = Some(self.steam_local_ready);
+                }
+            } else {
+                // 发送成功：若与上次不同则打印，便于确认 host 侧就绪态会随之变化。
+                if self.steam_last_sent_ready != Some(self.steam_local_ready) {
+                    eprintln!("[steam-client] sent ready={} to host", self.steam_local_ready);
+                    self.steam_last_sent_ready = Some(self.steam_local_ready);
+                }
             }
             let mut rcv = [0u8; 8192];
             if cli.recv_start_config(&mut rcv).unwrap_or(false) {
                 eprintln!("[steam-client] host says all ready -> config menu");
                 entered_config = true;
+            }
+            // 先读 StartConfig 再读 RosterReady，避免 RosterReady 的读取器把 StartConfig 当非目标包消费掉。
+            let mut rcv = [0u8; 8192];
+            if let Ok(Some(entries)) = cli.recv_roster_ready(&mut rcv) {
+                self.steam_roster_ready = entries.clone();
+                eprintln!("[steam-client] roster ready snapshot: {entries:?}");
             }
         } else if let Some(host) = self.steam_host_ls.as_mut() {
             // host：每帧 poll 收客户端（持续在场 + PlayerReady）；要求所有 client 在场 && 全体就绪。
@@ -1842,9 +1862,11 @@ impl Game {
                     let pres = host.present_clients_count();
                     let rdy = host.ready_clients_count();
                     let alive = host.connected_clients_count();
+                    let pkts = host.ready_packets_seen();
+                    let exp = host.expected_clients();
                     eprintln!(
-                        "[steam-host] waiting: local_ready={} present_clients={}/{} ready_clients={}/{} alive_conns={}",
-                        self.steam_local_ready, pres, host.expected_clients(), rdy, host.expected_clients(), alive
+                        "[steam-host] waiting: local_ready={} present_clients={pres}/{exp} ready_clients={rdy}/{exp} alive_conns={alive} ready_pkts={pkts}",
+                        self.steam_local_ready
                     );
                 }
             }

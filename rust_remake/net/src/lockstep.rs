@@ -55,6 +55,8 @@ pub struct HostLockstep<T: Transport> {
     idle_ticks: Vec<u32>,
     /// 各 client 当前是否已就绪（可撤销；由 `Packet::PlayerReady` 更新）。
     clients_ready: Vec<bool>,
+    /// 累计收到过的 `PlayerReady` 包总数（诊断用：区分“包根本没到”与“到了但值为 false”）。
+    ready_packets_seen: u64,
     /// 最近一次保存的整场 World 快照字节 + 接回 seq（供重连者重建后从该 seq 继续）。
     snapshot: Option<(Vec<u8>, u64)>,
     /// 距上次成功产帧/收到有效回包的 tick（用于 host 侧自动判定客户端掉线）。
@@ -84,6 +86,7 @@ impl<T: Transport> HostLockstep<T> {
             client_identities: vec![None; expected],
             idle_ticks: vec![0; expected],
             clients_ready: vec![false; expected],
+            ready_packets_seen: 0,
             snapshot: None,
             alive_tick: 0,
         }
@@ -164,6 +167,11 @@ impl<T: Transport> HostLockstep<T> {
     /// 期望的 client 总数（= 玩家总数减去 host 本地占位，若有参与）。
     pub fn expected_clients(&self) -> usize {
         self.expected
+    }
+
+    /// 累计收到过的 `PlayerReady` 包总数（诊断：区分“包没到”与“到了但值是 false”）。
+    pub fn ready_packets_seen(&self) -> u64 {
+        self.ready_packets_seen
     }
 
     /// 登记各 client 槽位的稳定身份（自握手结果带入；Steam=SteamID，局域网=握手随机/指定）。
@@ -347,6 +355,7 @@ impl<T: Transport> HostLockstep<T> {
                             Packet::PlayerReady { index, ready } => {
                                 let c = index as usize - self.local_base as usize;
                                 if c < self.expected {
+                                    self.ready_packets_seen += 1;
                                     // 更新该 client 的就绪状态（可撤销，反复 toggle）；同时记下它的端点，便于广播（如 StartConfig）。
                                     self.client_peers[c] = Some(from);
                                     self.client_addr[c] = Some(from);
