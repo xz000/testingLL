@@ -242,6 +242,11 @@ impl MatchState {
         }
     }
 
+    /// 开局前的配置阶段结束 → 进入第一局（不 +round，参与奖已在构造时发放）。
+    pub fn enter_first_round(&mut self) {
+        self.phase = MatchPhase::Fighting;
+    }
+
     fn advance_round(&mut self) {
         self.round += 1;
         self.phase = MatchPhase::Fighting;
