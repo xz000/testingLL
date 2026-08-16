@@ -71,6 +71,14 @@
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
 
+## Steam 真实接入（A2 单账号阶段）—— `SteamTransport::init` 已在真机跑通
+- **`transport_steam.rs`（`steam` feature 下编译）**：`SteamTransport::init(app_id)` = `steamworks::Client::init_app`；
+  `steam_id()`=本机 SteamID、`local()`=自己的 `Peer::Steam{id}`、`run_callbacks()`=每帧泵回调；`matchmaking()` 句柄备用。
+  `send_to/recv_from` 目前返回“尚未接 peer 会话”明确错误（双账号后才用 SteamNetworkingSockets 填）。
+- **真机验证通过**：`cargo test -p net-steam --features net-steam/steam -- --ignored init_and_read_own_steam_id` → **ok**（Steam 已登录 + AppID 908660，`Client::init_app` 成功）。
+- 这确认：**Steam 客户端在跑 + AppID 有效**，Steam 联机第一步已打通。差双账号做大厅对战收发（A2 后半）。
+- 注意：`Client` 每进程仅一个（steamworks 规定）；init 测试是 `#[ignore]`，默认 `cargo test --workspace` 不跑，CI 不依赖 Steam。
+
 ## Steam 传输适配 `net-steam`（方案丙：独立可插拔 crate）—— A1 已落
 - **workspace 新增第 4 个成员 `net-steam`**（依赖 `net` + `game-core`）。
 - **feature 门控**（丙的核心）：`steam` feature 默认关，且**当前先不声明 `steamworks` 依赖**（本环境 rsproxy 无法解析 steamworks）。
