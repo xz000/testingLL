@@ -209,7 +209,7 @@ impl Game {
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
-            pre_game_config: app == AppState::Solo,
+            pre_game_config: app != AppState::MainMenu,
         })
     }
 
@@ -1047,8 +1047,8 @@ impl event::EventHandler for Game {
             return Ok(());
         }
 
-        // 开局前的技能配置（Solo 试验场）：选/升级技能，按 Space/Enter/Esc 开始第一局。
-        if self.pre_game_config && self.app == AppState::Solo {
+        // 开局前的技能配置（Solo 试验场 / 局域网）：选/升级技能，按 Space/O 开始第一局。
+        if self.pre_game_config && self.app != AppState::MainMenu {
             use ggez::input::keyboard::Key;
             self.poll_learning(ctx);
             // 空格或字母 O（确认）开始第一局。
@@ -1118,11 +1118,13 @@ impl event::EventHandler for Game {
                         if host.all_cfgs() {
                             let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
                             host.broadcast_cfgs(&all);
-                            eprintln!("[meta] host synced {} player configs -> next round (round {})", all.len(), self.meta.round + 1);
+                            let stage = if self.pre_game_config { "pre-game" } else { "next round" };
+                            eprintln!("[meta] host synced {} player configs -> {stage} (round {})", all.len(), self.meta.round);
                             self.apply_player_cfgs(&all);
                             self.teardown_round_end();
                             host.reset_cfgs(); // 为下一局复用
                             self.net_cfg = NetCfgSync::Idle;
+                            self.pre_game_config = false;
                         }
                         self.net_host_ls = Some(host);
                         return Ok(()); // 同步阶段不推进战斗
@@ -1160,10 +1162,12 @@ impl event::EventHandler for Game {
                             link.upload_cfg(&cfg_bytes)?;
                         }
                         if let Some(all) = link.recv_cfg_all()? {
-                            eprintln!("[meta] client got {} player configs -> next round (round {})", all.len(), self.meta.round + 1);
+                            let stage = if self.pre_game_config { "pre-game" } else { "next round" };
+                            eprintln!("[meta] client got {} player configs -> {stage} (round {})", all.len(), self.meta.round);
                             self.apply_player_cfgs(&all);
                             self.teardown_round_end();
                             self.net_cfg = NetCfgSync::Idle;
+                            self.pre_game_config = false;
                         }
                         self.net_link = Some(link);
                         return Ok(()); // 同步阶段不推进战斗
@@ -1251,12 +1255,21 @@ impl event::EventHandler for Game {
 }
 
 impl Game {
-    /// 完成开局前的技能配置：进入第一局（round 保持 1）并把技能等级应用到 world。
+    /// 完成开局前的技能配置：第一局前同步各端 build（局域网走 HostGather/ClientWait），单机直接开打。
     fn finish_pre_game(&mut self) {
-        self.meta.enter_first_round();
-        self.teardown_round_end();
-        self.pre_game_config = false;
-        eprintln!("[meta] pre-game config done -> round {} Fighting", self.meta.round);
+        self.meta.enter_first_round(); // Fighting，round 保持 1
+        if self.net_link.is_some() {
+            eprintln!("[meta] pre-game done -> ClientWait config sync");
+            self.net_cfg = NetCfgSync::ClientWait;
+            // pre_game_config 保持 true，直到同步完成（见 Fighting 分支）。
+        } else if self.net_host_ls.is_some() {
+            eprintln!("[meta] pre-game done -> HostGather config sync");
+            self.net_cfg = NetCfgSync::HostGather;
+        } else {
+            self.teardown_round_end();
+            self.pre_game_config = false;
+            eprintln!("[meta] pre-game config done -> round {} Fighting", self.meta.round);
+        }
     }
 
     /// 开局前配置面板：显示当前绑定/等级/金币，提示按 Space 开始第一轮。

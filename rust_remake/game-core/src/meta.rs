@@ -363,4 +363,17 @@ mod tests {
         assert_eq!(p.gold, 100 - 50 + 25); // = 75
         assert_eq!(p.skill_level(SkillId::Rock), 1);
     }
+
+    #[test]
+    fn enter_first_round_keeps_round_one() {
+        let mut m = sample();
+        assert_eq!(m.round, 1);
+        assert_eq!(m.phase, MatchPhase::Fighting);
+        // 模拟开局配置：先进 Learning，再 enter_first_round 回 Fighting 且 round 不变。
+        m.phase = MatchPhase::Learning;
+        m.enter_first_round();
+        assert_eq!(m.phase, MatchPhase::Fighting);
+        assert_eq!(m.round, 1, "开局配置结束不应 +round");
+        // 与局间 start_next_round（会 +round）区分。
+    }
 }
