@@ -84,6 +84,16 @@
 - net 单测仍绿（`room_inbox_classifies_start_config_and_roster_together` 已适配 StartConfig{seq}）。
 - 下一步：再双机测，client 应打 `roster shows all 2 players ready -> config menu` 进配置；两端配完按 o/空格开打。
 
+## Steam 五测：房间→配置→开始都通了，但“对战不同步”（本次会话，诊断位）
+**2026-08-16 五测**：两人都能 `config done -> start match`（房间/配置/开始链已通），但进对战后 host 只 `emit seq=0`、且两边状态似各自独立——
+两者应是 **Fighting 阶段的帧交换未建立**：host 需收 client 每帧输入才能连续产 seq 帧；client 需收 host 帧才推进。
+- 已在两端 Feeding 循环加诊断日志：
+  - host：`emit seq=N, n_entries=`（前 30 帧）/ 以及“trying to emit but waiting for client input (present=)” （节流，若产不出帧）。
+  - client：`frame -> seq=N`（推进到哪帧）；及旧的 `send_room_state failed`。
+- 用这些日志可定位：若 host 卡在 seq=0 且一直“waiting for client input” → client 输入没到 host；
+  若 host emit seq 连续而 client 不打 `frame -> seq` → host→client 帧投递断；若两者都连续 → 是 world/配置分叉而非投递。
+- 另自查过：Steam host 与 client 均用同 seed/同 2 玩家建世界、`teardown_round_end` 同步，理论上逐位一致，只差帧交换。
+
 
 
 ## 关键历史（速览，回滚/定位用）

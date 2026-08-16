@@ -165,6 +165,9 @@ struct Game {
     /// Steam：房间阶段等待满员/就绪的累计帧数（用于节流打印诊断，避免每帧刷屏）。
     #[cfg(feature = "steam")]
     steam_lobby_wait_ticks: u32,
+    /// Steam：client 最近推进到的帧号（诊断：确认是否在收 host 权威帧）。
+    #[cfg(feature = "steam")]
+    steam_cli_last_seq: u64,
     /// Steam：主菜单内是否处于「大厅选择」子菜单（H 创建 / J 加入 / Q 返回）。
     #[cfg(feature = "steam")]
     steam_lobby_menu: bool,
@@ -350,6 +353,8 @@ impl Game {
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
             steam_lobby_wait_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_cli_last_seq: 0,
             #[cfg(feature = "steam")]
             steam_last_sent_ready: None,
             #[cfg(feature = "steam")]
@@ -1503,8 +1508,8 @@ impl event::EventHandler for Game {
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                             host.poll(&mut hrcv);
                             if let Some((seq, frame)) = host.try_emit() {
-                                if seq == 0 {
-                                    eprintln!("[steam-host] emit seq=0");
+                                if seq < 30 {
+                                    eprintln!("[steam-host] emit seq={seq}, n_entries={}", frame.len());
                                 }
                                 let n = self.world.players.len();
                                 let mut inputs = vec![PlayerInput::default(); n];
@@ -1522,6 +1527,11 @@ impl event::EventHandler for Game {
                                 }
                                 self.accumulator -= TICK;
                             } else {
+                                // 诊断（节流）：尝试产帧但没收到 client 输入 → 说明 host→client 帧/输入链可能断。
+                                self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
+                                if self.steam_lobby_wait_ticks % 120 == 1 {
+                                    eprintln!("[steam-host] trying to emit but waiting for client input (present={})", host.present_clients_count());
+                                }
                                 break;
                             }
                         }
@@ -1543,6 +1553,13 @@ impl event::EventHandler for Game {
                                     }
                                 }
                                 self.world.step(inputs, ticking);
+                                // 诊断：打印推进到哪一帧（前若干帧/变化时不刷屏）。
+                                let last = cli.expect_seq().saturating_sub(1);
+                                if self.steam_cli_last_seq != last {
+                                    let n_ents = self.world.players.len();
+                                    eprintln!("[steam-client] frame -> seq={last}, n_ents={n_ents}");
+                                    self.steam_cli_last_seq = last;
+                                }
                                 self.accumulator -= TICK;
                             } else {
                                 break; // 等权威帧
