@@ -1120,6 +1120,8 @@ impl Game {
                     draw_text(canvas, ctx, &line, 24.0, Color::WHITE, Point2 { x: cx, y }, true)?;
                     y += 40.0;
                 }
+                y += 30.0;
+                draw_text(canvas, ctx, "对局结束 —— 按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
             }
         }
         Ok(())
@@ -1180,6 +1182,14 @@ impl event::EventHandler for Game {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
                 self.accumulator = 0.0;
+                // 允许回主菜单：按 Q。
+                use ggez::input::keyboard::Key;
+                let q = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
+                    || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
+                if q {
+                    eprintln!("[meta] finished -> back to main menu");
+                    self.reset_to_main_menu();
+                }
                 Ok(())
             }
             MatchPhase::Learning => {
@@ -1403,6 +1413,49 @@ impl Game {
         }
     }
 
+    /// 把整场对抗（Finished）退回主菜单：放弃当前网络连接，重建为 MainMenu 的沙盒世界/meta，并清空所有运行状态。
+    fn reset_to_main_menu(&mut self) {
+        let seed = 20260812u64;
+        // 主菜单与 Solo 共用“2 玩家 + 靶子 + sandbox”世界（不判结束 / 不缩圈）。
+        let mut w = game_core::world::World::new(2, seed);
+        w.sandbox = true;
+        self.world = w;
+        self.meta = game_core::meta::MatchState::new(game_core::meta::MatchConfig::default(), &[0], 8);
+        // 默认绑定：每个键绑定其树的首个技能，保证菜单进 Solo 时开局即可用。
+        for profile in self.meta.profiles.iter_mut() {
+            for key in game_core::skill::CastKey::ALL {
+                if let Some(first) = key.tree().skills_in_tree().first() {
+                    profile.bind_skill(key, *first);
+                }
+            }
+        }
+        self.app = AppState::MainMenu;
+        // 放弃联网连接（UDP socket / 握手 / 帧同步关闭）。
+        self.net_link = None;
+        self.net_host = None;
+        self.net_host_ls = None;
+        self.net_ready = false;
+        self.net_cfg = NetCfgSync::Idle;
+        // 清空运行状态。
+        self.pre_game_config = false; // 主菜单不进入开局配置；选了模式后再进。
+        self.conn_dropped = false;
+        self.reconnect_attempting = false;
+        self.host_frame_count = 0;
+        self.pre_game_timer = PRE_GAME_TIMEOUT_SECS;
+        self.learn_tree_key = game_core::skill::CastKey::ALL.first().copied();
+        self.bot_targets = Vec::new();
+        self.bot_rngs = Vec::new();
+        self.player_target = None;
+        self.pending_cast = None;
+        self.pending_skill = None;
+        self.queued_cmds.clear();
+        self.pending_shift_skill = None;
+        self.pending_clear_signal = false;
+        self.pending_stop_signal = false;
+        self.accumulator = 0.0;
+    }
+
+    /// 开局前的技能配置（第一局开始前选择）。
     fn finish_pre_game(&mut self) {
         self.meta.enter_first_round(); // Fighting，round 保持 1
         if self.net_link.is_some() {
