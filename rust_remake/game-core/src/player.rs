@@ -140,6 +140,12 @@ pub struct Player {
     pub spell_factor: f64,
     /// 属性派生的击退抗性剩余倍率（0..1，越小越抗推）。
     pub kb_factor: f64,
+    /// 当前法力值（MP）。施法消耗、每帧回蓝。
+    pub mana: Fix64,
+    /// 最大法力值（由属性派生）。
+    pub max_mana: Fix64,
+    /// 每秒回蓝（由属性派生）。
+    pub mana_regen: Fix64,
     /// 当前移动目标点；`None` 表示本帧没有移动命令（停下来）。
     pub move_target: Option<Vec2>,
     /// 施法状态机（前摇 / 后摇 / 冷却 / 打断）
@@ -204,6 +210,9 @@ impl Player {
             armor_factor: 1.0,
             spell_factor: 1.0,
             kb_factor: 1.0,
+            mana: Fix64::from_num(crate::attribute::BASE_MAX_MANA),
+            max_mana: Fix64::from_num(crate::attribute::BASE_MAX_MANA),
+            mana_regen: Fix64::from_num(crate::attribute::BASE_MANA_REGEN),
             move_target: None,
             caster: Caster::new(),
             skill_levels: [1; SKILL_SLOTS],
@@ -506,6 +515,31 @@ impl Player {
         self.armor_factor = a.armor_factor();
         self.spell_factor = a.spell_factor();
         self.kb_factor = a.kb_factor();
+        // MP：由属性派生蓝上限与回蓝；保持当前蓝量比例。
+        let ratio = if self.max_mana > Fix64::ZERO {
+            self.mana / self.max_mana
+        } else {
+            Fix64::ONE
+        };
+        self.max_mana = Fix64::from_num(a.derived_max_mana());
+        self.mana_regen = Fix64::from_num(a.derived_mana_regen());
+        self.mana = (self.max_mana * ratio).max(Fix64::ZERO);
+    }
+
+    /// 每帧回蓝（在满蓝前不回超）。
+    pub fn regen_mana(&mut self, dt: Fix64) {
+        let regen = self.mana_regen * dt;
+        self.mana = (self.mana + regen).min(self.max_mana);
+    }
+
+    /// 施法消耗：蓝不足返回 false，足够则扣蓝。
+    pub fn spend_mana(&mut self, cost: Fix64) -> bool {
+        if self.mana >= cost {
+            self.mana -= cost;
+            true
+        } else {
+            false
+        }
     }
 
     /// 新一轮开始时重置回合相关状态（保留 id / pos / 技能等级 / 半径）。

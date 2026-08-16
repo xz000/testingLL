@@ -11,7 +11,9 @@ use crate::skill::SkillId;
 
 /// 快照版本：每次改字段布局就 +1，供将来两端一致性校验。
 /// v2（4.6b）：加入 attributes。
-pub const CONFIG_VERSION: u8 = 2;
+/// v3：attributes 扩充（mana_max / mana_regen）。
+/// v4：加入 growth_points。
+pub const CONFIG_VERSION: u8 = 4;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -42,6 +44,8 @@ pub struct PlayerConfig {
     pub gold_spent: i64,
     /// 战斗属性（4.6b）。
     pub attributes: crate::attribute::Attributes,
+    /// 成长点（4.6b）：用于购买属性（可用金币兑换）。
+    pub growth_points: u32,
 }
 
 impl PlayerConfig {
@@ -57,6 +61,7 @@ impl PlayerConfig {
             gold: p.gold as i64,
             gold_spent: p.gold_spent as i64,
             attributes: p.attributes,
+            growth_points: p.growth_points,
         }
     }
 
@@ -73,6 +78,7 @@ impl PlayerConfig {
         p.gold = self.gold as i32;
         p.gold_spent = self.gold_spent as i32;
         p.attributes = self.attributes;
+        p.growth_points = self.growth_points;
     }
 
     /// 编码为字节（带版本 + 长度前缀，可扩展）。
@@ -96,12 +102,16 @@ impl PlayerConfig {
         }
         put_i64(&mut out, self.gold);
         put_i64(&mut out, self.gold_spent);
-        // attributes（v2）：固定的 5 个 u32。
+        // attributes（v3）：固定的 7 个 u32。
         put_u32(&mut out, self.attributes.hp_bonus);
         put_u32(&mut out, self.attributes.speed_bonus);
         put_u32(&mut out, self.attributes.armor);
         put_u32(&mut out, self.attributes.spell_resist);
         put_u32(&mut out, self.attributes.kb_resist);
+        put_u32(&mut out, self.attributes.mana_max);
+        put_u32(&mut out, self.attributes.mana_regen);
+        // growth_points（v4）。
+        put_u32(&mut out, self.growth_points);
         out
     }
 
@@ -138,20 +148,24 @@ impl PlayerConfig {
         pos += 8;
         let gold_spent = i64_at(buf, pos)?;
         pos += 8;
-        // attributes（v2）。
+        // attributes（v3）。
         let attributes = crate::attribute::Attributes {
             hp_bonus: u32_at(buf, pos)?,
             speed_bonus: u32_at(buf, pos + 4)?,
             armor: u32_at(buf, pos + 8)?,
             spell_resist: u32_at(buf, pos + 12)?,
             kb_resist: u32_at(buf, pos + 16)?,
+            mana_max: u32_at(buf, pos + 20)?,
+            mana_regen: u32_at(buf, pos + 24)?,
         };
+        let growth_points = u32_at(buf, pos + 28)?;
         Some(PlayerConfig {
             skill_levels,
             key_slots,
             gold,
             gold_spent,
             attributes,
+            growth_points,
         })
     }
 }

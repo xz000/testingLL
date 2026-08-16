@@ -525,6 +525,8 @@ pub struct SkillGrowth {
     /// 护盾吸收量/弹体宽度等附加值（用于 Shield / Bullet / LineBeam 的 width、shield 强度）。
     pub extra_base: f64,
     pub extra_delta: f64,
+    /// 法力消耗/ManaCost（MP 机制）。0=默认不耗蓝（保持旧测试不变）；后续按手感调各技能数值。
+    pub mana_cost: f64,
 }
 
 impl SkillGrowth {
@@ -565,6 +567,11 @@ impl SkillDef {
     /// 是否仍可施放（不处于施法/后摇、且满足冷却）——由 CastEvent 状态判断。
     pub fn stats_at(&self, level: u32) -> SkillStats {
         self.growth.stats(level)
+    }
+
+    /// 该技能的法力消耗（MP）。0=不耗蓝。
+    pub fn mana_cost(&self) -> Fix64 {
+        Fix64::from_num(self.growth.mana_cost)
     }
 }
 
@@ -880,6 +887,7 @@ impl DefTable {
                     radius_base: 2.0,
                     duration_base: 0.7,
                     max_distance_base: 5.0,
+                    mana_cost: 30.0,
                     ..DEF_ZERO
                 },
             },
@@ -1410,6 +1418,7 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
     max_distance_delta: 0.0,
     extra_base: 0.0,
     extra_delta: 0.0,
+    mana_cost: 0.0,
 };
 
 // 由于 SkillDef 由 DefTable::def 直接构造（非 const，因需运行时 from_num），

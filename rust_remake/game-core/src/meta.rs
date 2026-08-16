@@ -57,6 +57,8 @@ pub struct PlayerProfile {
     pub gold_spent: i32,
     /// 战斗属性（4.6b）：Hp/移速等成长值，跨局/跨端确定性同步。
     pub attributes: crate::attribute::Attributes,
+    /// 成长点（4.6b）：用于购买属性。每局/阶段固定发放，也可用金币兑换。
+    pub growth_points: u32,
 }
 
 impl PlayerProfile {
@@ -73,6 +75,7 @@ impl PlayerProfile {
             key_slots: [None; 8],
             gold_spent: 0,
             attributes: crate::attribute::Attributes::default(),
+            growth_points: 0,
         }
     }
 
@@ -121,6 +124,33 @@ impl PlayerProfile {
         for lv in self.skill_levels.iter_mut() {
             *lv = 1;
         }
+    }
+
+    // ---- 4.6b 成长点 / 属性购买 ----
+
+    /// 发放成长点（每局/阶段调用）。
+    pub fn add_growth_points(&mut self, n: u32) {
+        self.growth_points = self.growth_points.saturating_add(n);
+    }
+
+    /// 用金币兑换成长点：扣 `cost_gold` 金币、得 1 成长点。返回是否成功。
+    pub fn buy_growth_with_gold(&mut self, cost_gold: i32) -> bool {
+        if self.gold < cost_gold {
+            return false;
+        }
+        self.gold -= cost_gold;
+        self.growth_points = self.growth_points.saturating_add(1);
+        true
+    }
+
+    /// 用成长点购买 1 点属性（`which` 决定买哪个），成本 `cost_points`。成功则 `attributes[which] += 1`。
+    pub fn buy_attribute(&mut self, which: crate::attribute::GrowthAttr, cost_points: u32) -> bool {
+        if self.growth_points < cost_points {
+            return false;
+        }
+        self.growth_points -= cost_points;
+        self.attributes.add_point(which);
+        true
     }
 
     /// 该玩家当前实际可用的（已绑定到某个键的）技能列表。
@@ -378,5 +408,23 @@ mod tests {
         assert_eq!(m.phase, MatchPhase::Fighting);
         assert_eq!(m.round, 1, "开局配置结束不应 +round");
         // 与局间 start_next_round（会 +round）区分。
+    }
+
+    /// 4.6b 成长点：发放、金币兑成长点、成长点买属性，均向 `growth_points`/`attributes` 正确记账。
+    #[test]
+    fn growth_points_for_attributes() {
+        let mut m = sample();
+        let p = &mut m.profiles[0];
+        p.gold = 100;
+        p.add_growth_points(3);
+        assert_eq!(p.growth_points, 3);
+        assert!(p.buy_growth_with_gold(20));
+        assert_eq!(p.growth_points, 4);
+        assert_eq!(p.gold, 80);
+        assert!(!p.buy_growth_with_gold(999), "金币不足应失败");
+        assert!(p.buy_attribute(crate::attribute::GrowthAttr::Hp, 1));
+        assert_eq!(p.attributes.hp_bonus, 1);
+        assert_eq!(p.growth_points, 3);
+        assert!(!p.buy_attribute(crate::attribute::GrowthAttr::Hp, 99), "成长点不足应失败");
     }
 }

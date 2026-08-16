@@ -21,7 +21,52 @@ pub struct Attributes {
     pub spell_resist: u32,
     /// 击退抗性（点数）：缩放 `push_power`/`push_time`。阶段 2 接入。
     pub kb_resist: u32,
+    /// 最大法力加成（点数）。每点 +`MANA_PER_BONUS`。法力机制（MP）。
+    pub mana_max: u32,
+    /// 回蓝加成（点数）。每点 +`MANA_REGEN_PER_BONUS`（每秒法力）。
+    pub mana_regen: u32,
 }
+
+/// 可购买的属性项（成长点购买索引）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GrowthAttr {
+    Hp,
+    Speed,
+    Armor,
+    SpellResist,
+    KbResist,
+    ManaMax,
+    ManaRegen,
+}
+
+impl Attributes {
+    /// 给指定属性 +1 点（购买）。
+    pub fn add_point(&mut self, which: GrowthAttr) {
+        match which {
+            GrowthAttr::Hp => self.hp_bonus += 1,
+            GrowthAttr::Speed => self.speed_bonus += 1,
+            GrowthAttr::Armor => self.armor += 1,
+            GrowthAttr::SpellResist => self.spell_resist += 1,
+            GrowthAttr::KbResist => self.kb_resist += 1,
+            GrowthAttr::ManaMax => self.mana_max += 1,
+            GrowthAttr::ManaRegen => self.mana_regen += 1,
+        }
+    }
+
+    /// 某属性的当前点数（用于价格表）。
+    pub fn current(&self, which: GrowthAttr) -> u32 {
+        match which {
+            GrowthAttr::Hp => self.hp_bonus,
+            GrowthAttr::Speed => self.speed_bonus,
+            GrowthAttr::Armor => self.armor,
+            GrowthAttr::SpellResist => self.spell_resist,
+            GrowthAttr::KbResist => self.kb_resist,
+            GrowthAttr::ManaMax => self.mana_max,
+            GrowthAttr::ManaRegen => self.mana_regen,
+        }
+    }
+}
+
 
 // ---------- 派生系数（Balance 收敛层） ----------
 
@@ -35,6 +80,14 @@ pub const ARMOR_REDUCTION_PER_POINT: f64 = 0.06;
 pub const SPELL_RESIST_PER_POINT: f64 = 0.06;
 /// 每点 kb_resist 削减击退的比例（12%）。
 pub const KB_RESIST_PER_POINT: f64 = 0.12;
+/// 每点 mana_max 加成的最大法力值（点数制，加法）。
+pub const MANA_PER_BONUS: f64 = 25.0;
+/// 每点 mana_regen 加成的每秒回蓝。
+pub const MANA_REGEN_PER_POINT: f64 = 1.0;
+/// 基础最大法力（无属性加成时的初始蓝）。
+pub const BASE_MAX_MANA: f64 = 100.0;
+/// 基础每秒回蓝（无属性加成时）。
+pub const BASE_MANA_REGEN: f64 = 5.0;
 
 impl Attributes {
     /// 由属性派生出最大生命值（在 `Balance::default().max_hp` 基础上按加法系数）。
@@ -60,6 +113,16 @@ impl Attributes {
     /// 击退抗性：剩余击退比例（push 力/时长乘此）。
     pub fn kb_factor(&self) -> f64 {
         (1.0 - self.kb_resist as f64 * KB_RESIST_PER_POINT).max(0.1)
+    }
+
+    /// 由属性派生的最大法力（基础 + 点数×每点值）。
+    pub fn derived_max_mana(&self) -> f64 {
+        BASE_MAX_MANA + self.mana_max as f64 * MANA_PER_BONUS
+    }
+
+    /// 由属性派生的每秒回蓝（基础 + 点数×每点值）。
+    pub fn derived_mana_regen(&self) -> f64 {
+        BASE_MANA_REGEN + self.mana_regen as f64 * MANA_REGEN_PER_POINT
     }
 }
 

@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 107 全绿 = game-core 85 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 109 全绿 = game-core 87 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -70,6 +70,14 @@
 - `net-steam` 加 `steam` feature（默认关）+ 可选依赖 `steamworks 0.13`；`cargo build -p net-steam --features net-steam/steam` **编译通过**（steamworks-sys 0.13 + steamworks 0.13.1）。
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
+
+## 法力量(MP)技术机制 + 成长点/购买 UI —— 已落 + 已测（数值占位、后续按手感调）
+- **MP 机制**（game-core，先机制后数值）：`Attributes` 加 `mana_max`/`mana_regen`；`Player` 加 `mana`/`max_mana`/`mana_regen`（序列化）；
+  施法 `handle_casts` 前用 `def.mana_cost()` 查蓝/扣蓝（`spend_mana`），蓝不足禁施；每帧 `regen_mana`；`SkillGrowth` 加 `mana_cost`（默认 0=不耗蓝，Rock 占位 30）。
+  现有测试默认不耗蓝 → 保持绿；加 MP 测试（耗蓝/禁施/回蓝/上限）。
+- **成长点/购买**：`PlayerProfile` 加 `growth_points` + 方法 `add_growth_points`/`buy_growth_with_gold`/`buy_attribute`；`PlayerConfig` 加 `growth_points`（v3→v4）；`Attributes::add_point`/`current`；`GrowthAttr` 枚举。
+- **UI**：`draw_pre_game` 加「成长点/金币/属性」面板；按键 `Z 金币→成长点`、`H/J/K/L/;/U/I` 买各自属性；每局 `settle_round` 发 `GROWTH_PER_ROUND` 成长点。
+- 测试：成长点发放/金币兑/买属性记账 -> **109 全绿**。数值(耗蓝/回蓝/价格)均为占位，后续平衡。
 
 ## 开局无初始技能 + 4.6b 阶段2（护甲/法抗/击退结算）—— 已落 + 已测
 - **开局不带任何默认技能**：删掉 `Game::new` 与 `reset_to_main_menu` 里的“每个键默认绑首个技能”，
