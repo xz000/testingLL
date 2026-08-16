@@ -26,6 +26,10 @@ pub struct SteamTransport {
     virtual_port: i32,
     /// 大厅成员→玩家槽位表（host/client 各持一致视角，来自大厅成员名单）。
     _table: Option<LobbyPlayerTable>,
+    /// 诊断：本运输已打的 send 失败日志数（节流，避免刷屏）。
+    send_fail_logs: u32,
+    /// 诊断：本运输已打的 recv/receive_messages 失败日志数。
+    recv_fail_logs: u32,
 }
 
 impl SteamTransport {
@@ -43,6 +47,8 @@ impl SteamTransport {
             conns: HashMap::new(),
             virtual_port,
             _table: None,
+            send_fail_logs: 0,
+            recv_fail_logs: 0,
         })
     }
 
@@ -123,7 +129,11 @@ impl SteamTransport {
                             out.push((pid, m.data().to_vec()));
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        if self.recv_fail_logs < 10 {
+                            self.recv_fail_logs += 1;
+                            eprintln!("[steam-p2p] receive_messages from {pid} failed: {e:?} -> removing conn (connection likely dropped)");
+                        }
                         self.conns.remove(&pid);
                     }
                 }
@@ -164,19 +174,36 @@ impl Transport for SteamTransport {
         self.client.run_callbacks();
         match peer {
             Peer::Steam { id, .. } => {
-                let c = self
-                    .conns
-                    .get_mut(id)
-                    .ok_or_else(|| io::Error::other(format!("no steam connection to SteamID {id}")))?;
+                let c = match self.conns.get_mut(id) {
+                    Some(c) => c,
+                    None => {
+                        if self.send_fail_logs < 10 {
+                            self.send_fail_logs += 1;
+                            eprintln!("[steam-p2p] send_to: no steam connection to SteamID {id}");
+                        }
+                        return Err(io::Error::other(format!("no steam connection to SteamID {id}")));
+                    }
+                };
                 // 连接尚未 ESTABLISHED 时 Steam 会返回 k_EResultIgnored（消息被丢弃）。这里显式跳过早发，
                 // 让上层连续重发、待连接建立后自然送达（避免静默丢包导致“host 判不了全员就绪”）。
                 if let Ok(info) = c.info() {
                     if info.state().ok() != Some(NetworkingConnectionState::Connected) {
+                        if self.send_fail_logs < 10 {
+                            self.send_fail_logs += 1;
+                            eprintln!("[steam-p2p] send_to: steam connection to {id} not established yet (state={:?})",
+                                info.state());
+                        }
                         return Err(io::Error::other(format!("steam connection to {id} not established yet")));
                     }
                 }
                 c.send_message(buf, SendFlags::RELIABLE_NO_NAGLE)
-                    .map_err(|e| io::Error::other(format!("steam send_message failed: {e:?}")))?;
+                    .map_err(|e| {
+                        if self.send_fail_logs < 10 {
+                            self.send_fail_logs += 1;
+                            eprintln!("[steam-p2p] send_to: send_message to {id} failed: {e:?}");
+                        }
+                        io::Error::other(format!("steam send_message failed: {e:?}"))
+                    })?;
                 Ok(buf.len())
             }
             Peer::Udp(_) => Err(io::Error::other("Peer::Udp 不适用于 SteamTransport")),
