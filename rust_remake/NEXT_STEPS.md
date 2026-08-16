@@ -10,15 +10,17 @@
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
-## Steam 房间就绪（进展 + 断点 + 待续）
-**已落（底层机制，已测）**：
-- net 层可撤销就绪：新增 `Packet::PlayerReady{index, ready}`；`HostLockstep` 追踪每 client 就绪（`client_ready`/`all_clients_ready`）；`ClientLockstep::send_ready_state(true/false)` 可反复 toggle 取消。新增 `ready_state_roundtrip_toggles_withdrawable` 测试（net 16，共 **110 全绿**）。
-- `Game` 加了（feature-gated，`#[allow(dead_code)]` 暂未接）：`steam_in_lobby` / `steam_local_ready` / `steam_roster`（槽位, Steam 昵称, SteamID，用 `Friends.get_friend(id).name()` 构建）/ `steam_all_ready`。
-- Steam P2P 已通（`[steam-p2p] host accepted connection`），host 不再卡死（改非阻塞 `try_receive_event`）。
-**断点/待续（下次从这里继续）**：
-- 房间就绪 UI 未接：`steam_in_lobby` 目前恒 false（游戏走之前的 net_cfg HostGather/ClientWait 就绪、P2P、进局）。
-- 把 `steam_lobby_phase` 实现并接入 update/draw：按 o toggle 就绪、host 收齐（本地 + `all_clients_ready`）→ 5 秒倒计时 → 进开局配置菜单（pre_game_config）→ 再用 net_cfg 同步真正开始。局域网未动。
-- 提醒：lobby 就绪与 net_cfg HostGather/ClientWait 是两个不同过渡（lobby→配置菜单、配置→开打），别想成一个。
+## Steam 房间就绪（进度）—— 已重写为干净流程（可双机测）
+**新流程（一次成行，替换 net_cfg 就绪与旧 steam_in_lobby 半成品）**：
+1. Steam 启动 → `steam_in_lobby`=true，显示「房间·等待所有人就绪」界面（成员昵称来自 `Friends`，成员就绪状态）。
+2. 按 o/空格 toggle 本机就绪（可撤销）；client 经 `PlayerReady` 上报 host，host 追踪每 client 就绪。
+3. host：本地+`all_clients_ready` 全就绪 → 5 秒倒计时（有人取消则重置）→ `broadcast StartConfig` → pre_game_config=true（进配置菜单）。
+4. client：收到 `StartConfig` → pre_game_config=true（进配置菜单）。
+5. 配置菜单（复用现有技能/点数界面）配完按 o → `finish_pre_game` Steam 直接开始对局（不再用 net_cfg HostGather/ClientWait）。
+6. 对局：Steam host 收齐各端输入才产帧（自然统一），client 跟帧。
+**已实现**：`Packet::StartConfig`+`broadcast_start_config`/`recv_start_config`；`steam_lobby_update` 接入 update；`draw_steam_ready_overlay` 显示成员昵称+就绪+倒计时；`finish_pre_game` Steam 直接开打；Fighting Steam 分支去掉 net_cfg 就绪等待。PlayerReady 处理也记录 client 端点（供广播）。
+**待验证**：双机跑通房间就绪→配置→对局；可撤销就绪/倒计时重置。局域网未动。
+
 
 ## 关键历史（速览，回滚/定位用）
 - **tag 丢失 bug**（曾导致网络静默吞输入 + 旧测试假绿）→ 已修 + 防假绿纪律写入 PLAN「测试约定」。真机 4 窗口验证通过。

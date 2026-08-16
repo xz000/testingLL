@@ -30,6 +30,8 @@ pub const TAG_RESYNC: u8 = 11;
 pub const TAG_RECONNECT: u8 = 12;
 /// 就绪状态变更：client→host，`index` 玩家序号 + 是否就绪（可反复 toggle，供房间界面显示/取消就绪）。
 pub const TAG_PLAYER_READY: u8 = 13;
+/// host→client：全体就绪，通知 client 去进入开局配置菜单。
+pub const TAG_START_CONFIG: u8 = 14;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -61,6 +63,8 @@ pub enum Packet {
     ReconnectReq { identity: u64, last_known_seq: u64 },
     /// client→host：就绪状态变更（`index`=玩家序号，`ready`=是否就绪；可反复 toggle 供取消就绪）。
     PlayerReady { index: u8, ready: bool },
+    /// host→client：全体就绪，进入开局配置菜单。
+    StartConfig,
     /// host→重连端：整场 World 快照字节 + 接回 seq。
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
@@ -141,6 +145,7 @@ impl Packet {
             Packet::PlayerReady { index, ready } => {
                 vec![TAG_PLAYER_READY, *index, if *ready { 1 } else { 0 }]
             }
+            Packet::StartConfig => vec![TAG_START_CONFIG],
             Packet::Snapshot { world_bytes, seq } => {
                 let mut v = Vec::with_capacity(1 + 2 + world_bytes.len() + 8);
                 v.push(TAG_SNAPSHOT);
@@ -240,6 +245,7 @@ impl Packet {
             TAG_PLAYER_READY if buf.len() >= 3 => {
                 Some(Packet::PlayerReady { index: buf[1], ready: buf[2] != 0 })
             }
+            TAG_START_CONFIG => Some(Packet::StartConfig),
             _ => None,
         }
     }
@@ -274,6 +280,7 @@ mod tests {
             },
             Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
             Packet::PlayerReady { index: 2, ready: true },
+            Packet::StartConfig,
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
         ];
