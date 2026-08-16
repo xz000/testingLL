@@ -95,7 +95,6 @@ impl NetLink {
         ls.recv_cfg_all(&mut self.rcv)
     }
 
-
     /// 每帧：只收带 seq 帧并推进 `world`。收到并推进返回 `Some(seq)`，未到返回 `None`。
     /// 首次收到帧时自动置 `started`（首帧即统一起始信号）。上行由调用方逐帧 `upload`。
     pub fn step_frame(
@@ -136,8 +135,8 @@ mod tests {
     use game_core::player::Cmd;
     use game_core::skill::SkillId;
     use net::handshake::HostHandshake;
-    use net::lockstep::HostLockstep;
-    use net::transport::StdUdpTransport;
+    use net::lockstep::{ClientLockstep, HostLockstep};
+    use net::transport::{Peer, StdUdpTransport};
     use std::time::Duration;
 
     fn sample_input() -> PlayerInput {
@@ -325,6 +324,76 @@ mod tests {
             let _ = b.step_frame(&mut w2b, dt).unwrap();
             assert_eq!(w2host.players, w2a.players, "第二局 host 与 a 应逐位一致");
             assert_eq!(w2host.players, w2b.players, "第二局 host 与 b 应逐位一致");
+        }
+    }
+
+    /// 重连垂直切片（切片2）：client 掉线 → host 用默认输入继续 → 存(World,seq)快照 →
+    /// 重连者用快照重建 World + set_start_seq 接回 → 继续跑，host 与重连端逐位一致。
+    #[test]
+    fn reconnect_after_drop_via_snapshot() {
+        let (ht, host_addr) = net::transport::StdUdpTransport::bind_loopback().unwrap();
+        let (ct, _caddr) = net::transport::StdUdpTransport::bind_loopback().unwrap();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(host_addr));
+        let mut rcv = [0u8; 8192];
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut whost = World::new(2, 55);
+        let mut wcli = World::new(2, 55);
+
+        // A 段：先建立两端一致。
+        for _ in 0..30 {
+            cli.send_input(&encode_player_input(&sample_input())).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            if let Some((_, frame)) = host.try_emit() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &frame { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                whost.step(ins, dt);
+            }
+            if let Some(ents) = cli.step_frame(&mut rcv).unwrap() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &ents { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                wcli.step(ins, dt);
+            }
+            assert_eq!(whost.players, wcli.players, "掉线前两端应一致");
+        }
+
+        // 掉线：client 停，host 用默认输入继续推进。
+        host.mark_dropped(1);
+        for _ in 0..20 {
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            if let Some((_, frame)) = host.try_emit() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &frame { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                whost.step(ins, dt);
+            }
+        }
+
+        // 快照：host 当前 World + 当前 seq。
+        let snapshot = whost.clone();
+        let sync_seq = host.next_seq();
+
+        // 重连：恢复 active，重连者重建 World 并接到当前 seq。
+        host.unmark_dropped(1);
+        wcli = snapshot.clone();
+        cli.set_start_seq(sync_seq);
+
+        // B 段：重连后继续跑，host 与重连端逐位一致。
+        for _ in 0..30 {
+            cli.send_input(&encode_player_input(&sample_input())).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            if let Some((_, frame)) = host.try_emit() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &frame { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                whost.step(ins, dt);
+            }
+            if let Some(ents) = cli.step_frame(&mut rcv).unwrap() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &ents { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                wcli.step(ins, dt);
+            }
+            assert_eq!(whost.players, wcli.players, "重连后两端应逐位一致");
         }
     }
 }
