@@ -12,6 +12,7 @@ pub mod progress;
 pub mod rng;
 pub mod skill;
 pub mod world;
+pub mod world_ser;
 
 /// 技能总数上限（用于 `skill_levels` / `cooldowns` 数组宽、档案长度）。
 /// 需 >= 所有 `SkillId::as_u32` 的最大值 + 1。
