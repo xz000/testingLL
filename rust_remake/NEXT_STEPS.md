@@ -104,6 +104,16 @@ client 完全不打 `frame -> seq`（**一帧 host 广播都没收到**）。且
   能直接看出“连接是否被拆、为何发不出”。
 - 下一步：再双机测，看 `[steam-p2p] send_to/...` 是否还在报错；若配置期保活后连接得住，对战时应有 `[steam-client] frame -> seq=0,1,2...` 且两端逐位一致。
 
+## Steam 七测：保活生效、client 收到帧但仍有输入断流——切 `send_room_state` 上对战斗输入（本次会话）
+**2026-08-16 七测**：配置期保活后 **连接不再被拆**——client 开始打 `frame -> seq=1, seq=2`（收到 host 帧了，对比上次一帧不收有进展）。
+但 host 仍卡 `waiting for client input (present=0)`（跑 ~30 帧后 client 输入断流），client 也还是“画面不动”（卡在等缺失帧/没推进）。
+- 归因：client 对战斗输入用 `send_input`（独立 `Packet::Input`，Steam P2P 下实测间歇丢、跑一会儿就断），导致 host `try_emit` 收不齐、停产帧；
+  client 因缺帧无法连续推进。而 `RoomState` 合包（在场+就绪+输入）在房间阶段被证明稳定送达。
+- **修**：Steam client 对战斗（Fighting）也改 `send_input` → **`send_room_state(ready, input)`**（走已证明可靠的合包通道），
+  host 的 `RoomState` 处理已会把 `input_bytes` 写进 `latest_input` → `try_emit` 照常收齐产帧。只改 client 一处，host 无需动。
+- 下一步：再双机测，host 应不再卡 `waiting for client input`（present 持续 =1），client 应连续 `frame -> seq=0,1,2...` 且两端角色都动起来。
+
+
 
 
 
