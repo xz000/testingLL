@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 98 全绿 = game-core 79 + net 14 + client 5**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 99 全绿 = game-core 79 + net 15 + client 5**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -59,6 +59,18 @@
 ## 局域网体验补完（ROADMAP M2）—— 起步
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
+
+## 稳定玩家身份（Steam 重连前提）—— 已落 + 已测 + 真机验证
+- **`proto`**：`Join` 改为 `Join { identity: u64 }`，`Ack` 改为 `Ack { my_index, players, identity: u64 }`
+  （身份=u64，Steam 将来直接放 SteamID；局域网=客户端随机/指定）。
+- **握手**：`HostHandshake` 按**稳定身份**（或退化按来源 `Peer`）去重；同一身份重复 JOIN/重连 → 复用原槽位、回 ACK 返回同序号，
+  不同身份各得独立槽。`ClientHandshake` 携带/回显身份。新增测试 `join_dedups_by_stable_identity` 锁死。
+- **重连按身份找回槽位**：`ReconnectReq` 现在带 `identity`，`HostLockstep` 用 `client_identities` 优先按身份找回槽（Steam=SteamID），
+  不依赖来源端点；`main.rs` 把握手读取的身份 `set_client_identities` 交给 HostLockstep。
+- **客户端**：`NetLink` 持有 `identity`（`connect_udp` 随机，`connect_udp_with(host, id)` / `from_transport(t,host,id)` 可指定），
+  `my_identity()` 上报；`try_reconnect` 带身份。真机 multi-launch 验证 `join_handshake OK` 且打印 `my stable identity`。
+- 注意：client 是 binary crate，`pub` 但未在本 crate 内用到的方法会被 `-D warnings` 判 dead-code，
+  需确保 `my_identity`/`connect_udp_with` 有实际调用（init 日志用到了）。
 
 ## Steam 前置基础（本次，为换 SteamTransport 铺路）—— 已落 + 已测
 - **`Peer` 抽象升级**：`net::transport::Peer` 由单一 `Udp(SocketAddr)` 扩为

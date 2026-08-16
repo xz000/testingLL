@@ -150,6 +150,7 @@ impl Game {
             AppState::LanJoin { addr } => {
                 let mut link: netlink::NetLinkUdp =
                     netlink::NetLink::connect_udp(addr).map_err(ggez::GameError::from)?;
+                eprintln!("[client] connecting to {addr}, my stable identity = {}", link.my_identity());
                 for _ in 0..60 {
                     if link.join_handshake().map_err(ggez::GameError::from)? {
                         break;
@@ -1405,8 +1406,15 @@ impl Game {
             if hs.joined >= hs.expected() {
                 eprintln!("[host] ALL {} clients joined -> hand to HostLockstep", hs.joined);
                 let n = self.world.players.len();
+                // 读各 client 槽位的稳定身份（Steam=SteamID，局域网=握手随机/指定），交付给 HostLockstep 供重连按身份找回。
+                let expected_clients = n.saturating_sub(1); // host 参与占 player 0
+                let identities: Vec<Option<u64>> = (0..expected_clients)
+                    .map(|c| hs.identity_of((1 + c) as u8))
+                    .collect();
                 let transport = hs.into_transport();
-                self.net_host_ls = Some(net::lockstep::HostLockstep::new(transport, n, true));
+                let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
+                host_ls.set_client_identities(&identities);
+                self.net_host_ls = Some(host_ls);
                 self.net_ready = true;
             } else {
                 self.net_host = Some(hs); // 尚未收齐 client，继续等

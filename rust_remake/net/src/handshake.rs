@@ -20,6 +20,8 @@ pub struct HostHandshake<T: Transport> {
     local_base: u8,
     /// 各 player 的 peer（仅 client 有值；下标=player index）。
     peers: Vec<Option<Peer>>,
+    /// 各 player 的稳定身份（u64，Steam=SteamID；局域网=客户端随机）。用于按身份去重/按身份重连取槽。
+    identities: Vec<Option<u64>>,
     /// 各 player 是否已 READY。
     ready: Vec<bool>,
     pub joined: usize,
@@ -34,6 +36,7 @@ impl<T: Transport> HostHandshake<T> {
             total: total_players,
             local_base,
             peers: vec![None; total_players],
+            identities: vec![None; total_players],
             ready: vec![false; total_players],
             joined: 0,
             go_sent: false,
@@ -45,9 +48,10 @@ impl<T: Transport> HostHandshake<T> {
         self.total - self.local_base as usize
     }
 
-    /// 收 JOIN → 按来源 Peer 去重分配序号 → 回 ACK。返回是否已收齐所有（去重后的）client。
-    /// 关键：同一 Peer 重复发 JOIN 时【不重复计数/分配】，而是重发已分配的 ACK，
+    /// 收 JOIN → 按已登记的稳定身份去重/分配序号 → 回 ACK（附身份回显）。返回是否已收齐所有（去重后的）client。
+    /// 关键：同一身份重复发 JOIN 时【不重复计数/分配】，而是重发已分配的 ACK，
     /// 否则 client 疯狂重发的 JOIN 会撑爆 joined/序号，导致其他 client 收不到 ACK。
+    /// 兼容：Steam 下身份=SteamID，局域网=客户端随机；早期 client 若不带身份（identity=0）回退到按来源 Peer 去重。
     pub fn poll_join(&mut self, rcv: &mut [u8]) -> bool {
         let expected = self.expected();
         let (local_base, total) = (self.local_base, self.total);
@@ -57,21 +61,30 @@ impl<T: Transport> HostHandshake<T> {
         loop {
             match transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
-                    if let Some(Packet::Join) = Packet::decode(&rcv[..n]) {
-                        // 已经入的 Peer：重发它的 ACK，不重复计数。
-                        if let Some(idx) = self.peers.iter().position(|p| *p == Some(from)) {
-                            let ack = Packet::Ack { my_index: idx as u8, players: total as u8 };
+                    if let Some(Packet::Join { identity }) = Packet::decode(&rcv[..n]) {
+                        // 带身份：按身份找已占用的槽位（重连/重复 JOIN 复用该槽）。
+                        let existing = if identity != 0 {
+                            self.identities.iter().position(|i| *i == Some(identity))
+                        } else {
+                            None
+                        };
+                        // 无身份（旧客户端）→ 退回按来源 Peer 找已占槽位。
+                        let existing = existing.or_else(|| self.peers.iter().position(|p| *p == Some(from)));
+                        if let Some(idx) = existing {
+                            self.peers[idx] = Some(from);
+                            let ack = Packet::Ack { my_index: idx as u8, players: total as u8, identity };
                             let _ = transport.send_to(&ack.encode(), &from);
                             continue;
                         }
-                        // 新 Peer：若还有空位则分配；否则忽略（已满）。
+                        // 新加入：若还有空位则分配；否则忽略（已满）。
                         if self.joined < expected {
                             let idx = local_base + self.joined as u8;
                             if (idx as usize) < self.peers.len() {
                                 self.peers[idx as usize] = Some(from);
+                                self.identities[idx as usize] = Some(identity);
                             }
                             self.joined += 1;
-                            let ack = Packet::Ack { my_index: idx, players: total as u8 };
+                            let ack = Packet::Ack { my_index: idx, players: total as u8, identity };
                             let _ = transport.send_to(&ack.encode(), &from);
                         }
                     }
@@ -81,6 +94,11 @@ impl<T: Transport> HostHandshake<T> {
             }
         }
         self.joined >= expected
+    }
+
+    /// 取某 player 的稳定身份（若有）。
+    pub fn identity_of(&self, player_index: u8) -> Option<u64> {
+        self.identities.get(player_index as usize).copied().flatten()
     }
 
     /// 收 READY，标记对应 client 已就绪。
@@ -140,38 +158,48 @@ impl<T: Transport> HostHandshake<T> {
 /// client 侧建连/统一握手。
 pub struct ClientHandshake<T: Transport> {
     transport: Option<T>,
+    /// 本端稳定身份（u64：Steam=SteamID；局域网=客户端随机/调用方指定）。
+    identity: u64,
     pub my_index: u8,
     pub players: u8,
 }
 
 impl<T: Transport> ClientHandshake<T> {
+    /// 用 0 身份（未指定）构造。旧调用方若不想关心身份可用此；但新代码建议用 `connected_with`。
     pub fn connected(transport: T) -> Self {
+        ClientHandshake::connected_with(transport, 0)
+    }
+
+    /// 带稳定身份构造（Steam 传 SteamID，局域网传调用方生成/指定的 id）。
+    pub fn connected_with(transport: T, identity: u64) -> Self {
         ClientHandshake {
             transport: Some(transport),
+            identity,
             my_index: 0,
             players: 0,
         }
     }
 
-    /// 发 JOIN。
+    /// 发 JOIN（附本端稳定身份）。
     pub fn send_join(&mut self, host: &Peer) -> io::Result<()> {
         let Some(t) = self.transport.as_mut() else {
             return Err(io::Error::other("transport taken"));
         };
-        t.send_to(&Packet::Join.encode(), host)?;
+        t.send_to(&Packet::Join { identity: self.identity }.encode(), host)?;
         Ok(())
     }
 
-    /// 收 ACK（拿序号+人数）。
+    /// 收 ACK（拿序号+人数+身份回显）。
     pub fn recv_join_ack(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
         let Some(t) = self.transport.as_mut() else {
             return Ok(false);
         };
         match t.recv_from(rcv) {
             Ok(Some((n, _))) => {
-                if let Some(Packet::Ack { my_index, players }) = Packet::decode(&rcv[..n]) {
+                if let Some(Packet::Ack { my_index, players, identity }) = Packet::decode(&rcv[..n]) {
                     self.my_index = my_index;
                     self.players = players;
+                    self.identity = identity;
                     Ok(true)
                 } else {
                     Ok(false)
@@ -266,5 +294,37 @@ mod tests {
         for c in clients.iter() {
             assert_eq!(c.players, 4, "client 应知道总人数 4");
         }
+    }
+
+    /// Steam-向前：稳定身份按 token 去重。同一身份重连/重复 JOIN → 复用它原有槽位（回 ACK 同序号），
+    /// 不同身份 → 各得不同槽位。这保证 Steam 下以 SteamID 作身份、掉线重连不会占新槽。
+    #[test]
+    fn join_dedups_by_stable_identity() {
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut host = HostHandshake::new(ht, 4, true); // host=0 + 3 client
+        let host_peer = Peer::Udp(host_addr);
+
+        // 两个不同身份 + 第三个与第一个同身份（模拟重连）。
+        let mut c1 = ClientHandshake::connected_with(StdUdpTransport::bind_loopback().unwrap().0, 70001);
+        let mut c2 = ClientHandshake::connected_with(StdUdpTransport::bind_loopback().unwrap().0, 70002);
+        // 重连者：独立 transport，但身份与 c1 相同。
+        let mut c1r = ClientHandshake::connected_with(StdUdpTransport::bind_loopback().unwrap().0, 70001);
+        let mut rcv = [0u8; 4096];
+
+        // 三个都 JOIN → host 应收齐 2 个不同身份（c1/c1r 同身份算一个），c1 与 c1r 拿到相同序号。
+        for hand in [&mut c1, &mut c2, &mut c1r] {
+            let _ = hand.send_join(&host_peer);
+        }
+        host.poll_join(&mut rcv);
+        let mut ok_all = true;
+        for hand in [&mut c1, &mut c2, &mut c1r] {
+            ok_all = ok_all && hand.recv_join_ack(&mut rcv).unwrap_or(false);
+        }
+        assert!(ok_all, "都应收到 ACK");
+        assert_eq!(host.joined, host.expected() - 1, "同身份占一个槽，应收齐 2 个不同身份");
+        assert_eq!(c1.my_index, c1r.my_index, "同身份重连应复用相同槽位");
+        assert_ne!(c1.my_index, c2.my_index, "不同身份应分到不同槽位");
+        assert_eq!(host.identity_of(c1.my_index), Some(70001), "host 应记住该槽的身份");
+        assert_eq!(host.identity_of(c2.my_index), Some(70002));
     }
 }

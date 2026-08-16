@@ -49,6 +49,8 @@ pub struct HostLockstep<T: Transport> {
     dropped: Vec<bool>,
     /// 各 client 的稳定端点（掉线丢失 `client_peers` 后仍保留，用于把重连请求的 from 映射回槽位）。
     client_addr: Vec<Option<Peer>>,
+    /// 各 client 的稳定身份（u64：Steam=SteamID；局域网=握手时登记的随机/指定身份）。重连按身份找回槽位。
+    client_identities: Vec<Option<u64>>,
     /// 各 client 连续「未在本帧提供输入」的已产帧数（用于 host 自动判定掉线）。
     idle_ticks: Vec<u32>,
     /// 最近一次保存的整场 World 快照字节 + 接回 seq（供重连者重建后从该 seq 继续）。
@@ -77,6 +79,7 @@ impl<T: Transport> HostLockstep<T> {
             local_cfg: None,
             dropped: vec![false; expected],
             client_addr: vec![None; expected],
+            client_identities: vec![None; expected],
             idle_ticks: vec![0; expected],
             snapshot: None,
             alive_tick: 0,
@@ -98,6 +101,16 @@ impl<T: Transport> HostLockstep<T> {
     /// 累计一帧推进（host 每产一帧调用一次，供上层做超时判活）。
     pub fn bump_alive(&mut self) {
         self.alive_tick += 1;
+    }
+
+    /// 登记各 client 槽位的稳定身份（自握手结果带入；Steam=SteamID，局域网=握手随机/指定）。
+    /// 重连时优先按身份找回槽位（不依赖来源端点），Steam 下即按 SteamID。
+    pub fn set_client_identities(&mut self, identities: &[Option<u64>]) {
+        for (i, v) in identities.iter().enumerate() {
+            if i < self.client_identities.len() {
+                self.client_identities[i] = *v;
+            }
+        }
     }
 
     /// 把某 client 标记为掉线：之后用“默认输入”占位（玩家原地不动），不再要求其真实输入，其余端照常推进。
@@ -249,15 +262,24 @@ impl<T: Transport> HostLockstep<T> {
                                     let _ = self.transport.send_to(&pkt.encode(), &from);
                                 }
                             }
-                            Packet::ReconnectReq { .. } => {
-                                // 客户端请求重连：把 from 映射回槽位 → 恢复为活跃，把当前快照回给它，
-                                // 并广播 Resync(seq) 让全员从该 seq 对齐基线后继续 lockstep。
-                                let c = self.client_addr.iter().position(|a| *a == Some(from));
+                            Packet::ReconnectReq { identity, .. } => {
+                                // 客户端请求重连：优先按稳定身份找回槽位（Steam=SteamID），否则按来源端点。
+                                // 找回后恢复为活跃、重记 peer、把当前快照回给它，并广播 Resync(seq) 让全员对齐基线。
+                                let c = if identity != 0 {
+                                    self.client_identities.iter().position(|i| *i == Some(identity))
+                                        .or_else(|| self.client_addr.iter().position(|a| *a == Some(from)))
+                                } else {
+                                    self.client_addr.iter().position(|a| *a == Some(from))
+                                };
                                 if let Some(c) = c {
                                     let idx = (c + self.local_base as usize) as u8;
                                     // 恢复为活跃（清掉默认占位，重记 peer），等它重新上行输入。
                                     self.unmark_dropped(idx);
                                     self.client_peers[c] = Some(from);
+                                    // 若还没登记该槽身份则补上。
+                                    if self.client_identities[c].is_none() {
+                                        self.client_identities[c] = Some(identity);
+                                    }
                                 }
                                 if let Some((wb, seq)) = self.snapshot.as_ref() {
                                     let snap_pkt = Packet::Snapshot { world_bytes: wb.clone(), seq: *seq };
@@ -426,9 +448,9 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(())
     }
 
-    /// 向 host 发送重连请求（附本端已知的最后 seq，供 host 校验/选快照）。
-    pub fn send_reconnect_req(&mut self) -> io::Result<()> {
-        let pkt = Packet::ReconnectReq { last_known_seq: self.expect_seq };
+    /// 向 host 发送重连请求（附本端稳定身份 + 最后已知 seq，供 host 按身份找回槽位/选快照）。
+    pub fn send_reconnect_req(&mut self, identity: u64) -> io::Result<()> {
+        let pkt = Packet::ReconnectReq { identity, last_known_seq: self.expect_seq };
         self.transport.send_to(&pkt.encode(), &self.host)?;
         Ok(())
     }
@@ -715,6 +737,9 @@ mod tests {
     fn reconnect_snapshot_and_resync_roundtrip() {
         let (ht, ct) = pair();
         let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let cli_identity = 70001u64;
+        // 登记 client1（槽位0）的稳定身份，验证重连按身份找回槽位。
+        host.set_client_identities(&[Some(cli_identity)]);
         let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
         let mut rcv = [0u8; 16384];
 
@@ -740,9 +765,9 @@ mod tests {
             }
         }
 
-        // 重连：client 发 ReconnectReq → host.poll 应答 Snapshot + 广播 Resync。
+        // 重连：client 发 ReconnectReq（附稳定身份）→ host.poll 应答 Snapshot + 广播 Resync。
         let before = cli.expect_seq();
-        cli.send_reconnect_req().unwrap();
+        cli.send_reconnect_req(cli_identity).unwrap();
         host.poll(&mut rcv); // host 处理 ReconnectReq，回 Snapshot 并广播 Resync
 
         // client 收 Snapshot：应得到最近快照及其 seq（= host 下一帧号）。
