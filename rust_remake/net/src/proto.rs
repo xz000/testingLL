@@ -69,10 +69,10 @@ pub enum Packet {
     ReconnectReq { identity: u64, last_known_seq: u64 },
     /// client→host：就绪状态变更（`index`=玩家序号，`ready`=是否就绪；可反复 toggle 供取消就绪）。
     PlayerReady { index: u8, ready: bool },
-    /// host→client：全体就绪，进入开局配置菜单。
-    StartConfig,
     /// host→client：房间就绪状态快照（含 host 槽 0）。`entries` = 各玩家 `(序号, ready)`。
     RosterReady { entries: Vec<(u8, bool)> },
+    /// host→client：全体就绪，进入开局配置菜单。`seq` 为 host 的起始帧号（作填充，避免 Steam P2P 丢过小的包）。
+    StartConfig { seq: u64 },
     /// client→host：房间阶段状态包：`index`（玩家序号）+ `ready`（是否就绪）+ `input_bytes`（输入在场信号）。
     /// 把就绪与在场合并成单包，走可靠的连续上行通道（P2P 下 Input 在场实测可靠）。
     RoomState { index: u8, ready: bool, input_bytes: Vec<u8> },
@@ -156,7 +156,11 @@ impl Packet {
             Packet::PlayerReady { index, ready } => {
                 vec![TAG_PLAYER_READY, *index, if *ready { 1 } else { 0 }]
             }
-            Packet::StartConfig => vec![TAG_START_CONFIG],
+            Packet::StartConfig { seq } => {
+                let mut v = vec![TAG_START_CONFIG];
+                v.extend_from_slice(&seq.to_be_bytes());
+                v
+            }
             Packet::RosterReady { entries } => {
                 let mut v = Vec::with_capacity(1 + 1 + entries.len() * 2);
                 v.push(TAG_ROSTER_READY);
@@ -277,7 +281,9 @@ impl Packet {
             TAG_PLAYER_READY if buf.len() >= 3 => {
                 Some(Packet::PlayerReady { index: buf[1], ready: buf[2] != 0 })
             }
-            TAG_START_CONFIG => Some(Packet::StartConfig),
+            TAG_START_CONFIG if buf.len() >= 9 => {
+                Some(Packet::StartConfig { seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
+            }
             TAG_ROSTER_READY if buf.len() >= 2 => {
                 let count = buf[1] as usize;
                 let mut entries = Vec::with_capacity(count);
@@ -336,7 +342,7 @@ mod tests {
             },
             Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
             Packet::PlayerReady { index: 2, ready: true },
-            Packet::StartConfig,
+            Packet::StartConfig { seq: 456 },
             Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], },
             Packet::RoomState { index: 1, ready: true, input_bytes: vec![1, 2, 3, 4] },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },

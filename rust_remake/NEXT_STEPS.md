@@ -73,6 +73,17 @@
   net 单测 +1：`room_inbox_classifies_start_config_and_roster_together`（StartConfig 与 RosterReady 同队列不互吞）。
 - 下一步：再双机测，看 client 是否打 `[steam-client] host says all ready -> config menu` 进配置；进而配置→对战。
 
+## Steam 四测：client 仍卡“进配置”——起始小包（StartConfig 仅 1 字节）被 Steam P2P 丢（本次会话）
+**2026-08-16 四测**：host 已到 `[steam] config done -> start match` / `emit seq=0`；client 能收到 `roster ready snapshot: [(0,true),(1,true)]`
+（即 host→client 的 RosterReady 广播可靠），但**没打 StartConfig 进配置** → 对“client 收到大包(RosterReady)却不收小包(StartConfig)”的规律加重证据。
+- 确认**传输层丢小包规律**：且大（Input/RosterReady，几十字节）都能到；独立小包（PlayerReady 3B、StartConfig 1B）被丢。Steam P2P 小消息易丢。
+- **修（双保险）**：
+  1. **StartConfig 加负载**：`Packet::StartConfig { seq }`（变 9 字节，不再是小包）；`broadcast_start_config` 连发 3 拍。
+  2. **client 用可靠 RosterReady 自触发进配置**（关键）：尽管 StartConfig 仍可能丢，client 收到「宿主广播的就绪快照显示所有玩家已就绪」时
+     自触发 `entered_config` 进配置菜单（不再依赖可能被丢的 StartConfig）。这是主路径；StartConfig 改为冗余/兜底。
+- net 单测仍绿（`room_inbox_classifies_start_config_and_roster_together` 已适配 StartConfig{seq}）。
+- 下一步：再双机测，client 应打 `roster shows all 2 players ready -> config menu` 进配置；两端配完按 o/空格开打。
+
 
 
 ## 关键历史（速览，回滚/定位用）

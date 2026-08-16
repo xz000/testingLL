@@ -1830,6 +1830,14 @@ impl Game {
                 if let Some(entries) = roster {
                     self.steam_roster_ready = entries.clone();
                     eprintln!("[steam-client] roster ready snapshot: {entries:?}");
+                    // 兜底：host 广播的就绪快照若显示「所有玩家（含 host 槽 0）都已就绪」，则自触发进配置。
+                    // 因为 Steam P2P 曾实测会丢独立的小包（StartConfig/PlayerReady），而 RosterReady 广播可靠；
+                    // 用可靠的就绪快照作退出房间的判据，即使 StartConfig 被丢也能可靠进配置菜单。
+                    let roster_cnt = self.world.players.len();
+                    if entries.len() >= roster_cnt && entries.iter().all(|(_, r)| *r) {
+                        eprintln!("[steam-client] roster shows all {roster_cnt} players ready -> config menu");
+                        entered_config = true;
+                    }
                 }
             }
         } else if let Some(host) = self.steam_host_ls.as_mut() {
