@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 106 全绿 = game-core 84 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 107 全绿 = game-core 85 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -70,6 +70,16 @@
 - `net-steam` 加 `steam` feature（默认关）+ 可选依赖 `steamworks 0.13`；`cargo build -p net-steam --features net-steam/steam` **编译通过**（steamworks-sys 0.13 + steamworks 0.13.1）。
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
+
+## 开局无初始技能 + 4.6b 阶段2（护甲/法抗/击退结算）—— 已落 + 已测
+- **开局不带任何默认技能**：删掉 `Game::new` 与 `reset_to_main_menu` 里的“每个键默认绑首个技能”，
+  完全由玩家在开局/学习界面按字母选树 + 数字绑技能（单机、局域网/Steam 一致）。默认预选 C 树便于直接按数字。
+- **4.6b 阶段2**：`Player` 增加派生因子 `armor_factor`/`spell_factor`/`kb_factor`（随角色序列化）；
+  `apply_attributes` 一并设置；`world_ser` 序列化含它们。
+  - 伤害：`damage_player` 与 `explode_at` 对玩家造成伤害（`from=Some`）按目标 `armor_factor×spell_factor` 折算；环境伤害不减。
+  - 击退：`Player::push` 统一按 `kb_factor` 缩短击退时长（所有击退都过此）。
+- 测试：护甲/法抗减少玩家伤害（用 Rock 爆炸对比）、击退抗性缩短短推、序列化往返保留因子 → **107 全绿**。
+- 阶段 3（后继）：法力量、成长点/购买 UI、数值调优。
 
 ## 4.6b 属性系统（第一步：字段 + 派生前 Hp/移速）—— 已落 + 已测
 - 新增 `game-core/src/attribute.rs`：`Attributes`（hp_bonus / speed_bonus / armor / spell_resist / kb_resist，整数点数）+ 派生系数

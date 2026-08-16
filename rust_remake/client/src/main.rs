@@ -191,15 +191,7 @@ impl Game {
             meta.config.learn_time_secs = 1.0;
             meta.config.total_rounds = 4;
         }
-        // 默认绑定：每个键绑定其树的首个技能，保证开局即可用（玩家可在学习阶段改）
-        for p in meta.profiles.iter_mut() {
-            for key in game_core::skill::CastKey::ALL {
-                let options = key.tree().skills_in_tree();
-                if let Some(first) = options.first() {
-                    p.bind_skill(key, *first);
-                }
-            }
-        }
+        // 开局不带任何默认技能：完全由玩家在配置/学习界面按字母选树 + 数字绑技能（4.6b/从零选择）。
 
         // 当前所有模式（Solo/Lan）都不带本地 AI 机器人：Solo 无对手，Lan 是真人玩家。
         let bot_rngs: Vec<Rng> = Vec::new();
@@ -1431,14 +1423,7 @@ impl Game {
         w.sandbox = true;
         self.world = w;
         self.meta = game_core::meta::MatchState::new(game_core::meta::MatchConfig::default(), &[0], 8);
-        // 默认绑定：每个键绑定其树的首个技能，保证菜单进 Solo 时开局即可用。
-        for profile in self.meta.profiles.iter_mut() {
-            for key in game_core::skill::CastKey::ALL {
-                if let Some(first) = key.tree().skills_in_tree().first() {
-                    profile.bind_skill(key, *first);
-                }
-            }
-        }
+        // 开局不带默认技能：玩家从零在配置界面选。
         self.app = AppState::MainMenu;
         // 放弃联网连接（UDP socket / 握手 / 帧同步关闭）。
         self.net_link = None;

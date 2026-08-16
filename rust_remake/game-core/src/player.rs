@@ -134,6 +134,12 @@ pub struct Player {
     pub max_hp: Fix64,
     /// 由属性（speed_bonus）派生的移速倍率（1.0 = 无加成）。确定性状态，随角色序列化。
     pub speed_mult: f64,
+    /// 属性派生的护甲减伤倍率（0..1，越小越抗）。确定性状态，随角色序列化。
+    pub armor_factor: f64,
+    /// 属性派生的法抗减伤倍率（0..1）。
+    pub spell_factor: f64,
+    /// 属性派生的击退抗性剩余倍率（0..1，越小越抗推）。
+    pub kb_factor: f64,
     /// 当前移动目标点；`None` 表示本帧没有移动命令（停下来）。
     pub move_target: Option<Vec2>,
     /// 施法状态机（前摇 / 后摇 / 冷却 / 打断）
@@ -195,6 +201,9 @@ impl Player {
             hp: max_hp,
             max_hp,
             speed_mult: 1.0,
+            armor_factor: 1.0,
+            spell_factor: 1.0,
+            kb_factor: 1.0,
             move_target: None,
             caster: Caster::new(),
             skill_levels: [1; SKILL_SLOTS],
@@ -238,9 +247,10 @@ impl Player {
     /// 立即进入强制位移：以 `vel` 移动 `time` 秒（覆盖旧状态；原版 `GetPushed`）。
     /// `inf` 用于无限时长（冲刺斩等），用 `true` 表示不设到期。
     pub fn push(&mut self, vel: Vec2, time: f64) {
+        // 4.6b：击退抗性统一在此按 kb_factor 缩短击退时长（所有 push 都过此）。
         self.control = Some(Control {
             vel,
-            remaining: Fix64::from_num(time),
+            remaining: Fix64::from_num(time * self.kb_factor),
         });
     }
 
@@ -492,6 +502,10 @@ impl Player {
         self.max_hp = Fix64::from_num(a.derived_max_hp(MAX_HP));
         self.hp = (self.max_hp * ratio).max(Fix64::from_num(1));
         self.speed_mult = a.derived_speed_mult();
+        // 阶段2：护甲/法抗/击退抗性折算到战斗数值（伤害/击退结算点读取）。
+        self.armor_factor = a.armor_factor();
+        self.spell_factor = a.spell_factor();
+        self.kb_factor = a.kb_factor();
     }
 
     /// 新一轮开始时重置回合相关状态（保留 id / pos / 技能等级 / 半径）。

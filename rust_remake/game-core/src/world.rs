@@ -674,6 +674,12 @@ impl World {
         if !p.alive {
             return;
         }
+        // 4.6b：玩家造成伤害按目标护甲×法抗折算。
+        let amount = if from.is_some() {
+            amount * Fix64::from_num(p.armor_factor * p.spell_factor)
+        } else {
+            amount
+        };
         if let Some(hitter) = from {
             p.last_hit_by = Some(hitter);
         }
@@ -1201,7 +1207,7 @@ impl World {
         for (victim, vel, time) in pushes {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
-                    p.push(vel, time);
+                    p.push(vel, time); // 击退抗性在 Player::push 内统一按 kb_factor 缩放
                 }
             }
         }
@@ -1325,20 +1331,20 @@ impl World {
             let d = p.pos - pos;
             let d_sq = d.length_squared();
             if d_sq <= r_sq {
-                // 受伤（记录击杀者）；boost 期间返还一半回血
+                // 受伤（记录击杀者）；boost 期间返还一半回血；护甲/法抗折算玩家造成伤害。
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
                 }
-                let net = p.soak_boost(damage);
+                let dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor);
+                let net = p.soak_boost(dmg);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
                 if p.hp == Fix64::ZERO {
                     p.alive = false;
                 }
-                // 击退（沿中心连线远离，随距离衰减；走控制/强制速度）
+                // 击退（沿中心连线远离，随距离衰减；走控制/强制速度；击退抗性在 push 内统一折算）
                 if d_sq > Fix64::ZERO {
                     let dist = d_sq.sqrt();
                     let falloff = (Fix64::ONE - dist / radius).max(Fix64::from_num(0.2));
-                    // 用 push 把玩家推开 duration 0.3s（可覆盖冲锋/冲刺等强制态）
                     let dir = d.normalized();
                     p.push(dir * (bomb_force * falloff), 0.3);
                 }
@@ -3040,6 +3046,53 @@ mod tests {
         let back = crate::world_ser::world_from_bytes(&bytes).expect("decode");
         assert_eq!(back.players[0].max_hp, world.players[0].max_hp);
         assert_eq!(back.players[0].speed_mult, world.players[0].speed_mult);
+        assert_eq!(back.players[0].armor_factor, world.players[0].armor_factor);
+    }
+
+    /// 4.6b 阶段2：护甲/法抗确实减少玩家造成的伤害（目标有防护时掉血更少）；击退抗性减少击退时长。
+    #[test]
+    fn attributes_reduce_damage_and_push() {
+        use crate::attribute::Attributes;
+        let dt = Fix64::from_num(1.0 / 60.0);
+
+        // 用与 rock_damages_victim_after_windup_and_fuse 相同的可靠施放：施法者(0,0) 掷石到受害者旁。
+        let mk = |armor: u32, spell: u32| -> Fix64 {
+            let mut w = crate::world::World::new(2, 900);
+            w.players[0].pos = Vec2::ZERO;
+            w.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+            if armor > 0 || spell > 0 {
+                w.players[1].apply_attributes(&Attributes {
+                    armor,
+                    spell_resist: spell,
+                    ..Default::default()
+                });
+            }
+            let in0 = vec![
+                PlayerInput {
+                    cast: Some((SkillId::Rock, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                    ..Default::default()
+                },
+                PlayerInput::default(),
+            ];
+            for _ in 0..90 {
+                w.step(in0.clone(), dt);
+            }
+            w.players[1].hp
+        };
+
+        let hp_base = mk(0, 0);
+        let hp_armored = mk(8, 0);
+        let hp_resisted = mk(0, 8);
+        assert!(hp_armored > hp_base, "护甲应减少玩家伤害：base={hp_base} armored={hp_armored}");
+        assert!(hp_resisted > hp_base, "法抗应减少玩家伤害");
+
+        // 击退抗性：给玩家1高 kb，受 push 后 remaining 更短。
+        let mut w = crate::world::World::new(2, 910);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        w.players[1].apply_attributes(&Attributes { kb_resist: 5, ..Default::default() });
+        w.players[1].push(Vec2::new(Fix64::from_num(10.0), Fix64::ZERO), 2.0);
+        assert!(w.players[1].control.map(|c| c.remaining.to_num::<f64>()).unwrap() < 2.0, "击退抗性应缩短击退");
     }
 
     #[test]
