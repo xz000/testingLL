@@ -60,6 +60,14 @@
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
 
+## 局域网开局：玩家准备状态显示（本次）—— 消“以为卡住”的困惑
+- 日志确认：“无法选技能”其实不成立（client2 的 `[learn] select/bind` 日志证明按键正常），卡住的是**多窗口焦点 + 每窗要按空格就绪**。
+- `HostLockstep` 新增就绪查询：`local_cfg_ready()` / `client_cfg_ready(idx)` / `cfg_ready_count()`。
+- `draw_pre_game` 新增「玩家准备状态」面板：
+  - host：每个玩家 ✓已就绪 / ○ 等待（等你按空格/等待上报）；还没收齐人时显示“已加入 X/期待 M + 每个窗口先点击再按空格”。
+  - client：显示自己「✓已就绪，等待 host 开始」或「○未就绪——请先点击本窗口，再按空格就绪」。
+- 顺手修复 `draw_pre_game` 一处“各键当前绑定/”笔误。
+
 ## 稳定玩家身份（Steam 重连前提）—— 已落 + 已测 + 真机验证
 - **`proto`**：`Join` 改为 `Join { identity: u64 }`，`Ack` 改为 `Ack { my_index, players, identity: u64 }`
   （身份=u64，Steam 将来直接放 SteamID；局域网=客户端随机/指定）。

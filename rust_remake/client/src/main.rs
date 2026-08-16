@@ -1488,6 +1488,44 @@ impl Game {
         let cx = sw / 2.0;
         draw_text(&mut canvas, ctx, "开局 · 配置技能", 46.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
         draw_text(&mut canvas, ctx, "按 Space / O 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+        // 准备状态面板：显示各玩家已加入/已就绪，避免“以为卡住”。
+        let me = self.self_index();
+        if self.app != AppState::Solo {
+            let mut r = sh * 0.12 + 96.0;
+            draw_text(&mut canvas, ctx, "—— 玩家准备状态 ——", 20.0, graphics::Color::from_rgb(200, 210, 220), Point2 { x: cx, y: r }, true)?;
+            r += 28.0;
+            if let Some(host) = self.net_host_ls.as_ref() {
+                let total = self.world.players.len();
+                for i in 0..total {
+                    let (name, ready) = if i == 0 {
+                        ("host(你)".to_string(), host.local_cfg_ready())
+                    } else {
+                        (format!("玩家{i}"), host.client_cfg_ready(i as u8))
+                    };
+                    let (txt, col) = if ready {
+                        (format!("  {name}  ✓ 已就绪"), Color::from_rgb(90, 220, 130))
+                    } else if (i as u32) == me {
+                        (format!("  {name}  ○ 等你按空格"), Color::from_rgb(240, 200, 70))
+                    } else {
+                        (format!("  {name}  ○ 等待上报"), Color::from_rgb(170, 175, 185))
+                    };
+                    draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
+                    r += 26.0;
+                }
+            } else if let Some(hs) = self.net_host.as_ref() {
+                draw_text(&mut canvas, ctx, &format!("  已加入 {}/{} 个玩家", hs.joined, hs.expected()), 18.0, Color::from_rgb(170, 175, 185), Point2 { x: cx, y: r }, true)?;
+                draw_text(&mut canvas, ctx, "  等所有玩家加入后：每个窗口先点击再按空格就绪", 17.0, Color::from_rgb(140, 160, 180), Point2 { x: cx, y: r + 26.0 }, true)?;
+            } else {
+                // client：显示自身是否已就绪。
+                let ready = self.net_cfg == NetCfgSync::ClientWait;
+                let (txt, col) = if ready {
+                    ("  ✓ 已就绪，等待 host 开始…".to_string(), Color::from_rgb(90, 220, 130))
+                } else {
+                    ("  ○ 未就绪 —— 请先点击本窗口，再按空格就绪".to_string(), Color::from_rgb(240, 200, 70))
+                };
+                draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
+            }
+        }
         if self.app == AppState::Solo {
             draw_text(&mut canvas, ctx, &format!("（单机：{:.0} 秒后自动用默认配置开始）", self.pre_game_timer.max(0.0)), 17.0, graphics::Color::from_rgb(140, 160, 180), Point2 { x: cx, y: sh * 0.12 + 92.0 }, true)?;
         }
@@ -1513,7 +1551,7 @@ impl Game {
                 y += 30.0;
             }
             y += 16.0;
-            draw_text(&mut canvas, ctx, "各键当前绑定/", 20.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+            draw_text(&mut canvas, ctx, "各键当前绑定：", 20.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
             y += 30.0;
             for key in game_core::skill::CastKey::ALL {
                 let bound = pr.bound_skill(key);

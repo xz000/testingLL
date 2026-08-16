@@ -227,6 +227,32 @@ impl<T: Transport> HostLockstep<T> {
         self.local_cfg = None;
     }
 
+    /// host 自身（player 0）的配置是否已就绪（host 按 Space 开始后即置）。
+    pub fn local_cfg_ready(&self) -> bool {
+        self.local_base == 0 || self.local_cfg.is_some()
+    }
+
+    /// 某一 client 槽位的配置是否已收到（即该 client 已就绪上报）。`client_seq` 是完整玩家序号。
+    pub fn client_cfg_ready(&self, client_seq: u8) -> bool {
+        let c = client_seq as usize - self.local_base as usize;
+        c < self.expected && self.cfgs[c].is_some()
+    }
+
+    /// 已就绪的玩家数（含 host 自身，若参与）。供 host 开局界面显示“已就绪 X / 总 N”。
+    pub fn cfg_ready_count(&self) -> usize {
+        let mut n = 0;
+        if self.local_cfg_ready() {
+            n += 1;
+        }
+        n += self.cfgs.iter().filter(|c| c.is_some()).count();
+        n
+    }
+
+    /// 全部玩家（host 自身 + 各 client）是否都已就绪。
+    pub fn all_cfgs_ready(&self) -> bool {
+        self.all_cfgs()
+    }
+
 
     /// 交给 host 自身的本地输入（参与对局时）。`None` 表示本 tick 不提供。
     pub fn set_local_input(&mut self, enc: Option<Vec<u8>>) {
