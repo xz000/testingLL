@@ -294,7 +294,7 @@ mod tests {
         use game_core::progress::PlayerConfig;
         let mut levels = vec![1u32; 34];
         levels[slot] = level;
-        PlayerConfig { skill_levels: levels, key_slots: [None; 8], gold: 0, gold_spent: 0, attributes: game_core::attribute::Attributes::default() }.encode()
+        PlayerConfig { skill_levels: levels, key_slots: [None; 8], gold: 0, gold_spent: 0, attributes: game_core::attribute::Attributes::default(), growth_points: 0 }.encode()
     }
 
     /// 端到端多局：host+2 client 第一局跑帧 → 学习+配置同步（host 收齐广播）→ 各端重建下一局

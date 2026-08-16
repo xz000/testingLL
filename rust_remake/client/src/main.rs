@@ -34,6 +34,14 @@ const SNAPSHOT_EVERY: u64 = 30;
 const CLIENT_STALE_TICKS: u64 = 180;
 /// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
+/// 每局发放的成长点（4.6b，占位数值，后续平衡）。
+const GROWTH_PER_ROUND: u32 = 3;
+/// 用金币兑换 1 成长点的成本（占位）。
+const GOLD_PER_GROWTH: i32 = 20;
+/// 某属性已有 `cur` 点时，买下一级成长点的成本（便宜斜坡，占位）。
+fn growth_attr_cost(cur: u32) -> u32 {
+    cur + 1 // base 1，每级 +1
+}
 
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
@@ -321,6 +329,38 @@ impl Game {
         }
     }
 
+    /// 4.6b 成长点/属性购买输入：
+    /// - `Z`：用金币换 1 成长点。
+    /// - `H`=Hp、`J`=Speed、`K`=Armor、`L`=法抗、`;`=击退、`U`=法力上限、`I`=回蓝。
+    fn poll_growth_buy(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        let me = self.self_index();
+        let just = |k: &str| {
+            ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_uppercase().into()))
+        };
+        let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else {
+            return;
+        };
+        if just("z") && profile.buy_growth_with_gold(GOLD_PER_GROWTH) {
+            eprintln!("[attr] 金币→成长点：金币 {}", profile.gold);
+        }
+        let mut buy = |g: game_core::attribute::GrowthAttr| {
+            let cur = profile.attributes.current(g);
+            let cost = growth_attr_cost(cur);
+            if profile.buy_attribute(g, cost) {
+                eprintln!("[attr] 买 {g:?} +1（点 {}", profile.attributes.current(g));
+            }
+        };
+        if just("h") { buy(game_core::attribute::GrowthAttr::Hp); }
+        if just("j") { buy(game_core::attribute::GrowthAttr::Speed); }
+        if just("k") { buy(game_core::attribute::GrowthAttr::Armor); }
+        if just("l") { buy(game_core::attribute::GrowthAttr::SpellResist); }
+        if just(";") { buy(game_core::attribute::GrowthAttr::KbResist); }
+        if just("u") { buy(game_core::attribute::GrowthAttr::ManaMax); }
+        if just("i") { buy(game_core::attribute::GrowthAttr::ManaRegen); }
+    }
+
     /// 本局进行中：结算击杀、名次，进入学习阶段。
     fn settle_round(&mut self) {
         for (killer, _victim) in self.world.take_kills() {
@@ -328,6 +368,10 @@ impl Game {
         }
         let placement = self.world.placement();
         self.meta.finish_round(placement);
+        // 4.6b：每局给所有玩家发成长点（用于买属性）。
+        for profile in self.meta.profiles.iter_mut() {
+            profile.add_growth_points(GROWTH_PER_ROUND);
+        }
     }
 
     /// 进入下一局前：把玩家的技能等级从档案同步到世界，并重置世界。
@@ -1156,6 +1200,7 @@ impl event::EventHandler for Game {
             self.poll_host_join_phase();
             use ggez::input::keyboard::Key;
             self.poll_learning(ctx);
+            self.poll_growth_buy(ctx);
             // 空格或字母 O（确认）开始第一局。
             let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()));
@@ -1194,6 +1239,7 @@ impl event::EventHandler for Game {
             MatchPhase::Learning => {
                 // 学习阶段：轮询购买升级输入 + 计时
                 self.poll_learning(ctx);
+                self.poll_growth_buy(ctx);
                 let now = self.meta.tick_learning(dt.min(0.25));
                 // 若学习结束，准备进入下一局：联网需先做「配置同步」
                 if self.meta.phase == MatchPhase::Fighting {
@@ -1550,6 +1596,17 @@ impl Game {
                 draw_text(&mut canvas, ctx, &txt, 22.0, if highlight { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(225, 228, 235) }, Point2 { x: cx, y }, true)?;
                 y += 30.0;
             }
+        }
+        // 4.6b 成长点 / 属性购买面板。
+        if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
+            let mut gy = sh * 0.70;
+            draw_text(&mut canvas, ctx, &format!("成长点 {}    金币 {}", pr.growth_points, pr.gold), 22.0, Color::from_rgb(130, 220, 255), Point2 { x: cx, y: gy }, true)?;
+            gy += 28.0;
+            let a = &pr.attributes;
+            draw_text(&mut canvas, ctx, &format!("生命+{}% 移速+{}% 护甲-{}% 法抗-{}% 击退-{}% 法力+{} 回蓝+{}/s",
+                a.hp_bonus * 10, a.speed_bonus * 5, a.armor * 6, a.spell_resist * 6, a.kb_resist * 12, a.mana_max * 25, a.mana_regen), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: gy }, true)?;
+            gy += 26.0;
+            draw_text(&mut canvas, ctx, "Z 金币→成长点 · H生命 J移速 K护甲 L法抗 ;击退 U法力上限 I回蓝", 16.0, Color::from_rgb(140, 160, 180), Point2 { x: cx, y: gy }, true)?;
         }
         draw_text(&mut canvas, ctx, "字母键选树 · 数字键绑技能 · = 升级 · X 洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.88 }, true)?;
         canvas.finish(ctx)?;

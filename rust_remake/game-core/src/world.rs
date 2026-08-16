@@ -359,6 +359,7 @@ impl World {
         for p in self.players.iter_mut() {
             p.step_velocity(dt);
             p.tick_buffs(dt);
+            p.regen_mana(dt);
         }
 
         // 4) 场地收缩（随时间）—— 试验场不缩圈
@@ -496,10 +497,14 @@ impl World {
                     continue;
                 }
                 let def = DefTable::def(skill);
-                if p
-                    .caster
-                    .try_cast(&def, p.skill_level(skill), target, p.pos, p.radius)
-                    .is_ok()
+                // MP：蓝不足则本次施法放不出（0 耗蓝不算）。
+                let mc = def.mana_cost();
+                let can_afford = mc <= Fix64::ZERO || p.spend_mana(mc);
+                if can_afford
+                    && p
+                        .caster
+                        .try_cast(&def, p.skill_level(skill), target, p.pos, p.radius)
+                        .is_ok()
                 {
                     // 施法开始：取消当前移动命令（施法优先于走位）
                     p.move_target = None;
@@ -3093,6 +3098,38 @@ mod tests {
         w.players[1].apply_attributes(&Attributes { kb_resist: 5, ..Default::default() });
         w.players[1].push(Vec2::new(Fix64::from_num(10.0), Fix64::ZERO), 2.0);
         assert!(w.players[1].control.map(|c| c.remaining.to_num::<f64>()).unwrap() < 2.0, "击退抗性应缩短击退");
+    }
+
+    /// 4.6b/法力机制：施法扣蓝、蓝不足禁施法、每帧回蓝（占位数值）。
+    #[test]
+    fn mana_drains_gates_and_regens() {
+        let mut world = World::new(2, 940);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 主对象：给玩家1降低蓝量，验证 Rock 耗蓝 30 且能回蓝。
+        let rock_cost = crate::skill::DefTable::def(SkillId::Rock).mana_cost();
+        assert_eq!(rock_cost, Fix64::from_num(30.0), "Rock 占位耗蓝应 30");
+
+        // 满蓝施法一次 → 蓝减少 30。
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].mana = world.players[0].max_mana;
+        let mana0 = world.players[0].mana;
+        assert!(world.players[0].spend_mana(rock_cost), "满蓝应可施法");
+        assert_eq!(world.players[0].mana, mana0 - rock_cost);
+        // 蓝不足（把蓝压到低于成本）应禁施。
+        world.players[0].mana = rock_cost - Fix64::ONE;
+        assert!(!world.players[0].spend_mana(rock_cost), "蓝不足应禁止施法");
+
+        // 回蓝：空蓝下一小段应缓慢回升，且不超过 max_mana。
+        world.players[0].mana = Fix64::ZERO;
+        let mut seen = false;
+        for _ in 0..120 {
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+            if world.players[0].mana > Fix64::ZERO {
+                seen = true;
+            }
+        }
+        assert!(seen, "回蓝应随时间上升");
+        assert!(world.players[0].mana <= world.players[0].max_mana, "回蓝不应超上限");
     }
 
     #[test]

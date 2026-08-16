@@ -176,6 +176,9 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wf64(o, p.armor_factor);
     wf64(o, p.spell_factor);
     wf64(o, p.kb_factor);
+    wfix(o, p.mana);
+    wfix(o, p.max_mana);
+    wfix(o, p.mana_regen);
     wopt_vec(o, p.move_target);
     encode_caster(o, &p.caster);
     for lv in &p.skill_levels {
@@ -281,6 +284,9 @@ fn decode_player(b: &[u8], p: &mut usize) -> Option<Player> {
     let armor_factor = f64::from_bits(u64at(b, p)?);
     let spell_factor = f64::from_bits(u64at(b, p)?);
     let kb_factor = f64::from_bits(u64at(b, p)?);
+    let mana = fixat(b, p)?;
+    let max_mana = fixat(b, p)?;
+    let mana_regen = fixat(b, p)?;
     let move_target = opt_vec(b, p)?;
     let mut caster = Caster::new();
     decode_caster(&mut caster, b, p)?;
@@ -364,6 +370,9 @@ fn decode_player(b: &[u8], p: &mut usize) -> Option<Player> {
     pl.armor_factor = armor_factor;
     pl.spell_factor = spell_factor;
     pl.kb_factor = kb_factor;
+    pl.mana = mana;
+    pl.max_mana = max_mana;
+    pl.mana_regen = mana_regen;
     pl.move_target = move_target;
     pl.caster = caster;
     pl.skill_levels = skill_levels;
