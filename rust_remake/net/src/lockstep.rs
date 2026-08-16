@@ -115,6 +115,26 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// 广播房间「实时就绪状态快照」给所有 client，使其显示所有成员的就绪状态（多人一致界面）。
+    /// `host_ready` = host 自身（槽 0）当前是否就绪。
+    pub fn broadcast_roster_ready(&mut self, host_ready: bool) {
+        let mut entries: Vec<(u8, bool)> = Vec::with_capacity(self.expected + 1);
+        if self.local_base > 0 {
+            entries.push((0, host_ready));
+        }
+        for (c, r) in self.clients_ready.iter().enumerate() {
+            entries.push(((c + self.local_base as usize) as u8, *r));
+        }
+        if entries.is_empty() {
+            return;
+        }
+        let pkt = Packet::RosterReady { entries };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
     /// 某 client（完整的玩家序号）当前是否已就绪（可撤销）。
     pub fn client_ready(&self, client_seq: u8) -> bool {
         let c = client_seq as usize - self.local_base as usize;
@@ -490,6 +510,21 @@ impl<T: Transport> ClientLockstep<T> {
         }
     }
 
+    /// 尝试收 host 的房间就绪状态快照（多人一致界面）；无则 None。
+    pub fn recv_roster_ready(&mut self, rcv: &mut [u8]) -> io::Result<Option<Vec<(u8, bool)>>> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::RosterReady { entries }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some(entries));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(_) => return Ok(None),
+            }
+        }
+    }
+
     /// 向 host 上报本玩家最终配置（`PlayerCfg`，载荷为 `PlayerConfig::encode()` 字节）。
     pub fn send_cfg(&mut self, bytes: &[u8]) -> io::Result<()> {
         let pkt = Packet::PlayerCfg { index: self.my_index, bytes: bytes.to_vec() };
@@ -768,6 +803,45 @@ mod tests {
         host.poll(&mut rcv);
         assert!(!host.client_ready(1));
         assert!(!host.all_clients_ready());
+    }
+
+    /// 房间「在场 + 就绪」流程（每帧持续上行）：client 每帧发输入（在场信号）+ 就绪状态；
+    /// host 要求「所有 client 在场（saw_all_clients）&& 全体就绪」才判定 ready；每帧广播 RosterReady 供各端显示。
+    #[test]
+    fn room_flow_presence_and_ready_and_roster() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // 初始：client 未在场未就绪 → host 不能判 ready。
+        assert!(!host.saw_all_clients());
+        assert!(!host.all_clients_ready());
+
+        // 模拟客户端房间阶段每帧：上行输入（在场）+ 上报就绪。
+        cli.send_input(&[7]).unwrap();
+        cli.send_ready_state(true).unwrap();
+        host.poll(&mut rcv);
+
+        // 客户端已在场且就绪；host 自身就绪时即可判定全体 ready。
+        assert!(host.saw_all_clients(), "client 每帧上行输入后 host 应看到其在场");
+        assert!(host.all_clients_ready());
+        assert!(host.client_ready(1));
+
+        // host 每帧广播 RosterReady 供 client 显示 → client 应收包含槽 0(host)+槽1(client) 的就绪快照。
+        host.broadcast_roster_ready(true);
+        let entries = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
+        assert_eq!(entries, vec![(0, true), (1, true)]);
+
+        // 取消就绪（可撤销）：client 发 PlayerReady(false) → host 不再判全体 ready。
+        cli.send_ready_state(false).unwrap();
+        host.poll(&mut rcv);
+        assert!(!host.all_clients_ready());
+
+        // 广播再发时，client 应看到槽 0 就绪、槽 1 取消。
+        host.broadcast_roster_ready(true);
+        let entries = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
+        assert_eq!(entries, vec![(0, true), (1, false)]);
     }
 
     /// 配置收集/广播：client 上报 PlayerCfg → host 收齐(含自身) → 广播 PlayerCfgAll → client 收到完整配置。

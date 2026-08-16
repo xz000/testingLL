@@ -6,7 +6,8 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 110 全绿 = game-core 87 + net 16 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 111 全绿 = game-core 87 + net 17 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+    - feature 路径（`client/steam`、`net-steam/steam`）build + clippy 也绿。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -18,14 +19,16 @@
 **双机测试结果（最新）**：
 - 两端都能进房间阶段、toggle 就绪（日志 `[steam-lobby] local ready = true/false/...`）、P2P 连接建立（host `[steam-p2p] host accepted connection`）。
 - **但 host 未能判定“全员就绪”→ 没倒计时/没进配置/没开打**。根因猜测：host 靠 `all_clients_ready()`（收 client 的 `PlayerReady` 包）判定，但 client 只在按 o 那帧 `send_ready_state` 一次，且**房间阶段 client 没有像局域网那样持续上行输入**——P2P 包一次性发送可能因连接建立时序丢包，host 收不到 client ready。
+- **已修（2026-08-16）**：房间阶段 client 改为**每帧持续上行输入（在场信号，对齐局域网 upload）+ 上报当前就绪（幂等）**；host 判定升级为 `本地就绪 && saw_all_clients() && all_clients_ready()`（所有 client 在场 && 全体就绪）；新增 **`RosterReady` 广播**（host 每帧把各成员就绪状态快照发给所有 client），让每个端都显示所有成员就绪（多人一致界面，不再只有 host 能看别人）。用 UDP 单测 `room_flow_presence_and_ready_and_roster` 锁死。
+- 还需双机实测确认：房间就绪（含可撤销）→ 配置 → 对战不再卡在“host 判不了全员就绪”。
 **关键对照（务必先读局域网多人开始逻辑再改）**：
 - **局域网核心**：client 在 `ClientWait` 后**每帧持续 `upload` 上行输入**（无条件），host `try_emit` **收齐所有 client 输入才产首帧** → 全员一起开始（天然多人）。局域网没有显式“按 o 就绪”，是“连上即在场即开始”。
 - 你要的“按 o 就绪可撤销”是在这个自动开始机制前加一个显式房间阶段。
-**下一步（新会话从这里）——照局域网可靠机制对齐**：
-1. 房间阶段 client **每帧持续 `send_input`（在场信号，同局域网 upload）**，按 o 时才发 `send_ready_state(true/false)`（就绪开关）。
-2. host 房间阶段 `poll` 收客户端（持续在场 + PlayerReady 就绪），判定 = 本地就绪 && 所有 client 在场（saw_all_clients()）&& 所有 client 就绪（all_clients_ready()） → 倒计时 → StartConfig 进配置。
-3. 待确认/可加：host→client 的“成员就绪状态快照”（RosterReady 广播）让每个端房间界面都显示**所有成员**就绪（多人一致界面；当前 client 只知道自己 local_ready，看不到别人）。
-4. 实现后仍需双机验证：房间就绪（含可撤销）→ 配置 → 对战。局域网保持不动。
+**下一步（新会话从这里）——照局域网可靠机制对齐（已完成 ✅，本次会话）**：
+1. ✅ 房间阶段 client **每帧持续 `send_input`（在场信号，同局域网 upload）**，按 o 时才发 `send_ready_state(true/false)`（就绪开关）。
+2. ✅ host 房间阶段 `poll` 收客户端（持续在场 + PlayerReady 就绪），判定 = 本地就绪 && 所有 client 在场（saw_all_clients()）&& 所有 client 就绪（all_clients_ready()） → 倒计时 → StartConfig 进配置。
+3. ✅ host→client 的“成员就绪状态快照”（`RosterReady` 广播）让每个端房间界面都显示**所有成员**就绪（多人一致界面）。
+4. 待双机验证：房间就绪（含可撤销）→ 配置 → 对战。局域网保持不动。
 
 
 
