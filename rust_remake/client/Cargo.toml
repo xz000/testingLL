@@ -4,7 +4,13 @@ version = "0.1.0"
 edition = "2021"
 description = "帧同步圆球竞技场 - ggez 客户端（渲染/输入/UI）"
 
+[features]
+# Steam 联机：开 `--features client/steam` 才编译 SteamTransport/大厅接入（需要蒸汽环境 + AppID + 双账号）。
+# 默认关 → 局域网/单机不受影响，check.ps1 全绿。
+steam = ["dep:net-steam", "net-steam/steam"]
+
 [dependencies]
 game-core = { path = "../game-core" }
 net = { path = "../net" }
 ggez = "0.10"
+net-steam = { path = "../net-steam", optional = true }

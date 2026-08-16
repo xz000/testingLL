@@ -310,6 +310,7 @@ dependencies = [
  "game-core",
  "ggez",
  "net",
+ "net-steam",
 ]
 
 [[package]]

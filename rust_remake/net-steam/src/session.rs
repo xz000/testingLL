@@ -189,4 +189,8 @@ impl SteamSession {
             .map(|t| t.identities_in_order().into_iter().map(|(k, SteamID(v))| (k, v)).collect())
             .unwrap_or_default()
     }
-}
+
+    /// 消费本会话，归还底层 `SteamTransport`（供 `HostLockstep`/`ClientLockstep` 持有）。
+    pub fn into_transport(self) -> SteamTransport {
+        self.transport
+    }}
