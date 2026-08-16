@@ -27,6 +27,8 @@ pub mod session;
 
 #[cfg(feature = "steam")]
 pub use transport_steam::SteamTransport;
+#[cfg(feature = "steam")]
+pub extern crate steamworks;
 
 pub use net::transport::{Peer, Transport};
 

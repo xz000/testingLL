@@ -53,6 +53,8 @@ pub struct HostLockstep<T: Transport> {
     client_identities: Vec<Option<u64>>,
     /// 各 client 连续「未在本帧提供输入」的已产帧数（用于 host 自动判定掉线）。
     idle_ticks: Vec<u32>,
+    /// 各 client 当前是否已就绪（可撤销；由 `Packet::PlayerReady` 更新）。
+    clients_ready: Vec<bool>,
     /// 最近一次保存的整场 World 快照字节 + 接回 seq（供重连者重建后从该 seq 继续）。
     snapshot: Option<(Vec<u8>, u64)>,
     /// 距上次成功产帧/收到有效回包的 tick（用于 host 侧自动判定客户端掉线）。
@@ -81,6 +83,7 @@ impl<T: Transport> HostLockstep<T> {
             client_addr: vec![None; expected],
             client_identities: vec![None; expected],
             idle_ticks: vec![0; expected],
+            clients_ready: vec![false; expected],
             snapshot: None,
             alive_tick: 0,
         }
@@ -101,6 +104,17 @@ impl<T: Transport> HostLockstep<T> {
     /// 累计一帧推进（host 每产一帧调用一次，供上层做超时判活）。
     pub fn bump_alive(&mut self) {
         self.alive_tick += 1;
+    }
+
+    /// 某 client（完整的玩家序号）当前是否已就绪（可撤销）。
+    pub fn client_ready(&self, client_seq: u8) -> bool {
+        let c = client_seq as usize - self.local_base as usize;
+        c < self.expected && self.clients_ready[c]
+    }
+
+    /// 所有 client 是否都已就绪（不含 host 自身；host 自身的就绪由调用方另管）。
+    pub fn all_clients_ready(&self) -> bool {
+        self.clients_ready.iter().all(|r| *r)
     }
 
     /// 登记各 client 槽位的稳定身份（自握手结果带入；Steam=SteamID，局域网=握手随机/指定）。
@@ -281,6 +295,13 @@ impl<T: Transport> HostLockstep<T> {
                                     self.idle_ticks[c] = 0; // 收到输入 → 清零空闲计数
                                 }
                             }
+                            Packet::PlayerReady { index, ready } => {
+                                let c = index as usize - self.local_base as usize;
+                                if c < self.expected {
+                                    // 更新该 client 的就绪状态（可撤销，反复 toggle）。
+                                    self.clients_ready[c] = ready;
+                                }
+                            }
                             Packet::ReqFrame { seq } => {
                                 // 补发缺失帧。
                                 if let Some((_, entries)) = self.frame_buf.iter().find(|(s, _)| *s == seq) {
@@ -432,6 +453,13 @@ impl<T: Transport> ClientLockstep<T> {
     /// 把本机输入上行给 host。
     pub fn send_input(&mut self, encoded: &[u8]) -> io::Result<()> {
         let pkt = Packet::Input { index: self.my_index, bytes: encoded.to_vec() };
+        self.transport.send_to(&pkt.encode(), &self.host)?;
+        Ok(())
+    }
+
+    /// 向 host 上报本机的就绪状态（可反复 toggle 以取消就绪）。`ready` = 当前是否就绪。
+    pub fn send_ready_state(&mut self, ready: bool) -> io::Result<()> {
+        let pkt = Packet::PlayerReady { index: self.my_index, ready };
         self.transport.send_to(&pkt.encode(), &self.host)?;
         Ok(())
     }
@@ -690,6 +718,30 @@ mod tests {
         }
         assert!(cli.expect_seq() >= 5, "丢帧后 client 应依靠请求补发追平（实际推进 seq {}", cli.expect_seq());
         assert_eq!(cli.pending_len(), 0, "client 落点不应有未消费的乱序帧");
+    }
+
+    /// 就绪往返（可撤销）：client 发 PlayerReady(true) → host 收到 → client_ready/all_clients_ready；
+    /// 再发 PlayerReady(false) → 取消就绪 → all_clients_ready 反悔。
+    #[test]
+    fn ready_state_roundtrip_toggles_withdrawable() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // 默认未就绪。
+        assert!(!host.client_ready(1));
+        assert!(!host.all_clients_ready());
+        // client 就绪 → host 收到。
+        cli.send_ready_state(true).unwrap();
+        host.poll(&mut rcv);
+        assert!(host.client_ready(1));
+        assert!(host.all_clients_ready());
+        // 取消就绪（可撤销）→ host 收到 → 全体不再就绪。
+        cli.send_ready_state(false).unwrap();
+        host.poll(&mut rcv);
+        assert!(!host.client_ready(1));
+        assert!(!host.all_clients_ready());
     }
 
     /// 配置收集/广播：client 上报 PlayerCfg → host 收齐(含自身) → 广播 PlayerCfgAll → client 收到完整配置。

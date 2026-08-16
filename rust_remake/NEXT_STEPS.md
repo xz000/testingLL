@@ -6,9 +6,19 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 109 全绿 = game-core 87 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 110 全绿 = game-core 87 + net 16 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
+
+## Steam 房间就绪（进展 + 断点 + 待续）
+**已落（底层机制，已测）**：
+- net 层可撤销就绪：新增 `Packet::PlayerReady{index, ready}`；`HostLockstep` 追踪每 client 就绪（`client_ready`/`all_clients_ready`）；`ClientLockstep::send_ready_state(true/false)` 可反复 toggle 取消。新增 `ready_state_roundtrip_toggles_withdrawable` 测试（net 16，共 **110 全绿**）。
+- `Game` 加了（feature-gated，`#[allow(dead_code)]` 暂未接）：`steam_in_lobby` / `steam_local_ready` / `steam_roster`（槽位, Steam 昵称, SteamID，用 `Friends.get_friend(id).name()` 构建）/ `steam_all_ready`。
+- Steam P2P 已通（`[steam-p2p] host accepted connection`），host 不再卡死（改非阻塞 `try_receive_event`）。
+**断点/待续（下次从这里继续）**：
+- 房间就绪 UI 未接：`steam_in_lobby` 目前恒 false（游戏走之前的 net_cfg HostGather/ClientWait 就绪、P2P、进局）。
+- 把 `steam_lobby_phase` 实现并接入 update/draw：按 o toggle 就绪、host 收齐（本地 + `all_clients_ready`）→ 5 秒倒计时 → 进开局配置菜单（pre_game_config）→ 再用 net_cfg 同步真正开始。局域网未动。
+- 提醒：lobby 就绪与 net_cfg HostGather/ClientWait 是两个不同过渡（lobby→配置菜单、配置→开打），别想成一个。
 
 ## 关键历史（速览，回滚/定位用）
 - **tag 丢失 bug**（曾导致网络静默吞输入 + 旧测试假绿）→ 已修 + 防假绿纪律写入 PLAN「测试约定」。真机 4 窗口验证通过。
