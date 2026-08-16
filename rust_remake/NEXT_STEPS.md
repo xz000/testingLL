@@ -47,6 +47,20 @@
 - **替换 UI 里可能打不出来的字符**（CJK 字体可能缺字形）：`◀`→`[已选]`、`✓`/`○`→`[v]`/`[ ]`、`→`→`->`、`——`/`──`→`-`、`·`→`/`、`…`→`...`。
   （技能名里的 `·`（如“潜行踢·连推”）为 U+00B7 常见字符，保留。）
 
+## Steam 双机重测：P2P 在场已通、但“就绪”仍不达（本次会话诊断位）
+**2026-08-16 双机重测（established 门 + 持续在场已生效）**：
+- host 日志铁证：`[steam-p2p] host connection ESTABLISHED` 后，`present_clients=1/1`（client 的输入在场已送达 host）、
+  但 `ready_clients=0/1` 恒为 0；即使 client 按 o 且 `[steam-client] local ready=true`。
+- **结论**：Steam P2P 的 **Input 包能到 host，PlayerReady 包不到**——同一条连接、同样 `send_to`，只有包内容不同。
+  疑似 `send_ready_state` 方向/编码或某处把 ready 值当 false 发；也可能是传输层对 3 字节小包的处理。
+- **本轮加了决定性诊断**：
+  - client：`[steam-client] sent ready=true to host`（发送成功才打）/ `[steam-client] send_ready_state failed: ...`（建立门失败才打，节流一次）。
+  - host：`ready_pkts=N`（累计收到的 PlayerReady 包总数）。可区分“包没到（ready_pkts=0）”还是“包到了但值是 false（ready_pkts>0 且 ready_clients=0）”。
+  - `[steam-lobby] roster ready snapshot: [...]`（client 收到的实时就绪快照，确认 host->client 广播是否通）。
+- **另修**：client 房间阶段**先 `recv_start_config` 再 `recv_roster_ready`**（避免 RosterReady 读取器把 StartConfig 当非目标包消费掉 -> 进不了配置菜单）。
+- 下一步：跑双机，看 client 的 `sent ready=` / `send_ready_state failed` 与 host 的 `ready_pkts`，
+  据此定位是“client 没发出去”还是“host 收到但没算就绪”，再对症修（候选：把就绪折进 Input 在场包，天然可靠）。
+
 
 
 ## 关键历史（速览，回滚/定位用）
