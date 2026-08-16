@@ -106,6 +106,15 @@ impl<T: Transport> HostLockstep<T> {
         self.alive_tick += 1;
     }
 
+    /// 广播「全体就绪→进入配置」给所有 client（供房间阶段 host 通知 client 进配置菜单）。
+    pub fn broadcast_start_config(&mut self) {
+        let pkt = Packet::StartConfig;
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
     /// 某 client（完整的玩家序号）当前是否已就绪（可撤销）。
     pub fn client_ready(&self, client_seq: u8) -> bool {
         let c = client_seq as usize - self.local_base as usize;
@@ -298,7 +307,9 @@ impl<T: Transport> HostLockstep<T> {
                             Packet::PlayerReady { index, ready } => {
                                 let c = index as usize - self.local_base as usize;
                                 if c < self.expected {
-                                    // 更新该 client 的就绪状态（可撤销，反复 toggle）。
+                                    // 更新该 client 的就绪状态（可撤销，反复 toggle）；同时记下它的端点，便于广播（如 StartConfig）。
+                                    self.client_peers[c] = Some(from);
+                                    self.client_addr[c] = Some(from);
                                     self.clients_ready[c] = ready;
                                 }
                             }
@@ -462,6 +473,21 @@ impl<T: Transport> ClientLockstep<T> {
         let pkt = Packet::PlayerReady { index: self.my_index, ready };
         self.transport.send_to(&pkt.encode(), &self.host)?;
         Ok(())
+    }
+
+    /// 尝试收 host 的 `StartConfig`（全体就绪，进入配置菜单）；无则 None。
+    pub fn recv_start_config(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::StartConfig) = Packet::decode(&rcv[..n]) {
+                        return Ok(true);
+                    }
+                }
+                Ok(None) => return Ok(false),
+                Err(_) => return Ok(false),
+            }
+        }
     }
 
     /// 向 host 上报本玩家最终配置（`PlayerCfg`，载荷为 `PlayerConfig::encode()` 字节）。

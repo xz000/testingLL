@@ -142,13 +142,11 @@ struct Game {
     /// Steam：全体就绪后的倒计时（秒）。
     #[cfg(feature = "steam")]
     steam_countdown: f32,
-    /// Steam host：是否仍在「房间/就绪」阶段（下一步 lobby UI 用，暂未接）。
+    /// Steam：是否仍在「房间/就绪」阶段（进配置菜单前）。
     #[cfg(feature = "steam")]
-    #[allow(dead_code)]
     steam_in_lobby: bool,
-    /// Steam：本机是否已就绪（下一步 lobby 按 o toggle 用，暂未接）。
+    /// Steam：本机是否已就绪（按 o toggle，可撤销）。
     #[cfg(feature = "steam")]
-    #[allow(dead_code)]
     steam_local_ready: bool,
     /// Steam：房间成员名单（槽位, 昵称, SteamID），下一步 lobby 界面显示用（已构建、暂未读）。
     #[cfg(feature = "steam")]
@@ -198,6 +196,8 @@ impl Game {
         let mut steam_my_index: u8 = 0;
         #[cfg(feature = "steam")]
         let mut steam_roster: Vec<(u8, String, u64)> = Vec::new();
+        #[cfg(feature = "steam")]
+        let steam_in_lobby_flag = matches!(app, AppState::SteamHost { .. }) || matches!(app, AppState::SteamJoin { .. });
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
         let mut player_count: u32 = 1;
         match app {
@@ -337,7 +337,7 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
-            steam_in_lobby: false,
+            steam_in_lobby: steam_in_lobby_flag,
             #[cfg(feature = "steam")]
             steam_local_ready: false,
             #[cfg(feature = "steam")]
@@ -1102,7 +1102,7 @@ impl Game {
         self.draw_meta_overlay(&mut canvas, ctx)?;
 
         #[cfg(feature = "steam")]
-        if self.net_cfg == NetCfgSync::HostGather || self.net_cfg == NetCfgSync::ClientWait {
+        if self.steam_in_lobby {
             self.draw_steam_ready_overlay(&mut canvas, ctx)?;
         }
 
@@ -1115,20 +1115,36 @@ impl Game {
         Ok(())
     }
 
-    /// Steam host：等待全体就绪的提示层（就绪后 5 秒倒计时，host 可再按 o 立即开始）。
+    /// Steam 房间/就绪界面：列出成员昵称 + 就绪状态，按 o 就绪/取消，全就绪倒计时。
     #[cfg(feature = "steam")]
     fn draw_steam_ready_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = ctx.gfx.drawable_size();
-        let dim = Mesh::new_rectangle(
-            &ctx.gfx,
-            DrawMode::fill(),
-            graphics::Rect::new(0.0, 0.0, sw, sh),
-            Color::from_rgba(8, 10, 16, 210),
-        )?;
+        let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(0.0, 0.0, sw, sh), Color::from_rgba(8, 10, 16, 225))?;
         canvas.draw(&dim, graphics::DrawParam::new());
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "等待全体玩家就绪…", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.4 }, true)?;
-        draw_text(canvas, ctx, &format!("已就绪 {}/{}，{:.0} 秒后自动开始（按 o 立即开始）", self.steam_my_index + 1, self.world.players.len().max(1), self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y: sh * 0.4 + 60.0 }, true)?;
+        draw_text(canvas, ctx, "房间 · 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
+        let mut y = sh * 0.32;
+        for (slot, name, id) in self.steam_roster.iter() {
+            let is_me = *slot == self.steam_my_index;
+            let (ready, col) = if is_me {
+                (self.steam_local_ready, if self.steam_local_ready { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
+            } else if let Some(host) = self.steam_host_ls.as_ref() {
+                let r = host.client_ready(*slot);
+                (r, if r { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
+            } else {
+                (false, Color::from_rgb(170, 175, 185))
+            };
+            let mark = if ready { "✓" } else { "○" };
+            let me_tag = if is_me { "（我）" } else { "" };
+            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}  ({id})"), 22.0, col, Point2 { x: cx, y }, true)?;
+            y += 32.0;
+        }
+        y += 12.0;
+        if self.steam_all_ready {
+            draw_text(canvas, ctx, &format!("全体就绪 —— {:.0} 秒后进配置（按 o 立即）", self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y }, true)?;
+        } else {
+            draw_text(canvas, ctx, "按 o / 空格 就绪（再按取消）", 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y }, true)?;
+        }
         Ok(())
     }
 
@@ -1329,6 +1345,12 @@ impl event::EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         let dt = ctx.time.delta().as_secs_f64();
 
+        // Steam 房间/就绪阶段：显示成员+就绪、按 o toggle（可撤销）、全体就绪 → 进配置菜单。
+        #[cfg(feature = "steam")]
+        if self.steam_in_lobby {
+            return self.steam_lobby_update(ctx, dt);
+        }
+
         // 主菜单：轮询选择，其余模式走 MatchPhase。
         if self.app == AppState::MainMenu {
             use ggez::input::keyboard::Key;
@@ -1422,34 +1444,8 @@ impl event::EventHandler for Game {
                 #[cfg(feature = "steam")]
                 {
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
-                        // Steam host：与局域网一致：按 o 就绪（net_cfg=HostGather）后，等全体 client 就绪
-                        // （host 每帧 poll 见齐 client 输入 saw_all_clients），全体就绪 → 5 秒倒计时（host 可再按 o 立即开始）
-                        // → net_cfg=Idle + pre_game_config=false → 真正产首帧开打。
+                        // Steam host：就绪/配置已在房间与配置菜单完成，这里直接产帧（收齐各端输入才产，自然统一起始）。
                         let mut hrcv = vec![0u8; 8192];
-                        if self.net_cfg == NetCfgSync::HostGather {
-                            // 收 client 输入（推进 P2P + 记录各 client 已就绪）。
-                            host.poll(&mut hrcv);
-                            if host.saw_all_clients() {
-                                let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Character("o".into()))
-                                    || ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Character(" ".into()));
-                                if o_pressed || self.steam_countdown <= 0.0 {
-                                    self.net_cfg = NetCfgSync::Idle;
-                                    self.pre_game_config = false;
-                                    eprintln!("[steam-host] all ready -> start");
-                                } else {
-                                    self.steam_countdown -= dt.min(0.25) as f32;
-                                }
-                            } else {
-                                self.steam_countdown = 5.0;
-                            }
-                        }
-                        // 仍在等待（未开始）→ 本轮不产帧。
-                        if self.net_cfg == NetCfgSync::HostGather {
-                            self.steam_host_ls = Some(host);
-                            self.accumulator = 0.0;
-                            return Ok(());
-                        }
-                        // 正常产帧（已开始 / 多局学习后下一局）。
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
@@ -1479,21 +1475,13 @@ impl event::EventHandler for Game {
                         }
                         self.steam_host_ls = Some(host);
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
-                        // Steam client：与局域网一致：按 o 就绪（net_cfg=ClientWait）后，上行输入（就绪信号）
-                        // 并等 host 首个权威帧；收到首帧才 pre_game_config=false → 进图开始；否则停留在配置/等待界面。
+                        // Steam client：就绪/配置已在房间与配置菜单完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
                         let mut c_rcv = vec![0u8; 8192];
-                        let mut advanced = false;
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             let enc = game_core::netcode::encode_player_input(&me);
                             cli.send_input(&enc).ok();
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
-                                // 收到权威帧 → 正式进图开始。
-                                if self.net_cfg == NetCfgSync::ClientWait {
-                                    self.pre_game_config = false;
-                                    self.net_cfg = NetCfgSync::Idle;
-                                    eprintln!("[steam-client] host started (first frame)");
-                                }
                                 let n = self.world.players.len();
                                 let mut inputs = vec![PlayerInput::default(); n];
                                 for (idx, bytes) in ents {
@@ -1504,16 +1492,9 @@ impl event::EventHandler for Game {
                                 }
                                 self.world.step(inputs, ticking);
                                 self.accumulator -= TICK;
-                                advanced = true;
                             } else {
                                 break; // 等权威帧
                             }
-                        }
-                        // 仍在等待首帧（没开始）→ 本轮不进图。
-                        if !advanced && self.net_cfg == NetCfgSync::ClientWait {
-                            self.steam_cli_ls = Some(cli);
-                            self.accumulator = 0.0;
-                            return Ok(());
                         }
                         self.steam_cli_ls = Some(cli);
                     }
@@ -1756,20 +1737,64 @@ impl Game {
     }
 
     /// 开局前的技能配置（第一局开始前选择）。
+    /// Steam 房间/就绪阶段（每帧）：
+    /// - 按 o toggle 本机就绪（可撤销）；client 向 host 上报，host 数成员就绪。
+    /// - host：全就绪 → 5 秒倒计时（有人取消则重置）→ broadcast StartConfig + 进配置菜单。
+    /// - client：收到 StartConfig → 进配置菜单。
+    #[cfg(feature = "steam")]
+    fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
+        use ggez::input::keyboard::Key;
+        let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()));
+        if o_pressed {
+            self.steam_local_ready = !self.steam_local_ready;
+            eprintln!("[steam-lobby] local ready = {}", self.steam_local_ready);
+        }
+        let mut entered_config = false;
+        if let Some(cli) = self.steam_cli_ls.as_mut() {
+            // client：上报就绪，收 StartConfig。
+            cli.send_ready_state(self.steam_local_ready).ok();
+            let mut rcv = [0u8; 8192];
+            if cli.recv_start_config(&mut rcv).unwrap_or(false) {
+                eprintln!("[steam-client] host says all ready -> config menu");
+                entered_config = true;
+            }
+        } else if let Some(host) = self.steam_host_ls.as_mut() {
+            // host：收 client 就绪，算全体就绪 → 倒计时 → 广播。
+            let mut rcv = [0u8; 8192];
+            host.poll(&mut rcv);
+            let all_ready = self.steam_local_ready && host.all_clients_ready();
+            self.steam_all_ready = all_ready;
+            if all_ready {
+                if o_pressed || self.steam_countdown <= 0.0 {
+                    eprintln!("[steam-host] all ready -> broadcast StartConfig");
+                    host.broadcast_start_config();
+                    entered_config = true;
+                } else {
+                    self.steam_countdown -= dt.min(0.25) as f32;
+                }
+            } else {
+                self.steam_countdown = 5.0;
+            }
+        }
+        if entered_config {
+            self.steam_in_lobby = false;
+            self.pre_game_config = true; // 进开局配置菜单（技能/点数）。
+            self.net_cfg = NetCfgSync::Idle;
+        }
+        self.accumulator = 0.0;
+        Ok(())
+    }
+
     fn finish_pre_game(&mut self) {
         self.meta.enter_first_round(); // Fighting，round 保持 1
         #[cfg(feature = "steam")]
         if self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
-            // Steam：与局域网一致，按 o 只是「就绪」，不立即进图；复用 net_cfg 的 HostGather/ClientWait。
-            if self.steam_host_ls.is_some() {
-                eprintln!("[steam] pre-game ready -> HostGather (wait all clients)");
-                self.net_cfg = NetCfgSync::HostGather;
-            } else {
-                eprintln!("[steam] pre-game ready -> ClientWait (wait host start)");
-                self.net_cfg = NetCfgSync::ClientWait;
-            }
-            // pre_game_config 保持 true：本块（net_cfg != Idle）会放行到 Fighting 去 poll/等帧；
-            // 直到「全体就绪开始」（host 置 false）或「收到 host 首个权威帧」（client 置 false）才真正开打。
+            // Steam：就绪已在房间阶段完成；配置菜单按 o 就是各自确认，直接开始对局。
+            // 对局开始的对齐由 lockstep「host 收齐各端输入才产帧」保证（无需 HostGather/ClientWait）。
+            eprintln!("[steam] config done -> start match");
+            self.teardown_round_end();
+            self.pre_game_config = false;
             return;
         }
         if self.net_link.is_some() {
