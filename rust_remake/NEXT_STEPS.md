@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 101 全绿 = game-core 79 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 102 全绿 = game-core 80 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -59,6 +59,16 @@
 ## 局域网体验补完（ROADMAP M2）—— 起步
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
+
+## 吸血/跳弹镖“无限时长·自动二镖”修复（本次，game-core 技能确定性 bug）
+- 根因（不是联机）：`ProjectileKind::Chain` 中 `ratio_decay=0`（吸血/转镖）时，`ratio` 永不衰减；且每次命中都 `*life=1.5` 重置、`last_target` 只排除上一目标 → 会在末两个敌人间**无限往返**（看起来“自动发二镖/永远存在”）。
+- 修复：`Chain` 增加 `max_chain`/`hit_count`；命中即 `hit_count+1`，达到 `max_chain` 或倍率衰减到 0 → 消失。吸血/转镖 `max_chain=3`，跳弹(T3) `max_chain=8`（其 ratio_decay>0 本就自限，加硬上限作安全网）。同步更新 `world_ser`。
+- 加了回归测试 `chain_leech_terminates_not_infinite`（4 敌人围圈、跑 300 帧，链镖必须消失）。
+
+## Steam 环境前置（A2 编译/运行所需）—— 已查清
+- 本环境 cargo 默认源是 `rsproxy-sparse`，**它没有 `steamworks`**；但 `cargo search steamworks --registry crates-io` 能搜到（最新 0.13.x / 0.15 视版本）。
+- 因此 A2 加 `steamworks` 依赖时需：项目的 cargo 能访问 `crates-io`（`:source replacement` 或对 `net-steam` 用 `--registry crates-io`），而非默认 rsproxy。
+- 运行还需：本机装 Steam 客户端并登录、`steam_appid.txt` 为正确的 AppID；`SteamAPI_Init` 要连到真在跑的 Steam/AppID。这些已可准备（你已有 AppID + 双账号在途）。
 
 ## Steam 传输适配 `net-steam`（方案丙：独立可插拔 crate）—— A1 已落
 - **workspace 新增第 4 个成员 `net-steam`**（依赖 `net` + `game-core`）。
