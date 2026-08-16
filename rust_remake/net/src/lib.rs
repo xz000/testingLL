@@ -27,6 +27,9 @@ pub use transport::{Peer, StdUdpTransport, Transport};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::io;
+    use std::rc::Rc;
     use game_core::fix::{Fix64, Vec2};
     use game_core::netcode::{decode_player_input, encode_player_input};
     use game_core::player::Cmd;
@@ -80,6 +83,7 @@ mod tests {
             while let Some((n, from)) = host.recv_from(&mut rcv).unwrap() {
                 let a = match from {
                     Peer::Udp(a) => a,
+                    Peer::Steam { .. } => continue, // 本测试只用 UDP，Steam 端点不出现。
                 };
                 let player = *port_to_player.get(&a.port()).unwrap();
                 if let Some((pid, body)) = parse_up(&rcv[..n]) {
@@ -149,5 +153,97 @@ mod tests {
         let d1 = decode_player_input(parsed[1].1).unwrap();
         assert_eq!(d0, sample_input(0));
         assert_eq!(d1, sample_input(1));
+    }
+
+    /// 假想 Steam 传输：以 `Peer::Steam{ id, .. }` 为端点的内存邮箱。投递时记录来源 id。
+    /// 目的：证明 lockstep/握手逻辑只按 `Peer` 判等/转发，换 `SteamTransport` 时上层零改动。
+    struct FakeSteamTransport {
+        myself: u64,
+        mail: Rc<RefCell<std::collections::HashMap<u64, std::collections::VecDeque<(u64, Vec<u8>)>>>>,
+    }
+
+    impl Transport for FakeSteamTransport {
+        fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
+            // 只投递到 Steam 端点（本测试不用 UDP）。来源为本端自身。
+            if let Peer::Steam { id, .. } = peer {
+                self.mail.borrow_mut().entry(*id).or_default().push_back((self.myself, buf.to_vec()));
+                Ok(buf.len())
+            } else {
+                Err(io::Error::other("unexpected Peer for fake steam transport"))
+            }
+        }
+        fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, Peer)>> {
+            let popped = self.mail.borrow_mut().get_mut(&self.myself).and_then(|q| q.pop_front());
+            if let Some((src_id, bytes)) = popped {
+                if bytes.len() <= buf.len() {
+                    buf[..bytes.len()].copy_from_slice(&bytes);
+                    Ok(Some((bytes.len(), Peer::Steam { id: src_id, conn: None })))
+                } else {
+                    Ok(None)
+                }
+            } else {
+                Ok(None)
+            }
+        }
+        fn local(&self) -> Peer {
+            Peer::Steam { id: self.myself, conn: None }
+        }
+    }
+
+    /// Steam-向前证明：host + client 用 `Peer::Steam` 端点跑 HostLockstep/ClientLockstep，
+    /// 两端按序推进、逐位一致 —— 说明“换 Transport 底层（UDP→Steam）不动 lockstep 逻辑”。
+    #[test]
+    fn lockstep_over_steam_peers_preserves_determinism() {
+        let mail: Rc<RefCell<std::collections::HashMap<u64, std::collections::VecDeque<(u64, Vec<u8>)>>>> =
+            Rc::new(RefCell::new(std::collections::HashMap::new()));
+
+        let host_id = 100u64; // 假想 host 的 SteamID
+        let cli_id = 200u64; // 假想 client 的 SteamID
+        let h_local = Peer::Steam { id: host_id, conn: None };
+
+        let mut host = HostLockstep::new(FakeSteamTransport { myself: host_id, mail: mail.clone() }, 2, true); // host=0+client1
+        let mut cli = ClientLockstep::new(FakeSteamTransport { myself: cli_id, mail: mail.clone() }, 1, h_local);
+        let mut whost = World::new(2, 55);
+        let mut wcli = World::new(2, 55);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut rcv = [0u8; 8192];
+
+        for i in 0..20u8 {
+            let inp = encode_player_input(&sample_input(i));
+            cli.send_input(&inp).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(encode_player_input(&sample_input(i))));
+            if let Some((_, frame)) = host.try_emit() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &frame {
+                    ins[*idx as usize] = decode_player_input(b).unwrap();
+                }
+                whost.step(ins, dt);
+            }
+            if let Some(ents) = cli.step_frame(&mut rcv).unwrap() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &ents {
+                    ins[*idx as usize] = decode_player_input(b).unwrap();
+                }
+                wcli.step(ins, dt);
+            }
+        }
+        // 让 client 追平 host 已产帧（收尾一次性 drain 到同一 seq），再比世界——证明同套帧输入下逐位一致。
+        while cli.expect_seq() < host.next_seq() {
+            if let Some(ents) = cli.step_frame(&mut rcv).unwrap() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &ents {
+                    ins[*idx as usize] = decode_player_input(b).unwrap();
+                }
+                wcli.step(ins, dt);
+            } else {
+                break;
+            }
+        }
+        // Steam 端点下 host 与 client 帧数对齐后世界应逐位一致。
+        assert_eq!(host.next_seq(), cli.expect_seq(), "双方序列号应对齐");
+        assert_eq!(whost.players, wcli.players, "Steam 端点下双方世界逐位一致");
+        // 至少推进过多帧（防假绿）。
+        assert!(host.next_seq() > 0, "应有产帧");
     }
 }

@@ -3,10 +3,18 @@
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 
-/// 网络端点（抽象；本地为 UDP socket 地址，将来可扩展为 Steam 用户/通道）。
+/// 网络端点（传输无关抽象）。
+///
+/// - `Udp(SocketAddr)`：本地 StdUdpTransport 的端点（UDP socket 地址）。
+/// - `Steam { id, conn }`：为 SteamTransport（`SteamNetworkingSockets`）预留的端点——`id` 是稳定身份
+///   （如 `CSteamID.ConvertToUint64()`，也作重连身份用，见 RECONNECT.md 挂点 2），`conn` 是会话句柄。
+///
+/// 帧同步/握手逻辑一律只按 `Peer` 判等与转发，不关心具体传输，故换 `SteamTransport` 时无需改上层。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Peer {
     Udp(SocketAddr),
+    /// Steam 预留端点：稳定身份 id + 可选会话句柄 conn。
+    Steam { id: u64, conn: Option<u32> },
 }
 
 /// 帧同步所需的底层传输能力：向指定端点 send、从任一端点 recv 字节。
@@ -48,6 +56,8 @@ impl Transport for StdUdpTransport {
     fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
         match peer {
             Peer::Udp(addr) => self.sock.send_to(buf, *addr),
+            // UDP 传输不认识 Steam 端点；由 SteamTransport 才处理该变体。此处不会在正常流程被调用。
+            Peer::Steam { .. } => Err(io::Error::other("Peer::Steam used with StdUdpTransport")),
         }
     }
 

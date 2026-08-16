@@ -6,9 +6,9 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 97 全绿 = game-core 79 + net 13 + client 5**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 98 全绿 = game-core 79 + net 14 + client 5**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
-- 测试计数几乎每次新增/重连切片都在涨（79/13/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
+- 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
 ## 关键历史（速览，回滚/定位用）
 - **tag 丢失 bug**（曾导致网络静默吞输入 + 旧测试假绿）→ 已修 + 防假绿纪律写入 PLAN「测试约定」。真机 4 窗口验证通过。
@@ -59,6 +59,15 @@
 ## 局域网体验补完（ROADMAP M2）—— 起步
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
+
+## Steam 前置基础（本次，为换 SteamTransport 铺路）—— 已落 + 已测
+- **`Peer` 抽象升级**：`net::transport::Peer` 由单一 `Udp(SocketAddr)` 扩为
+  `Udp(SocketAddr)` + `Steam { id: u64, conn: Option<u32> }`（id 作稳定身份/SteamID/重连身份，见 RECONNECT 挂点 2）。
+  UDP 传输路径不变（lockstep/handshake 只按 `Peer` 判等/转发，不关心变体）。
+- **证明“换传输底层零改动”**：新增头测试 `lockstep_over_steam_peers_preserves_determinism`——用假想 `FakeSteamTransport`
+  （以 `Peer::Steam` 为端点的内存邮箱）跑 `HostLockstep + ClientLockstep`，两端按序推进 + 逐位一致。
+  这验证了将来 `SteamTransport`（真实 SteamNetworkingSockets/大厅）可直接复用现有 lockstep/多局/重连逻辑。
+- 方向性决定：**局域网“房间列表/广播发现”不做**（Steam 大厅天然提供），玩家名按 Steam 昵称（局域网允许缺省）。优先保证 Steam 联机。
 
 ## host 提早收人修复（本次会话 +1，未提交）
 多开实测发现：LAN host 在「开局配置」阶段从不 poll_join，要等 host 窗口按 Space 进入 Fighting 才开始收 client →
