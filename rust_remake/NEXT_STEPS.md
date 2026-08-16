@@ -94,6 +94,17 @@
   若 host emit seq 连续而 client 不打 `frame -> seq` → host→client 帧投递断；若两者都连续 → 是 world/配置分叉而非投递。
 - 另自查过：Steam host 与 client 均用同 seed/同 2 玩家建世界、`teardown_round_end` 同步，理论上逐位一致，只差帧交换。
 
+## Steam 六测关键：host 产帧但 client 一帧没收——建议根因=配置期连接被 Steam 拆除（本次会话，已修保活 + 诊断）
+**2026-08-16 六测**：host `emit seq=0..22`（自跑 23 帧，n_entries=2）后卡 `waiting for client input (present=0)`；
+client 完全不打 `frame -> seq`（**一帧 host 广播都没收到**）。且 client 的移动在 host 上可见（host 在跑），但 client 画面不动。
+- **结论**：host→client 的 Frame 广播从一开始就没送达；约 23 帧后 client→host 的输入也断（present=0）。两方向同断 → **P2P 连接断了**。
+- 断点成因：**房间→配置→开打之间，配置阶段两端都不 pump 回调/无流量，Steam P2P 连接被拆除/timeout**；开打后 host 空转产帧（send 失败被吞），client 收不到一切。
+- **修**：`steam_config_keepalive()` —— 配置阶段每帧 `send_room_state`(client) 或 `poll`+`broadcast_roster_ready`(host) 作心跳，持续 pump 回调 + 双向保活，防止连接在配置期死掉。
+- **顺带加重诊断**（`SteamTransport`）：`send_to` 失败（no-conn / not-established / send_message）与 `receive_messages` 失败（会 remove conn）都打前 10 条，
+  能直接看出“连接是否被拆、为何发不出”。
+- 下一步：再双机测，看 `[steam-p2p] send_to/...` 是否还在报错；若配置期保活后连接得住，对战时应有 `[steam-client] frame -> seq=0,1,2...` 且两端逐位一致。
+
+
 
 
 ## 关键历史（速览，回滚/定位用）

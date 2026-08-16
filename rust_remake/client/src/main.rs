@@ -1437,6 +1437,10 @@ impl event::EventHandler for Game {
             use ggez::input::keyboard::Key;
             self.poll_learning(ctx);
             self.poll_growth_buy(ctx);
+            // Steam：配置阶段也持续 pump 回调 + 收发心跳，避免 P2P 连接在长时间无流量/无回调期间被 Steam 拆除
+            // （曾实测对战后双方向都断流、host 空转产帧：根因就是配置期没 pump，连接在开打前已死）。
+            #[cfg(feature = "steam")]
+            self.steam_config_keepalive();
             // 空格或字母 O（确认）开始第一局。
             let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()));
@@ -1995,6 +1999,25 @@ impl Game {
         self.reconnect_attempting = false;
         self.host_frame_count = 0;
         self.accumulator = 0.0;
+    }
+
+    /// Steam 配置阶段保活：每帧 pump 回调并收发心跳，防止 P2P 连接在空转期被 Steam 拆除。
+    /// （若连接真的已断，这里的收发会记录错误；对战开始时 lockstep 会重新尝试。）
+    #[cfg(feature = "steam")]
+    fn steam_config_keepalive(&mut self) {
+        // 先取心跳字节（借用 self.meta/self.world 前），避免与 cli/host 的 &mut 借用冲突。
+        let k = game_core::netcode::encode_player_input(&self.local_player_input());
+        if let Some(cli) = self.steam_cli_ls.as_mut() {
+            // client：上行心跳（在场/就绪）+ 收 host 包（pump 回调）。
+            let _ = cli.send_room_state(self.steam_local_ready, &k);
+            let mut krcv = vec![0u8; 4096];
+            let _ = cli.step_frame(&mut krcv); // 顺带 pump + 若 host 已产帧则推进（一般不发生，配置期 host 没开打）
+        } else if let Some(host) = self.steam_host_ls.as_mut() {
+            // host：收客户端心跳（pump）+ 广播就绪快照当心跳，双向保活。
+            let mut krcv = vec![0u8; 4096];
+            host.poll(&mut krcv);
+            host.broadcast_roster_ready(self.steam_local_ready);
+        }
     }
 
     fn finish_pre_game(&mut self) {
