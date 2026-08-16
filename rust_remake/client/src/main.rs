@@ -190,9 +190,8 @@ impl Game {
                 sess.prepare_transport().map_err(ggez::GameError::from)?;
                 steam_my_index = sess.my_slot();
                 eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
-                // 建 HostLockstep<SteamTransport>（总玩家数 = 大厅成员数）。
-                let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(players.max(1) as usize);
-                let n = total.max(1);
+                // 建 HostLockstep<SteamTransport>：总玩家数= host 请求的 players（不是当前唯一成员 1）。
+                let n = players.max(1) as usize;
                 let ids: Vec<Option<u64>> = sess.identities().iter().map(|(_, v)| Some(*v)).collect();
                 let transport = sess.into_transport();
                 let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
@@ -561,6 +560,19 @@ impl Game {
                 self.pending_clear_signal = true; // 也让 World 清空其队列
                 self.player_target = Some(world);
             }
+        }
+    }
+
+    /// 本局运行模式已并入 `AppState`（主菜单 / Solo / 局域网主机 / 局域网加入）。
+    /// Steam 模式是否激活（host 或 client 任一）。默认构建恒 false。
+    fn steam_active(&self) -> bool {
+        #[cfg(feature = "steam")]
+        {
+            self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            false
         }
     }
 
@@ -1396,6 +1408,8 @@ impl event::EventHandler for Game {
                         self.steam_cli_ls = Some(cli);
                     }
                 }
+                // 非 Steam 模式才走 UDP host/client/单机 分支（Steam 已在上面的块里推进了世界）。
+                if !self.steam_active() {
                 // 联网 · 开房作 host：接收 client 加入，全部到齐后移交 HostLockstep（不强制 READY/GO，
                 // 由“host 收齐输入即产首帧”自然统一起始。）。
                 self.poll_host_join_phase();
@@ -1529,6 +1543,7 @@ impl event::EventHandler for Game {
                         self.accumulator -= TICK;
                     }
                 }
+                } // end 非 Steam 分支
                 // 一旦世界已进入前摇（施法被接受），清除待发送的施法命令，避免重复发送。
                 if self.pending_cast.is_some() {
                     if let Some(p) = self.world.players.get(PLAYER_ID as usize) {
@@ -1633,6 +1648,14 @@ impl Game {
     /// 开局前的技能配置（第一局开始前选择）。
     fn finish_pre_game(&mut self) {
         self.meta.enter_first_round(); // Fighting，round 保持 1
+        #[cfg(feature = "steam")]
+        if self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
+            // Steam：大厅已给出名单，无需 UDP 式配置同步（首帧即统一起始）；直接开打。
+            eprintln!("[meta] pre-game done -> Steam lockstep start");
+            self.teardown_round_end();
+            self.pre_game_config = false;
+            return;
+        }
         if self.net_link.is_some() {
             eprintln!("[meta] pre-game done -> ClientWait config sync");
             self.net_cfg = NetCfgSync::ClientWait;
