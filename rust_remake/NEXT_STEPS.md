@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 112 全绿 = game-core 87 + net 18 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 113 全绿 = game-core 87 + net 19 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
     - feature 路径（`client/steam`、`net-steam/steam`）build + clippy 也绿。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
@@ -64,6 +64,14 @@
   net 单测 +1：`room_state_bundle_sets_both_presence_and_ready`（锁在场+就绪同包、可撤销）。协议往返含 RoomState。
 - 下一步（新会话从这做起）：跑双机，host 若 `present=1 && ready=1` 则应能过“全家就绪→倒计时→StartConfig”；
   若仍 `ready=0` 则看 client 的 `send_room_state failed` 与 host 的 `ready_pkts` 定位传输层问题。
+
+## Steam 双机再测：`RoomState` 生效、host 已 “all ready -> broadcast StartConfig”（本次会话）
+**2026-08-16 三测（RoomState 合包生效）**：host 日志 `present_clients=1/1 ready_clients=1/1`（就绪已在场包同路送达）、`[steam-host] all ready -> broadcast StartConfig`。
+- 说明「就绪折进在场包」已解决“host 判不了全员就绪”。剩最后一段：**host→client 的 StartConfig 是否被 client 收到并进入配置菜单**（client 日志本截到 `sent room_state ready=false` 未显示进配置）。
+- **修（防 StartConfig 被吞）**：改用 `ClientLockstep::recv_room_inbox` **单次排空**入包并对 StartConfig / RosterReady 分类，
+  杜绝“先读 RosterReady 的循环把 StartConfig 当非目标包消费掉”的竞态。client 房间阶段改走它。
+  net 单测 +1：`room_inbox_classifies_start_config_and_roster_together`（StartConfig 与 RosterReady 同队列不互吞）。
+- 下一步：再双机测，看 client 是否打 `[steam-client] host says all ready -> config menu` 进配置；进而配置→对战。
 
 
 

@@ -1820,16 +1820,17 @@ impl Game {
                 eprintln!("[steam-client] sent room_state ready={} to host", self.steam_local_ready);
                 self.steam_last_sent_ready = Some(self.steam_local_ready);
             }
-            // 先读 StartConfig 再读 RosterReady，避免 RosterReady 的读取器把 StartConfig 当非目标包消费掉。
+            // 单次排空读 host 房间入包：StartConfig（进配置）与 RosterReady（界面）一次分类，绝不互吞。
             let mut rcv = [0u8; 8192];
-            if cli.recv_start_config(&mut rcv).unwrap_or(false) {
-                eprintln!("[steam-client] host says all ready -> config menu");
-                entered_config = true;
-            }
-            let mut rcv = [0u8; 8192];
-            if let Ok(Some(entries)) = cli.recv_roster_ready(&mut rcv) {
-                self.steam_roster_ready = entries.clone();
-                eprintln!("[steam-client] roster ready snapshot: {entries:?}");
+            if let Ok((got_cfg, roster)) = cli.recv_room_inbox(&mut rcv) {
+                if got_cfg {
+                    eprintln!("[steam-client] host says all ready -> config menu");
+                    entered_config = true;
+                }
+                if let Some(entries) = roster {
+                    self.steam_roster_ready = entries.clone();
+                    eprintln!("[steam-client] roster ready snapshot: {entries:?}");
+                }
             }
         } else if let Some(host) = self.steam_host_ls.as_mut() {
             // host：每帧 poll 收客户端（持续在场 + PlayerReady）；要求所有 client 在场 && 全体就绪。
