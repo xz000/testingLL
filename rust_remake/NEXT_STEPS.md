@@ -60,6 +60,15 @@
 - **对局结束可回主菜单** ✅（本次）：`MatchPhase::Finished` 结算界面新增“按 Q 返回主菜单”（`reset_to_main_menu` 重建 2 玩家沙盒世界/meta、清空联网与运行状态），不再死屏幕。Esc 暂用不了（ggez0.10 的 `NamedKey::Escape` 需直接 import winit，先只用 Q）。
 - 待做：玩家名/开局房间界面、局域网发现（可选）、对接续的下一个体验闭环。
 
+## 对局分叉 / 右键疑似控双角色的修复（本次）—— 关掉局域网乐观预测
+- 日志确认：三端均已 `FIRST FRAME started`、host `emit seq=0`，开局/同步/进对局正常。
+- 三端视觉不一致 / “右键像是控两个角色”的根因：**client 的乐观预测（4.7 阶段一）与后续权威帧叠加，
+  导致本地 World 与 host 分叉**（预测步进 + 权威步进在同一 tick 都执行，无回滚校正）。局域网/Steam 要“逐位一致”，
+  应在收不到权威帧时**等待**而非乐观预测。
+- 修复：client 收不到权威帧时改为 `break`（等待，不扣 accumulator），仅按权威帧推进 → 严格 lockstep 确定性。
+  （乐观手感需配完整回滚才上，见 `LATENCY_MASKING.md` 阶段二；本阶段保证“本地/内网逐位一致”。）
+- “数字绑技能”再次由日志证实生效（`[learn] bind ... digit='1/2/3'`）；界面反馈偏弱，非逻辑问题，后续可加强。
+
 ## 局域网开局卡住的根因修复（本次）—— pre-game 块拦截配置同步
 - 日志铁证：host 反复打 `pre-game done -> HostGather`（14 次），client1 打多次（重复按空格）；且 client1/client2 的 `[learn] bind ... digit='2'` 证明**数字绑技能其实生效**。
 - **根因**：`pre_game_config` 在联网开局保持 `true`，而开局前配置块 `if pre_game_config && app != MainMenu { ... return Ok() }` **每帧 return**，把 `Fighting` 分支里的 `HostGather`/`ClientWait` 配置同步逻辑**挡住了**——所以 host 按空格进 HostGather、client 进 ClientWait 后，配置同步**永远不推进 → 对局卡在开局，无法开始**。

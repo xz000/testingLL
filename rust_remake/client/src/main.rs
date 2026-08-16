@@ -1316,8 +1316,9 @@ impl event::EventHandler for Game {
                         let enc = game_core::netcode::encode_player_input(&me);
                         // 无条件上行（无论是否已收到首帧）。
                         link.upload(&enc)?;
-                        // 收到权威帧则按权威推进（校正）；没收到则本地预测：用本机输入乐观推进，
-                        // 让操作立即上屏、消除“等帧冻结”。
+                        // 收到权威帧则按权威推进（严格 lockstep，保证逐位一致）。
+                        // 未收到帧【不乐观预测】——等待 host 的权威帧即可。乐观预测（4.7 阶段一）会与后续
+                        // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.accumulator -= TICK;
                         } else {
@@ -1329,14 +1330,9 @@ impl event::EventHandler for Game {
                                 self.conn_dropped = true;
                                 return Ok(());
                             }
-                            // 本地预测（乐观）：用本机输入推进，其他玩家用默认输入。
-                            let n = self.world.players.len();
-                            let mut inputs = vec![PlayerInput::default(); n];
-                            if (self.self_index() as usize) < n {
-                                inputs[self.self_index() as usize] = me;
-                            }
-                            self.world.step(inputs, ticking);
-                            self.accumulator -= TICK;
+                            // 本 tick 不推进，等权威帧补齐（帧会由 lockstep 补发/排队，稍后追上）。
+                            // 注意：不扣 accumulator，下一帧继续尝试收帧，避免时间凭空流逝导致分叉。
+                            break;
                         }
                     }
                     self.net_link = Some(link);
