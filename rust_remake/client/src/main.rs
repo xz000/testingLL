@@ -26,6 +26,15 @@ const TICK: f64 = 1.0 / 60.0;
 /// 玩家本人 = id 0
 const PLAYER_ID: u32 = 0;
 
+/// host：客户端连续空闲这么多帧判定为掉线（自动 mark_dropped，不卡全队）。约 3 秒。
+const HOST_DROP_TICKS: u32 = 180;
+/// host：每隔多少帧保存一次世界快照（供重连）。约 0.5 秒。
+const SNAPSHOT_EVERY: u64 = 30;
+/// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
+const CLIENT_STALE_TICKS: u64 = 180;
+/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
+const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
+
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
 const KEY_LETTERS: [(&str, game_core::skill::CastKey); 8] = [
@@ -113,6 +122,14 @@ struct Game {
     pre_game_config: bool,
     /// 顶层应用状态（主菜单 / 各模式）。
     app: AppState,
+    /// 客户端是否已因长时间收不到帧而进入“掉线/重连”状态（显示重连界面）。
+    conn_dropped: bool,
+    /// 客户端是否正在发起重连（已按 R，正等 host 快照）。
+    reconnect_attempting: bool,
+    /// 主机端累计产帧数（用于周期保存快照）。
+    host_frame_count: u64,
+    /// 单机开局配置剩余的等待秒数（超时自动用默认配置开始，避免“按键无反应卡死”）。
+    pre_game_timer: f64,
 }
 
 impl Game {
@@ -197,7 +214,8 @@ impl Game {
             pending_shift_skill: None,
             pending_clear_signal: false,
             pending_stop_signal: false,
-            learn_tree_key: None,
+            // 默认首选一棵技能树（第一个键 C），让“按数字键绑技能”立即可用，不必先想到去按字母键选树。
+            learn_tree_key: game_core::skill::CastKey::ALL.first().copied(),
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
@@ -210,6 +228,10 @@ impl Game {
             net_cfg: NetCfgSync::Idle,
             app,
             pre_game_config: app != AppState::MainMenu,
+            conn_dropped: false,
+            reconnect_attempting: false,
+            host_frame_count: 0,
+            pre_game_timer: PRE_GAME_TIMEOUT_SECS,
         })
     }
 
@@ -244,6 +266,7 @@ impl Game {
                 .keyboard
                 .is_logical_key_just_pressed(&Key::Character(letter.into()))
             {
+                eprintln!("[learn] select tree '{letter}' (key=Key::Character)");
                 self.learn_tree_key = Some(key);
             }
         }
@@ -258,6 +281,7 @@ impl Game {
                     .keyboard
                     .is_logical_key_just_pressed(&Key::Character(digit.to_string().into()))
                 {
+                    eprintln!("[learn] bind tree={} digit='{}' -> {}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name);
                     if let Some(profile) = self
                         .meta
                         .profiles
@@ -272,6 +296,7 @@ impl Game {
 
         // `=` 键：升级当前选中键绑定的技能
         if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into())) {
+            eprintln!("[learn] '=' pressed, learn_tree_key={learn_key:?}");
             if let Some(key) = learn_key {
                 if let Some(profile) = self
                     .meta
@@ -281,6 +306,7 @@ impl Game {
                 {
                     if let Some(skill) = profile.bound_skill(key) {
                         let cost = upgrade_cost(profile.skill_level(skill));
+                        eprintln!("[learn] upgrade {} cost={}", game_core::skill::DefTable::def(skill).name, cost);
                         profile.upgrade_skill(skill, cost);
                     }
                 }
@@ -496,6 +522,55 @@ impl Game {
         }
 
         inputs
+    }
+
+    /// 客户端掉线后的重连流程：按 R 发起重连 → 向 host 拉快照 → 重建 World 并对齐基线 → 恢复。
+    /// 在该状态下不推进世界（冻结，避免与 host 分叉），只等待重连成功或玩家放弃。
+    fn poll_reconnect(&mut self, ctx: &mut Context, link: &mut netlink::NetLink) {
+        use ggez::input::keyboard::Key;
+        let r_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("r".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("R".into()));
+        if !self.reconnect_attempting && !r_pressed {
+            return; // 未按 R，不发起重连，保持空闲等待。
+        }
+        if !self.reconnect_attempting {
+            self.reconnect_attempting = true;
+            eprintln!("[client] reconnect flow: sending ReconnectReq...");
+        }
+        match link.try_reconnect() {
+            Ok(Some((world_bytes, seq))) => {
+                eprintln!("[client] got Snapshot seq={seq}, rebuilding World ({n} bytes)", n = world_bytes.len());
+                link.align_after_reconnect().ok();
+                match game_core::world_ser::world_from_bytes(&world_bytes) {
+                    Some(w) => {
+                        self.world = w;
+                        // 清空本地输入残留，避免把掉线期间的输入误带到接回后。
+                        self.player_target = None;
+                        self.pending_cast = None;
+                        self.pending_skill = None;
+                        self.queued_cmds.clear();
+                        self.pending_shift_skill = None;
+                        self.pending_clear_signal = false;
+                        self.pending_stop_signal = false;
+                        self.conn_dropped = false;
+                        self.reconnect_attempting = false;
+                        // 重连一次成功即进入等待；重连接完毕后靠下一帧的权威帧驱动（stale 已归零）。
+                        eprintln!("[client] reconnected: World rebuilt from snapshot, resuming lockstep");
+                    }
+                    None => {
+                        eprintln!("[client] failed to decode snapshot, retrying on next keypress");
+                        self.reconnect_attempting = false;
+                    }
+                }
+            }
+            Ok(None) => {
+                // 尚未收到快照：保持等待（下帧再试）。
+            }
+            Err(e) => {
+                eprintln!("[client] reconnect error: {e:?}");
+                self.reconnect_attempting = false;
+            }
+        }
     }
 
     fn draw_scene(&mut self, ctx: &mut Context) -> GameResult {
@@ -851,7 +926,33 @@ impl Game {
         // 多局 meta 覆盖层（学习阶段 / 整场结束）
         self.draw_meta_overlay(&mut canvas, ctx)?;
 
+        // 客户端掉线/重连覆盖层
+        if self.conn_dropped {
+            self.draw_reconnect_overlay(&mut canvas, ctx)?;
+        }
+
         canvas.finish(ctx)?;
+        Ok(())
+    }
+
+    /// 客户端掉线/重连提示覆盖层：提醒玩家已掉线，按 R 重连。
+    fn draw_reconnect_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let dim = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, sw, sh),
+            Color::from_rgba(8, 8, 12, 220),
+        )?;
+        canvas.draw(&dim, graphics::DrawParam::new());
+        let cx = sw / 2.0;
+        let status = if self.reconnect_attempting {
+            "正在重连…"
+        } else {
+            "连接已断开"
+        };
+        draw_text(canvas, ctx, status, 42.0, Color::from_rgb(255, 190, 90), Point2 { x: cx, y: sh * 0.38 }, true)?;
+        draw_text(canvas, ctx, "按 R 从 host 拉取快照重连", 24.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y: sh * 0.38 + 70.0 }, true)?;
         Ok(())
     }
 
@@ -1049,12 +1150,26 @@ impl event::EventHandler for Game {
 
         // 开局前的技能配置（Solo 试验场 / 局域网）：选/升级技能，按 Space/O 开始第一局。
         if self.pre_game_config && self.app != AppState::MainMenu {
+            // 局域网 host：开局配置阶段就同步接收 client 加入（不必等按了 Space 才开始收人），
+            // 否则先到的 client 会因 host 未 poll_join 而握手超时。
+            self.poll_host_join_phase();
             use ggez::input::keyboard::Key;
             self.poll_learning(ctx);
             // 空格或字母 O（确认）开始第一局。
             let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()));
+            // 单机：超时自动用默认配置开始（防止窗口无焦点/按键收不到导致卡死）。
+            let auto_done = if self.app == AppState::Solo && self.net_link.is_none() && self.net_host.is_none() && self.net_host_ls.is_none() {
+                self.pre_game_timer -= dt;
+                self.pre_game_timer <= 0.0
+            } else {
+                self.pre_game_timer = PRE_GAME_TIMEOUT_SECS; // 联网：不自动开始，重置计时供其它判断用
+                false
+            };
             if done {
+                self.finish_pre_game();
+            } else if auto_done {
+                eprintln!("[solo] pre-game timeout -> auto-start with defaults");
                 self.finish_pre_game();
             }
             self.accumulator = 0.0;
@@ -1092,21 +1207,10 @@ impl event::EventHandler for Game {
                 self.poll_input(ctx);
                 self.accumulator += dt.min(0.25);
                 let ticking = Fix64::from_num(TICK);
-                if let Some(mut hs) = std::mem::take(&mut self.net_host) {
-                    // 联网 · 开房作 host：等待所有 client 加入后移交 HostLockstep（不强制 READY/GO，
-                    // 由“host 收齐输入即产首帧”自然统一起始。）。
-                    let mut host_rcv = vec![0u8; 4096];
-                    hs.poll_join(&mut host_rcv);
-                    if hs.joined >= hs.expected() {
-                        eprintln!("[host] ALL {} clients joined -> hand to HostLockstep", hs.joined);
-                        let n = self.world.players.len();
-                        let transport = hs.into_transport();
-                        self.net_host_ls = Some(net::lockstep::HostLockstep::new(transport, n, true));
-                        self.net_ready = true;
-                    } else {
-                        self.net_host = Some(hs); // 尚未收齐 client，继续等
-                    }
-                } else if let Some(mut host) = std::mem::take(&mut self.net_host_ls) {
+                // 联网 · 开房作 host：接收 client 加入，全部到齐后移交 HostLockstep（不强制 READY/GO，
+                // 由“host 收齐输入即产首帧”自然统一起始。）。
+                self.poll_host_join_phase();
+                if let Some(mut host) = std::mem::take(&mut self.net_host_ls) {
                     // 多于局：学习结束后的「配置同步」阶段——收齐各端配置(含自身) → 广播 PlayerCfgAll → 完成。
                     if self.net_cfg == NetCfgSync::HostGather {
                         let mut g_rcv = vec![0u8; 8192];
@@ -1135,6 +1239,10 @@ impl event::EventHandler for Game {
                         let me = self.local_player_input();
                         host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                         host.poll(&mut host_rcv);
+                        // 掉线判定：任一 client 空闲超时才自动 mark_dropped（不卡全队）。
+                        for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
+                            eprintln!("[host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues");
+                        }
                         if let Some((seq, frame)) = host.try_emit() {
                             if seq == 0 {
                                 eprintln!("[host] emit seq=0: started, n_entries={}", frame.len());
@@ -1148,6 +1256,12 @@ impl event::EventHandler for Game {
                                 }
                             }
                             self.world.step(inputs, ticking);
+                            // 周期保存快照（供掉线者重连时拉取当前状态接回）。
+                            self.host_frame_count += 1;
+                            if self.host_frame_count % SNAPSHOT_EVERY == 0 {
+                                let wb = game_core::world_ser::world_to_bytes(&self.world);
+                                host.set_snapshot(wb, host.next_seq());
+                            }
                             self.accumulator -= TICK;
                         } else {
                             break; // 未收齐本帧：停在此 tick，下一帧 host.poll 会再收、补发缺失帧
@@ -1174,6 +1288,14 @@ impl event::EventHandler for Game {
                     }
                     // 联网：加入者 —— 每帧持续上行输入（让 host 能收齐并产首帧），并收帧推进。
                     // 收到首帧即开始（started 首帧凭底）；丢帧由 lockstep 自动补发，不会永久不同步。
+                    // 若已判定掉线（conn_dropped）：冻结世界，等待重连入口（按 R）。
+                    if self.conn_dropped {
+                        // 只做重连尝试，不推进世界（避免与 host 分叉）。
+                        self.poll_reconnect(ctx, &mut link);
+                        self.net_link = Some(link);
+                        self.accumulator = 0.0;
+                        return Ok(());
+                    }
                     while self.accumulator >= TICK {
                         let me = self.local_player_input();
                         let enc = game_core::netcode::encode_player_input(&me);
@@ -1184,8 +1306,15 @@ impl event::EventHandler for Game {
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.accumulator -= TICK;
                         } else {
+                            link.bump_stale();
+                            if link.stale_ticks() >= CLIENT_STALE_TICKS {
+                                // 太久没收到权威帧 → 判定掉线，进入重连界面。
+                                eprintln!("[client] NO frames for {} ticks -> connection dropped, waiting for reconnect (R)",
+                                    link.stale_ticks());
+                                self.conn_dropped = true;
+                                return Ok(());
+                            }
                             // 本地预测（乐观）：用本机输入推进，其他玩家用默认输入。
-                            eprintln!("[pred] no authority frame, local predict tick");
                             let n = self.world.players.len();
                             let mut inputs = vec![PlayerInput::default(); n];
                             if (self.self_index() as usize) < n {
@@ -1256,6 +1385,24 @@ impl event::EventHandler for Game {
 
 impl Game {
     /// 完成开局前的技能配置：第一局前同步各端 build（局域网走 HostGather/ClientWait），单机直接开打。
+    /// 联网 host：接收 client 加入，全部到齐后把 `net_host` 移交为 `net_host_ls`。
+    /// 在“开局配置”阶段与 Fighting 阶段都调用，确保 host 在等人时就开始收人（否则先到的 client 会握手超时）。
+    fn poll_host_join_phase(&mut self) {
+        if let Some(mut hs) = std::mem::take(&mut self.net_host) {
+            let mut host_rcv = vec![0u8; 4096];
+            hs.poll_join(&mut host_rcv);
+            if hs.joined >= hs.expected() {
+                eprintln!("[host] ALL {} clients joined -> hand to HostLockstep", hs.joined);
+                let n = self.world.players.len();
+                let transport = hs.into_transport();
+                self.net_host_ls = Some(net::lockstep::HostLockstep::new(transport, n, true));
+                self.net_ready = true;
+            } else {
+                self.net_host = Some(hs); // 尚未收齐 client，继续等
+            }
+        }
+    }
+
     fn finish_pre_game(&mut self) {
         self.meta.enter_first_round(); // Fighting，round 保持 1
         if self.net_link.is_some() {
@@ -1279,6 +1426,9 @@ impl Game {
         let cx = sw / 2.0;
         draw_text(&mut canvas, ctx, "开局 · 配置技能", 46.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
         draw_text(&mut canvas, ctx, "按 Space / O 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+        if self.app == AppState::Solo {
+            draw_text(&mut canvas, ctx, &format!("（单机：{:.0} 秒后自动用默认配置开始）", self.pre_game_timer.max(0.0)), 17.0, graphics::Color::from_rgb(140, 160, 180), Point2 { x: cx, y: sh * 0.12 + 92.0 }, true)?;
+        }
         // 列出本机玩家的键位绑定与等级。
         let me = self.self_index();
         if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == me) {
@@ -1286,6 +1436,23 @@ impl Game {
             let gold_line = format!("金币：{}    击杀：{}    最佳名次：#{}", pr.gold, pr.total_kills, pr.best_placement);
             draw_text(&mut canvas, ctx, &gold_line, 24.0, graphics::Color::from_rgb(220, 224, 232), Point2 { x: cx, y }, true)?;
             y += 40.0;
+            // 当前选中树：高亮字样，提醒按了字母 C/R/E... 已选中哪棵/可选技能。
+            if let Some(sel) = self.learn_tree_key {
+                let sel_line = format!("[{}] {} 树（当前选中）", sel.letter(), sel.tree().name_zh());
+                draw_text(&mut canvas, ctx, &sel_line, 24.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
+                y += 36.0;
+                for (i, skill) in sel.tree().skills_in_tree().iter().enumerate() {
+                    let star = if pr.bound_skill(sel) == Some(*skill) { "  ◀" } else { "" };
+                    draw_text(&mut canvas, ctx, &format!("  按 {}  →  {}{}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 20.0, graphics::Color::from_rgb(215, 220, 230), Point2 { x: cx, y }, true)?;
+                    y += 30.0;
+                }
+            } else {
+                draw_text(&mut canvas, ctx, "（尚未选树：按字母 C/R/E/D/Y/T/F/G 选中一棵后，按数字键选技能）", 19.0, graphics::Color::from_rgb(170, 175, 185), Point2 { x: cx, y }, true)?;
+                y += 30.0;
+            }
+            y += 16.0;
+            draw_text(&mut canvas, ctx, "各键当前绑定/", 20.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+            y += 30.0;
             for key in game_core::skill::CastKey::ALL {
                 let bound = pr.bound_skill(key);
                 let lv = bound.map(|s| pr.skill_level(s)).unwrap_or(0);
@@ -1293,8 +1460,9 @@ impl Game {
                     Some(s) => format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::def(s).name, lv),
                     None => format!("[{}] （未绑定）", key.letter()),
                 };
-                draw_text(&mut canvas, ctx, &txt, 22.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
-                y += 34.0;
+                let highlight = self.learn_tree_key == Some(key);
+                draw_text(&mut canvas, ctx, &txt, 22.0, if highlight { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(225, 228, 235) }, Point2 { x: cx, y }, true)?;
+                y += 30.0;
             }
         }
         draw_text(&mut canvas, ctx, "字母键选树 · 数字键绑技能 · = 升级 · X 洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.88 }, true)?;
@@ -1384,16 +1552,16 @@ fn draw_text(
 }
 
 /// 本局运行模式已并入 `AppState`（主菜单 / Solo / 局域网主机 / 局域网加入）。
-fn main() -> GameResult {
-    // 解析命令行（可选直通入口）：--join <host:port> / --host <port> [--players N] / --solo。
-    // 若无任一参数 → 进主菜单选择。
-    let args: Vec<String> = std::env::args().collect();
+/// 解析命令行（可选直通入口）：`--join <host:port>` / `--host <port>` [--players N] / `--solo`；
+/// 无匹配选项 → 返回主菜单。抽成纯函数便于回归测试（曾因 `--solo` 分支漏 `i += 1` 导致死循环）。
+fn parse_app_from_args(args: &[String]) -> AppState {
     let mut app = AppState::MainMenu;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "--solo" => {
                 app = AppState::Solo;
+                i += 1;
             }
             "--join" if i + 1 < args.len() => {
                 if let Ok(a) = args[i + 1].parse() {
@@ -1415,7 +1583,16 @@ fn main() -> GameResult {
             _ => i += 1,
         }
     }
+    app
+}
+
+fn main() -> GameResult {
+    // 解析命令行（可选直通入口）：--join <host:port> / --host <port> [--players N] / --solo。
+    // 若无任一参数 → 进主菜单选择。
+    let args: Vec<String> = std::env::args().collect();
+    let app = parse_app_from_args(&args);
     eprintln!("[main] app = {:?} args = {:?}", app, args[1..].to_vec());
+    eprintln!("[main] building ggez context (window)...");
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
         .window_setup(ggez::conf::WindowSetup::default().title("帧同步圆球竞技场 — 阶段1"))
@@ -1428,4 +1605,28 @@ fn main() -> GameResult {
 
     let game = Game::new(&mut ctx, app)?;
     event::run(ctx, event_loop, game)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn solo_parse_does_not_hang_and_selects_solo() {
+        // 回归：`--solo` 曾因漏 `i += 1` 在命令行解析里死循环，导致单机无法启动。
+        let s = |x: &[&str]| x.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        assert_eq!(parse_app_from_args(&s(&["exe", "--solo"])), AppState::Solo);
+        // 无参数 → 主菜单
+        assert_eq!(parse_app_from_args(&s(&["exe"])), AppState::MainMenu);
+        // host + players
+        assert_eq!(
+            parse_app_from_args(&s(&["exe", "--host", "9001", "--players", "6"])),
+            AppState::LanHost { port: 9001, total: 6 }
+        );
+        // join
+        assert_eq!(
+            parse_app_from_args(&s(&["exe", "--join", "127.0.0.1:5199"])),
+            AppState::LanJoin { addr: "127.0.0.1:5199".parse().unwrap() }
+        );
+    }
 }
