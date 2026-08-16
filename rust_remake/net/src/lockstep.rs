@@ -80,6 +80,15 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// 重连：把某 client 从掉线恢复为活跃，并清掉默认占位（下次它发输入时 host 会重新记 peer、继续推进）。
+    pub fn unmark_dropped(&mut self, client_seq: u8) {
+        let c = client_seq as usize - self.local_base as usize;
+        if c < self.expected {
+            self.dropped[c] = false;
+            self.latest_input[c] = None; // 等重连端重新上行，poll 会重记 peer
+        }
+    }
+
     /// 交给 host 自身的玩家配置（学习阶段结束后设定）。
     pub fn set_local_cfg(&mut self, enc: Vec<u8>) {
         self.local_cfg = Some(enc);
