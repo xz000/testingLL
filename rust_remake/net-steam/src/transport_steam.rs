@@ -92,14 +92,20 @@ impl SteamTransport {
         let mut out = Vec::new();
         // host：accept 待连 / 收已连连接。
         if let Some(ls) = self.listen.as_ref() {
-            for ev in ls.events() {
+            // 注意：不能用 `ls.events()`（阻塞迭代器，会卡住主线程）；用非阻塞 `try_receive_event`。
+            while let Some(ev) = ls.try_receive_event() {
                 match ev {
                     ListenSocketEvent::Connecting(req) => {
+                        let remote_id = req.remote().steam_id();
                         let _ = req.accept();
+                        if let Some(id) = remote_id {
+                            eprintln!("[steam-p2p] host accepted connection from {}", id.raw());
+                        }
                     }
                     ListenSocketEvent::Connected(ev) => {
                         if let Some(id) = ev.remote().steam_id() {
                             let conn = ev.take_connection();
+                            eprintln!("[steam-p2p] host connection established with {}", id.raw());
                             self.conns.insert(id.raw(), conn);
                         }
                     }
