@@ -47,6 +47,15 @@ pub struct HostLockstep<T: Transport> {
     local_cfg: Option<Vec<u8>>,
     /// 各 client 是否已判定掉线（不再要求其输入；其帧用默认输入占位）。
     dropped: Vec<bool>,
+    /// 各 client 的稳定端点（掉线丢失 `client_peers` 后仍保留，用于把重连请求的 from 映射回槽位）。
+    client_addr: Vec<Option<Peer>>,
+    /// 各 client 连续「未在本帧提供输入」的已产帧数（用于 host 自动判定掉线）。
+    idle_ticks: Vec<u32>,
+    /// 最近一次保存的整场 World 快照字节 + 接回 seq（供重连者重建后从该 seq 继续）。
+    snapshot: Option<(Vec<u8>, u64)>,
+    /// 距上次成功产帧/收到有效回包的 tick（用于 host 侧自动判定客户端掉线）。
+    /// 仅在需要时由调用方驱动更新（见 `bump_alive`）。
+    pub alive_tick: u64,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -67,7 +76,28 @@ impl<T: Transport> HostLockstep<T> {
             cfgs: vec![None; expected],
             local_cfg: None,
             dropped: vec![false; expected],
+            client_addr: vec![None; expected],
+            idle_ticks: vec![0; expected],
+            snapshot: None,
+            alive_tick: 0,
         }
+    }
+
+    /// 记下当前整场 World 快照（编码字节 + 接回 seq）。
+    /// 语义：`world_bytes` 反映「已处理完 seq-1 帧」的世界状态，重连端应把它重建后**从 seq 开始继续收帧**。
+    /// 因此调用方应在「World 已应用完第 seq 帧」后传下一帧号 `host.next_seq()`。
+    pub fn set_snapshot(&mut self, world_bytes: Vec<u8>, seq: u64) {
+        self.snapshot = Some((world_bytes, seq));
+    }
+
+    /// 读当前快照（若有）。用于测试/断言。
+    pub fn current_snapshot(&self) -> Option<&(Vec<u8>, u64)> {
+        self.snapshot.as_ref()
+    }
+
+    /// 累计一帧推进（host 每产一帧调用一次，供上层做超时判活）。
+    pub fn bump_alive(&mut self) {
+        self.alive_tick += 1;
     }
 
     /// 把某 client 标记为掉线：之后用“默认输入”占位（玩家原地不动），不再要求其真实输入，其余端照常推进。
@@ -87,6 +117,30 @@ impl<T: Transport> HostLockstep<T> {
             self.dropped[c] = false;
             self.latest_input[c] = None; // 等重连端重新上行，poll 会重记 peer
         }
+    }
+
+    /// 某一 client 的连续空闲（未提供输入）帧数。
+    pub fn client_idle_ticks(&self, client_seq: u8) -> u32 {
+        let c = client_seq as usize - self.local_base as usize;
+        if c < self.expected {
+            self.idle_ticks[c]
+        } else {
+            0
+        }
+    }
+
+    /// 自动化掉线：任何一个未掉线 client 连续空闲 `threshold` 帧即标记为掉线（此后用默认输入占位、不再卡全队）。
+    /// 返回本次新标记为掉线的 client 序号列表。
+    pub fn auto_drop_idle(&mut self, threshold: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        for c in 0..self.expected {
+            if !self.dropped[c] && self.idle_ticks[c] >= threshold {
+                let idx = (c + self.local_base as usize) as u8;
+                self.mark_dropped(idx);
+                out.push(idx);
+            }
+        }
+        out
     }
 
     /// 交给 host 自身的玩家配置（学习阶段结束后设定）。
@@ -181,11 +235,11 @@ impl<T: Transport> HostLockstep<T> {
                             Packet::Input { index, bytes } => {
                                 let c = index as usize - self.local_base as usize;
                                 if c < self.expected {
-                                    if self.latest_input[c].is_none() {
-                                        // 首次见到该 client → 记住 peer，用于广播/补发。
-                                        self.client_peers[c] = Some(from);
-                                    }
+                                    // 始终记下端点（即使已掉线重连），用于广播/补发；也更新稳定端点映射。
+                                    self.client_peers[c] = Some(from);
+                                    self.client_addr[c] = Some(from);
                                     self.latest_input[c] = Some(bytes);
+                                    self.idle_ticks[c] = 0; // 收到输入 → 清零空闲计数
                                 }
                             }
                             Packet::ReqFrame { seq } => {
@@ -195,12 +249,42 @@ impl<T: Transport> HostLockstep<T> {
                                     let _ = self.transport.send_to(&pkt.encode(), &from);
                                 }
                             }
+                            Packet::ReconnectReq { .. } => {
+                                // 客户端请求重连：把 from 映射回槽位 → 恢复为活跃，把当前快照回给它，
+                                // 并广播 Resync(seq) 让全员从该 seq 对齐基线后继续 lockstep。
+                                let c = self.client_addr.iter().position(|a| *a == Some(from));
+                                if let Some(c) = c {
+                                    let idx = (c + self.local_base as usize) as u8;
+                                    // 恢复为活跃（清掉默认占位，重记 peer），等它重新上行输入。
+                                    self.unmark_dropped(idx);
+                                    self.client_peers[c] = Some(from);
+                                }
+                                if let Some((wb, seq)) = self.snapshot.as_ref() {
+                                    let snap_pkt = Packet::Snapshot { world_bytes: wb.clone(), seq: *seq };
+                                    let _ = self.transport.send_to(&snap_pkt.encode(), &from);
+                                }
+                                let rseq = self.snapshot.as_ref().map(|(_, s)| *s);
+                                if let Some(seq) = rseq {
+                                    let resync_pkt = Packet::Resync { seq };
+                                    let enc = resync_pkt.encode();
+                                    // 广播到已知 peer（含刚重连回来的）。
+                                    for peer in self.client_peers.iter().flatten() {
+                                        let _ = self.transport.send_to(&enc, peer);
+                                    }
+                                }
+                            }
                             _ => {}
                         }
                     }
                 }
                 Ok(None) => break,
                 Err(_) => break,
+            }
+        }
+        // 空闲计数：本轮未提供输入且未掉线的 client 各 +1（已发送的已被 Input 臂清零）。
+        for c in 0..self.expected {
+            if !self.dropped[c] && self.latest_input[c].is_none() {
+                self.idle_ticks[c] += 1;
             }
         }
     }
@@ -250,6 +334,7 @@ impl<T: Transport> HostLockstep<T> {
         if self.local_base > 0 {
             self.local = None;
         }
+        self.bump_alive();
         Some((seq, entries))
     }
 
@@ -341,6 +426,29 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(())
     }
 
+    /// 向 host 发送重连请求（附本端已知的最后 seq，供 host 校验/选快照）。
+    pub fn send_reconnect_req(&mut self) -> io::Result<()> {
+        let pkt = Packet::ReconnectReq { last_known_seq: self.expect_seq };
+        self.transport.send_to(&pkt.encode(), &self.host)?;
+        Ok(())
+    }
+
+    /// 尝试收 host 回给重连者的整场快照：返回 `Some((world_bytes, seq))`；当前没有则 None。
+    pub fn recv_snapshot(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<u8>, u64)>> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::Snapshot { world_bytes, seq }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some((world_bytes, seq)));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     /// 从 transport 收一个 FRAME：入 pending 并尝试消费连续帧。
     /// 返回 `Ok(Some(entries))` 表示推进了一帧；`Ok(None)` 表示当前无可用帧（未推进）。
     pub fn step_frame(&mut self, rcv: &mut [u8]) -> io::Result<Option<FrameData>> {
@@ -362,6 +470,26 @@ impl<T: Transport> ClientLockstep<T> {
         }
         // 尝试推进连续帧。
         Ok(self.try_advance())
+    }
+
+    /// 处理 host 广播的 `Resync`：把本端起点 seq 对齐到该 seq（配合快照重建后使用）。
+    /// 返回是否收到并应用了 Resync。
+    pub fn apply_resync(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::Resync { seq }) = Packet::decode(&rcv[..n]) {
+                        // 对齐到重连基线：丢弃所有更早的 pending 帧，从该 seq 起恢复严格按序。
+                        self.pending.retain(|(s, _)| *s >= seq);
+                        self.expect_seq = seq;
+                        return Ok(true);
+                    }
+                }
+                Ok(None) => return Ok(false),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     fn try_advance(&mut self) -> Option<FrameData> {
@@ -578,6 +706,118 @@ mod tests {
             assert!(host.try_emit().is_some(), "掉线后 host 应继续产帧（不因缺 client 卡死）");
         }
         assert!(host.next_seq() > before, "掉线后 host 应持续前进");
+    }
+
+    /// 重连全链路（client 侧收 Snapshot + Resync）：client 发 ReconnectReq →
+    /// host 用已保存快照应答 Snapshot 并广播 Resync → client 接快照重建 World + set_start_seq/apply_resync
+    /// → 继续跑，host 与重连端仍逐位一致。
+    #[test]
+    fn reconnect_snapshot_and_resync_roundtrip() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+
+        // 跑若干帧，host 周期保存快照。
+        for i in 0..10u8 {
+            cli.send_input(&encode_input(i)).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![i + 100]));
+            if let Some((seq, _)) = host.try_emit() {
+                // host 侧记录当前 World 快照（这里用任意确定性字节，测试只关注 seq 与链路）。
+                host.set_snapshot(format!("snap@{seq}").into_bytes(), seq);
+            }
+            let _ = cli.step_frame(&mut rcv).unwrap();
+        }
+
+        // client 掉线：host 标记 drop 并继续推进几步（期间 host 快照继续更新）。
+        host.mark_dropped(1);
+        for _ in 0..5u8 {
+            host.set_local_input(Some(vec![7]));
+            if host.try_emit().is_some() {
+                // 快照 seq = 下一帧号（World 已反映到上一帧）。
+                host.set_snapshot(format!("snap@{}", host.next_seq() - 1).into_bytes(), host.next_seq());
+            }
+        }
+
+        // 重连：client 发 ReconnectReq → host.poll 应答 Snapshot + 广播 Resync。
+        let before = cli.expect_seq();
+        cli.send_reconnect_req().unwrap();
+        host.poll(&mut rcv); // host 处理 ReconnectReq，回 Snapshot 并广播 Resync
+
+        // client 收 Snapshot：应得到最近快照及其 seq（= host 下一帧号）。
+        let (wb, seq) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到 Snapshot");
+        let expect_seq_at_snap = String::from_utf8(wb).unwrap();
+        assert!(expect_seq_at_snap.starts_with("snap@"), "快照应为 host 最近保存的那份");
+        assert_eq!(seq, host.next_seq(), "快照 seq 应为 host 当前下一帧号");
+
+        // host 已把该客户端从掉线恢复（unmark_dropped 在 poll 应答时隐式完成）。
+        // client 收 Resync 对齐基线（从快照 seq 起继续）。
+        let applied = cli.apply_resync(&mut rcv).unwrap();
+        assert!(applied, "应收到 Resync 并应用");
+        assert_eq!(cli.expect_seq(), seq, "Resync 应把 client 基线对齐到快照 seq");
+        assert!(cli.expect_seq() > before, "重连后期待 seq 应前进到快照处");
+
+        // 重连后继续跑：host 与 client 均从快照 seq 后继续 lockstep。
+        for i in 0..20u8 {
+            let inp = encode_input(i);
+            cli.send_input(&inp).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![i + 50]));
+            let _ = host.try_emit();
+            while let Some(_) = cli.step_frame(&mut rcv).unwrap() {}
+        }
+        assert_eq!(cli.expect_seq(), seq + 20, "重连后应继续严格按序推进 20 帧");
+    }
+
+    /// 构造本测试专用的确定性输入字节。
+    fn encode_input(i: u8) -> Vec<u8> {
+        game_core::netcode::encode_player_input(&game_core::world::PlayerInput {
+            set_target: Some(game_core::fix::Vec2::new(i.into(), 0.into())),
+            ..Default::default()
+        })
+    }
+
+    /// 自动掉线判定（切片1运行时版）：client 停发输入 → host 每帧 poll 累计空闲 → 达阈值 auto_drop_idle 自动掉线，不再卡全队。
+    #[test]
+    fn host_auto_drops_idle_client() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // 先正常跑几帧（client 持续上行）。
+        for _ in 0..3u8 {
+            cli.send_input(&encode_input(1)).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![9]));
+            assert!(host.try_emit().is_some());
+        }
+        assert_eq!(host.client_idle_ticks(1), 0);
+
+        // client 停发：host 每帧仍 poll（会因缺 client 输入无法产帧，但空闲计数逐帧累加）。
+        let dropped = 3u32;
+        let mut dropped_list = Vec::new();
+        let mut advanced_after = false;
+        for _ in 0..(dropped + 3) {
+            host.poll(&mut rcv); // 空闲计数 +1（client 未发）
+            dropped_list.extend(host.auto_drop_idle(dropped)); // 达阈值自动掉线
+            host.set_local_input(Some(vec![9]));
+            if host.try_emit().is_some() {
+                advanced_after = true;
+            }
+        }
+        assert!(!dropped_list.is_empty(), "client 空闲达阈值应被自动掉线");
+        assert_eq!(dropped_list[0], 1);
+        assert!(advanced_after, "自动掉线后 host 应能靠默认占位继续产帧（不卡全队）");
+        // 掉线后继续推进：不再因缺 client 卡死。
+        let before = host.next_seq();
+        for _ in 0..5u8 {
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![9]));
+            assert!(host.try_emit().is_some(), "掉线后应持续产帧");
+        }
+        assert!(host.next_seq() > before);
     }
 }
 

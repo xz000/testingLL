@@ -6,9 +6,9 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 93 全绿 = game-core 79 + net 11 + client 3**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 97 全绿 = game-core 79 + net 13 + client 5**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
-- 测试计数几乎每次新增/重连切片都在涨（79/11/3）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
+- 测试计数几乎每次新增/重连切片都在涨（79/13/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
 ## 关键历史（速览，回滚/定位用）
 - **tag 丢失 bug**（曾导致网络静默吞输入 + 旧测试假绿）→ 已修 + 防假绿纪律写入 PLAN「测试约定」。真机 4 窗口验证通过。
@@ -29,6 +29,39 @@
 
 → 重连主线（掉线不卡全队 + 真字节快照重连接回 + 两端逐位一致）已闭环、有测试锁死。
 
+## 重连接入 client 真实运行时 ✅（本次会话完成，未提交）
+把重连从“只有无头切片”接到真实运行的 ggez client 与 host，全部走真实 UDP：
+- **net `lockstep.rs`**：
+  - `HostLockstep` 加 `set_snapshot`/`current_snapshot`（周期保存快照）、`client_addr`（掉线后仍保留端点到槽位映射）、
+    `idle_ticks` + `client_idle_ticks` + `auto_drop_idle(threshold)`（host 自动判定掉线）；`poll()` 改为：
+    收到输入始终重记 peer、清零该端 idle；收到 `ReconnectReq` 按来源端点映射回槽位 → unmark + 回 `Snapshot` + 广播 `Resync(seq)`。
+  - `ClientLockstep` 加 `send_reconnect_req` / `recv_snapshot` / `apply_resync`（对齐基线 seq）。
+  - 语义锁定：**快照字节反映「已处理完 seq-1 帧」的世界，重连端从 seq 开始继续收帧**（seq = host.next_seq()）。
+- **client `netlink.rs`（NetLink）**：加 `stale_ticks` + `bump_stale`/`stale_ticks`（掉线探测）、`try_reconnect`（发 ReconnectReq + 收 Snapshot）、
+  `align_after_reconnect`（收 Resync 对齐基线）；`step_frame` 成功时清零 stale。
+- **client `main.rs`（真实运行时）**：
+  - host 端：每帧 `auto_drop_idle(HOST_DROP_TICKS)`（超时自动掉线不卡全队）；每 `SNAPSHOT_EVERY` 帧 `set_snapshot(world_to_bytes, next_seq)`。
+  - client 端：收到权威帧即推进；没收到则 `bump_stale` + 乐观预测；`stale >= CLIENT_STALE_TICKS` → `conn_dropped` 冻结并显示重连 UI；
+    按 **R** 触发 `try_reconnect` → 拉快照 → `align_after_reconnect` → 重建 World → 清输入残留 → 恢复 lockstep。
+  - 常量：`HOST_DROP_TICKS=180`、`SNAPSHOT_EVERY=30`、`CLIENT_STALE_TICKS=180`。
+- **新增测试锁死（防假绿）**：net `reconnect_snapshot_and_resync_roundtrip` + `host_auto_drops_idle_client`；client `netlink_reconnect_flow_resumes_identical_worlds`
+  （真实 UDP，host+1 client 掉线→快照重连接回→两端逐位一致）。合起来把“host 自动判活 + 快照应答 + client 掉线重连”整条链路锁住。
+
+→ 重连在真实运行时已闭环（host 自动掉线、快照应答、client 按 R 拉快照重建回接）。
+
+## 单机启动死循环 bug + 修复（本次会话 +1，未提交）
+真机/多开排查发现 `--solo` **无法启动**（进程存活但无窗口、无 `[main]` 日志），追查到底：
+`main()` 命令行解析里 `--solo` 分支**漏了 `i += 1`**，导致 `while i < args.len()` 死循环，单机永远到不了建窗。
+- 修复：补 `i += 1`；把解析抽成纯函数 `parse_app_from_args(&[String]) -> AppState`，加回归单测 `solo_parse_does_not_hang_and_selects_solo`（锁死 `--solo` 不再死循环）。
+- 顺带体验改善：配置/学习面板**默认预选第一个技能树**（`learn_tree_key` 默认 C 键树），按数字键绑技能立即可用，不必先想到按字母选树；
+  Solo 开局配置加 **15 秒超时自动默认开始**（`PRE_GAME_TIMEOUT_SECS`，显示提示），避免窗口没焦点/按键收不到时单机卡死。
+
+## host 提早收人修复（本次会话 +1，未提交）
+多开实测发现：LAN host 在「开局配置」阶段从不 poll_join，要等 host 窗口按 Space 进入 Fighting 才开始收 client →
+无头/手快时先到的 client 会握手超时（100 次后 panic 退出）。已把 host 收人逻辑抽成 `poll_host_join_phase()`，
+并在「开局配置」与 Fighting 两阶段都调用，host 等人时就开始收人。
+实测：`multi-launch.ps1 -Players 2` 客户端 **attempt 1 即 join_handshake OK**（原先 100 次超时），两端按 Space 均进入配置同步。
+
 ## 三大功能（ROADMAP.md）当前进度
 - **单机技能试验场**：✅ 已可用（无 AI + 靶子 + 开局配置；`--solo` 或菜单按 1）。
 - **局域网对战**：✅ lockstep 打通（多局配置同步/重连切片/开局配置已在 UDP 验证）；缺"中途退出的真实掉线 UI"（见重连剩余）。
@@ -38,22 +71,23 @@
 - M0 主菜单已做（三大入口）。暂停/退出菜单、单机调试辅助（无敌/重置CD/伤害数字）**未做**，规划在 UI_MENUS。
 
 ## 待议 / 下一步（按我此前优先级建议排序）
-1. **把重连接进 client 真实运行时**（RECONNECT 残余）：
-   - host 端真实「上行超时判定 → 自动 mark_dropped」（目前是显式调用）。
-   - host 端把 World 快照周期 save + 应答 ReconnectReq 返回 Snapshot。
-   - client 端重连入口：掉线 → 重连按钮 → 拉 Snapshot → 重建 World → set_start_seq 接回。
-   - host 掉线处理（快照给候补 / 回大厅）可后做。
+1. **✅ 已办（未提交）**：重连接进 client 真实运行时（见上节“重连接入 client 真实运行时”）。
+   剩可后做：真机多窗口手动验证重连手感 / host 掉线处理（快照给候补 / 回大厅）。
 2. **暂停/退出菜单 + 单机调试辅助**（体验层，见效快，无网络顾虑；联网暂停=本地暂停交互、不暂停时间，退出按 RECONNECT 离场处理）。
 3. **4.6b 属性系统**（`ATTRIBUTE_SYSTEM.md`：法抗/护甲/移速血量成长等；网络层已就绪，只加 PlayerConfig 字段 + 合成）。
 4. **4.7 完整回滚重放**（`LATENCY_MASKING.md` 阶段二；决策门：先真机感受乐观预测，跳变明显再做）。
 5. **Steamworks**（最终目标必含重连；先局域网验证重连，再接 SteamTransport）。
 
+> 建议先跑一次 `multi-launch.ps1` 真机多开，手动停掉一个 client 看 host 自动掉线 + 其余继续；再手动按 R 重连接回。
+> 注意多窗口是给**真人操作**的：键盘输入只发给**有焦点的那一个窗口**，需逐个点选窗口后按 Space 完成各自开局配置，
+> 才能让 host 收齐配置并开打。无头环境无法聚焦窗口，故逻辑用 UDP 单测（`host_and_two_clients_sync_over_udp`/`netlink_reconnect_flow_resumes_identical_worlds`）锁死。
+
 ## 常用命令
 ```
-cargo test  --workspace                # 回归（93 全绿基线）
+cargo test  --workspace                # 回归（97 全绿基线）
 cargo clippy --workspace -- -D warnings
 cargo run -p client -- --solo          # 单机试验场
-powershell -File multi-launch.ps1 -Players 3   # 局域网多开（-Fast 加速局终看多局）
+powershell -File multi-launch.ps1 -Players 3   # 局域网多开（-Fast 加速局终看多局；可手动停窗看重连）
 powershell -File check.ps1             # 一键 build+test+clippy
 ```
 

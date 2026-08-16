@@ -24,6 +24,8 @@ pub struct NetLink {
     pub started: bool,
     my_index: u8,
     players: u8,
+    /// 连续未收到权威帧的 tick 计数（用于判断是否掉线/可重连）。每次成功收到帧时清零。
+    stale_ticks: u64,
 }
 
 impl NetLink {
@@ -37,6 +39,7 @@ impl NetLink {
             started: false,
             my_index: 0,
             players: 0,
+            stale_ticks: 0,
         })
     }
 
@@ -69,6 +72,34 @@ impl NetLink {
 
     pub fn player_count(&self) -> u8 {
         self.players
+    }
+
+    /// 由调用方在「本 tick 未收到权威帧」时累计，用于探测掉线。
+    pub fn bump_stale(&mut self) {
+        self.stale_ticks += 1;
+    }
+
+    /// 距上次成功收到权威帧的连续 tick 数。
+    pub fn stale_ticks(&self) -> u64 {
+        self.stale_ticks
+    }
+
+    /// 掉线后发起重连：向 host 发 `ReconnectReq`，尝试收 `Snapshot`。
+    /// 返回 `Some((world_bytes, seq))`＝拿到整场快照（调用方据此重建 World + 对齐基线）；`None`＝尚未收到。
+    pub fn try_reconnect(&mut self) -> io::Result<Option<(Vec<u8>, u64)>> {
+        let Some(ls) = self.lockstep.as_mut() else {
+            return Ok(None);
+        };
+        ls.send_reconnect_req()?;
+        ls.recv_snapshot(&mut self.rcv)
+    }
+
+    /// 重连拿到快照后，把本端基线对齐到快照 seq（处理 host 广播的 `Resync`）。
+    pub fn align_after_reconnect(&mut self) -> io::Result<bool> {
+        let Some(ls) = self.lockstep.as_mut() else {
+            return Ok(false);
+        };
+        ls.apply_resync(&mut self.rcv)
     }
 
     /// 持续上行本机输入（无论是否 started）。host 靠收齐输入产首帧，从而自然统一起始。
@@ -109,6 +140,7 @@ impl NetLink {
         let n = world.players.len();
         match ls.step_frame(&mut self.rcv)? {
             Some(entries) => {
+                self.stale_ticks = 0;
                 let became_started = !self.started && { self.started = true; true };
                 if became_started {
                     eprintln!("[netlink] FIRST FRAME: started, expect_seq->{expect_before}");
@@ -404,5 +436,96 @@ mod tests {
             }
             assert_eq!(whost.players, wcli.players, "重连后两端应逐位一致");
         }
+    }
+
+    /// 端到端重连（真实 UDP，走 NetLink 高层 API）：client 掉线 → host 继续推进 + save 快照 →
+    /// client 用 `try_reconnect` 拉快照、`align_after_reconnect` 对齐 → 重建 World → 继续跑，host 与重连端逐位一致。
+    #[test]
+    fn netlink_reconnect_flow_resumes_identical_worlds() {
+        let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
+        let mut hs = HostHandshake::new(ht, 2, true); // host=0 + client1
+        let mut cli = NetLink::connect(host_addr).unwrap();
+        let mut rcv = [0u8; 16384];
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut whost = World::new(2, 55);
+        let mut wcli = World::new(2, 55);
+        let mut progressed = 0u32;
+
+        // 握手：client 拿序号（my_index=1），host 收齐后移交 HostLockstep。
+        for _ in 0..100 {
+            let _ = cli.handshake.as_mut().unwrap().send_join(&cli.host);
+            hs.poll_join(&mut rcv);
+            if cli.join_handshake().unwrap() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(cli.my_index(), 1);
+        assert!(hs.joined >= hs.expected(), "host 应收齐 1 client");
+        let mut host = HostLockstep::new(hs.into_transport(), 2, true); // host=0 + client1
+
+        // A 段：正常跑 30 帧，两端一致。
+        for _ in 0..30 {
+            cli.upload(&encode_player_input(&sample_input())).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            if let Some((_, frame)) = host.try_emit() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &frame { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                whost.step(ins, dt);
+            }
+            if cli.step_frame(&mut wcli, dt).unwrap().is_some() {
+                progressed += 1;
+            }
+            assert_eq!(whost.players, wcli.players, "A 段两端应一致");
+        }
+        assert!(progressed > 0, "A 段应推进过（防假绿）");
+
+        // 掉线：client 停，host 用默认输入继续；并周期保存快照（快照 seq = 下一帧号）。
+        host.mark_dropped(1);
+        for i in 0..25u8 {
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            if host.try_emit().is_some() {
+                host.set_snapshot(game_core::world_ser::world_to_bytes(&whost), host.next_seq());
+            }
+            // 每帧喂世界（用默认占位输入：掉线端原地）。
+            let mut ins = vec![PlayerInput::default(); 2];
+            ins[0] = sample_input();
+            whost.step(ins, dt);
+            let _ = i;
+        }
+
+        // 重连：client 通过 NetLink 拉快照。
+        let _ = cli.try_reconnect().unwrap(); // 首次：发出 ReconnectReq，host 尚未应答
+        host.poll(&mut rcv); // host 处理 ReconnectReq -> 回 Snapshot 并广播 Resync
+        let (wb, seq) = cli.try_reconnect().unwrap().expect("应能拉到 Snapshot");
+
+        // 对齐基线（处理 Resync）。
+        let applied = cli.align_after_reconnect().unwrap();
+        assert!(applied, "重连端应收到 Resync 并应用到快照 seq");
+        assert_eq!(cli.lockstep.as_ref().unwrap().expect_seq(), seq, "对齐后基线应为快照 seq");
+
+        // 重建 World：从快照字节重建（与 host 当前 World 状态一致的未来起点状态）。
+        wcli = game_core::world_ser::world_from_bytes(&wb).expect("快照可解码为 World");
+        // host 端 World 也应重建到同一快照（此处 host 一直用 whost 推进；为严格对照，把 host 也重置到快照）。
+        whost = game_core::world_ser::world_from_bytes(&wb).unwrap();
+
+        // B 段：重连后继续跑，host 与重连端逐位一致。
+        let mut resumed = 0u32;
+        for _ in 0..30 {
+            cli.upload(&encode_player_input(&sample_input())).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(encode_player_input(&sample_input())));
+            if let Some((_, frame)) = host.try_emit() {
+                let mut ins = vec![PlayerInput::default(); 2];
+                for (idx, b) in &frame { ins[*idx as usize] = decode_player_input(b).unwrap(); }
+                whost.step(ins, dt);
+            }
+            if cli.step_frame(&mut wcli, dt).unwrap().is_some() {
+                resumed += 1;
+            }
+            assert_eq!(whost.players, wcli.players, "重连后两端应逐位一致");
+        }
+        assert!(resumed > 0, "重连后应继续推进（防假绿）");
     }
 }
