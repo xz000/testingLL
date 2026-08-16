@@ -35,6 +35,9 @@ pub const TAG_START_CONFIG: u8 = 14;
 /// host→client：房间「就绪状态快照」：`entries` 为各玩家 `(玩家序号, 是否就绪)`（含 host 槽 0）。
 /// 每端据此显示所有成员的实时就绪状态，保证多人界面一致。
 pub const TAG_ROSTER_READY: u8 = 15;
+/// client→host：房间阶段的状态包：`index` + 就绪标志 + 输入在场字节（三合一）。
+/// 因为 P2P 下 Input 在场已被验证可靠送达、但独立 PlayerReady 常丢，故把就绪折进同一在场包，天然可靠。
+pub const TAG_ROOM_STATE: u8 = 16;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -70,6 +73,9 @@ pub enum Packet {
     StartConfig,
     /// host→client：房间就绪状态快照（含 host 槽 0）。`entries` = 各玩家 `(序号, ready)`。
     RosterReady { entries: Vec<(u8, bool)> },
+    /// client→host：房间阶段状态包：`index`（玩家序号）+ `ready`（是否就绪）+ `input_bytes`（输入在场信号）。
+    /// 把就绪与在场合并成单包，走可靠的连续上行通道（P2P 下 Input 在场实测可靠）。
+    RoomState { index: u8, ready: bool, input_bytes: Vec<u8> },
     /// host→重连端：整场 World 快照字节 + 接回 seq。
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
@@ -161,6 +167,15 @@ impl Packet {
                     v.push(i);
                     v.push(if r { 1 } else { 0 });
                 }
+                v
+            }
+            Packet::RoomState { index, ready, input_bytes } => {
+                let mut v = Vec::with_capacity(4 + input_bytes.len());
+                v.push(TAG_ROOM_STATE);
+                v.push(*index);
+                v.push(if *ready { 1 } else { 0 });
+                v.extend_from_slice(&(input_bytes.len() as u16).to_be_bytes());
+                v.extend_from_slice(input_bytes);
                 v
             }
             Packet::Snapshot { world_bytes, seq } => {
@@ -274,7 +289,18 @@ impl Packet {
                     entries.push((buf[pos], buf[pos + 1] != 0));
                     pos += 2;
                 }
-                Some(Packet::RosterReady { entries })
+                let entries = Packet::RosterReady { entries };
+                Some(entries)
+            }
+            TAG_ROOM_STATE if buf.len() >= 4 => {
+                let index = buf[1];
+                let ready = buf[2] != 0;
+                let len = u16::from_be_bytes([buf[3], buf[4]]) as usize;
+                let end = 5usize + len;
+                if end > buf.len() {
+                    return None;
+                }
+                Some(Packet::RoomState { index, ready, input_bytes: buf[5..end].to_vec() })
             }
             _ => None,
         }
@@ -312,6 +338,7 @@ mod tests {
             Packet::PlayerReady { index: 2, ready: true },
             Packet::StartConfig,
             Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], },
+            Packet::RoomState { index: 1, ready: true, input_bytes: vec![1, 2, 3, 4] },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
         ];

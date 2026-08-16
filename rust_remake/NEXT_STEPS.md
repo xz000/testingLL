@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 111 全绿 = game-core 87 + net 17 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 112 全绿 = game-core 87 + net 18 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
     - feature 路径（`client/steam`、`net-steam/steam`）build + clippy 也绿。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
@@ -58,8 +58,12 @@
   - host：`ready_pkts=N`（累计收到的 PlayerReady 包总数）。可区分“包没到（ready_pkts=0）”还是“包到了但值是 false（ready_pkts>0 且 ready_clients=0）”。
   - `[steam-lobby] roster ready snapshot: [...]`（client 收到的实时就绪快照，确认 host->client 广播是否通）。
 - **另修**：client 房间阶段**先 `recv_start_config` 再 `recv_roster_ready`**（避免 RosterReady 读取器把 StartConfig 当非目标包消费掉 -> 进不了配置菜单）。
-- 下一步：跑双机，看 client 的 `sent ready=` / `send_ready_state failed` 与 host 的 `ready_pkts`，
-  据此定位是“client 没发出去”还是“host 收到但没算就绪”，再对症修（候选：把就绪折进 Input 在场包，天然可靠）。
+- **根治候选已实施：`RoomState` 合包**（既然独立 PlayerReady 包 P2P 下常丢、而 Input 在场包被验证可靠送达）：
+  新增 `Packet::RoomState { index, ready, input_bytes }`（TAG 16），client 房间阶段用 `send_room_state(ready, presence_input)` 单包持续上行，
+  host 收到一次即同时更新「在场 + 就绪 + 端点 + 空闲」→ 就绪与在场天然同路、同可靠性。
+  net 单测 +1：`room_state_bundle_sets_both_presence_and_ready`（锁在场+就绪同包、可撤销）。协议往返含 RoomState。
+- 下一步（新会话从这做起）：跑双机，host 若 `present=1 && ready=1` 则应能过“全家就绪→倒计时→StartConfig”；
+  若仍 `ready=0` 则看 client 的 `send_room_state failed` 与 host 的 `ready_pkts` 定位传输层问题。
 
 
 

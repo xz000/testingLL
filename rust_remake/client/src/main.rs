@@ -1808,29 +1808,24 @@ impl Game {
         // 本机当前输入（房间阶段就用它做「在场信号」，对齐局域网 upload；与对局开始后一致）。
         let presence_enc = game_core::netcode::encode_player_input(&self.local_player_input());
         if let Some(cli) = self.steam_cli_ls.as_mut() {
-            // client：每帧上行输入（在场信号，对齐局域网 upload —— 避免连接未建立时一次性包丢失）
-            // + 上报当前就绪（幂等，host 始终有最新就绪态）；收 RosterReady/StartConfig。
-            cli.send_input(&presence_enc).ok();
-            let send_res = cli.send_ready_state(self.steam_local_ready);
-            if let Err(e) = send_res {
-                // 只有连接未建立时 send_ready_state 会失败；节流打印一条即可（连接建立后自然成功）。
+            // client：房间阶段用「就绪+在场」合包持续上行（`RoomState`），走已证实可靠的输入在场通道。
+            // （独立 PlayerReady 包在 P2P 下曾实测常丢，折进在场包后天然可靠。）
+            let room_res = cli.send_room_state(self.steam_local_ready, &presence_enc);
+            if let Err(e) = room_res {
                 if self.steam_last_sent_ready.is_none() {
-                    eprintln!("[steam-client] send_ready_state failed: {e:?}");
+                    eprintln!("[steam-client] send_room_state failed: {e:?}");
                     self.steam_last_sent_ready = Some(self.steam_local_ready);
                 }
-            } else {
-                // 发送成功：若与上次不同则打印，便于确认 host 侧就绪态会随之变化。
-                if self.steam_last_sent_ready != Some(self.steam_local_ready) {
-                    eprintln!("[steam-client] sent ready={} to host", self.steam_local_ready);
-                    self.steam_last_sent_ready = Some(self.steam_local_ready);
-                }
+            } else if self.steam_last_sent_ready != Some(self.steam_local_ready) {
+                eprintln!("[steam-client] sent room_state ready={} to host", self.steam_local_ready);
+                self.steam_last_sent_ready = Some(self.steam_local_ready);
             }
+            // 先读 StartConfig 再读 RosterReady，避免 RosterReady 的读取器把 StartConfig 当非目标包消费掉。
             let mut rcv = [0u8; 8192];
             if cli.recv_start_config(&mut rcv).unwrap_or(false) {
                 eprintln!("[steam-client] host says all ready -> config menu");
                 entered_config = true;
             }
-            // 先读 StartConfig 再读 RosterReady，避免 RosterReady 的读取器把 StartConfig 当非目标包消费掉。
             let mut rcv = [0u8; 8192];
             if let Ok(Some(entries)) = cli.recv_roster_ready(&mut rcv) {
                 self.steam_roster_ready = entries.clone();
