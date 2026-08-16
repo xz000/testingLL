@@ -111,10 +111,13 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 广播「全体就绪→进入配置」给所有 client（供房间阶段 host 通知 client 进配置菜单）。
     pub fn broadcast_start_config(&mut self) {
-        let pkt = Packet::StartConfig;
+        let pkt = Packet::StartConfig { seq: self.next_seq };
         let enc = pkt.encode();
-        for peer in self.client_peers.iter().flatten() {
-            let _ = self.transport.send_to(&enc, peer);
+        // 连发 3 拍增强投递可靠性（Steam P2P 曾实测丢过的小包重发即达）。
+        for _ in 0..3 {
+            for peer in self.client_peers.iter().flatten() {
+                let _ = self.transport.send_to(&enc, peer);
+            }
         }
     }
 
@@ -552,7 +555,7 @@ impl<T: Transport> ClientLockstep<T> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) => {
-                    if let Some(Packet::StartConfig) = Packet::decode(&rcv[..n]) {
+                    if let Some(Packet::StartConfig { .. }) = Packet::decode(&rcv[..n]) {
                         return Ok(true);
                     }
                 }
@@ -588,7 +591,7 @@ impl<T: Transport> ClientLockstep<T> {
                 Ok(Some((n, _))) => {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
-                            Packet::StartConfig => start_config = true,
+                            Packet::StartConfig { .. } => start_config = true,
                             Packet::RosterReady { entries } => roster = Some(entries),
                             _ => {}
                         }
@@ -956,7 +959,7 @@ mod tests {
 
         // host 广播：先 roster，再 StartConfig（模拟同一帧到件、且 roster 先到）。
         let roster_pkt = Packet::RosterReady { entries: vec![(0, true), (1, true)] };
-        let start_pkt = Packet::StartConfig;
+        let start_pkt = Packet::StartConfig { seq: 0 };
         // 直接把两个包一次性投递给 client（借用 pair 的 transport 投递方向：cli 发→host；host 发需从 host 端投）。
         // 这里我们用 host 的 transport.send_to 会投到 client 的 peer_inbox。
         host.transport.send_to(&roster_pkt.encode(), &Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001)))).unwrap();
