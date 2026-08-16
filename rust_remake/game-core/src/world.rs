@@ -3016,6 +3016,32 @@ mod tests {
         assert!(world.projectiles.is_empty(), "吸血链镖必须在有限次链跳后消失（修前会无限往返）");
     }
 
+    /// 4.6b：属性派生确定性 + 应用到 Player（最大生命/移速）+ 序列化往返保留。
+    #[test]
+    fn attributes_derive_and_apply_deterministically() {
+        use crate::attribute::Attributes;
+        let mut world = World::new(2, 11);
+        assert!((world.players[0].speed_mult - 1.0).abs() < 1e-9);
+
+        let attrs = Attributes { hp_bonus: 5, speed_bonus: 4, ..Default::default() };
+        // 5 点 hp → +50%；4 点 speed → +20%。
+        let expected_max = crate::player::MAX_HP * (1.0 + 5.0 * crate::attribute::HP_PER_BONUS);
+        world.players[0].apply_attributes(&attrs);
+        assert!((world.players[0].max_hp - Fix64::from_num(expected_max)).abs() < Fix64::from_num(1e-6), "max_hp 应按属性加成");
+        assert!((world.players[0].speed_mult - 1.2).abs() < 1e-9, "speed_mult 应 +20%");
+        // 掉血后 apply 应保持血比（以当前 max_hp 的一半为准）。
+        world.players[0].hp = world.players[0].max_hp / Fix64::from_num(2);
+        world.players[0].apply_attributes(&attrs);
+        let half = world.players[0].max_hp / Fix64::from_num(2);
+        assert!((world.players[0].hp - half).abs() < Fix64::from_num(1e-6), "apply 应保持当前血比");
+
+        // 序列化往返保留（speed_mult / max_hp 是确定性共享状态，重连快照须一致）。
+        let bytes = crate::world_ser::world_to_bytes(&world);
+        let back = crate::world_ser::world_from_bytes(&bytes).expect("decode");
+        assert_eq!(back.players[0].max_hp, world.players[0].max_hp);
+        assert_eq!(back.players[0].speed_mult, world.players[0].speed_mult);
+    }
+
     #[test]
     fn t3_jump_decays_damage() {
         let mut world = World::new(3, 71);

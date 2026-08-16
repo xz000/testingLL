@@ -10,7 +10,8 @@ use crate::meta::PlayerProfile;
 use crate::skill::SkillId;
 
 /// 快照版本：每次改字段布局就 +1，供将来两端一致性校验。
-pub const CONFIG_VERSION: u8 = 1;
+/// v2（4.6b）：加入 attributes。
+pub const CONFIG_VERSION: u8 = 2;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -39,6 +40,8 @@ pub struct PlayerConfig {
     pub key_slots: [Option<SkillId>; KEY_SLOTS],
     pub gold: i64,
     pub gold_spent: i64,
+    /// 战斗属性（4.6b）。
+    pub attributes: crate::attribute::Attributes,
 }
 
 impl PlayerConfig {
@@ -53,6 +56,7 @@ impl PlayerConfig {
             key_slots,
             gold: p.gold as i64,
             gold_spent: p.gold_spent as i64,
+            attributes: p.attributes,
         }
     }
 
@@ -68,6 +72,7 @@ impl PlayerConfig {
         }
         p.gold = self.gold as i32;
         p.gold_spent = self.gold_spent as i32;
+        p.attributes = self.attributes;
     }
 
     /// 编码为字节（带版本 + 长度前缀，可扩展）。
@@ -91,6 +96,12 @@ impl PlayerConfig {
         }
         put_i64(&mut out, self.gold);
         put_i64(&mut out, self.gold_spent);
+        // attributes（v2）：固定的 5 个 u32。
+        put_u32(&mut out, self.attributes.hp_bonus);
+        put_u32(&mut out, self.attributes.speed_bonus);
+        put_u32(&mut out, self.attributes.armor);
+        put_u32(&mut out, self.attributes.spell_resist);
+        put_u32(&mut out, self.attributes.kb_resist);
         out
     }
 
@@ -126,11 +137,21 @@ impl PlayerConfig {
         let gold = i64_at(buf, pos)?;
         pos += 8;
         let gold_spent = i64_at(buf, pos)?;
+        pos += 8;
+        // attributes（v2）。
+        let attributes = crate::attribute::Attributes {
+            hp_bonus: u32_at(buf, pos)?,
+            speed_bonus: u32_at(buf, pos + 4)?,
+            armor: u32_at(buf, pos + 8)?,
+            spell_resist: u32_at(buf, pos + 12)?,
+            kb_resist: u32_at(buf, pos + 16)?,
+        };
         Some(PlayerConfig {
             skill_levels,
             key_slots,
             gold,
             gold_spent,
+            attributes,
         })
     }
 }
@@ -150,13 +171,16 @@ mod tests {
     #[test]
     fn encode_decode_roundtrip_preserves_config() {
         let mut p = profile();
-        // 手动改一点：升一级、绑个键、改金币。
+        // 手动改一点：升一级、绑个键、改金币、加属性（4.6b）。
         p.gold = 12345;
         p.gold_spent = 500;
+        p.attributes = crate::attribute::Attributes { hp_bonus: 3, speed_bonus: 2, ..Default::default() };
         let cfg = PlayerConfig::from_profile(&p);
         let bytes = cfg.encode();
         let dec = PlayerConfig::decode(&bytes).expect("应能解码");
         assert_eq!(dec, cfg, "快照往返应一致");
+        assert_eq!(dec.attributes.hp_bonus, 3, "属性应随快照同步");
+        assert_eq!(dec.attributes.speed_bonus, 2);
     }
 
     #[test]

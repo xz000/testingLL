@@ -346,6 +346,8 @@ impl Game {
             for i in 0..p.skill_levels.len().min(profile.skill_levels.len()) {
                 p.skill_levels[i] = profile.skill_levels[i];
             }
+            // 4.6b：把玩家属性（Hp/移速等）派生到战斗数值（确定性纯函数，跨端/跨局一致）。
+            p.apply_attributes(&profile.attributes);
         }
         self.world.reset_round();
         self.player_target = None;

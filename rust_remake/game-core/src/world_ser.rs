@@ -172,6 +172,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wfix(o, p.radius);
     wfix(o, p.hp);
     wfix(o, p.max_hp);
+    wf64(o, p.speed_mult);
     wopt_vec(o, p.move_target);
     encode_caster(o, &p.caster);
     for lv in &p.skill_levels {
@@ -273,6 +274,7 @@ fn decode_player(b: &[u8], p: &mut usize) -> Option<Player> {
     let radius = fixat(b, p)?;
     let hp = fixat(b, p)?;
     let max_hp = fixat(b, p)?;
+    let speed_mult = f64::from_bits(u64at(b, p)?);
     let move_target = opt_vec(b, p)?;
     let mut caster = Caster::new();
     decode_caster(&mut caster, b, p)?;
@@ -352,6 +354,7 @@ fn decode_player(b: &[u8], p: &mut usize) -> Option<Player> {
     pl.radius = radius;
     pl.hp = hp;
     pl.max_hp = max_hp;
+    pl.speed_mult = speed_mult;
     pl.move_target = move_target;
     pl.caster = caster;
     pl.skill_levels = skill_levels;
