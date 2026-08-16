@@ -1542,11 +1542,12 @@ impl event::EventHandler for Game {
                         self.steam_host_ls = Some(host);
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
                         // Steam client：就绪/配置已在房间与配置菜单完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
+                        // 上行用 `send_room_state`（合包，Steam P2P 下实测可靠）；`send_input` 单独发送曾实测间歇丢。
                         let mut c_rcv = vec![0u8; 8192];
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             let enc = game_core::netcode::encode_player_input(&me);
-                            cli.send_input(&enc).ok();
+                            let _ = cli.send_room_state(self.steam_local_ready, &enc);
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
                                 let n = self.world.players.len();
                                 let mut inputs = vec![PlayerInput::default(); n];
