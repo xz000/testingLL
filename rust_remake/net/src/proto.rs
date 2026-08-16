@@ -25,6 +25,9 @@ pub const TAG_GO: u8 = 6;
 pub const TAG_REQ_FRAME: u8 = 7;
 pub const TAG_SKILL: u8 = 8;
 pub const TAG_SKILL_ALL: u8 = 9;
+pub const TAG_SNAPSHOT: u8 = 10;
+pub const TAG_RESYNC: u8 = 11;
+pub const TAG_RECONNECT: u8 = 12;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -51,6 +54,12 @@ pub enum Packet {
     PlayerCfg { index: u8, bytes: Vec<u8> },
     /// host→所有端：广播下一局所有玩家的完整配置快照（各端据此确定性初始化下一局）。
     PlayerCfgAll { entries: Vec<(u8, Vec<u8>)> },
+    /// client→host：请求重连，附希望接回的 seq（校验用）。
+    ReconnectReq { last_known_seq: u64 },
+    /// host→重连端：整场 World 快照字节 + 接回 seq。
+    Snapshot { world_bytes: Vec<u8>, seq: u64 },
+    /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
+    Resync { seq: u64 },
 }
 
 impl Packet {
@@ -103,6 +112,26 @@ impl Packet {
                     v.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
                     v.extend_from_slice(bytes);
                 }
+                v
+            }
+            Packet::ReconnectReq { last_known_seq } => {
+                let mut v = Vec::with_capacity(9);
+                v.push(TAG_RECONNECT);
+                v.extend_from_slice(&last_known_seq.to_be_bytes());
+                v
+            }
+            Packet::Snapshot { world_bytes, seq } => {
+                let mut v = Vec::with_capacity(1 + 2 + world_bytes.len() + 8);
+                v.push(TAG_SNAPSHOT);
+                v.extend_from_slice(&(world_bytes.len() as u16).to_be_bytes());
+                v.extend_from_slice(world_bytes);
+                v.extend_from_slice(&seq.to_be_bytes());
+                v
+            }
+            Packet::Resync { seq } => {
+                let mut v = Vec::with_capacity(9);
+                v.push(TAG_RESYNC);
+                v.extend_from_slice(&seq.to_be_bytes());
                 v
             }
         }
@@ -164,6 +193,22 @@ impl Packet {
                 }
                 Some(Packet::PlayerCfgAll { entries })
             }
+            TAG_SNAPSHOT if buf.len() >= 4 => {
+                let len = u16::from_be_bytes([buf[1], buf[2]]) as usize;
+                let end = 3usize + len;
+                if end + 8 > buf.len() {
+                    return None;
+                }
+                let world_bytes = buf[3..end].to_vec();
+                let seq = u64::from_be_bytes(buf[end..end + 8].try_into().ok()?);
+                Some(Packet::Snapshot { world_bytes, seq })
+            }
+            TAG_RESYNC if buf.len() >= 9 => {
+                Some(Packet::Resync { seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
+            }
+            TAG_RECONNECT if buf.len() >= 9 => {
+                Some(Packet::ReconnectReq { last_known_seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
+            }
             _ => None,
         }
     }
@@ -196,6 +241,9 @@ mod tests {
             Packet::PlayerCfgAll {
                 entries: vec![(0, vec![10, 20]), (1, vec![30]), (2, vec![])],
             },
+            Packet::ReconnectReq { last_known_seq: 123 },
+            Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
+            Packet::Resync { seq: 789 },
         ];
         for p in cases {
             let enc = p.encode();
