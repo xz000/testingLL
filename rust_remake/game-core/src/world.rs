@@ -140,9 +140,11 @@ pub enum ProjectileKind {
         heal: Fix64,       // 每次命中给施法者的回血量（T1b/TestLeech；0=无）
         ratio: Fix64,      // 本次命中伤害倍率（T3 衰减用；1 起）
         ratio_decay: Fix64,// 每次跳跃衰减量（T3；0=不衰减）
-        life: Fix64,       // 剩余飞行时间/总生存（跳跃会重置）
+        life: Fix64,       // 剩余飞行时间/总生存（两跳之间到不了新目标则自然消失）
         last_target: u32,  // 上次目标（避免立刻跳回），用 u32::MAX 表示无
         owner: u32,
+        max_chain: u32,    // 最多链跳次数（含首次命中后继续跳的累计上限；防止“吸血/跳弹”无限往返）
+        hit_count: u32,    // 已命中次数；达到 max_chain 即消失
     },
     /// 蓄力跳弹·直线炸弹（T3b）：沿方向飞行，命中玩家→伤+推+累计 damageplus+生成回返镖；
     /// 射程耗尽没命中→damageplus 归零。
@@ -923,7 +925,7 @@ impl World {
             }
             // 链镖/跳弹族单独处理（需改动 Chain 内部状态以完成跳跃，交给可变分支）
             if matches!(pr.kind, ProjectileKind::Chain { .. }) {
-                if let ProjectileKind::Chain { damage, heal, ratio, ratio_decay, life, last_target, owner, .. } = &mut pr.kind {
+                if let ProjectileKind::Chain { damage, heal, ratio, ratio_decay, life, last_target, owner, max_chain, hit_count, .. } = &mut pr.kind {
                     let lt = *last_target;
                     if let Some((victim, _dd)) =
                         nearest_hit_with_skip(&self.players, pr.pos, *owner, Fix64::from_num(0.6), lt)
@@ -946,7 +948,11 @@ impl World {
                         }
                         let next_ratio = *ratio - *ratio_decay;
                         *last_target = victim;
-                        if next_ratio <= Fix64::ZERO {
+                        *hit_count += 1;
+                        // 命中后：伤害倍率衰减到 0 或链跳数达上限 → 消失；否则继续跳（重置生命/衰减倍率）。
+                        // 修复“吸血/跳弹无限往返”：max_chain 硬上限，加上不再无条件重置 life 也能自然耗尽。
+                        let dead = next_ratio <= Fix64::ZERO || *hit_count >= *max_chain;
+                        if dead {
                             pr.alive = false;
                         } else {
                             *ratio = next_ratio;
@@ -1841,6 +1847,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             life: Fix64::from_num(1.5),
                             last_target: u32::MAX,
                             owner: idx,
+                            max_chain: 3,
+                            hit_count: 0,
                         },
                         pos: p.pos,
                         alive: true,
@@ -1864,6 +1872,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             life: Fix64::from_num(1.5),
                             last_target: u32::MAX,
                             owner: idx,
+                            max_chain: 3,
+                            hit_count: 0,
                         },
                         pos: p.pos,
                         alive: true,
@@ -1886,6 +1896,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             life: Fix64::from_num(1.5),
                             last_target: u32::MAX,
                             owner: idx,
+                            max_chain: 8,
+                            hit_count: 0,
                         },
                         pos: p.pos,
                         alive: true,
@@ -2973,6 +2985,35 @@ mod tests {
         assert!(world.players[1].hp < hp1, "吸血链镖应命中敌人1");
         assert!(world.players[2].hp < hp2, "吸血链镖应链到敌人2");
         assert!(world.players[0].hp > hp0, "吸血链镖应给施法者回血");
+    }
+
+    /// 回归：吸血/跳弹镖必须**有限**（不再无限往返、也不无限重置生存时间而“永远存在”）。
+    /// 修前：ratio_decay=0 + 每次命中重置 life=1.5 + 只排除上一目标 → 会在末两个敌人间无限往返；
+    /// 修后：max_chain 硬上限 → 链跳 N 次后必然消失。
+    #[test]
+    fn chain_leech_terminates_not_infinite() {
+        let mut world = World::new(5, 82);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        // 4 个敌人围一圈，保证“永远有最近的下一目标”，专门暴露无限往返。
+        for i in 1..5 {
+            world.players[i].pos = Vec2::new(Fix64::from_num(1.0 + i as f64), Fix64::ZERO);
+        }
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::TLeech, Some(Vec2::new(Fix64::from_num(2.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ];
+        // 长时间运行（远超单镖正常生存 1.5s）。修前会因无限往返而链镖一直存活；修后应早已消失。
+        for _ in 0..300 {
+            world.step(input.clone(), dt);
+            if world.projectiles.is_empty() {
+                break;
+            }
+        }
+        assert!(world.projectiles.is_empty(), "吸血链镖必须在有限次链跳后消失（修前会无限往返）");
     }
 
     #[test]
