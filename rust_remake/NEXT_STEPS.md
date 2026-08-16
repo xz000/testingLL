@@ -71,6 +71,16 @@
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
 
+## Steam 大厅会话 `SteamSession`（自动发现/加入）—— 已落 + 已测（main.rs 接线待续）
+- `net-steam::session::SteamSession`：封装大厅生命周期：
+  - `init(app,port)`、`run_callbacks()`、`host_create_lobby(max, matchkey)`（公开大厅 + 写 `matchkey` 元数据）、
+    `client_find_and_join(matchkey)`（`request_lobby_list` + 用公开 `lobby_data(matchkey)` 过滤 + `join_lobby`；
+    注：steamworks 的 `add_request_lobby_list_string_filter` 需 `LobbyKey`（pub(crate) 字段）无法从外部构造，故改用公开 API 过滤）。
+  - `prepare_transport()`（host→listen，client→connect_to(host)）；`table`（成员→槽位）、`identities()`（喂给 `set_client_identities`）、`my_slot`。
+- 单锁步/重连复用：`HostLockstep<SteamTransport>` / `ClientLockstep<SteamTransport>`（传输无关，已有 `lockstep_over_steam_peers` 兜底）。
+- 编译 + clippy（`--features net-steam/steam`）已绿；默认（无 feature）不触发、门禁不红。
+- 待续：`main.rs` 接 `--steam-host/--steam-join` + lockstep 分支（需双机实测）。
+
 ## 法力量(MP)技术机制 + 成长点/购买 UI —— 已落 + 已测（数值占位、后续按手感调）
 - **MP 机制**（game-core，先机制后数值）：`Attributes` 加 `mana_max`/`mana_regen`；`Player` 加 `mana`/`max_mana`/`mana_regen`（序列化）；
   施法 `handle_casts` 前用 `def.mana_cost()` 查蓝/扣蓝（`spend_mana`），蓝不足禁施；每帧 `regen_mana`；`SkillGrowth` 加 `mana_cost`（默认 0=不耗蓝，Rock 占位 30）。

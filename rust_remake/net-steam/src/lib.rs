@@ -22,6 +22,8 @@ pub mod lobby;
 pub mod transport_stub;
 #[cfg(feature = "steam")]
 pub mod transport_steam;
+#[cfg(feature = "steam")]
+pub mod session;
 
 pub use net::transport::{Peer, Transport};
 
