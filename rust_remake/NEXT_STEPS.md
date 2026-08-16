@@ -65,10 +65,11 @@
 - 修复：`Chain` 增加 `max_chain`/`hit_count`；命中即 `hit_count+1`，达到 `max_chain` 或倍率衰减到 0 → 消失。吸血/转镖 `max_chain=3`，跳弹(T3) `max_chain=8`（其 ratio_decay>0 本就自限，加硬上限作安全网）。同步更新 `world_ser`。
 - 加了回归测试 `chain_leech_terminates_not_infinite`（4 敌人围圈、跑 300 帧，链镖必须消失）。
 
-## Steam 环境前置（A2 编译/运行所需）—— 已查清
-- 本环境 cargo 默认源是 `rsproxy-sparse`，**它没有 `steamworks`**；但 `cargo search steamworks --registry crates-io` 能搜到（最新 0.13.x / 0.15 视版本）。
-- 因此 A2 加 `steamworks` 依赖时需：项目的 cargo 能访问 `crates-io`（`:source replacement` 或对 `net-steam` 用 `--registry crates-io`），而非默认 rsproxy。
-- 运行还需：本机装 Steam 客户端并登录、`steam_appid.txt` 为正确的 AppID；`SteamAPI_Init` 要连到真在跑的 Steam/AppID。这些已可准备（你已有 AppID + 双账号在途）。
+## Steam 环境前置（A2 编译/运行所需）—— ✅ steamworks 可编译，已确认
+- 之前猜测 `steamworks 0.15` 解析失败；查出真实稳定版为 **0.13.1**（rsproxy 源就有），改版本后可编译。
+- `net-steam` 加 `steam` feature（默认关）+ 可选依赖 `steamworks 0.13`；`cargo build -p net-steam --features net-steam/steam` **编译通过**（steamworks-sys 0.13 + steamworks 0.13.1）。
+- 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
+- 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
 
 ## Steam 传输适配 `net-steam`（方案丙：独立可插拔 crate）—— A1 已落
 - **workspace 新增第 4 个成员 `net-steam`**（依赖 `net` + `game-core`）。
