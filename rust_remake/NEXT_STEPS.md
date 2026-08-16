@@ -79,8 +79,11 @@
 - `update.Fighting` 加 Steam 分支：host 产帧步世界（乐观预测关，严格 lockstep + 快照）；client 上行 + 严格按权威帧推进。
 - `self_index()` 用 `steam_my_index`；CLI 支持 `--steam-host [--players N]` / `--steam-join`。
 - 编译：`cargo build -p client --features client/steam` + feature clippy 全绿；默认（无 feature）build/test/clippy 全绿（109）。
-- ⚠ 运行期前置：Steam 客户端登录 + `steam_api64.dll`（steamworks 非 vendored 动态加载）+ 工作目录含 `steam_appid.txt`（或 `Client::init_app` 已强制 AppID）。
-  本机 `client.exe --steam-host` 先不输出（运行时 DLL/工作目录问题），**需双机实测环境**验证。
+- ⚠ 运行期前置（已在本机验证）：Steam 客户端登录 + **`steam_api64.dll` 必须与 `client.exe` 同在 `target\debug\`**（放错误位置会进程无输出直接退，exit 1）。
+  `steam_appid.txt` 也放到 exe 旁边（`init_app` 已强制 AppID 908660 作双保险）。
+  本机 `client.exe --steam-host` 已跑通：`[steam-host] lobby=<id>, my slot=0`（建厅成功）。
+- **辅助脚本 `run-steam.ps1`**：`run-steam -Mode host [-Players N]` / `run-steam -Mode join`——自动 `--features client/steam` 构建 + 把 `steam_api64.dll`/`steam_appid.txt` 拷到 exe 旁再启动（双机各跑一个）。
+- 待双机：host 一台 `run-steam.ps1 -Mode host`，client 另一台 `run-steam.ps1 -Mode join`（各登不同账号，自动搜加 matchkey 大厅）。
 - 待双机：host 一台 `client --steam-host`，client 另一台 `client --steam-join`（各登不同账号，自动按 matchkey 搜加大厅）。
 
 ## Steam 大厅会话 `SteamSession`（自动发现/加入）—— 已落 + 已测（main.rs 接线待续）
