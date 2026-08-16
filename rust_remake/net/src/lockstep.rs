@@ -17,6 +17,11 @@ use crate::transport::{Peer, Transport};
 use std::collections::VecDeque;
 use std::io;
 
+/// 掉线客户端用的“默认输入”占位（玩家原地不动）。
+fn default_input_bytes() -> Vec<u8> {
+    game_core::netcode::encode_player_input(&game_core::world::PlayerInput::default())
+}
+
 /// host 侧帧同步状态机。
 pub struct HostLockstep<T: Transport> {
     transport: T,
@@ -40,6 +45,8 @@ pub struct HostLockstep<T: Transport> {
     cfgs: Vec<Option<Vec<u8>>>,
     /// host 自身（player 0）上报的配置（学习阶段结束时设定）。
     local_cfg: Option<Vec<u8>>,
+    /// 各 client 是否已判定掉线（不再要求其输入；其帧用默认输入占位）。
+    dropped: Vec<bool>,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -59,6 +66,17 @@ impl<T: Transport> HostLockstep<T> {
             frame_buf_capacity: 60,
             cfgs: vec![None; expected],
             local_cfg: None,
+            dropped: vec![false; expected],
+        }
+    }
+
+    /// 把某 client 标记为掉线：之后用“默认输入”占位（玩家原地不动），不再要求其真实输入，其余端照常推进。
+    pub fn mark_dropped(&mut self, client_seq: u8) {
+        let c = client_seq as usize - self.local_base as usize;
+        if c < self.expected {
+            self.dropped[c] = true;
+            self.latest_input[c] = Some(default_input_bytes());
+            self.client_peers[c] = None; // 不再向它广播
         }
     }
 
@@ -212,8 +230,14 @@ impl<T: Transport> HostLockstep<T> {
         while self.frame_buf.len() > self.frame_buf_capacity {
             self.frame_buf.pop_front();
         }
-        // 清空本帧已用输入，等待下一帧。
-        self.latest_input.iter_mut().for_each(|x| *x = None);
+        // 清空本帧已用输入，等待下一帧；掉线端保持默认占位（继续用默认输入推进）。
+        for (c, x) in self.latest_input.iter_mut().enumerate() {
+            if self.dropped[c] {
+                *x = Some(default_input_bytes());
+            } else {
+                *x = None;
+            }
+        }
         if self.local_base > 0 {
             self.local = None;
         }
@@ -515,6 +539,36 @@ mod tests {
         assert_eq!(got[0].1, host_cfg);
         assert_eq!(got[1].0, 1);
         assert_eq!(got[1].1, client_cfg);
+    }
+
+    /// 掉线离场（切片1）：client 掉线后，host 用默认输入占位照常产帧（不再等它），不卡全队。
+    #[test]
+    fn host_continues_after_client_dropped() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // 掉线前：client 参与，host 应收齐产帧。
+        for i in 0..3u8 {
+            let inp = game_core::netcode::encode_player_input(&game_core::world::PlayerInput {
+                set_target: Some(game_core::fix::Vec2::new(i.into(), 0.into())),
+                ..Default::default()
+            });
+            cli.send_input(&inp).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![i + 100]));
+            assert!(host.try_emit().is_some(), "掉线前应收齐产帧");
+        }
+
+        // 标记 client1 掉线：此后 host 不再等它，用默认输入占位照常产帧。
+        host.mark_dropped(1);
+        let before = host.next_seq();
+        for _ in 0..10 {
+            host.set_local_input(Some(vec![7]));
+            assert!(host.try_emit().is_some(), "掉线后 host 应继续产帧（不因缺 client 卡死）");
+        }
+        assert!(host.next_seq() > before, "掉线后 host 应持续前进");
     }
 }
 
