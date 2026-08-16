@@ -71,6 +71,16 @@
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
 
+## Steam 真实接入（A2 中间：P2P 传输已实现）—— `SteamTransport` 完整实现
+- **`SteamTransport`（`steam` feature）现已用 `steamworks 0.13` 实现完整 `Transport`**：
+  - `init(app_id, virtual_port)` = `Client::init_app`；`steam_id()` / `local()`=自己的 `Peer::Steam{id}`；`run_callbacks()`。
+  - host：`listen()` = `create_listen_socket_p2p`；client：`connect_to(host_steam_id)` = `connect_p2p`（`NetworkingIdentity::new_steam_id`）。
+  - `send_to/recv_from`：`Peer::Steam{id}` ↔ `Netconnection`；`recv_from` 内部 `listen.events()` accept 新连接 + 各连接 `receive_messages`，返回 `(peer_id, 数据)` 并映射回 `Peer::Steam`。
+  - `create_lobby`（`LobbyMatching::create_lobby`，`LobbyType::Private`）用于大厅链路；`set_player_table` 配 `lobby::LobbyPlayerTable`。
+- 类型路径：`steamworks::networking_sockets::{ListenSocket, NetConnection}`、`networking_types::{SendFlags, NetworkingIdentity, NetworkingConfigEntry, ListenSocketEvent}`、`matchmaking::LobbyType`。
+- 已验证：默认（无 feature）+ feature 两 path 都 build/clippy 绿；`--ignored` init 测试真机跑通。
+- 剩双账号端到端：真机各登一账号 → host `listen`+`create_lobby`，client `join_lobby`+`connect_to(host)`，走 `NetLink::from_transport` 注入，帧同步零改动。
+
 ## Steam 真实接入（A2 单账号阶段）—— `SteamTransport::init` 已在真机跑通
 - **`transport_steam.rs`（`steam` feature 下编译）**：`SteamTransport::init(app_id)` = `steamworks::Client::init_app`；
   `steam_id()`=本机 SteamID、`local()`=自己的 `Peer::Steam{id}`、`run_callbacks()`=每帧泵回调；`matchmaking()` 句柄备用。
