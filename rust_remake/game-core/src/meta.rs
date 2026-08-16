@@ -55,6 +55,8 @@ pub struct PlayerProfile {
     pub key_slots: [Option<SkillId>; 8],
     /// 累计在技能升级上花费的金币（用于洗点退款）
     pub gold_spent: i32,
+    /// 战斗属性（4.6b）：Hp/移速等成长值，跨局/跨端确定性同步。
+    pub attributes: crate::attribute::Attributes,
 }
 
 impl PlayerProfile {
@@ -70,6 +72,7 @@ impl PlayerProfile {
             skill_levels: vec![1; n],
             key_slots: [None; 8],
             gold_spent: 0,
+            attributes: crate::attribute::Attributes::default(),
         }
     }
 

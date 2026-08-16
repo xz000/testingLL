@@ -6,7 +6,7 @@
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
 ## 当前状态（全绿）
-- **单测 102 全绿 = game-core 80 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
+- **单测 106 全绿 = game-core 84 + net 15 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
 - 技术栈：`game-core`（定点确定性核心）+ `net`（proto/handshake/lockstep 三层）+ `client`（ggez）。定点 `fixed=1.28`、三角 `cordic`；`Balance` 数值收敛层已建。
 - 测试计数几乎每次新增/重连切片都在涨（79/14/5）。**续接时以 `cargo test --workspace` 为准，别信本文件里的静态数字。**
 
@@ -70,6 +70,16 @@
 - `net-steam` 加 `steam` feature（默认关）+ 可选依赖 `steamworks 0.13`；`cargo build -p net-steam --features net-steam/steam` **编译通过**（steamworks-sys 0.13 + steamworks 0.13.1）。
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
+
+## 4.6b 属性系统（第一步：字段 + 派生前 Hp/移速）—— 已落 + 已测
+- 新增 `game-core/src/attribute.rs`：`Attributes`（hp_bonus / speed_bonus / armor / spell_resist / kb_resist，整数点数）+ 派生系数
+  （`HP_PER_BONUS`、`SPEED_PER_BONUS`、护甲/法抗/击退折算系数）与**确定性纯函数** `derived_max_hp`/`derived_speed_mult`/`armor_factor` 等。
+- 接入：
+  - `PlayerProfile` / `PlayerConfig` 加 `attributes` 字段；`PlayerConfig::CONFIG_VERSION` bump v1→v2，编码/解码加 5 个 u32。
+  - `Player` 加 `speed_mult`（base_speed 乘它）+ `apply_attributes`（按系数重设 max_hp、保持血比、设移速倍率）；`world_ser` 序列化含 `speed_mult`。
+  - `main.rs::teardown_round_end` 复用 `p.apply_attributes(&profile.attributes)` → **单机与联机共用**，属性跨端/跨局确定性一致。
+- 测试：attribute 派生确定性 + clamping、PlayerConfig 往返含属性、world 应用/血比/序列化往返 → **106 全绿**。
+- 阶段 2（文档后继）：护甲/法抗/击退接入 `events` 伤害与 `push` 结算点；法力值系统单独评估。
 
 ## Steam 真实接入（A2 中间：P2P 传输已实现）—— `SteamTransport` 完整实现
 - **`SteamTransport`（`steam` feature）现已用 `steamworks 0.13` 实现完整 `Transport`**：

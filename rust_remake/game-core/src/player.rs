@@ -125,11 +125,15 @@ pub struct SweepState {
 /// 单个玩家的确定性状态。
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Player {
+    /// 累计在技能升级上花费的金币（未用）
+
     pub id: u32,
     pub pos: Vec2,
     pub radius: Fix64,
     pub hp: Fix64,
     pub max_hp: Fix64,
+    /// 由属性（speed_bonus）派生的移速倍率（1.0 = 无加成）。确定性状态，随角色序列化。
+    pub speed_mult: f64,
     /// 当前移动目标点；`None` 表示本帧没有移动命令（停下来）。
     pub move_target: Option<Vec2>,
     /// 施法状态机（前摇 / 后摇 / 冷却 / 打断）
@@ -190,6 +194,7 @@ impl Player {
             radius,
             hp: max_hp,
             max_hp,
+            speed_mult: 1.0,
             move_target: None,
             caster: Caster::new(),
             skill_levels: [1; SKILL_SLOTS],
@@ -333,11 +338,11 @@ impl Player {
 
     // ---- 每帧推进 ----
 
-    /// 本帧移动速度（自走速度 × 移速 buff 倍率）。
+    /// 本帧移动速度（自走速度 × 属性移速倍率 × 移速 buff 倍率）。
     #[inline]
     fn base_speed(&self) -> Fix64 {
         let mult = self.buff_value(BuffKind::Speed(1.0)).max(1.0);
-        Fix64::from_num(BASE_SPEED) * Fix64::from_num(mult)
+        Fix64::from_num(BASE_SPEED * self.speed_mult) * Fix64::from_num(mult)
     }
 
     /// 依据"朝目标直线前进 + 加速度/减速度 + 附加速度"推进一帧的位移（整个速度合成模型）。
@@ -476,7 +481,21 @@ impl Player {
         self.pull = Vec2::ZERO;
     }
 
+    /// 应用玩家属性（4.6b 派生）：按相加系数重设最大生命（保持当前血比）与移速倍率。
+    /// 确定性纯函数（只依赖属性）；跨局/跨端一致地在 `teardown_round_end` 或重置时调用。
+    pub fn apply_attributes(&mut self, a: &crate::attribute::Attributes) {
+        let ratio = if self.max_hp > Fix64::ZERO {
+            self.hp / self.max_hp
+        } else {
+            Fix64::ONE
+        };
+        self.max_hp = Fix64::from_num(a.derived_max_hp(MAX_HP));
+        self.hp = (self.max_hp * ratio).max(Fix64::from_num(1));
+        self.speed_mult = a.derived_speed_mult();
+    }
+
     /// 新一轮开始时重置回合相关状态（保留 id / pos / 技能等级 / 半径）。
+    /// 注意：保留 `max_hp`（由属性派生，跨局保留）；这里只恢复满血。
     pub fn reset_state(&mut self) {
         self.hp = self.max_hp;
         self.alive = true;
