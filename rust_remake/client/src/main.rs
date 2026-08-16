@@ -159,6 +159,12 @@ struct Game {
     #[cfg(feature = "steam")]
     #[allow(dead_code)]
     steam_all_ready: bool,
+    /// Steam：房间阶段等待满员/就绪的累计帧数（用于节流打印诊断，避免每帧刷屏）。
+    #[cfg(feature = "steam")]
+    steam_lobby_wait_ticks: u32,
+    /// Steam：主菜单内是否处于「大厅选择」子菜单（H 创建 / J 加入 / Q 返回）。
+    #[cfg(feature = "steam")]
+    steam_lobby_menu: bool,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -340,6 +346,8 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
+            steam_lobby_wait_ticks: 0,
+            #[cfg(feature = "steam")]
             steam_in_lobby: steam_in_lobby_flag,
             #[cfg(feature = "steam")]
             steam_local_ready: false,
@@ -349,6 +357,8 @@ impl Game {
             steam_roster_ready: Vec::new(),
             #[cfg(feature = "steam")]
             steam_all_ready: false,
+            #[cfg(feature = "steam")]
+            steam_lobby_menu: false,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1127,7 +1137,7 @@ impl Game {
         let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(0.0, 0.0, sw, sh), Color::from_rgba(8, 10, 16, 225))?;
         canvas.draw(&dim, graphics::DrawParam::new());
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "房间 · 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
+        draw_text(canvas, ctx, "房间 - 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
         let mut y = sh * 0.32;
         let roster_lookup = |slot: u8, fallback: bool| -> bool {
             self.steam_roster_ready
@@ -1149,14 +1159,14 @@ impl Game {
                 let r = roster_lookup(*slot, false);
                 (r, if r { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
             };
-            let mark = if ready { "✓" } else { "○" };
+            let mark = if ready { "[v]" } else { "[ ]" };
             let me_tag = if is_me { "（我）" } else { "" };
             draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}  ({id})"), 22.0, col, Point2 { x: cx, y }, true)?;
             y += 32.0;
         }
         y += 12.0;
         if self.steam_all_ready {
-            draw_text(canvas, ctx, &format!("全体就绪 —— {:.0} 秒后进配置（按 o 立即）", self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y }, true)?;
+            draw_text(canvas, ctx, &format!("全体就绪 - {:.0} 秒后进配置（按 o 立即）", self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y }, true)?;
         } else {
             draw_text(canvas, ctx, "按 o / 空格 就绪（再按取消）", 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y }, true)?;
         }
@@ -1272,7 +1282,7 @@ impl Game {
                 let cx = sw / 2.0;
                 let mut y = sh * 0.18;
 
-                let title = format!("第 {} / {} 局结束 —— 学习阶段", self.meta.round, self.meta.config.total_rounds);
+                let title = format!("第 {} / {} 局结束 - 学习阶段", self.meta.round, self.meta.config.total_rounds);
                 draw_text(canvas, ctx, &title, 34.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
                 y += 64.0;
 
@@ -1288,7 +1298,7 @@ impl Game {
                     // 提示操作
                     draw_text(
                         canvas, ctx,
-                        "选键改技能：按 字母(C/R/E/D/Y/T/F/G) 选中该树 → 数字键选技能 → 按 = 升级，X 洗点",
+                        "选键改技能：按 字母(C/R/E/D/Y/T/F/G) 选中该树 -> 数字键选技能 -> 按 = 升级，X 洗点",
                         20.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
                     y += 44.0;
 
@@ -1349,7 +1359,7 @@ impl Game {
                     y += 40.0;
                 }
                 y += 30.0;
-                draw_text(canvas, ctx, "对局结束 —— 按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
+                draw_text(canvas, ctx, "对局结束 - 按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
             }
         }
         Ok(())
@@ -1378,7 +1388,29 @@ impl event::EventHandler for Game {
             } else if just("2") {
                 eprintln!("[menu] 局域网需命令行：/--host <port> --players N / 或 /--join <host:port>");
             } else if just("3") {
-                eprintln!("[menu] Steam 对战敬请期待。");
+                // 进入 Steam 大厅选择子菜单（H 创建 / J 加入 / Q 返回）。
+                #[cfg(feature = "steam")]
+                {
+                    eprintln!("[menu] -> Steam lobby menu");
+                    self.steam_lobby_menu = true;
+                }
+                #[cfg(not(feature = "steam"))]
+                eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
+            }
+            #[cfg(feature = "steam")]
+            if self.steam_lobby_menu {
+                if just("h")
+                    || just("H")
+                    || just(" ")
+                {
+                    eprintln!("[menu] Steam -> host lobby (2 players)");
+                    self.enter_steam_mode(ctx, true, 2);
+                } else if just("j") || just("J") {
+                    eprintln!("[menu] Steam -> auto-join host lobby");
+                    self.enter_steam_mode(ctx, false, 2);
+                } else if just("q") || just("Q") {
+                    self.steam_lobby_menu = false;
+                }
             }
             self.accumulator = 0.0;
             return Ok(());
@@ -1804,6 +1836,17 @@ impl Game {
                 }
             } else {
                 self.steam_countdown = 5.0;
+                // 节流诊断：每 ~120 帧打一次，说明“等了谁”（在场/就绪各几何），便于真机定位 Steam 联机卡点。
+                self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
+                if self.steam_lobby_wait_ticks % 120 == 1 {
+                    let pres = host.present_clients_count();
+                    let rdy = host.ready_clients_count();
+                    let alive = host.connected_clients_count();
+                    eprintln!(
+                        "[steam-host] waiting: local_ready={} present_clients={}/{} ready_clients={}/{} alive_conns={}",
+                        self.steam_local_ready, pres, host.expected_clients(), rdy, host.expected_clients(), alive
+                    );
+                }
             }
         }
         if entered_config {
@@ -1813,6 +1856,102 @@ impl Game {
         }
         self.accumulator = 0.0;
         Ok(())
+    }
+
+    /// 从主菜单进入 Steam 大厅模式：重建真实 Steam 会话（建厅/加入）+ lockstep + 世界/战绩，
+    /// 然后停在「房间/就绪界面」（`steam_in_lobby=true`）。`is_host`=创建大厅，否则自动按 matchkey 加入；
+    /// `players` 仅 host 用（请求的玩家总数，含 host）。
+    #[cfg(feature = "steam")]
+    fn enter_steam_mode(&mut self, _ctx: &mut Context, is_host: bool, players: u8) {
+        let seed = 20260812u64;
+        let res = (|| -> std::io::Result<()> {
+            let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)?;
+            if is_host {
+                let lobby = sess.host_create_lobby(players.max(1) as u32, 200)?;
+                sess.prepare_transport()?;
+                self.steam_my_index = sess.my_slot();
+                eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                // 房间成员名单（昵称）。
+                let fr = sess.transport.friends();
+                let mut roster = Vec::new();
+                for (slot, id) in sess.identities() {
+                    let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+                    roster.push((slot, name, id));
+                }
+                self.steam_roster = roster;
+                // 建 HostLockstep<SteamTransport>：总玩家数 = 请求的 players。
+                let n = players.max(1) as usize;
+                let ids: Vec<Option<u64>> = sess.identities().iter().map(|(_, v)| Some(*v)).collect();
+                let transport = sess.into_transport();
+                let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
+                host_ls.set_client_identities(&ids);
+                self.steam_host_ls = Some(host_ls);
+                self.steam_cli_ls = None;
+                self.app = AppState::SteamHost { players };
+                // 世界/战绩：玩家数 = 请求数。
+                self.world = game_core::world::World::new(n.max(1) as u32, seed);
+                self.meta = game_core::meta::MatchState::new(
+                    game_core::meta::MatchConfig::default(),
+                    &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
+                    8,
+                );
+            } else {
+                let lobby = sess.client_find_and_join(240)?;
+                sess.prepare_transport()?;
+                eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
+                let host_id = sess.host_steam_id().unwrap_or(0);
+                let my_slot = sess.my_slot();
+                self.steam_my_index = my_slot;
+                let fr = sess.transport.friends();
+                let mut roster = Vec::new();
+                for (slot, id) in sess.identities() {
+                    let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+                    roster.push((slot, name, id));
+                }
+                self.steam_roster = roster;
+                let transport = sess.into_transport();
+                self.steam_cli_ls = Some(net::lockstep::ClientLockstep::new(
+                    transport,
+                    my_slot,
+                    net::transport::Peer::Steam { id: host_id, conn: None },
+                ));
+                self.steam_host_ls = None;
+                self.app = AppState::SteamJoin { lobby_id: None };
+                let n = total.max(2);
+                self.world = game_core::world::World::new(n.max(1) as u32, seed);
+                self.meta = game_core::meta::MatchState::new(
+                    game_core::meta::MatchConfig::default(),
+                    &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
+                    8,
+                );
+            }
+            Ok(())
+        })();
+        if let Err(e) = res {
+            eprintln!("[steam-menu] failed to enter steam mode: {e:?}");
+            // 失败则退回主菜单（保留沙盒世界）。
+            self.steam_lobby_menu = false;
+            self.steam_in_lobby = false;
+            return;
+        }
+        // 进入房间/就绪界面（无需再手动输入房间号）。
+        self.steam_lobby_menu = false;
+        self.steam_in_lobby = true;
+        self.steam_local_ready = false;
+        self.steam_roster_ready = Vec::new();
+        self.steam_all_ready = false;
+        self.steam_countdown = 0.0;
+        self.pre_game_config = false; // 由房间就绪 → StartConfig → true
+        self.net_cfg = NetCfgSync::Idle;
+        self.net_link = None;
+        self.net_host = None;
+        self.net_host_ls = None;
+        self.net_ready = false;
+        self.conn_dropped = false;
+        self.reconnect_attempting = false;
+        self.host_frame_count = 0;
+        self.accumulator = 0.0;
     }
 
     fn finish_pre_game(&mut self) {
@@ -1844,13 +1983,13 @@ impl Game {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
-        draw_text(&mut canvas, ctx, "开局 · 配置技能", 46.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
+        draw_text(&mut canvas, ctx, "开局 - 配置技能", 46.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
         draw_text(&mut canvas, ctx, "按 Space / O 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         // 准备状态面板：显示各玩家已加入/已就绪，避免“以为卡住”。
         let me = self.self_index();
         if self.app != AppState::Solo {
             let mut r = sh * 0.12 + 96.0;
-            draw_text(&mut canvas, ctx, "—— 玩家准备状态 ——", 20.0, graphics::Color::from_rgb(200, 210, 220), Point2 { x: cx, y: r }, true)?;
+            draw_text(&mut canvas, ctx, "== 玩家准备状态 ==", 20.0, graphics::Color::from_rgb(200, 210, 220), Point2 { x: cx, y: r }, true)?;
             r += 28.0;
             if let Some(host) = self.net_host_ls.as_ref() {
                 let total = self.world.players.len();
@@ -1861,11 +2000,11 @@ impl Game {
                         (format!("玩家{i}"), host.client_cfg_ready(i as u8))
                     };
                     let (txt, col) = if ready {
-                        (format!("  {name}  ✓ 已就绪"), Color::from_rgb(90, 220, 130))
+                        (format!("  {name}  [v] 已就绪"), Color::from_rgb(90, 220, 130))
                     } else if (i as u32) == me {
-                        (format!("  {name}  ○ 等你按空格"), Color::from_rgb(240, 200, 70))
+                        (format!("  {name}  [ ] 等你按空格"), Color::from_rgb(240, 200, 70))
                     } else {
-                        (format!("  {name}  ○ 等待上报"), Color::from_rgb(170, 175, 185))
+                        (format!("  {name}  [ ] 等待上报"), Color::from_rgb(170, 175, 185))
                     };
                     draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
                     r += 26.0;
@@ -1877,9 +2016,9 @@ impl Game {
                 // client：显示自身是否已就绪。
                 let ready = self.net_cfg == NetCfgSync::ClientWait;
                 let (txt, col) = if ready {
-                    ("  ✓ 已就绪，等待 host 开始…".to_string(), Color::from_rgb(90, 220, 130))
+                    ("  [v] 已就绪，等待 host 开始...".to_string(), Color::from_rgb(90, 220, 130))
                 } else {
-                    ("  ○ 未就绪 —— 请先点击本窗口，再按空格就绪".to_string(), Color::from_rgb(240, 200, 70))
+                    ("  [ ] 未就绪 - 请先点击本窗口，再按空格就绪".to_string(), Color::from_rgb(240, 200, 70))
                 };
                 draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
             }
@@ -1900,8 +2039,8 @@ impl Game {
                 draw_text(&mut canvas, ctx, &sel_line, 24.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
                 y += 36.0;
                 for (i, skill) in sel.tree().skills_in_tree().iter().enumerate() {
-                    let star = if pr.bound_skill(sel) == Some(*skill) { "  ◀" } else { "" };
-                    draw_text(&mut canvas, ctx, &format!("  按 {}  →  {}{}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 20.0, graphics::Color::from_rgb(215, 220, 230), Point2 { x: cx, y }, true)?;
+                    let star = if pr.bound_skill(sel) == Some(*skill) { "  [已选]" } else { "" };
+                    draw_text(&mut canvas, ctx, &format!("  按 {} ->  {}{}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 20.0, graphics::Color::from_rgb(215, 220, 230), Point2 { x: cx, y }, true)?;
                     y += 30.0;
                 }
             } else {
@@ -1932,15 +2071,15 @@ impl Game {
             draw_text(&mut canvas, ctx, &format!("生命+{}% 移速+{}% 护甲-{}% 法抗-{}% 击退-{}% 法力+{} 回蓝+{}/s",
                 a.hp_bonus * 10, a.speed_bonus * 5, a.armor * 6, a.spell_resist * 6, a.kb_resist * 12, a.mana_max * 25, a.mana_regen), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: gy }, true)?;
             gy += 26.0;
-            draw_text(&mut canvas, ctx, "Z 金币→成长点 · H生命 J移速 K护甲 L法抗 ;击退 U法力上限 I回蓝", 16.0, Color::from_rgb(140, 160, 180), Point2 { x: cx, y: gy }, true)?;
+            draw_text(&mut canvas, ctx, "Z 金币换成长点 / H生命 J移速 K护甲 L法抗 ;击退 U法力上限 I回蓝", 16.0, Color::from_rgb(140, 160, 180), Point2 { x: cx, y: gy }, true)?;
         }
-        draw_text(&mut canvas, ctx, "字母键选树 · 数字键绑技能 · = 升级 · X 洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.88 }, true)?;
+        draw_text(&mut canvas, ctx, "字母键选树 / 数字键绑技能 / = 升级 / X 洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.88 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
 
 
-    /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 占位）。
+    /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
     fn draw_menu(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         let (sw, sh) = ctx.gfx.drawable_size();
@@ -1948,16 +2087,32 @@ impl Game {
         let title = "帧同步圆球竞技场";
         draw_text(&mut canvas, ctx, title, 52.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
         draw_text(&mut canvas, ctx, "请选择模式（按数字键）", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.18 + 70.0 }, true)?;
+        #[cfg(feature = "steam")]
+        if self.steam_lobby_menu {
+            draw_text(&mut canvas, ctx, "=== Steam 大厅 ===", 32.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
+            let subs = [
+                "H / 空格   创建房间（2 人）",
+                "J          自动加入已开房间",
+                "Q          返回主菜单",
+            ];
+            for (i, s) in subs.iter().enumerate() {
+                let y = sh * 0.46 + (i as f32) * 40.0;
+                draw_text(&mut canvas, ctx, s, 26.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+            }
+            draw_text(&mut canvas, ctx, "加入无需输房间号（按 matchkey 自动搜加）", 17.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            canvas.finish(ctx)?;
+            return Ok(());
+        }
         let items = [
             "1  单机技能试验场（无 AI）",
             "2  局域网 · 开房间 / 加入（暂用命令行 --host / --join）",
-            "3  Steam 对战（敬请期待）",
+            "3  Steam 对战（按 3 进入大厅）",
         ];
         for (i, s) in items.iter().enumerate() {
             let y = sh * 0.40 + (i as f32) * 46.0;
             draw_text(&mut canvas, ctx, s, 26.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
         }
-        draw_text(&mut canvas, ctx, "也可用命令行直通：--solo / --host <port> / --join <host:port>", 16.0, graphics::Color::from_rgb(150, 155, 165), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        draw_text(&mut canvas, ctx, "也可用命令行直通：--solo / --host <port> / --join <host:port> / --steam-host / --steam-join", 15.0, graphics::Color::from_rgb(150, 155, 165), Point2 { x: cx, y: sh * 0.90 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }

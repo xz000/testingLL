@@ -105,7 +105,7 @@ impl SteamTransport {
                     ListenSocketEvent::Connected(ev) => {
                         if let Some(id) = ev.remote().steam_id() {
                             let conn = ev.take_connection();
-                            eprintln!("[steam-p2p] host connection established with {}", id.raw());
+                            eprintln!("[steam-p2p] host connection ESTABLISHED with {}", id.raw());
                             self.conns.insert(id.raw(), conn);
                         }
                     }
@@ -132,6 +132,15 @@ impl SteamTransport {
         out
     }
 
+    /// 某 Steam 端点的 P2P 连接当前是否为 EstABLISHED（可正常收发）。
+    pub fn is_established(&self, id: u64) -> bool {
+        use steamworks::networking_types::NetworkingConnectionState;
+        match self.conns.get(&id) {
+            Some(c) => matches!(c.info().ok().and_then(|i| i.state().ok()), Some(NetworkingConnectionState::Connected)),
+            None => false,
+        }
+    }
+
     /// 大厅（Matchmaking）句柄；用 `create_lobby`/`join_lobby`/`lobby_members` 做成员→槽位。
     pub fn matchmaking(&self) -> steamworks::Matchmaking {
         self.client.matchmaking()
@@ -150,13 +159,22 @@ impl SteamTransport {
 
 impl Transport for SteamTransport {
     fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
-        use steamworks::networking_types::SendFlags;
+        use steamworks::networking_types::{NetworkingConnectionState, SendFlags};
+        // 先 pump 回调，推进 P2P 握手/连接建立（SteamNetworkingSockets 需要回调驱动状态机）。
+        self.client.run_callbacks();
         match peer {
             Peer::Steam { id, .. } => {
                 let c = self
                     .conns
                     .get_mut(id)
                     .ok_or_else(|| io::Error::other(format!("no steam connection to SteamID {id}")))?;
+                // 连接尚未 ESTABLISHED 时 Steam 会返回 k_EResultIgnored（消息被丢弃）。这里显式跳过早发，
+                // 让上层连续重发、待连接建立后自然送达（避免静默丢包导致“host 判不了全员就绪”）。
+                if let Ok(info) = c.info() {
+                    if info.state().ok() != Some(NetworkingConnectionState::Connected) {
+                        return Err(io::Error::other(format!("steam connection to {id} not established yet")));
+                    }
+                }
                 c.send_message(buf, SendFlags::RELIABLE_NO_NAGLE)
                     .map_err(|e| io::Error::other(format!("steam send_message failed: {e:?}")))?;
                 Ok(buf.len())

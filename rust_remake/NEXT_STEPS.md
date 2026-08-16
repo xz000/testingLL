@@ -30,6 +30,23 @@
 3. ✅ host→client 的“成员就绪状态快照”（`RosterReady` 广播）让每个端房间界面都显示**所有成员**就绪（多人一致界面）。
 4. 待双机验证：房间就绪（含可撤销）→ 配置 → 对战。局域网保持不动。
 
+## Steam 联机根因：P2P 连接未建立前 SendMessage 被静默丢弃 —— 已加 established 门 + 诊断（本次会话，未提交）
+**真机测试再卡（2026-08-16）**：即便已上“持续在场+幂等就绪+RosterReady”，host 仍判不了全员就绪。查 steamworks 源码：
+`SendMessageToConnection` 在连接**尚未 ESTABLISHED** 时返回 `k_EResultIgnored`（消息直接被丢弃），而我们 `.ok()` 静默吞错，
+于是 host 永远收不到 client 的 Input/PlayerReady（P2P 握手建立与首包发送的时序竞态）。
+- **修复**：`SteamTransport::send_to` 现在**先 `run_callbacks()` 推进握手**，且显式检查该端连接状态；非 `Connected(Established)` 时返回明确
+  “not established yet”错误（不静默丢），上层 `.ok()` 丢弃该次、但**每帧持续重发**，连接建立后自然送达 → 不再因时序丢包。
+- **诊断**：host 房间阶段每 ~120 帧节流打一条 `[steam-host] waiting: local_ready / present_clients / ready_clients / alive_conns / expected`，
+  真机卡点能从日志直接看出“等了谁”（在场/就绪/连接各几何）。`HostLockstep` 新增 `present_clients_count`/`ready_clients_count`/`connected_clients_count`/`expected_clients`。
+- 待双机重测：看 `[steam-p2p] host connection ESTABLISHED` + 上述 waiting 计数，确认 host 能收到 client 在场/就绪并倒计时。
+
+## Steam 大厅/加入界面 + 可显示字符替换（本次会话，未提交）
+- **主菜单 Steam 入口变为真界面**：按 `3` 进 Steam 大厅子菜单，`H/空格` = 建 2 人厅、`J` = **自动按 matchkey 加入（无需输房间号）**、`Q` 返回。
+  `Game::enter_steam_mode`（自菜单重建 Steam 会话/lockstep/world/meta，复用 `--steam-host/--steam-join` 同套构建代码）。
+  `run-steam.ps1 -Mode menu` 可起 Steam 版菜单（自动 stage DLL/appid）。
+- **替换 UI 里可能打不出来的字符**（CJK 字体可能缺字形）：`◀`→`[已选]`、`✓`/`○`→`[v]`/`[ ]`、`→`→`->`、`——`/`──`→`-`、`·`→`/`、`…`→`...`。
+  （技能名里的 `·`（如“潜行踢·连推”）为 U+00B7 常见字符，保留。）
+
 
 
 ## 关键历史（速览，回滚/定位用）
@@ -254,10 +271,13 @@
 
 ## 常用命令
 ```
-cargo test  --workspace                # 回归（97 全绿基线）
+cargo test  --workspace                # 回归（111 全绿基线）
 cargo clippy --workspace -- -D warnings
 cargo run -p client -- --solo          # 单机试验场
 powershell -File multi-launch.ps1 -Players 3   # 局域网多开（-Fast 加速局终看多局；可手动停窗看重连）
+powershell -File run-steam.ps1 -Mode menu       # Steam 版主菜单（按 3 进大厅，H 建厅 / J 自动加入）
+powershell -File run-steam.ps1 -Mode host -Players 2   # host 建厅
+powershell -File run-steam.ps1 -Mode join        # client 自动按 matchkey 加入（无需输房间号）
 powershell -File check.ps1             # 一键 build+test+clippy
 ```
 
