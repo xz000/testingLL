@@ -56,7 +56,7 @@
 - M0 UI/菜单（`UI_MENUS.md`）：主菜单三大入口 + 各模式流程（先出可交互入口，具体页面对应 M1-M3）。
 - M1 单机试验场可玩（无 AI、自由测技能 + 调试辅助）—— 无网络依赖，最快。
 - M2 局域网对战体验补完（开局/加入/名次/重开）可对外演示 —— 基于已打通的 lockstep。
-- M3 Steamworks 对战 MVP（Steam 大厅 + SteamTransport 跑通多端）—— 交付级。
+- M3 Steamworks 对战 MVP（Steam 大厅 + SteamTransport 跑通多端）—— 交付级。必含掉线/重连：见 `RECONNECT.md`（先局域网落“host 快照 + 掉线重连”方案A，再换 SteamTransport 复用）。
 
 ## 待定 / 需用户拍板
 - 局域网是否要做"房间列表/自动发现"（内网广播），还是手动输 host:port 即可？默认先做手动。
