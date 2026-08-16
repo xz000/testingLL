@@ -32,6 +32,9 @@ pub const TAG_RECONNECT: u8 = 12;
 pub const TAG_PLAYER_READY: u8 = 13;
 /// host→client：全体就绪，通知 client 去进入开局配置菜单。
 pub const TAG_START_CONFIG: u8 = 14;
+/// host→client：房间「就绪状态快照」：`entries` 为各玩家 `(玩家序号, 是否就绪)`（含 host 槽 0）。
+/// 每端据此显示所有成员的实时就绪状态，保证多人界面一致。
+pub const TAG_ROSTER_READY: u8 = 15;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -65,6 +68,8 @@ pub enum Packet {
     PlayerReady { index: u8, ready: bool },
     /// host→client：全体就绪，进入开局配置菜单。
     StartConfig,
+    /// host→client：房间就绪状态快照（含 host 槽 0）。`entries` = 各玩家 `(序号, ready)`。
+    RosterReady { entries: Vec<(u8, bool)> },
     /// host→重连端：整场 World 快照字节 + 接回 seq。
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
@@ -146,6 +151,18 @@ impl Packet {
                 vec![TAG_PLAYER_READY, *index, if *ready { 1 } else { 0 }]
             }
             Packet::StartConfig => vec![TAG_START_CONFIG],
+            Packet::RosterReady { entries } => {
+                let mut v = Vec::with_capacity(1 + 1 + entries.len() * 2);
+                v.push(TAG_ROSTER_READY);
+                v.push(entries.len() as u8);
+                let mut sorted: Vec<(u8, bool)> = entries.clone();
+                sorted.sort_by_key(|(i, _)| *i);
+                for (i, r) in sorted {
+                    v.push(i);
+                    v.push(if r { 1 } else { 0 });
+                }
+                v
+            }
             Packet::Snapshot { world_bytes, seq } => {
                 let mut v = Vec::with_capacity(1 + 2 + world_bytes.len() + 8);
                 v.push(TAG_SNAPSHOT);
@@ -246,6 +263,19 @@ impl Packet {
                 Some(Packet::PlayerReady { index: buf[1], ready: buf[2] != 0 })
             }
             TAG_START_CONFIG => Some(Packet::StartConfig),
+            TAG_ROSTER_READY if buf.len() >= 2 => {
+                let count = buf[1] as usize;
+                let mut entries = Vec::with_capacity(count);
+                let mut pos = 2;
+                for _ in 0..count {
+                    if pos + 2 > buf.len() {
+                        return None;
+                    }
+                    entries.push((buf[pos], buf[pos + 1] != 0));
+                    pos += 2;
+                }
+                Some(Packet::RosterReady { entries })
+            }
             _ => None,
         }
     }
@@ -281,6 +311,7 @@ mod tests {
             Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
             Packet::PlayerReady { index: 2, ready: true },
             Packet::StartConfig,
+            Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
         ];

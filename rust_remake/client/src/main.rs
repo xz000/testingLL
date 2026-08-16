@@ -152,6 +152,9 @@ struct Game {
     #[cfg(feature = "steam")]
     #[allow(dead_code)]
     steam_roster: Vec<(u8, String, u64)>,
+    /// Steam：本机最近一次收到的 host 房间「就绪状态快照」（多人一致界面；client 侧显示各成员就绪用）。
+    #[cfg(feature = "steam")]
+    steam_roster_ready: Vec<(u8, bool)>,
     /// Steam：全体就绪是否为真（host 计算），下一步 lobby 用（暂未接）。
     #[cfg(feature = "steam")]
     #[allow(dead_code)]
@@ -342,6 +345,8 @@ impl Game {
             steam_local_ready: false,
             #[cfg(feature = "steam")]
             steam_roster,
+            #[cfg(feature = "steam")]
+            steam_roster_ready: Vec::new(),
             #[cfg(feature = "steam")]
             steam_all_ready: false,
             net_ready: false,
@@ -1124,15 +1129,25 @@ impl Game {
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "房间 · 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
         let mut y = sh * 0.32;
+        let roster_lookup = |slot: u8, fallback: bool| -> bool {
+            self.steam_roster_ready
+                .iter()
+                .find(|(s, _)| *s == slot)
+                .map(|(_, r)| *r)
+                .unwrap_or(fallback)
+        };
         for (slot, name, id) in self.steam_roster.iter() {
             let is_me = *slot == self.steam_my_index;
             let (ready, col) = if is_me {
                 (self.steam_local_ready, if self.steam_local_ready { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
             } else if let Some(host) = self.steam_host_ls.as_ref() {
+                // host 本机：直接读 HostLockstep 里的各 client 就绪。
                 let r = host.client_ready(*slot);
                 (r, if r { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
             } else {
-                (false, Color::from_rgb(170, 175, 185))
+                // client 本机：用 host 广播的就绪状态快照（多人一致界面）。
+                let r = roster_lookup(*slot, false);
+                (r, if r { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
             };
             let mark = if ready { "✓" } else { "○" };
             let me_tag = if is_me { "（我）" } else { "" };
@@ -1738,9 +1753,11 @@ impl Game {
 
     /// 开局前的技能配置（第一局开始前选择）。
     /// Steam 房间/就绪阶段（每帧）：
-    /// - 按 o toggle 本机就绪（可撤销）；client 向 host 上报，host 数成员就绪。
-    /// - host：全就绪 → 5 秒倒计时（有人取消则重置）→ broadcast StartConfig + 进配置菜单。
-    /// - client：收到 StartConfig → 进配置菜单。
+    /// - 按 o toggle 本机就绪（可撤销）；client 每帧持续上行输入（在场信号，对齐局域网 upload）+
+    ///   上报当前就绪，双重保证连接建立后 host 能可靠收到 client 在场与就绪（避免一次性包在连接建立时序丢）。
+    /// - host：poll 收客户端（持续在场 + PlayerReady 就绪），要求所有 client 在场 && 全体（含 host）就绪
+    ///   → 每帧广播「就绪状态快照」给各端（多人一致界面）→ 5 秒倒计时（有人取消则重置）→ broadcast StartConfig + 进配置菜单。
+    /// - client：收到 RosterReady 更新界面，收到 StartConfig → 进配置菜单。
     #[cfg(feature = "steam")]
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
         use ggez::input::keyboard::Key;
@@ -1751,20 +1768,32 @@ impl Game {
             eprintln!("[steam-lobby] local ready = {}", self.steam_local_ready);
         }
         let mut entered_config = false;
+        // 本机当前输入（房间阶段就用它做「在场信号」，对齐局域网 upload；与对局开始后一致）。
+        let presence_enc = game_core::netcode::encode_player_input(&self.local_player_input());
         if let Some(cli) = self.steam_cli_ls.as_mut() {
-            // client：上报就绪，收 StartConfig。
+            // client：每帧上行输入（在场信号，对齐局域网 upload —— 避免连接未建立时一次性包丢失）
+            // + 上报当前就绪（幂等，host 始终有最新就绪态）；收 RosterReady/StartConfig。
+            cli.send_input(&presence_enc).ok();
             cli.send_ready_state(self.steam_local_ready).ok();
+            let mut rcv = [0u8; 8192];
+            if let Ok(Some(entries)) = cli.recv_roster_ready(&mut rcv) {
+                self.steam_roster_ready = entries;
+            }
             let mut rcv = [0u8; 8192];
             if cli.recv_start_config(&mut rcv).unwrap_or(false) {
                 eprintln!("[steam-client] host says all ready -> config menu");
                 entered_config = true;
             }
         } else if let Some(host) = self.steam_host_ls.as_mut() {
-            // host：收 client 就绪，算全体就绪 → 倒计时 → 广播。
+            // host：每帧 poll 收客户端（持续在场 + PlayerReady）；要求所有 client 在场 && 全体就绪。
             let mut rcv = [0u8; 8192];
             host.poll(&mut rcv);
-            let all_ready = self.steam_local_ready && host.all_clients_ready();
+            let all_present = host.saw_all_clients(); // 所有 client 都已上行过输入（在场信号）
+            let all_clients_ready = host.all_clients_ready();
+            let all_ready = self.steam_local_ready && all_present && all_clients_ready;
             self.steam_all_ready = all_ready;
+            // 每帧广播就绪状态快照，让各端都能看到所有成员的就绪状态（多人一致界面）。
+            host.broadcast_roster_ready(self.steam_local_ready);
             if all_ready {
                 if o_pressed || self.steam_countdown <= 0.0 {
                     eprintln!("[steam-host] all ready -> broadcast StartConfig");
