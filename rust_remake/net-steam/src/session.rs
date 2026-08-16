@@ -82,6 +82,41 @@ impl SteamSession {
         Ok(lobby)
     }
 
+    /// client：用 host 打印的 LobbyId 直接加入（自动搜厅失败时的 fallback）。
+    pub fn join_lobby_by_id(&mut self, lobby_id: u64, beats: u32) -> io::Result<steamworks::LobbyId> {
+        use steamworks::LobbyId;
+        let mm = self.transport.matchmaking();
+        let lobby = LobbyId::from_raw(lobby_id);
+        let join_done = Arc::new(AtomicBool::new(false));
+        let join_res = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, ()>>));
+        {
+            let join_done = join_done.clone();
+            let join_res = join_res.clone();
+            mm.join_lobby(lobby, move |r| {
+                *join_res.lock().unwrap() = Some(r.map_err(|_| ()));
+                join_done.store(true, Ordering::SeqCst);
+            });
+        }
+        for _ in 0..beats {
+            self.run_callbacks();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if join_done.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+        let lobby = join_res
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| io::Error::other("join lobby by id timeout"))?
+            .map_err(|_| io::Error::other("join lobby by id failed"))?;
+        self.lobby = Some(lobby);
+        let host_id = mm.lobby_owner(lobby).raw();
+        let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
+        self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
+        Ok(lobby)
+    }
+
     /// client：按 `matchkey` 大厅元数据过滤公开大厅并加入。返回 LobbyId。
     /// 注意：steamworks 的 `add_request_lobby_list_string_filter` 需要 `LobbyKey`（pub(crate) 字段）无法从本 crate 构造，
     /// 故改为 request_lobby_list 后用 `lobby_data(matchkey)` 过滤（公开 API）。
