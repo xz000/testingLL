@@ -35,10 +35,10 @@ pub type FrameData = Vec<(u8, Vec<u8>)>;
 /// 网络层可发送/接收的包。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Packet {
-    /// client 申请加入（空）。
-    Join,
-    /// host 确认序号：`my_index` + 总人数。
-    Ack { my_index: u8, players: u8 },
+    /// client 申请加入，附本端稳定身份（u64，未来=SteamID；局域网可随机，重连/按身份取槽用）。
+    Join { identity: u64 },
+    /// host 确认序号：`my_index` + 总人数 + 本端稳定身份回显。
+    Ack { my_index: u8, players: u8, identity: u64 },
     /// client 本机输入：`index` + 已编码字节。
     Input { index: u8, bytes: Vec<u8> },
     /// host 广播整帧：`seq` + 全玩家输入。
@@ -54,8 +54,9 @@ pub enum Packet {
     PlayerCfg { index: u8, bytes: Vec<u8> },
     /// host→所有端：广播下一局所有玩家的完整配置快照（各端据此确定性初始化下一局）。
     PlayerCfgAll { entries: Vec<(u8, Vec<u8>)> },
-    /// client→host：请求重连，附希望接回的 seq（校验用）。
-    ReconnectReq { last_known_seq: u64 },
+    /// client→host：请求重连，附本端稳定身份（Steam=SteamID；局域网=握手时登记的身份）
+    /// 与已知的最后 seq（校验用）。host 按身份找回槽位，而非只靠来源端点。
+    ReconnectReq { identity: u64, last_known_seq: u64 },
     /// host→重连端：整场 World 快照字节 + 接回 seq。
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
@@ -66,9 +67,21 @@ impl Packet {
     /// 编成字节（纯函数，返回独立 Vec）。
     pub fn encode(&self) -> Vec<u8> {
         match self {
-            Packet::Join => vec![TAG_JOIN],
+            Packet::Join { identity } => {
+                let mut v = Vec::with_capacity(9);
+                v.push(TAG_JOIN);
+                v.extend_from_slice(&identity.to_be_bytes());
+                v
+            }
             Packet::Ready => vec![TAG_READY],
-            Packet::Ack { my_index, players } => vec![TAG_ACK, *players, *my_index],
+            Packet::Ack { my_index, players, identity } => {
+                let mut v = Vec::with_capacity(10);
+                v.push(TAG_ACK);
+                v.push(*players);
+                v.push(*my_index);
+                v.extend_from_slice(&identity.to_be_bytes());
+                v
+            }
             Packet::Go { start_seq } => {
                 let mut v = Vec::with_capacity(9);
                 v.push(TAG_GO);
@@ -114,9 +127,10 @@ impl Packet {
                 }
                 v
             }
-            Packet::ReconnectReq { last_known_seq } => {
-                let mut v = Vec::with_capacity(9);
+            Packet::ReconnectReq { identity, last_known_seq } => {
+                let mut v = Vec::with_capacity(17);
                 v.push(TAG_RECONNECT);
+                v.extend_from_slice(&identity.to_be_bytes());
                 v.extend_from_slice(&last_known_seq.to_be_bytes());
                 v
             }
@@ -143,12 +157,17 @@ impl Packet {
             return None;
         }
         match buf[0] {
-            TAG_JOIN => Some(Packet::Join),
+            TAG_JOIN if buf.len() >= 9 => {
+                let identity = u64::from_be_bytes(buf[1..9].try_into().ok()?);
+                Some(Packet::Join { identity })
+            }
             TAG_READY => Some(Packet::Ready),
-            TAG_ACK if buf.len() >= 3 => Some(Packet::Ack {
-                my_index: buf[2],
-                players: buf[1],
-            }),
+            TAG_ACK if buf.len() >= 10 => {
+                let players = buf[1];
+                let my_index = buf[2];
+                let identity = u64::from_be_bytes(buf[3..11].try_into().ok()?);
+                Some(Packet::Ack { my_index, players, identity })
+            }
             TAG_GO if buf.len() >= 9 => {
                 Some(Packet::Go { start_seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
             }
@@ -206,8 +225,10 @@ impl Packet {
             TAG_RESYNC if buf.len() >= 9 => {
                 Some(Packet::Resync { seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
             }
-            TAG_RECONNECT if buf.len() >= 9 => {
-                Some(Packet::ReconnectReq { last_known_seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
+            TAG_RECONNECT if buf.len() >= 17 => {
+                let identity = u64::from_be_bytes(buf[1..9].try_into().ok()?);
+                let last_known_seq = u64::from_be_bytes(buf[9..17].try_into().ok()?);
+                Some(Packet::ReconnectReq { identity, last_known_seq })
             }
             _ => None,
         }
@@ -227,9 +248,9 @@ mod tests {
     #[test]
     fn roundtrip_all_packets() {
         let cases: Vec<Packet> = vec![
-            Packet::Join,
+            Packet::Join { identity: 9001 },
             Packet::Ready,
-            Packet::Ack { my_index: 3, players: 8 },
+            Packet::Ack { my_index: 3, players: 8, identity: 9001 },
             Packet::Go { start_seq: 7 },
             Packet::Input { index: 2, bytes: vec![1, 2, 3] },
             Packet::Frame {
@@ -241,7 +262,7 @@ mod tests {
             Packet::PlayerCfgAll {
                 entries: vec![(0, vec![10, 20]), (1, vec![30]), (2, vec![])],
             },
-            Packet::ReconnectReq { last_known_seq: 123 },
+            Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
         ];
@@ -256,8 +277,10 @@ mod tests {
     fn decode_rejects_truncated() {
         // Go 需要 9 字节，给 2 字节应拒绝。
         assert!(Packet::decode(&[TAG_GO, 0, 1]).is_none());
-        // Ack 需要 3 字节。
+        // Ack 需要 10 字节（players+index+identity:u64）。
         assert!(Packet::decode(&[TAG_ACK, 0]).is_none());
+        // Join 需要 9 字节（identity:u64）。
+        assert!(Packet::decode(&[TAG_JOIN]).is_none());
         // 未知 tag。
         assert!(Packet::decode(&[99, 1, 2, 3]).is_none());
     }

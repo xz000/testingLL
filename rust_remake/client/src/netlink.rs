@@ -13,6 +13,16 @@ use net::transport::{Peer, StdUdpTransport, Transport};
 use std::io;
 use std::net::SocketAddr;
 
+/// 生成本进程内近乎唯一的稳定身份（u64 占位）：时间戳异或 pid。Steam 将来直接换成 SteamID，不走这里。
+fn random_identity() -> u64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let pid = std::process::id() as u64;
+    (nanos ^ pid.wrapping_mul(0x9E3779B97F4A7C15)).max(1)
+}
+
 /// 联网客户端连接封装（**传输无关**：`T: Transport` 决定底层是 UDP 还是 Steam）。
 /// `NetLink` 只按 `Peer` 收发/判等，不关心具体传输；换底层（UDP→Steam）只需换 `T` 与注入方式。
 /// 局域网用 `connect_udp`；Steam 将来用 `from_transport` 注入 SteamTransport。
@@ -22,6 +32,8 @@ pub struct NetLink<T: Transport> {
     /// 运行阶段持有（transport 移交于此）。
     lockstep: Option<ClientLockstep<T>>,
     host: Peer,
+    /// 本端稳定身份（u64：Steam 未来=SteamID；局域网=随机占位）。握手时上报、ACK 回显。
+    identity: u64,
     rcv: Vec<u8>,
     pub started: bool,
     my_index: u8,
@@ -33,27 +45,38 @@ pub struct NetLink<T: Transport> {
 pub type NetLinkUdp = NetLink<StdUdpTransport>;
 
 impl NetLinkUdp {
-    /// 局域网（UDP）便捷构造：绑定本机随机端口，以 `Peer::Udp(host)` 为 host 端点。
-    /// （放在具体别名 impl 上，避免泛型 `T` 推断歧义。）
+    /// 局域网（UDP）便捷构造：绑定本机随机端口，以 `Peer::Udp(host)` 为 host 端点，随机稳定身份占位。
     pub fn connect_udp(host: SocketAddr) -> io::Result<NetLinkUdp> {
+        let identity = random_identity();
+        NetLinkUdp::connect_udp_with(host, identity)
+    }
+
+    /// 局域网（UDP）+ 指定稳定身份（如昵称 hash / 玩家自定义 id）。
+    pub fn connect_udp_with(host: SocketAddr, identity: u64) -> io::Result<NetLinkUdp> {
         let (t, _) = StdUdpTransport::bind_loopback()?;
-        NetLink::from_transport(t, Peer::Udp(host))
+        NetLink::from_transport(t, Peer::Udp(host), identity)
     }
 }
 
 impl<T: Transport> NetLink<T> {
-    /// 传输无关构造：给定一个已连通的 `transport` 与要连的 host 端点（可为 `Peer::Steam` 或 `Peer::Udp`）。
-    pub fn from_transport(transport: T, host: Peer) -> io::Result<NetLink<T>> {
+    /// 传输无关构造：指定稳定身份（Steam 传 SteamID；局域网传昵称 hash/自定义 id）。
+    pub fn from_transport(transport: T, host: Peer, identity: u64) -> io::Result<NetLink<T>> {
         Ok(NetLink {
-            handshake: Some(ClientHandshake::connected(transport)),
+            handshake: Some(ClientHandshake::connected_with(transport, identity)),
             lockstep: None,
             host,
+            identity,
             rcv: vec![0u8; 4096],
             started: false,
             my_index: 0,
             players: 0,
             stale_ticks: 0,
         })
+    }
+
+    /// 本端稳定身份。
+    pub fn my_identity(&self) -> u64 {
+        self.identity
     }
 
     /// 握手：发 JOIN 并尝试收 ACK，直到拿到序号/人数；一旦拿到，立即把 transport 移交给
@@ -103,7 +126,7 @@ impl<T: Transport> NetLink<T> {
         let Some(ls) = self.lockstep.as_mut() else {
             return Ok(None);
         };
-        ls.send_reconnect_req()?;
+        ls.send_reconnect_req(self.identity)?;
         ls.recv_snapshot(&mut self.rcv)
     }
 
