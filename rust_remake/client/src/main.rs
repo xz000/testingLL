@@ -109,6 +109,8 @@ struct Game {
     net_ready: bool,
     /// 联网多局：学习结束后「配置同步」阶段（见 `NetCfgSync`）。
     net_cfg: NetCfgSync,
+    /// 开局前的技能配置阶段（第一局开始前先选/升级技能）。
+    pre_game_config: bool,
     /// 顶层应用状态（主菜单 / 各模式）。
     app: AppState,
 }
@@ -207,6 +209,7 @@ impl Game {
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
+            pre_game_config: app == AppState::Solo,
         })
     }
 
@@ -1034,10 +1037,25 @@ impl event::EventHandler for Game {
                 // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
                 eprintln!("[menu] -> Solo");
                 self.app = AppState::Solo;
+                self.pre_game_config = true; // 先进开局配置
             } else if just("2") {
                 eprintln!("[menu] 局域网需命令行：/--host <port> --players N / 或 /--join <host:port>");
             } else if just("3") {
                 eprintln!("[menu] Steam 对战敬请期待。");
+            }
+            self.accumulator = 0.0;
+            return Ok(());
+        }
+
+        // 开局前的技能配置（Solo 试验场）：选/升级技能，按 Space/Enter/Esc 开始第一局。
+        if self.pre_game_config && self.app == AppState::Solo {
+            use ggez::input::keyboard::Key;
+            self.poll_learning(ctx);
+            // 空格或字母 O（确认）开始第一局。
+            let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()));
+            if done {
+                self.finish_pre_game();
             }
             self.accumulator = 0.0;
             return Ok(());
@@ -1225,11 +1243,53 @@ impl event::EventHandler for Game {
         if self.app == AppState::MainMenu {
             return self.draw_menu(ctx);
         }
+        if self.pre_game_config {
+            return self.draw_pre_game(ctx);
+        }
         self.draw_scene(ctx)
     }
 }
 
 impl Game {
+    /// 完成开局前的技能配置：进入第一局（round 保持 1）并把技能等级应用到 world。
+    fn finish_pre_game(&mut self) {
+        self.meta.enter_first_round();
+        self.teardown_round_end();
+        self.pre_game_config = false;
+        eprintln!("[meta] pre-game config done -> round {} Fighting", self.meta.round);
+    }
+
+    /// 开局前配置面板：显示当前绑定/等级/金币，提示按 Space 开始第一轮。
+    fn draw_pre_game(&self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        draw_text(&mut canvas, ctx, "开局 · 配置技能", 46.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
+        draw_text(&mut canvas, ctx, "按 Space / O 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+        // 列出本机玩家的键位绑定与等级。
+        let me = self.self_index();
+        if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == me) {
+            let mut y = sh * 0.30;
+            let gold_line = format!("金币：{}    击杀：{}    最佳名次：#{}", pr.gold, pr.total_kills, pr.best_placement);
+            draw_text(&mut canvas, ctx, &gold_line, 24.0, graphics::Color::from_rgb(220, 224, 232), Point2 { x: cx, y }, true)?;
+            y += 40.0;
+            for key in game_core::skill::CastKey::ALL {
+                let bound = pr.bound_skill(key);
+                let lv = bound.map(|s| pr.skill_level(s)).unwrap_or(0);
+                let txt = match bound {
+                    Some(s) => format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::def(s).name, lv),
+                    None => format!("[{}] （未绑定）", key.letter()),
+                };
+                draw_text(&mut canvas, ctx, &txt, 22.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+                y += 34.0;
+            }
+        }
+        draw_text(&mut canvas, ctx, "字母键选树 · 数字键绑技能 · = 升级 · X 洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.88 }, true)?;
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+
+
     /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 占位）。
     fn draw_menu(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
