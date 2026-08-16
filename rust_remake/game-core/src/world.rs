@@ -250,6 +250,8 @@ impl Obstacle {
 pub struct World {
     pub players: Vec<Player>,
     pub arena_radius: Fix64,
+    /// 试验场模式（单机技能试验场）：不缩圈、不出圈掉血、不判对局结束。
+    pub sandbox: bool,
     /// 场景里的静态圆形障碍（柱子/墙）
     pub obstacles: Vec<Obstacle>,
     /// 场上飞行物 / 延时区域
@@ -280,6 +282,7 @@ impl World {
         World {
             players,
             arena_radius,
+            sandbox: false,
             obstacles,
             projectiles: Vec::new(),
             eliminated_order: Vec::new(),
@@ -356,8 +359,10 @@ impl World {
             p.tick_buffs(dt);
         }
 
-        // 4) 场地收缩（随时间）
-        self.shrink_arena(dt);
+        // 4) 场地收缩（随时间）—— 试验场不缩圈
+        if !self.sandbox {
+            self.shrink_arena(dt);
+        }
 
         // 5) 玩家之间的碰撞
         resolve_player_collisions(&mut self.players, dt);
@@ -374,7 +379,7 @@ impl World {
             if !p.alive {
                 continue;
             }
-            if p.pos.length() > self.arena_radius {
+            if !self.sandbox && p.pos.length() > self.arena_radius {
                 // 球心已出圈：持续掉血。回去靠自己走位。（boost 期间返一半回血）
                 let net = p.soak_boost(Fix64::from_num(OUT_HURT) * dt);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
@@ -1368,8 +1373,11 @@ impl World {
         std::mem::take(&mut self.kills_this_round)
     }
 
-    /// 本局是否已结束（只剩 0 或 1 名存活）。
+    /// 本局是否已结束（只剩 0 或 1 名存活）。试验场永不判结束。
     pub fn round_over(&self) -> bool {
+        if self.sandbox {
+            return false;
+        }
         self.alive_count() <= 1
     }
 

@@ -147,9 +147,21 @@ impl Game {
             }
         }
         let seed = 20260812u64;
-        let mut world = World::new(player_count.max(1), seed);
+        // Solo 试验场：世界含 1 个「你 + 1 个不动靶子」→ 对局不判结束；meta 只记录你自己(player0)。
+        let mut world = match app {
+            AppState::Solo => {
+                let mut w = World::new(2, seed); // player0=你, player1=靶子
+                w.sandbox = true;
+                w
+            }
+            _ => World::new(player_count.max(1), seed),
+        };
+        let meta_ids: Vec<u32> = match app {
+            AppState::Solo => vec![0],
+            _ => (0..player_count).collect(),
+        };
         // 整场对抗：3 小局，所有玩家都纳入档案
-        let mut meta = MatchState::new(MatchConfig::default(), &(0..player_count).collect::<Vec<_>>(), 8);
+        let mut meta = MatchState::new(MatchConfig::default(), &meta_ids, 8);
         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
         if std::env::var("FASTROUND").is_ok() {
             world.arena_radius = game_core::fix::Fix64::from_num(3.0);
@@ -1161,10 +1173,21 @@ impl event::EventHandler for Game {
                     }
                     self.net_link = Some(link);
                 } else {
-                    // 单机：本机玩家 + 本地 AI 机器人
+                    // 单机：Solo 试验场用「本机输入 + 其余(靶子)默认」；否则带 AI 机器人。
+                    let is_solo = self.app == AppState::Solo;
                     while self.accumulator >= TICK {
-                        let inputs = self.compute_inputs();
-                        self.world.step(inputs, ticking);
+                        if is_solo {
+                            let me = self.self_index();
+                            let n = self.world.players.len();
+                            let mut inputs = vec![PlayerInput::default(); n];
+                            if (me as usize) < n {
+                                inputs[me as usize] = self.local_player_input();
+                            }
+                            self.world.step(inputs, ticking);
+                        } else {
+                            let inputs = self.compute_inputs();
+                            self.world.step(inputs, ticking);
+                        }
                         self.accumulator -= TICK;
                     }
                 }
