@@ -369,14 +369,23 @@ mod tests {
             }
         }
 
-        // 快照：host 当前 World + 当前 seq。
-        let snapshot = whost.clone();
-        let sync_seq = host.next_seq();
+        // 快照：host 当前 World -> 字节 -> 封装 Packet::Snapshot（模拟真实回传）。
+        let seq_at = host.next_seq();
+        let world_bytes = game_core::world_ser::world_to_bytes(&whost);
+        let snap_pkt = net::Packet::Snapshot { world_bytes, seq: seq_at };
+        let snap_bytes = snap_pkt.encode();
+        let snap_back = net::Packet::decode(&snap_bytes).expect("Snapshot 应可编解码");
 
-        // 重连：恢复 active，重连者重建 World 并接到当前 seq。
+        // 重连：恢复 active；重连者从字节重建 World 并接到当前 seq。
         host.unmark_dropped(1);
-        wcli = snapshot.clone();
-        cli.set_start_seq(sync_seq);
+        let world_bytes = match snap_back {
+            net::Packet::Snapshot { world_bytes, seq } => {
+                cli.set_start_seq(seq);
+                world_bytes
+            }
+            _ => panic!("应收到 Snapshot"),
+        };
+        wcli = game_core::world_ser::world_from_bytes(&world_bytes).expect("应能从字节重建 World");
 
         // B 段：重连后继续跑，host 与重连端逐位一致。
         for _ in 0..30 {
