@@ -87,6 +87,7 @@ impl SteamSession {
         use steamworks::LobbyId;
         let mm = self.transport.matchmaking();
         let lobby = LobbyId::from_raw(lobby_id);
+        eprintln!("[steam-sess] joining lobby by id {lobby_id} ...");
         let join_done = Arc::new(AtomicBool::new(false));
         let join_res = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, ()>>));
         {
@@ -110,6 +111,7 @@ impl SteamSession {
             .take()
             .ok_or_else(|| io::Error::other("join lobby by id timeout"))?
             .map_err(|_| io::Error::other("join lobby by id failed"))?;
+        eprintln!("[steam-sess] joined lobby by id {:?}", lobby.raw());
         self.lobby = Some(lobby);
         let host_id = mm.lobby_owner(lobby).raw();
         let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
@@ -124,6 +126,7 @@ impl SteamSession {
         use steamworks::LobbyId;
         let mm = self.transport.matchmaking();
         // 搜大厅列表。
+        eprintln!("[steam-sess] requesting lobby list (matchkey)...");
         let list_done = Arc::new(AtomicBool::new(false));
         let candidates = Arc::new(std::sync::Mutex::new(Vec::<LobbyId>::new()));
         {
@@ -151,6 +154,7 @@ impl SteamSession {
             .find(|l| mm.lobby_data(**l, MATCH_KEY).as_deref() == Some(MATCH_VALUE))
             .copied()
             .ok_or_else(|| io::Error::other("未找到 matchkey 匹配的大厅（host 是否已 `--steam-host` 并建厅？）"))?;
+        eprintln!("[steam-sess] found host lobby {:?}, joining...", lobby.raw());
         // 加入。
         let join_done = Arc::new(AtomicBool::new(false));
         let join_res = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, ()>>));

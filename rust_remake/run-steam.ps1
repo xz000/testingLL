@@ -41,5 +41,6 @@ if ($Mode -eq 'host') {
     $argsList = @('--steam-join',"$LobbyId")
 }
 
-Start-Process -FilePath $exe -ArgumentList $argsList -Wait
+# 前台运行（&），让 stderr（panic/错误/[steam-join] 日志）直接进当前控制台，便于排查 client 加入失败。
+& $exe @argsList
 Pop-Location
