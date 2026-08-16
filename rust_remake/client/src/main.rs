@@ -139,6 +139,12 @@ struct Game {
     /// Steam 联机：本机在大厅里的玩家槽位（`self_index` 用）。
     #[cfg(feature = "steam")]
     steam_my_index: u8,
+    /// Steam：host 是否处于「等全体就绪」阶段（就绪后 5 秒倒计时 / host 再按 o 立即进图）。
+    #[cfg(feature = "steam")]
+    steam_waiting_ready: bool,
+    /// Steam：全体就绪后的倒计时（秒）。
+    #[cfg(feature = "steam")]
+    steam_countdown: f32,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -297,6 +303,10 @@ impl Game {
             steam_cli_ls,
             #[cfg(feature = "steam")]
             steam_my_index,
+            #[cfg(feature = "steam")]
+            steam_waiting_ready: false,
+            #[cfg(feature = "steam")]
+            steam_countdown: 0.0,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1054,12 +1064,34 @@ impl Game {
         // 多局 meta 覆盖层（学习阶段 / 整场结束）
         self.draw_meta_overlay(&mut canvas, ctx)?;
 
+        #[cfg(feature = "steam")]
+        if self.steam_waiting_ready {
+            self.draw_steam_ready_overlay(&mut canvas, ctx)?;
+        }
+
         // 客户端掉线/重连覆盖层
         if self.conn_dropped {
             self.draw_reconnect_overlay(&mut canvas, ctx)?;
         }
 
         canvas.finish(ctx)?;
+        Ok(())
+    }
+
+    /// Steam host：等待全体就绪的提示层（就绪后 5 秒倒计时，host 可再按 o 立即开始）。
+    #[cfg(feature = "steam")]
+    fn draw_steam_ready_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let dim = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, sw, sh),
+            Color::from_rgba(8, 10, 16, 210),
+        )?;
+        canvas.draw(&dim, graphics::DrawParam::new());
+        let cx = sw / 2.0;
+        draw_text(canvas, ctx, "等待全体玩家就绪…", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.4 }, true)?;
+        draw_text(canvas, ctx, &format!("已就绪 {}/{}，{:.0} 秒后自动开始（按 o 立即开始）", self.steam_my_index + 1, self.world.players.len().max(1), self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y: sh * 0.4 + 60.0 }, true)?;
         Ok(())
     }
 
@@ -1353,8 +1385,36 @@ impl event::EventHandler for Game {
                 #[cfg(feature = "steam")]
                 {
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
-                        // Steam host：收齐输入 → 产 seq 帧 → 步世界（乐观预测关，严格 lockstep）。
+                        // Steam host：等全体就绪后开始产帧（严格 lockstep）。
+                        // 就绪判定：host 按 o（steam_waiting_ready=true）后，每帧 poll 观看是否见齐所有 client 输入；
+                        // 见齐 → 5 秒倒计时（host 可再按 o 立即开始）→ 真正 try_emit 产首帧。
                         let mut hrcv = vec![0u8; 8192];
+                        if self.steam_waiting_ready {
+                            // 先收 client 输入（推进 P2P + 记录各 client 已就绪）。
+                            host.poll(&mut hrcv);
+                            // host 见过所有 client 输入（saw_all_clients）= 全体就绪，进入倒计时。
+                            if host.saw_all_clients() {
+                                // 倒计时或 host 再按 o → 开始。
+                                let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Character("o".into()))
+                                    || ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Character(" ".into()));
+                                if o_pressed || self.steam_countdown <= 0.0 {
+                                    self.steam_waiting_ready = false;
+                                    eprintln!("[steam-host] all ready -> start");
+                                } else {
+                                    self.steam_countdown -= dt.min(0.25) as f32;
+                                }
+                            } else {
+                                // 未齐：重置倒计时，等待。
+                                self.steam_countdown = 5.0;
+                            }
+                        }
+                        // 若仍在等待（没开始），本轮不产帧，跳过。
+                        if self.steam_waiting_ready {
+                            self.steam_host_ls = Some(host);
+                            self.accumulator = 0.0;
+                            return Ok(());
+                        }
+                        // 正常产帧（已过就绪阶段）。
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
@@ -1650,10 +1710,15 @@ impl Game {
         self.meta.enter_first_round(); // Fighting，round 保持 1
         #[cfg(feature = "steam")]
         if self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
-            // Steam：大厅已给出名单，无需 UDP 式配置同步（首帧即统一起始）；直接开打。
-            eprintln!("[meta] pre-game done -> Steam lockstep start");
-            self.teardown_round_end();
-            self.pre_game_config = false;
+            // Steam：按 o 只是「就绪」，不立即进图。
+            // - host：标记就绪并进入「等待全体就绪」阶段（等 client 就绪后倒计时/手动进图）。
+            // - client：标记就绪（进入 Fighting 并开始上行输入 = 就绪信号），等 host 广播开始。
+            self.pre_game_config = false; // 放行进 Fighting 去 poll / 上行
+            if self.steam_host_ls.is_some() {
+                self.steam_waiting_ready = true;
+                self.steam_countdown = 5.0;
+            }
+            eprintln!("[meta] pre-game done -> Steam ready/wait");
             return;
         }
         if self.net_link.is_some() {
