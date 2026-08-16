@@ -137,6 +137,11 @@ impl SteamTransport {
         self.client.matchmaking()
     }
 
+    /// 好友（Friends）句柄；用 `get_friend(id).name()` 拿 Steam 昵称。
+    pub fn friends(&self) -> steamworks::Friends {
+        self.client.friends()
+    }
+
     /// 设置大厅→玩家槽位表（host 从 `lobby_members` 建表，client 用同样名单建一致表）。
     pub fn set_player_table(&mut self, t: LobbyPlayerTable) {
         self._table = Some(t);

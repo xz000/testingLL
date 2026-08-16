@@ -28,6 +28,8 @@ pub const TAG_SKILL_ALL: u8 = 9;
 pub const TAG_SNAPSHOT: u8 = 10;
 pub const TAG_RESYNC: u8 = 11;
 pub const TAG_RECONNECT: u8 = 12;
+/// 就绪状态变更：client→host，`index` 玩家序号 + 是否就绪（可反复 toggle，供房间界面显示/取消就绪）。
+pub const TAG_PLAYER_READY: u8 = 13;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -57,6 +59,8 @@ pub enum Packet {
     /// client→host：请求重连，附本端稳定身份（Steam=SteamID；局域网=握手时登记的身份）
     /// 与已知的最后 seq（校验用）。host 按身份找回槽位，而非只靠来源端点。
     ReconnectReq { identity: u64, last_known_seq: u64 },
+    /// client→host：就绪状态变更（`index`=玩家序号，`ready`=是否就绪；可反复 toggle 供取消就绪）。
+    PlayerReady { index: u8, ready: bool },
     /// host→重连端：整场 World 快照字节 + 接回 seq。
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
@@ -133,6 +137,9 @@ impl Packet {
                 v.extend_from_slice(&identity.to_be_bytes());
                 v.extend_from_slice(&last_known_seq.to_be_bytes());
                 v
+            }
+            Packet::PlayerReady { index, ready } => {
+                vec![TAG_PLAYER_READY, *index, if *ready { 1 } else { 0 }]
             }
             Packet::Snapshot { world_bytes, seq } => {
                 let mut v = Vec::with_capacity(1 + 2 + world_bytes.len() + 8);
@@ -230,6 +237,9 @@ impl Packet {
                 let last_known_seq = u64::from_be_bytes(buf[9..17].try_into().ok()?);
                 Some(Packet::ReconnectReq { identity, last_known_seq })
             }
+            TAG_PLAYER_READY if buf.len() >= 3 => {
+                Some(Packet::PlayerReady { index: buf[1], ready: buf[2] != 0 })
+            }
             _ => None,
         }
     }
@@ -263,6 +273,7 @@ mod tests {
                 entries: vec![(0, vec![10, 20]), (1, vec![30]), (2, vec![])],
             },
             Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
+            Packet::PlayerReady { index: 2, ready: true },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
         ];

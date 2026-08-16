@@ -142,6 +142,22 @@ struct Game {
     /// Steam：全体就绪后的倒计时（秒）。
     #[cfg(feature = "steam")]
     steam_countdown: f32,
+    /// Steam host：是否仍在「房间/就绪」阶段（下一步 lobby UI 用，暂未接）。
+    #[cfg(feature = "steam")]
+    #[allow(dead_code)]
+    steam_in_lobby: bool,
+    /// Steam：本机是否已就绪（下一步 lobby 按 o toggle 用，暂未接）。
+    #[cfg(feature = "steam")]
+    #[allow(dead_code)]
+    steam_local_ready: bool,
+    /// Steam：房间成员名单（槽位, 昵称, SteamID），下一步 lobby 界面显示用（已构建、暂未读）。
+    #[cfg(feature = "steam")]
+    #[allow(dead_code)]
+    steam_roster: Vec<(u8, String, u64)>,
+    /// Steam：全体就绪是否为真（host 计算），下一步 lobby 用（暂未接）。
+    #[cfg(feature = "steam")]
+    #[allow(dead_code)]
+    steam_all_ready: bool,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -180,6 +196,8 @@ impl Game {
         let mut steam_cli_ls: Option<net::lockstep::ClientLockstep<net_steam::SteamTransport>> = None;
         #[cfg(feature = "steam")]
         let mut steam_my_index: u8 = 0;
+        #[cfg(feature = "steam")]
+        let mut steam_roster: Vec<(u8, String, u64)> = Vec::new();
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
         let mut player_count: u32 = 1;
         match app {
@@ -193,6 +211,14 @@ impl Game {
                 sess.prepare_transport().map_err(ggez::GameError::from)?;
                 steam_my_index = sess.my_slot();
                 eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                // 房间成员名单（昵称）：identities + Friends 昵称。
+                {
+                    let fr = sess.transport.friends();
+                    for (slot, id) in sess.identities() {
+                        let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+                        steam_roster.push((slot, name, id));
+                    }
+                }
                 // 建 HostLockstep<SteamTransport>：总玩家数= host 请求的 players（不是当前唯一成员 1）。
                 let n = players.max(1) as usize;
                 let ids: Vec<Option<u64>> = sess.identities().iter().map(|(_, v)| Some(*v)).collect();
@@ -216,6 +242,14 @@ impl Game {
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 steam_my_index = my_slot;
+                // 房间成员名单（昵称）。
+                {
+                    let fr = sess.transport.friends();
+                    for (slot, id) in sess.identities() {
+                        let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+                        steam_roster.push((slot, name, id));
+                    }
+                }
                 let transport = sess.into_transport();
                 steam_cli_ls = Some(net::lockstep::ClientLockstep::new(
                     transport,
@@ -302,6 +336,14 @@ impl Game {
             steam_my_index,
             #[cfg(feature = "steam")]
             steam_countdown: 0.0,
+            #[cfg(feature = "steam")]
+            steam_in_lobby: false,
+            #[cfg(feature = "steam")]
+            steam_local_ready: false,
+            #[cfg(feature = "steam")]
+            steam_roster,
+            #[cfg(feature = "steam")]
+            steam_all_ready: false,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
