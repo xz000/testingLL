@@ -71,6 +71,18 @@
 - 默认（无 feature）`check.ps1` / build / test / clippy 全绿；feature 路径 clippy 也绿。
 - 运行时前置已在手：**仓库根 `steam_appid.txt` = 908660**，Steam 客户端已登录。还差双账号用于端到端大厅/对战验收。
 
+## `main.rs` Steam 接线（--steam-host / --steam-join + lockstep 分支）—— 已落编译，待双机实测
+- `client` 加可选依赖 `net-steam` + `steam` feature（默认关，check.ps1 不触发）。
+- `AppState` 加 `SteamHost{players}` / `SteamJoin`；`Game` 加 `steam_host_ls` / `steam_cli_ls` / `steam_my_index`。
+- `Game::new`：`SteamHost` → `SteamSession::init(APP_ID=908660, virtual_port=1337)` + `host_create_lobby` + `prepare_transport`(listen) + `HostLockstep<SteamTransport>`；
+  `SteamJoin` → `init` + `client_find_and_join` + `prepare_transport`(connect) + `ClientLockstep<SteamTransport>`。
+- `update.Fighting` 加 Steam 分支：host 产帧步世界（乐观预测关，严格 lockstep + 快照）；client 上行 + 严格按权威帧推进。
+- `self_index()` 用 `steam_my_index`；CLI 支持 `--steam-host [--players N]` / `--steam-join`。
+- 编译：`cargo build -p client --features client/steam` + feature clippy 全绿；默认（无 feature）build/test/clippy 全绿（109）。
+- ⚠ 运行期前置：Steam 客户端登录 + `steam_api64.dll`（steamworks 非 vendored 动态加载）+ 工作目录含 `steam_appid.txt`（或 `Client::init_app` 已强制 AppID）。
+  本机 `client.exe --steam-host` 先不输出（运行时 DLL/工作目录问题），**需双机实测环境**验证。
+- 待双机：host 一台 `client --steam-host`，client 另一台 `client --steam-join`（各登不同账号，自动按 matchkey 搜加大厅）。
+
 ## Steam 大厅会话 `SteamSession`（自动发现/加入）—— 已落 + 已测（main.rs 接线待续）
 - `net-steam::session::SteamSession`：封装大厅生命周期：
   - `init(app,port)`、`run_callbacks()`、`host_create_lobby(max, matchkey)`（公开大厅 + 写 `matchkey` 元数据）、

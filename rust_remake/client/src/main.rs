@@ -31,8 +31,7 @@ const HOST_DROP_TICKS: u32 = 180;
 /// host：每隔多少帧保存一次世界快照（供重连）。约 0.5 秒。
 const SNAPSHOT_EVERY: u64 = 30;
 /// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
-const CLIENT_STALE_TICKS: u64 = 180;
-/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
+const CLIENT_STALE_TICKS: u64 = 180;/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
 /// 每局发放的成长点（4.6b，占位数值，后续平衡）。
 const GROWTH_PER_ROUND: u32 = 3;
@@ -42,6 +41,13 @@ const GOLD_PER_GROWTH: i32 = 20;
 fn growth_attr_cost(cur: u32) -> u32 {
     cur + 1 // base 1，每级 +1
 }
+
+/// Steamworks 应用 AppID（对应根目录 `steam_appid.txt` = 908660）。
+#[cfg(feature = "steam")]
+const APP_ID: u32 = 908660;
+/// Steam P2P 虚拟端口（host/peer 约定一致）。
+#[cfg(feature = "steam")]
+const STEAM_VIRTUAL_PORT: i32 = 1337;
 
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
@@ -78,6 +84,12 @@ enum AppState {
     LanHost { port: u16, total: u8 },
     /// 局域网：加入（client）。
     LanJoin { addr: std::net::SocketAddr },
+    /// Steam：开厅作 host（自身=player0，其余由大厅成员按 SteamID 排序）。
+    #[cfg(feature = "steam")]
+    SteamHost { players: u8 },
+    /// Steam：按 matchkey 自动加入 host 大厅（client）。
+    #[cfg(feature = "steam")]
+    SteamJoin,
 }
 
 /// 升级到某个等级的价格（简单坡度，后期可调）
@@ -118,6 +130,15 @@ struct Game {
     offset: Point2<f32>,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
     net_link: Option<netlink::NetLinkUdp>,
+    /// Steam 联机：host 端帧同步（feature=steam）。
+    #[cfg(feature = "steam")]
+    steam_host_ls: Option<net::lockstep::HostLockstep<net_steam::SteamTransport>>,
+    /// Steam 联机：client 端帧同步（feature=steam）。
+    #[cfg(feature = "steam")]
+    steam_cli_ls: Option<net::lockstep::ClientLockstep<net_steam::SteamTransport>>,
+    /// Steam 联机：本机在大厅里的玩家槽位（`self_index` 用）。
+    #[cfg(feature = "steam")]
+    steam_my_index: u8,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -150,12 +171,54 @@ impl Game {
         let mut net_link: Option<netlink::NetLinkUdp> = None;
         let mut net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>> = None;
         let net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>> = None;
+        #[cfg(feature = "steam")]
+        let mut steam_host_ls: Option<net::lockstep::HostLockstep<net_steam::SteamTransport>> = None;
+        #[cfg(feature = "steam")]
+        let mut steam_cli_ls: Option<net::lockstep::ClientLockstep<net_steam::SteamTransport>> = None;
+        #[cfg(feature = "steam")]
+        let mut steam_my_index: u8 = 0;
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
             AppState::Solo => {}
-            AppState::LanJoin { addr } => {
+            #[cfg(feature = "steam")]
+            AppState::SteamHost { players } => {
+                let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
+                    .map_err(ggez::GameError::from)?;
+                let lobby = sess.host_create_lobby(players.max(1) as u32, 200).map_err(ggez::GameError::from)?;
+                sess.prepare_transport().map_err(ggez::GameError::from)?;
+                steam_my_index = sess.my_slot();
+                eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                // 建 HostLockstep<SteamTransport>（总玩家数 = 大厅成员数）。
+                let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(players.max(1) as usize);
+                let n = total.max(1);
+                let ids: Vec<Option<u64>> = sess.identities().iter().map(|(_, v)| Some(*v)).collect();
+                let transport = sess.into_transport();
+                let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
+                host_ls.set_client_identities(&ids);
+                steam_host_ls = Some(host_ls);
+                player_count = n as u32;
+            }
+            #[cfg(feature = "steam")]
+            AppState::SteamJoin => {
+                let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
+                    .map_err(ggez::GameError::from)?;
+                let lobby = sess.client_find_and_join(240).map_err(ggez::GameError::from)?;
+                sess.prepare_transport().map_err(ggez::GameError::from)?;
+                eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
+                let host_id = sess.host_steam_id().unwrap_or(0);
+                let my_slot = sess.my_slot();
+                steam_my_index = my_slot;
+                let transport = sess.into_transport();
+                steam_cli_ls = Some(net::lockstep::ClientLockstep::new(
+                    transport,
+                    my_slot,
+                    net::transport::Peer::Steam { id: host_id, conn: None },
+                ));
+                player_count = total.max(2) as u32;
+            }            AppState::LanJoin { addr } => {
                 let mut link: netlink::NetLinkUdp =
                     netlink::NetLink::connect_udp(addr).map_err(ggez::GameError::from)?;
                 eprintln!("[client] connecting to {addr}, my stable identity = {}", link.my_identity());
@@ -226,6 +289,12 @@ impl Game {
             net_link,
             net_host,
             net_host_ls,
+            #[cfg(feature = "steam")]
+            steam_host_ls,
+            #[cfg(feature = "steam")]
+            steam_cli_ls,
+            #[cfg(feature = "steam")]
+            steam_my_index,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -492,8 +561,12 @@ impl Game {
         }
     }
 
-    /// 本机玩家在该次对局中的序号：单机/host 恒为 0，加入者为握手分配到的 `my_index`。
+    /// 本机玩家在该次对局中的序号：单机/host 恒为 0，加入者为握手分配到的 `my_index`；Steam 用大厅槽位。
     fn self_index(&self) -> u32 {
+        #[cfg(feature = "steam")]
+        if self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
+            return self.steam_my_index as u32;
+        }
         match &self.net_link {
             Some(l) => l.my_index() as u32,
             None => PLAYER_ID,
@@ -1262,6 +1335,64 @@ impl event::EventHandler for Game {
                 self.poll_input(ctx);
                 self.accumulator += dt.min(0.25);
                 let ticking = Fix64::from_num(TICK);
+                #[cfg(feature = "steam")]
+                {
+                    if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
+                        // Steam host：收齐输入 → 产 seq 帧 → 步世界（乐观预测关，严格 lockstep）。
+                        let mut hrcv = vec![0u8; 8192];
+                        while self.accumulator >= TICK {
+                            let me = self.local_player_input();
+                            host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
+                            host.poll(&mut hrcv);
+                            if let Some((seq, frame)) = host.try_emit() {
+                                if seq == 0 {
+                                    eprintln!("[steam-host] emit seq=0");
+                                }
+                                let n = self.world.players.len();
+                                let mut inputs = vec![PlayerInput::default(); n];
+                                for (idx, bytes) in frame {
+                                    if (idx as usize) < n {
+                                        inputs[idx as usize] =
+                                            game_core::netcode::decode_player_input(&bytes).unwrap_or_default();
+                                    }
+                                }
+                                self.world.step(inputs, ticking);
+                                // 周期快照（重连用）。
+                                self.host_frame_count += 1;
+                                if self.host_frame_count % SNAPSHOT_EVERY == 0 {
+                                    host.set_snapshot(game_core::world_ser::world_to_bytes(&self.world), host.next_seq());
+                                }
+                                self.accumulator -= TICK;
+                            } else {
+                                break;
+                            }
+                        }
+                        self.steam_host_ls = Some(host);
+                    } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
+                        // Steam client：上行输入 + 严格按权威帧推进（乐观预测关）。
+                        let mut c_rcv = vec![0u8; 8192];
+                        while self.accumulator >= TICK {
+                            let me = self.local_player_input();
+                            let enc = game_core::netcode::encode_player_input(&me);
+                            cli.send_input(&enc).ok();
+                            if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
+                                let n = self.world.players.len();
+                                let mut inputs = vec![PlayerInput::default(); n];
+                                for (idx, bytes) in ents {
+                                    if (idx as usize) < n {
+                                        inputs[idx as usize] =
+                                            game_core::netcode::decode_player_input(&bytes).unwrap_or_default();
+                                    }
+                                }
+                                self.world.step(inputs, ticking);
+                                self.accumulator -= TICK;
+                            } else {
+                                break; // 等权威帧
+                            }
+                        }
+                        self.steam_cli_ls = Some(cli);
+                    }
+                }
                 // 联网 · 开房作 host：接收 client 加入，全部到齐后移交 HostLockstep（不强制 READY/GO，
                 // 由“host 收齐输入即产首帧”自然统一起始。）。
                 self.poll_host_join_phase();
@@ -1717,7 +1848,21 @@ fn parse_app_from_args(args: &[String]) -> AppState {
                 app = AppState::LanHost { port, total: 4 };
                 i += 2;
             }
+            #[cfg(feature = "steam")]
+            "--steam-host" => {
+                app = AppState::SteamHost { players: 4 };
+                i += 1;
+            }
+            #[cfg(feature = "steam")]
+            "--steam-join" => {
+                app = AppState::SteamJoin;
+                i += 1;
+            }
             "--players" if i + 1 < args.len() => {
+                #[cfg(feature = "steam")]
+                if let AppState::SteamHost { players } = &mut app {
+                    *players = args[i + 1].parse().unwrap_or(4);
+                }
                 if let AppState::LanHost { total, .. } = &mut app {
                     *total = args[i + 1].parse().unwrap_or(4);
                 }
