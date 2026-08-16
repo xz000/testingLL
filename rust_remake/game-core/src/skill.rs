@@ -636,6 +636,16 @@ impl Caster {
         self.cooldowns[id.as_u32() as usize] = Fix64::ZERO;
     }
 
+    /// （序列化用）原始读取 phase + 冷却数组。
+    pub(crate) fn raw_snapshot(&self) -> (CastPhase, [Fix64; MAX_SKILL_SLOTS]) {
+        (self.phase, self.cooldowns)
+    }
+    /// （序列化用）原始恢复 phase + 冷却数组。
+    pub(crate) fn raw_restore(&mut self, phase: CastPhase, cooldowns: [Fix64; MAX_SKILL_SLOTS]) {
+        self.phase = phase;
+        self.cooldowns = cooldowns;
+    }
+
     /// 是否正处于施法/后摇中（不能再次施放）。
     pub fn is_busy(&self) -> bool {
         !matches!(self.phase, CastPhase::Idle)

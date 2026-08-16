@@ -257,10 +257,10 @@ pub struct World {
     /// 场上飞行物 / 延时区域
     pub projectiles: Vec<Projectile>,
     /// 按死亡先后记录的玩家 id（用于本局名次结算）
-    eliminated_order: Vec<u32>,
+    pub(crate) eliminated_order: Vec<u32>,
     /// 本局内发生的击杀：(击杀者 id, 被击杀者 id)
-    kills_this_round: Vec<(u32, u32)>,
-    time: Fix64,
+    pub(crate) kills_this_round: Vec<(u32, u32)>,
+    pub(crate) time: Fix64,
 }
 
 impl World {
