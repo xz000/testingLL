@@ -3288,7 +3288,7 @@ mod tests {
     fn sandbox_never_ends_and_no_shrink() {
         let dt = Fix64::from_num(1.0 / 60.0);
         // 正常模式：1 个玩家会立即 round_over。
-        let mut normal = World::new(1, 7);
+        let normal = World::new(1, 7);
         assert!(normal.round_over(), "仅 1 玩家时默认对局视为结束");
         // sandbox：1 玩家也永不结束、不缩圈。
         let mut sw = World::new(1, 7);
