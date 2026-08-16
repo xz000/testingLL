@@ -66,7 +66,10 @@
   UDP 传输路径不变（lockstep/handshake 只按 `Peer` 判等/转发，不关心变体）。
 - **证明“换传输底层零改动”**：新增头测试 `lockstep_over_steam_peers_preserves_determinism`——用假想 `FakeSteamTransport`
   （以 `Peer::Steam` 为端点的内存邮箱）跑 `HostLockstep + ClientLockstep`，两端按序推进 + 逐位一致。
-  这验证了将来 `SteamTransport`（真实 SteamNetworkingSockets/大厅）可直接复用现有 lockstep/多局/重连逻辑。
+- **客户端接线传输无关化**：`client::netlink::NetLink` 由 `StdUdpTransport` 硬编码改为泛型 `NetLink<T: Transport>`；
+  新增传输无关 `NetLink::from_transport(transport, host_peer)` + 局域网便捷 `NetLinkUdp::connect_udp(host)`。
+  `main.rs` 统一用 `netlink::NetLinkUdp`。将来换 Steam：把 `NetLinkUdp` 换成 `NetLink<SteamTransport>`、
+  `connect_udp` 换成“用 SteamTransport 构造 + from_transport”即可，握手/收发/重连逻辑零改动。
 - 方向性决定：**局域网“房间列表/广播发现”不做**（Steam 大厅天然提供），玩家名按 Steam 昵称（局域网允许缺省）。优先保证 Steam 联机。
 
 ## host 提早收人修复（本次会话 +1，未提交）
