@@ -146,6 +146,26 @@ impl<T: Transport> HostLockstep<T> {
         self.clients_ready.iter().all(|r| *r)
     }
 
+    /// 已上行过输入（在场信号）的 client 数。
+    pub fn present_clients_count(&self) -> usize {
+        self.latest_input.iter().filter(|x| x.is_some()).count()
+    }
+
+    /// 已就绪（收到 PlayerReady(true)）的 client 数。
+    pub fn ready_clients_count(&self) -> usize {
+        self.clients_ready.iter().filter(|r| **r).count()
+    }
+
+    /// 已建立连接（记录到 client_peers）的 client 数。
+    pub fn connected_clients_count(&self) -> usize {
+        self.client_peers.iter().filter(|p| p.is_some()).count()
+    }
+
+    /// 期望的 client 总数（= 玩家总数减去 host 本地占位，若有参与）。
+    pub fn expected_clients(&self) -> usize {
+        self.expected
+    }
+
     /// 登记各 client 槽位的稳定身份（自握手结果带入；Steam=SteamID，局域网=握手随机/指定）。
     /// 重连时优先按身份找回槽位（不依赖来源端点），Steam 下即按 SteamID。
     pub fn set_client_identities(&mut self, identities: &[Option<u64>]) {

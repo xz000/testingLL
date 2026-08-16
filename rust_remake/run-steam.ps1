@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('host','join')] [string]$Mode = 'host',
+    [ValidateSet('host','join','menu')] [string]$Mode = 'menu',
     [int]$Players = 2,
     [string]$LobbyId = ''
 )
@@ -30,7 +30,11 @@ if ($dll) {
 $appid = Join-Path $root 'steam_appid.txt'
 if (Test-Path $appid) { Copy-Item $appid (Join-Path $PSScriptRoot 'target\debug\steam_appid.txt') -Force }
 
-if ($Mode -eq 'host') {
+if ($Mode -eq 'menu') {
+    # 进 Steam 版主菜单：按 3 进入 Steam 大厅，H 创建 / J 自动加入（无需输房间号）。
+    Write-Host '== Steam MENU (按 3 进入大厅，H 建厅 / J 自动加入) =='
+    $argsList = @()  # 不传参数 → 主菜单
+} elseif ($Mode -eq 'host') {
     Write-Host "== Steam HOST --players $Players =="
     $argsList = @('--steam-host','--players',"$Players")
 } elseif ($LobbyId -eq '') {
