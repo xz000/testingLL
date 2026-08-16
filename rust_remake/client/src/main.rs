@@ -147,17 +147,19 @@ impl Game {
             }
         }
         let seed = 20260812u64;
-        // Solo 试验场：世界含 1 个「你 + 1 个不动靶子」→ 对局不判结束；meta 只记录你自己(player0)。
+        // Solo 试验场（含主菜单入口）：世界含「你 + 1 个不动靶子」→ 不判结束；meta 只记录你。
+        // 这样无论从菜单按 1 进 Solo 还是 --solo 直通，世界都已是 sandbox。
         let mut world = match app {
-            AppState::Solo => {
+            AppState::Solo | AppState::MainMenu => {
                 let mut w = World::new(2, seed); // player0=你, player1=靶子
                 w.sandbox = true;
+                eprintln!("[solo] world players={} sandbox={}", w.players.len(), w.sandbox);
                 w
             }
             _ => World::new(player_count.max(1), seed),
         };
         let meta_ids: Vec<u32> = match app {
-            AppState::Solo => vec![0],
+            AppState::Solo | AppState::MainMenu => vec![0],
             _ => (0..player_count).collect(),
         };
         // 整场对抗：3 小局，所有玩家都纳入档案
@@ -1340,6 +1342,7 @@ fn main() -> GameResult {
             _ => i += 1,
         }
     }
+    eprintln!("[main] app = {:?} args = {:?}", app, args[1..].to_vec());
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
         .window_setup(ggez::conf::WindowSetup::default().title("帧同步圆球竞技场 — 阶段1"))

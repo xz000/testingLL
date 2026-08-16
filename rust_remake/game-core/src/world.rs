@@ -3282,4 +3282,23 @@ mod tests {
         p.cmd_clear();
         assert!(p.cmd_empty());
     }
+
+    /// 试验场（sandbox）：不缩圈、round_over 恒 false（供单机技能试验场“不秒结束”）。
+    #[test]
+    fn sandbox_never_ends_and_no_shrink() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 正常模式：1 个玩家会立即 round_over。
+        let mut normal = World::new(1, 7);
+        assert!(normal.round_over(), "仅 1 玩家时默认对局视为结束");
+        // sandbox：1 玩家也永不结束、不缩圈。
+        let mut sw = World::new(1, 7);
+        sw.sandbox = true;
+        let start_r = sw.arena_radius;
+        let none = vec![PlayerInput::default()];
+        for _ in 0..120 {
+            sw.step(none.clone(), dt);
+        }
+        assert!(!sw.round_over(), "sandbox 永不判结束");
+        assert_eq!(sw.arena_radius, start_r, "sandbox 不缩圈");
+    }
 }
