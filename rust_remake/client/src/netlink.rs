@@ -9,16 +9,18 @@ use game_core::netcode::decode_player_input;
 use game_core::world::{PlayerInput, World};
 use net::handshake::ClientHandshake;
 use net::lockstep::ClientLockstep;
-use net::transport::{Peer, StdUdpTransport};
+use net::transport::{Peer, StdUdpTransport, Transport};
 use std::io;
 use std::net::SocketAddr;
 
-/// 联网客户端连接封装。
-pub struct NetLink {
+/// 联网客户端连接封装（**传输无关**：`T: Transport` 决定底层是 UDP 还是 Steam）。
+/// `NetLink` 只按 `Peer` 收发/判等，不关心具体传输；换底层（UDP→Steam）只需换 `T` 与注入方式。
+/// 局域网用 `connect_udp`；Steam 将来用 `from_transport` 注入 SteamTransport。
+pub struct NetLink<T: Transport> {
     /// 握手阶段持有（transport 在其内）。
-    handshake: Option<ClientHandshake<StdUdpTransport>>,
+    handshake: Option<ClientHandshake<T>>,
     /// 运行阶段持有（transport 移交于此）。
-    lockstep: Option<ClientLockstep<StdUdpTransport>>,
+    lockstep: Option<ClientLockstep<T>>,
     host: Peer,
     rcv: Vec<u8>,
     pub started: bool,
@@ -28,13 +30,24 @@ pub struct NetLink {
     stale_ticks: u64,
 }
 
-impl NetLink {
-    pub fn connect(host: SocketAddr) -> io::Result<NetLink> {
+pub type NetLinkUdp = NetLink<StdUdpTransport>;
+
+impl NetLinkUdp {
+    /// 局域网（UDP）便捷构造：绑定本机随机端口，以 `Peer::Udp(host)` 为 host 端点。
+    /// （放在具体别名 impl 上，避免泛型 `T` 推断歧义。）
+    pub fn connect_udp(host: SocketAddr) -> io::Result<NetLinkUdp> {
         let (t, _) = StdUdpTransport::bind_loopback()?;
+        NetLink::from_transport(t, Peer::Udp(host))
+    }
+}
+
+impl<T: Transport> NetLink<T> {
+    /// 传输无关构造：给定一个已连通的 `transport` 与要连的 host 端点（可为 `Peer::Steam` 或 `Peer::Udp`）。
+    pub fn from_transport(transport: T, host: Peer) -> io::Result<NetLink<T>> {
         Ok(NetLink {
-            handshake: Some(ClientHandshake::connected(t)),
+            handshake: Some(ClientHandshake::connected(transport)),
             lockstep: None,
-            host: Peer::Udp(host),
+            host,
             rcv: vec![0u8; 4096],
             started: false,
             my_index: 0,
@@ -187,8 +200,8 @@ mod tests {
     fn host_and_two_clients_sync_over_udp() {
         let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
         let mut hs = HostHandshake::new(ht, 3, true); // host=0 + 2 client
-        let mut a = NetLink::connect(host_addr).unwrap();
-        let mut b = NetLink::connect(host_addr).unwrap();
+        let mut a = NetLink::connect_udp(host_addr).unwrap();
+        let mut b = NetLink::connect_udp(host_addr).unwrap();
         let mut rcv = [0u8; 8192];
 
         // 握手（client join_handshake 内部移交 transport → lockstep；host poll_join 收加入）
@@ -268,8 +281,8 @@ mod tests {
     fn meta_round_sync_keeps_worlds_identical() {
         let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
         let mut hs = HostHandshake::new(ht, 3, true);
-        let mut a = NetLink::connect(host_addr).unwrap();
-        let mut b = NetLink::connect(host_addr).unwrap();
+        let mut a = NetLink::connect_udp(host_addr).unwrap();
+        let mut b = NetLink::connect_udp(host_addr).unwrap();
         let mut rcv = [0u8; 8192];
 
         for _ in 0..100 {
@@ -444,7 +457,7 @@ mod tests {
     fn netlink_reconnect_flow_resumes_identical_worlds() {
         let (ht, host_addr) = StdUdpTransport::bind_loopback().unwrap();
         let mut hs = HostHandshake::new(ht, 2, true); // host=0 + client1
-        let mut cli = NetLink::connect(host_addr).unwrap();
+        let mut cli = NetLink::connect_udp(host_addr).unwrap();
         let mut rcv = [0u8; 16384];
         let dt = Fix64::from_num(1.0 / 60.0);
         let mut whost = World::new(2, 55);

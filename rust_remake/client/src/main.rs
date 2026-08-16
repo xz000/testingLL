@@ -109,7 +109,7 @@ struct Game {
     /// 相机偏移（竞技场中心在画面中央）
     offset: Point2<f32>,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
-    net_link: Option<netlink::NetLink>,
+    net_link: Option<netlink::NetLinkUdp>,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -139,7 +139,7 @@ impl Game {
         ctx.gfx.add_font("cjk", font);
 
         // 联网：加入 host 或开房作 host；否则单机（含本地 AI 机器人）。
-        let mut net_link: Option<netlink::NetLink> = None;
+        let mut net_link: Option<netlink::NetLinkUdp> = None;
         let mut net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>> = None;
         let net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>> = None;
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
@@ -148,7 +148,8 @@ impl Game {
             AppState::MainMenu => {}
             AppState::Solo => {}
             AppState::LanJoin { addr } => {
-                let mut link = netlink::NetLink::connect(addr).map_err(ggez::GameError::from)?;
+                let mut link: netlink::NetLinkUdp =
+                    netlink::NetLink::connect_udp(addr).map_err(ggez::GameError::from)?;
                 for _ in 0..60 {
                     if link.join_handshake().map_err(ggez::GameError::from)? {
                         break;
@@ -526,7 +527,7 @@ impl Game {
 
     /// 客户端掉线后的重连流程：按 R 发起重连 → 向 host 拉快照 → 重建 World 并对齐基线 → 恢复。
     /// 在该状态下不推进世界（冻结，避免与 host 分叉），只等待重连成功或玩家放弃。
-    fn poll_reconnect(&mut self, ctx: &mut Context, link: &mut netlink::NetLink) {
+    fn poll_reconnect(&mut self, ctx: &mut Context, link: &mut netlink::NetLinkUdp) {
         use ggez::input::keyboard::Key;
         let r_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("r".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("R".into()));
