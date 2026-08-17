@@ -155,11 +155,12 @@ impl<T: Transport> NetLink<T> {
     }
 
     /// 尝试收 host 广播的 `PlayerCfgAll`（所有玩家完整配置）；当前没有则返回 None。
+    /// 局域网为满员，故舍弃 participants（收缩仅 Steam 不满员用）。
     pub fn recv_cfg_all(&mut self) -> io::Result<Option<Vec<(u8, Vec<u8>)>>> {
         let Some(ls) = self.lockstep.as_mut() else {
             return Ok(None);
         };
-        ls.recv_cfg_all(&mut self.rcv)
+        Ok(ls.recv_cfg_all(&mut self.rcv)?.map(|(e, _parts)| e))
     }
 
     /// 每帧：只收带 seq 帧并推进 `world`。收到并推进返回 `Some(seq)`，未到返回 `None`。

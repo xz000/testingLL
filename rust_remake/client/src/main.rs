@@ -47,10 +47,12 @@ fn growth_attr_cost(cur: u32) -> u32 {
 
 /// Steamworks 应用 AppID（对应根目录 `steam_appid.txt` = 908660）。
 #[cfg(feature = "steam")]
-const APP_ID: u32 = 908660;
-/// Steam P2P 虚拟端口（host/peer 约定一致）。
+const APP_ID: u32 = 908660;/// Steam P2P 虚拟端口（host/peer 约定一致）。
 #[cfg(feature = "steam")]
 const STEAM_VIRTUAL_PORT: i32 = 1337;
+/// Steam 对局确定性世界种子（各端一致，重建 world 用）。
+#[cfg(feature = "steam")]
+const STEAM_SEED: u64 = 20260812;
 /// Steam 房间：全员就绪后进入配置/开战的缓冲倒计时（秒）。
 #[cfg(feature = "steam")]
 const STEAM_READY_COUNTDOWN_SECS: f32 = 5.0;
@@ -698,6 +700,19 @@ impl Game {
                 }
             }
         }
+    }
+
+    /// 对局开始时把 world 与 meta 重建为“本局参与玩家数” `p`（不满员时两端角色数量由此一致）：
+    /// 参与者被收缩为连续 player 0..p-1（`self.steam_my_index` 由调用方同步更新）。首局开局用 seed 从零建。
+    #[cfg(feature = "steam")]
+    fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
+        self.world = game_core::world::World::new(p.max(1) as u32, seed);
+        self.meta = game_core::meta::MatchState::new(
+            game_core::meta::MatchConfig::default(),
+            &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
+            8,
+        );
+        eprintln!("[steam] staged world for {p} participant player(s)");
     }
 
     /// 每帧统一轮询输入（键盘 + 鼠标都用 ggez 的 just-pressed 边沿检测）。
@@ -1814,15 +1829,25 @@ impl event::EventHandler for Game {
                                 );
                             }
                             if host.all_cfgs() {
+                                // 提前记住参与玩家数（host 只读）与首局标志，归还 host 后据此重建 world。
+                                let p = host.participants_count();
+                                let stage_first = self.pre_game_config;
                                 let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
                                 host.broadcast_cfgs(&all);
-                                let stage = if self.pre_game_config { "pre-game" } else { "next round" };
-                                eprintln!("[steam-host] synced {} player configs -> {stage} (round {})", all.len(), self.meta.round);
+                                let stage = if stage_first { "pre-game" } else { "next round" };
+                                eprintln!("[steam-host] synced {} player configs -> {stage} (round {}), participants={p}", all.len(), self.meta.round);
+                                host.reset_cfgs();
+                                self.steam_host_ls = Some(host); // 归还 host，释放 borrow 后重建 world
+                                // 首局开局：把 world/meta 重建为本局参与玩家数（不满员时两端角色一致）；此后多局沿用。
+                                if stage_first {
+                                    self.stage_world_for_participants(p, STEAM_SEED);
+                                }
                                 self.apply_player_cfgs(&all);
                                 self.teardown_round_end();
-                                host.reset_cfgs();
                                 self.net_cfg = NetCfgSync::Idle;
                                 self.pre_game_config = false;
+                                self.accumulator = 0.0;
+                                return Ok(()); // 同步阶段不推进战斗
                             }
                             self.steam_host_ls = Some(host);
                             self.accumulator = 0.0;
@@ -1892,13 +1917,27 @@ impl event::EventHandler for Game {
                                 );
                             }
                             let mut c_rcv = vec![0u8; 8192];
-                            if let Some(all) = cli.recv_cfg_all(&mut c_rcv)? {
-                                let stage = if self.pre_game_config { "pre-game" } else { "next round" };
-                                eprintln!("[steam-client] got {} player configs -> {stage} (round {})", all.len(), self.meta.round);
+                            if let Some((all, participants)) = cli.recv_cfg_all(&mut c_rcv)? {
+                                let stage_first = self.pre_game_config;
+                                let stage = if stage_first { "pre-game" } else { "next round" };
+                                eprintln!("[steam-client] got {} player configs -> {stage} (round {}), participants={}", all.len(), self.meta.round, participants.len());
+                                self.steam_cli_ls = Some(cli); // 归还 cli，释放 borrow 后重建 world
+                                // 首局开局：用 host 广播的参与玩家数重建 world/meta（不满员时两端角色一致），
+                                // 并把本机索引更新为“在参与列表中的位置”（原 index 可能因缺席而收缩）。
+                                if stage_first && !participants.is_empty() {
+                                    let p = participants.len();
+                                    let me_orig = self.steam_my_index;
+                                    let me_new = participants.iter().position(|&x| x == me_orig).unwrap_or(0) as u8;
+                                    self.stage_world_for_participants(p, STEAM_SEED);
+                                    self.steam_my_index = me_new;
+                                    eprintln!("[steam-client] reindexed me orig={me_orig} -> new={me_new}");
+                                }
                                 self.apply_player_cfgs(&all);
                                 self.teardown_round_end();
                                 self.net_cfg = NetCfgSync::Idle;
                                 self.pre_game_config = false;
+                                self.accumulator = 0.0;
+                                return Ok(()); // 同步阶段不推进战斗
                             }
                             self.steam_cli_ls = Some(cli);
                             self.accumulator = 0.0;

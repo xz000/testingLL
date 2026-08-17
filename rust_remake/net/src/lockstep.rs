@@ -33,6 +33,9 @@ pub struct HostLockstep<T: Transport> {
     /// 用于“人不满也启动”：建房上限里只有部分 client 进场就绪，host 开局时把“实际就绪者”设为参与集，
     /// 产帧与就绪/配置判定仅对参与集要求，其余 vacant 槽位排除在局外。
     active: Option<Vec<bool>>,
+    /// 本局参与玩家的【原 player index】有序列表（host=0 恒在首，其余按参与 client 槽升序）。
+    /// new(=本局世界内) index 即“在该列表中的位置”，产帧/配置/self_index 都用 new index，保证不满员时两端角色数量与编号一致。
+    participants_orig: Vec<u8>,
     /// 各 client peer（下标=client 序号 - local_base）。
     client_peers: Vec<Option<Peer>>,
     /// 各 client 最新输入（下标=client 序号 - local_base）。
@@ -83,6 +86,7 @@ impl<T: Transport> HostLockstep<T> {
             local_base,
             expected,
             active: None,
+            participants_orig: Vec::new(),
             client_peers: vec![None; expected],
             latest_input: vec![None; expected],
             local: None,
@@ -221,14 +225,50 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
-    /// 设置本局参与对局的 client 槽位集合（“人不满也启动”：只让实际就绪者参与，其余 vacant 槽位排除）。
+    /// 参与玩家【原 index → 本局 new index】：new = 在 `participants_orig` 中的位置；未设参与集时退化为 identity。
+    fn orig_to_new(&self, orig: u8) -> u8 {
+        if self.participants_orig.is_empty() {
+            orig // 未设参与集（满员/局域网）：new = orig
+        } else {
+            self.participants_orig.iter().position(|&x| x == orig).unwrap() as u8
+        }
+    }
+
+    /// 设置本局参与对局的 client 槽位集合（“人不满也启动”：只让实际就绪者参与，其余 vacant 槽位排除），
+    /// 并据此算出参与玩家【原 player index】有序列表（host=0 恒在首，其余按参与 client 槽升序）。
     /// 长度必须严格等于 `expected`，否则不生效并返回 false。调用时机：host 判定“可开局”时（进配置/开战前）。
     pub fn set_participants(&mut self, active: &[bool]) -> bool {
         if active.len() != self.expected {
             return false;
         }
         self.active = Some(active.to_vec());
+        // 参与玩家原 index：host(=local_base 0) + 参与 client 的 orig player index（槽序升序）。
+        let mut orig: Vec<u8> = Vec::with_capacity(self.expected + self.local_base as usize);
+        if self.local_base > 0 {
+            orig.push(0); // host = player 0
+        }
+        for (c, &on) in active.iter().enumerate() {
+            if on {
+                orig.push((c + self.local_base as usize) as u8);
+            }
+        }
+        self.participants_orig = orig;
         true
+    }
+
+    /// 参与玩家的原 player index 列表（host=0 在首；new/本局 index = 在该列表中的位置）。供广播给 client 对齐下标。
+    pub fn participants_orig(&self) -> &[u8] {
+        &self.participants_orig
+    }
+
+    /// 本局参与玩家总数（host + 参与 client 数）。
+    pub fn participants_count(&self) -> usize {
+        if self.participants_orig.is_empty() {
+            // 未设参与集前：默认全 expected + host。
+            self.expected + self.local_base as usize
+        } else {
+            self.participants_orig.len()
+        }
     }
 
     /// 当前参与的 client 槽位数（诊断/界面用）。
@@ -343,7 +383,9 @@ impl<T: Transport> HostLockstep<T> {
         for c in 0..self.expected {
             if self.is_active(c) {
                 if let Some(b) = &self.cfgs[c] {
-                    out.push(((c + self.local_base as usize) as u8, b.clone()));
+                    let orig = (c + self.local_base as usize) as u8;
+                    let new = self.orig_to_new(orig);
+                    out.push((new, b.clone()));
                 }
             }
         }
@@ -351,9 +393,18 @@ impl<T: Transport> HostLockstep<T> {
         Some(out)
     }
 
-    /// 广播 `PlayerCfgAll`（所有端完整配置）给所有 client。
+    /// 广播 `PlayerCfgAll`（所有端完整配置 + 本局参与玩家原 index 列表）给所有 client。
     pub fn broadcast_cfgs(&mut self, entries: &[(u8, Vec<u8>)]) {
-        let pkt = Packet::PlayerCfgAll { entries: entries.to_vec() };
+        // 未设参与集（满员/局域网）时 participants 退化为全量 orig（identity）。
+        let parts: Vec<u8> = if self.participants_orig.is_empty() {
+            (0..(self.expected + self.local_base as usize)).map(|i| i as u8).collect()
+        } else {
+            self.participants_orig.clone()
+        };
+        let pkt = Packet::PlayerCfgAll {
+            entries: entries.to_vec(),
+            participants: parts,
+        };
         let enc = pkt.encode();
         for peer in self.client_peers.iter().flatten() {
             let _ = self.transport.send_to(&enc, peer);
@@ -530,14 +581,17 @@ impl<T: Transport> HostLockstep<T> {
             return None;
         }
         let mut entries: FrameData = Vec::new();
-        // host local = player 0。
+        // host local = 本局 new index 0（原 player 0）。
         if self.local_base > 0 {
             entries.push((0, self.local.clone().unwrap()));
         }
         for c in 0..self.expected {
             if self.is_active(c) {
                 if let Some(bytes) = &self.latest_input[c] {
-                    entries.push(((c + self.local_base as usize) as u8, bytes.clone()));
+                    // 参与玩家收缩为本局连续 index：new index = 在 participants_orig 中该 orig index 的位置。
+                    let orig = (c + self.local_base as usize) as u8;
+                    let new = self.orig_to_new(orig);
+                    entries.push((new, bytes.clone()));
                 }
             }
         }
@@ -707,13 +761,14 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(())
     }
 
-    /// 尝试收 host 广播的 `PlayerCfgAll`（所有玩家完整配置）；当前没有则返回 None。
-    pub fn recv_cfg_all(&mut self, rcv: &mut [u8]) -> io::Result<Option<Vec<(u8, Vec<u8>)>>> {
+    /// 尝试收 host 广播的 `PlayerCfgAll`（所有玩家完整配置 + 参与列表）；当前没有则返回 None。
+    /// 返回 `(entries, participants)`。
+    pub fn recv_cfg_all(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<(u8, Vec<u8>)>, Vec<u8>)>> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) => {
-                    if let Some(Packet::PlayerCfgAll { entries }) = Packet::decode(&rcv[..n]) {
-                        return Ok(Some(entries));
+                    if let Some(Packet::PlayerCfgAll { entries, participants }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some((entries, participants)));
                     }
                 }
                 Ok(None) => return Ok(None),
@@ -1171,7 +1226,8 @@ mod tests {
 
         // host 广播 → client 收到完整配置
         host.broadcast_cfgs(&all);
-        let got = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
+        let (got, parts) = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
+        assert_eq!(parts, vec![0, 1], "参与列表应含 host 与 client 原 index");
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].0, 0);
         assert_eq!(got[0].1, host_cfg);
@@ -1204,7 +1260,7 @@ mod tests {
         let all = host.collect_cfgs().expect("配置应收齐");
         assert_eq!(all.len(), 2);
         host.broadcast_cfgs(&all);
-        let got = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
+        let (got, _parts) = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
         assert_eq!(got.len(), 2);
 
         // —— 开战：host 产 seq=0 首帧（统一开始信号），client 严格从 expect_seq=0 推进 ——
@@ -1441,6 +1497,43 @@ mod tests {
         let merged = host.collect_cfgs().unwrap();
         let players_cfg: Vec<u8> = merged.iter().map(|(i, _)| *i).collect();
         assert_eq!(players_cfg, vec![0, 1], "合并配置只应含参与玩家");
+    }
+
+    /// 稀疏参与收缩：只 host + client2 参与（client1 缺席），参与玩家【原 index】收缩为连续 [0,2]→new 0,1，
+    /// 使 host/client 能以“本局参与数”建等量角色（不满员时两端角色数量一致）。
+    #[test]
+    fn participants_sparse_reindex() {
+        let (ht, ct) = pair();
+        // host=0 + client1(槽1) + client2(槽2)，只 client2(slot 1，orig player 2) 参与。
+        let mut host = HostLockstep::new(ht, 3, true);
+        // 模拟 client2（实际 slot=1，orig player 2）的 ClientLockstep（my_index=2）。
+        let mut cli = ClientLockstep::new(ct, 2, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        assert!(host.set_participants(&[false, true])); // client1 不参与、client2 参与
+        assert_eq!(host.participants_orig(), &[0, 2], "参与玩家原 index：host + client2");
+        assert_eq!(host.participants_count(), 2);
+
+        // 只给参与者输入（client2 上行 + host 本地）→ 应能产帧，且 new index 连续 [0,1]。
+        cli.send_input(&encode_input(7)).unwrap();
+        host.poll(&mut rcv);
+        host.set_local_input(Some(vec![9]));
+        let (_, entries) = host.try_emit().expect("按参与集应能产帧");
+        let players: Vec<u8> = entries.iter().map(|(i, _)| *i).collect();
+        assert_eq!(players, vec![0, 1], "产帧 new index 应收缩为连续 0,1（不含缺席的 player1）");
+
+        // 配置同步只对参与集；broadcast 的 participants 也应反映收缩。
+        host.set_local_cfg(vec![0]);
+        cli.send_cfg(&vec![1]).unwrap();
+        host.poll_cfg(&mut rcv);
+        let merged = host.collect_cfgs().unwrap();
+        assert_eq!(merged.len(), 2);
+        let p: Vec<u8> = merged.iter().map(|(i, _)| *i).collect();
+        assert_eq!(p, vec![0, 1]);
+        host.broadcast_cfgs(&merged);
+        let (got, parts) = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
+        assert_eq!(parts, vec![0, 2], "广播的参与列表应为原 index 收缩");
+        assert_eq!(got.len(), 2);
     }
 }
 

@@ -111,8 +111,13 @@
   - **满员**（present≥expected）且全员就绪：保留现有“5 秒倒计时→归零自动启动”（参与集=全在场）。
   - **不满员**（present<expected）且当前在线者都就绪：**不自动倒计时**，界面提示“人数不足（已入 X），当前全员就绪，按回车 手动开始”，由 **host 按回车确认**才启动（参与集=current 在场 mask，`broadcast_start_config`）。
 - **UI**：host 房间界面在不满员待手动时显示“按回车手动开始”（`steam_manual_start_pending`）。
-- **单测**：net `participants_underfull_start_only_active`（产帧/就绪/配置只要求参与集）。workspace 118 全绿。
-- **真机待复验**：建房设 >2 人上限、只进 2 人 → host 按回车应能启动；满员时仍自动倒计时启动。
+- **角色数量一致（“对局开始时确定角色数”，2026-08-17 补，修复 host/client 角色数不一致 bug）**：
+  - 对局开始时由 host 确定本局参与玩家数（＝ host + 实际参与 client）；参与玩家按原 index 收缩为连续 new index `0..p-1`。
+  - net：`set_participants` 额外记录 `participants_orig`（有序原 index）；`try_emit`/`collect_cfgs` 产帧/配置用 new index（`orig_to_new`）；`PlayerCfgAll` 协议加 `participants` 字段并广播；`recv_cfg_all` 返回 `(entries, participants)`。
+  - client（Steam）：收 cfg_all 后用 `participants.len()` 重建 world/meta（`stage_world_for_participants`），并把本机索引更新为“在参与列表中的位置”（原 index 可能因缺席收缩）。host 也在首局配置同步完成时按 `participants_count()` 重建 world。两端角色数与 index 一致。
+  - net 测试 +1：`participants_sparse_reindex`（host+client2 参与、client1 缺席 → 产帧/配置 new index 收缩为 0,1）。workspace 119 全绿。
+- **单测**：net `participants_underfull_start_only_active` + `participants_sparse_reindex`。
+- **真机待复验**：建房设 >2 人上限、只进 2 人 → host 按回车应能启动，且两端角色数量一致（不再 host 多 client 少）；满员时仍自动倒计时启动。
 
 
 
