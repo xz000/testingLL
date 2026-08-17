@@ -1812,6 +1812,19 @@ impl event::EventHandler for Game {
         Ok(())
     }
 
+    /// 诊断（本次会话加）：打印收到的键盘事件 + 窗口焦点变化。
+    /// 作用：区分“按键根本没到本进程（窗口无焦点/多窗口）”与“到了但逻辑没处理”。
+    /// ggez 的键盘由 winit 事件分发，**窗口无焦点时不发 KeyboardInput**，直接观察日志即可定位。
+    fn key_down_event(&mut self, _ctx: &mut Context, input: ggez::input::keyboard::KeyInput, repeated: bool) -> GameResult {
+        eprintln!("[input] key_down focused logical={:?} repeated={repeated}", input.event.logical_key);
+        Ok(())
+    }
+
+    fn focus_event(&mut self, _ctx: &mut Context, gained: bool) -> GameResult {
+        eprintln!("[input] window focus gained={gained}");
+        Ok(())
+    }
+
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         if self.app == AppState::MainMenu {
             return self.draw_menu(ctx);
