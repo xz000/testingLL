@@ -194,6 +194,39 @@ struct Game {
     /// Steam：主菜单内是否处于「大厅选择」子菜单（H 创建 / J 加入 / Q 返回）。
     #[cfg(feature = "steam")]
     steam_lobby_menu: bool,
+    /// Steam：是否处于「建房设置」界面（房间名/备注/人数，回车创建 / Q 取消）。
+    #[cfg(feature = "steam")]
+    steam_lobby_create: bool,
+    /// Steam：是否处于「房间列表」界面（浏览公开大厅，方向键选中+回车加入 / R 刷新 / Q 返回）。
+    #[cfg(feature = "steam")]
+    steam_lobby_list: bool,
+    /// Steam 建房设置：房间名当前输入。
+    #[cfg(feature = "steam")]
+    steam_create_name: String,
+    /// Steam 建房设置：备注当前输入（可空）。
+    #[cfg(feature = "steam")]
+    steam_create_note: String,
+    /// Steam 建房设置：当前聚焦字段（0=房间名，1=备注，2=人数）。
+    #[cfg(feature = "steam")]
+    steam_create_focus: usize,
+    /// Steam：房间列表（缓存的公开大厅信息，供浏览选房）。
+    #[cfg(feature = "steam")]
+    steam_list_lobbies: Vec<net_steam::session::LobbyInfo>,
+    /// Steam：房间列表当前选中项。
+    #[cfg(feature = "steam")]
+    steam_list_selection: usize,
+    /// Steam：是否为房间列表拉取过一次（true=已在加载/已加载，避免反复 request_lobby_list）。
+    #[cfg(feature = "steam")]
+    steam_list_requested: bool,
+    /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
+    #[cfg(feature = "steam")]
+    steam_sess: Option<net_steam::session::SteamSession>,
+    /// Steam：本机昵称（建房默认房间名/大厅展示用；进入大厅时读取并缓存）。
+    #[cfg(feature = "steam")]
+    steam_my_display_name: String,
+    /// Steam：客户端要加入的指定大厅 LobbyId（从房间列表选中时设置；`enter_steam_mode` client 分支优先用其加入）。
+    #[cfg(feature = "steam")]
+    steam_join_lobby_id: Option<u64>,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -403,6 +436,28 @@ impl Game {
             steam_was_all_ready: false,
             #[cfg(feature = "steam")]
             steam_lobby_menu: false,
+            #[cfg(feature = "steam")]
+            steam_lobby_create: false,
+            #[cfg(feature = "steam")]
+            steam_lobby_list: false,
+            #[cfg(feature = "steam")]
+            steam_create_name: "我的房间".to_string(),
+            #[cfg(feature = "steam")]
+            steam_create_note: String::new(),
+            #[cfg(feature = "steam")]
+            steam_create_focus: 0,
+            #[cfg(feature = "steam")]
+            steam_list_lobbies: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_list_selection: 0,
+            #[cfg(feature = "steam")]
+            steam_list_requested: false,
+            #[cfg(feature = "steam")]
+            steam_sess: None,
+            #[cfg(feature = "steam")]
+            steam_my_display_name: String::new(),
+            #[cfg(feature = "steam")]
+            steam_join_lobby_id: None,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1432,10 +1487,25 @@ impl event::EventHandler for Game {
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
             let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
             const MENU_COUNT: usize = 3;
+            // 大厅子界面（主/建房设置/房间列表）内不响应主菜单的方向键/数字。
             #[cfg(feature = "steam")]
-            let in_lobby_menu = self.steam_lobby_menu;
+            let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
             #[cfg(not(feature = "steam"))]
             let in_lobby_menu = false;
+            // 建房设置界面输入（房间名/备注/人数，回车创建 / Q 取消）。
+            #[cfg(feature = "steam")]
+            if self.steam_lobby_create {
+                self.steam_lobby_create_update(ctx);
+                self.accumulator = 0.0;
+                return Ok(());
+            }
+            // 房间列表界面输入（浏览公开大厅，方向键+回车加入 / R 刷新 / Q 返回）。
+            #[cfg(feature = "steam")]
+            if self.steam_lobby_list {
+                self.steam_lobby_list_update(ctx);
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             // 方向键移动选中（在 Steam 大厅子菜单里不干扰，只影响主菜单选中）。
             if !in_lobby_menu {
                 if just_named(NamedKey::ArrowUp) {
@@ -1479,6 +1549,24 @@ impl event::EventHandler for Game {
                         {
                             eprintln!("[menu] -> Steam lobby menu");
                             self.steam_lobby_menu = true;
+                            self.steam_lobby_create = false;
+                            self.steam_lobby_list = false;
+                            // 进入大厅前初始化一次 Steam 会话（读本机昵称；建房/加入复用，避免重复 init 单实例）。
+                            if self.steam_sess.is_none() {
+                                match net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT) {
+                                    Ok(s) => {
+                                        self.steam_my_display_name = s.transport.friends()
+                                            .get_friend(net_steam::steamworks::SteamId::from_raw(s.transport.steam_id()))
+                                            .name();
+                                        self.steam_sess = Some(s);
+                                        eprintln!("[steam] session ready, display name='{}'", self.steam_my_display_name);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[steam] session init failed: {e:?}");
+                                        self.steam_sess = None;
+                                    }
+                                }
+                            }
                         }
                         #[cfg(not(feature = "steam"))]
                         eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
@@ -1486,18 +1574,23 @@ impl event::EventHandler for Game {
                     _ => {}
                 }
             }
-            // Steam 大厅子菜单：H 创建 / J 加入 / Q 返回（S2 再接入建房设置与房间列表；当前建厅人数用默认值）。
+            // Steam 大厅主界面：H 进建房设置 / J 进房间列表 / Q 返回主菜单。
             #[cfg(feature = "steam")]
-            if self.steam_lobby_menu {
+            if self.steam_lobby_menu && !self.steam_lobby_create && !self.steam_lobby_list {
                 if just('h') || just('H') || just(' ') {
-                    eprintln!("[menu] Steam -> host lobby ({STEAM_DEFAULT_PLAYERS} players)");
-                    self.enter_steam_mode(ctx, true, STEAM_DEFAULT_PLAYERS);
+                    eprintln!("[menu] Steam -> create-lobby setup");
+                    // 进入建房设置：重置字段到默认。
+                    self.steam_create_name = "我的房间".to_string();
+                    self.steam_create_note = String::new();
+                    self.steam_create_focus = 0;
+                    self.steam_create_players = STEAM_DEFAULT_PLAYERS;
+                    self.steam_lobby_create = true;
                 } else if just('j') || just('J') {
-                    #[cfg(feature = "steam")]
-                    {
-                        eprintln!("[menu] Steam -> auto-join host lobby");
-                        self.enter_steam_mode(ctx, false, STEAM_DEFAULT_PLAYERS);
-                    }
+                    eprintln!("[menu] Steam -> join lobby list");
+                    self.steam_lobby_list = true;
+                    self.steam_list_requested = false;
+                    self.steam_list_lobbies = Vec::new();
+                    self.steam_list_selection = 0;
                 } else if just('q') || just('Q') {
                     self.steam_lobby_menu = false;
                 }
@@ -2128,16 +2221,154 @@ impl Game {
         Ok(())
     }
 
-    /// 从主菜单进入 Steam 大厅模式：重建真实 Steam 会话（建厅/加入）+ lockstep + 世界/战绩，
-    /// 然后停在「房间/就绪界面」（`steam_in_lobby=true`）。`is_host`=创建大厅，否则自动按 matchkey 加入；
-    /// `players` 仅 host 用（请求的玩家总数，含 host）。
+    /// 建房设置界面输入：四个字段（房间名/备注/人数）。
+    /// - ↑/↓ 或 Tab 切换字段；在文本字段可输入 ascii+空格+常用标点、Backspace 删末字符；人数字段 `+`/`-` 或直接输数字（2..=STEAM_MAX_PLAYERS）。
+    /// - 回车=创建房间（用现有 steam_sess 建厅+写房间元数据）；Q=放弃返回大厅主界面。
     #[cfg(feature = "steam")]
-    fn enter_steam_mode(&mut self, _ctx: &mut Context, is_host: bool, players: u8) {
+    fn steam_lobby_create_update(&mut self, ctx: &mut Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
+        let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        // 切换字段 0=房名 1=备注 2=人数。
+        if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
+            self.steam_create_focus = (self.steam_create_focus + 2) % 3;
+        } else if just_named(NamedKey::ArrowDown) {
+            self.steam_create_focus = (self.steam_create_focus + 1) % 3;
+        }
+        if just('q') || just('Q') {
+            self.steam_lobby_create = false; // 返回大厅主界面
+            return;
+        }
+        match self.steam_create_focus {
+            0 | 1 => {
+                // 文本字段：房名 / 备注。
+                if just_named(NamedKey::Backspace) {
+                    let buf = if self.steam_create_focus == 0 { &mut self.steam_create_name } else { &mut self.steam_create_note };
+                    buf.pop();
+                    return;
+                }
+                let buf = if self.steam_create_focus == 0 { &mut self.steam_create_name } else { &mut self.steam_create_note };
+                if buf.len() >= 80 {
+                    return;
+                }
+                // 可打印 ascii 字符（字母大小写/数字/空格/常用标点）。
+                const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
+                for c in CHARS.chars() {
+                    if just(c) {
+                        buf.push(c);
+                        return;
+                    }
+                }
+            }
+            2 => {
+                // 人数字段：`+`/`-` 步进 + 数字直接输入（2..=STEAM_MAX_PLAYERS）。
+                if just('+') {
+                    self.steam_create_players = (self.steam_create_players as i32 + 1).clamp(2, STEAM_MAX_PLAYERS as i32) as u8;
+                } else if just('-') {
+                    self.steam_create_players = (self.steam_create_players as i32 - 1).clamp(2, STEAM_MAX_PLAYERS as i32) as u8;
+                } else if just_named(NamedKey::Backspace) {
+                    self.steam_create_players = 2;
+                } else {
+                    for d in '0'..='9' {
+                        if just(d) {
+                            let n = d.to_digit(10).unwrap() as u8;
+                            let val = self.steam_create_players.saturating_mul(10).saturating_add(n);
+                            self.steam_create_players = val.clamp(2, STEAM_MAX_PLAYERS);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        // 回车=创建房间。
+        if just_named(NamedKey::Enter) || just('\r') {
+            let players = self.steam_create_players;
+            let name = self.steam_create_name.clone();
+            let note = self.steam_create_note.clone();
+            eprintln!("[steam] create lobby: players={players} name='{name}' note='{note}'");
+            self.steam_lobby_create = false;
+            self.steam_lobby_menu = true;
+            self.steam_list_requested = false;
+            self.steam_list_lobbies = Vec::new();
+            self.steam_list_selection = 0;
+            self.enter_steam_mode(ctx, true, players, Some(&name), Some(&note));
+        }
+    }
+
+    /// 房间列表界面输入：首次进入拉一次公开大厅列表，供浏览选房加入。
+    /// - ↑/↓ 选择；回车=加入选中的大厅；R=重新刷新；Q=返回大厅主界面。
+    #[cfg(feature = "steam")]
+    fn steam_lobby_list_update(&mut self, ctx: &mut Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
+        let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        // 首次进入 / 按 R：刷新列表。
+        let refresh = !self.steam_list_requested || just('r') || just('R');
+        if refresh {
+            self.steam_list_requested = true;
+            if let Some(sess) = self.steam_sess.as_ref() {
+                match sess.client_list_lobbies(120) {
+                    Ok(mut list) => {
+                        // 人数已满的大厅仍显示但不可选（steamworks 加入会失败）；这里仅排序展示。
+                        list.sort_by_key(|l| (l.members >= l.limit, l.members));
+                        self.steam_list_lobbies = list;
+                        if self.steam_list_selection >= self.steam_list_lobbies.len() {
+                            self.steam_list_selection = self.steam_list_lobbies.len().saturating_sub(1);
+                        }
+                        eprintln!("[steam-list] {} lobbies found", self.steam_list_lobbies.len());
+                    }
+                    Err(e) => {
+                        eprintln!("[steam-list] list failed: {e:?}");
+                        self.steam_list_lobbies = Vec::new();
+                    }
+                }
+            }
+        }
+        if just('q') || just('Q') {
+            self.steam_lobby_list = false;
+            return;
+        }
+        if self.steam_list_lobbies.is_empty() {
+            return; // 没有可加入房间（或加载中），等待/提示。
+        }
+        let n = self.steam_list_lobbies.len();
+        if just_named(NamedKey::ArrowDown) {
+            self.steam_list_selection = (self.steam_list_selection + 1) % n;
+        } else if just_named(NamedKey::ArrowUp) {
+            self.steam_list_selection = (self.steam_list_selection + n - 1) % n;
+        }
+        if just_named(NamedKey::Enter) || just('\r') {
+            let sel = self.steam_list_selection;
+            if sel < self.steam_list_lobbies.len() && self.steam_list_lobbies[sel].members < self.steam_list_lobbies[sel].limit {
+                let lobby_id = self.steam_list_lobbies[sel].id;
+                eprintln!("[steam] join lobby by id {lobby_id}");
+                self.steam_lobby_list = false;
+                self.steam_lobby_menu = true;
+                self.steam_join_lobby_id = Some(lobby_id); // enter_steam_mode client 分支优先按其加入
+                self.enter_steam_mode(ctx, false, 2, None, None);
+            } else {
+                eprintln!("[steam-list] 选中的房间已满或无效");
+            }
+        }
+    }
+
+    /// 从主菜单进入 Steam 大厅模式：重建真实 Steam 会话（建厅/加入）+ lockstep + 世界/战绩，
+    /// 然后停在「房间/就绪界面」（`steam_in_lobby=true`）。`is_host`=创建大厅，否则加入；
+    /// `players` 仅 host 用（请求的玩家总数，含 host）；`room_name`/`room_note` 仅 host 建厅时写进房间元数据（可空）。
+    #[cfg(feature = "steam")]
+    fn enter_steam_mode(&mut self, _ctx: &mut Context, is_host: bool, players: u8, room_name: Option<&str>, room_note: Option<&str>) {
         let seed = 20260812u64;
         let res = (|| -> std::io::Result<()> {
-            let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)?;
+            // 复用进入大厅主界面时初始化的一次性 Steam 会话（避免重复 init 单实例 steamworks）。
+            let mut sess = self
+                .steam_sess
+                .take()
+                .ok_or_else(|| std::io::Error::other("steam 会话未初始化（未进入 Steam 大厅？）"))?;
             if is_host {
                 let lobby = sess.host_create_lobby(players.max(1) as u32, 200)?;
+                sess.host_set_room_info(room_name, room_note)?;
                 sess.prepare_transport()?;
                 self.steam_my_index = sess.my_slot();
                 eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
@@ -2166,7 +2397,11 @@ impl Game {
                     8,
                 );
             } else {
-                let lobby = sess.client_find_and_join(240)?;
+                // 从房间列表选中了具体大厅 → 按其加入；否则沿用 matchkey 自动搜索加入。
+                let lobby = match self.steam_join_lobby_id.take() {
+                    Some(id) => sess.join_lobby_by_id(id, 240)?,
+                    None => sess.client_find_and_join(240)?,
+                };
                 sess.prepare_transport()?;
                 eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
@@ -2494,12 +2729,27 @@ impl Game {
         let gap = 26.0;
 
         #[cfg(feature = "steam")]
-        let in_lobby_menu = self.steam_lobby_menu;
+        let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
         #[cfg(not(feature = "steam"))]
         let in_lobby_menu = false;
 
-        // Steam 大厅子菜单：创建 / 加入 / 返回，同样卡片样式。
+        // Steam 大厅：建房设置 / 房间列表 / 大厅主界面三种子界面。
         if in_lobby_menu {
+            // 建房设置界面。
+            #[cfg(feature = "steam")]
+            if self.steam_lobby_create {
+                self.draw_steam_create_lobby(&mut canvas, ctx)?;
+                canvas.finish(ctx)?;
+                return Ok(());
+            }
+            // 房间列表界面。
+            #[cfg(feature = "steam")]
+            if self.steam_lobby_list {
+                self.draw_steam_lobby_list(&mut canvas, ctx)?;
+                canvas.finish(ctx)?;
+                return Ok(());
+            }
+            // 大厅主界面：创建 / 加入 / 返回，同样卡片样式。
             #[cfg(feature = "steam")]
             {
                 let subs: [(&str, &str); 3] = [
@@ -2560,6 +2810,84 @@ impl Game {
         canvas.finish(ctx)?;
         Ok(())
     }
+
+    /// 绘制「建房设置」界面：房间名 / 备注 / 人数 三字段，当前聚焦字段高亮。
+    #[cfg(feature = "steam")]
+    fn draw_steam_create_lobby(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        draw_text(canvas, ctx, "创建房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.24 }, true)?;
+        draw_text(canvas, ctx, "↑/↓ 或 Tab 切换字段，输入文本，回车创建", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.24 + 54.0 }, true)?;
+        let labels = ["房间名", "备注（可空）", "玩家人数"];
+        let vals = [self.steam_create_name.clone(), self.steam_create_note.clone(), self.steam_create_players.to_string()];
+        let mut y = sh * 0.40;
+        let label_w = 220.0;
+        let box_w = 420.0;
+        let box_h = 56.0;
+        let left = cx - box_w / 2.0 - 40.0;
+        for i in 0..3 {
+            let selected = i == self.steam_create_focus;
+            // 标签
+            draw_text(canvas, ctx, labels[i], 24.0, Color::from_rgb(220, 224, 235), Point2 { x: left + (label_w + box_w) / 2.0, y: y + box_h / 2.0 - 16.0 }, true)?;
+            // 输入框（聚焦高亮边框 → 用背景色区分）
+            let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(30, 34, 44) };
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(left + label_w, y, box_w, box_h), bg_col)?;
+            canvas.draw(&bg, graphics::DrawParam::new());
+            let disp = if i == 0 && vals[0].is_empty() {
+                "（输入房间名）".to_string()
+            } else if i == 1 && vals[1].is_empty() {
+                "（可选）".to_string()
+            } else {
+                format!("  {}", vals[i])
+            };
+            draw_text(canvas, ctx, &disp, 22.0, if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE }, Point2 { x: left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
+            y += box_h + 30.0;
+        }
+        draw_text(canvas, ctx, "人数范围 2 - 64（+/- 调，或直接输数字）", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: y + 10.0 }, true)?;
+        draw_text(canvas, ctx, "回车 创建房间    Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        Ok(())
+    }
+
+    /// 绘制「房间列表」界面：公开大厅列表（房主昵称/房名/人数/备注），当前选中高亮。
+    #[cfg(feature = "steam")]
+    fn draw_steam_lobby_list(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        draw_text(canvas, ctx, "加入房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.22 }, true)?;
+        draw_text(canvas, ctx, "↑/↓ 选择，回车加入，R 刷新", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
+        if self.steam_list_lobbies.is_empty() {
+            draw_text(canvas, ctx, "（暂无可加入的房间）", 28.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: sh * 0.5 }, true)?;
+            draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+        } else {
+            let mut y = sh * 0.34;
+            let head_w = (sw * 0.8).min(760.0);
+            let head_x = cx - head_w / 2.0;
+            for (i, l) in self.steam_list_lobbies.iter().enumerate() {
+                // 房主昵称（临时查 friends；取不到则“房主”）。
+                let owner_name = self
+                    .steam_sess
+                    .as_ref()
+                    .map(|s| {
+                        let id = net_steam::steamworks::SteamId::from_raw(l.owner);
+                        s.transport.friends().get_friend(id).name()
+                    })
+                    .unwrap_or_else(|| "房主".to_string());
+                let full = format!("{}   {}", owner_name, l.name);
+                let meta = format!("人数 {}/{}    {}", l.members, l.limit, l.note);
+                let selected = i == self.steam_list_selection;
+                let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(28, 31, 38) };
+                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(head_x, y, head_w, 64.0), bg_col)?;
+                canvas.draw(&bg, graphics::DrawParam::new());
+                let mark = if selected { "[v]" } else { "[ ]" };
+                let name_col = if selected { Color::WHITE } else { Color::from_rgb(210, 214, 225) };
+                draw_text(canvas, ctx, &format!("{mark}{full}"), 24.0, name_col, Point2 { x: cx, y: y + 20.0 }, true)?;
+                draw_text(canvas, ctx, &meta, 16.0, Color::from_rgb(150, 156, 172), Point2 { x: cx, y: y + 44.0 }, true)?;
+                y += 74.0;
+            }
+        }
+        draw_text(canvas, ctx, "回车 加入    R 刷新    Q 返回", 18.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        Ok(())
+    }
 }
 
 
@@ -2595,8 +2923,7 @@ fn hp_color(ratio: f32) -> Color {
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
-fn draw_text(
-    canvas: &mut Canvas,
+fn draw_text(    canvas: &mut Canvas,
     ctx: &Context,
     text: &str,
     size: f32,

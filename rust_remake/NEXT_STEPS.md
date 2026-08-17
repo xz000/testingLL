@@ -69,8 +69,16 @@
 - 用户提“人不满但全员准备就绪也要能启动”。
 - 已核实：`HostLockstep::new(total_players,..)` 按 `expected=total_players-1` 建固定槽位；启动判定 `saw_all_clients()`（所有槽位都要有输入）`all_clients_ready()`（所有槽位就绪）**都要求满员**。当前开房设 64 人、只来 2 人永不能启动。
 - 合方向：把“固定 expected 满员判定”改为“基于**实际已加入且就绪**玩家数”满足即启动。**这是核心逻辑改动，涉及确定性/多局/测试**，单独记（见下文“待实现核心改动”）。本次 UI 会把“局内参与人数”与“建房人数上限”概念分开，为此留好口子。
-**S1 已落（本提交）**：主菜单卡片化 + 方向键 ↑/↓ 选中 + 回车确认 + 数字 1/2/3 快捷 + 选中高亮 + 底部操作提示条；Steam 大厅子菜单同款卡片；局域网入口保留“建设中/需命令行”；新增 `menu_selection` 字段与 `winit` 依赖（方向键逻辑键 NamedKey）。build/test/clippy 默认+steam 全绿，117 测试不破。
-**未尽（后续增量）**：S2 建房设置界面（文本输入框/房间名/人数 2~64/备注）+ 房间列表加入界面 + S2.5 开房后编辑（房名备注改+锁房） + S4 配置/学习界面分区 + S5 房间就绪界面样式统一。
+**S1 已落（提交 `a02edf0`）**：主菜单卡片化 + 方向键 ↑/↓ 选中 + 回车确认 + 数字 1/2/3 快捷 + 选中高亮 + 底部操作提示条；Steam 大厅子菜单同款卡片；局域网入口保留“建设中/需命令行”；新增 `menu_selection` 字段与 `winit` 依赖（方向键逻辑键 NamedKey）。build/test/clippy 默认+steam，117 测试不破。
+**S2 已落（本提交）**：
+- session.rs 加 `host_set_room_info(name,note)`（写/改房间元数据 `room_name`/`room_note`）、`client_list_lobbies()`（列公开大厅：id/房主/人数/上限/房名/备注）、新 `LobbyInfo`。
+- 大厅子界面拆成三态：`steam_lobby_menu`（主：H 建房设置 / J 房间列表 / Q 返） / `steam_lobby_create`（建房设置） / `steam_lobby_list`（房间列表）。
+- 建房设置界面（文本输入框）：房间名（默认“我的房间”）/备注/人数 2~64，↑↓或Tab切字段，字符输入+Backspace，人数 `+`/`-` 或直接输数字，回车建厅（带房名/备注写元数据），Q 取消。
+- 房间列表界面：进界面拉一次公开大厅，显示 房主昵称·房名·人数 x/M·备注，↑↓选中+回车加入（走 `join_lobby_by_id`），R 刷新，Q 返回；人数已满的不可选。
+- 去掉测试用“自动按 matchkey 加入第一个厅”（J 不再自动，改为房间列表）。
+- Steam 会话改为**进入大厅时 init 一次**（`steam_sess` 持有 + 缓存本机昵称 `steam_my_display_name`），建房/加入消费之，避免重复 init 单实例 steamworks；`enter_steam_mode` 改从 `steam_sess.take()` 取会话。
+- 已知限制（记录）：建房默认房间名目前用“我的房间”，**未接昵称**（避免在大厅 UI 阶段提前 init 单实例 Steam 去取昵称导致二次 init 风险；后续可在“整进程仅 init 一次”框架下把默认名设为 `{昵称}的房间`）。文本输入框暂**只支持 ascii 字符+空格+常用标点**（ggez 逻辑键无法捕获中文 IME；中文房间名输入为后续增强）。
+**未尽（后续增量）**：S2.5 开房后编辑（房间名/备注改 + 锁房 `set_lobby_joinable`）需在房间就绪界面加房主编辑入口（transport 已进 lockstep，需经 `transport_ref()` 或保留 matchmaking 访问）；S4 配置/学习界面分区；S5 房间就绪界面样式统一。
 
 
 ## 当前状态（全绿）
