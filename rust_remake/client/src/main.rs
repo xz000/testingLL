@@ -2478,7 +2478,11 @@ impl Game {
                 self.steam_countdown = (self.steam_countdown - dt.min(0.25) as f32).max(0.0);
                 if self.steam_countdown <= 0.0 {
                     // 缓冲归零（正常倒计时结束，或锁定窗口内无视取消后仍归零）→ 统一广播 StartConfig 进配置。
-                    eprintln!("[steam-host] all ready countdown zero -> broadcast StartConfig");
+                    // 人不满启动：用当前在场的 client 槽位作本局参与集（建房上限里只来了这些人就开打；vacant 槽位排除在局外）。
+                    let mask = host.present_mask();
+                    host.set_participants(&mask);
+                    let n = mask.iter().filter(|&&b| b).count();
+                    eprintln!("[steam-host] all ready countdown zero -> start with {n} participant client(s), mask={mask:?}");
                     host.broadcast_start_config();
                     entered_config = true;
                 }

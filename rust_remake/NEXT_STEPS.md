@@ -100,7 +100,17 @@
 - ✅ **host 感知 client 离开**：`steam_refresh_roster` 检测成员减少（`steam_last_roster_len`），有人退出时打印 `[steam-host] a player left ... waiting`；host 本身不受影响（`saw_all_clients` 因缺人会 false、倒计时自动复位，不会误开打），只是房间继续等/可 Q 退出。
 - ⚠ 已知边界：以上“离场”都是退出进程/房间级；Steam 对战中 client 真掉线（非退程序）仍无 `auto_drop_idle` 自动处置（见前文新观察，属重连范畴）。
 - 真机待复验：host 退出后 client 几秒内自动回主菜单；client 退出后 host 打印 player-left 并继续等。
-**未尽（后续增量）**：S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，可进一步统一 LAN/Steam；LAN 暂不进此界面）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
+**Host Migration（Steam host 离开时的自动选新房主）—— 决策记录（2026-08-17）**：
+- 背景：当前对称离场已实现——Steam host 离开 → client 约 4s 检测到心跳丢失 → 自动回主菜单（安全但中断游戏）。局域网不必迁移；Steam 是否可 host 离开后**自动选一个 client 当新 host 继续对局**？
+- **已核实难点**：`lobby_owner`（Steam 大厅房主）由 Steam 强管、0.13 无 `TransferLobbyOwnership` 易暴露；而游戏对局真正的 host 是 `HostLockstep`（负责产 seq 帧/快照/重连）。迁移需两层都迁 + 所有端**确定性选出同一新 host**（否则分叉）+ 新 host 由 `ClientLockstep` 转 `HostLockstep` + 其他在线端重定向到新 host + **端间可能有未建的 P2P 连接**需建立 + 新 host 产“接管快照/Resync 对齐”续延（可复用现有 reconnect 的快照/`apply_resync` 机制）。属**第二核心网络大改动**（仅次于“人不满启动”）。
+- **决定（用户确认）**：host migration 作为独立大目标**排在“人不满启动”之后**；当前只做小的核心改动“人不满但全员就绪也能启动”。分步方案（后续做时）存入思路：① 确定性选新 host（在线成员 SteamID 最小者、排除旧 host）；② 候选端转 HostLockstep + 广播接管快照；③ 其余端 `retarget` + `apply_resync` 对齐；④ 需要时端间互连。
+- 顺序更新：真机验证（本轮多数✅）→ **“人不满启动”**（已实现，待真机复验）→ S5 →（后续）Host Migration →（后续）Steam 战斗内掉线 auto_drop/reconnect。
+**“人不满但全员就绪也能启动” —— 已实现（2026-08-17）**：
+- **核心（net `HostLockstep` 参与集）**：新增 `active: Option<Vec<bool>>`（默认 `None`=满员全参与，兼容局域网/现有测试）。新增 `set_participants` / `is_active` / `active_clients_count` / `present_mask()`。所有“就绪/在场/配好/配置齐全”判定与产帧（`saw_all_clients`/`all_clients_ready`/`all_clients_build_done`/`all_cfgs`/`try_emit`/`collect_cfgs`）改为**只对参与集要求/收集**。`active=None` 行为与旧完全一致（局域网/既有测试全绿）。
+- **Steam 接入（`steam_lobby_update` host 分支）**：倒计时归零进配置前用 `host.present_mask()` 设参与集，建房上限只来了几人就按几人开打，vacant 槽位排除；日志 `[steam-host] start with N participant client(s)`。
+- **单测**：net `participants_underfull_start_only_active`（建房 3 人、只 host+client1 参与：产帧只含 p0+p1、就绪/配置只要求参与集）。workspace 118 全绿。
+- **真机待复验**：建房设 >2 人上限、只进 2 人 → 全员就绪应能启动（不再建多大必须满多大）。
+
 
 
 
