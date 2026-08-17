@@ -193,6 +193,11 @@ impl<T: Transport> HostLockstep<T> {
         self.latest_input.iter().filter(|x| x.is_some()).count()
     }
 
+    /// 各 client 槽位当前是否在场（有输入），返回长度=expected 的掩码。供开启一局前 `set_participants` 用。
+    pub fn present_mask(&self) -> Vec<bool> {
+        (0..self.expected).map(|c| self.latest_input[c].is_some()).collect()
+    }
+
     /// 已就绪（收到 PlayerReady(true)）的 client 数。
     pub fn ready_clients_count(&self) -> usize {
         self.clients_ready.iter().filter(|r| **r).count()
