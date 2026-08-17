@@ -29,6 +29,10 @@ pub struct HostLockstep<T: Transport> {
     local_base: u8,
     /// 需要收齐的 client 数。
     expected: usize,
+    /// 本局实际参与对局的 client 槽位集合（`None`=全部 expected 槽位都参与，兼容满员/局域网）。
+    /// 用于“人不满也启动”：建房上限里只有部分 client 进场就绪，host 开局时把“实际就绪者”设为参与集，
+    /// 产帧与就绪/配置判定仅对参与集要求，其余 vacant 槽位排除在局外。
+    active: Option<Vec<bool>>,
     /// 各 client peer（下标=client 序号 - local_base）。
     client_peers: Vec<Option<Peer>>,
     /// 各 client 最新输入（下标=client 序号 - local_base）。
@@ -78,6 +82,7 @@ impl<T: Transport> HostLockstep<T> {
             transport,
             local_base,
             expected,
+            active: None,
             client_peers: vec![None; expected],
             latest_input: vec![None; expected],
             local: None,
@@ -154,9 +159,10 @@ impl<T: Transport> HostLockstep<T> {
         c < self.expected && self.clients_ready[c]
     }
 
-    /// 所有 client 是否都已就绪（不含 host 自身；host 自身的就绪由调用方另管）。
+    /// 所有【参与本局】的 client 是否都已就绪（不含 host 自身；host 自身的就绪由调用方另管）。
+    /// 未参与的 vacant 槽位不要求。
     pub fn all_clients_ready(&self) -> bool {
-        self.clients_ready.iter().all(|r| *r)
+        (0..self.expected).all(|c| !self.is_active(c) || self.clients_ready[c])
     }
 
     /// 某 client（完整的玩家序号）当前是否已配好技能/配置（开局配置阶段）。
@@ -165,9 +171,9 @@ impl<T: Transport> HostLockstep<T> {
         c < self.expected && self.clients_build_done[c]
     }
 
-    /// 所有 client 是否都已配好技能/配置（不含 host 自身；host 自身是否配好由调用方另管）。
+    /// 所有【参与本局】的 client 是否都已配好技能/配置（不含 host 自身；host 自身是否配好由调用方另管）。
     pub fn all_clients_build_done(&self) -> bool {
-        self.clients_build_done.iter().all(|b| *b)
+        (0..self.expected).all(|c| !self.is_active(c) || self.clients_build_done[c])
     }
 
     /// 已配好技能/配置（收到 RoomState.build_done=true）的 client 数。
@@ -200,6 +206,29 @@ impl<T: Transport> HostLockstep<T> {
     /// 期望的 client 总数（= 玩家总数减去 host 本地占位，若有参与）。
     pub fn expected_clients(&self) -> usize {
         self.expected
+    }
+
+    /// 某 client 槽位（下标）是否参与本局对局（`active=None` 时全部参与）。
+    fn is_active(&self, c: usize) -> bool {
+        match &self.active {
+            None => true,
+            Some(v) => v.get(c).copied().unwrap_or(false),
+        }
+    }
+
+    /// 设置本局参与对局的 client 槽位集合（“人不满也启动”：只让实际就绪者参与，其余 vacant 槽位排除）。
+    /// 长度必须严格等于 `expected`，否则不生效并返回 false。调用时机：host 判定“可开局”时（进配置/开战前）。
+    pub fn set_participants(&mut self, active: &[bool]) -> bool {
+        if active.len() != self.expected {
+            return false;
+        }
+        self.active = Some(active.to_vec());
+        true
+    }
+
+    /// 当前参与的 client 槽位数（诊断/界面用）。
+    pub fn active_clients_count(&self) -> usize {
+        (0..self.expected).filter(|&c| self.is_active(c)).count()
     }
 
     /// 累计收到过的 `PlayerReady` 包总数（诊断：区分“包没到”与“到了但值是 false”）。
@@ -287,15 +316,15 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
-    /// 是否已收齐所有端（host 自身 + 全部 client）的配置。
+    /// 是否已收齐所有【参与本局】的端（host 自身 + 参与 client）的配置（未参与的 vacant 槽位不要求）。
     pub fn all_cfgs(&self) -> bool {
         if self.local_base > 0 && self.local_cfg.is_none() {
             return false;
         }
-        self.cfgs.iter().all(|x| x.is_some())
+        (0..self.expected).all(|c| !self.is_active(c) || self.cfgs[c].is_some())
     }
 
-    /// 合并所有端配置：`(player_index, bytes)`（host=0 在前，client 随后），收齐才 Some。
+    /// 合并所有【参与本局】端配置：`(player_index, bytes)`（host=0 在前，参与 client 随后），收齐才 Some。
     pub fn collect_cfgs(&self) -> Option<Vec<(u8, Vec<u8>)>> {
         if !self.all_cfgs() {
             return None;
@@ -306,9 +335,11 @@ impl<T: Transport> HostLockstep<T> {
                 out.push((0, c.clone()));
             }
         }
-        for (c, cfg) in self.cfgs.iter().enumerate() {
-            if let Some(b) = cfg {
-                out.push(((c + self.local_base as usize) as u8, b.clone()));
+        for c in 0..self.expected {
+            if self.is_active(c) {
+                if let Some(b) = &self.cfgs[c] {
+                    out.push(((c + self.local_base as usize) as u8, b.clone()));
+                }
             }
         }
         out.sort_by_key(|(i, _)| *i);
@@ -369,9 +400,9 @@ impl<T: Transport> HostLockstep<T> {
         self.local = enc;
     }
 
-    /// host 是否已见过所有 client 的输入至少一次。
+    /// host 是否已见过所有【参与本局】的 client 的输入至少一次（未参与的 vacant 槽位不要求）。
     pub fn saw_all_clients(&self) -> bool {
-        self.latest_input.iter().all(|x| x.is_some())
+        (0..self.expected).all(|c| !self.is_active(c) || self.latest_input[c].is_some())
     }
 
     /// 处理 transport 中当前所有包（INPUT / REQ_FRAME）。无副作用推进，只在收 REQ_FRAME 时补发。
@@ -486,8 +517,8 @@ impl<T: Transport> HostLockstep<T> {
     /// 若已收齐全部 client（及 host 自身）输入，则合成一帧：入缓冲、广播，清空已用输入，
     /// 返回 `Some((seq, entries))`（供各端包括 host 自身喂给本地 World）；未收齐返回 `None`。
     pub fn try_emit(&mut self) -> Option<(u64, crate::proto::FrameData)> {
-        // 若 host 参与，总玩家数 = expected + 1；需 host 本地输入 + 全部 client。
-        if !self.latest_input.iter().all(|x| x.is_some()) {
+        // 若 host 参与，总玩家数 = expected + 1；需 host 本地输入 + 所有【参与】的 client 输入（未参与的 vacant 槽位不要求）。
+        if !(0..self.expected).all(|c| !self.is_active(c) || self.latest_input[c].is_some()) {
             return None;
         }
         if self.local_base > 0 && self.local.is_none() {
@@ -498,9 +529,11 @@ impl<T: Transport> HostLockstep<T> {
         if self.local_base > 0 {
             entries.push((0, self.local.clone().unwrap()));
         }
-        for (c, inp) in self.latest_input.iter().enumerate() {
-            if let Some(bytes) = inp {
-                entries.push(((c + self.local_base as usize) as u8, bytes.clone()));
+        for c in 0..self.expected {
+            if self.is_active(c) {
+                if let Some(bytes) = &self.latest_input[c] {
+                    entries.push(((c + self.local_base as usize) as u8, bytes.clone()));
+                }
             }
         }
         entries.sort_by_key(|(i, _)| *i);
@@ -1358,6 +1391,51 @@ mod tests {
             assert!(host.try_emit().is_some(), "掉线后应持续产帧");
         }
         assert!(host.next_seq() > before);
+    }
+
+    /// 「人不满也启动」：建房上限 3（host+2 client），但只有 client1 进场就绪；host 设参与集 `[client1 参与, client2 不参与]`，
+    /// 产帧 / 就绪 / 配置判定仅对参与集要求，vacant 槽位排除在局外。锁死“人不满但全员（现有者）就绪也能启动”。
+    #[test]
+    fn participants_underfull_start_only_active() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 3, true); // host=0 + client1 + client2（expected=2）
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // 未设参与集前（满员判定）：缺 client2 不能视为全在场、无法产帧。
+        assert!(!host.saw_all_clients(), "满员判定：client2 缺席时不全在场");
+        cli.send_input(&encode_input(1)).unwrap();
+        host.poll(&mut rcv);
+        host.set_local_input(Some(vec![9]));
+        assert!(host.try_emit().is_none(), "满员判定下应因缺 client2 无法产帧");
+
+        // 设参与集：只 client1 参与 → 只要求 client1。
+        assert!(host.set_participants(&[true, false]));
+        assert!(host.saw_all_clients(), "按参与集只在场的 client1 应视为全在场");
+        assert_eq!(host.active_clients_count(), 1);
+
+        // 产帧：只含 player0(host) + player1(client1)，不含 player2。
+        let (seq, entries) = host.try_emit().expect("按参与集应能产帧");
+        let players: Vec<u8> = entries.iter().map(|(i, _)| *i).collect();
+        assert_eq!(seq, 0);
+        assert_eq!(players, vec![0, 1], "产帧只应含参与玩家 host 与 client1");
+        assert!(!players.contains(&2), "未参与的 client2 不应出现在帧里");
+
+        // 就绪仅对参与集：client1 就绪 → all_clients_ready true（不要求 client2）。
+        assert!(!host.all_clients_ready());
+        cli.send_ready_state(true).unwrap();
+        host.poll(&mut rcv);
+        assert!(host.all_clients_ready(), "参与集就绪即可（client2 不参与不要求）");
+
+        // 配置同步仅对参与集：host local cfg + client1 cfg → all_cfgs true（不要求 client2）。
+        host.set_local_cfg(vec![0]);
+        cli.send_cfg(&vec![1]).unwrap();
+        let mut rcv2 = [0u8; 4096];
+        host.poll_cfg(&mut rcv2);
+        assert!(host.all_cfgs(), "参与集配置就绪即可（client2 不参与不要求）");
+        let merged = host.collect_cfgs().unwrap();
+        let players_cfg: Vec<u8> = merged.iter().map(|(i, _)| *i).collect();
+        assert_eq!(players_cfg, vec![0, 1], "合并配置只应含参与玩家");
     }
 }
 
