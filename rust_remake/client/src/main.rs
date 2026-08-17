@@ -69,6 +69,9 @@ const STEAM_DEFAULT_PLAYERS: u8 = 2;
 /// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽）。
 #[cfg(feature = "steam")]
 const LOBBY_REFRESH_COOLDOWN_SECS: f64 = 4.0;
+/// Steam 房间（client）：连续这么多帧收不到 host 的 `RosterReady` 广播，即判定 host 已离开（自动退出房间回主菜单）。约 4 秒。
+#[cfg(feature = "steam")]
+const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
 
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
@@ -255,6 +258,12 @@ struct Game {
     /// Steam：host 房间阶段刷新成员名单（roster）的节流计数器（client 加入后 host 才能看到并显示新成员）。
     #[cfg(feature = "steam")]
     steam_roster_refresh_ticks: u32,
+    /// Steam：client 连续收不到 host 广播（RosterReady 心跳）的帧数；超过 `STEAM_LOBBY_SILENT_TIMEOUT_TICKS` 判定 host 已离开。
+    #[cfg(feature = "steam")]
+    steam_lobby_silent_ticks: u32,
+    /// Steam：host 上次刷新 roster 看到的成员数（用于检测“有玩家离开”并提示 host，避免误以为卡住）。
+    #[cfg(feature = "steam")]
+    steam_last_roster_len: usize,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -502,6 +511,10 @@ impl Game {
             steam_room_locked: false,
             #[cfg(feature = "steam")]
             steam_roster_refresh_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_lobby_silent_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_last_roster_len: 0,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -2330,12 +2343,19 @@ impl Game {
             let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id.0)).name();
             roster.push((slot, name, id.0));
         }
-        // 仅当成员集合变化时更新（避免每帧重建 + 日志）。
+        // 仅当成员集合变化时更新（避免每帧重建 + 日志）；并检测“有玩家离开”给 host 提示。
         let changed = roster.len() != self.steam_roster.len()
             || roster.iter().zip(self.steam_roster.iter()).any(|(a, b)| a != b);
+        let new_len = roster.len();
+        let prev_len = self.steam_last_roster_len;
+        self.steam_last_roster_len = new_len;
         if changed {
+            if prev_len > new_len && prev_len > 1 {
+                eprintln!("[steam-host] a player left the room (members {prev_len} -> {new_len}), waiting");
+            } else {
+                eprintln!("[steam-host] roster updated: {new_len} member(s)");
+            }
             self.steam_roster = roster;
-            eprintln!("[steam] roster refreshed: {} members", self.steam_roster.len());
         }
     }
 
@@ -2410,6 +2430,8 @@ impl Game {
                 eprintln!("[steam-client] sent room_state ready={} to host", self.steam_local_ready);
                 self.steam_last_sent_ready = Some(self.steam_local_ready);
             }
+            // host 离开检测：每帧先累计“沉默”帧数；收不到 host 广播（RosterReady 心跳）累计，收到即清零。
+            self.steam_lobby_silent_ticks = self.steam_lobby_silent_ticks.saturating_add(1);
             // 单次排空读 host 房间入包：StartConfig（进配置）与 RosterReady（界面）一次分类，绝不互吞。
             let mut rcv = [0u8; 8192];
             if let Ok((got_cfg, roster)) = cli.recv_room_inbox(&mut rcv) {
@@ -2418,6 +2440,7 @@ impl Game {
                     entered_config = true;
                 }
                 if let Some(entries) = roster {
+                    self.steam_lobby_silent_ticks = 0; // 收到 host 广播 → 心跳正常。
                     self.steam_roster_ready = entries.clone();
                     eprintln!("[steam-client] roster ready snapshot: {entries:?}");
                     // 兜底：host 广播的就绪快照若显示「所有玩家（含 host 槽 0）都已就绪」，则自触发进配置。
@@ -2475,6 +2498,18 @@ impl Game {
                     );
                 }
             }
+        }
+        // client：host 提前离开（超过 N 帧收不到 host 广播）→ 自动退出房间回主菜单（host 不应让 client 永久卡在等待）。
+        let host_missing = self.steam_cli_ls.is_some()
+            && self.steam_lobby_silent_ticks >= STEAM_LOBBY_SILENT_TIMEOUT_TICKS;
+        if host_missing {
+            eprintln!(
+                "[steam-client] host left (no heartbeat for {} ticks) -> leave room",
+                self.steam_lobby_silent_ticks
+            );
+            self.steam_leave_room();
+            self.accumulator = 0.0;
+            return Ok(());
         }
         if entered_config {
             self.steam_in_lobby = false;
