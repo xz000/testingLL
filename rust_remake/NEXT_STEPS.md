@@ -7,6 +7,26 @@
 
 > ⚠ **Steam 双机「不能自动进对战 + client 无法操控」根因分析与修复，见下方「Steam 根因分析」节（2026-08-17：已完成代码实现，待真机双机验证）。**
 
+---
+
+## ▓ 工作约定（每次会话都遵守，务必先读）
+1. **思考和回复始终使用中文**（除非代码/标识符本身是英文）。
+2. **续接方式**：下一位协作者直接说「继续」即从本文继续，无需重述背景；本文件是唯一权威续接入口。
+3. 改代码前后都跑 `cargo test --workspace` + `cargo clippy --workspace -- -D warnings`（stages pre-commit 也会自动跑）；steam 路径额外 `cargo build -p client --features client/steam` + `cargo clippy -p client --features client/steam -- -D warnings`。
+4. 提交走 `.githooks` pre-commit（根在上级 `testingLL/`），提交信息简洁、含改动要点。
+5. 不要破坏现有确定性与全绿基线；加功能必加对应测试锁死。
+
+## ▓ 环境要点（Windows 11，本机环境）
+- **系统**：Windows 11（中文环境）。git 仓库根在**上级 `testingLL/`**，`rust_remake/` 只是子目录；`core.hooksPath` 用绝对路径指 `rust_remake/.githooks`。
+- **工具链**：Rust stable（`cargo` 在 `C:\Users\xvzan\.cargo\bin\cargo.exe`）。注意：bash 里的 `ls`/`tail`/`head`/`rg`/`pwd` 不可用（非 git-bash），文件浏览用 `cmd /c dir` / `findstr` / 直接 `read`；管道会被截断，尽量别依赖 `| head`。
+- **日志目录**：`rust_remake/netlogs/`（host/client 的 out/err 文件）；真机日志通常由用户直接贴过来。
+- **Steam 相关**：AppID=908660；`steam_api64.dll` 必须与 exe 同目录（跑 `run-steam.ps1` 自动 stage）；Steam 客户端需登录；双机各登不同账号、`--steam-host`/`--steam-join` 自动按 matchkey 搜加厅。
+- **运行入口脚本**：`run-steam.ps1`（Steam）、`multi-launch.ps1`（局域网多开）、`check.ps1`（一键 build+test+clippy）。
+- **UI/菜单现状**：CJK 字体缺某些字形，已改用稳妥字符（`[v]`/`[ ]`、`->` 等）；注意“用户诉求：把主菜单与各阶段 UI 系统性做清爽”是下一轮主题。
+
+---
+
+
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 
