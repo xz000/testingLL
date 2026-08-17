@@ -264,6 +264,9 @@ struct Game {
     /// Steam：host 上次刷新 roster 看到的成员数（用于检测“有玩家离开”并提示 host，避免误以为卡住）。
     #[cfg(feature = "steam")]
     steam_last_roster_len: usize,
+    /// Steam（host）：当前是否处于“不满员但在线者都已就绪、等待 host 手动开始”的状态（供界面提示）。
+    #[cfg(feature = "steam")]
+    steam_manual_start_pending: bool,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -515,6 +518,8 @@ impl Game {
             steam_lobby_silent_ticks: 0,
             #[cfg(feature = "steam")]
             steam_last_roster_len: 0,
+            #[cfg(feature = "steam")]
+            steam_manual_start_pending: false,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1317,6 +1322,9 @@ impl Game {
         draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: flow_y }, true)?;
         if self.steam_all_ready {
             draw_text(canvas, ctx, &format!("全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）", self.steam_countdown.max(0.0)), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+        } else if self.steam_host_ls.is_some() && self.steam_manual_start_pending {
+            // 不满员但在线者都就绪：不自动倒计时，由 host 按回车手动开始。
+            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：当前全员就绪，按回车 手动开始"), 26.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else {
             draw_text(canvas, ctx, "▶ 按 U 就绪（再按 U 取消）", 28.0, Color::from_rgb(255, 240, 120), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         }
@@ -2457,37 +2465,55 @@ impl Game {
             // host：每帧 poll 收客户端（持续在场 + PlayerReady）；要求所有 client 在场 && 全体就绪。
             let mut rcv = [0u8; 8192];
             host.poll(&mut rcv);
-            let all_present = host.saw_all_clients(); // 所有 client 都已上行过输入（在场信号）
+            let all_present = host.saw_all_clients(); // 所有 expected client 都已上行过输入（满员在场）
             let all_clients_ready = host.all_clients_ready();
-            let all_ready = self.steam_local_ready && all_present && all_clients_ready;
+            let present = host.present_clients_count();
+            let expected = host.expected_clients();
+            let full = present >= expected; // 是否满员
+            // 满员 && 全员（含 host）就绪 → 自动倒计时启动（现有）。
+            let full_ready = self.steam_local_ready && all_present && all_clients_ready;
+            // 不满员但“当前在场的都就绪” → 不自动倒计时，由 host 手动确认开始（人不满开打由 host 拍板）。
+            let underfull_ready = !full && self.steam_local_ready && present > 0 && host.ready_clients_count() == present;
+            self.steam_manual_start_pending = underfull_ready;
             // 每帧广播就绪状态快照，让各端都能看到所有成员的就绪状态（多人一致界面）。
             host.broadcast_roster_ready(self.steam_local_ready);
-            // 倒计时状态机（修 4：不再有 o_pressed 秒进；修 3：全员就绪 → 缓冲倒计时，可取消，最后 LOCK 秒锁定）
-            if !all_ready && !locked {
-                // 有人未就绪/取消，且不在锁定窗口 → 复位倒计时，等再次全员就绪再启动。
+            // —— 满员路径：全员就绪 → 缓冲倒计时，可取消，最后 LOCK 秒锁定；归零自动启动。
+            if !full_ready && !locked {
                 self.steam_was_all_ready = false;
                 self.steam_countdown = 0.0;
-            } else if all_ready && !self.steam_was_all_ready {
-                // 刚达成全员就绪 → 启动 5 秒缓冲倒计时。
+            } else if full_ready && !self.steam_was_all_ready {
                 self.steam_was_all_ready = true;
                 self.steam_countdown = STEAM_READY_COUNTDOWN_SECS;
             }
-            // UI 状态：锁定期间也视为“全体就绪/即将开始”。
-            self.steam_all_ready = all_ready || locked;
+            self.steam_all_ready = full_ready || locked;
             if self.steam_was_all_ready {
                 self.steam_countdown = (self.steam_countdown - dt.min(0.25) as f32).max(0.0);
                 if self.steam_countdown <= 0.0 {
-                    // 缓冲归零（正常倒计时结束，或锁定窗口内无视取消后仍归零）→ 统一广播 StartConfig 进配置。
-                    // 人不满启动：用当前在场的 client 槽位作本局参与集（建房上限里只来了这些人就开打；vacant 槽位排除在局外）。
+                    // 缓冲归零 → 统一广播 StartConfig 进配置（满员：参与集=全在场）。
                     let mask = host.present_mask();
                     host.set_participants(&mask);
                     let n = mask.iter().filter(|&&b| b).count();
-                    eprintln!("[steam-host] all ready countdown zero -> start with {n} participant client(s), mask={mask:?}");
+                    eprintln!("[steam-host] full ready countdown zero -> start with {n} participant client(s), mask={mask:?}");
                     host.broadcast_start_config();
                     entered_config = true;
                 }
             }
-            if !all_ready && !locked {
+            // —— 不满员路径：当前在场都就绪 → 提示并由 host 手动开始（回车）。人数不足时不自动倒计时。
+            // 不满员也提示“只来了 X/上限 Y，全员就绪，host 按回车开始”。
+            if underfull_ready {
+                use winit::keyboard::NamedKey;
+                let enter = ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(NamedKey::Enter))
+                    || ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Character("\r".into()));
+                if enter {
+                    let mask = host.present_mask();
+                    host.set_participants(&mask);
+                    let n = mask.iter().filter(|&&b| b).count();
+                    eprintln!("[steam-host] host manually starts underfull match: {present}/{expected} clients, {n} participant(s), mask={mask:?}");
+                    host.broadcast_start_config();
+                    entered_config = true;
+                }
+            }
+            if !full_ready && !locked {
                 // 节流诊断：每 ~120 帧打一次，说明“等了谁”（在场/就绪各几何），便于真机定位 Steam 联机卡点。
                 self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
                 if self.steam_lobby_wait_ticks % 120 == 1 {
@@ -2497,7 +2523,7 @@ impl Game {
                     let pkts = host.ready_packets_seen();
                     let exp = host.expected_clients();
                     eprintln!(
-                        "[steam-host] waiting: local_ready={} present_clients={pres}/{exp} ready_clients={rdy}/{exp} alive_conns={alive} ready_pkts={pkts}",
+                        "[steam-host] waiting: local_ready={} present_clients={pres}/{exp} ready_clients={rdy}/{exp} alive_conns={alive} ready_pkts={pkts} underfull_ready={underfull_ready} full_ready={full_ready}",
                         self.steam_local_ready
                     );
                 }

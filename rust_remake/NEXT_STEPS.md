@@ -105,11 +105,15 @@
 - **已核实难点**：`lobby_owner`（Steam 大厅房主）由 Steam 强管、0.13 无 `TransferLobbyOwnership` 易暴露；而游戏对局真正的 host 是 `HostLockstep`（负责产 seq 帧/快照/重连）。迁移需两层都迁 + 所有端**确定性选出同一新 host**（否则分叉）+ 新 host 由 `ClientLockstep` 转 `HostLockstep` + 其他在线端重定向到新 host + **端间可能有未建的 P2P 连接**需建立 + 新 host 产“接管快照/Resync 对齐”续延（可复用现有 reconnect 的快照/`apply_resync` 机制）。属**第二核心网络大改动**（仅次于“人不满启动”）。
 - **决定（用户确认）**：host migration 作为独立大目标**排在“人不满启动”之后**；当前只做小的核心改动“人不满但全员就绪也能启动”。分步方案（后续做时）存入思路：① 确定性选新 host（在线成员 SteamID 最小者、排除旧 host）；② 候选端转 HostLockstep + 广播接管快照；③ 其余端 `retarget` + `apply_resync` 对齐；④ 需要时端间互连。
 - 顺序更新：真机验证（本轮多数✅）→ **“人不满启动”**（已实现，待真机复验）→ S5 →（后续）Host Migration →（后续）Steam 战斗内掉线 auto_drop/reconnect。
-**“人不满但全员就绪也能启动” —— 已实现（2026-08-17）**：
+**“人不满但全员就绪也能启动” —— 已实现（2026-08-17，host 手动开始语义）**：
 - **核心（net `HostLockstep` 参与集）**：新增 `active: Option<Vec<bool>>`（默认 `None`=满员全参与，兼容局域网/现有测试）。新增 `set_participants` / `is_active` / `active_clients_count` / `present_mask()`。所有“就绪/在场/配好/配置齐全”判定与产帧（`saw_all_clients`/`all_clients_ready`/`all_clients_build_done`/`all_cfgs`/`try_emit`/`collect_cfgs`）改为**只对参与集要求/收集**。`active=None` 行为与旧完全一致（局域网/既有测试全绿）。
-- **Steam 接入（`steam_lobby_update` host 分支）**：倒计时归零进配置前用 `host.present_mask()` 设参与集，建房上限只来了几人就按几人开打，vacant 槽位排除；日志 `[steam-host] start with N participant client(s)`。
-- **单测**：net `participants_underfull_start_only_active`（建房 3 人、只 host+client1 参与：产帧只含 p0+p1、就绪/配置只要求参与集）。workspace 118 全绿。
-- **真机待复验**：建房设 >2 人上限、只进 2 人 → 全员就绪应能启动（不再建多大必须满多大）。
+- **Steam host 两路径（`steam_lobby_update` host 分支）**：
+  - **满员**（present≥expected）且全员就绪：保留现有“5 秒倒计时→归零自动启动”（参与集=全在场）。
+  - **不满员**（present<expected）且当前在线者都就绪：**不自动倒计时**，界面提示“人数不足（已入 X），当前全员就绪，按回车 手动开始”，由 **host 按回车确认**才启动（参与集=current 在场 mask，`broadcast_start_config`）。
+- **UI**：host 房间界面在不满员待手动时显示“按回车手动开始”（`steam_manual_start_pending`）。
+- **单测**：net `participants_underfull_start_only_active`（产帧/就绪/配置只要求参与集）。workspace 118 全绿。
+- **真机待复验**：建房设 >2 人上限、只进 2 人 → host 按回车应能启动；满员时仍自动倒计时启动。
+
 
 
 
