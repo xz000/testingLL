@@ -227,6 +227,24 @@ struct Game {
     /// Steam：客户端要加入的指定大厅 LobbyId（从房间列表选中时设置；`enter_steam_mode` client 分支优先用其加入）。
     #[cfg(feature = "steam")]
     steam_join_lobby_id: Option<u64>,
+    /// Steam：房主是否处于「编辑房间信息」子界面（房间就绪界面按 E 进入，回车保存 / Q 取消）。
+    #[cfg(feature = "steam")]
+    steam_room_edit: bool,
+    /// Steam 房主编辑：当前聚焦字段（0=房间名，1=备注）。
+    #[cfg(feature = "steam")]
+    steam_room_edit_focus: usize,
+    /// Steam 房主编辑：房间名当前编辑内容。
+    #[cfg(feature = "steam")]
+    steam_edit_name: String,
+    /// Steam 房主编辑：备注当前编辑内容。
+    #[cfg(feature = "steam")]
+    steam_edit_note: String,
+    /// Steam：当前所在房间的 LobbyId（编辑房间信息/锁房用；host/client 进入房间后设置）。
+    #[cfg(feature = "steam")]
+    steam_lobby_id: Option<u64>,
+    /// Steam：当前房间是否已锁定（他人不能再加入；host 用 set_lobby_joinable 控制，本端记录状态）。
+    #[cfg(feature = "steam")]
+    steam_room_locked: bool,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -458,6 +476,18 @@ impl Game {
             steam_my_display_name: String::new(),
             #[cfg(feature = "steam")]
             steam_join_lobby_id: None,
+            #[cfg(feature = "steam")]
+            steam_room_edit: false,
+            #[cfg(feature = "steam")]
+            steam_room_edit_focus: 0,
+            #[cfg(feature = "steam")]
+            steam_edit_name: String::new(),
+            #[cfg(feature = "steam")]
+            steam_edit_note: String::new(),
+            #[cfg(feature = "steam")]
+            steam_lobby_id: None,
+            #[cfg(feature = "steam")]
+            steam_room_locked: false,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1220,7 +1250,11 @@ impl Game {
 
         #[cfg(feature = "steam")]
         if self.steam_in_lobby {
-            self.draw_steam_ready_overlay(&mut canvas, ctx)?;
+            if self.steam_room_edit {
+                self.draw_steam_room_edit(&mut canvas, ctx)?;
+            } else {
+                self.draw_steam_ready_overlay(&mut canvas, ctx)?;
+            }
         }
 
         // 客户端掉线/重连覆盖层
@@ -1240,15 +1274,33 @@ impl Game {
         canvas.draw(&dim, graphics::DrawParam::new());
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "房间 - 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
-        // 醒目操作提示（大字、亮色），并附流程说明，避免“不知道现在该按什么/下一步去哪”。
-        if self.steam_all_ready {
-            draw_text(canvas, ctx, &format!("全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）", self.steam_countdown.max(0.0)), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: sh * 0.18 + 52.0 }, true)?;
-        } else {
-            draw_text(canvas, ctx, "▶ 按 U 就绪（再按 U 取消）", 28.0, Color::from_rgb(255, 240, 120), Point2 { x: cx, y: sh * 0.18 + 52.0 }, true)?;
+        // 房间名 + 人数 + 锁状态（host 读 matchmaking，client 用本地记录）。
+        let (rname, rnote) = self.steam_current_room_info();
+        let n_in = self.steam_roster.len();
+        let lock_txt = if self.steam_room_locked { "[锁]" } else { "[开]" };
+        let mut roomline = format!("房间：{rname}    人数 {n_in}");
+        if self.steam_host_ls.is_some() {
+            roomline.push_str(&format!("   {lock_txt}"));
         }
-        draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: sh * 0.18 + 92.0 }, true)?;
-        draw_text(canvas, ctx, "== 就绪状态 ==", 20.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: sh * 0.40 }, true)?;
-        let mut y = sh * 0.40 + 32.0;
+        draw_text(canvas, ctx, &roomline, 20.0, Color::from_rgb(190, 200, 215), Point2 { x: cx, y: sh * 0.18 + 40.0 }, true)?;
+        if !rnote.is_empty() {
+            draw_text(canvas, ctx, &format!("备注：{rnote}"), 18.0, Color::from_rgb(170, 180, 195), Point2 { x: cx, y: sh * 0.18 + 66.0 }, true)?;
+        }
+        let flow_y = if rnote.is_empty() { sh * 0.18 + 66.0 } else { sh * 0.18 + 92.0 };
+        draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: flow_y }, true)?;
+        if self.steam_all_ready {
+            draw_text(canvas, ctx, &format!("全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）", self.steam_countdown.max(0.0)), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+        } else {
+            draw_text(canvas, ctx, "▶ 按 U 就绪（再按 U 取消）", 28.0, Color::from_rgb(255, 240, 120), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+        }
+        // host 附加“编辑房间”入口，显示在底部。
+        if self.steam_host_ls.is_some() {
+            draw_text(canvas, ctx, "E 编辑房间名/备注与锁定    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        } else {
+            draw_text(canvas, ctx, "U 就绪/取消    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        }
+        draw_text(canvas, ctx, "== 就绪状态 ==", 20.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: sh * 0.42 }, true)?;
+        let mut y = sh * 0.42 + 32.0;
         let roster_lookup = |slot: u8, fallback: bool| -> bool {
             self.steam_roster_ready
                 .iter()
@@ -1474,9 +1526,12 @@ impl event::EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         let dt = ctx.time.delta().as_secs_f64();
 
-        // Steam 房间/就绪阶段：显示成员+就绪、按 o toggle（可撤销）、全体就绪 → 进配置菜单。
+        // Steam 房间/就绪/编辑阶段：房主按 E 进「编辑房间信息」界面；否则进房间就绪界面。
         #[cfg(feature = "steam")]
         if self.steam_in_lobby {
+            if self.steam_room_edit {
+                return self.steam_room_edit_update(ctx, dt);
+            }
             return self.steam_lobby_update(ctx, dt);
         }
 
@@ -1579,8 +1634,13 @@ impl event::EventHandler for Game {
             if self.steam_lobby_menu && !self.steam_lobby_create && !self.steam_lobby_list {
                 if just('h') || just('H') || just(' ') {
                     eprintln!("[menu] Steam -> create-lobby setup");
-                    // 进入建房设置：重置字段到默认。
-                    self.steam_create_name = "我的房间".to_string();
+                    // 进入建房设置：重置字段；默认房间名用「昵称的房间」（若昵称已知）。
+                    let disp = self.steam_my_display_name.clone();
+                    self.steam_create_name = if disp.is_empty() {
+                        "我的房间".to_string()
+                    } else {
+                        format!("{disp}的房间")
+                    };
                     self.steam_create_note = String::new();
                     self.steam_create_focus = 0;
                     self.steam_create_players = STEAM_DEFAULT_PLAYERS;
@@ -2104,19 +2164,146 @@ impl Game {
         self.accumulator = 0.0;
     }
 
-    /// 开局前的技能配置（第一局开始前选择）。
-    /// Steam 房间/就绪阶段（每帧）：
-    /// - 按 o toggle 本机就绪（可撤销）；client 每帧持续上行输入（在场信号，对齐局域网 upload）+
-    ///   上报当前就绪，双重保证连接建立后 host 能可靠收到 client 在场与就绪（避免一次性包在连接建立时序丢）。
-    /// - host：poll 收客户端（持续在场 + PlayerReady 就绪），要求所有 client 在场 && 全体（含 host）就绪
-    ///   → 每帧广播「就绪状态快照」给各端（多人一致界面）→ 5 秒倒计时（有人取消则重置）→ broadcast StartConfig + 进配置菜单。
-    /// - client：收到 RosterReady 更新界面，收到 StartConfig → 进配置菜单。
+    /// 读取当前房间名与备注，host 从 matchmaking 读，无房间或非 host 时返回默认，返回二元组。
+    #[cfg(feature = "steam")]
+    fn steam_current_room_info(&self) -> (String, String) {
+        let t = match self.steam_host_ls.as_ref() {
+            Some(ls) => ls.transport_ref(),
+            None => return ("未命名房间".to_string(), String::new()),
+        };
+        let Some(lid) = self.steam_lobby_id else {
+            return ("未命名房间".to_string(), String::new());
+        };
+        let mm = t.matchmaking();
+        let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+        let name = mm
+            .lobby_data(lobby, net_steam::session::ROOM_NAME_KEY)
+            .unwrap_or_else(|| "未命名房间".to_string());
+        let note = mm.lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY).unwrap_or_default();
+        (name, note)
+    }
+
+    /// 房主「编辑房间信息」子界面输入：改房间名/备注，回车保存（写回 matchmaking 元数据），Q 取消；
+    /// 附带 `L` 锁定/解锁房间（`set_lobby_joinable`；人数上限建房时固定，用锁房代替“开房后改人数”）。
+    #[cfg(feature = "steam")]
+    fn steam_room_edit_update(&mut self, ctx: &Context, _dt: f64) -> GameResult {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
+        let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        // 锁房：L 切换（host 且记录到字段），即时 set_lobby_joinable。
+        if just('l') || just('L') {
+            if let Some(ls) = self.steam_host_ls.as_ref() {
+                if let Some(lid) = self.steam_lobby_id {
+                    let mm = ls.transport_ref().matchmaking();
+                    let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+                    self.steam_room_locked = !self.steam_room_locked;
+                    mm.set_lobby_joinable(lobby, !self.steam_room_locked);
+                    eprintln!("[steam-room] set joinable={} (locked={})", !self.steam_room_locked, self.steam_room_locked);
+                }
+            }
+        }
+        // 字段切换 0=房间名 1=备注（↑/↓ 或 Tab）。
+        if just_named(NamedKey::ArrowUp) || just_named(NamedKey::ArrowDown) || just_named(NamedKey::Tab) {
+            self.steam_room_edit_focus = (self.steam_room_edit_focus + 1) % 2;
+        }
+        if just('q') || just('Q') {
+            self.steam_room_edit = false;
+            return Ok(());
+        }
+        if just_named(NamedKey::Enter) || just('\r') {
+            // 保存：写回房间名/备注。
+            if let Some(ls) = self.steam_host_ls.as_ref() {
+                if let Some(lid) = self.steam_lobby_id {
+                    let mm = ls.transport_ref().matchmaking();
+                    let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+                    let name = if self.steam_edit_name.trim().is_empty() {
+                        "未命名房间"
+                    } else {
+                        self.steam_edit_name.trim()
+                    };
+                    mm.set_lobby_data(lobby, net_steam::session::ROOM_NAME_KEY, name);
+                    mm.set_lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY, self.steam_edit_note.trim());
+                    eprintln!("[steam-room] saved name='{name}' note='{}'", self.steam_edit_note.trim());
+                }
+            }
+            self.steam_room_edit = false;
+            return Ok(());
+        }
+        // 文本输入：聚焦字段 0=名 1=备注。
+        if just_named(NamedKey::Backspace) {
+            let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
+            buf.pop();
+            return Ok(());
+        }
+        let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
+        if buf.len() < 80 {
+            const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
+            for c in CHARS.chars() {
+                if just(c) {
+                    buf.push(c);
+                    return Ok(());
+                }
+            }
+        }
+        self.accumulator = 0.0;
+        Ok(())
+    }
+
+    /// 绘制「编辑房间信息」界面（房主）：房间名/备注 两字段 + 锁房状态。
+    #[cfg(feature = "steam")]
+    fn draw_steam_room_edit(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        draw_text(canvas, ctx, "编辑房间信息", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.26 }, true)?;
+        let labels = ["房间名", "备注"];
+        let vals = [self.steam_edit_name.clone(), self.steam_edit_note.clone()];
+        let mut y = sh * 0.42;
+        let label_w = 200.0;
+        let box_w = 420.0;
+        let box_h = 56.0;
+        let left = cx - box_w / 2.0 - 40.0;
+        for i in 0..2 {
+            let selected = i == self.steam_room_edit_focus;
+            draw_text(canvas, ctx, labels[i], 24.0, Color::from_rgb(220, 224, 235), Point2 { x: left + (label_w + box_w) / 2.0, y: y + box_h / 2.0 - 16.0 }, true)?;
+            let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(30, 34, 44) };
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(left + label_w, y, box_w, box_h), bg_col)?;
+            canvas.draw(&bg, graphics::DrawParam::new());
+            let disp = if vals[i].is_empty() {
+                if i == 0 { "（输入房间名）".to_string() } else { "（可选）".to_string() }
+            } else {
+                format!("  {}", vals[i])
+            };
+            draw_text(canvas, ctx, &disp, 22.0, if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE }, Point2 { x: left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
+            y += box_h + 30.0;
+        }
+        let lock_txt = if self.steam_room_locked { "[v] 已锁定（他人不能加入）" } else { "[ ] 未锁定（可加入）" };
+        draw_text(canvas, ctx, &format!("房间锁：{lock_txt}（按 L 切换）"), 22.0, if self.steam_room_locked { Color::from_rgb(235, 150, 90) } else { Color::from_rgb(140, 200, 160) }, Point2 { x: cx, y: y + 30.0 }, true)?;
+        draw_text(canvas, ctx, "人数上限建房时固定（steamworks 限制），用房间锁控制新入", 17.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: y + 62.0 }, true)?;
+        draw_text(canvas, ctx, "回车 保存    Q 取消    L 锁房", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        Ok(())
+    }
+
+    /// Steam 房间/就绪阶段（每帧）：client 每帧上行「就绪+在场」合包；host poll 收各端、全员就绪倒数计时进配置。
+    /// 房主按 E 进入编辑房间信息界面（见 `steam_room_edit_update`）。
     #[cfg(feature = "steam")]
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
         use ggez::input::keyboard::Key;
         // 房间阶段只用 [U] 就绪/取消就绪；不再用 o/空格（避免 o 多重语义、避免与“配置确认”混淆）。
         let ready_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("u".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("U".into()));
+        // host 按 E 进入「编辑房间信息」子界面（改房间名/备注；人数上限建房时固定，走锁房代替）。
+        let e_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("e".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("E".into()));
+        if e_pressed && self.steam_host_ls.is_some() {
+            let (cur_name, cur_note) = self.steam_current_room_info();
+            self.steam_edit_name = cur_name;
+            self.steam_edit_note = cur_note;
+            self.steam_room_edit_focus = 0;
+            self.steam_room_edit = true;
+            self.accumulator = 0.0;
+            return Ok(());
+        }
         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
         // 锁定窗口内忽略「按 U 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
         let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
@@ -2368,6 +2555,7 @@ impl Game {
                 .ok_or_else(|| std::io::Error::other("steam 会话未初始化（未进入 Steam 大厅？）"))?;
             if is_host {
                 let lobby = sess.host_create_lobby(players.max(1) as u32, 200)?;
+                self.steam_lobby_id = Some(lobby.raw());
                 sess.host_set_room_info(room_name, room_note)?;
                 sess.prepare_transport()?;
                 self.steam_my_index = sess.my_slot();
@@ -2402,6 +2590,7 @@ impl Game {
                     Some(id) => sess.join_lobby_by_id(id, 240)?,
                     None => sess.client_find_and_join(240)?,
                 };
+                self.steam_lobby_id = Some(lobby.raw());
                 sess.prepare_transport()?;
                 eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
@@ -2923,7 +3112,8 @@ fn hp_color(ratio: f32) -> Color {
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
-fn draw_text(    canvas: &mut Canvas,
+fn draw_text(
+    canvas: &mut Canvas,
     ctx: &Context,
     text: &str,
     size: f32,

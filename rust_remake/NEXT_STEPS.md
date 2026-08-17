@@ -78,7 +78,13 @@
 - 去掉测试用“自动按 matchkey 加入第一个厅”（J 不再自动，改为房间列表）。
 - Steam 会话改为**进入大厅时 init 一次**（`steam_sess` 持有 + 缓存本机昵称 `steam_my_display_name`），建房/加入消费之，避免重复 init 单实例 steamworks；`enter_steam_mode` 改从 `steam_sess.take()` 取会话。
 - 已知限制（记录）：建房默认房间名目前用“我的房间”，**未接昵称**（避免在大厅 UI 阶段提前 init 单实例 Steam 去取昵称导致二次 init 风险；后续可在“整进程仅 init 一次”框架下把默认名设为 `{昵称}的房间`）。文本输入框暂**只支持 ascii 字符+空格+常用标点**（ggez 逻辑键无法捕获中文 IME；中文房间名输入为后续增强）。
-**未尽（后续增量）**：S2.5 开房后编辑（房间名/备注改 + 锁房 `set_lobby_joinable`）需在房间就绪界面加房主编辑入口（transport 已进 lockstep，需经 `transport_ref()` 或保留 matchmaking 访问）；S4 配置/学习界面分区；S5 房间就绪界面样式统一。
+**S2.5 已落（本提交）**：
+- **开房后编辑房间信息**：房间就绪界面房主按 `E` 进「编辑房间信息」界面（改房间名/备注，↑↓或Tab切字段，字符输入+Backspace，回车写回 matchmaking 元数据，Q 取消）；`L` 锁定/解锁房间（`set_lobby_joinable`；人数上限建房时固定，用锁房代替“开房后改人数”）。
+- 房间就绪界面顶部显示 房间名+人数+锁状态+备注；host 底部提示“E 编辑 / Q 退出房间”，client 提示“U / Q”。
+- 新增 `steam_lobby_id`（存当前房间 LobbyId）`steam_room_edit`/`steam_edit_name`/`steam_edit_note`/`steam_room_edit_focus`/`steam_room_locked` 字段；`steam_current_room_info()` 经 host lockstep 的 `transport_ref().matchmaking()` 读当前房名/备注。
+- 建房设置界面默认房间名改为 **`{昵称}的房间`**（用进入大厅时缓存的 `steam_my_display_name`）。
+- build/test/clippy（默认+steam）全绿，117 测试不破。
+**未尽（后续增量）**：S4 配置/学习界面分区；S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，进一步统一 LAN/Steam）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
 
 
 ## 当前状态（全绿）
