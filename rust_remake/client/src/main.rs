@@ -65,6 +65,10 @@ const STEAM_MAX_PLAYERS: u8 = 64;
 /// Steam 建房：默认玩家数（创建房间界面的初始值）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_PLAYERS: u8 = 2;
+/// Steam 房间列表：两次刷新（`request_lobby_list`）之间的最小间隔（秒）。
+/// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽）。
+#[cfg(feature = "steam")]
+const LOBBY_REFRESH_COOLDOWN_SECS: f64 = 4.0;
 
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
@@ -218,6 +222,9 @@ struct Game {
     /// Steam：是否为房间列表拉取过一次（true=已在加载/已加载，避免反复 request_lobby_list）。
     #[cfg(feature = "steam")]
     steam_list_requested: bool,
+    /// Steam：房间列表上次刷新的时间戳（秒，用于刷新节流，避免 Steam 搜索限速）。
+    #[cfg(feature = "steam")]
+    steam_list_last_refresh: f64,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -470,6 +477,8 @@ impl Game {
             steam_list_selection: 0,
             #[cfg(feature = "steam")]
             steam_list_requested: false,
+            #[cfg(feature = "steam")]
+            steam_list_last_refresh: -999.0,
             #[cfg(feature = "steam")]
             steam_sess: None,
             #[cfg(feature = "steam")]
@@ -2491,10 +2500,13 @@ impl Game {
         use winit::keyboard::NamedKey;
         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
-        // 首次进入 / 按 R：刷新列表。
-        let refresh = !self.steam_list_requested || just('r') || just('R');
-        if refresh {
+        // 刷新节流：首次进入刷新一次；按 R 刷新需距上次 ≥ LOBBY_REFRESH_COOLDOWN_SECS（Steam 搜索接口限速，避免列表漂忽 1->0->1）。
+        let first = !self.steam_list_requested;
+        let now = ctx.time.time_since_start().as_secs_f64();
+        let want_refresh = first || just('r') || just('R');
+        if want_refresh && (first || now - self.steam_list_last_refresh >= LOBBY_REFRESH_COOLDOWN_SECS) {
             self.steam_list_requested = true;
+            self.steam_list_last_refresh = now;
             if let Some(sess) = self.steam_sess.as_ref() {
                 match sess.client_list_lobbies(120) {
                     Ok(mut list) => {
@@ -2512,6 +2524,8 @@ impl Game {
                     }
                 }
             }
+        } else if want_refresh {
+            eprintln!("[steam-list] 刷新太快（Steam 搜索限速），请几秒后再按 R");
         }
         if just('q') || just('Q') {
             self.steam_lobby_list = false;
