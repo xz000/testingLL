@@ -13,6 +13,9 @@ use game_core::skill::SkillId;
 use game_core::world::{PlayerInput, World};
 use ggez::event;
 use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh};
+// 让 `SteamTransport::send_stats()`（trait 默认实现由 net-steam 覆盖）在泛型代码里可直接调用。
+#[cfg(feature = "steam")]
+use net::transport::Transport as _;
 use ggez::mint::Point2;
 use ggez::{Context, GameResult};
 
@@ -1543,16 +1546,19 @@ impl event::EventHandler for Game {
                             if local_cfg_ready {
                                 host.set_local_cfg(cfg_bytes);
                             }
-                            // 诊断（节流）：HostGather 里等“谁”。本地配置是否就绪 + 已收到几个客户端配置 + 在场/配好。
+                            // 诊断（节流）：HostGather 里等“谁”。本地配置是否就绪 + 已收到几个客户端配置 + 在场/配好 + 传输收发统计。
                             self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
                             if self.steam_lobby_wait_ticks % 60 == 1 {
+                                let st = host.transport_ref().send_stats();
                                 eprintln!(
-                                    "[steam-host] HostGather waiting: local_cfg={local_cfg_ready} cfgReady={} pres={} bd={}/{} exp={}",
+                                    "[steam-host] HostGather waiting: local_cfg={local_cfg_ready} cfgReady={} pres={} bd={}/{} exp={} stats(recv={},queued={})",
                                     host.cfg_ready_count(),
                                     host.present_clients_count(),
                                     host.build_done_clients_count(),
                                     host.expected_clients(),
                                     host.expected_clients(),
+                                    st.2,
+                                    st.1,
                                 );
                             }
                             if host.all_cfgs() {
@@ -1621,12 +1627,16 @@ impl event::EventHandler for Game {
                             } else {
                                 cli.send_cfg(&cfg_bytes).is_ok()
                             };
-                            // 诊断（节流）：确认 ClientWait 每帧真的在发 PlayerCfg（以及包大小/发送是否成功）。
+                            // 诊断（节流）：确认 ClientWait 每帧真的在发 PlayerCfg（大小/发送是否成功/直发还是入队补发队列）。
                             self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
                             if self.steam_lobby_wait_ticks % 60 == 1 {
+                                let st = cli.transport_ref().send_stats();
                                 eprintln!(
-                                    "[steam-client] ClientWait sending cfg len={cfg_len} ok={send_ok} expect_seq={}",
+                                    "[steam-client] ClientWait sending cfg len={cfg_len} ok={send_ok} expect_seq={} stats(direct={},queued={},recv={})",
                                     cli.expect_seq(),
+                                    st.0,
+                                    st.1,
+                                    st.2,
                                 );
                             }
                             let mut c_rcv = vec![0u8; 8192];
