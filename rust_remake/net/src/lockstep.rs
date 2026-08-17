@@ -534,6 +534,11 @@ impl<T: Transport> HostLockstep<T> {
     pub fn next_seq(&self) -> u64 {
         self.next_seq
     }
+
+    /// 只读访问底层传输（诊断用，如取 `send_stats()`）。
+    pub fn transport_ref(&self) -> &T {
+        &self.transport
+    }
 }
 
 /// client 侧帧同步状态机。
@@ -807,6 +812,11 @@ impl<T: Transport> ClientLockstep<T> {
 
     pub fn pending_len(&self) -> usize {
         self.pending.len()
+    }
+
+    /// 只读访问底层传输（诊断用，如取 `send_stats()`）。
+    pub fn transport_ref(&self) -> &T {
+        &self.transport
     }
 }
 

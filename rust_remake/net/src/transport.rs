@@ -25,6 +25,10 @@ pub trait Transport {
     fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, Peer)>>;
     /// 本端在本地网络中的端点（host 客户端互相连接的已知地址用）。
     fn local(&self) -> Peer;
+    /// 传输收发统计（诊断用）：`(direct_sends, queued_sends, recv_msgs)`。默认全 0；实现方可覆盖。
+    fn send_stats(&self) -> (u64, u64, u64) {
+        (0, 0, 0)
+    }
 }
 
 /// 基于标准库 `UdpSocket` 的本地传输实现。

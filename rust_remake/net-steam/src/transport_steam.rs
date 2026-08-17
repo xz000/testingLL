@@ -29,6 +29,12 @@ pub struct SteamTransport {
     pending_sends: HashMap<u64, VecDeque<Vec<u8>>>,
     /// 诊断：本运输已打的 send 失败日志数（节流，避免刷屏）。
     send_fail_logs: u32,
+    /// 诊断：直接 `send_reliable` 成功发出的消息条数（未经过补发队列）。
+    direct_sends: u64,
+    /// 诊断：因「队列非空 / 会话暂不可发」而被塞进补发队列的消息条数（不保证当下已真发）。
+    queued_sends: u64,
+    /// 诊断：累计成功收到的消息条数（host/client 各端收到多少包）。
+    recv_msgs: u64,
 }
 
 impl SteamTransport {
@@ -55,6 +61,9 @@ impl SteamTransport {
             client,
             pending_sends: HashMap::new(),
             send_fail_logs: 0,
+            direct_sends: 0,
+            queued_sends: 0,
+            recv_msgs: 0,
         })
     }
 
@@ -122,6 +131,7 @@ impl SteamTransport {
         self.client.run_callbacks();
         let msgs = self.client.networking_messages().receive_messages_on_channel(0, batch);
         for m in msgs {
+            self.recv_msgs += 1;
             if let Some(sid) = m.identity_peer().steam_id() {
                 out.push((sid.raw(), m.data().to_vec()));
             }
@@ -137,7 +147,7 @@ impl SteamTransport {
         state == NetworkingConnectionState::Connected
     }
 
-    /// 大厅（Matchmaking）句柄；用 `create_lobby`/`join_lobby`/`lobby_members` 做成员→槽位。
+    /// 展厅（Matchmaking）句柄；用 `create_lobby`/`join_lobby`/`lobby_members` 做成员→槽位。
     pub fn matchmaking(&self) -> steamworks::Matchmaking {
         self.client.matchmaking()
     }
@@ -149,6 +159,11 @@ impl SteamTransport {
 }
 
 impl Transport for SteamTransport {
+    /// 传输收发统计（诊断，判定包是否直发/入队/被收）：`(direct_sends, queued_sends, recv_msgs)`。
+    fn send_stats(&self) -> (u64, u64, u64) {
+        (self.direct_sends, self.queued_sends, self.recv_msgs)
+    }
+
     fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
         // 先把上一轮“会话未建/暂不可发”而积压的可靠消息补发出去。
         self.flush_pending();
@@ -157,17 +172,22 @@ impl Transport for SteamTransport {
                 // 若该 peer 还有未补发成功的历史可靠消息，此刻直接发新 buf 会乱序（RELIABLE 有序）；
                 // 统一追加到队尾，让 flush 按 FIFO 顺序发出。
                 if self.pending_sends.get(id).is_some_and(|q| !q.is_empty()) {
+                    self.queued_sends += 1;
                     self.push_pending(*id, buf);
                     return Ok(buf.len());
                 }
                 match self.send_reliable(*id, buf) {
-                    true => Ok(buf.len()),
+                    true => {
+                        self.direct_sends += 1;
+                        Ok(buf.len())
+                    }
                     false => {
                         // 会话尚未建立 / 暂不可发 / 发送失败：入队待补发，不丢失。
                         if self.send_fail_logs < 10 {
                             self.send_fail_logs += 1;
                             eprintln!("[steam-p2p] send_to {id}: not sendable yet (session establishing?) -> queued for re-send");
                         }
+                        self.queued_sends += 1;
                         self.push_pending(*id, buf);
                         Ok(buf.len())
                     }
