@@ -1164,7 +1164,15 @@ impl Game {
         canvas.draw(&dim, graphics::DrawParam::new());
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "房间 - 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
-        let mut y = sh * 0.32;
+        // 醒目操作提示（大字、亮色），并附流程说明，避免“不知道现在该按什么/下一步去哪”。
+        if self.steam_all_ready {
+            draw_text(canvas, ctx, &format!("全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）", self.steam_countdown.max(0.0)), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: sh * 0.18 + 52.0 }, true)?;
+        } else {
+            draw_text(canvas, ctx, "▶ 按 U 就绪（再按 U 取消）", 28.0, Color::from_rgb(255, 240, 120), Point2 { x: cx, y: sh * 0.18 + 52.0 }, true)?;
+        }
+        draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: sh * 0.18 + 92.0 }, true)?;
+        draw_text(canvas, ctx, "== 就绪状态 ==", 20.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: sh * 0.40 }, true)?;
+        let mut y = sh * 0.40 + 32.0;
         let roster_lookup = |slot: u8, fallback: bool| -> bool {
             self.steam_roster_ready
                 .iter()
@@ -1172,7 +1180,7 @@ impl Game {
                 .map(|(_, r)| *r)
                 .unwrap_or(fallback)
         };
-        for (slot, name, id) in self.steam_roster.iter() {
+        for (slot, name, _id) in self.steam_roster.iter() {
             let is_me = *slot == self.steam_my_index;
             let (ready, col) = if is_me {
                 (self.steam_local_ready, if self.steam_local_ready { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
@@ -1187,14 +1195,8 @@ impl Game {
             };
             let mark = if ready { "[v]" } else { "[ ]" };
             let me_tag = if is_me { "（我）" } else { "" };
-            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}  ({id})"), 22.0, col, Point2 { x: cx, y }, true)?;
-            y += 32.0;
-        }
-        y += 12.0;
-        if self.steam_all_ready {
-            draw_text(canvas, ctx, &format!("全体就绪 - {:.0} 秒后进配置（倒计时结束前可取消）", self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y }, true)?;
-        } else {
-            draw_text(canvas, ctx, "按 U 就绪（再按 U 取消）", 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y }, true)?;
+            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: cx, y }, true)?;
+            y += 36.0;
         }
         Ok(())
     }
