@@ -44,9 +44,12 @@ impl SteamTransport {
         client.networking_messages().session_request_callback(|req| {
             req.accept();
         });
-        // 会话失败/对端关闭时打日志（诊断“怎么又断了”，实际由 AutoRestartBrokenSession 自动重启）。
-        client.networking_messages().session_failed_callback(|_info| {
-            eprintln!("[steam-p2p] networking session failed (will auto-restart on next send)");
+        // 会话失败/对端关闭时打日志（含 end_reason/state，定位为何连不上；实际由 AutoRestartBrokenSession 自动重启）。
+        client.networking_messages().session_failed_callback(|info| {
+            let reason = info.end_reason();
+            let state = info.state().ok();
+            let remote = info.identity_remote().map(|i| i.debug_string()).unwrap_or_else(|| "?".into());
+            eprintln!("[steam-p2p] networking session failed: state={state:?} end_reason={reason:?} remote={remote}");
         });
         Ok(SteamTransport {
             client,
