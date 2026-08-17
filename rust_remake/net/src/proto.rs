@@ -63,7 +63,9 @@ pub enum Packet {
     /// 学习阶段结束/就绪时发送。
     PlayerCfg { index: u8, bytes: Vec<u8> },
     /// host→所有端：广播下一局所有玩家的完整配置快照（各端据此确定性初始化下一局）。
-    PlayerCfgAll { entries: Vec<(u8, Vec<u8>)> },
+    /// `participants`=本局参与玩家的【原 index】有序列表（host=0 在首；new/本局 index = 在列表中的位置），
+    /// 供各端把参与玩家收缩成连续 0..P-1 并知道自身 new index（不满员时对齐角色数量）。
+    PlayerCfgAll { entries: Vec<(u8, Vec<u8>)>, participants: Vec<u8> },
     /// client→host：请求重连，附本端稳定身份（Steam=SteamID；局域网=握手时登记的身份）
     /// 与已知的最后 seq（校验用）。host 按身份找回槽位，而非只靠来源端点。
     ReconnectReq { identity: u64, last_known_seq: u64 },
@@ -136,9 +138,12 @@ impl Packet {
                 v.extend_from_slice(bytes);
                 v
             }
-            Packet::PlayerCfgAll { entries } => {
-                let mut v = Vec::with_capacity(1 + 2 + entries.iter().map(|(_, b)| 1 + 2 + b.len()).sum::<usize>());
+            Packet::PlayerCfgAll { entries, participants } => {
+                let mut v = Vec::with_capacity(1 + 2 + participants.len() + 2 + entries.iter().map(|(_, b)| 1 + 2 + b.len()).sum::<usize>());
                 v.push(TAG_SKILL_ALL);
+                // 顺序：participants(count u16 + 逐 u8)，再 entries。
+                v.extend_from_slice(&(participants.len() as u16).to_be_bytes());
+                v.extend_from_slice(participants);
                 v.extend_from_slice(&(entries.len() as u16).to_be_bytes());
                 for (idx, bytes) in entries {
                     v.push(*idx);
@@ -243,9 +248,17 @@ impl Packet {
                 Some(Packet::PlayerCfg { index, bytes: buf[4..end].to_vec() })
             }
             TAG_SKILL_ALL if buf.len() >= 3 => {
-                let count = u16::from_be_bytes([buf[1], buf[2]]) as usize;
+                // 顺序：participants(count u16 + 逐 u8)，再 entries。
+                let pcount = u16::from_be_bytes([buf[1], buf[2]]) as usize;
+                let p_start = 3usize;
+                let p_end = p_start + pcount;
+                if p_end + 2 > buf.len() {
+                    return None;
+                }
+                let participants = buf[p_start..p_end].to_vec();
+                let count = u16::from_be_bytes([buf[p_end], buf[p_end + 1]]) as usize;
                 let mut entries = Vec::with_capacity(count);
-                let mut pos = 3;
+                let mut pos = p_end + 2;
                 for _ in 0..count {
                     if pos + 3 > buf.len() {
                         return None;
@@ -260,7 +273,7 @@ impl Packet {
                     entries.push((idx, buf[pos..pos + len].to_vec()));
                     pos += len;
                 }
-                Some(Packet::PlayerCfgAll { entries })
+                Some(Packet::PlayerCfgAll { entries, participants })
             }
             TAG_SNAPSHOT if buf.len() >= 4 => {
                 let len = u16::from_be_bytes([buf[1], buf[2]]) as usize;
@@ -342,6 +355,7 @@ mod tests {
             Packet::PlayerCfg { index: 2, bytes: vec![1, 2, 3, 4] },
             Packet::PlayerCfgAll {
                 entries: vec![(0, vec![10, 20]), (1, vec![30]), (2, vec![])],
+                participants: vec![0, 1, 2, 3],
             },
             Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
             Packet::PlayerReady { index: 2, ready: true },
