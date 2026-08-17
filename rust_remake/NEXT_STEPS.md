@@ -10,7 +10,15 @@
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 
-### 现状概览（git 已提交，HEAD=`d9c5f9b`，工作区干净，workspace 117 测试全绿）
+### 🎉 Steam 主线已通（真机双机验证通过，2026-08-17 收官）
+- **完整链路跑通**：房间就绪（U）→ 倒计时 → 进配置 → 各自按 P 配好 → `config sync`（HostGather/ClientWait）→ **统一自动开战** → 两端逐位一致帧同步。
+- host 日志：`[steam-host] synced 2 player configs -> pre-game (round 1)` + 连续 `emit seq=0.., n_entries=2`。
+- client 日志：`[steam-client] got 2 player configs -> pre-game (round 1)` + 连续 `frame -> seq=1.., n_ents=2`（追平 host，无分叉）。
+- ✅ 用户两大诉求已达成：不再“各端分别按 o 各自进对局”（不能自动进对战）、不再“client 画面不可操控”（帧同步通了、两端一致）。
+- **根因（最终定案）**：`net-steam/src/transport_steam.rs` 的 `recv_from`——`receive_messages_on_channel(0,32)` 一次出队一整批，旧代码只返回第一条、静默丢弃同批次后续。RoomState 常先到（成为第一条）而 PlayerCfg 作为同批第二条被丢 → host 永远收不到 PlayerCfg（cfgReady 卡 1）。修复：内部 `recv_queue` 缓冲整批、逐条交付。同时修复了 host→client 的 `PlayerCfgAll` 与战斗 `Frame` 的同批次丢包。
+- 提交：`3ff5409`（修复）+ 前面的诊断提交（`b7bfdd2` 等）。workspace 117 全绿，工作区干净。
+
+### 现状概览（git 已提交，HEAD=`3ff5409`，工作区干净，workspace 117 测试全绿）
 - Steam 传输已改用 **ISteamNetworkingMessages（`SendMessageToUser`/`ReceiveMessagesOnChannel`）**，不再自己管 listen/accept/connect/conn 状态（`cc48642`）。
 - 房间/配置流程键位已简化：**房间就绪=`U`（再按取消）、配置确认配好=`P`**，`o`/空格从 Steam 流程移除（`47faa69`）。
 - 房间界面已重做成醒目标题 + “按 U 就绪”提示 + 流程说明（`0dccac1`）。
@@ -19,25 +27,12 @@
 - 连接不再反复断：两端就绪（按 U）→ 倒计时归零 → `broadcast StartConfig` → 进配置 → 各自按 P 配好 → host 打 `all players configured -> config sync (HostGather)`，client 打 `build done -> config sync (ClientWait)`。**流程能推到这里，是实打实进展。**
 - 本次日志**没有**再出现 `session_failed` 大片刷屏——那个卡点基本退场。这次卡在：**两端都进了 配置同步（HostGather / ClientWait）但收不到对方配置，无 `synced N player configs` / `got N player configs`**。
 
-### █ 当前卡点（下一个会话就是修这个）→ 已修 poll 吞包，但真机仍卡配置同步（未进 synced/got）
-- **已修（上轮，`net/src/lockstep.rs`）**：`HostLockstep::poll` 新增 `Packet::PlayerCfg` 处理臂（HostGather 里先 `poll` 再 `poll_cfg` 不再丢配置）+ 回归测试 `host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`。
-- **但真机双机再测（本轮）仍卡**：host 到 HostGather、client 到 ClientWait，均无 `synced N` / `got N`。**说明 poll 吞包不是唯一根因，client 的 PlayerCfg 很可能根本没到 host。**（判据：host 进 HostGather 依赖 `all_clients_build_done()`=RoomState 能到 host，而 PlayerCfg 走同一 `send_to` / 同一 channel，照理也该到→矛盾点集中在“client 侧是否真的成功发出 PlayerCfg”。）
-- **已加诊断（`client/src/main.rs`，提交 `7fdf531`）**：
-  - host `HostGather` 每 60 帧打 `[steam-host] HostGather waiting: local_cfg=… cfgReady=… pres=… bd=/… exp=…`（本地配置就绪 + 已配齐玩家数 + 在场 + 配好数）。
-  - client `ClientWait` 每 60 帧打 `[steam-client] ClientWait sending cfg len=… ok=… expect_seq=…`（确认每帧真的在发 PlayerCfg 及包大小/发送是否成功）。
-- **凭诊断分叉判定根因（下一步真机跑一轮即可定）**：
-  - client 打 `cfg len=0` → `local_player_cfg()` 返回空（me=steam_my_index 在 meta.profiles 找不到 profile 或没生成配置）→ 是配置生成 bug，非传输层。
-  - client 打 `len>0 ok=true` 但 host `cfgReady` 恒为 1（只有 host 自己）→ PlayerCfg 传/解码问题（RoomState 却通）。
-  - client 打 `len>0 ok=false` → `send_cfg` 失败 → 传输层（pending 队列卡死？）。
-- 状态：workspace 117 全绿；diagnostics 提交 `7fdf531`、poll-fix 提交 `2ff9ba7`。待用户真机跑出诊断行定位。
+### 诊断/修复历程（已全部解决，仅存档）
+- 排查步骤：先修 `HostLockstep::poll` 吞 `PlayerCfg`（`2ff9ba7`）→ 仍卡 → 加传输读写计数器 / tag 诊断（`b7bfdd2`）→ 真机铁证：client `direct` 每帧 +2（RoomState+PlayerCfg 都直发）、host `recv` 每帧 +2 但 `cfgReady` 恒 1 → 锁定 **`recv_from` 丢同批非首条** → 修复（`3ff5409`，加 `recv_queue` 缓冲整批逐条交付）→ 真机通过。
 
-### 本次会话改动记录（未提交，含 git 历史）
-- `net/src/lockstep.rs`：`poll` 增加 `PlayerCfg` 处理臂（修复 HostGather 吞配置）+ 新增回归测试 `host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`。（工作区未提交，HEAD=`d9c5f9b`）
-- 提交基线：workspace 117 全绿（client 5 + game-core 87 + net 23 + net-steam 2），steam feature build/clippy 全绿。
-
-### 用户两大未满足诉求（都记着，别丢）
-1. **Steam 双机对局开始流程**（正在修，见上）。
-2. **主菜单/流程 UI“乱”**：用户多次抱怨菜单乱、键太多、给 `o` 键塞了太多功能。已把就绪/配好拆成 U/P，但**主菜单及各阶段 UI 还需要系统性地重做清晰**（用户说“如果网络修不了，也可以先设计一个好的菜单，之后再修网络”）。网络这轮推到了配置同步卡点，若 `end_reason` 能定位则继续修网络；否则按用户偏好先重做菜单。
+### 用户诉求（都记着，别丢）
+1. **Steam 双机对局开始流程** ✅ 已通（见上“主线已通”节）。
+2. **主菜单/流程 UI“乱”**（未做，下一个可做的体验项）：用户多次抱怨菜单乱、键太多、之前给 `o` 键塞了太多功能。已把就绪/配好拆成 U/P，但**主菜单及各阶段 UI 仍需要系统性地重做清晰**。网络主线已通，现在没有“先修网络”的牵制，可专注把 UI 做清爽（用户说过“如果网络修不了，也可以先设计一个好的菜单，之后再修网络”——现在网络通了，菜单重做更是纯加分项）。
 
 ## 当前状态（全绿）
 - **单测 113 全绿 = game-core 87 + net 19 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
