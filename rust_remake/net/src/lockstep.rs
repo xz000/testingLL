@@ -60,6 +60,8 @@ pub struct HostLockstep<T: Transport> {
     clients_build_done: Vec<bool>,
     /// 累计收到过的 `PlayerReady` 包总数（诊断用：区分“包根本没到”与“到了但值为 false”）。
     ready_packets_seen: u64,
+    /// 累计收到过并被 `poll`/`poll_cfg` 处理记进 `cfgs` 的 `PlayerCfg` 包数（诊断用）。
+    player_cfg_packets_seen: u64,
     /// 最近一次保存的整场 World 快照字节 + 接回 seq（供重连者重建后从该 seq 继续）。
     snapshot: Option<(Vec<u8>, u64)>,
     /// 距上次成功产帧/收到有效回包的 tick（用于 host 侧自动判定客户端掉线）。
@@ -91,6 +93,7 @@ impl<T: Transport> HostLockstep<T> {
             clients_ready: vec![false; expected],
             clients_build_done: vec![false; expected],
             ready_packets_seen: 0,
+            player_cfg_packets_seen: 0,
             snapshot: None,
             alive_tick: 0,
         }
@@ -268,6 +271,7 @@ impl<T: Transport> HostLockstep<T> {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
                     if let Some(Packet::PlayerCfg { index, bytes }) = Packet::decode(&rcv[..n]) {
+                        self.player_cfg_packets_seen += 1;
                         let c = index as usize - self.local_base as usize;
                         if c < self.expected {
                             if self.client_peers[c].is_none() {
@@ -339,6 +343,11 @@ impl<T: Transport> HostLockstep<T> {
         c < self.expected && self.cfgs[c].is_some()
     }
 
+    /// 诊断：累计被 `poll`/`poll_cfg` 处理并记进 `cfgs` 的 PlayerCfg 包数（用于判断 PlayerCfg 是否真的到达并解码）。
+    pub fn player_cfg_packets_seen(&self) -> u64 {
+        self.player_cfg_packets_seen
+    }
+
     /// 已就绪的玩家数（含 host 自身，若参与）。供 host 开局界面显示“已就绪 X / 总 N”。
     pub fn cfg_ready_count(&self) -> usize {
         let mut n = 0;
@@ -408,6 +417,7 @@ impl<T: Transport> HostLockstep<T> {
                                 // 配置同步（HostGather/ClientWait）期间，client 会把 PlayerCfg 与心跳（RoomState）混在同一
                                 // 批次上行；这里若把 PlayerCfg 当无关包丢弃，随后调用的 `poll_cfg` 就什么都收不到 → host 永远
                                 // 收不齐配置 → 卡在配置同步。故 poll 也必须把 PlayerCfg 记进 `cfgs`（与 `poll_cfg` 语义一致）。
+                                self.player_cfg_packets_seen += 1;
                                 let c = index as usize - self.local_base as usize;
                                 if c < self.expected {
                                     if self.client_peers[c].is_none() {
