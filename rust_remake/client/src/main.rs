@@ -1539,8 +1539,21 @@ impl event::EventHandler for Game {
                             let mut g_rcv = vec![0u8; 8192];
                             host.poll_cfg(&mut g_rcv);
                             let cfg_bytes = self.local_player_cfg();
-                            if !cfg_bytes.is_empty() {
+                            let local_cfg_ready = !cfg_bytes.is_empty();
+                            if local_cfg_ready {
                                 host.set_local_cfg(cfg_bytes);
+                            }
+                            // 诊断（节流）：HostGather 里等“谁”。本地配置是否就绪 + 已收到几个客户端配置 + 在场/配好。
+                            self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
+                            if self.steam_lobby_wait_ticks % 60 == 1 {
+                                eprintln!(
+                                    "[steam-host] HostGather waiting: local_cfg={local_cfg_ready} cfgReady={} pres={} bd={}/{} exp={}",
+                                    host.cfg_ready_count(),
+                                    host.present_clients_count(),
+                                    host.build_done_clients_count(),
+                                    host.expected_clients(),
+                                    host.expected_clients(),
+                                );
                             }
                             if host.all_cfgs() {
                                 let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
@@ -1602,8 +1615,19 @@ impl event::EventHandler for Game {
                             // 上报我的 PlayerCfg（client 每帧发一次，确保 host 无论如何进入 HostGather 都能收到；
                             // Steam 可靠通道保证送达，重发仅为覆盖“host 尚未开始收集”的时序）。
                             let cfg_bytes = self.local_player_cfg();
-                            if !cfg_bytes.is_empty() {
-                                let _ = cli.send_cfg(&cfg_bytes);
+                            let cfg_len = cfg_bytes.len();
+                            let send_ok = if cfg_bytes.is_empty() {
+                                false
+                            } else {
+                                cli.send_cfg(&cfg_bytes).is_ok()
+                            };
+                            // 诊断（节流）：确认 ClientWait 每帧真的在发 PlayerCfg（以及包大小/发送是否成功）。
+                            self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
+                            if self.steam_lobby_wait_ticks % 60 == 1 {
+                                eprintln!(
+                                    "[steam-client] ClientWait sending cfg len={cfg_len} ok={send_ok} expect_seq={}",
+                                    cli.expect_seq(),
+                                );
                             }
                             let mut c_rcv = vec![0u8; 8192];
                             if let Some(all) = cli.recv_cfg_all(&mut c_rcv)? {
