@@ -2846,29 +2846,57 @@ impl Game {
         if self.app == AppState::Solo {
             draw_text(&mut canvas, ctx, &format!("（单机：{:.0} 秒后自动用默认配置开始）", self.pre_game_timer.max(0.0)), 17.0, graphics::Color::from_rgb(140, 160, 180), Point2 { x: cx, y: sh * 0.12 + 92.0 }, true)?;
         }
-        // 列出本机玩家的键位绑定与等级。
+        // 下方分左右两栏：左=技能树与键位绑定，右=成长点与属性购买；底部一条操作提示。
+        let lcx = sw * 0.30; // 左栏中心
+        let rcx = sw * 0.72; // 右栏中心
+        let col_top = sh * 0.22;
+        // —— 右栏：成长点 / 属性购买面板。
+        if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
+            let mut gy = col_top;
+            draw_text(&mut canvas, ctx, "== 成长 / 属性 ==", 20.0, Color::from_rgb(130, 220, 255), Point2 { x: rcx, y: gy }, true)?;
+            gy += 34.0;
+            draw_text(&mut canvas, ctx, &format!("成长点 {}    金币 {}", pr.growth_points, pr.gold), 22.0, Color::from_rgb(220, 230, 245), Point2 { x: rcx, y: gy }, true)?;
+            gy += 34.0;
+            let a = &pr.attributes;
+            draw_text(&mut canvas, ctx, &format!("生命 +{}%", a.hp_bonus * 10), 19.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
+            gy += 28.0;
+            draw_text(&mut canvas, ctx, &format!("移速 +{}%", a.speed_bonus * 5), 19.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
+            gy += 28.0;
+            draw_text(&mut canvas, ctx, &format!("护甲 -{}%  法抗 -{}%", a.armor * 6, a.spell_resist * 6), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
+            gy += 28.0;
+            draw_text(&mut canvas, ctx, &format!("击退 -{}%  法力 +{}  回蓝 +{}/s", a.kb_resist * 12, a.mana_max * 25, a.mana_regen), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
+            gy += 34.0;
+            draw_text(&mut canvas, ctx, "购买：Z 金币换点", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
+            gy += 26.0;
+            draw_text(&mut canvas, ctx, "H生命 J移速 K护甲", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
+            gy += 26.0;
+            draw_text(&mut canvas, ctx, "L法抗 ;击退 U蓝上 I回蓝", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
+        }
+        // —— 左栏：技能树与键位绑定。
         let me = self.self_index();
         if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == me) {
-            let mut y = sh * 0.30;
+            let mut y = col_top;
+            draw_text(&mut canvas, ctx, "== 技能 配置 ==", 20.0, Color::from_rgb(255, 210, 120), Point2 { x: lcx, y }, true)?;
+            y += 34.0;
             let gold_line = format!("金币：{}    击杀：{}    最佳名次：#{}", pr.gold, pr.total_kills, pr.best_placement);
-            draw_text(&mut canvas, ctx, &gold_line, 24.0, graphics::Color::from_rgb(220, 224, 232), Point2 { x: cx, y }, true)?;
-            y += 40.0;
+            draw_text(&mut canvas, ctx, &gold_line, 20.0, Color::from_rgb(220, 224, 232), Point2 { x: lcx, y }, true)?;
+            y += 34.0;
             // 当前选中树：高亮字样，提醒按了字母 C/R/E... 已选中哪棵/可选技能。
             if let Some(sel) = self.learn_tree_key {
                 let sel_line = format!("[{}] {} 树（当前选中）", sel.letter(), sel.tree().name_zh());
-                draw_text(&mut canvas, ctx, &sel_line, 24.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
-                y += 36.0;
+                draw_text(&mut canvas, ctx, &sel_line, 22.0, Color::from_rgb(255, 210, 120), Point2 { x: lcx, y }, true)?;
+                y += 34.0;
                 for (i, skill) in sel.tree().skills_in_tree().iter().enumerate() {
                     let star = if pr.bound_skill(sel) == Some(*skill) { "  [已选]" } else { "" };
-                    draw_text(&mut canvas, ctx, &format!("  按 {} ->  {}{}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 20.0, graphics::Color::from_rgb(215, 220, 230), Point2 { x: cx, y }, true)?;
-                    y += 30.0;
+                    draw_text(&mut canvas, ctx, &format!("  {} {} {}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 19.0, Color::from_rgb(215, 220, 230), Point2 { x: lcx, y }, true)?;
+                    y += 28.0;
                 }
+                y += 10.0;
             } else {
-                draw_text(&mut canvas, ctx, "（尚未选树：按字母 C/R/E/D/Y/T/F/G 选中一棵后，按数字键选技能）", 19.0, graphics::Color::from_rgb(170, 175, 185), Point2 { x: cx, y }, true)?;
-                y += 30.0;
+                draw_text(&mut canvas, ctx, "（按字母 C/R/E/D/Y/T/F/G 选树）", 18.0, Color::from_rgb(170, 175, 185), Point2 { x: lcx, y }, true)?;
+                y += 32.0;
             }
-            y += 16.0;
-            draw_text(&mut canvas, ctx, "各键当前绑定：", 20.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+            draw_text(&mut canvas, ctx, "各键当前绑定：", 19.0, Color::from_rgb(225, 228, 235), Point2 { x: lcx, y }, true)?;
             y += 30.0;
             for key in game_core::skill::CastKey::ALL {
                 let bound = pr.bound_skill(key);
@@ -2878,22 +2906,11 @@ impl Game {
                     None => format!("[{}] （未绑定）", key.letter()),
                 };
                 let highlight = self.learn_tree_key == Some(key);
-                draw_text(&mut canvas, ctx, &txt, 22.0, if highlight { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(225, 228, 235) }, Point2 { x: cx, y }, true)?;
-                y += 30.0;
+                draw_text(&mut canvas, ctx, &txt, 20.0, if highlight { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(225, 228, 235) }, Point2 { x: lcx, y }, true)?;
+                y += 28.0;
             }
         }
-        // 4.6b 成长点 / 属性购买面板。
-        if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
-            let mut gy = sh * 0.70;
-            draw_text(&mut canvas, ctx, &format!("成长点 {}    金币 {}", pr.growth_points, pr.gold), 22.0, Color::from_rgb(130, 220, 255), Point2 { x: cx, y: gy }, true)?;
-            gy += 28.0;
-            let a = &pr.attributes;
-            draw_text(&mut canvas, ctx, &format!("生命+{}% 移速+{}% 护甲-{}% 法抗-{}% 击退-{}% 法力+{} 回蓝+{}/s",
-                a.hp_bonus * 10, a.speed_bonus * 5, a.armor * 6, a.spell_resist * 6, a.kb_resist * 12, a.mana_max * 25, a.mana_regen), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: gy }, true)?;
-            gy += 26.0;
-            draw_text(&mut canvas, ctx, "Z 金币换成长点 / H生命 J移速 K护甲 L法抗 ;击退 U法力上限 I回蓝", 16.0, Color::from_rgb(140, 160, 180), Point2 { x: cx, y: gy }, true)?;
-        }
-        draw_text(&mut canvas, ctx, "字母键选树 / 数字键绑技能 / = 升级 / X 洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.88 }, true)?;
+        draw_text(&mut canvas, ctx, "字母C/R/E/D/Y/T/F/G选树  数字绑技能  =升级  X洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.92 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
