@@ -35,6 +35,14 @@ pub struct SteamTransport {
     queued_sends: u64,
     /// 诊断：累计成功收到的消息条数（host/client 各端收到多少包）。
     recv_msgs: u64,
+    /// 诊断：收到的 `TAG_SKILL=8`（PlayerCfg）消息条数。
+    recv_tag_skill: u64,
+    /// 诊断：收到的 `TAG_ROOM_STATE=16`（RoomState）消息条数。
+    recv_tag_room: u64,
+    /// 内部接收缓冲：`receive_messages_on_channel` 一次会取回一**批**（最多 32）条已入队消息并**出队**；
+    /// 若每次都只取第一条、丢掉其余，同批次的后续消息（如 PlayerCfg 常跟在 RoomState 后到达）会被静默丢弃。
+    /// 故用此缓冲承接整批、由 `recv_from` 逐条交付，保证同批次消息不丢。
+    recv_queue: VecDeque<(u64, Vec<u8>)>,
 }
 
 impl SteamTransport {
@@ -64,6 +72,9 @@ impl SteamTransport {
             direct_sends: 0,
             queued_sends: 0,
             recv_msgs: 0,
+            recv_tag_skill: 0,
+            recv_tag_room: 0,
+            recv_queue: VecDeque::new(),
         })
     }
 
@@ -126,17 +137,17 @@ impl SteamTransport {
     }
 
     /// 从「指定 SteamID 频道」读取收到的消息（UDP 风格，接收方无需维护连接）。
-    fn recv_messages_once(&mut self, batch: usize) -> Vec<(u64, Vec<u8>)> {
-        let mut out = Vec::new();
+    /// 注意：`receive_messages_on_channel` 一次会拿回并**出队**一批（最多 batch）消息；这里把整批存入
+    /// `recv_queue`，由 `recv_from` 逐条交付（否则同批次第 2 条及以后（如 PlayerCfg 跟在 RoomState 后到达）会被丢）。
+    fn recv_messages_into_queue(&mut self, batch: usize) {
         self.client.run_callbacks();
         let msgs = self.client.networking_messages().receive_messages_on_channel(0, batch);
         for m in msgs {
             self.recv_msgs += 1;
             if let Some(sid) = m.identity_peer().steam_id() {
-                out.push((sid.raw(), m.data().to_vec()));
+                self.recv_queue.push_back((sid.raw(), m.data().to_vec()));
             }
         }
-        out
     }
 
     /// 某 Steam 端点的会话当前是否为 Connected（诊断用；收发不依赖它）。
@@ -162,6 +173,11 @@ impl Transport for SteamTransport {
     /// 传输收发统计（诊断，判定包是否直发/入队/被收）：`(direct_sends, queued_sends, recv_msgs)`。
     fn send_stats(&self) -> (u64, u64, u64) {
         (self.direct_sends, self.queued_sends, self.recv_msgs)
+    }
+
+    /// 收到的消息 tag 分布（诊断）：`(total, tag8_stock/PlayerCfg, tag16_roomstate)`。
+    fn recv_tag_counts(&self) -> (u64, u64, u64) {
+        (self.recv_msgs, self.recv_tag_skill, self.recv_tag_room)
     }
 
     fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
@@ -200,7 +216,18 @@ impl Transport for SteamTransport {
     fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, Peer)>> {
         // 先推进会话/补发，再收帧。
         self.flush_pending();
-        for (pid, data) in self.recv_messages_once(32) {
+        // 缓冲为空才取新一批（receive_messages_on_channel 一次出队一批；若只回第一条会丢同批次后续消息）。
+        if self.recv_queue.is_empty() {
+            self.recv_messages_into_queue(32);
+        }
+        while let Some((pid, data)) = self.recv_queue.pop_front() {
+            // 诊断：按 tag 累计（确认 PlayerCfg(TAG_SKILL=8) 是否真的到达交付层）。
+            if data.first() == Some(&8) {
+                self.recv_tag_skill += 1;
+            }
+            if data.first() == Some(&16) {
+                self.recv_tag_room += 1;
+            }
             if data.len() <= buf.len() {
                 buf[..data.len()].copy_from_slice(&data);
                 return Ok(Some((data.len(), Peer::Steam { id: pid, conn: None })));

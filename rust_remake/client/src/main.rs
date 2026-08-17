@@ -1550,8 +1550,9 @@ impl event::EventHandler for Game {
                             self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
                             if self.steam_lobby_wait_ticks % 60 == 1 {
                                 let st = host.transport_ref().send_stats();
+                                let tc = host.transport_ref().recv_tag_counts();
                                 eprintln!(
-                                    "[steam-host] HostGather waiting: local_cfg={local_cfg_ready} cfgReady={} pres={} bd={}/{} exp={} stats(recv={},queued={})",
+                                    "[steam-host] HostGather waiting: local_cfg={local_cfg_ready} cfgReady={} pres={} bd={}/{} exp={} stats(recv={},queued={}) tags(total={},skill={},room={}) cfgSeen={}",
                                     host.cfg_ready_count(),
                                     host.present_clients_count(),
                                     host.build_done_clients_count(),
@@ -1559,6 +1560,10 @@ impl event::EventHandler for Game {
                                     host.expected_clients(),
                                     st.2,
                                     st.1,
+                                    tc.0,
+                                    tc.1,
+                                    tc.2,
+                                    host.player_cfg_packets_seen(),
                                 );
                             }
                             if host.all_cfgs() {

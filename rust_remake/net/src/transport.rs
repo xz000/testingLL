@@ -29,6 +29,10 @@ pub trait Transport {
     fn send_stats(&self) -> (u64, u64, u64) {
         (0, 0, 0)
     }
+    /// 收到的消息 tag 分布（诊断用）：`(total, tag_skill(PlayerCfg), tag_room_state)`。默认全 0；实现方可覆盖。
+    fn recv_tag_counts(&self) -> (u64, u64, u64) {
+        (0, 0, 0)
+    }
 }
 
 /// 基于标准库 `UdpSocket` 的本地传输实现。
