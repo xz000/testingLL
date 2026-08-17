@@ -191,6 +191,11 @@ client 完全不打 `frame -> seq`（**一帧 host 广播都没收到**）。且
   - **修复（`net-steam/src/transport_steam.rs`）**：`send_to` 遇“未建立/暂不可发/发送失败”不再报错丢弃，而是**入队待补发**（新增 `pending_sends` 补发队列 + `flush_pending`，每个 `send_to`/`recv_from` 前自动把已 ESTABLISHED 的积压消息按 FIFO 补发；RELIABLE 有序，故有历史积压时不直接发新包而追加队尾）。host 端 `Disconnected` 事件清理该 peer 的 conns+pending；队列有 1024 条上限防膨胀。这样建立前发出的关键包在连接建立后会自动补发一次，client 必达。
   - 配套：**键位拆分**——`o` 从 Steam 流程彻底移除；房间就绪用 `U`，配置确认配好用 `P`（空格在本环境实测不可靠，LAN 也能开始说明不是按键问题，但 Steam 的确认键换可靠字符键）；非 Steam(LAN/Solo) 开始键保留空格+P 克底。
   - 状态：workspace 116 测试全绿；steam feature build/clippy 全绿。待真机双机验证配置→统一开战（host 打 `all players configured` / `synced N`，client 打 `got N` + `frame -> seq=0,1,2`）。
+- **重建传送层为 ISteamNetworkingMessages（2026-08-17，回掉 sockets 连接管理）**：
+  - 现象（你提供的 host 日志铁证）：rooms 阶段连接 `ESTABLISHED` → 过几帧又 `DISCONNECTED` → 又 `accepted/ESTABLISHED` → 再断，**反复断连**，host 一直卡 waiting（present=1 但 ready_clients=0）。根因不是某一个包，而是 **sockets 连接本身就建立后不稳定、需要手动管理 listen/accept/connect + 连接状态，极易在握手/回调解耦处出问题**。
+  - 改用官方文档推荐的 UDP 风格接口 **`ISteamNetworkingMessages`（`SendMessageToUser` / `ReceiveMessagesOnChannel`）**：直接按 SteamID 发消息，底层会话隐式建立；`k_nSteamNetworkingSend_AutoRestartBrokenSession` 断后自动重启，**不再自己维护连接状态**（官方：只在乎两台 peer 互通、不在乎 client/server 角色时用 messages 而非 sockets）。两端 `init` 时注册 `session_request_callback(accept)` 自动接受入站会话。pending outbox（补发队列）保留：会话未建/暂不可发时 send 失败入队，恢复后按 FIFO 补发，保证一次性关键包必达、顺序正确。
+  - 改动：`net-steam/src/transport_steam.rs` 重写（去 listen/conns/ListenSocket/NetConnection/virtual_port，改 messages 收发）；`session.rs::prepare_transport` 改为 no-op（无需 listen/connect）。
+  - 状态：steam feature build/clippy 全绿；默认 workspace 116 测试全绿。待真机双机验证连接是否不再反复断、配置→统一开战能推进。
 
 ## 验收 / 下一步（新会话从这里做）
 1. **真机双机**：确认 client 不再需要“手动进对局”——房间全就绪 → 倒计时（最后 2 秒按 o 无效）→ 进配置 → 各自配完 → **自动统一进对局**；client 连续 `[steam-client] frame -> seq=0,1,2`，两端角色都动、可操控、逐位一致。

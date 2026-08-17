@@ -187,16 +187,9 @@ impl SteamSession {
         Ok(lobby)
     }
 
-    /// host：开 P2P 监听；client：连到 host。据此把当前运输接到 lockstep。
+    /// 在 messages 接口下为“无”需额外准备：`SendMessageToUser` 会隐式建立会话、`AutoRestartBrokenSession`
+    /// 断后自动重启，收发直接按 SteamID 走，无需 listen/connect。保留此空操作以兼容旧调用点。
     pub fn prepare_transport(&mut self) -> io::Result<()> {
-        if let Some(host_id) = self.host_steam_id() {
-            // 我是 host（自己 owner）→ listen；否则 connect 到 host。
-            if self.transport.steam_id() == host_id {
-                self.transport.listen()?;
-            } else {
-                self.transport.connect_to(host_id)?;
-            }
-        }
         Ok(())
     }
 
