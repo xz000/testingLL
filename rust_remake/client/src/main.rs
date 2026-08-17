@@ -252,6 +252,9 @@ struct Game {
     /// Steam：当前房间是否已锁定（他人不能再加入；host 用 set_lobby_joinable 控制，本端记录状态）。
     #[cfg(feature = "steam")]
     steam_room_locked: bool,
+    /// Steam：host 房间阶段刷新成员名单（roster）的节流计数器（client 加入后 host 才能看到并显示新成员）。
+    #[cfg(feature = "steam")]
+    steam_roster_refresh_ticks: u32,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -497,6 +500,8 @@ impl Game {
             steam_lobby_id: None,
             #[cfg(feature = "steam")]
             steam_room_locked: false,
+            #[cfg(feature = "steam")]
+            steam_roster_refresh_ticks: 0,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -2153,6 +2158,20 @@ impl Game {
             self.steam_countdown = 0.0;
             self.steam_roster_ready = Vec::new();
             self.steam_all_ready = false;
+            self.steam_roster = Vec::new();
+            self.steam_lobby_id = None;
+            self.steam_room_edit = false;
+            self.steam_room_locked = false;
+            self.steam_room_edit_focus = 0;
+            self.steam_edit_name = String::new();
+            self.steam_edit_note = String::new();
+            self.steam_lobby_menu = false;
+            self.steam_lobby_create = false;
+            self.steam_lobby_list = false;
+            self.steam_list_requested = false;
+            self.steam_list_lobbies = Vec::new();
+            self.steam_join_lobby_id = None;
+            self.steam_roster_refresh_ticks = 0;
         }
         // 清空运行状态。
         self.pre_game_config = false; // 主菜单不进入开局配置；选了模式后再进。
@@ -2293,6 +2312,51 @@ impl Game {
         Ok(())
     }
 
+    /// host 在房间阶段刷新成员名单（roster）：client 加入后 host 才能看到并显示新成员。
+    /// 从 matchmaking 读 `lobby_members` → `LobbyPlayerTable`（host=槽0，其余按 SteamID 升序）保持槽位与 lockstep 一致。
+    #[cfg(feature = "steam")]
+    fn steam_refresh_roster(&mut self) {
+        let Some(lid) = self.steam_lobby_id else { return; };
+        let Some(ls) = self.steam_host_ls.as_ref() else { return; };
+        let t = ls.transport_ref();
+        let host_id = t.steam_id();
+        let mm = t.matchmaking();
+        let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+        let members: Vec<net_steam::lobby::SteamID> = mm.lobby_members(lobby).iter().map(|s| net_steam::lobby::SteamID(s.raw())).collect();
+        let table = net_steam::lobby::LobbyPlayerTable::new(net_steam::lobby::SteamID(host_id), members);
+        let fr = t.friends();
+        let mut roster = Vec::with_capacity(table.total_players());
+        for (slot, id) in table.identities_in_order() {
+            let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id.0)).name();
+            roster.push((slot, name, id.0));
+        }
+        // 仅当成员集合变化时更新（避免每帧重建 + 日志）。
+        let changed = roster.len() != self.steam_roster.len()
+            || roster.iter().zip(self.steam_roster.iter()).any(|(a, b)| a != b);
+        if changed {
+            self.steam_roster = roster;
+            eprintln!("[steam] roster refreshed: {} members", self.steam_roster.len());
+        }
+    }
+
+    /// 退出房间：`leave_lobby`（让 Steam 后端不再占席）+ 清理会话回到主菜单。
+    #[cfg(feature = "steam")]
+    fn steam_leave_room(&mut self) {
+        if let Some(lid) = self.steam_lobby_id {
+            let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+            if let Some(host) = self.steam_host_ls.as_ref() {
+                host.transport_ref().matchmaking().leave_lobby(lobby);
+            } else if let Some(cli) = self.steam_cli_ls.as_ref() {
+                cli.transport_ref().matchmaking().leave_lobby(lobby);
+            }
+        }
+        eprintln!("[steam] leave room -> main menu");
+        self.steam_room_edit = false;
+        self.steam_lobby_id = None;
+        self.steam_room_locked = false;
+        self.reset_to_main_menu();
+    }
+
     /// Steam 房间/就绪阶段（每帧）：client 每帧上行「就绪+在场」合包；host poll 收各端、全员就绪倒数计时进配置。
     /// 房主按 E 进入编辑房间信息界面（见 `steam_room_edit_update`）。
     #[cfg(feature = "steam")]
@@ -2301,6 +2365,14 @@ impl Game {
         // 房间阶段只用 [U] 就绪/取消就绪；不再用 o/空格（避免 o 多重语义、避免与“配置确认”混淆）。
         let ready_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("u".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("U".into()));
+        // Q：退出房间（leave_lobby + 回主菜单）。
+        let q_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
+        if q_pressed {
+            self.steam_leave_room();
+            self.accumulator = 0.0;
+            return Ok(());
+        }
         // host 按 E 进入「编辑房间信息」子界面（改房间名/备注；人数上限建房时固定，走锁房代替）。
         let e_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("e".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("E".into()));
@@ -2412,6 +2484,11 @@ impl Game {
             //  避免“host 进配置晚于 client 已配完、reset 把已上报的 build_done 清掉导致 host 永远等不到”。）
             self.steam_build_done = false;
             self.net_cfg = NetCfgSync::Idle;
+        }
+        // host：节流刷新成员名单（client 加入后 host 界面才能显示新成员）。
+        self.steam_roster_refresh_ticks = self.steam_roster_refresh_ticks.wrapping_add(1);
+        if self.steam_roster_refresh_ticks % 30 == 1 {
+            self.steam_refresh_roster();
         }
         self.accumulator = 0.0;
         Ok(())
