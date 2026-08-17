@@ -180,10 +180,16 @@ client 完全不打 `frame -> seq`（**一帧 host 广播都没收到**）。且
 - **修 4 ✅ 倒计时边界**：去掉旧的“on o_pressed 秒进”；倒计时由 `steam_was_all_ready` 状态机控制，只在真正全员就绪后才启动、清零才放行。
 - **UI**：房间层显示“N 秒后进配置（可取消）”；配置层显示各端配好状态 + “我已配好等待全员配完统一开始”。
 - **net 单测 2 新增**：`client_pump_frames_caches_without_advancing_expect`、`steam_config_gather_then_unified_start_identical`（配置→统一开战链）；workspace 116 全绿（client 5 + game-core 87 + net 22 + net-steam 2）。
+- **实机双机再测（2026-08-17）：配置同步阶段连接断开（ClosedByPeer）卡点，已补修**：
+  - 现象：房间就绪/倒计时/进配置都通了；host 日志 `[steam-host] all ready countdown zero -> broadcast StartConfig` → 两端都打了 `[steam] build done -> waiting ...`，但 **host 一直没进 HostGather**（没打 `all players configured`），随后 host 侧连接反复 `state=Ok(ClosedByPeer)`（对端连接断了）。
+  - 根因①（host 判定卡住）：host 进配置时 `reset_clients_build_done()` 会把 client 已上报的 build_done 清零；而 client 一旦配完就进入 ClientWait（原本不再上行 build_done）→ host 永远收不到 client build_done=true → 一直不进 HostGather。
+  - 根因②（连接断/保活不足）：进入配置同步（ClientWait/HostGather）后，client 只发 `send_cfg`、host 只 `poll_cfg`，没有每帧上行/广播保活；一旦同步拖久，P2P 连接易被 Steam 断开/对端异常关连 → ClosedByPeer。
+  - **补修**：`reset_clients_build_done()` 不再在进配置时调用（build_done 由玩家按 o 自然置位+续报，host 不筛漏）；client 在 ClientWait 阶段每帧 `send_room_state(ready, build_done, input)` 续报 build_done + 保活；host 在 HostGather 阶段同时 `poll`（收 RoomState）+ `poll_cfg` + 每帧 `broadcast_roster_ready` 保活；并加节流诊断 `[steam-host] config waiting: ... clients_build_done=…`。
+  - 真机待验：双机配置→统一开战能推进，host 打 `all players configured -> config sync` + `synced N player configs`，client 打 `got N player configs` + 连续 `frame -> seq=0,1,2`。
 
 ## 验收 / 下一步（新会话从这里做）
 1. **真机双机**：确认 client 不再需要“手动进对局”——房间全就绪 → 倒计时（最后 2 秒按 o 无效）→ 进配置 → 各自配完 → **自动统一进对局**；client 连续 `[steam-client] frame -> seq=0,1,2`，两端角色都动、可操控、逐位一致。
-2. 观察登录：`[steam-host] synced N player configs -> pre-game` / `[steam-client] got N player configs` / `[steam-client] build done -> config sync`。若某端卡“等待配置”则按旧诊断日志定位（`send_cfg`/`recv_cfg_all` 方向、`all_clients_build_done`）。
+2. 观察登录：`[steam-host] synced N player configs -> pre-game` / `[steam-client] got N player configs` / `[steam-client] build done -> config sync`。若 host 卡“等待配置”，看 `[steam-host] config waiting: ... clients_build_done=…`（等哪个 client 配完）；若某端连不上看 `[steam-p2p] ... not established` / `ClosedByPeer`。
 3. 局域网/Solo（非 steam feature 路径）不受影响，build/test/clippy 全绿。
 4. 若体验要再调：把锁定改为“最后 N 秒”（现在 2 秒），或调整倒计时长度。
 > 已知边界（本次不处理）：Steam 多局（round 2+）的经济/升级配置同步仍沿用旧逻辑（首局走新统一开始；后局依赖既有每帧通道），如需逐位同步多局配置需后续接入与局域网一致的完整同步（本次只修“开局不能自动进对战”）。

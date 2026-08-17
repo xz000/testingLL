@@ -1529,6 +1529,10 @@ impl event::EventHandler for Game {
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
                         if self.net_cfg == NetCfgSync::HostGather {
+                            // 保活：HostGather 阶段也收 client 心跳（RoomState，更新在场/配好）+ 广播就绪快照当心跳，双向保活。
+                            let mut k_rcv = vec![0u8; 4096];
+                            host.poll(&mut k_rcv);
+                            host.broadcast_roster_ready(self.steam_local_ready);
                             let mut g_rcv = vec![0u8; 8192];
                             host.poll_cfg(&mut g_rcv);
                             let cfg_bytes = self.local_player_cfg();
@@ -1588,6 +1592,11 @@ impl event::EventHandler for Game {
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
                         // Steam client：开局配置·配置同步阶段——上报我的 PlayerCfg，等 host 广播 PlayerCfgAll 后完成。
                         if self.net_cfg == NetCfgSync::ClientWait {
+                            // 保活：配置同步阶段也每帧上行（就绪 + 配好 + 在场输入），既防止 P2P 空闲被拆，
+                            // 也持续向 host 续报 build_done=true（host 端判定“所有端配完”始终成立）。
+                            let ref_enc = game_core::netcode::encode_player_input(&self.local_player_input());
+                            let _ = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &ref_enc);
+                            // 上报我的 PlayerCfg（幂等，丢包后持续重发，直到 host 广播 PlayerCfgAll）。
                             let cfg_bytes = self.local_player_cfg();
                             if !cfg_bytes.is_empty() {
                                 let _ = cli.send_cfg(&cfg_bytes);
@@ -1993,11 +2002,10 @@ impl Game {
         if entered_config {
             self.steam_in_lobby = false;
             self.pre_game_config = true; // 进开局配置菜单（技能/点数）。
-            // 进配置阶段：本端 build_done 重新收集；host 同步重置各 client 的 build_done。
+            // 本端进入配置：build_done 由玩家在配置阶段重新按 o 确认（重新收集）。
+            // （不再对 host 侧 client build_done 做 reset：client 会在其进入配置、按 o 后再次上报 build_done=true，
+            //  避免“host 进配置晚于 client 已配完、reset 把已上报的 build_done 清掉导致 host 永远等不到”。）
             self.steam_build_done = false;
-            if let Some(host) = self.steam_host_ls.as_mut() {
-                host.reset_clients_build_done();
-            }
             self.net_cfg = NetCfgSync::Idle;
         }
         self.accumulator = 0.0;
@@ -2151,6 +2159,18 @@ impl Game {
                 // 本端 + 所有 client 都配完：进入 HostGather，收齐配置并广播 PlayerCfgAll 后统一开战。
                 eprintln!("[steam-host] all players configured -> config sync (HostGather)");
                 enter_sync = Some(NetCfgSync::HostGather);
+            } else if self.steam_build_done {
+                // 诊断（节流）：我配完了但还没收齐 client，打印“等谁”的配好/在场计数，便于真机定位。
+                self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
+                if self.steam_lobby_wait_ticks % 120 == 1 {
+                    let done = host.build_done_clients_count();
+                    let pres = host.present_clients_count();
+                    let exp = host.expected_clients();
+                    eprintln!(
+                        "[steam-host] config waiting: my_build_done={} clients_build_done={done}/{exp} present={pres}/{exp}",
+                        self.steam_build_done
+                    );
+                }
             }
             self.steam_host_ls = Some(host);
         }
