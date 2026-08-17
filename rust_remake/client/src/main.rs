@@ -60,9 +60,7 @@ const STEAM_READY_COUNTDOWN_SECS: f32 = 5.0;
 #[cfg(feature = "steam")]
 const STEAM_COUNTDOWN_LOCK_SECS: f32 = 2.0;
 /// Steam 建房：玩家人数上限允许的最大值（steamworks 支持到 250，这里给竞技场设实际可玩的上限）。
-///（S2 建房设置界面用；当前 pending 先标 allow 防 -D warnings。）
 #[cfg(feature = "steam")]
-#[allow(dead_code)]
 const STEAM_MAX_PLAYERS: u8 = 64;
 /// Steam 建房：默认玩家数（创建房间界面的初始值）。
 #[cfg(feature = "steam")]
@@ -174,16 +172,15 @@ struct Game {
     /// Steam：本机是否已就绪（按 o toggle，可撤销）。
     #[cfg(feature = "steam")]
     steam_local_ready: bool,
-    /// Steam：房间成员名单（槽位, 昵称, SteamID），下一步 lobby 界面显示用（已构建、暂未读）。
+    /// Steam：房间成员名单（槽位, 昵称, SteamID）。host 每 ~0.5s 经 `steam_refresh_roster` 刷新（显示新进成员），
+    /// client 加入时构建；房间就绪界面按此列出成员。
     #[cfg(feature = "steam")]
-    #[allow(dead_code)]
     steam_roster: Vec<(u8, String, u64)>,
     /// Steam：本机最近一次收到的 host 房间「就绪状态快照」（多人一致界面；client 侧显示各成员就绪用）。
     #[cfg(feature = "steam")]
     steam_roster_ready: Vec<(u8, bool)>,
-    /// Steam：全体就绪是否为真（host 计算），下一步 lobby 用（暂未接）。
+    /// Steam：全体就绪是否为真（host 计算；房间/就绪界面显示用）。
     #[cfg(feature = "steam")]
-    #[allow(dead_code)]
     steam_all_ready: bool,
     /// Steam：本机最近一次上报给 host 的就绪值（用于节流打印发送结果/变更）。
     #[cfg(feature = "steam")]
@@ -292,9 +289,7 @@ struct Game {
     /// 主菜单当前选中项（方向键 ↑/↓ 移动 + 回车确认；数字键直选同步更新）。
     menu_selection: usize,
     /// 主菜单「Steam 大厅」子界面里，创建房间的玩家人数上限（2..=STEAM_MAX_PLAYERS）。
-    ///（S2 建房设置界面用；当前 pending 先标 allow 防 -D warnings。）
     #[cfg(feature = "steam")]
-    #[allow(dead_code)]
     steam_create_players: u8,
 }
 
@@ -1358,6 +1353,8 @@ impl Game {
                 .map(|(_, r)| *r)
                 .unwrap_or(fallback)
         };
+        let card_w = (sw * 0.46).min(520.0);
+        let card_x = cx - card_w / 2.0;
         for (slot, name, _id) in self.steam_roster.iter() {
             let is_me = *slot == self.steam_my_index;
             let (ready, col) = if is_me {
@@ -1371,10 +1368,14 @@ impl Game {
                 let r = roster_lookup(*slot, false);
                 (r, if r { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
             };
+            // 成员卡片背景（就绪偏绿、未就绪深灰），与主菜单/配置界面卡片视觉一致。
+            let bg_col = if ready { Color::from_rgb(34, 58, 44) } else { Color::from_rgb(30, 34, 44) };
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(card_x, y - 6.0, card_w, 44.0), bg_col)?;
+            canvas.draw(&bg, graphics::DrawParam::new());
             let mark = if ready { "[v]" } else { "[ ]" };
             let me_tag = if is_me { "（我）" } else { "" };
-            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: cx, y }, true)?;
-            y += 36.0;
+            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: card_x + 90.0, y: y }, true)?;
+            y += 46.0;
         }
         Ok(())
     }

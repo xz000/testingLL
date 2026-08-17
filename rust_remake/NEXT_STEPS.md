@@ -118,6 +118,11 @@
   - net 测试 +1：`participants_sparse_reindex`（host+client2 参与、client1 缺席 → 产帧/配置 new index 收缩为 0,1）。workspace 119 全绿。
 - **单测**：net `participants_underfull_start_only_active` + `participants_sparse_reindex`。
 - **真机待复验**：建房设 >2 人上限、只进 2 人 → host 按回车应能启动，且两端角色数量一致（不再 host 多 client 少）；满员时仍自动倒计时启动。
+**S5 房间就绪界面样式统一 + 冗余清理（2026-08-17，本会话最后一项）**：
+- **S5**：房间就绪界面成员列表改为**卡片式**（每行成员半透明背景条，就绪偏绿/未就绪深灰，居中卡片）——与主菜单卡片、配置界面左右分栏的视觉语言统一；标题/房间信息/流程提示/就绪状态/操作条分层清晰（房名/人数/锁/编辑/手动开始提示均已在位）。
+- **冗余清理**：去掉已实际使用的 `STEAM_MAX_PLAYERS`、`steam_create_players`、`steam_roster`、`steam_all_ready` 上的多余 `#[allow(dead_code)]`（它们现在都被读写）；`BOTS` 常量保留（设计上留作将来“带 AI 测试”模式）。
+- build/test/clippy（默认+steam）全绿，workspace 119。
+**下轮（用户要求先不测、记录后继续）**：真机复验“人不满启动角色数一致”+ S5 房间界面；完成后按序 →（后续）Host Migration →（后续）Steam 战斗内掉线 auto_drop/reconnect。未尽：中文房间名输入（IME）、LAN 多局/局域网房间列表。
 
 
 
