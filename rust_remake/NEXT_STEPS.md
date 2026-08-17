@@ -5,6 +5,8 @@
 > `LATENCY_MASKING.md`（手感）/ `ATTRIBUTE_SYSTEM.md`（4.6b）/ `NET_REWRITE.md`（网络重写）/
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
+> ⚠ **Steam 双机「不能自动进对战 + client 无法操控」根因分析与修复，见下方「Steam 根因分析」节（2026-08-17：已完成代码实现，待真机双机验证）。**
+
 ## 当前状态（全绿）
 - **单测 113 全绿 = game-core 87 + net 19 + client 5 + net-steam 2**；`cargo build --workspace`、`cargo test --workspace`、`cargo clippy --workspace -- -D warnings` 均绿、工作区干净。
     - feature 路径（`client/steam`、`net-steam/steam`）build + clippy 也绿。
@@ -115,6 +117,76 @@ client 完全不打 `frame -> seq`（**一帧 host 广播都没收到**）。且
 
 
 
+
+
+## Steam 根因分析 + 修复落地（2026-08-17：代码已实现，待真机双机验证）：两个症状的机理 + 修复方案
+**2026-08-17 接手复盘**。双机最新观察复述：
+- 症状 A：**不能自动进对战**——要机器上“分别按 o”，两台才各自进对战（各自手动、不同步）。
+- 症状 B：**client 画面角色无法操控**，但 host 能看到两端角色都在动。
+
+> 读码结论：这两条不是两个独立 bug，而是「**对战开始没有同步**」这一个根因的两个表象；症状 B 还叠加一个「配置期 keepalive 吞帧但没步进世界 → expect_seq 与 world 分叉」的确定性 bug。
+
+---
+### 症状 A 机理：开始对战的“第二道手动确认”没去掉，且各端独立触发
+当前 Steam 进对战实际是**两段手动按 o**：
+1. `steam_in_lobby`：按 `o` toggle 就绪（可撤销）。全员就绪 → 5 秒倒计时 → `StartConfig` → 进 `pre_game_config` 配置菜单。
+2. `pre_game_config`（`main.rs` 的开局配置块）：`done = 空格 || o` → `finish_pre_game()`（Steam 分支只 `teardown_round_end(); pre_game_config=false`）→ 进 `Fighting`。
+- 第 2 段是**各端自己按 `o` 才各自离开配置菜单进对局**，host 与 client 之间没有任何“统一开始”信号 —— 这就是“两台机器分别按 o、分别进入对战”的来源。
+- 反观**局域网**：没有配置菜单按 o 这段；host 在 `Fighting` 里 `try_emit` **收齐各端输入才产 seq=0 首帧**，首帧即统一开始信号 → 天然同步开始。这正是你要“参考的开始对战机制”。
+
+### 症状 B 机理：不同步开始 → 先开的一边跑、后开的一边 world 被 keepalive 吞帧而分叉/冻结
+- Steam client 在 `Fighting` 分支**只收权威帧步进 `self.world`**（`cli.step_frame → world.step`）。host 在 `Fighting` 分支 `try_emit`（有 host local + 全部 client 输入）就产帧步进自己 world —— 所以 **host 的 world（含两端输入）在跑 = host 看到两只都在动**（吻合观察）。
+- 若 client 因“分别按 o”比 host 晚进 `Fighting`，则 host 已开始 `emit seq=0,1,2,...`；仍在 `pre_game_config` 的 client 每帧 `steam_config_keepalive()` 里调 `cli.step_frame(&mut krcv)` 收帧，但**丢弃返回（不 step world）** —— 而 `step_frame`/`try_advance` 会推进 `expect_seq`。
+  → client 的 `expect_seq` 被前冲、world 却停在原地 → 进 `Fighting` 后从「n 帧之后」的输入继续步进同一个初始 world，**与 host 的 world 永久错位（滞后 n 帧、越拉越僵），画面看起来就像自己的角色不动、不可操控**。
+- 若“后开的其实是 host”则会反过来（host 停、仅 client 在跑）——总之**谁先离开配置谁先跑，后开的那个 world 分叉/冻结**。这就是每次“分别按 o”结果不稳定的原因。
+
+### 症状 B 的次因（历史已修大半，需再确认）
+- 早期“host 产帧但 client 一帧不收 / 输入断流”主要是「配置期连接被 Steam 拆除（无回调/无流量）」与「独立小包(P2P 下发送时未 established/时序)被吞」。
+  - 已修：配置期 `steam_config_keepalive` 保活；`SteamTransport::send_to` 加 established 门 + `run_callbacks`；client 对战斗输入也改走可靠的 `send_room_state`。
+  - 待确认：**帧(host→client)与输入(client→host)两条方向在真机双机是否都稳定送达**。诊断日志已齐：host `[steam-host] emit seq=N, n_entries` / `trying to emit but waiting (present=)`；client `[steam-client] frame -> seq=N` / `send_room_state failed`。
+
+---
+## 修复思路（按“先跨通、再加缓冲”排序）
+### 修 1（核心正确性，必做）：去掉“各端按 o 才开打”，改**局域网式统一开始**
+- 不再让 `pre_game_config` 里的 `done = 空格||o` 触发各自 `finish_pre_game`。
+- 把「配置完成 / 就绪」折进**每帧上行**（用现有 `RoomState`，client 在配置菜单结束时置 `ready=true` 并以 `send_room_state(ready, input)` 每帧持续上报，天然同路可靠）。
+- host 在 `pre_game_config` 阶段**照现逻辑每帧 `poll` 收各端 ready**，等「本地 + 所有 client 都 ready」→ 才开始 `try_emit`（seq=0 首帧）→ 各端 `Fighting` 一起以同一 seq 开始。
+- client 端 `pre_game_config` 结束时**不再自己 `finish_pre_game`**，而是保持等待 host 产帧 → 收到 seq=0 首帧才切 `Fighting` 并开步进。
+- 效果：与局域网一致，首帧=统一开始；两台不再分道扬镳，症状 A/B 的“不同步”根因直接消失。
+
+### 修 2（正确性，防复发）：`steam_config_keepalive` 不得吞帧推进 `expect_seq`
+- 配置期/等待期 client 只在“收心跳/推进握手”时 `run_callbacks` + 读包，但**不要用 `step_frame` 消费 FRAME**（否则 `try_advance` 把 `expect_seq` 前冲、world 不跟着走 → 分叉）。
+- 可加一个“不推进的收包”方法（或直接不读 FRAME，只收 RosterReady 等配置期包），保证 `expect_seq` 只在 `Fighting` 真正对战时才动。
+
+### 修 3（想要的体验，在修 1/2 打底后做）：全员就绪 → 3~5 秒缓冲 → 自动进对战，期间可取消就绪
+- 复用现有就绪判定 + 倒计时：`all_ready = 本地就绪 && saw_all_clients && all_clients_ready`，`all_ready` 时 `steam_countdown = 5.0` 递减。
+- **取消机会**：倒计时期间任何一端按 `o` 取消就绪（client `send_room_state(false)` / host 本地 toggle false），host 检测非全就绪 → 重置 `steam_countdown = 5.0`；倒计时归零（且未被取消）才放行统一开始。
+- **给各端显示倒计时与谁取消**：现有 `RosterReady` 广播只含每人 ready 布尔；“倒计时/是否已放行”建议再带一个共享阶段（如 `STARTING(N)`）或跟首帧联动。若嫌复杂，可先只用“就绪快照 + host 放行后自然产首帧”的简单版跑通。
+- 简单版保底：不弄倒计时 UI，只要“全员就绪即统一开始”（等同局域网机制）也算达到你要的“自动进对战”。
+
+### 修 4（可选加固）：`steam_lobby_update` 的倒计时边界 bug
+- 现 `if o_pressed || self.steam_countdown <= 0.0 { broadcast StartConfig }`——**若全员就绪恰好发生在“按下 o 的当帧”** 会跳过倒计时秒进配置；`steam_countdown` 初值在 `enter_steam_mode` 为 `0.0`（非全就绪帧才重置 5.0），与倒计时叠加易出“秒进/永不进”边界。改统一：`all_ready` 才真正开始倒计时，且 `o` 在该阶段只做“取消”，不再做“秒进”。
+
+---
+## 修复落地（2026-08-17 已实现，steam build/test/clippy 全绿；逻辑用 net 单测 U 锁死，真机待验）
+- **修 1 ✅ 对局开始统一（局域网式）**：
+  - `RoomState` 新增 `build_done` 字段（client→host 每帧上报“配完”）；proto 编解码含之（`proto.rs`）。
+  - `HostLockstep` 记录各 client `build_done`，新增 `all_clients_build_done`/`client_build_done`/`reset_clients_build_done`（`lockstep.rs`）。
+  - `steam_config_update`：配置阶段玩家按空格/o 置 `build_done`；host 等「本端 + 所有 client 配完」→ 进入 HostGather；client 配完 → 进入 ClientWait。
+  - Fighting 分支新增 Steam 的 HostGather/ClientWait 配置同步（复用现成 `poll_cfg`/`set_local_cfg`/`collect_cfgs`/`broadcast_cfgs`/`send_cfg`/`recv_cfg_all`）：收齐 PlayerCfg → 广播 PlayerCfgAll → 各端 apply → teardown → host 产 seq=0 首帧统一开战、client 收首帧开战。
+  - 效果：去掉“各端按 o 各自进对局”（症状 A）；并**同步了各端技能配置**（两端 world 逐位一致，堵住配置分叉）。
+- **修 2 ✅ 配置期不吞帧推进 expect_seq**：新增 `ClientLockstep::pump_frames`（只缓存不推进）；`steam_config_update` 配置等待期用 `pump_frames` 保活（不再 `step_frame` 前冲锚点）——堵住症状 B 的“后开一边 world 分叉/冻结”。
+- **修 3 ✅ 缓冲 + 取消 + 锁定**：host 房间阶段全员就绪 → 5 秒倒计时（`STEAM_READY_COUNTDOWN_SECS`），倒计时内有人取消（ready=false / host 按 o）则重置；**最后 2 秒 `STEAM_COUNTDOWN_LOCK_SECS` 锁定，忽略取消**（host 权威执行，防临界竞态）。
+- **修 4 ✅ 倒计时边界**：去掉旧的“on o_pressed 秒进”；倒计时由 `steam_was_all_ready` 状态机控制，只在真正全员就绪后才启动、清零才放行。
+- **UI**：房间层显示“N 秒后进配置（可取消）”；配置层显示各端配好状态 + “我已配好等待全员配完统一开始”。
+- **net 单测 2 新增**：`client_pump_frames_caches_without_advancing_expect`、`steam_config_gather_then_unified_start_identical`（配置→统一开战链）；workspace 116 全绿（client 5 + game-core 87 + net 22 + net-steam 2）。
+
+## 验收 / 下一步（新会话从这里做）
+1. **真机双机**：确认 client 不再需要“手动进对局”——房间全就绪 → 倒计时（最后 2 秒按 o 无效）→ 进配置 → 各自配完 → **自动统一进对局**；client 连续 `[steam-client] frame -> seq=0,1,2`，两端角色都动、可操控、逐位一致。
+2. 观察登录：`[steam-host] synced N player configs -> pre-game` / `[steam-client] got N player configs` / `[steam-client] build done -> config sync`。若某端卡“等待配置”则按旧诊断日志定位（`send_cfg`/`recv_cfg_all` 方向、`all_clients_build_done`）。
+3. 局域网/Solo（非 steam feature 路径）不受影响，build/test/clippy 全绿。
+4. 若体验要再调：把锁定改为“最后 N 秒”（现在 2 秒），或调整倒计时长度。
+> 已知边界（本次不处理）：Steam 多局（round 2+）的经济/升级配置同步仍沿用旧逻辑（首局走新统一开始；后局依赖既有每帧通道），如需逐位同步多局配置需后续接入与局域网一致的完整同步（本次只修“开局不能自动进对战”）。
 
 
 ## 关键历史（速览，回滚/定位用）

@@ -55,6 +55,9 @@ pub struct HostLockstep<T: Transport> {
     idle_ticks: Vec<u32>,
     /// 各 client 当前是否已就绪（可撤销；由 `Packet::PlayerReady` 更新）。
     clients_ready: Vec<bool>,
+    /// 各 client 当前是否已配好技能/配置（开局配置阶段由 `Packet::RoomState.build_done` 更新）。
+    /// host 收齐所有端(含自身) `build_done` 才产首帧统一开战（对齐局域网机制，消除“各端分别按 o 进对局不同步”）。
+    clients_build_done: Vec<bool>,
     /// 累计收到过的 `PlayerReady` 包总数（诊断用：区分“包根本没到”与“到了但值为 false”）。
     ready_packets_seen: u64,
     /// 最近一次保存的整场 World 快照字节 + 接回 seq（供重连者重建后从该 seq 继续）。
@@ -86,6 +89,7 @@ impl<T: Transport> HostLockstep<T> {
             client_identities: vec![None; expected],
             idle_ticks: vec![0; expected],
             clients_ready: vec![false; expected],
+            clients_build_done: vec![false; expected],
             ready_packets_seen: 0,
             snapshot: None,
             alive_tick: 0,
@@ -150,6 +154,29 @@ impl<T: Transport> HostLockstep<T> {
     /// 所有 client 是否都已就绪（不含 host 自身；host 自身的就绪由调用方另管）。
     pub fn all_clients_ready(&self) -> bool {
         self.clients_ready.iter().all(|r| *r)
+    }
+
+    /// 某 client（完整的玩家序号）当前是否已配好技能/配置（开局配置阶段）。
+    pub fn client_build_done(&self, client_seq: u8) -> bool {
+        let c = client_seq as usize - self.local_base as usize;
+        c < self.expected && self.clients_build_done[c]
+    }
+
+    /// 所有 client 是否都已配好技能/配置（不含 host 自身；host 自身是否配好由调用方另管）。
+    pub fn all_clients_build_done(&self) -> bool {
+        self.clients_build_done.iter().all(|b| *b)
+    }
+
+    /// 已配好技能/配置（收到 RoomState.build_done=true）的 client 数。
+    pub fn build_done_clients_count(&self) -> usize {
+        self.clients_build_done.iter().filter(|b| **b).count()
+    }
+
+    /// 重置所有 client 的「配好」标志为 false（进入开局配置阶段时调用，重新收集各端 build_done）。
+    pub fn reset_clients_build_done(&mut self) {
+        for b in self.clients_build_done.iter_mut() {
+            *b = false;
+        }
     }
 
     /// 已上行过输入（在场信号）的 client 数。
@@ -355,14 +382,15 @@ impl<T: Transport> HostLockstep<T> {
                                     self.idle_ticks[c] = 0; // 收到输入 → 清零空闲计数
                                 }
                             }
-                            Packet::RoomState { index, ready, input_bytes } => {
+                            Packet::RoomState { index, ready, build_done, input_bytes } => {
                                 let c = index as usize - self.local_base as usize;
                                 if c < self.expected {
-                                    // 房间阶段合包：一次更新「在场 + 就绪 + 端点 + 空闲」。可靠的输入在场通道。
+                                    // 房间阶段合包：一次更新「在场 + 就绪 + 配好 + 端点 + 空闲」。可靠的输入在场通道。
                                     self.client_peers[c] = Some(from);
                                     self.client_addr[c] = Some(from);
                                     self.latest_input[c] = Some(input_bytes);
                                     self.clients_ready[c] = ready;
+                                    self.clients_build_done[c] = build_done;
                                     self.idle_ticks[c] = 0;
                                 }
                             }
@@ -538,12 +566,14 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(())
     }
 
-    /// 房间阶段：把「就绪 + 输入在场信号」合成单包持续上行给 host。
-    /// （P2P 下独立的 PlayerReady 包曾实测常丢，而输入在场包可靠；故把就绪折进同一在场包。）
-    pub fn send_room_state(&mut self, ready: bool, input_bytes: &[u8]) -> io::Result<()> {
+    /// 房间阶段：把「就绪 + 配好 + 输入在场信号」合成单包持续上行给 host。
+    /// （P2P 下独立的 PlayerReady 包曾实测常丢，而输入在场包可靠；故把就绪/配好折进同一在场包。）
+    /// `build_done` 表示本端是否已在开局配置阶段配好技能/配置（host 收齐所有端才统一开战）。
+    pub fn send_room_state(&mut self, ready: bool, build_done: bool, input_bytes: &[u8]) -> io::Result<()> {
         let pkt = Packet::RoomState {
             index: self.my_index,
             ready,
+            build_done,
             input_bytes: input_bytes.to_vec(),
         };
         self.transport.send_to(&pkt.encode(), &self.host)?;
@@ -663,6 +693,30 @@ impl<T: Transport> ClientLockstep<T> {
                 Err(e) => return Err(e),
             }
         }
+    }
+
+    /// 配置/等待期专用：只 pump 回调并缓存 host 广播的 FRAME 到 `pending`，但**不推进 `expect_seq`**、不步进世界。
+    /// 返回 `Ok(true)` 表示收到了 ≥ expect 的新帧（即 host 已开始产帧，本端可据此进入对局）。
+    /// 与 `step_frame` 的区别：`step_frame` 收帧后还会 `try_advance` 更新 `expect_seq`（配合步进 world）；
+    /// 而配置期我们只想让连接保活、且不把 `expect_seq` 前冲（否则进入对局后 start 锚点错位 → world 与 host 分叉）。
+    pub fn pump_frames(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
+        let mut got = false;
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::Frame { seq, entries }) = Packet::decode(&rcv[..n]) {
+                        if seq >= self.expect_seq {
+                            let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
+                            self.pending.insert(pos, (seq, entries));
+                            got = true;
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+        Ok(got)
     }
 
     /// 从 transport 收一个 FRAME：入 pending 并尝试消费连续帧。
@@ -935,18 +989,68 @@ mod tests {
         assert!(!host.all_clients_ready());
 
         // client 房间阶段单包上行：就绪 + 在场。
-        cli.send_room_state(true, &[7, 8, 9]).unwrap();
+        cli.send_room_state(true, false, &[7, 8, 9]).unwrap();
         host.poll(&mut rcv);
 
         assert!(host.saw_all_clients(), "RoomState 应同时标记在场");
         assert!(host.all_clients_ready(), "RoomState 应同时标记就绪");
         assert!(host.client_ready(1));
+        assert!(!host.client_build_done(1), "未上报 build_done 应为 false");
 
         // 取消就绪（可撤销）：再发 ready=false。
-        cli.send_room_state(false, &[7, 8, 9]).unwrap();
+        cli.send_room_state(false, false, &[7, 8, 9]).unwrap();
         host.poll(&mut rcv);
         assert!(!host.all_clients_ready());
         assert!(host.saw_all_clients(), "在场信号应保持");
+    }
+
+    /// 房间「合包」的 build_done：client 上报 build_done=true → host 判定该端已配完；也可重置收集。
+    #[test]
+    fn room_state_build_done_gates_config_gather() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        assert!(!host.all_clients_build_done());
+        cli.send_room_state(true, true, &[7, 8, 9]).unwrap();
+        host.poll(&mut rcv);
+        assert!(host.client_build_done(1), "上报 build_done=true 后应置位");
+        assert!(host.all_clients_build_done(), "全部 client 配完");
+        assert_eq!(host.build_done_clients_count(), 1);
+
+        // 重置（进入下一阶段重新收集）。
+        host.reset_clients_build_done();
+        assert!(!host.all_clients_build_done());
+    }
+
+    /// 配置期 keepalive：`pump_frames` 只缓存不推进 expect_seq（host 已产帧时能感知开始，但锚点不错位）。
+    #[test]
+    fn client_pump_frames_caches_without_advancing_expect() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // host 产一帧（需要 local + 全部 client 输入）。
+        host.set_local_input(Some(vec![1, 2, 3]));
+        cli.send_room_state(true, true, &[9, 9, 9]).unwrap();
+        host.poll(&mut rcv);
+        let emitted = host.try_emit().expect("应能产第一帧");
+        let seq0 = emitted.0;
+        assert_eq!(seq0, 0);
+
+        // 配置期 client 用 pump_frames：应感知到 host 已开始（返回 true），但 expect_seq 仍为 0。
+        let mut prcv = [0u8; 4096];
+        let got = cli.pump_frames(&mut prcv).expect("pump 不应出错");
+        assert!(got, "pump_frames 应感知到 host 开始产帧");
+        assert_eq!(cli.expect_seq(), 0, "pump_frames 不得推进 expect_seq");
+
+        // 进入对局后 step_frame 才消费 seq=0，且 expect_seq 推进到 1。
+        let frame = cli.step_frame(&mut prcv).expect("step 不应出错").expect("应从 pending 消费 seq=0");
+        assert_eq!(cli.expect_seq(), 1);
+        let n_ents = frame.len();
+        assert_eq!(n_ents, 2, "首帧应含两端输入");
     }
 
     /// 房间入包单次排空分类：StartConfig 与 RosterReady 混在队列里也不会互吞，都能被正确识别。
@@ -1002,6 +1106,50 @@ mod tests {
         assert_eq!(got[0].1, host_cfg);
         assert_eq!(got[1].0, 1);
         assert_eq!(got[1].1, client_cfg);
+    }
+
+    /// Steam 配置→统一开战综合链路（修 1 的 net 侧）：
+    /// client 上报 RoomState(build_done=true)+PlayerCfg，host 认齐 build_done → 收集 cfg + 广播 PlayerCfgAll →
+    /// client 收到并应用 → host 产 seq=0 首帧 → client 收帧推进且 expect_seq 由 0 起（开战锚点一致）。
+    /// 这锁死“所有端配完 → 统一开始”，消除“各端分别按 o 进对局不同步”。
+    #[test]
+    fn steam_config_gather_then_unified_start_identical() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // —— 配置阶段：client 每帧 RoomState(build_done=true, 在场输入) + send_cfg ——
+        cli.send_room_state(true, true, &[7, 8, 9]).unwrap();
+        host.poll(&mut rcv);
+        assert!(host.all_clients_build_done(), "host 看到该 client 已配完");
+
+        // host 进入配置同步：收 client cfg + 设自身 cfg → 收齐 → 广播。
+        let host_cfg = vec![1, 0, 0, 2, 5];
+        let client_cfg = vec![1, 0, 0, 3, 9];
+        host.set_local_cfg(host_cfg.clone());
+        cli.send_cfg(&client_cfg).unwrap();
+        host.poll_cfg(&mut rcv);
+        let all = host.collect_cfgs().expect("配置应收齐");
+        assert_eq!(all.len(), 2);
+        host.broadcast_cfgs(&all);
+        let got = cli.recv_cfg_all(&mut rcv).unwrap().expect("client 应收 PlayerCfgAll");
+        assert_eq!(got.len(), 2);
+
+        // —— 开战：host 产 seq=0 首帧（统一开始信号），client 严格从 expect_seq=0 推进 ——
+        assert_eq!(cli.expect_seq(), 0, "开战前 client 锚点应为 0");
+        host.set_local_input(Some(vec![1, 2, 3]));
+        let emitted = host.try_emit().expect("host 应能产首帧");
+        assert_eq!(emitted.0, 0, "首帧 seq 应为 0");
+        assert_eq!(emitted.1.len(), 2, "首帧应含两端输入");
+
+        // client 用 pump（不推进）+ step_frame（推进）：首帧入 pending 后按序消费 seq=0。
+        let got_frame = cli.pump_frames(&mut rcv).expect("pump 不应出错");
+        assert!(got_frame, "应该收到 host 首帧");
+        assert_eq!(cli.expect_seq(), 0, "pump 不得推进 expect_seq");
+        let frame = cli.step_frame(&mut rcv).expect("step 不应出错").expect("应从 pending 消费 seq=0");
+        assert_eq!(cli.expect_seq(), 1, "开战后推进到 seq=1");
+        assert_eq!(frame.len(), 2);
     }
 
     /// 掉线离场（切片1）：client 掉线后，host 用默认输入占位照常产帧（不再等它），不卡全队。
