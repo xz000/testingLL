@@ -1,64 +1,61 @@
 //! 真实 Steam 传输（`steam` feature 下编译；非 vendored，连系统 Steam）。
 //!
-//! 用 `steamworks` 实现 `net::Transport`，使现有 lockstep / 多局 / 重连代码**零改动**地在 Steam 上运行：
-//!   - `SteamTransport::init(app_id)`：`Client::init_app`（连当前登录账号）。
-//!   - host 侧 `listen()`：`create_listen_socket_p2p` 开监听；client 侧 `connect_to(steam_id)` 用 `connect_p2p`。
-//!   - `Transport::send_to/recv_from`：`Peer::Steam{id}` ↔ `steamworks::networking_types::NetworkingIdentity`；
-//!     每帧 `run_callbacks()` 驱动 P2P 事件与收帧。
+//! 用 `steamworks` 的 **ISteamNetworkingMessages**（面向 SteamID 的消息接口，UDP 风格）实现 `net::Transport`，
+//! 使现有 lockstep / 多局 / 重连代码**零改动**地在 Steam 上运行：
+//!   - `SteamTransport::init(app_id)`：`Client::init_app`（连当前登录账号）+ 注册自动接受入站会话。
+//!   - `Transport::send_to/recv_from`：`Peer::Steam{id}` ↔ `NetworkingIdentity`；
+//!     直接向指定 SteamID 发消息（`SendMessageToUser`），底层会话隐式建立、断后 `AutoRestartBrokenSession`
+//!     自动重启，**无需自己管理 listen/accept/connect 连接状态**（官方文档：只在乎两台 peer 互通、
+//!     不在乎 client/server 角色时，用 messages 比 sockets 合适）。
 //!   - 大厅（`client.matchmaking()`）：`create_lobby` / `join_lobby` / `lobby_members` 做“身份→玩家槽位”（配 `lobby::LobbyPlayerTable`）。
 //!
-//! 单账号即可验证 init/读 SteamID/创建大厅；对战收发需双账号（真机 + 各自登录）。
+//! 为什么不用 ISteamNetworkingSockets（连接导向）：
+//!   真机日志显示 sockets 连接 ESTABLISHED 后又 DISCONNECTED、反复断连重连——因为 sockets 需要你自己
+//!   维护 listen/accept/connect + 连接状态，极易在握手/回调解耦处出错或随网络波动断掉。messages 接口
+//!   隐式管理会话、`k_nSteamNetworkingSend_AutoRestartBrokenSession` 断后自动重启，天然消除此类卡点。
+//! 可靠语义：RELIABLE 消息只要 send 成功就保证送达（同 host 同 channel 有序恰好一次）；会话尚未建立时
+//!   send 会返回错误——所以配合一个补发队列（`pending_sends`），失败不丢、会话建立后自动补发。
 
 use net::transport::{Peer, Transport};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 
-use crate::lobby::LobbyPlayerTable;
-
-/// Steam P2P 传输：持有已初始化 Client + 监听/P2P 连接映射。
+/// Steam 消息传输：持有已初始化 Client。
 pub struct SteamTransport {
     client: steamworks::Client,
-    /// 若为 host：已创建的监听 socket。
-    listen: Option<steamworks::networking_sockets::ListenSocket>,
-    /// peer SteamID -> 会话（client 用 connect_p2p 所得，或 host accept 所得）。
-    conns: HashMap<u64, steamworks::networking_sockets::NetConnection>,
-    /// 可靠发送补发队列：`send_to` 因连接尚未 ESTABLISHED / 瞬间不可发而失败时，不丢包而是入队，
-    /// 待连接建立后在 flush_pending 里按序重发（官方文档：RELIABLE 消息 send 成功即保证送达；
-    /// 但连接未建立时 send 会返回错误——此前代码 `let _ =` 吞掉导致“一次性关键包”永久丢失 → client 卡死）。
+    /// 可靠发送补发队列：`send_to` 因「会话尚未建立 / 暂不可发」而失败时，不丢包而是入队，
+    /// 待会话可用后在 `flush_pending` 里按序重发（RELIABLE send 成功即保证送达）。
     /// 键=peer SteamID；值=按发送顺序的待发消息。
     pending_sends: HashMap<u64, VecDeque<Vec<u8>>>,
-    /// 我方虚拟端口（host 与 peer 约定一致即可）。
-    virtual_port: i32,
-    /// 大厅成员→玩家槽位表（host/client 各持一致视角，来自大厅成员名单）。
-    _table: Option<LobbyPlayerTable>,
     /// 诊断：本运输已打的 send 失败日志数（节流，避免刷屏）。
     send_fail_logs: u32,
-    /// 诊断：本运输已打的 recv/receive_messages 失败日志数。
-    recv_fail_logs: u32,
 }
 
 impl SteamTransport {
-    /// 初始化 Steam（连当前登录账号 + 强制 AppID）。一台机器即可验证成功。
+    /// 初始化 Steam（连当前登录账号 + 强制 AppID）+ 注册自动接受入站会话。
     /// 注意：一个进程只应有一个 `Client`，故应全局单例持有。
-    pub fn init(app_id: u32, virtual_port: i32) -> io::Result<SteamTransport> {
+    pub fn init(app_id: u32, _virtual_port: i32) -> io::Result<SteamTransport> {
         let client = steamworks::Client::init_app(app_id).map_err(|e| {
             io::Error::other(format!(
                 "Steam init failed: 请确认 Steam 客户端在运行且已登录、AppID({app_id}) 有效。({e})"
             ))
         })?;
+        // 自动接受所有入站会话（SendMessageToUser 会隐式建会话；对端需 accept，否则消息进不来）。
+        client.networking_messages().session_request_callback(|req| {
+            req.accept();
+        });
+        // 会话失败/对端关闭时打日志（诊断“怎么又断了”，实际由 AutoRestartBrokenSession 自动重启）。
+        client.networking_messages().session_failed_callback(|_info| {
+            eprintln!("[steam-p2p] networking session failed (will auto-restart on next send)");
+        });
         Ok(SteamTransport {
             client,
-            listen: None,
-            conns: HashMap::new(),
             pending_sends: HashMap::new(),
-            virtual_port,
-            _table: None,
             send_fail_logs: 0,
-            recv_fail_logs: 0,
         })
     }
 
-    /// pump 待处理 Steam 回调（大厅 / 网络连接事件）。建议每帧调用。
+    /// pump 待处理 Steam 回调（大厅 / 会话建立）。建议每帧调用。
     pub fn run_callbacks(&self) {
         self.client.run_callbacks();
     }
@@ -68,60 +65,31 @@ impl SteamTransport {
         self.client.user().steam_id().raw()
     }
 
-    /// host：开 P2P 监听，返回本机 SteamID（供 client join / 大厅分发）。
-    pub fn listen(&mut self) -> io::Result<u64> {
-        let socks = self.client.networking_sockets();
-        let ls = socks
-            .create_listen_socket_p2p(
-                self.virtual_port,
-                std::iter::empty::<steamworks::networking_types::NetworkingConfigEntry>(),
-            )
-            .map_err(|e| io::Error::other(format!("create_listen_socket_p2p failed: {e:?}")))?;
-        self.listen = Some(ls);
-        Ok(self.steam_id())
+    /// 向指定 SteamID 发一条可靠消息。会话未建立/暂不可发时入队待补发；AUTO_RESTART 使坏会话自动重启。
+    fn send_reliable(&mut self, id: u64, data: &[u8]) -> bool {
+        use steamworks::networking_types::{NetworkingIdentity, SendFlags};
+        let flags = SendFlags::RELIABLE_NO_NAGLE | SendFlags::AUTO_RESTART_BROKEN_SESSION;
+        let identity = NetworkingIdentity::new_steam_id(steamworks::SteamId::from_raw(id));
+        self.client
+            .networking_messages()
+            .send_message_to_user(identity, flags, data, 0)
+            .is_ok()
     }
 
-    /// client：连接到 host 的 SteamID。
-    pub fn connect_to(&mut self, host_steam_id: u64) -> io::Result<()> {
-        use steamworks::networking_types::NetworkingIdentity;
-        let socks = self.client.networking_sockets();
-        let identity = NetworkingIdentity::new_steam_id(steamworks::SteamId::from_raw(host_steam_id));
-        let conn = socks
-            .connect_p2p(
-                identity,
-                self.virtual_port,
-                std::iter::empty::<steamworks::networking_types::NetworkingConfigEntry>(),
-            )
-            .map_err(|e| io::Error::other(format!("connect_p2p failed: {e:?}")))?;
-        self.conns.insert(host_steam_id, conn);
-        Ok(())
-    }
-
-    /// 把可靠补发队列里、且连接已 ESTABLISHED 的消息按序重发。
-    /// 覆盖“一次性关键包（StartConfig/PlayerCfg/PlayerCfgAll/ReconnectReq）在连接尚未建立时
-    /// send 被拒、被 `let _ =` 吞掉而永久丢失”的根因：失败先入队，连接建立后自动补发。
-    /// 连接已彻底关闭(conns 中已无)时清空该 peer 队列（送不到，等重连另行处理）。
+    /// 把可靠补发队列里、且会话当前可发（send 成功）的消息按序补发。
+    /// 用 AUTO_RESTART_BROKEN_SESSION 后无需自行判断“已建立”——send 成功即送达；失败则留在队首等下一帧。
     fn flush_pending(&mut self) {
-        use steamworks::networking_types::{NetworkingConnectionState, SendFlags};
-        // 1) 对连接已 ESTABLISHED 的 peer，按 FIFO 尽量清空（一旦某条发失败即停，等下帧再补，保证顺序）。
-        let ready: Vec<u64> = self.pending_sends.keys().copied().filter(|id| {
-            match self.conns.get(id) {
-                Some(c) => matches!(
-                    c.info().ok().and_then(|i| i.state().ok()),
-                    Some(NetworkingConnectionState::Connected)
-                ),
-                None => false,
-            }
-        }).collect();
-        for id in ready {
+        let keys: Vec<u64> = self.pending_sends.keys().copied().collect();
+        for id in keys {
             // 用 while let 尽量清空：发送成功才 pop；失败则 break 保留在队首等下帧补发（FIFO 顺序）。
             while let Some(head) = self.pending_sends.get(&id).and_then(|q| q.front().cloned()) {
-                let ok = match self.conns.get_mut(&id) {
-                    Some(c) => c.send_message(&head, SendFlags::RELIABLE_NO_NAGLE).is_ok(),
-                    None => false,
+                let ok = {
+                    // 若该 peer 之前排队的那条补发失败，先立即重试它；同时每轮先 run_callbacks 推进会话。
+                    self.client.run_callbacks();
+                    self.send_reliable(id, &head)
                 };
                 if !ok {
-                    break; // 仍不可发：留队，下帧再补
+                    break; // 会话仍不可发：留队，下帧再补
                 }
                 self.pending_sends.get_mut(&id).map(|q| q.pop_front());
             }
@@ -129,11 +97,9 @@ impl SteamTransport {
                 self.pending_sends.remove(&id);
             }
         }
-        // 注：这里不根据 conns 是否含该 peer 来清空 pending——host 侧连接建立(Connected 事件)前 conns 里也还没有
-        // client，若急切清空会把“正在握手、尚不可发”的关键包误丢。真正释放由 Disconnected 事件/重连重建负责。
     }
 
-    /// 把一条待发消息入队（带长度上限防无限增长：连接长期不可发时丢最老，避免内存膨胀）。
+    /// 把一条待发消息入队（带长度上限防无限增长：长期不可发时丢最老，避免内存膨胀）。
     const PENDING_MAX: usize = 1024;
     fn push_pending(&mut self, id: u64, bytes: &[u8]) {
         let q = self.pending_sends.entry(id).or_default();
@@ -147,73 +113,25 @@ impl SteamTransport {
         q.push_back(bytes.to_vec());
     }
 
-    /// 处理 P2P 事件（host accept 新连接 / 断开清理）并收帧。返回 `(来源 SteamID, 数据)` 列表。
-    fn pump_p2p(&mut self) -> Vec<(u64, Vec<u8>)> {        self.client.run_callbacks();
-        use steamworks::networking_types::ListenSocketEvent;
+    /// 从「指定 SteamID 频道」读取收到的消息（UDP 风格，接收方无需维护连接）。
+    fn recv_messages_once(&mut self, batch: usize) -> Vec<(u64, Vec<u8>)> {
         let mut out = Vec::new();
-        // host：accept 待连 / 收已连连接。
-        if let Some(ls) = self.listen.as_ref() {
-            // 注意：不能用 `ls.events()`（阻塞迭代器，会卡住主线程）；用非阻塞 `try_receive_event`。
-            while let Some(ev) = ls.try_receive_event() {
-                match ev {
-                    ListenSocketEvent::Connecting(req) => {
-                        let remote_id = req.remote().steam_id();
-                        let _ = req.accept();
-                        if let Some(id) = remote_id {
-                            eprintln!("[steam-p2p] host accepted connection from {}", id.raw());
-                        }
-                    }
-                    ListenSocketEvent::Connected(ev) => {
-                        if let Some(id) = ev.remote().steam_id() {
-                            let conn = ev.take_connection();
-                            eprintln!("[steam-p2p] host connection ESTABLISHED with {}", id.raw());
-                            self.conns.insert(id.raw(), conn);
-                        }
-                    }
-                    ListenSocketEvent::Disconnected(ev) => {
-                        // peer 断连：移除其连接并清掉待补发（送不到，等重连走 ReconnectReq/Snapshot 另建）。
-                        if let Some(id) = ev.remote().steam_id() {
-                            self.conns.remove(&id.raw());
-                            self.pending_sends.remove(&id.raw());
-                            if self.recv_fail_logs < 10 {
-                                self.recv_fail_logs += 1;
-                                eprintln!("[steam-p2p] host connection DISCONNECTED from {}", id.raw());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // 从每个已建立连接收帧。
-        let peer_ids: Vec<u64> = self.conns.keys().copied().collect();
-        for pid in peer_ids {
-            if let Some(c) = self.conns.get_mut(&pid) {
-                match c.receive_messages(32) {
-                    Ok(msgs) => {
-                        for m in msgs {
-                            out.push((pid, m.data().to_vec()));
-                        }
-                    }
-                    Err(e) => {
-                        if self.recv_fail_logs < 10 {
-                            self.recv_fail_logs += 1;
-                            eprintln!("[steam-p2p] receive_messages from {pid} failed: {e:?} -> removing conn (connection likely dropped)");
-                        }
-                        self.conns.remove(&pid);
-                    }
-                }
+        self.client.run_callbacks();
+        let msgs = self.client.networking_messages().receive_messages_on_channel(0, batch);
+        for m in msgs {
+            if let Some(sid) = m.identity_peer().steam_id() {
+                out.push((sid.raw(), m.data().to_vec()));
             }
         }
         out
     }
 
-    /// 某 Steam 端点的 P2P 连接当前是否为 EstABLISHED（可正常收发）。
+    /// 某 Steam 端点的会话当前是否为 Connected（诊断用；收发不依赖它）。
     pub fn is_established(&self, id: u64) -> bool {
-        use steamworks::networking_types::NetworkingConnectionState;
-        match self.conns.get(&id) {
-            Some(c) => matches!(c.info().ok().and_then(|i| i.state().ok()), Some(NetworkingConnectionState::Connected)),
-            None => false,
-        }
+        use steamworks::networking_types::{NetworkingIdentity, NetworkingConnectionState};
+        let identity = NetworkingIdentity::new_steam_id(steamworks::SteamId::from_raw(id));
+        let (state, _, _) = self.client.networking_messages().get_session_connection_info(&identity);
+        state == NetworkingConnectionState::Connected
     }
 
     /// 大厅（Matchmaking）句柄；用 `create_lobby`/`join_lobby`/`lobby_members` 做成员→槽位。
@@ -225,52 +143,27 @@ impl SteamTransport {
     pub fn friends(&self) -> steamworks::Friends {
         self.client.friends()
     }
-
-    /// 设置大厅→玩家槽位表（host 从 `lobby_members` 建表，client 用同样名单建一致表）。
-    pub fn set_player_table(&mut self, t: LobbyPlayerTable) {
-        self._table = Some(t);
-    }
 }
 
 impl Transport for SteamTransport {
     fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
-        use steamworks::networking_types::{NetworkingConnectionState, SendFlags};
-        // 先 pump 回调，推进 P2P 握手/连接建立（SteamNetworkingSockets 需要回调驱动状态机）。
-        self.client.run_callbacks();
-        // 先把上一轮“未建立/暂不可发”而积压的可靠消息补发出去。
+        // 先把上一轮“会话未建/暂不可发”而积压的可靠消息补发出去。
         self.flush_pending();
         match peer {
             Peer::Steam { id, .. } => {
-                // 连接尚未 ESTABLISHED 或尚不存在时，RELIABLE send 会返回错误；这里不丢包，而是入队待补发。
-                let established = match self.conns.get(id) {
-                    Some(c) => matches!(
-                        c.info().ok().and_then(|i| i.state().ok()),
-                        Some(NetworkingConnectionState::Connected)
-                    ),
-                    None => false,
-                };
-                if !established {
-                    if self.send_fail_logs < 10 {
-                        self.send_fail_logs += 1;
-                        eprintln!("[steam-p2p] send_to: steam connection to {id} not established yet -> queued for re-send");
-                    }
-                    self.push_pending(*id, buf);
-                    return Ok(buf.len());
-                }
-                let c = self.conns.get_mut(id).expect("established 已保证存在");
-                // 若该 peer 还有未补发成功的历史可靠消息，若此刻直接 send 新 buf 会乱序（RELIABLE 有序）；
+                // 若该 peer 还有未补发成功的历史可靠消息，此刻直接发新 buf 会乱序（RELIABLE 有序）；
                 // 统一追加到队尾，让 flush 按 FIFO 顺序发出。
                 if self.pending_sends.get(id).is_some_and(|q| !q.is_empty()) {
                     self.push_pending(*id, buf);
                     return Ok(buf.len());
                 }
-                match c.send_message(buf, SendFlags::RELIABLE_NO_NAGLE) {
-                    Ok(_) => Ok(buf.len()),
-                    Err(e) => {
-                        // 瞬间不可发（如发送缓冲满 LimitExceeded / 状态翻转 InvalidState）：入队待补发，不丢失。
+                match self.send_reliable(*id, buf) {
+                    true => Ok(buf.len()),
+                    false => {
+                        // 会话尚未建立 / 暂不可发 / 发送失败：入队待补发，不丢失。
                         if self.send_fail_logs < 10 {
                             self.send_fail_logs += 1;
-                            eprintln!("[steam-p2p] send_to: send_message to {id} failed: {e:?} -> queued for re-send");
+                            eprintln!("[steam-p2p] send_to {id}: not sendable yet (session establishing?) -> queued for re-send");
                         }
                         self.push_pending(*id, buf);
                         Ok(buf.len())
@@ -282,13 +175,14 @@ impl Transport for SteamTransport {
     }
 
     fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, Peer)>> {
-        // 先推进回调/握手 + 补发可靠队列，再收帧。
+        // 先推进会话/补发，再收帧。
         self.flush_pending();
-        for (pid, data) in self.pump_p2p() {
+        for (pid, data) in self.recv_messages_once(32) {
             if data.len() <= buf.len() {
                 buf[..data.len()].copy_from_slice(&data);
                 return Ok(Some((data.len(), Peer::Steam { id: pid, conn: None })));
-            }            // 缓冲区过小则丢弃该包（上层 rcv 一般足够大）。
+            }
+            // 缓冲区过小则丢弃该包（上层 rcv 一般足够大）。
         }
         Ok(None)
     }
