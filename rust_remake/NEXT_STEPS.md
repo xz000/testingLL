@@ -90,7 +90,13 @@
 - ⚠ **加入房间“尝试多次才成功”**（`1 lobbies → 0 → 1` 漂忽）：根因是 **Steam `request_lobby_list` 搜索接口有限速**（官方建议每秒至多一次），且回调异步，用户连续按 R 会拿到空/陈旧结果。**已修**：`steam_lobby_list_update` 加刷新节流（新增 `LOBBY_REFRESH_COOLDOWN_SECS=4.0`，首刷一次、R 刷新需间隔 ≥4s，否则提示“刷新太快”），防止疯狂触发变空。真机待复验（几秒一次 R 应稳定搜到 host 房间）。
 - ✅ `present=0` 输入断流（host 尾段 `waiting for client input`）经对照两端日志（client 停在 `seq=10` 后无更多输出），判定为**用户 Ctrl+C 同时退出**导致的正常离场，非网络 bug，**无需修**。
 - 📌 新观察（记录，不在本轮范围）：若 Steam 对战中 client 真掉线（非退出整个程序），Steam host 分支会一直 `waiting for client input` 空转、**没有接局域网那种 `auto_drop_idle` 掉线自动处置**（Steam 战斗端掉线/重连未接入）。属已知边界，与「重连对 Steam 未接」同源，后续可单独做。
+**问题回填（2026-08-17，[steam-lobby] 复盘后修）**：
+- ✅ **进入房间后不能退出 → 疏漏，已修**：房间就绪界面提示了 Q 退出但 `steam_lobby_update` 从未处理 Q。新增 `steam_leave_room()`（`leave_lobby` 让 Steam 后端不再占席 + `reset_to_main_menu` 清会话回主菜单），`steam_lobby_update` 开头响应 Q。
+- ✅ **host 不显示进入的 client → 疏漏，已修**：`steam_roster` 只在建厅时构建（当时只有 host），之后从不刷新。新增 `steam_refresh_roster()`（读 `lobby_members` → `LobbyPlayerTable` 排序保持槽位与 lockstep 一致 → 映射昵称），host 每 30 帧节流刷新，client 加入后 host 界面能显示新成员。
+- `reset_to_main_menu` 的 steam 清理块补充清 `steam_roster`/`steam_lobby_id`/`steam_room_edit*`/`steam_lobby_*`/`steam_join_lobby_id`（退出/整场结束后回主菜单干净）。
+- build/clippy（默认+steam）/test 全绿，117 测试不破。真机待复验：进房后 host 能看到 client、按 Q 能退回主菜单、再建房/加入正常。
 **未尽（后续增量）**：S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，可进一步统一 LAN/Steam；LAN 暂不进此界面）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
+
 
 
 
