@@ -1194,7 +1194,7 @@ impl Game {
         if self.steam_all_ready {
             draw_text(canvas, ctx, &format!("全体就绪 - {:.0} 秒后进配置（倒计时结束前可取消）", self.steam_countdown.max(0.0)), 22.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y }, true)?;
         } else {
-            draw_text(canvas, ctx, "按 o / 空格 就绪（再按取消）", 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y }, true)?;
+            draw_text(canvas, ctx, "按 U 就绪（再按 U 取消）", 22.0, Color::from_rgb(200, 205, 220), Point2 { x: cx, y }, true)?;
         }
         Ok(())
     }
@@ -1462,9 +1462,10 @@ impl event::EventHandler for Game {
             use ggez::input::keyboard::Key;
             self.poll_learning(ctx);
             self.poll_growth_buy(ctx);
-            // 空格或字母 O（确认）开始第一局。
+            // 空格（确认）开始第一轮；空格在本环境实测不可靠，故加 P 兜底。
             let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()));
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()));
             // 单机：超时自动用默认配置开始（防止窗口无焦点/按键收不到导致卡死）。
             let auto_done = if self.app == AppState::Solo && self.net_link.is_none() && self.net_host.is_none() && self.net_host_ls.is_none() {
                 self.pre_game_timer -= dt;
@@ -1596,7 +1597,8 @@ impl event::EventHandler for Game {
                             // 也持续向 host 续报 build_done=true（host 端判定“所有端配完”始终成立）。
                             let ref_enc = game_core::netcode::encode_player_input(&self.local_player_input());
                             let _ = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &ref_enc);
-                            // 上报我的 PlayerCfg（幂等，丢包后持续重发，直到 host 广播 PlayerCfgAll）。
+                            // 上报我的 PlayerCfg（client 每帧发一次，确保 host 无论如何进入 HostGather 都能收到；
+                            // Steam 可靠通道保证送达，重发仅为覆盖“host 尚未开始收集”的时序）。
                             let cfg_bytes = self.local_player_cfg();
                             if !cfg_bytes.is_empty() {
                                 let _ = cli.send_cfg(&cfg_bytes);
@@ -1906,15 +1908,16 @@ impl Game {
     #[cfg(feature = "steam")]
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
         use ggez::input::keyboard::Key;
-        let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()));
+        // 房间阶段只用 [U] 就绪/取消就绪；不再用 o/空格（避免 o 多重语义、避免与“配置确认”混淆）。
+        let ready_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("u".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("U".into()));
         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
-        // 锁定窗口内忽略「按 o 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
+        // 锁定窗口内忽略「按 U 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
         let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
-        if o_pressed && !locked {
+        if ready_pressed && !locked {
             self.steam_local_ready = !self.steam_local_ready;
             eprintln!("[steam-lobby] local ready = {}", self.steam_local_ready);
-        } else if o_pressed && locked {
+        } else if ready_pressed && locked {
             eprintln!("[steam-lobby] ignoring ready-cancel during locked countdown");
         }
         let mut entered_config = false;
@@ -2125,11 +2128,12 @@ impl Game {
         let k = game_core::netcode::encode_player_input(&self.local_player_input());
 
         // 配置输入：本端未配完才允许；配完即锁定（不再响应选技能/成长）。
+        // 确认配好用 [P]（配置界面 p 空闲、语义明确；空格在本环境实测不可靠，且不再用 o）。
         if !self.steam_build_done {
             self.poll_learning(ctx);
             self.poll_growth_buy(ctx);
-            let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()));
+            let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()));
             if confirm {
                 self.steam_build_done = true;
                 eprintln!("[steam] build done -> waiting for all players configured, then start match");
@@ -2229,13 +2233,13 @@ impl Game {
             if self.steam_build_done {
                 draw_text(&mut canvas, ctx, "[v] 我已配好，等待所有玩家配完统一开始...", 22.0, graphics::Color::from_rgb(90, 220, 130), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
             } else {
-                draw_text(&mut canvas, ctx, "选择技能后按 Space / O 确认配好 ", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+                draw_text(&mut canvas, ctx, "选择技能后按 P 确认配好", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
             }
         } else {
-            draw_text(&mut canvas, ctx, "按 Space / O 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+            draw_text(&mut canvas, ctx, "按 Space 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         }
         #[cfg(not(feature = "steam"))]
-        draw_text(&mut canvas, ctx, "按 Space / O 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+        draw_text(&mut canvas, ctx, "按 Space 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         // 准备状态面板：显示各玩家已加入/已就绪，避免“以为卡住”。
         let me = self.self_index();
         if self.app != AppState::Solo {
@@ -2286,7 +2290,7 @@ impl Game {
                     let (txt, col) = if done {
                         (format!("  {name}  [v] 已配好"), Color::from_rgb(90, 220, 130))
                     } else if (i as u32) == self.self_index() {
-                        (format!("  {name}  [ ] 选技能后按空格/O"), Color::from_rgb(240, 200, 70))
+                        (format!("  {name}  [ ] 选技能后按 P"), Color::from_rgb(240, 200, 70))
                     } else {
                         (format!("  {name}  [ ] 配好中"), Color::from_rgb(170, 175, 185))
                     };
@@ -2297,7 +2301,7 @@ impl Game {
                 let (txt, col) = if self.steam_build_done {
                     ("  [v] 我已配好，等待全员配完统一开始...".to_string(), Color::from_rgb(90, 220, 130))
                 } else {
-                    ("  [ ] 选技能后按空格/O 确认配好".to_string(), Color::from_rgb(240, 200, 70))
+                    ("  [ ] 选技能后按 P 确认配好".to_string(), Color::from_rgb(240, 200, 70))
                 };
                 draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
             }

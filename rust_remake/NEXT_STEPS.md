@@ -186,6 +186,11 @@ client 完全不打 `frame -> seq`（**一帧 host 广播都没收到**）。且
   - 根因②（连接断/保活不足）：进入配置同步（ClientWait/HostGather）后，client 只发 `send_cfg`、host 只 `poll_cfg`，没有每帧上行/广播保活；一旦同步拖久，P2P 连接易被 Steam 断开/对端异常关连 → ClosedByPeer。
   - **补修**：`reset_clients_build_done()` 不再在进配置时调用（build_done 由玩家按 o 自然置位+续报，host 不筛漏）；client 在 ClientWait 阶段每帧 `send_room_state(ready, build_done, input)` 续报 build_done + 保活；host 在 HostGather 阶段同时 `poll`（收 RoomState）+ `poll_cfg` + 每帧 `broadcast_roster_ready` 保活；并加节流诊断 `[steam-host] config waiting: ... clients_build_done=…`。
   - 真机待验：双机配置→统一开战能推进，host 打 `all players configured -> config sync` + `synced N player configs`，client 打 `got N player configs` + 连续 `frame -> seq=0,1,2`。
+- **根因确认 + Steam 传输可靠发送补发（2026-08-17，基于 steamworks 官方发送文档）**：
+  - 对照：局域网不用按键也能开始、Steam 却卡——根源在**传输层**不是快捷键。查 steamworks 头文件 `SendMessageToConnection`：RELIABLE 消息只要 send 返回成功就保证送达；但**连接尚未 ESTABLISHED / 无效时 send 返回错误**（`k_EResultInvalidState`/`k_EResultNoConnection`/`k_EResultLimitExceeded`/包过大 `InvalidParam`）。旧 `transport_steam.rs::send_to` 遇错 `return Err`，上层一律 `let _=` 静默吞 → **一次性关键包（StartConfig/PlayerCfg/PlayerCfgAll/ReconnectReq）在建立时序里被拒即永久丢失** → client 收不到 → 卡死/分叉。
+  - **修复（`net-steam/src/transport_steam.rs`）**：`send_to` 遇“未建立/暂不可发/发送失败”不再报错丢弃，而是**入队待补发**（新增 `pending_sends` 补发队列 + `flush_pending`，每个 `send_to`/`recv_from` 前自动把已 ESTABLISHED 的积压消息按 FIFO 补发；RELIABLE 有序，故有历史积压时不直接发新包而追加队尾）。host 端 `Disconnected` 事件清理该 peer 的 conns+pending；队列有 1024 条上限防膨胀。这样建立前发出的关键包在连接建立后会自动补发一次，client 必达。
+  - 配套：**键位拆分**——`o` 从 Steam 流程彻底移除；房间就绪用 `U`，配置确认配好用 `P`（空格在本环境实测不可靠，LAN 也能开始说明不是按键问题，但 Steam 的确认键换可靠字符键）；非 Steam(LAN/Solo) 开始键保留空格+P 克底。
+  - 状态：workspace 116 测试全绿；steam feature build/clippy 全绿。待真机双机验证配置→统一开战（host 打 `all players configured` / `synced N`，client 打 `got N` + `frame -> seq=0,1,2`）。
 
 ## 验收 / 下一步（新会话从这里做）
 1. **真机双机**：确认 client 不再需要“手动进对局”——房间全就绪 → 倒计时（最后 2 秒按 o 无效）→ 进配置 → 各自配完 → **自动统一进对局**；client 连续 `[steam-client] frame -> seq=0,1,2`，两端角色都动、可操控、逐位一致。
