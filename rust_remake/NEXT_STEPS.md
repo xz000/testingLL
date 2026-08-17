@@ -19,11 +19,17 @@
 - 连接不再反复断：两端就绪（按 U）→ 倒计时归零 → `broadcast StartConfig` → 进配置 → 各自按 P 配好 → host 打 `all players configured -> config sync (HostGather)`，client 打 `build done -> config sync (ClientWait)`。**流程能推到这里，是实打实进展。**
 - 本次日志**没有**再出现 `session_failed` 大片刷屏——那个卡点基本退场。这次卡在：**两端都进了 配置同步（HostGather / ClientWait）但收不到对方配置，无 `synced N player configs` / `got N player configs`**。
 
-### █ 当前卡点（下一个会话就是修这个）→ 本次已定位并修复
-- **根因（代码定案，非传输层）**：Steam host 的 `HostGather` 分支（`client/src/main.rs` 里 steam-host 处理）为“双向保活”**先 `host.poll(&mut k_rcv)` 再 `host.poll_cfg(&mut g_rcv)`**。而 `HostLockstep::poll` 会**排空 transport 里所有包**，并把 `PlayerCfg` 当无关包丢进 `_ => {}` → client 每帧 emit 的 `PlayerCfg` 被 `poll` 消费丢弃，随后 `poll_cfg` 什么都读不到 → host 永远 `all_cfgs()=false` → 卡在 HostGather（client 也等不到 `PlayerCfgAll`，两端一起卡死）。
-- **修复（`net/src/lockstep.rs`）**：`HostLockstep::poll` 新增 `Packet::PlayerCfg` 处理臂，与 `poll_cfg` 同语义把配置记进 `cfgs`（并记 peer）。这样 HostGather 里先 `poll` 再 `poll_cfg` 都不会丢配置，client 配置必达 → host `all_cfgs()` → 广播 `PlayerCfgAll` → client `recv_cfg_all` → 两端 apply → 统一开战。
-- **回归测试 +1**：`host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`（client 每帧 RoomState 心跳 + PlayerCfg 混批上行，host 先 poll 再 poll_cfg，断言配置仍被收齐）。
-- 待真机双机验证：host 应打 `synced N player configs`，client 应打 `got N player configs` + 连续 `frame -> seq=0,1,2`，两端统一开战。
+### █ 当前卡点（下一个会话就是修这个）→ 已修 poll 吞包，但真机仍卡配置同步（未进 synced/got）
+- **已修（上轮，`net/src/lockstep.rs`）**：`HostLockstep::poll` 新增 `Packet::PlayerCfg` 处理臂（HostGather 里先 `poll` 再 `poll_cfg` 不再丢配置）+ 回归测试 `host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`。
+- **但真机双机再测（本轮）仍卡**：host 到 HostGather、client 到 ClientWait，均无 `synced N` / `got N`。**说明 poll 吞包不是唯一根因，client 的 PlayerCfg 很可能根本没到 host。**（判据：host 进 HostGather 依赖 `all_clients_build_done()`=RoomState 能到 host，而 PlayerCfg 走同一 `send_to` / 同一 channel，照理也该到→矛盾点集中在“client 侧是否真的成功发出 PlayerCfg”。）
+- **已加诊断（`client/src/main.rs`，提交 `7fdf531`）**：
+  - host `HostGather` 每 60 帧打 `[steam-host] HostGather waiting: local_cfg=… cfgReady=… pres=… bd=/… exp=…`（本地配置就绪 + 已配齐玩家数 + 在场 + 配好数）。
+  - client `ClientWait` 每 60 帧打 `[steam-client] ClientWait sending cfg len=… ok=… expect_seq=…`（确认每帧真的在发 PlayerCfg 及包大小/发送是否成功）。
+- **凭诊断分叉判定根因（下一步真机跑一轮即可定）**：
+  - client 打 `cfg len=0` → `local_player_cfg()` 返回空（me=steam_my_index 在 meta.profiles 找不到 profile 或没生成配置）→ 是配置生成 bug，非传输层。
+  - client 打 `len>0 ok=true` 但 host `cfgReady` 恒为 1（只有 host 自己）→ PlayerCfg 传/解码问题（RoomState 却通）。
+  - client 打 `len>0 ok=false` → `send_cfg` 失败 → 传输层（pending 队列卡死？）。
+- 状态：workspace 117 全绿；diagnostics 提交 `7fdf531`、poll-fix 提交 `2ff9ba7`。待用户真机跑出诊断行定位。
 
 ### 本次会话改动记录（未提交，含 git 历史）
 - `net/src/lockstep.rs`：`poll` 增加 `PlayerCfg` 处理臂（修复 HostGather 吞配置）+ 新增回归测试 `host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`。（工作区未提交，HEAD=`d9c5f9b`）
