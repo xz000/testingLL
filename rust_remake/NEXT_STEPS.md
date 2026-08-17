@@ -84,7 +84,8 @@
 - 新增 `steam_lobby_id`（存当前房间 LobbyId）`steam_room_edit`/`steam_edit_name`/`steam_edit_note`/`steam_room_edit_focus`/`steam_room_locked` 字段；`steam_current_room_info()` 经 host lockstep 的 `transport_ref().matchmaking()` 读当前房名/备注。
 - 建房设置界面默认房间名改为 **`{昵称}的房间`**（用进入大厅时缓存的 `steam_my_display_name`）。
 - build/test/clippy（默认+steam）全绿，117 测试不破。
-**未尽（后续增量）**：S4 配置/学习界面分区；S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，进一步统一 LAN/Steam）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
+**S4 已落（本提交）**：开局配置界面（`draw_pre_game`）重排为**左右分栏**：左栏=技能树与键位绑定（标题、金币/击杀/名次、选中树与可选技能、各键当前绑定），右栏=成长/属性面板（成长点、金币、属性一览、购买快捷键），顶部=标题/开始提示/玩家准备状态，底部一条操作提示。“键位逻辑完全不动”（只改绘制坐标，不碰任何输入/确定性逻辑）。build/clippy（默认+steam）/test 全绿，117 测试不破。
+**未尽（后续增量）**：S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，可进一步统一 LAN/Steam；LAN 暂不进此界面）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
 
 
 ## 当前状态（全绿）
