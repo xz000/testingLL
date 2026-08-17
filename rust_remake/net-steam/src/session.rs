@@ -18,6 +18,10 @@ use std::sync::Arc;
 pub const MATCH_KEY: &str = "matchkey";
 /// 默认大厅 key 值（同一房间名）。
 pub const MATCH_VALUE: &str = "remake_arena_v1";
+/// 大厅元数据：房间名称（键）。
+pub const ROOM_NAME_KEY: &str = "room_name";
+/// 大厅元数据：房间备注（键）。
+pub const ROOM_NOTE_KEY: &str = "room_note";
 
 /// 一次大厅会话的封装。
 pub struct SteamSession {
@@ -26,6 +30,21 @@ pub struct SteamSession {
     pub lobby: Option<steamworks::LobbyId>,
     /// 大厅玩家表（成员→槽位 + 身份）。host/client 各持一致视角。
     pub table: Option<LobbyPlayerTable>,
+}
+
+/// 房间列表里一间公开大厅的展示信息（加入前即可读取；房主昵称由调用方用 Friends 补）。
+pub struct LobbyInfo {
+    pub id: u64,
+    /// 房主 SteamID（房间列表显示“谁建的房”）。
+    pub owner: u64,
+    /// 当前已加入人数。
+    pub members: usize,
+    /// 人数上限（建房时固定）。
+    pub limit: usize,
+    /// 房间名（元数据 `room_name`；缺省用“未命名房间”）。
+    pub name: String,
+    /// 房间备注（元数据 `room_note`，可空）。
+    pub note: String,
 }
 
 impl SteamSession {
@@ -80,6 +99,23 @@ impl SteamSession {
         let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
         self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
         Ok(lobby)
+    }
+
+    /// 设置/修改房间名与备注（大厅元数据）。`None` = 不改该项。开房后可随时调用（编辑房间信息）。
+    pub fn host_set_room_info(&self, name: Option<&str>, note: Option<&str>) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_room_info: 尚未建厅"));
+        };
+        let mm = self.transport.matchmaking();
+        if let Some(n) = name {
+            let n = n.trim();
+            let n = if n.is_empty() { "未命名房间" } else { n };
+            mm.set_lobby_data(l, ROOM_NAME_KEY, n);
+        }
+        if let Some(n) = note {
+            mm.set_lobby_data(l, ROOM_NOTE_KEY, n.trim());
+        }
+        Ok(())
     }
 
     /// client：用 host 打印的 LobbyId 直接加入（自动搜厅失败时的 fallback）。
@@ -185,6 +221,51 @@ impl SteamSession {
         let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
         self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
         Ok(lobby)
+    }
+
+    /// 列出当前可加入的公开大厅（供「房间列表」界面浏览选房）。
+    /// 只跑一次 `request_lobby_list` 回调；对每个大厅读人数/上限/房主/房名/备注（加入前即可读）。
+    /// 返回空列表表示暂无可加入房间（host 未建厅或都已满）。
+    pub fn client_list_lobbies(&self, beats: u32) -> io::Result<Vec<LobbyInfo>> {
+        use steamworks::LobbyId;
+        let mm = self.transport.matchmaking();
+        let count = Arc::new(AtomicBool::new(false));
+        let cands = Arc::new(std::sync::Mutex::new(Vec::<LobbyId>::new()));
+        {
+            let count = count.clone();
+            let cands = cands.clone();
+            mm.request_lobby_list(move |res| {
+                if let Ok(l) = res {
+                    *cands.lock().unwrap() = l;
+                }
+                count.store(true, Ordering::SeqCst);
+            });
+        }
+        for _ in 0..beats {
+            self.run_callbacks();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            if count.load(Ordering::SeqCst) {
+                break;
+            }
+        }
+        let ids = cands.lock().unwrap().clone();
+        let mut out = Vec::with_capacity(ids.len());
+        for l in ids {
+            let members = mm.lobby_member_count(l);
+            let limit = mm.lobby_member_limit(l).unwrap_or(2);
+            let owner = mm.lobby_owner(l).raw();
+            let name = mm.lobby_data(l, ROOM_NAME_KEY).unwrap_or_else(|| "未命名房间".to_string());
+            let note = mm.lobby_data(l, ROOM_NOTE_KEY).unwrap_or_default();
+            out.push(LobbyInfo {
+                id: l.raw(),
+                owner,
+                members,
+                limit,
+                name,
+                note,
+            });
+        }
+        Ok(out)
     }
 
     /// 在 messages 接口下为“无”需额外准备：`SendMessageToUser` 会隐式建立会话、`AutoRestartBrokenSession`
