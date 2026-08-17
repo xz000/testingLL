@@ -13,4 +13,6 @@ steam = ["dep:net-steam", "net-steam/steam"]
 game-core = { path = "../game-core" }
 net = { path = "../net" }
 ggez = "0.10"
+# 与 ggez 0.10 解析到同一版本实例（Cargo.lock 已锁定 0.30.x），用于方向键/回车等逻辑键的命名检测（主菜单选中/文本输入框）。
+winit = "0.30"
 net-steam = { path = "../net-steam", optional = true }

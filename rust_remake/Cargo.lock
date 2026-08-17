@@ -311,6 +311,7 @@ dependencies = [
  "ggez",
  "net",
  "net-steam",
+ "winit",
 ]
 
 [[package]]
