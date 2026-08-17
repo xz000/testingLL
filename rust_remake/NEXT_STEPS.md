@@ -95,6 +95,11 @@
 - ✅ **host 不显示进入的 client → 疏漏，已修**：`steam_roster` 只在建厅时构建（当时只有 host），之后从不刷新。新增 `steam_refresh_roster()`（读 `lobby_members` → `LobbyPlayerTable` 排序保持槽位与 lockstep 一致 → 映射昵称），host 每 30 帧节流刷新，client 加入后 host 界面能显示新成员。
 - `reset_to_main_menu` 的 steam 清理块补充清 `steam_roster`/`steam_lobby_id`/`steam_room_edit*`/`steam_lobby_*`/`steam_join_lobby_id`（退出/整场结束后回主菜单干净）。
 - build/clippy（默认+steam）/test 全绿，117 测试不破。真机待复验：进房后 host 能看到 client、按 Q 能退回主菜单、再建房/加入正常。
+**离场对称处理（2026-08-17，新增）**：
+- ✅ **client 感知 host 离开**：host 退出（leave_lobby 或离开）后 client 不再收到 host 的 `RosterReady` 广播。新增 `steam_lobby_silent_ticks`（client 每帧累计、收 RosterReady 即清零），超过 `STEAM_LOBBY_SILENT_TIMEOUT_TICKS`(=240≈4s) 判定 host 离开 → 自动 `steam_leave_room()` 回主菜单，避免 client 永久卡在等 host。
+- ✅ **host 感知 client 离开**：`steam_refresh_roster` 检测成员减少（`steam_last_roster_len`），有人退出时打印 `[steam-host] a player left ... waiting`；host 本身不受影响（`saw_all_clients` 因缺人会 false、倒计时自动复位，不会误开打），只是房间继续等/可 Q 退出。
+- ⚠ 已知边界：以上“离场”都是退出进程/房间级；Steam 对战中 client 真掉线（非退程序）仍无 `auto_drop_idle` 自动处置（见前文新观察，属重连范畴）。
+- 真机待复验：host 退出后 client 几秒内自动回主菜单；client 退出后 host 打印 player-left 并继续等。
 **未尽（后续增量）**：S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，可进一步统一 LAN/Steam；LAN 暂不进此界面）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
 
 
