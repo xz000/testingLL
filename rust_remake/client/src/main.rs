@@ -57,6 +57,14 @@ const STEAM_READY_COUNTDOWN_SECS: f32 = 5.0;
 /// Steam 房间：倒计时最后这么多秒**不允许取消就绪**（锁定），防止临界竞态（避免有人卡最后一瞬取消导致不同步）。
 #[cfg(feature = "steam")]
 const STEAM_COUNTDOWN_LOCK_SECS: f32 = 2.0;
+/// Steam 建房：玩家人数上限允许的最大值（steamworks 支持到 250，这里给竞技场设实际可玩的上限）。
+///（S2 建房设置界面用；当前 pending 先标 allow 防 -D warnings。）
+#[cfg(feature = "steam")]
+#[allow(dead_code)]
+const STEAM_MAX_PLAYERS: u8 = 64;
+/// Steam 建房：默认玩家数（创建房间界面的初始值）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_PLAYERS: u8 = 2;
 
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
@@ -206,6 +214,13 @@ struct Game {
     host_frame_count: u64,
     /// 单机开局配置剩余的等待秒数（超时自动用默认配置开始，避免“按键无反应卡死”）。
     pre_game_timer: f64,
+    /// 主菜单当前选中项（方向键 ↑/↓ 移动 + 回车确认；数字键直选同步更新）。
+    menu_selection: usize,
+    /// 主菜单「Steam 大厅」子界面里，创建房间的玩家人数上限（2..=STEAM_MAX_PLAYERS）。
+    ///（S2 建房设置界面用；当前 pending 先标 allow 防 -D warnings。）
+    #[cfg(feature = "steam")]
+    #[allow(dead_code)]
+    steam_create_players: u8,
 }
 
 impl Game {
@@ -396,6 +411,9 @@ impl Game {
             reconnect_attempting: false,
             host_frame_count: 0,
             pre_game_timer: PRE_GAME_TIMEOUT_SECS,
+            menu_selection: 0,
+            #[cfg(feature = "steam")]
+            steam_create_players: STEAM_DEFAULT_PLAYERS,
         })
     }
 
@@ -1407,39 +1425,80 @@ impl event::EventHandler for Game {
             return self.steam_lobby_update(ctx, dt);
         }
 
-        // 主菜单：轮询选择，其余模式走 MatchPhase。
+        // 主菜单：方向键 ↑/↓ 选中 + 回车确认 + 数字快捷；局域网（S3 完成前）保留命令行提示。
         if self.app == AppState::MainMenu {
             use ggez::input::keyboard::Key;
-            let just = |k: &str| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.into()));
-            if just("1") {
-                // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
-                eprintln!("[menu] -> Solo");
-                self.app = AppState::Solo;
-                self.pre_game_config = true; // 先进开局配置
-            } else if just("2") {
-                eprintln!("[menu] 局域网需命令行：/--host <port> --players N / 或 /--join <host:port>");
-            } else if just("3") {
-                // 进入 Steam 大厅选择子菜单（H 创建 / J 加入 / Q 返回）。
-                #[cfg(feature = "steam")]
-                {
-                    eprintln!("[menu] -> Steam lobby menu");
-                    self.steam_lobby_menu = true;
+            use winit::keyboard::NamedKey;
+            let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
+            let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+            const MENU_COUNT: usize = 3;
+            #[cfg(feature = "steam")]
+            let in_lobby_menu = self.steam_lobby_menu;
+            #[cfg(not(feature = "steam"))]
+            let in_lobby_menu = false;
+            // 方向键移动选中（在 Steam 大厅子菜单里不干扰，只影响主菜单选中）。
+            if !in_lobby_menu {
+                if just_named(NamedKey::ArrowUp) {
+                    self.menu_selection = (self.menu_selection + MENU_COUNT - 1) % MENU_COUNT;
+                    eprintln!("[menu] select={}", self.menu_selection);
+                } else if just_named(NamedKey::ArrowDown) {
+                    self.menu_selection = (self.menu_selection + 1) % MENU_COUNT;
+                    eprintln!("[menu] select={}", self.menu_selection);
                 }
-                #[cfg(not(feature = "steam"))]
-                eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
             }
+            // 执行选中项对应的动作（回车 / 数字直选共用）。
+            let mut act: Option<usize> = None;
+            if in_lobby_menu {
+                act = None;
+            } else if just_named(NamedKey::Enter) || just('\r') {
+                act = Some(self.menu_selection);
+            } else if just('1') {
+                self.menu_selection = 0;
+                act = Some(0);
+            } else if just('2') {
+                self.menu_selection = 1;
+                act = Some(1);
+            } else if just('3') {
+                self.menu_selection = 2;
+                act = Some(2);
+            }
+            if let Some(sel) = act {
+                match sel {
+                    0 => {
+                        // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
+                        eprintln!("[menu] -> Solo");
+                        self.app = AppState::Solo;
+                        self.pre_game_config = true; // 先进开局配置
+                    }
+                    1 => {
+                        eprintln!("[menu] 局域网建设中：需命令行 --host <port> / --join <host:port>");
+                    }
+                    2 => {
+                        // 进入 Steam 大厅选择子菜单（H 创建 / J 加入 / Q 返回）。
+                        #[cfg(feature = "steam")]
+                        {
+                            eprintln!("[menu] -> Steam lobby menu");
+                            self.steam_lobby_menu = true;
+                        }
+                        #[cfg(not(feature = "steam"))]
+                        eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
+                    }
+                    _ => {}
+                }
+            }
+            // Steam 大厅子菜单：H 创建 / J 加入 / Q 返回（S2 再接入建房设置与房间列表；当前建厅人数用默认值）。
             #[cfg(feature = "steam")]
             if self.steam_lobby_menu {
-                if just("h")
-                    || just("H")
-                    || just(" ")
-                {
-                    eprintln!("[menu] Steam -> host lobby (2 players)");
-                    self.enter_steam_mode(ctx, true, 2);
-                } else if just("j") || just("J") {
-                    eprintln!("[menu] Steam -> auto-join host lobby");
-                    self.enter_steam_mode(ctx, false, 2);
-                } else if just("q") || just("Q") {
+                if just('h') || just('H') || just(' ') {
+                    eprintln!("[menu] Steam -> host lobby ({STEAM_DEFAULT_PLAYERS} players)");
+                    self.enter_steam_mode(ctx, true, STEAM_DEFAULT_PLAYERS);
+                } else if just('j') || just('J') {
+                    #[cfg(feature = "steam")]
+                    {
+                        eprintln!("[menu] Steam -> auto-join host lobby");
+                        self.enter_steam_mode(ctx, false, STEAM_DEFAULT_PLAYERS);
+                    }
+                } else if just('q') || just('Q') {
                     self.steam_lobby_menu = false;
                 }
             }
@@ -2421,35 +2480,83 @@ impl Game {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
+
+        // 标题区
         let title = "帧同步圆球竞技场";
-        draw_text(&mut canvas, ctx, title, 52.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
-        draw_text(&mut canvas, ctx, "请选择模式（按数字键）", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.18 + 70.0 }, true)?;
+        draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
+        draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.14 + 64.0 }, true)?;
+
+        // 卡片通用尺寸
+        let card_w = (sw * 0.62).min(560.0);
+        let card_h = 96.0;
+        let card_x = cx - card_w / 2.0;
+        let y0 = sh * 0.34;
+        let gap = 26.0;
+
         #[cfg(feature = "steam")]
-        if self.steam_lobby_menu {
-            draw_text(&mut canvas, ctx, "=== Steam 大厅 ===", 32.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
-            let subs = [
-                "H / 空格   创建房间（2 人）",
-                "J          自动加入已开房间",
-                "Q          返回主菜单",
-            ];
-            for (i, s) in subs.iter().enumerate() {
-                let y = sh * 0.46 + (i as f32) * 40.0;
-                draw_text(&mut canvas, ctx, s, 26.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+        let in_lobby_menu = self.steam_lobby_menu;
+        #[cfg(not(feature = "steam"))]
+        let in_lobby_menu = false;
+
+        // Steam 大厅子菜单：创建 / 加入 / 返回，同样卡片样式。
+        if in_lobby_menu {
+            #[cfg(feature = "steam")]
+            {
+                let subs: [(&str, &str); 3] = [
+                    ("创建房间", "选房间名与玩家人数，然后进入房间"),
+                    ("加入房间", "从房间列表选择并加入（S2 接入房间列表）"),
+                    ("返回主菜单", "回到主菜单选择"),
+                ];
+                draw_text(&mut canvas, ctx, "Steam 对战 - 大厅", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.27 }, true)?;
+                draw_text(&mut canvas, ctx, "H 创建    J 加入    Q 返回", 20.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.36 }, true)?;
+                for (i, (name, desc)) in subs.iter().enumerate() {
+                    let y = y0 + (i as f32) * (card_h + gap);
+                    // 卡片背景
+                    let bg = Mesh::new_rectangle(
+                        &ctx.gfx, DrawMode::fill(),
+                        graphics::Rect::new(card_x, y, card_w, card_h),
+                        Color::from_rgb(30, 34, 44),
+                    )?;
+                    canvas.draw(&bg, graphics::DrawParam::new());
+                    draw_text(&mut canvas, ctx, name, 30.0, graphics::Color::from_rgb(235, 238, 245), Point2 { x: cx, y: y + card_h * 0.5 - 16.0 }, true)?;
+                    draw_text(&mut canvas, ctx, desc, 17.0, graphics::Color::from_rgb(150, 155, 168), Point2 { x: cx, y: y + card_h * 0.5 + 18.0 }, true)?;
+                }
             }
-            draw_text(&mut canvas, ctx, "加入无需输房间号（按 matchkey 自动搜加）", 17.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            #[cfg(not(feature = "steam"))]
+            {
+                draw_text(&mut canvas, ctx, "Steam 未启用", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
+                draw_text(&mut canvas, ctx, "需要 --features client/steam 构建", 20.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.44 }, true)?;
+            }
+            draw_text(&mut canvas, ctx, "H 创建    J 加入    Q 返回", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.90 }, true)?;
             canvas.finish(ctx)?;
             return Ok(());
         }
-        let items = [
-            "1  单机技能试验场（无 AI）",
-            "2  局域网 · 开房间 / 加入（暂用命令行 --host / --join）",
-            "3  Steam 对战（按 3 进入大厅）",
+
+        // 主菜单三个入口卡片
+        let items: [(u8, &str, &str); 3] = [
+            (1, "单机技能试验场", "无 AI 自由试技能与数值（进入后配置技能开始）"),
+            (2, "局域网对战", "建设中：需命令行 --host <port> / --join <host:port>"),
+            (3, "Steam 在线对战", "联网与好友实时对抗（进入 Steam 大厅）"),
         ];
-        for (i, s) in items.iter().enumerate() {
-            let y = sh * 0.40 + (i as f32) * 46.0;
-            draw_text(&mut canvas, ctx, s, 26.0, graphics::Color::from_rgb(225, 228, 235), Point2 { x: cx, y }, true)?;
+        for (i, (num, name, desc)) in items.iter().enumerate() {
+            let y = y0 + (i as f32) * (card_h + gap);
+            let selected = i == self.menu_selection;
+            // 选中卡片：高亮背景条；未选中：深灰背景。
+            let bg_color = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(28, 31, 38) };
+            let bg = Mesh::new_rectangle(
+                &ctx.gfx, DrawMode::fill(),
+                graphics::Rect::new(card_x, y, card_w, card_h),
+                bg_color,
+            )?;
+            canvas.draw(&bg, graphics::DrawParam::new());
+            let mark = if selected { "[v]" } else { "[ ]" };
+            let name_col = if selected { Color::WHITE } else { Color::from_rgb(210, 214, 225) };
+            draw_text(&mut canvas, ctx, &format!("[{num}]  {mark}{name}"), 30.0, name_col, Point2 { x: cx, y: y + card_h * 0.5 - 16.0 }, true)?;
+            draw_text(&mut canvas, ctx, desc, 17.0, Color::from_rgb(150, 156, 172), Point2 { x: cx, y: y + card_h * 0.5 + 20.0 }, true)?;
         }
-        draw_text(&mut canvas, ctx, "也可用命令行直通：--solo / --host <port> / --join <host:port> / --steam-host / --steam-join", 15.0, graphics::Color::from_rgb(150, 155, 165), Point2 { x: cx, y: sh * 0.90 }, true)?;
+
+        // 底部操作提示条
+        draw_text(&mut canvas, ctx, "↑/↓ 选择    回车 确认    或直接按数字键", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.92 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
