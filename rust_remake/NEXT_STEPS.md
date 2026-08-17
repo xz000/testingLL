@@ -10,27 +10,24 @@
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 
-### 现状概览（git 已提交，HEAD=`0dccac1`，工作区干净，workspace 116 测试全绿）
+### 现状概览（git 已提交，HEAD=`d9c5f9b`，工作区干净，workspace 117 测试全绿）
 - Steam 传输已改用 **ISteamNetworkingMessages（`SendMessageToUser`/`ReceiveMessagesOnChannel`）**，不再自己管 listen/accept/connect/conn 状态（`cc48642`）。
 - 房间/配置流程键位已简化：**房间就绪=`U`（再按取消）、配置确认配好=`P`**，`o`/空格从 Steam 流程移除（`47faa69`）。
 - 房间界面已重做成醒目标题 + “按 U 就绪”提示 + 流程说明（`0dccac1`）。
 
 ### 真机实测已确认的进展（最近一轮 host+client 日志）
 - 连接不再反复断：两端就绪（按 U）→ 倒计时归零 → `broadcast StartConfig` → 进配置 → 各自按 P 配好 → host 打 `all players configured -> config sync (HostGather)`，client 打 `build done -> config sync (ClientWait)`。**流程能推到这里，是实打实进展。**
+- 本次日志**没有**再出现 `session_failed` 大片刷屏——那个卡点基本退场。这次卡在：**两端都进了 配置同步（HostGather / ClientWait）但收不到对方配置，无 `synced N player configs` / `got N player configs`**。
 
-### █ 当前卡点（下一个会话就是修这个）
-- **配置同步阶段（ClientWait/HostGather）底层 networking 会话反复 `session failed`**：client 打 `[steam-p2p] networking session failed ...` 一大片，host 端伴随 steam 内部 assert `steamnetworkingsockets_p2p.cpp ... p_arentListenSocket == nullptr`。
-- 结果：client 的 `send_cfg`（PlayerCfg）和 host 的 `poll_cfg` 传不通 → host 在 HostGather 永远等不到 `all_cfgs()` → **不开战、卡在配置同步**。
-- 奇怪点：房间阶段 `send_room_state`（每帧 RoomState）明明能传通；进了配置同步（client 只 `send_cfg`+`recv_cfg_all`，host 只 `poll_cfg`）会话才开始失败。疑似该阶段让底层 P2P 会话重新打洞/重建失败。
-- **已加诊断（`0dccac1`）**：`session_failed_callback` 现在会打印 `state=...  end_reason=...  remote=...`。**下一步先让用户再跑一次，拿到那行的 `end_reason`（如 NAT punch failed / HostNoPublicAddress / 被拒 / 版本不匹配），凭它精准定向修复**，别再瞎猜。
-- 若 `end_reason` 指向 NAT/非中继打洞问题 → 考虑：显式 `CloseSessionWithUser` 后用 `AUTO_RESTART_BROKEN_SESSION` 重开；或两端先各 `SendMessageToUser` 触发建会话再同步；或配 relay/STUN。
+### █ 当前卡点（下一个会话就是修这个）→ 本次已定位并修复
+- **根因（代码定案，非传输层）**：Steam host 的 `HostGather` 分支（`client/src/main.rs` 里 steam-host 处理）为“双向保活”**先 `host.poll(&mut k_rcv)` 再 `host.poll_cfg(&mut g_rcv)`**。而 `HostLockstep::poll` 会**排空 transport 里所有包**，并把 `PlayerCfg` 当无关包丢进 `_ => {}` → client 每帧 emit 的 `PlayerCfg` 被 `poll` 消费丢弃，随后 `poll_cfg` 什么都读不到 → host 永远 `all_cfgs()=false` → 卡在 HostGather（client 也等不到 `PlayerCfgAll`，两端一起卡死）。
+- **修复（`net/src/lockstep.rs`）**：`HostLockstep::poll` 新增 `Packet::PlayerCfg` 处理臂，与 `poll_cfg` 同语义把配置记进 `cfgs`（并记 peer）。这样 HostGather 里先 `poll` 再 `poll_cfg` 都不会丢配置，client 配置必达 → host `all_cfgs()` → 广播 `PlayerCfgAll` → client `recv_cfg_all` → 两端 apply → 统一开战。
+- **回归测试 +1**：`host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`（client 每帧 RoomState 心跳 + PlayerCfg 混批上行，host 先 poll 再 poll_cfg，断言配置仍被收齐）。
+- 待真机双机验证：host 应打 `synced N player configs`，client 应打 `got N player configs` + 连续 `frame -> seq=0,1,2`，两端统一开战。
 
-### 本次会话改动记录（git）
-- `47faa69` 可靠发送补发队列（pending outbox，一次性关键包不丢）+ 键位拆分（U/P）。
-- `cc48642` sockets → ISteamNetworkingMessages 重构（去 listen/conns/virtual_port；`session.rs::prepare_transport` 变 no-op）。
-- `a6ee7e0` 输入诊断（`key_down_event`/`focus_event`）——已证实键盘能到达进程、焦点正常，非焦点问题。
-- `0dccac1` 房间界面醒目提示 + `session_failed` 打 `end_reason/state`。
-- 测试基线：workspace 116 全绿（client 5 + game-core 87 + net 22 + net-steam 2），steam feature build/clippy 全绿。
+### 本次会话改动记录（未提交，含 git 历史）
+- `net/src/lockstep.rs`：`poll` 增加 `PlayerCfg` 处理臂（修复 HostGather 吞配置）+ 新增回归测试 `host_poll_does_not_swallow_player_cfg_from_heartbeat_batch`。（工作区未提交，HEAD=`d9c5f9b`）
+- 提交基线：workspace 117 全绿（client 5 + game-core 87 + net 23 + net-steam 2），steam feature build/clippy 全绿。
 
 ### 用户两大未满足诉求（都记着，别丢）
 1. **Steam 双机对局开始流程**（正在修，见上）。

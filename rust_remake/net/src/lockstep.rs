@@ -404,6 +404,19 @@ impl<T: Transport> HostLockstep<T> {
                                     self.clients_ready[c] = ready;
                                 }
                             }
+                            Packet::PlayerCfg { index, bytes } => {
+                                // 配置同步（HostGather/ClientWait）期间，client 会把 PlayerCfg 与心跳（RoomState）混在同一
+                                // 批次上行；这里若把 PlayerCfg 当无关包丢弃，随后调用的 `poll_cfg` 就什么都收不到 → host 永远
+                                // 收不齐配置 → 卡在配置同步。故 poll 也必须把 PlayerCfg 记进 `cfgs`（与 `poll_cfg` 语义一致）。
+                                let c = index as usize - self.local_base as usize;
+                                if c < self.expected {
+                                    if self.client_peers[c].is_none() {
+                                        self.client_peers[c] = Some(from);
+                                    }
+                                    self.client_addr[c] = Some(from);
+                                    self.cfgs[c] = Some(bytes);
+                                }
+                            }
                             Packet::ReqFrame { seq } => {
                                 // 补发缺失帧。
                                 if let Some((_, entries)) = self.frame_buf.iter().find(|(s, _)| *s == seq) {
@@ -1150,6 +1163,36 @@ mod tests {
         let frame = cli.step_frame(&mut rcv).expect("step 不应出错").expect("应从 pending 消费 seq=0");
         assert_eq!(cli.expect_seq(), 1, "开战后推进到 seq=1");
         assert_eq!(frame.len(), 2);
+    }
+
+    /// Steam host 在 HostGather 阶段把“心跳收包”与“配置收集”同一批次处理时不吞 PlayerCfg：
+    /// client 每帧 RoomState(心跳) + PlayerCfg(配置) 混批上行，host 先 `poll`（保活/收心跳）再 `poll_cfg`（收配置）；
+    /// 若 `poll` 把 PlayerCfg 当无关包丢弃，则 poll_cfg 收不到、host 永远收不齐配置 → 卡在配置同步。
+    /// 锁死 `poll` 必须把 PlayerCfg 一并记进 `cfgs`（与 poll_cfg 同语义）。
+    #[test]
+    fn host_poll_does_not_swallow_player_cfg_from_heartbeat_batch() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 8192];
+
+        // 模拟 ClientWait 阶段 client 每帧：RoomState(心跳, build_done=true) + PlayerCfg(我的配置)。
+        let client_cfg = vec![1, 0, 0, 3, 9];
+        let host_cfg = vec![1, 0, 0, 2, 5];
+        host.set_local_cfg(host_cfg);
+        for _ in 0..3 {
+            // 同帧先心跳后配置（P2P 下二者可能混在同一批次到达）。
+            cli.send_room_state(true, true, &[7, 8, 9]).unwrap();
+            cli.send_cfg(&client_cfg).unwrap();
+            // host 的 HostGather：先 poll（收心跳保活 + 不应吞 cfg），再 poll_cfg（收集配置）。
+            host.poll(&mut rcv);
+            host.poll_cfg(&mut rcv);
+        }
+        // 配置必须被完整收进 cfgs（即便 host 每帧先 poll 再 poll_cfg）。
+        assert!(host.all_cfgs(), "poll 不吞 PlayerCfg 时 host 应收齐配置");
+        let all = host.collect_cfgs().expect("配置应收齐");
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|(i, b)| *i == 1 && *b == client_cfg), "client 的 PlayerCfg 应被记录");
     }
 
     /// 掉线离场（切片1）：client 掉线后，host 用默认输入占位照常产帧（不再等它），不卡全队。
