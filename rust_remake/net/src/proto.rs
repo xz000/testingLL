@@ -73,9 +73,10 @@ pub enum Packet {
     RosterReady { entries: Vec<(u8, bool)> },
     /// host→client：全体就绪，进入开局配置菜单。`seq` 为 host 的起始帧号（作填充，避免 Steam P2P 丢过小的包）。
     StartConfig { seq: u64 },
-    /// client→host：房间阶段状态包：`index`（玩家序号）+ `ready`（是否就绪）+ `input_bytes`（输入在场信号）。
-    /// 把就绪与在场合并成单包，走可靠的连续上行通道（P2P 下 Input 在场实测可靠）。
-    RoomState { index: u8, ready: bool, input_bytes: Vec<u8> },
+    /// client→host：房间阶段状态包：`index`（玩家序号）+ `ready`（是否就绪）+ `build_done`（是否已选好技能/配完开局）+
+    /// `input_bytes`（输入在场信号）。把就绪/配完/在场合并成单包，走可靠的连续上行通道（P2P 下 Input 在场实测可靠）。
+    /// `build_done` 用于「开局配置阶段」判定该端是否已配完（host 收齐所有端 build_done 才产首帧统一开战）。
+    RoomState { index: u8, ready: bool, build_done: bool, input_bytes: Vec<u8> },
     /// host→重连端：整场 World 快照字节 + 接回 seq。
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
@@ -173,11 +174,12 @@ impl Packet {
                 }
                 v
             }
-            Packet::RoomState { index, ready, input_bytes } => {
-                let mut v = Vec::with_capacity(4 + input_bytes.len());
+            Packet::RoomState { index, ready, build_done, input_bytes } => {
+                let mut v = Vec::with_capacity(5 + input_bytes.len());
                 v.push(TAG_ROOM_STATE);
                 v.push(*index);
                 v.push(if *ready { 1 } else { 0 });
+                v.push(if *build_done { 1 } else { 0 });
                 v.extend_from_slice(&(input_bytes.len() as u16).to_be_bytes());
                 v.extend_from_slice(input_bytes);
                 v
@@ -298,15 +300,16 @@ impl Packet {
                 let entries = Packet::RosterReady { entries };
                 Some(entries)
             }
-            TAG_ROOM_STATE if buf.len() >= 4 => {
+            TAG_ROOM_STATE if buf.len() >= 5 => {
                 let index = buf[1];
                 let ready = buf[2] != 0;
-                let len = u16::from_be_bytes([buf[3], buf[4]]) as usize;
-                let end = 5usize + len;
+                let build_done = buf[3] != 0;
+                let len = u16::from_be_bytes([buf[4], buf[5]]) as usize;
+                let end = 6usize + len;
                 if end > buf.len() {
                     return None;
                 }
-                Some(Packet::RoomState { index, ready, input_bytes: buf[5..end].to_vec() })
+                Some(Packet::RoomState { index, ready, build_done, input_bytes: buf[6..end].to_vec() })
             }
             _ => None,
         }
@@ -344,7 +347,7 @@ mod tests {
             Packet::PlayerReady { index: 2, ready: true },
             Packet::StartConfig { seq: 456 },
             Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], },
-            Packet::RoomState { index: 1, ready: true, input_bytes: vec![1, 2, 3, 4] },
+            Packet::RoomState { index: 1, ready: true, build_done: true, input_bytes: vec![1, 2, 3, 4] },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
         ];
