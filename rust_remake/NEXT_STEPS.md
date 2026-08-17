@@ -85,7 +85,13 @@
 - 建房设置界面默认房间名改为 **`{昵称}的房间`**（用进入大厅时缓存的 `steam_my_display_name`）。
 - build/test/clippy（默认+steam）全绿，117 测试不破。
 **S4 已落（本提交）**：开局配置界面（`draw_pre_game`）重排为**左右分栏**：左栏=技能树与键位绑定（标题、金币/击杀/名次、选中树与可选技能、各键当前绑定），右栏=成长/属性面板（成长点、金币、属性一览、购买快捷键），顶部=标题/开始提示/玩家准备状态，底部一条操作提示。“键位逻辑完全不动”（只改绘制坐标，不碰任何输入/确定性逻辑）。build/clippy（默认+steam）/test 全绿，117 测试不破。
+**真机验证回填（2026-08-17，UI 重构后双机复验）**：
+- ✅ 全链路 UI 通过：建房设置（`players=2 name='xvzan的房间'`）、房间列表（client `1 lobbies found` → `join by id` → `my slot=1`）、就绪（`roster shows all ready`）、配置同步（`synced/got 2 player configs`）、统一开战逐位一致（host `emit seq=0..29`、client `frame -> seq=1..10`）。UI 重构未破坏 Steam 主线。
+- ⚠ **加入房间“尝试多次才成功”**（`1 lobbies → 0 → 1` 漂忽）：根因是 **Steam `request_lobby_list` 搜索接口有限速**（官方建议每秒至多一次），且回调异步，用户连续按 R 会拿到空/陈旧结果。**已修**：`steam_lobby_list_update` 加刷新节流（新增 `LOBBY_REFRESH_COOLDOWN_SECS=4.0`，首刷一次、R 刷新需间隔 ≥4s，否则提示“刷新太快”），防止疯狂触发变空。真机待复验（几秒一次 R 应稳定搜到 host 房间）。
+- ✅ `present=0` 输入断流（host 尾段 `waiting for client input`）经对照两端日志（client 停在 `seq=10` 后无更多输出），判定为**用户 Ctrl+C 同时退出**导致的正常离场，非网络 bug，**无需修**。
+- 📌 新观察（记录，不在本轮范围）：若 Steam 对战中 client 真掉线（非退出整个程序），Steam host 分支会一直 `waiting for client input` 空转、**没有接局域网那种 `auto_drop_idle` 掉线自动处置**（Steam 战斗端掉线/重连未接入）。属已知边界，与「重连对 Steam 未接」同源，后续可单独做。
 **未尽（后续增量）**：S5 房间就绪界面样式统一（已将房间名/人数/锁纳入，可进一步统一 LAN/Steam；LAN 暂不进此界面）；中文房间名输入（IME）；“人不满但全员就绪也能启动”仍为独立的待实现核心改动（见前）。
+
 
 
 ## 当前状态（全绿）
