@@ -172,9 +172,9 @@ impl<T: Transport> HostLockstep<T> {
         ids
     }
 
-    /// 迁移接管后：向所有在线 client 广播 `Takeover`（声明本端为新 host、基线 seq）。
-    pub fn broadcast_takeover(&mut self, seq: u64) {
-        let pkt = Packet::Takeover { seq };
+    /// 迁移接管后：向所有在线 client 广播 `Takeover`（声明本端为新 host、基线 seq、更新后的参与集）。
+    pub fn broadcast_takeover(&mut self, seq: u64, participants: Vec<u64>) {
+        let pkt = Packet::Takeover { seq, participants };
         let enc = pkt.encode();
         for peer in self.client_peers.iter().flatten() {
             let _ = self.transport.send_to(&enc, peer);
@@ -744,9 +744,9 @@ pub struct ClientLockstep<T: Transport> {
     /// host 主动广播的最新媒体快照（`(world_bytes, seq)`，seq=应重建后继续的下一帧号）。
     /// 供「host 掉线时接管」使用（阶段 3）；在正常收帧循环里顺带缓存、不应用、不推进。
     latest_snapshot: Option<(Vec<u8>, u64)>,
-    /// 最近收到的 `Takeover`（主机迁移接管信号，`(来源, 基线 seq)`）。
+    /// 最近收到的 `Takeover`（主机迁移接管信号，`(来源, 基线 seq, 更新后的参与集)`）。
     /// 新 host 可能在 client 尚未进入迁移时（fighting 阶段）广播；此处先缓存，迁移时取用，避免错过。
-    latest_takeover: Option<(Peer, u64)>,
+    latest_takeover: Option<(Peer, u64, Vec<u64>)>,
 }
 
 impl<T: Transport> ClientLockstep<T> {
@@ -762,8 +762,8 @@ impl<T: Transport> ClientLockstep<T> {
         }
     }
 
-    /// 取走缓存的 `Takeover`（`(来源, 基线 seq)`）。无则 None。
-    pub fn take_latest_takeover(&mut self) -> Option<(Peer, u64)> {
+    /// 取走缓存的 `Takeover`（`(来源, 基线 seq, 更新后的参与集)`）。无则 None。
+    pub fn take_latest_takeover(&mut self) -> Option<(Peer, u64, Vec<u64>)> {
         self.latest_takeover.take()
     }
 
@@ -808,13 +808,13 @@ impl<T: Transport> ClientLockstep<T> {
         self.host = new_host;
     }
 
-    /// 尝试收新 host 广播的 `Takeover`（主机迁移接管信号）：返回 `Some((来源, seq))`；当前没有则 None。
-    pub fn recv_takeover(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Peer, u64)>> {
+    /// 尝试收新 host 广播的 `Takeover`（主机迁移接管信号）：返回 `Some((来源, seq, 更新后的参与集))`；当前没有则 None。
+    pub fn recv_takeover(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Peer, u64, Vec<u64>)>> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
-                    if let Some(Packet::Takeover { seq }) = Packet::decode(&rcv[..n]) {
-                        return Ok(Some((from, seq)));
+                    if let Some(Packet::Takeover { seq, participants }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some((from, seq, participants)));
                     }
                 }
                 Ok(None) => return Ok(None),
@@ -1042,9 +1042,9 @@ impl<T: Transport> ClientLockstep<T> {
                                 // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
                                 self.latest_snapshot = Some((world_bytes, seq));
                             }
-                            Packet::Takeover { seq } => {
-                                // 缓存新 host 的接管信号（含来源），供 client 稍后进入迁移时取用（避免错过单次广播）。
-                                self.latest_takeover = Some((from, seq));
+                            Packet::Takeover { seq, participants } => {
+                                // 缓存新 host 的接管信号（含来源 + 更新后的参与集），供 client 稍后进入迁移时取用（避免错过单次广播）。
+                                self.latest_takeover = Some((from, seq, participants));
                             }
                             _ => {}
                         }
@@ -1791,7 +1791,7 @@ mod tests {
         let host_peer = Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000)));
         // 新 host 向 client 广播 Takeover（模拟：用 ht 的 peer 通道投递到 cli 的 inbox；
         // FakeTransport 下 cli 收到的来源 = ct.peer_addr = host_peer(4000)）。
-        let tk = Packet::Takeover { seq: 42 };
+        let tk = Packet::Takeover { seq: 42, participants: vec![111, 222] };
         ht.send_to(&tk.encode(), &host_peer).unwrap();
         // client 在正常 step_frame（fighting）里收包：缓存 Takeover，不推进 expect_seq。
         assert_eq!(cli.expect_seq(), 0);

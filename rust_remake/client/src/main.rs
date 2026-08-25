@@ -173,10 +173,14 @@ struct Game {
     /// Steam（client）：连续未收到权威帧的 tick 数（Steam 战斗端掉线探测；对齐局域网 stale_ticks）。
     #[cfg(feature = "steam")]
     steam_cli_stale_ticks: u64,
-    /// Steam：本局参与玩家的稳定身份（SteamID）按 new index 排列（host 广播 `Participants` 后保存），
-    /// 供各端在 host 掉线时确定性选举新 host。
+    /// Steam：本局参与玩家的稳定身份（SteamID）按 new index 排列（host 广播 `Participants` 后保存，**原始、不变**）。
+    /// world index → SteamID 的映射：对局开始时确定，迁移时据此定位本端 world index 与掉线 host 的 index。
     #[cfg(feature = "steam")]
     steam_participants: Vec<u64>,
+    /// Steam：当前**在线**参与玩家 SteamID 集（初始 = steam_participants；每次迁移排除掉线 host，并随 Takeover 同步）。
+    /// 用于选举新 host（排除已掉线的 host，避免把已掉线的旧 host 再选出）。
+    #[cfg(feature = "steam")]
+    steam_online: Vec<u64>,
     /// Steam（client）：是否正处于「主机迁移」流程中（host 掉线 → 选举/接管/重定向）。
     #[cfg(feature = "steam")]
     steam_migrating: bool,
@@ -343,6 +347,8 @@ impl Game {
         #[cfg(feature = "steam")]
         let steam_participants: Vec<u64> = Vec::new();
         #[cfg(feature = "steam")]
+        let steam_online: Vec<u64> = Vec::new();
+        #[cfg(feature = "steam")]
         let steam_migrating: bool = false;
         #[cfg(feature = "steam")]
         let steam_migrate_ticks: u64 = 0;
@@ -497,6 +503,8 @@ impl Game {
             steam_cli_stale_ticks,
             #[cfg(feature = "steam")]
             steam_participants,
+            #[cfg(feature = "steam")]
+            steam_online,
             #[cfg(feature = "steam")]
             steam_migrating,
             #[cfg(feature = "steam")]
@@ -1091,18 +1099,19 @@ impl Game {
                 // 来自非旧 host（如新 host）的包：忽略，继续探测/等待。
             }
             if self.steam_migrate_ticks >= MIGRATE_PROBE_TICKS {
-                // 判定 host 掉线 → 确定性选举新 host（排除旧 host、SteamID 最小者）。
+                // 判定 host 掉线 → 确定性选举新 host（排除当前 host、SteamID 最小者）。
+                // 候选集用 `steam_online`（已排除历次掉线的 host），避免把已掉线的旧 host 再选出。
                 let old_host_id = match old_host {
                     net::transport::Peer::Steam { id, .. } => id,
                     _ => 0,
                 };
-                let candidates: Vec<u64> = self.steam_participants.iter().filter(|&&id| id != old_host_id).copied().collect();
+                let candidates: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
                 let new_host_id = candidates.iter().min().copied().unwrap_or(0);
                 self.steam_new_host_id = new_host_id;
                 eprintln!(
-                    "[steam-client] host gone (probe timeout), elected new host={new_host_id} (I {}), participants={:?}",
+                    "[steam-client] host gone (probe timeout), elected new host={new_host_id} (I {}), online={:?}",
                     if new_host_id == self.steam_my_id { "am new host" } else { "am client" },
-                    self.steam_participants
+                    self.steam_online
                 );
             }
             return Ok(Some(cli));
@@ -1114,8 +1123,9 @@ impl Game {
         } else {
             // 优先用 fighting 阶段缓存的 Takeover，否则从传输收（新 host 会持续广播直到首个 client 连上）。
             let takeover = cli.take_latest_takeover().or_else(|| cli.recv_takeover(rcv).ok().flatten());
-            if let Some((from, seq)) = takeover {
-                // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打。
+            if let Some((from, seq, online)) = takeover {
+                // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打；并同步更新在线参与集。
+                self.steam_online = online; // 排除掉线 host 后的在线参与集（供下一次迁移选举）
                 cli.retarget_host(from);
                 if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
                     if let Some(w) = game_core::world_ser::world_from_bytes(&wb) {
@@ -1137,19 +1147,28 @@ impl Game {
 
     /// 迁移接管：本端被选为新 host。把原 client lockstep 转为 host lockstep，从缓存快照续打，
     /// 广播 `Takeover`+`Snapshot` 让其余端重定向并对齐。
+    /// 用**原始** `steam_participants` 定位 world index（对局开始时确定、迁移不变）与掉线旧 host 的 index；
+    /// 用 `steam_online`（排除掉线 host）作为选举/广播的新在线集，保证下一次迁移仍能正确选新 host。
     #[cfg(feature = "steam")]
     fn steam_do_takeover(&mut self, cli: net::lockstep::ClientLockstep<net_steam::SteamTransport>, _rcv: &mut [u8]) -> GameResult {
         // 取本端缓存的快照重建 world（迁移基线）。
         let snap = cli.cached_snapshot();
+        let old_host_id = match cli.host_peer() {
+            net::transport::Peer::Steam { id, .. } => id,
+            _ => 0,
+        };
+        // 本端 world index = 在原始参与列表中的位置（对局开始时确定，迁移不变）。
+        let my_index = self.steam_participants.iter().position(|&id| id == self.steam_my_id).unwrap_or(0) as u8;
         let total = self.steam_participants.len().max(1);
         if let Some((wb, _)) = &snap {
             if let Some(w) = game_core::world_ser::world_from_bytes(wb) {
                 self.world = w;
             }
         }
-        // 本端（新 host）在参与玩家中的 new index = 在 steam_participants 中的位置。
-        let my_index = self.steam_participants.iter().position(|&id| id == self.steam_my_id).unwrap_or(0) as u8;
-        // 其余参与端：new index 0（原 host）掉线占位，其余在线 client 按 SteamID 连。
+        // 更新在线参与集：排除掉线的旧 host（供下一次迁移选举）。
+        let new_online: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
+        self.steam_online = new_online.clone();
+        // 其余参与端（按原始 world index）；不在新在线集里的玩家（历次掉线的 host）用默认输入占位。
         let mut other_indices = Vec::new();
         let mut peers = Vec::new();
         let mut dropped = Vec::new();
@@ -1158,13 +1177,13 @@ impl Game {
             let iu = i as u8;
             if iu != my_index {
                 other_indices.push(iu);
-                let is_old_host = i == 0; // new index 0 = 掉线的原 host
-                peers.push(if is_old_host {
+                let gone = !new_online.contains(&self.steam_participants[i]); // 掉线占位
+                peers.push(if gone {
                     None
                 } else {
                     Some(net::transport::Peer::Steam { id: self.steam_participants[i], conn: None })
                 });
-                dropped.push(is_old_host);
+                dropped.push(gone);
                 identities.push(Some(self.steam_participants[i]));
             }
         }
@@ -1177,14 +1196,14 @@ impl Game {
             dropped,
             identities,
         );
-        // 广播 Takeover + Snapshot（接管基线）给其余在线端，让它们重定向并对齐。
+        // 广播 Takeover（带更新后的在线参与集）+ Snapshot（接管基线）给其余在线端。
         let seq = host.next_seq();
         if let Some((wb, _)) = &snap {
-            host.broadcast_takeover(seq);
+            host.broadcast_takeover(seq, new_online.clone());
             host.broadcast_snapshot(wb.clone(), seq);
         }
         self.steam_my_index = my_index;
-        eprintln!("[steam-host] TAKEOVER: I am new host (player {my_index}/{total}), resume seq={seq}");
+        eprintln!("[steam-host] TAKEOVER: I am new host (player {my_index}/{total}), resume seq={seq}, online={new_online:?}");
         self.steam_host_ls = Some(host);
         self.steam_cli_ls = None;
         self.steam_migrating = false;
@@ -2134,10 +2153,10 @@ impl event::EventHandler for Game {
                             let me = self.local_player_input();
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                             host.poll(&mut hrcv);
-                            // 迁移接管后：持续广播 Takeover（基线=快照 seq），直到首个在线 client 连上产帧才停。
+                            // 迁移接管后：持续广播 Takeover（基线=快照 seq + 更新后的在线参与集），直到首个在线 client 连上产帧才停。
                             if takeover_bcast {
                                 if let Some((_, bseq)) = host.current_snapshot() {
-                                    host.broadcast_takeover(*bseq);
+                                    host.broadcast_takeover(*bseq, self.steam_online.clone());
                                 }
                             }
                             // 掉线判定（Steam 战斗端）：某 client 连续未上行超时 → 自动 drop（默认输入占位），其余端继续，不空转等它。
@@ -2211,6 +2230,7 @@ impl event::EventHandler for Game {
                                 // 收 host 广播的本局参与玩家 SteamID（按 new index），供 host 掉线时确定性选举新 host。
                                 if let Ok(Some(ids)) = cli.recv_participants(&mut c_rcv) {
                                     self.steam_participants = ids.clone();
+                                    self.steam_online = ids.clone(); // 初始在线集 = 全参与
                                     eprintln!("[steam-client] got participants ids={ids:?}");
                                 }
                                 self.steam_cli_ls = Some(cli); // 归还 cli，释放 borrow 后重建 world
@@ -2556,6 +2576,7 @@ impl Game {
             self.steam_roster_refresh_ticks = 0;
             self.steam_cli_stale_ticks = 0;
             self.steam_participants = Vec::new();
+            self.steam_online = Vec::new();
             self.steam_migrating = false;
             self.steam_migrate_ticks = 0;
             self.steam_new_host_id = 0;
@@ -3175,6 +3196,7 @@ impl Game {
         self.host_frame_count = 0;
         self.steam_cli_stale_ticks = 0;
         self.steam_participants = Vec::new();
+        self.steam_online = Vec::new();
         self.steam_migrating = false;
         self.steam_migrate_ticks = 0;
         self.steam_new_host_id = 0;

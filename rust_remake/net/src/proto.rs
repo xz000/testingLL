@@ -88,8 +88,9 @@ pub enum Packet {
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
     Resync { seq: u64 },
-    /// 新 host→其余 client：主机迁移接管信号（`seq`=接管基线）。
-    Takeover { seq: u64 },
+    /// 新 host→其余 client：主机迁移接管信号（`seq`=接管基线，`participants`=接管后的当前在线参与玩家 SteamID）。
+    /// `participants` 已排除掉线的旧 host，供各端同步更新参与集，使下一次迁移仍能正确选举（不会把已掉线的旧 host 再选出）。
+    Takeover { seq: u64, participants: Vec<u64> },
     /// host→所有 client：本局参与玩家的稳定身份（SteamID）列表（选举新 host 用）。
     Participants { ids: Vec<u64> },
 }
@@ -212,10 +213,14 @@ impl Packet {
                 v.extend_from_slice(&seq.to_be_bytes());
                 v
             }
-            Packet::Takeover { seq } => {
-                let mut v = Vec::with_capacity(9);
+            Packet::Takeover { seq, participants } => {
+                let mut v = Vec::with_capacity(9 + 2 + participants.len() * 8);
                 v.push(TAG_TAKEOVER);
                 v.extend_from_slice(&seq.to_be_bytes());
+                v.extend_from_slice(&(participants.len() as u16).to_be_bytes());
+                for id in participants {
+                    v.extend_from_slice(&id.to_be_bytes());
+                }
                 v
             }
             Packet::Participants { ids } => {
@@ -348,8 +353,19 @@ impl Packet {
                 }
                 Some(Packet::RoomState { index, ready, build_done, input_bytes: buf[6..end].to_vec() })
             }
-            TAG_TAKEOVER if buf.len() >= 9 => {
-                Some(Packet::Takeover { seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
+            TAG_TAKEOVER if buf.len() >= 11 => {
+                let seq = u64::from_be_bytes(buf[1..9].try_into().ok()?);
+                let count = u16::from_be_bytes([buf[9], buf[10]]) as usize;
+                let end = 11usize + count * 8;
+                if end > buf.len() {
+                    return None;
+                }
+                let mut participants = Vec::with_capacity(count);
+                for i in 0..count {
+                    let off = 11 + i * 8;
+                    participants.push(u64::from_be_bytes(buf[off..off + 8].try_into().ok()?));
+                }
+                Some(Packet::Takeover { seq, participants })
             }
             TAG_PARTICIPANTS if buf.len() >= 3 => {
                 let count = u16::from_be_bytes([buf[1], buf[2]]) as usize;
@@ -404,7 +420,7 @@ mod tests {
             Packet::RoomState { index: 1, ready: true, build_done: true, input_bytes: vec![1, 2, 3, 4] },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
-            Packet::Takeover { seq: 12345 },
+            Packet::Takeover { seq: 12345, participants: vec![111, 222, 333] },
             Packet::Participants { ids: vec![111, 222, 333] },
         ];
         for p in cases {
