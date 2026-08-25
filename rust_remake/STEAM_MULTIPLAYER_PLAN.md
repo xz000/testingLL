@@ -60,7 +60,9 @@
 - **结果**：任何端都持有最新世界快照，谁都能当新 host——为迁移铺路。
 - **待真机复验**：对局中任意 client 持有的快照与 host 一致；观察带宽开销（每 0.5s 一份完整世界快照）是否可接受。
 
-### 阶段 3：主机迁移（Steam 专属增强）✅ 已落（2026-08-25，真机待复验）
+### 阶段 3：主机迁移（Steam 专属增强）✅ 已落 + 真机复验通过（2026-08-25）
+> 真机：host 掉线 → 自动选新 host 接管；新 host 再掉线 → 继续选下一新 host 接管，**连续迁移正常**。
+> 日志确认：`elected new host=...` → `TAKEOVER: player X/N` + `online=[...]`（只含在线者）逐级收敛。
 分三步提交：① 重构 `HostLockstep` 支持 host 任意 index（`host_index`+`client_indices`+`slot_of`）；② net 层迁移 API
 （`Packet::Takeover`/`Participants`、`HostLockstep::takeover`/`broadcast_participants`/`broadcast_takeover`、
 `ClientLockstep` `into_transport`/`retarget_host`/`recv_takeover`/`recv_participants`）；③ client 迁移状态机。
