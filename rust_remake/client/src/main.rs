@@ -1374,7 +1374,7 @@ impl Game {
             canvas.draw(&bg, graphics::DrawParam::new());
             let mark = if ready { "[v]" } else { "[ ]" };
             let me_tag = if is_me { "（我）" } else { "" };
-            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: card_x + 90.0, y: y }, true)?;
+            draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: card_x + 90.0, y }, true)?;
             y += 46.0;
         }
         Ok(())
