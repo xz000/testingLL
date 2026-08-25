@@ -1,7 +1,7 @@
 # 交接记录 / 下一步（离线续接用）
 
 > 唯一的当前权威续接入口。**2026-08-15 晚**重写为最新快照。
-> 阅读顺序：先看本文件 → 缺背景再翻 `STEAM_MULTIPLAYER_PLAN.md`（Steam 联机规划，2026-08-25 立）→ `RECONNECT.md`（重连）/ `ROADMAP.md`（三功能）/
+> 阅读顺序：先看本文件 → 缺背景再翻 `WORK_BACKLOG.md`（**后续工作总索引，2026-08-25 立**）→ `STEAM_MULTIPLAYER_PLAN.md`（Steam 联机规划）→ `RECONNECT.md`（重连）/ `ROADMAP.md`（三功能）/
 > `LATENCY_MASKING.md`（手感）/ `ATTRIBUTE_SYSTEM.md`（4.6b）/ `NET_REWRITE.md`（网络重写）/
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
