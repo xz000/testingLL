@@ -377,7 +377,8 @@ impl Game {
                 }
                 // 建 HostLockstep<SteamTransport>：总玩家数= host 请求的 players（不是当前唯一成员 1）。
                 let n = players.max(1) as usize;
-                let ids: Vec<Option<u64>> = sess.identities().iter().map(|(_, v)| Some(*v)).collect();
+                // 传给 set_client_identities 的身份必须是 client（不含 host 槽 0）：sess.identities() 含 host，需跳过。
+                let ids: Vec<Option<u64>> = sess.identities().iter().skip(1).map(|(_, v)| Some(*v)).collect();
                 let transport = sess.into_transport();
                 let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
                 host_ls.set_client_identities(&ids);
@@ -3093,7 +3094,8 @@ impl Game {
                 self.steam_roster = roster;
                 // 建 HostLockstep<SteamTransport>：总玩家数 = 请求的 players。
                 let n = players.max(1) as usize;
-                let ids: Vec<Option<u64>> = sess.identities().iter().map(|(_, v)| Some(*v)).collect();
+                // 传给 set_client_identities 的身份必须是 client（不含 host 槽 0）：sess.identities() 含 host，需跳过。
+                let ids: Vec<Option<u64>> = sess.identities().iter().skip(1).map(|(_, v)| Some(*v)).collect();
                 let transport = sess.into_transport();
                 let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
                 host_ls.set_client_identities(&ids);
