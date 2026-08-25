@@ -1948,10 +1948,10 @@ impl event::EventHandler for Game {
                                     }
                                 }
                                 self.world.step(inputs, ticking);
-                                // 周期快照（重连用）。
+                                // 周期快照（重连用 + 广播给所有 client，供「host 掉线接管」用）。
                                 self.host_frame_count += 1;
                                 if self.host_frame_count % SNAPSHOT_EVERY == 0 {
-                                    host.set_snapshot(game_core::world_ser::world_to_bytes(&self.world), host.next_seq());
+                                    host.broadcast_snapshot(game_core::world_ser::world_to_bytes(&self.world), host.next_seq());
                                 }
                                 self.accumulator -= TICK;
                             } else {
