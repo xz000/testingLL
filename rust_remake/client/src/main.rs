@@ -186,6 +186,10 @@ struct Game {
     /// Steam（client）：选举出的新 host SteamID（0 = 尚未决定）。
     #[cfg(feature = "steam")]
     steam_new_host_id: u64,
+    /// Steam（host）：接管后是否仍在「持续广播 Takeover」（直到首个在线 client 连上、产出首帧才停）。
+    /// 避免晚进入迁移的 client 错过单次 Takeover 广播。
+    #[cfg(feature = "steam")]
+    steam_host_broadcasting_takeover: bool,
     /// Steam：全体就绪后的倒计时（秒）。
     #[cfg(feature = "steam")]
     steam_countdown: f32,
@@ -345,6 +349,8 @@ impl Game {
         #[cfg(feature = "steam")]
         let steam_new_host_id: u64 = 0;
         #[cfg(feature = "steam")]
+        let steam_host_broadcasting_takeover: bool = false;
+        #[cfg(feature = "steam")]
         let mut steam_roster: Vec<(u8, String, u64)> = Vec::new();
         #[cfg(feature = "steam")]
         let steam_in_lobby_flag = matches!(app, AppState::SteamHost { .. }) || matches!(app, AppState::SteamJoin { .. });
@@ -496,6 +502,8 @@ impl Game {
             steam_migrate_ticks,
             #[cfg(feature = "steam")]
             steam_new_host_id,
+            #[cfg(feature = "steam")]
+            steam_host_broadcasting_takeover,
             #[cfg(feature = "steam")]
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
@@ -1057,21 +1065,33 @@ impl Game {
         // —— 阶段 A：探测 host 是否还在（尚未决定新 host）。
         if self.steam_new_host_id == 0 {
             let _ = cli.send_reconnect_req(self.steam_my_id);
-            if let Ok(Some((wb, seq))) = cli.recv_snapshot(rcv) {
-                // host 还在：恢复对局（对齐基线后继续）。
-                cli.apply_resync(rcv).ok();
-                if let Some(w) = game_core::world_ser::world_from_bytes(&wb) {
-                    self.world = w;
-                    self.clear_transient_input();
-                    eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
+            let old_host = cli.host_peer();
+            // 只接受「来自旧 host」的包作为 host 还活着的证据：
+            // 否则新 host（接管后）广播的 Snapshot 会被误判成“旧 host 还活着” → 恢复却不重定向 → 永远连旧 host。
+            if let Ok(Some((from, pkt))) = cli.recv_packet(rcv) {
+                if from == old_host {
+                    if let net::Packet::Snapshot { world_bytes, seq } = pkt {
+                        cli.apply_resync(rcv).ok();
+                        if let Some(w) = game_core::world_ser::world_from_bytes(&world_bytes) {
+                            self.world = w;
+                            self.clear_transient_input();
+                            eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
+                        }
+                        self.steam_migrating = false;
+                        self.steam_migrate_ticks = 0;
+                        return Ok(Some(cli));
+                    }
+                    // 来自旧 host 的其它包（如 Frame）也说明 host 还在：恢复，交给下一帧正常循环推进（丢帧由 lockstep 补发）。
+                    self.steam_migrating = false;
+                    self.steam_migrate_ticks = 0;
+                    eprintln!("[steam-client] host alive (heartbeat from old host), resuming");
+                    return Ok(Some(cli));
                 }
-                self.steam_migrating = false;
-                self.steam_migrate_ticks = 0;
-                return Ok(Some(cli));
+                // 来自非旧 host（如新 host）的包：忽略，继续探测/等待。
             }
             if self.steam_migrate_ticks >= MIGRATE_PROBE_TICKS {
                 // 判定 host 掉线 → 确定性选举新 host（排除旧 host、SteamID 最小者）。
-                let old_host_id = match cli.host_peer() {
+                let old_host_id = match old_host {
                     net::transport::Peer::Steam { id, .. } => id,
                     _ => 0,
                 };
@@ -1090,23 +1110,27 @@ impl Game {
         if self.steam_new_host_id == self.steam_my_id {
             self.steam_do_takeover(cli, rcv)?;
             Ok(None)
-        } else if let Ok(Some((from, seq))) = cli.recv_takeover(rcv) {
-            // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打。
-            cli.retarget_host(from);
-            if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
-                if let Some(w) = game_core::world_ser::world_from_bytes(&wb) {
-                    self.world = w;
-                    self.clear_transient_input();
-                }
-            }
-            cli.apply_resync(rcv).ok();
-            self.steam_migrating = false;
-            self.steam_migrate_ticks = 0;
-            self.steam_new_host_id = 0;
-            eprintln!("[steam-client] migrated to new host (seq={seq}), resuming lockstep");
-            Ok(Some(cli))
         } else {
-            Ok(Some(cli))
+            // 优先用 fighting 阶段缓存的 Takeover，否则从传输收（新 host 会持续广播直到首个 client 连上）。
+            let takeover = cli.take_latest_takeover().or_else(|| cli.recv_takeover(rcv).ok().flatten());
+            if let Some((from, seq)) = takeover {
+                // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打。
+                cli.retarget_host(from);
+                if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
+                    if let Some(w) = game_core::world_ser::world_from_bytes(&wb) {
+                        self.world = w;
+                        self.clear_transient_input();
+                    }
+                }
+                cli.apply_resync(rcv).ok();
+                self.steam_migrating = false;
+                self.steam_migrate_ticks = 0;
+                self.steam_new_host_id = 0;
+                eprintln!("[steam-client] migrated to new host (seq={seq}), resuming lockstep");
+                Ok(Some(cli))
+            } else {
+                Ok(Some(cli))
+            }
         }
     }
 
@@ -1165,6 +1189,8 @@ impl Game {
         self.steam_migrating = false;
         self.steam_migrate_ticks = 0;
         self.steam_new_host_id = 0;
+        // 接管后持续广播 Takeover，直到首个在线 client 连上（产帧成功）才停，避免晚进入迁移的 client 错过。
+        self.steam_host_broadcasting_takeover = true;
         Ok(())
     }
 
@@ -2102,15 +2128,23 @@ impl event::EventHandler for Game {
                         }
                         // Steam host：配置同步完成后这里直接产帧（收齐各端输入才产，seq=0 即统一开始）。
                         let mut hrcv = vec![0u8; 8192];
+                        let mut takeover_bcast = self.steam_host_broadcasting_takeover;
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                             host.poll(&mut hrcv);
+                            // 迁移接管后：持续广播 Takeover（基线=快照 seq），直到首个在线 client 连上产帧才停。
+                            if takeover_bcast {
+                                if let Some((_, bseq)) = host.current_snapshot() {
+                                    host.broadcast_takeover(*bseq);
+                                }
+                            }
                             // 掉线判定（Steam 战斗端）：某 client 连续未上行超时 → 自动 drop（默认输入占位），其余端继续，不空转等它。
                             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                                 eprintln!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues");
                             }
                             if let Some((seq, frame)) = host.try_emit() {
+                                takeover_bcast = false; // 首个在线 client 已连上，停止广播 Takeover
                                 if seq < 30 {
                                     eprintln!("[steam-host] emit seq={seq}, n_entries={}", frame.len());
                                 }
@@ -2138,6 +2172,7 @@ impl event::EventHandler for Game {
                                 break;
                             }
                         }
+                        self.steam_host_broadcasting_takeover = takeover_bcast;
                         self.steam_host_ls = Some(host);
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
                         // Steam client：开局配置·配置同步阶段——上报我的 PlayerCfg，等 host 广播 PlayerCfgAll 后完成。
@@ -2523,6 +2558,7 @@ impl Game {
             self.steam_migrating = false;
             self.steam_migrate_ticks = 0;
             self.steam_new_host_id = 0;
+            self.steam_host_broadcasting_takeover = false;
         }
         // 清空运行状态。
         self.pre_game_config = false; // 主菜单不进入开局配置；选了模式后再进。
@@ -3140,6 +3176,7 @@ impl Game {
         self.steam_migrating = false;
         self.steam_migrate_ticks = 0;
         self.steam_new_host_id = 0;
+        self.steam_host_broadcasting_takeover = false;
         self.accumulator = 0.0;
     }
 

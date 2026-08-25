@@ -738,6 +738,9 @@ pub struct ClientLockstep<T: Transport> {
     /// host 主动广播的最新媒体快照（`(world_bytes, seq)`，seq=应重建后继续的下一帧号）。
     /// 供「host 掉线时接管」使用（阶段 3）；在正常收帧循环里顺带缓存、不应用、不推进。
     latest_snapshot: Option<(Vec<u8>, u64)>,
+    /// 最近收到的 `Takeover`（主机迁移接管信号，`(来源, 基线 seq)`）。
+    /// 新 host 可能在 client 尚未进入迁移时（fighting 阶段）广播；此处先缓存，迁移时取用，避免错过。
+    latest_takeover: Option<(Peer, u64)>,
 }
 
 impl<T: Transport> ClientLockstep<T> {
@@ -749,6 +752,28 @@ impl<T: Transport> ClientLockstep<T> {
             pending: VecDeque::new(),
             host,
             latest_snapshot: None,
+            latest_takeover: None,
+        }
+    }
+
+    /// 取走缓存的 `Takeover`（`(来源, 基线 seq)`）。无则 None。
+    pub fn take_latest_takeover(&mut self) -> Option<(Peer, u64)> {
+        self.latest_takeover.take()
+    }
+
+    /// 从 transport 读一个包并返回其来源 + 解码结果（供迁移/探测时区分包来自谁，避免误判）。
+    pub fn recv_packet(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Peer, Packet)>> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, from))) => {
+                    if let Some(pkt) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some((from, pkt)));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(e) => return Err(e),
+            }
         }
     }
 
@@ -997,7 +1022,7 @@ impl<T: Transport> ClientLockstep<T> {
         // 收当前所有 FRAME（有界轮询一次）。
         loop {
             match self.transport.recv_from(rcv) {
-                Ok(Some((n, _))) => {
+                Ok(Some((n, from))) => {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Frame { seq, entries } => {
@@ -1010,6 +1035,10 @@ impl<T: Transport> ClientLockstep<T> {
                             Packet::Snapshot { world_bytes, seq } => {
                                 // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
                                 self.latest_snapshot = Some((world_bytes, seq));
+                            }
+                            Packet::Takeover { seq } => {
+                                // 缓存新 host 的接管信号（含来源），供 client 稍后进入迁移时取用（避免错过单次广播）。
+                                self.latest_takeover = Some((from, seq));
                             }
                             _ => {}
                         }
@@ -1744,6 +1773,28 @@ mod tests {
         assert_eq!(cli.host_peer(), Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))), "初始 host 为原 host");
         cli.retarget_host(Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))));
         assert_eq!(cli.host_peer(), Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))), "重定向到新 host 后 host_peer 更新");
+    }
+
+    /// 阶段 3 修复：client 在 fighting 阶段（step_frame）收到 `Takeover` 也缓存（含来源），迁移时 `take_latest_takeover` 可取到，
+    /// 避免「新 host 单次广播 Takeover，而 client 尚未进入迁移时错过」。
+    #[test]
+    fn client_caches_takeover_in_step_frame_for_migration() {
+        let (mut ht, ct) = pair();
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+        let host_peer = Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000)));
+        // 新 host 向 client 广播 Takeover（模拟：用 ht 的 peer 通道投递到 cli 的 inbox；
+        // FakeTransport 下 cli 收到的来源 = ct.peer_addr = host_peer(4000)）。
+        let tk = Packet::Takeover { seq: 42 };
+        ht.send_to(&tk.encode(), &host_peer).unwrap();
+        // client 在正常 step_frame（fighting）里收包：缓存 Takeover，不推进 expect_seq。
+        assert_eq!(cli.expect_seq(), 0);
+        let _ = cli.step_frame(&mut rcv).unwrap();
+        assert_eq!(cli.expect_seq(), 0, "缓存 Takeover 不得推进帧序");
+        let cached = cli.take_latest_takeover().expect("应缓存新 host 的 Takeover（含来源）");
+        assert_eq!(cached.1, 42);
+        assert!(cached.0 == host_peer, "缓存的来源应为发送者 peer");
+        assert!(cli.take_latest_takeover().is_none(), "取走后应清空");
     }
 
     /// 阶段 2（快照广播）：host `broadcast_snapshot` 把快照广播给所有 client，client 在正常收帧循环
