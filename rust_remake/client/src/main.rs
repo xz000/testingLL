@@ -163,6 +163,12 @@ struct Game {
     /// Steam 联机：本机在大厅里的玩家槽位（`self_index` 用）。
     #[cfg(feature = "steam")]
     steam_my_index: u8,
+    /// Steam 联机：本机 SteamID（重连时作稳定身份发给 host 找回槽位）。
+    #[cfg(feature = "steam")]
+    steam_my_id: u64,
+    /// Steam（client）：连续未收到权威帧的 tick 数（Steam 战斗端掉线探测；对齐局域网 stale_ticks）。
+    #[cfg(feature = "steam")]
+    steam_cli_stale_ticks: u64,
     /// Steam：全体就绪后的倒计时（秒）。
     #[cfg(feature = "steam")]
     steam_countdown: f32,
@@ -310,6 +316,10 @@ impl Game {
         #[cfg(feature = "steam")]
         let mut steam_my_index: u8 = 0;
         #[cfg(feature = "steam")]
+        let steam_my_id: u64 = 0;
+        #[cfg(feature = "steam")]
+        let steam_cli_stale_ticks: u64 = 0;
+        #[cfg(feature = "steam")]
         let mut steam_roster: Vec<(u8, String, u64)> = Vec::new();
         #[cfg(feature = "steam")]
         let steam_in_lobby_flag = matches!(app, AppState::SteamHost { .. }) || matches!(app, AppState::SteamJoin { .. });
@@ -449,6 +459,10 @@ impl Game {
             steam_cli_ls,
             #[cfg(feature = "steam")]
             steam_my_index,
+            #[cfg(feature = "steam")]
+            steam_my_id,
+            #[cfg(feature = "steam")]
+            steam_cli_stale_ticks,
             #[cfg(feature = "steam")]
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
@@ -932,6 +946,63 @@ impl Game {
             }
             Err(e) => {
                 eprintln!("[client] reconnect error: {e:?}");
+                self.reconnect_attempting = false;
+            }
+        }
+    }
+
+    /// Steam client 战斗端掉线后的重连入口（对齐局域网 `poll_reconnect`，但直接操作 `steam_cli_ls`）。
+    /// 按 R 触发：发 `ReconnectReq`(带本机 SteamID) → host 应答 `Snapshot` → 重建 World → `apply_resync` 对齐续打。
+    #[cfg(feature = "steam")]
+    fn poll_steam_reconnect(&mut self, ctx: &Context, cli: &mut net::lockstep::ClientLockstep<net_steam::SteamTransport>) {
+        use ggez::input::keyboard::Key;
+        let r_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("r".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("R".into()));
+        if !self.reconnect_attempting && !r_pressed {
+            return; // 未按 R，不发起重连，保持空闲等待。
+        }
+        if !self.reconnect_attempting {
+            self.reconnect_attempting = true;
+            eprintln!("[steam-client] reconnect flow: sending ReconnectReq...");
+        }
+        // 发重连请求（带本机 SteamID 作稳定身份，host 按身份找回槽位）。
+        if cli.send_reconnect_req(self.steam_my_id).is_err() {
+            eprintln!("[steam-client] reconnect send failed");
+            self.reconnect_attempting = false;
+            return;
+        }
+        let mut rcv = vec![0u8; 8192];
+        match cli.recv_snapshot(&mut rcv) {
+            Ok(Some((world_bytes, seq))) => {
+                eprintln!("[steam-client] got Snapshot seq={seq}, rebuilding World ({n} bytes)", n = world_bytes.len());
+                cli.apply_resync(&mut rcv).ok();
+                match game_core::world_ser::world_from_bytes(&world_bytes) {
+                    Some(w) => {
+                        self.world = w;
+                        // 清空本地输入残留，避免把掉线期间的输入误带到接回后。
+                        self.player_target = None;
+                        self.pending_cast = None;
+                        self.pending_skill = None;
+                        self.queued_cmds.clear();
+                        self.pending_shift_skill = None;
+                        self.pending_clear_signal = false;
+                        self.pending_stop_signal = false;
+                        self.steam_cli_stale_ticks = 0;
+                        self.conn_dropped = false;
+                        self.reconnect_attempting = false;
+                        eprintln!("[steam-client] reconnected: World rebuilt from snapshot, resuming lockstep");
+                    }
+                    None => {
+                        eprintln!("[steam-client] failed to decode snapshot, retrying on next keypress");
+                        self.reconnect_attempting = false;
+                    }
+                }
+            }
+            Ok(None) => {
+                // 尚未收到快照：保持等待（下帧再试）。
+            }
+            Err(e) => {
+                eprintln!("[steam-client] reconnect error: {e:?}");
                 self.reconnect_attempting = false;
             }
         }
@@ -1860,6 +1931,10 @@ impl event::EventHandler for Game {
                             let me = self.local_player_input();
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                             host.poll(&mut hrcv);
+                            // 掉线判定（Steam 战斗端）：某 client 连续未上行超时 → 自动 drop（默认输入占位），其余端继续，不空转等它。
+                            for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
+                                eprintln!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues");
+                            }
                             if let Some((seq, frame)) = host.try_emit() {
                                 if seq < 30 {
                                     eprintln!("[steam-host] emit seq={seq}, n_entries={}", frame.len());
@@ -1947,11 +2022,19 @@ impl event::EventHandler for Game {
                         // Steam client：就绪/配置已完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
                         // 上行用 `send_room_state`（合包，Steam P2P 下实测可靠）；`send_input` 单独发送曾实测间歇丢。
                         let mut c_rcv = vec![0u8; 8192];
+                        // 已判定掉线：冻结世界，进入重连入口（按 R 拉快照重建），不再推进世界（避免与 host 分叉）。
+                        if self.conn_dropped {
+                            self.poll_steam_reconnect(ctx, &mut cli);
+                            self.steam_cli_ls = Some(cli);
+                            self.accumulator = 0.0;
+                            return Ok(());
+                        }
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             let enc = game_core::netcode::encode_player_input(&me);
                             let _ = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &enc);
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
+                                self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
                                 let n = self.world.players.len();
                                 let mut inputs = vec![PlayerInput::default(); n];
                                 for (idx, bytes) in ents {
@@ -1970,7 +2053,15 @@ impl event::EventHandler for Game {
                                 }
                                 self.accumulator -= TICK;
                             } else {
-                                break; // 等权威帧
+                                // 本帧无权威帧：累计掉线计数，超阈值判定掉线（对齐局域网 stale 检测）。
+                                self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
+                                if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
+                                    eprintln!("[steam-client] NO frames for {} ticks -> connection dropped, waiting for reconnect (R)", self.steam_cli_stale_ticks);
+                                    self.conn_dropped = true;
+                                    self.accumulator = 0.0;
+                                    break;
+                                }
+                                break; // 等权威帧（不扣 accumulator，避免时间凭空流逝导致分叉）
                             }
                         }
                         self.steam_cli_ls = Some(cli);
@@ -2233,6 +2324,7 @@ impl Game {
             self.steam_list_lobbies = Vec::new();
             self.steam_join_lobby_id = None;
             self.steam_roster_refresh_ticks = 0;
+            self.steam_cli_stale_ticks = 0;
         }
         // 清空运行状态。
         self.pre_game_config = false; // 主菜单不进入开局配置；选了模式后再进。
@@ -2755,6 +2847,7 @@ impl Game {
                 sess.host_set_room_info(room_name, room_note)?;
                 sess.prepare_transport()?;
                 self.steam_my_index = sess.my_slot();
+                self.steam_my_id = sess.transport.steam_id();
                 eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
                 // 房间成员名单（昵称）。
                 let fr = sess.transport.friends();
@@ -2789,6 +2882,7 @@ impl Game {
                 self.steam_lobby_id = Some(lobby.raw());
                 sess.prepare_transport()?;
                 eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                self.steam_my_id = sess.transport.steam_id();
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
@@ -2843,6 +2937,7 @@ impl Game {
         self.conn_dropped = false;
         self.reconnect_attempting = false;
         self.host_frame_count = 0;
+        self.steam_cli_stale_ticks = 0;
         self.accumulator = 0.0;
     }
 
