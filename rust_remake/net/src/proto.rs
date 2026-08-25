@@ -38,6 +38,11 @@ pub const TAG_ROSTER_READY: u8 = 15;
 /// client→host：房间阶段的状态包：`index` + 就绪标志 + 输入在场字节（三合一）。
 /// 因为 P2P 下 Input 在场已被验证可靠送达、但独立 PlayerReady 常丢，故把就绪折进同一在场包，天然可靠。
 pub const TAG_ROOM_STATE: u8 = 16;
+/// 新 host（原某 client）→ 其余 client：主机迁移接管信号，`seq`=新 host 接管基线（快照 seq）。
+/// 收到者据此把 host 重定向到来源（新 host）、用其广播的快照重建并对齐续打。
+pub const TAG_TAKEOVER: u8 = 17;
+/// host → 所有 client：本局参与玩家的稳定身份（SteamID）列表，供各端在 host 掉线时确定性选举新 host。
+pub const TAG_PARTICIPANTS: u8 = 18;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -83,6 +88,10 @@ pub enum Packet {
     Snapshot { world_bytes: Vec<u8>, seq: u64 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
     Resync { seq: u64 },
+    /// 新 host→其余 client：主机迁移接管信号（`seq`=接管基线）。
+    Takeover { seq: u64 },
+    /// host→所有 client：本局参与玩家的稳定身份（SteamID）列表（选举新 host 用）。
+    Participants { ids: Vec<u64> },
 }
 
 impl Packet {
@@ -201,6 +210,21 @@ impl Packet {
                 let mut v = Vec::with_capacity(9);
                 v.push(TAG_RESYNC);
                 v.extend_from_slice(&seq.to_be_bytes());
+                v
+            }
+            Packet::Takeover { seq } => {
+                let mut v = Vec::with_capacity(9);
+                v.push(TAG_TAKEOVER);
+                v.extend_from_slice(&seq.to_be_bytes());
+                v
+            }
+            Packet::Participants { ids } => {
+                let mut v = Vec::with_capacity(1 + 2 + ids.len() * 8);
+                v.push(TAG_PARTICIPANTS);
+                v.extend_from_slice(&(ids.len() as u16).to_be_bytes());
+                for id in ids {
+                    v.extend_from_slice(&id.to_be_bytes());
+                }
                 v
             }
         }
@@ -324,6 +348,22 @@ impl Packet {
                 }
                 Some(Packet::RoomState { index, ready, build_done, input_bytes: buf[6..end].to_vec() })
             }
+            TAG_TAKEOVER if buf.len() >= 9 => {
+                Some(Packet::Takeover { seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
+            }
+            TAG_PARTICIPANTS if buf.len() >= 3 => {
+                let count = u16::from_be_bytes([buf[1], buf[2]]) as usize;
+                let end = 3usize + count * 8;
+                if end > buf.len() {
+                    return None;
+                }
+                let mut ids = Vec::with_capacity(count);
+                for i in 0..count {
+                    let off = 3 + i * 8;
+                    ids.push(u64::from_be_bytes(buf[off..off + 8].try_into().ok()?));
+                }
+                Some(Packet::Participants { ids })
+            }
             _ => None,
         }
     }
@@ -364,6 +404,8 @@ mod tests {
             Packet::RoomState { index: 1, ready: true, build_done: true, input_bytes: vec![1, 2, 3, 4] },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
+            Packet::Takeover { seq: 12345 },
+            Packet::Participants { ids: vec![111, 222, 333] },
         ];
         for p in cases {
             let enc = p.encode();
