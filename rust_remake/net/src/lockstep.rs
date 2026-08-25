@@ -25,8 +25,12 @@ fn default_input_bytes() -> Vec<u8> {
 /// host 侧帧同步状态机。
 pub struct HostLockstep<T: Transport> {
     transport: T,
-    /// 0 = host 不参与对局；1 = host 自身占 player 0。client 序号从 `local_base` 起。
+    /// 0 = host 不参与对局；1 = host 自身参与（默认占 player 0）。
     local_base: u8,
+    /// host 本地的 player index（参与时有效；默认 0）。迁移后新 host 可指定为自己的原 index（不再恒为 0）。
+    host_index: u8,
+    /// 各 client 槽位对应的 player index（默认：host 参与时 [1..N]，不参与时 [0..N-1]；迁移后按新 host 重排）。
+    client_indices: Vec<u8>,
     /// 需要收齐的 client 数。
     expected: usize,
     /// 本局实际参与对局的 client 槽位集合（`None`=全部 expected 槽位都参与，兼容满员/局域网）。
@@ -81,9 +85,14 @@ impl<T: Transport> HostLockstep<T> {
     pub fn new(transport: T, total_players: usize, host_participates: bool) -> Self {
         let local_base = if host_participates { 1 } else { 0 };
         let expected = total_players.saturating_sub(local_base as usize);
+        // 参与 client 的 player index：host 参与时从 1 起，否则从 0 起。
+        let host_index: u8 = if host_participates { 0 } else { u8::MAX }; // 不参与时 host_index 无效
+        let client_indices: Vec<u8> = (local_base as usize..total_players).map(|i| i as u8).collect();
         HostLockstep {
             transport,
             local_base,
+            host_index,
+            client_indices,
             expected,
             active: None,
             participants_orig: Vec::new(),
@@ -171,8 +180,7 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 某 client（完整的玩家序号）当前是否已就绪（可撤销）。
     pub fn client_ready(&self, client_seq: u8) -> bool {
-        let c = client_seq as usize - self.local_base as usize;
-        c < self.expected && self.clients_ready[c]
+        self.slot_of(client_seq).map(|c| self.clients_ready[c]).unwrap_or(false)
     }
 
     /// 所有【参与本局】的 client 是否都已就绪（不含 host 自身；host 自身的就绪由调用方另管）。
@@ -183,8 +191,7 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 某 client（完整的玩家序号）当前是否已配好技能/配置（开局配置阶段）。
     pub fn client_build_done(&self, client_seq: u8) -> bool {
-        let c = client_seq as usize - self.local_base as usize;
-        c < self.expected && self.clients_build_done[c]
+        self.slot_of(client_seq).map(|c| self.clients_build_done[c]).unwrap_or(false)
     }
 
     /// 所有【参与本局】的 client 是否都已配好技能/配置（不含 host 自身；host 自身是否配好由调用方另管）。
@@ -237,6 +244,11 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// 反查某 player index 对应的 client 槽位（下标）。无则 None。
+    fn slot_of(&self, player_index: u8) -> Option<usize> {
+        self.client_indices.iter().position(|&x| x == player_index)
+    }
+
     /// 参与玩家【原 index → 本局 new index】：new = 在 `participants_orig` 中的位置；未设参与集时退化为 identity。
     fn orig_to_new(&self, orig: u8) -> u8 {
         if self.participants_orig.is_empty() {
@@ -254,14 +266,14 @@ impl<T: Transport> HostLockstep<T> {
             return false;
         }
         self.active = Some(active.to_vec());
-        // 参与玩家原 index：host(=local_base 0) + 参与 client 的 orig player index（槽序升序）。
+        // 参与玩家原 index：host 本地 index 在首 + 参与 client 的 player index（槽序升序）。
         let mut orig: Vec<u8> = Vec::with_capacity(self.expected + self.local_base as usize);
         if self.local_base > 0 {
-            orig.push(0); // host = player 0
+            orig.push(self.host_index);
         }
         for (c, &on) in active.iter().enumerate() {
             if on {
-                orig.push((c + self.local_base as usize) as u8);
+                orig.push(self.client_indices[c]);
             }
         }
         self.participants_orig = orig;
@@ -305,8 +317,7 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 把某 client 标记为掉线：之后用“默认输入”占位（玩家原地不动），不再要求其真实输入，其余端照常推进。
     pub fn mark_dropped(&mut self, client_seq: u8) {
-        let c = client_seq as usize - self.local_base as usize;
-        if c < self.expected {
+        if let Some(c) = self.slot_of(client_seq) {
             self.dropped[c] = true;
             self.latest_input[c] = Some(default_input_bytes());
             self.client_peers[c] = None; // 不再向它广播
@@ -315,8 +326,7 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 重连：把某 client 从掉线恢复为活跃，并清掉默认占位（下次它发输入时 host 会重新记 peer、继续推进）。
     pub fn unmark_dropped(&mut self, client_seq: u8) {
-        let c = client_seq as usize - self.local_base as usize;
-        if c < self.expected {
+        if let Some(c) = self.slot_of(client_seq) {
             self.dropped[c] = false;
             self.latest_input[c] = None; // 等重连端重新上行，poll 会重记 peer
         }
@@ -324,12 +334,7 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 某一 client 的连续空闲（未提供输入）帧数。
     pub fn client_idle_ticks(&self, client_seq: u8) -> u32 {
-        let c = client_seq as usize - self.local_base as usize;
-        if c < self.expected {
-            self.idle_ticks[c]
-        } else {
-            0
-        }
+        self.slot_of(client_seq).map(|c| self.idle_ticks[c]).unwrap_or(0)
     }
 
     /// 自动化掉线：任何一个未掉线 client 连续空闲 `threshold` 帧即标记为掉线（此后用默认输入占位、不再卡全队）。
@@ -338,7 +343,7 @@ impl<T: Transport> HostLockstep<T> {
         let mut out = Vec::new();
         for c in 0..self.expected {
             if !self.dropped[c] && self.idle_ticks[c] >= threshold {
-                let idx = (c + self.local_base as usize) as u8;
+                let idx = self.client_indices[c];
                 self.mark_dropped(idx);
                 out.push(idx);
             }
@@ -358,8 +363,7 @@ impl<T: Transport> HostLockstep<T> {
                 Ok(Some((n, from))) => {
                     if let Some(Packet::PlayerCfg { index, bytes }) = Packet::decode(&rcv[..n]) {
                         self.player_cfg_packets_seen += 1;
-                        let c = index as usize - self.local_base as usize;
-                        if c < self.expected {
+                        if let Some(c) = self.slot_of(index) {
                             if self.client_peers[c].is_none() {
                                 self.client_peers[c] = Some(from);
                             }
@@ -389,13 +393,13 @@ impl<T: Transport> HostLockstep<T> {
         let mut out: Vec<(u8, Vec<u8>)> = Vec::new();
         if self.local_base > 0 {
             if let Some(c) = &self.local_cfg {
-                out.push((0, c.clone()));
+                out.push((self.orig_to_new(self.host_index), c.clone()));
             }
         }
         for c in 0..self.expected {
             if self.is_active(c) {
                 if let Some(b) = &self.cfgs[c] {
-                    let orig = (c + self.local_base as usize) as u8;
+                    let orig = self.client_indices[c];
                     let new = self.orig_to_new(orig);
                     out.push((new, b.clone()));
                 }
@@ -438,8 +442,7 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 某一 client 槽位的配置是否已收到（即该 client 已就绪上报）。`client_seq` 是完整玩家序号。
     pub fn client_cfg_ready(&self, client_seq: u8) -> bool {
-        let c = client_seq as usize - self.local_base as usize;
-        c < self.expected && self.cfgs[c].is_some()
+        self.slot_of(client_seq).map(|c| self.cfgs[c].is_some()).unwrap_or(false)
     }
 
     /// 诊断：累计被 `poll`/`poll_cfg` 处理并记进 `cfgs` 的 PlayerCfg 包数（用于判断 PlayerCfg 是否真的到达并解码）。
@@ -481,8 +484,7 @@ impl<T: Transport> HostLockstep<T> {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Input { index, bytes } => {
-                                let c = index as usize - self.local_base as usize;
-                                if c < self.expected {
+                                if let Some(c) = self.slot_of(index) {
                                     // 始终记下端点（即使已掉线重连），用于广播/补发；也更新稳定端点映射。
                                     self.client_peers[c] = Some(from);
                                     self.client_addr[c] = Some(from);
@@ -491,8 +493,7 @@ impl<T: Transport> HostLockstep<T> {
                                 }
                             }
                             Packet::RoomState { index, ready, build_done, input_bytes } => {
-                                let c = index as usize - self.local_base as usize;
-                                if c < self.expected {
+                                if let Some(c) = self.slot_of(index) {
                                     // 房间阶段合包：一次更新「在场 + 就绪 + 配好 + 端点 + 空闲」。可靠的输入在场通道。
                                     self.client_peers[c] = Some(from);
                                     self.client_addr[c] = Some(from);
@@ -503,8 +504,7 @@ impl<T: Transport> HostLockstep<T> {
                                 }
                             }
                             Packet::PlayerReady { index, ready } => {
-                                let c = index as usize - self.local_base as usize;
-                                if c < self.expected {
+                                if let Some(c) = self.slot_of(index) {
                                     self.ready_packets_seen += 1;
                                     // 更新该 client 的就绪状态（可撤销，反复 toggle）；同时记下它的端点，便于广播（如 StartConfig）。
                                     self.client_peers[c] = Some(from);
@@ -517,8 +517,7 @@ impl<T: Transport> HostLockstep<T> {
                                 // 批次上行；这里若把 PlayerCfg 当无关包丢弃，随后调用的 `poll_cfg` 就什么都收不到 → host 永远
                                 // 收不齐配置 → 卡在配置同步。故 poll 也必须把 PlayerCfg 记进 `cfgs`（与 `poll_cfg` 语义一致）。
                                 self.player_cfg_packets_seen += 1;
-                                let c = index as usize - self.local_base as usize;
-                                if c < self.expected {
+                                if let Some(c) = self.slot_of(index) {
                                     if self.client_peers[c].is_none() {
                                         self.client_peers[c] = Some(from);
                                     }
@@ -543,7 +542,7 @@ impl<T: Transport> HostLockstep<T> {
                                     self.client_addr.iter().position(|a| *a == Some(from))
                                 };
                                 if let Some(c) = c {
-                                    let idx = (c + self.local_base as usize) as u8;
+                                    let idx = self.client_indices[c];
                                     // 恢复为活跃（清掉默认占位，重记 peer），等它重新上行输入。
                                     self.unmark_dropped(idx);
                                     self.client_peers[c] = Some(from);
@@ -593,15 +592,15 @@ impl<T: Transport> HostLockstep<T> {
             return None;
         }
         let mut entries: FrameData = Vec::new();
-        // host local = 本局 new index 0（原 player 0）。
+        // host local = 本局 new index（host_index 在 participants_orig 中的位置，通常 0）。
         if self.local_base > 0 {
-            entries.push((0, self.local.clone().unwrap()));
+            entries.push((self.orig_to_new(self.host_index), self.local.clone().unwrap()));
         }
         for c in 0..self.expected {
             if self.is_active(c) {
                 if let Some(bytes) = &self.latest_input[c] {
                     // 参与玩家收缩为本局连续 index：new index = 在 participants_orig 中该 orig index 的位置。
-                    let orig = (c + self.local_base as usize) as u8;
+                    let orig = self.client_indices[c];
                     let new = self.orig_to_new(orig);
                     entries.push((new, bytes.clone()));
                 }
@@ -637,12 +636,7 @@ impl<T: Transport> HostLockstep<T> {
     }
 
     pub fn client_peer(&self, client_seq: u8) -> Option<Peer> {
-        let c = client_seq as usize - self.local_base as usize;
-        if c < self.expected {
-            self.client_peers[c]
-        } else {
-            None
-        }
+        self.slot_of(client_seq).and_then(|c| self.client_peers[c])
     }
 
     pub fn next_seq(&self) -> u64 {
