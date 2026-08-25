@@ -1454,6 +1454,68 @@ mod tests {
         assert!(host.next_seq() > before);
     }
 
+    /// 阶段 1（Steam 战斗端等效）完整链路：对战中 client 停发 → host `auto_drop_idle` 自动掉线并靠默认占位继续产帧（不空转）
+    /// → client 发 `ReconnectReq`(带身份) 重连 → host 恢复该槽 + 回 `Snapshot` + 广播 `Resync` → client 重建对齐 →
+    /// 两端继续逐位推进。锁死「host 自动掉线 + 掉线重连接回」整条链路（Steam 版接入复用此传输无关逻辑）。
+    #[test]
+    fn host_auto_drops_then_client_reconnects_resumes() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let cli_identity = 70001u64;
+        host.set_client_identities(&[Some(cli_identity)]);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+
+        // A 段：正常跑几帧，两端同步。
+        for _ in 0..5u8 {
+            cli.send_input(&encode_input(1)).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![9]));
+            assert!(host.try_emit().is_some());
+        }
+        assert_eq!(host.client_idle_ticks(1), 0);
+
+        // B 段：client 停发，host 空闲超阈值自动掉线并继续产帧（默认占位，不卡全队）；期间周期保存快照。
+        let dropped = 3u32;
+        let mut dropped_list = Vec::new();
+        for _ in 0..(dropped + 5) {
+            host.poll(&mut rcv);
+            dropped_list.extend(host.auto_drop_idle(dropped));
+            host.set_local_input(Some(vec![9]));
+            if host.try_emit().is_some() {
+                host.set_snapshot(format!("snap@{}", host.next_seq() - 1).into_bytes(), host.next_seq());
+            }
+        }
+        assert!(!dropped_list.is_empty(), "client 空闲超阈值应被自动掉线");
+        assert_eq!(dropped_list[0], 1);
+
+        // C 段：client 重连（发 ReconnectReq 附身份）→ host.poll 处理（恢复槽 + 回 Snapshot + 广播 Resync）。
+        let before = cli.expect_seq();
+        cli.send_reconnect_req(cli_identity).unwrap();
+        host.poll(&mut rcv);
+        let (wb, seq) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到 Snapshot");
+        assert!(String::from_utf8(wb).unwrap().starts_with("snap@"), "应为 host 最近保存的快照");
+        assert_eq!(seq, host.next_seq(), "快照 seq 应为 host 当前下一帧号");
+        assert_eq!(cli.expect_seq(), before, "收到 Snapshot 但未 Resync 前基线不变");
+        let applied = cli.apply_resync(&mut rcv).unwrap();
+        assert!(applied, "应收到 Resync 对齐基线");
+        assert_eq!(cli.expect_seq(), seq, "Resync 应把 client 基线对齐到快照 seq");
+
+        // D 段：重连后两端继续 lockstep（host 已 unmark_dropped，需重新收到 client 输入才产帧）。
+        let mut advanced = 0u32;
+        for i in 0..20u8 {
+            cli.send_input(&encode_input(i)).unwrap();
+            host.poll(&mut rcv);
+            host.set_local_input(Some(vec![i + 50]));
+            if host.try_emit().is_some() {
+                advanced += 1;
+            }
+            while let Some(_) = cli.step_frame(&mut rcv).unwrap() {}
+        }
+        assert!(advanced > 0, "重连后应能继续产帧（防假绿）");
+        assert_eq!(cli.expect_seq(), seq + 20, "重连后应继续严格按序推进 20 帧");
+    }
+
     /// 「人不满也启动」：建房上限 3（host+2 client），但只有 client1 进场就绪；host 设参与集 `[client1 参与, client2 不参与]`，
     /// 产帧 / 就绪 / 配置判定仅对参与集要求，vacant 槽位排除在局外。锁死“人不满但全员（现有者）就绪也能启动”。
     #[test]

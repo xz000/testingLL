@@ -1,7 +1,7 @@
 # 交接记录 / 下一步（离线续接用）
 
 > 唯一的当前权威续接入口。**2026-08-15 晚**重写为最新快照。
-> 阅读顺序：先看本文件 → 缺背景再翻 `RECONNECT.md`（重连）/ `ROADMAP.md`（三功能）/
+> 阅读顺序：先看本文件 → 缺背景再翻 `STEAM_MULTIPLAYER_PLAN.md`（Steam 联机规划，2026-08-25 立）→ `RECONNECT.md`（重连）/ `ROADMAP.md`（三功能）/
 > `LATENCY_MASKING.md`（手感）/ `ATTRIBUTE_SYSTEM.md`（4.6b）/ `NET_REWRITE.md`（网络重写）/
 > `LOCKSTEP_FOUNDATION.md`（基座）/ `UI_MENUS.md`（界面）。
 
@@ -26,6 +26,12 @@
 
 ---
 
+
+> 🔭 **Steam 联机主线规划（2026-08-25 立）**：架构定案＝纯玩家 P2P + 不租服务器 + 帧同步 host 权威；
+> 主线目标＝主机迁移（host 掉线自动接管继续）；分三阶段（掉线重连 → 快照广播 → 主机迁移）。
+> 详见 `STEAM_MULTIPLAYER_PLAN.md`（含 Steamworks 能力盘点：已用/建议用/后期/排除）。
+> **进度**：✅ 阶段 1（Steam 战斗端掉线处理 + 重连）已落（2026-08-25），workspace 120 全绿，
+> 待真机复验。下一步：阶段 2（快照广播给所有 client）。
 
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
