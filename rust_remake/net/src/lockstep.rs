@@ -141,6 +141,57 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// 广播本局参与玩家的稳定身份（SteamID）列表给所有 client（对局开始、参与集确定后调用一次）。
+    /// 各端据此在 host 掉线时确定性选举新 host（排除旧 host、SteamID 最小者）。
+    pub fn broadcast_participants(&mut self, ids: &[u64]) {
+        let pkt = Packet::Participants { ids: ids.to_vec() };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
+    /// 主机迁移接管：把「原 client lockstep」转换为「新 host lockstep」。
+    /// - `client`：本端（新 host）在原对局中的 client lockstep（提供 transport + 缓存快照）。
+    /// - `my_index`：本端（新 host）在原对局中的 player index（通常非 0）。
+    /// - `total_players`：世界玩家总数（含掉线的原 host）。
+    /// - `other_indices`：其余参与端（含掉线的原 host player 0）的 player index，长度应 = total_players - 1。
+    /// - `peers`：与 `other_indices` 一一对应的 peer（掉线端给 None）。
+    /// - `dropped`：与 `other_indices` 对应的掉线标记（原 host 那槽为 true，输入用默认占位）。
+    /// - `identities`：与 `other_indices` 对应的稳定身份。
+    ///
+    /// 新 host 从 client 缓存的快照续打（next_seq = 快照 seq），并已把掉线端占位。
+    /// 调用方应保证各参数长度一致且符合总人数。
+    pub fn takeover(
+        client: ClientLockstep<T>,
+        my_index: u8,
+        total_players: usize,
+        other_indices: Vec<u8>,
+        peers: Vec<Option<Peer>>,
+        dropped: Vec<bool>,
+        identities: Vec<Option<u64>>,
+    ) -> Self {
+        let snapshot = client.cached_snapshot();
+        let transport = client.into_transport();
+        let mut host = HostLockstep::new(transport, total_players, true); // host 参与（占 my_index）
+        host.host_index = my_index;
+        host.client_indices = other_indices;
+        host.client_peers = peers;
+        host.dropped = dropped;
+        host.client_identities = identities;
+        // 掉线的端（如原 host player 0）用默认输入占位，否则产帧会缺输入卡住。
+        for c in 0..host.expected {
+            if host.dropped[c] {
+                host.latest_input[c] = Some(default_input_bytes());
+            }
+        }
+        if let Some((wb, seq)) = snapshot {
+            host.next_seq = seq;
+            host.snapshot = Some((wb, seq));
+        }
+        host
+    }
+
     /// 累计一帧推进（host 每产一帧调用一次，供上层做超时判活）。
     pub fn bump_alive(&mut self) {
         self.alive_tick += 1;
@@ -680,6 +731,58 @@ impl<T: Transport> ClientLockstep<T> {
     /// 取走缓存的最新媒体快照（`(world_bytes, seq)`）。无则 None。
     pub fn take_latest_snapshot(&mut self) -> Option<(Vec<u8>, u64)> {
         self.latest_snapshot.take()
+    }
+
+    /// 读缓存的最新媒体快照（不消费，迁移接管用）。
+    pub fn cached_snapshot(&self) -> Option<(Vec<u8>, u64)> {
+        self.latest_snapshot.clone()
+    }
+
+    /// 取出底层 transport（迁移：原 client 转新 host 时把 transport 移交给 HostLockstep）。
+    pub fn into_transport(self) -> T {
+        self.transport
+    }
+
+    /// 当前 host peer（原 host；迁移后需 `retarget_host` 到新 host）。
+    pub fn host_peer(&self) -> Peer {
+        self.host
+    }
+
+    /// 迁移：把 host peer 重定向到新 host。
+    pub fn retarget_host(&mut self, new_host: Peer) {
+        self.host = new_host;
+    }
+
+    /// 尝试收新 host 广播的 `Takeover`（主机迁移接管信号）：返回 `Some((来源, seq))`；当前没有则 None。
+    pub fn recv_takeover(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Peer, u64)>> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, from))) => {
+                    if let Some(Packet::Takeover { seq }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some((from, seq)));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// 尝试收 host 广播的 `Participants`（本局参与玩家稳定身份 SteamID 列表，选举新 host 用）。
+    pub fn recv_participants(&mut self, rcv: &mut [u8]) -> io::Result<Option<Vec<u64>>> {
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, _))) => {
+                    if let Some(Packet::Participants { ids }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some(ids));
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     /// 收到 GO 后设置起点 seq。
@@ -1547,6 +1650,76 @@ mod tests {
         }
         assert!(advanced > 0, "重连后应能继续产帧（防假绿）");
         assert_eq!(cli.expect_seq(), seq + 20, "重连后应继续严格按序推进 20 帧");
+    }
+
+    /// 阶段 3（主机迁移）：`HostLockstep::takeover` 从「原 client」转换，把 `next_seq` 基线设为该 client 缓存快照的 seq。
+    #[test]
+    fn host_takeover_resumes_from_cached_snapshot_seq() {
+        let (mut ht, ct) = pair();
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+        // 向 client 注入一份快照（seq=42）并让它缓存。
+        let snap = Packet::Snapshot { world_bytes: vec![1, 2, 3], seq: 42 };
+        ht.send_to(&snap.encode(), &Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001)))).unwrap();
+        cli.step_frame(&mut rcv).unwrap();
+        assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 42)), "client 应已缓存快照");
+        // 原 host(player0) 掉线，client(player1) 接管为 new host。
+        let mut host = HostLockstep::takeover(cli, 1, 2, vec![0], vec![None], vec![true], vec![None]);
+        // 新 host 从快照 seq 继续产帧（next_seq = 42）。
+        host.set_local_input(Some(vec![99])); // 新 host(player1) 的输入
+        let (seq, frame) = host.try_emit().expect("新 host 应收齐（player0 掉线占位 + 自身输入）后产帧");
+        assert_eq!(seq, 42, "新 host 应从缓存快照的 seq 续打");
+        // 产帧应含：player0(掉线默认) + player1(新 host)。
+        assert_eq!(frame.len(), 2, "2 人局迁移后仍产 2 个玩家的帧");
+        assert!(frame.iter().any(|(i, b)| *i == 0 && !b.is_empty()), "player0 用默认占位输入");
+        assert!(frame.iter().any(|(i, b)| *i == 1 && b == &vec![99]), "player1 = 新 host 输入");
+    }
+
+    /// 阶段 3（主机迁移）：新 host 不是 player 0 时，产帧的 host 输入 index 用 `host_index`（非 0），
+    /// 且掉线的原 host(player0) 用默认输入占位——验证重构后的 index 模型在迁移下正确。
+    #[test]
+    fn host_takeover_nonzero_index_emits_correct_frames() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let host_peer_addr = std::net::SocketAddr::from(([127, 0, 0, 1], 4000));
+        let p1_peer_addr = std::net::SocketAddr::from(([127, 0, 0, 1], 4001));
+        let host_peer = Peer::Udp(host_peer_addr);
+        let p1_peer = Peer::Udp(p1_peer_addr);
+        let host_inbox = Rc::new(RefCell::new(std::collections::VecDeque::new()));
+        let p1_inbox = Rc::new(RefCell::new(std::collections::VecDeque::new()));
+        // 迁移的 client（player2，新 host）用 ht 作 transport；在线 client（player1）用 p1t。
+        let ht = FakeTransport { inbox: host_inbox.clone(), peer_inbox: p1_inbox.clone(), peer_addr: p1_peer_addr, drop_seqs: Vec::new() };
+        let mut p1t = FakeTransport { inbox: p1_inbox.clone(), peer_inbox: host_inbox.clone(), peer_addr: host_peer_addr, drop_seqs: Vec::new() };
+        let mut cli = ClientLockstep::new(ht, 2, host_peer.clone()); // player2 (新 host)
+        let mut rcv = [0u8; 16384];
+        // 注入快照到 cli(ht) 的 inbox（借 p1t 向 host 发），让 cli 缓存。
+        let snap = Packet::Snapshot { world_bytes: vec![9, 9, 9], seq: 7 };
+        p1t.send_to(&snap.encode(), &host_peer).unwrap();
+        cli.step_frame(&mut rcv).unwrap();
+        // 原 3 人局：host(player0) 掉线，本端(player2) 接管。其他参与端 index = [0(掉线原host), 1(在线player1)]。
+        let mut host = HostLockstep::takeover(cli, 2, 3, vec![0, 1], vec![None, Some(p1_peer.clone())], vec![true, false], vec![None, Some(555)]);
+        host.set_local_input(Some(vec![77])); // 新 host(player2) 输入
+        // 在线 client（player1）上行输入给新 host。
+        let mut p1_cli = ClientLockstep::new(p1t, 1, host_peer.clone());
+        p1_cli.send_input(&vec![66]).unwrap();
+        host.poll(&mut rcv); // 收 player1 输入 → 记进对应槽位
+        let (seq, frame) = host.try_emit().expect("新 host 应收齐（player0 掉线占位 + player1 在线 + 自身）后产帧");
+        assert_eq!(seq, 7, "新 host 应从缓存快照的 seq 续打");
+        assert_eq!(frame.len(), 3, "3 人局迁移后仍产 3 个玩家的帧");
+        assert!(frame.iter().any(|(i, b)| *i == 0 && !b.is_empty()), "player0 默认占位");
+        assert!(frame.iter().any(|(i, b)| *i == 1 && b == &vec![66]), "player1 在线 client 输入");
+        assert!(frame.iter().any(|(i, b)| *i == 2 && b == &vec![77]), "player2 = 新 host 输入（host_index 非 0）");
+        assert_eq!(host.expected_clients(), 2, "迁移后 expected = 其他参与端数");
+    }
+
+    /// 阶段 3（主机迁移）：client 端把 host 重定向到新 host（`retarget_host`），之后 host_peer 更新。
+    #[test]
+    fn client_retarget_host_after_migration() {
+        let (_ht, ct) = pair();
+        let mut cli = ClientLockstep::new(ct, 2, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        assert_eq!(cli.host_peer(), Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))), "初始 host 为原 host");
+        cli.retarget_host(Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))));
+        assert_eq!(cli.host_peer(), Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))), "重定向到新 host 后 host_peer 更新");
     }
 
     /// 阶段 2（快照广播）：host `broadcast_snapshot` 把快照广播给所有 client，client 在正常收帧循环
