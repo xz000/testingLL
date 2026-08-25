@@ -53,10 +53,12 @@
   掉线端按 R 拉快照接回、两端逐位一致。
 - **为什么先做**：迁移时新 host 要给快照、其余端要拉快照对齐，这套能力就是重连——它是迁移的地基。
 
-### 阶段 2：快照广播（让每个端都有"接任能力"）
-- host 周期把最新快照 `Snapshot` 广播给**所有** client（`SendMessageToUser` 向每个大厅成员发）。
-- 结果：任何端都持有最新世界快照，谁都能当新 host——为迁移铺路。
-- **验收**：任意 client 持有的快照字节与 host 当前快照一致（传输无关单测锁死 + 真机抽查）。
+### 阶段 2：快照广播（让每个端都有"接任能力"）✅ 已落（2026-08-25）
+- **net**：`HostLockstep::broadcast_snapshot`（本地保存 + 广播给所有 client）；`ClientLockstep` 加 `latest_snapshot` 缓存 + `take_latest_snapshot`，在 `step_frame`/`pump_frames` 收包循环里顺带缓存（不应用、不推进）。
+- **host**：Steam 战斗分支周期 `set_snapshot` → `broadcast_snapshot`（每 `SNAPSHOT_EVERY` 帧）。
+- **单测 +1**：`host_broadcasts_snapshot_client_caches_it`（锁死「广播→缓存→可取走」）。workspace 121 全绿。
+- **结果**：任何端都持有最新世界快照，谁都能当新 host——为迁移铺路。
+- **待真机复验**：对局中任意 client 持有的快照与 host 一致；观察带宽开销（每 0.5s 一份完整世界快照）是否可接受。
 
 ### 阶段 3：主机迁移（Steam 专属增强）
 - **检测**：client 心跳超时判定 host 掉线（复用现有 `steam_lobby_silent_ticks` 机制扩展）。

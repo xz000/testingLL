@@ -120,6 +120,18 @@ impl<T: Transport> HostLockstep<T> {
         self.snapshot.as_ref()
     }
 
+    /// 把当前整场 World 快照广播给所有 client（并本地保存），让每个端都持有最新快照、具备「host 掉线时接管」的能力。
+    /// 语义同 `set_snapshot`：`world_bytes` 反映「已处理完 seq-1 帧」的世界状态，接任者应重建后从 seq 继续。
+    /// 调用方应在「World 已应用完第 seq 帧」后传下一帧号 `host.next_seq()`。
+    pub fn broadcast_snapshot(&mut self, world_bytes: Vec<u8>, seq: u64) {
+        self.snapshot = Some((world_bytes.clone(), seq));
+        let pkt = Packet::Snapshot { world_bytes, seq };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
     /// 累计一帧推进（host 每产一帧调用一次，供上层做超时判活）。
     pub fn bump_alive(&mut self) {
         self.alive_tick += 1;
@@ -654,6 +666,9 @@ pub struct ClientLockstep<T: Transport> {
     pending: VecDeque<(u64, FrameData)>,
     /// host peer。
     host: Peer,
+    /// host 主动广播的最新媒体快照（`(world_bytes, seq)`，seq=应重建后继续的下一帧号）。
+    /// 供「host 掉线时接管」使用（阶段 3）；在正常收帧循环里顺带缓存、不应用、不推进。
+    latest_snapshot: Option<(Vec<u8>, u64)>,
 }
 
 impl<T: Transport> ClientLockstep<T> {
@@ -664,7 +679,13 @@ impl<T: Transport> ClientLockstep<T> {
             expect_seq: 0,
             pending: VecDeque::new(),
             host,
+            latest_snapshot: None,
         }
+    }
+
+    /// 取走缓存的最新媒体快照（`(world_bytes, seq)`）。无则 None。
+    pub fn take_latest_snapshot(&mut self) -> Option<(Vec<u8>, u64)> {
+        self.latest_snapshot.take()
     }
 
     /// 收到 GO 后设置起点 seq。
@@ -825,11 +846,20 @@ impl<T: Transport> ClientLockstep<T> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) => {
-                    if let Some(Packet::Frame { seq, entries }) = Packet::decode(&rcv[..n]) {
-                        if seq >= self.expect_seq {
-                            let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
-                            self.pending.insert(pos, (seq, entries));
-                            got = true;
+                    if let Some(pkt) = Packet::decode(&rcv[..n]) {
+                        match pkt {
+                            Packet::Frame { seq, entries } => {
+                                if seq >= self.expect_seq {
+                                    let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
+                                    self.pending.insert(pos, (seq, entries));
+                                    got = true;
+                                }
+                            }
+                            Packet::Snapshot { world_bytes, seq } => {
+                                // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
+                                self.latest_snapshot = Some((world_bytes, seq));
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -847,11 +877,20 @@ impl<T: Transport> ClientLockstep<T> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) => {
-                    if let Some(Packet::Frame { seq, entries }) = Packet::decode(&rcv[..n]) {
-                        if seq >= self.expect_seq {
-                            // 只缓存 >= expect 的帧；丢弃过时帧。
-                            let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
-                            self.pending.insert(pos, (seq, entries));
+                    if let Some(pkt) = Packet::decode(&rcv[..n]) {
+                        match pkt {
+                            Packet::Frame { seq, entries } => {
+                                if seq >= self.expect_seq {
+                                    // 只缓存 >= expect 的帧；丢弃过时帧。
+                                    let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
+                                    self.pending.insert(pos, (seq, entries));
+                                }
+                            }
+                            Packet::Snapshot { world_bytes, seq } => {
+                                // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
+                                self.latest_snapshot = Some((world_bytes, seq));
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -1514,6 +1553,38 @@ mod tests {
         }
         assert!(advanced > 0, "重连后应能继续产帧（防假绿）");
         assert_eq!(cli.expect_seq(), seq + 20, "重连后应继续严格按序推进 20 帧");
+    }
+
+    /// 阶段 2（快照广播）：host `broadcast_snapshot` 把快照广播给所有 client，client 在正常收帧循环
+    /// （step_frame）里顺带缓存到 `latest_snapshot`（不应用、不推进），`take_latest_snapshot` 可取走。
+    /// 锁死「每端都持有最新快照、具备 host 掉线接管能力」。
+    #[test]
+    fn host_broadcasts_snapshot_client_caches_it() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+
+        // 先让 client 发一次输入，host 登记该 client peer（否则 broadcast_snapshot 无人可广播）。
+        cli.send_input(&encode_input(1)).unwrap();
+        host.poll(&mut rcv);
+
+        // host 广播一份快照（seq=10，字节任意确定性内容）。
+        host.broadcast_snapshot(b"snap@10".to_vec(), 10);
+        assert_eq!(host.current_snapshot(), Some(&(b"snap@10".to_vec(), 10)), "host 本地也应保存最新快照");
+
+        // client 正常 step_frame 收包：应缓存该快照到 latest_snapshot，但 expect_seq 不变（不推进）。
+        assert_eq!(cli.expect_seq(), 0);
+        let _ = cli.step_frame(&mut rcv).unwrap(); // 消费到 Snapshot（无 Frame，返回 None 不推进）
+        assert_eq!(cli.expect_seq(), 0, "缓存快照不得推进 expect_seq");
+        let cached = cli.take_latest_snapshot().expect("client 应缓存 host 广播的快照");
+        assert_eq!(cached, (b"snap@10".to_vec(), 10), "缓存内容与 host 广播一致");
+
+        // 取走后清空；再广播新快照覆盖旧值。
+        assert!(cli.take_latest_snapshot().is_none(), "take 后应清空");
+        host.broadcast_snapshot(b"snap@11".to_vec(), 11);
+        let _ = cli.step_frame(&mut rcv).unwrap();
+        assert_eq!(cli.take_latest_snapshot(), Some((b"snap@11".to_vec(), 11)), "新快照覆盖旧缓存");
     }
 
     /// 「人不满也启动」：建房上限 3（host+2 client），但只有 client1 进场就绪；host 设参与集 `[client1 参与, client2 不参与]`，
