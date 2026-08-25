@@ -60,13 +60,21 @@
 - **结果**：任何端都持有最新世界快照，谁都能当新 host——为迁移铺路。
 - **待真机复验**：对局中任意 client 持有的快照与 host 一致；观察带宽开销（每 0.5s 一份完整世界快照）是否可接受。
 
-### 阶段 3：主机迁移（Steam 专属增强）
-- **检测**：client 心跳超时判定 host 掉线（复用现有 `steam_lobby_silent_ticks` 机制扩展）。
-- **选举**：以 `lobby_members`（Steam 权威、全员一致）+ 排除旧 host + SteamID 最小者，确定性选同一新 host（无分叉）。
-- **接管**：新 host 由 `ClientLockstep` 转 `HostLockstep`，用本地快照接管，广播 `Resync` 对齐。
-- **重定向**：其余端把 host peer 改为新 host（`SendMessageToUser` 向新 host 建连），`apply_resync` 对齐续打。
-- **验收**：Steam 对局中 host 掉线 → 各端（以大厅成员为准）确定性选出同一新 host → 新 host 接管广播快照 →
-  其余端重定向 + Resync 对齐 → 对局不断续打，两端逐位一致。
+### 阶段 3：主机迁移（Steam 专属增强）✅ 已落（2026-08-25，真机待复验）
+分三步提交：① 重构 `HostLockstep` 支持 host 任意 index（`host_index`+`client_indices`+`slot_of`）；② net 层迁移 API
+（`Packet::Takeover`/`Participants`、`HostLockstep::takeover`/`broadcast_participants`/`broadcast_takeover`、
+`ClientLockstep` `into_transport`/`retarget_host`/`recv_takeover`/`recv_participants`）；③ client 迁移状态机。
+- **参与者广播**：host 对局配置同步完成时 `broadcast_participants`（按 new index 的 SteamID）；client 收存 `steam_participants`。
+- **检测/探测**：client 连续收不到权威帧（`CLIENT_STALE_TICKS`）→ 进入迁移；先发 `ReconnectReq` 探测 host 是否还在，
+  收到 Snapshot 则（host 在）恢复；`MIGRATE_PROBE_TICKS` 超时无应答则判定 host 掉线。
+- **选举**：排除旧 host + `steam_participants` 中 SteamID 最小者为新 host（确定性、全员一致）。
+- **接管**：本端是新 host → `HostLockstep::takeover`（ClientLockstep 转 host，host_index=本端 index，原 host player0 掉线占位，
+  从缓存快照续打）→ 广播 `Takeover`+`Snapshot`。
+- **重定向**：其余端收 `Takeover` → `retarget_host`（新 host peer）→ 用其快照重建 world → `apply_resync` 对齐续打。
+- **单测 +3**：`host_takeover_resumes_from_cached_snapshot_seq` / `host_takeover_nonzero_index_emits_correct_frames` /
+  `client_retarget_host_after_migration`。workspace 124 全绿，build/test/clippy（默认+steam）全绿。
+- **待真机复验**：Steam 双机对局中 host 直接退出/掉线 → 其余端自动选新 host 接管、对局不断、两端逐位一致。
+- **已知边界**：只处理「原 host 掉线」（new index 0）；其他参与 client 同时掉线时，迁移后新 host 会等其输入而卡（后续可扩展为对掉线 client 也 auto_drop）；不满员对局的迁移未特别处理。
 
 ### 实施顺序
 阶段 1 → 阶段 2 → 阶段 3。阶段 1 同时补掉当前已知缺陷（Steam 对战中 client 掉线 host 空转）。

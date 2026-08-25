@@ -142,9 +142,33 @@ impl<T: Transport> HostLockstep<T> {
     }
 
     /// 广播本局参与玩家的稳定身份（SteamID）列表给所有 client（对局开始、参与集确定后调用一次）。
-    /// 各端据此在 host 掉线时确定性选举新 host（排除旧 host、SteamID 最小者）。
+    /// `ids[i]` = 参与玩家 new index i 的 SteamID。各端据此在 host 掉线时确定性选举新 host。
     pub fn broadcast_participants(&mut self, ids: &[u64]) {
         let pkt = Packet::Participants { ids: ids.to_vec() };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
+    /// 本局参与玩家的稳定身份（SteamID）按 new index 排列：new index 0 = host，其后按参与 client 槽位序。
+    /// 供 host 广播 `Participants`（各端据此在 host 掉线时确定性选举新 host）。
+    pub fn participant_ids(&self, host_id: u64) -> Vec<u64> {
+        let mut ids = Vec::new();
+        if self.local_base > 0 {
+            ids.push(host_id); // host = new index 0
+        }
+        for c in 0..self.expected {
+            if self.is_active(c) {
+                ids.push(self.client_identities[c].unwrap_or(0));
+            }
+        }
+        ids
+    }
+
+    /// 迁移接管后：向所有在线 client 广播 `Takeover`（声明本端为新 host、基线 seq）。
+    pub fn broadcast_takeover(&mut self, seq: u64) {
+        let pkt = Packet::Takeover { seq };
         let enc = pkt.encode();
         for peer in self.client_peers.iter().flatten() {
             let _ = self.transport.send_to(&enc, peer);
