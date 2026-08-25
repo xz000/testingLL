@@ -153,6 +153,8 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 本局参与玩家的稳定身份（SteamID）按 new index 排列：new index 0 = host，其后按参与 client 槽位序。
     /// 供 host 广播 `Participants`（各端据此在 host 掉线时确定性选举新 host）。
+    /// 身份优先取 `client_peers` 里真实连接来源的 SteamID（处理输入时记录），
+    /// 而非 `client_identities`（该表来自建厅时的 session，client 加入后可能没刷新而缺 id）。
     pub fn participant_ids(&self, host_id: u64) -> Vec<u64> {
         let mut ids = Vec::new();
         if self.local_base > 0 {
@@ -160,7 +162,11 @@ impl<T: Transport> HostLockstep<T> {
         }
         for c in 0..self.expected {
             if self.is_active(c) {
-                ids.push(self.client_identities[c].unwrap_or(0));
+                let id = match &self.client_peers[c] {
+                    Some(Peer::Steam { id, .. }) => *id,
+                    _ => self.client_identities[c].unwrap_or(0),
+                };
+                ids.push(id);
             }
         }
         ids
