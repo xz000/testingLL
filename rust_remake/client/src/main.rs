@@ -2131,6 +2131,49 @@ impl event::EventHandler for Game {
                 self.accumulator = 0.0;
                 return Ok(());
             }
+            // Steam 大厅主界面（创建 / 加入 / 返回）：独立处理并返回，不落到下面主菜单动作块。
+            // 放在主菜单动作处理【之前】，避免“刚进入大厅那一帧”把触发键（回车/鼠标）又当成大厅里的选择再触发一次（会直接进创建房间）。
+            #[cfg(feature = "steam")]
+            if self.steam_lobby_menu {
+                // 上下箭头切换选中。
+                if just_named(NamedKey::ArrowUp) {
+                    self.steam_lobby_selection = (self.steam_lobby_selection + 2) % 3;
+                } else if just_named(NamedKey::ArrowDown) {
+                    self.steam_lobby_selection = (self.steam_lobby_selection + 1) % 3;
+                }
+                // 鼠标点击卡片：命中即选中并执行。
+                let mut clicked = false;
+                if ctx.mouse.button_just_pressed(MouseButton::Left) {
+                    let (sw, sh) = ctx.gfx.drawable_size();
+                    let card_w = (sw * 0.62).min(560.0);
+                    let card_h = 96.0;
+                    let card_x = sw / 2.0 - card_w / 2.0;
+                    let y0 = sh * 0.34;
+                    let gap = 26.0;
+                    let p = ctx.mouse.position();
+                    for i in 0..3 {
+                        let y = y0 + i as f32 * (card_h + gap);
+                        if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
+                            self.steam_lobby_selection = i;
+                            self.steam_lobby_act(i);
+                            clicked = true;
+                        }
+                    }
+                }
+                if !clicked {
+                    if just('h') || just('H') || just(' ') {
+                        self.steam_lobby_act(0);
+                    } else if just('j') || just('J') {
+                        self.steam_lobby_act(1);
+                    } else if just('q') || just('Q') {
+                        self.steam_lobby_act(2);
+                    } else if just_named(NamedKey::Enter) || just('\r') {
+                        self.steam_lobby_act(self.steam_lobby_selection);
+                    }
+                }
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             // 方向键移动选中（在 Steam 大厅子菜单里不干扰，只影响主菜单选中）。
             if !in_lobby_menu {
                 if just_named(NamedKey::ArrowUp) {
@@ -2214,46 +2257,6 @@ impl event::EventHandler for Game {
                         eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
                     }
                     _ => {}
-                }
-            }
-            // Steam 大厅主界面：创建 / 加入 / 返回（H/J/Q 快捷键 + 上下箭头 + 回车 + 鼠标点击）。
-            #[cfg(feature = "steam")]
-            if self.steam_lobby_menu && !self.steam_lobby_create && !self.steam_lobby_list {
-                // 上下箭头切换选中。
-                if just_named(NamedKey::ArrowUp) {
-                    self.steam_lobby_selection = (self.steam_lobby_selection + 2) % 3;
-                } else if just_named(NamedKey::ArrowDown) {
-                    self.steam_lobby_selection = (self.steam_lobby_selection + 1) % 3;
-                }
-                // 鼠标点击卡片：命中即选中并执行。
-                let mut clicked = false;
-                if ctx.mouse.button_just_pressed(MouseButton::Left) {
-                    let (sw, sh) = ctx.gfx.drawable_size();
-                    let card_w = (sw * 0.62).min(560.0);
-                    let card_h = 96.0;
-                    let card_x = sw / 2.0 - card_w / 2.0;
-                    let y0 = sh * 0.34;
-                    let gap = 26.0;
-                    let p = ctx.mouse.position();
-                    for i in 0..3 {
-                        let y = y0 + i as f32 * (card_h + gap);
-                        if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
-                            self.steam_lobby_selection = i;
-                            self.steam_lobby_act(i);
-                            clicked = true;
-                        }
-                    }
-                }
-                if !clicked {
-                    if just('h') || just('H') || just(' ') {
-                        self.steam_lobby_act(0);
-                    } else if just('j') || just('J') {
-                        self.steam_lobby_act(1);
-                    } else if just('q') || just('Q') {
-                        self.steam_lobby_act(2);
-                    } else if just_named(NamedKey::Enter) || just('\r') {
-                        self.steam_lobby_act(self.steam_lobby_selection);
-                    }
                 }
             }
             self.accumulator = 0.0;
@@ -2343,6 +2346,24 @@ impl event::EventHandler for Game {
                 Ok(())
             }
             MatchPhase::Fighting => {
+                // 单机试验场：按 Esc 随时返回主菜单（无任何联网对局时才生效）。
+                #[cfg(not(feature = "steam"))]
+                let solo_no_net = self.net_link.is_none() && self.net_host.is_none();
+                #[cfg(feature = "steam")]
+                let solo_no_net = self.net_link.is_none()
+                    && self.net_host.is_none()
+                    && self.steam_cli_ls.is_none()
+                    && self.steam_host_ls.is_none();
+                if solo_no_net {
+                    use ggez::input::keyboard::Key;
+                    use winit::keyboard::NamedKey;
+                    if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+                        eprintln!("[solo] Esc -> back to main menu");
+                        self.reset_to_main_menu();
+                        self.accumulator = 0.0;
+                        return Ok(());
+                    }
+                }
                 // 每帧轮询输入（技能键 / 鼠标）
                 self.poll_input(ctx);
                 self.accumulator += dt.min(0.25);
