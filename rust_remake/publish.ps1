@@ -40,8 +40,9 @@ Push-Location $PSScriptRoot
 # 配置节（需自行填写 / 覆盖）
 # ----------------------------------------------------------------------------
 $AppId    = 908660
-# ★ Depot ID：到 Steamworks 后台「SteamPipe > Depots」看，替换成你的真实值。
-$DepotId  = 'REPLACE_WITH_YOUR_DEPOT_ID'
+# Depot ID = 908661「Circle Brawl Content」（当前仅 Windows，语言 = 所有语言）。
+# 未来加 Linux 等平台：为每个平台各新建一个 depot，并在 VDF 的 Depots 里列出多个。
+$DepotId  = 908661
 
 # Steam 登录账号（带 bot 的账号）。凭据从环境变量读，避免明文进仓库：
 #   $env:STEAM_USER / $env:STEAM_PASS
