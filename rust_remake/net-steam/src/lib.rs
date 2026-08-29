@@ -18,6 +18,7 @@
 //!    - 双账号阶段：用 SteamNetworkingSockets 的 send_to/recv_from 把 Peer::Steam{id} 映射到真实 peer 会话，实现收发。
 
 pub mod lobby;
+pub mod stats;
 #[cfg(not(feature = "steam"))]
 pub mod transport_stub;
 #[cfg(feature = "steam")]

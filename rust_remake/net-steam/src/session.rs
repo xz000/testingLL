@@ -8,6 +8,7 @@
 //! 复用已就绪的地基：`SteamTransport`（P2P 收发）、`LobbyPlayerTable`（成员→槽位）、
 //! `net::lockstep::HostLockstep`/`ClientLockstep`（传输无关），故帧同步/多局/重连零改动。
 
+use crate::stats::{MatchSummary, STAT_KILLS, STAT_MATCHES, STAT_WINS};
 use crate::transport_steam::SteamTransport;
 use crate::lobby::{format_connect_string, parse_connect_string, LobbyPlayerTable, SteamID};
 use std::collections::VecDeque;
@@ -98,6 +99,218 @@ pub fn open_invite_dialog(transport: &SteamTransport, lobby: u64) {
         .friends()
         .activate_invite_dialog(steamworks::LobbyId::from_raw(lobby));
     eprintln!("[steam-invite] opened Steam invite dialog for lobby {lobby}");
+}
+
+/// 头像尺寸（Steam 三档固定尺寸，RGBA 字节）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AvatarSize {
+    /// 32x32
+    Small,
+    /// 64x64
+    Medium,
+    /// 184x184
+    Large,
+}
+
+impl AvatarSize {
+    /// 该档头像的像素边长（Steam 固定；返回的字节数 = 边长² × 4）。
+    pub fn side(self) -> u32 {
+        match self {
+            AvatarSize::Small => 32,
+            AvatarSize::Medium => 64,
+            AvatarSize::Large => 184,
+        }
+    }
+}
+
+/// 取某位 Steam 用户的头像（RGBA 字节 + 边长）。`None` = Steam 还没把头像拉下来（首次进房常见，稍后重试即可）。
+pub fn avatar_rgba(transport: &SteamTransport, steam_id: u64, size: AvatarSize) -> Option<(Vec<u8>, u32)> {
+    let f = transport.friends().get_friend(steamworks::SteamId::from_raw(steam_id));
+    let bytes = match size {
+        AvatarSize::Small => f.small_avatar(),
+        AvatarSize::Medium => f.medium_avatar(),
+        AvatarSize::Large => f.large_avatar(),
+    };
+    bytes.map(|b| (b, size.side()))
+}
+
+/// 到某 peer 的当前 ping（毫秒）。`None` = 还没建立会话 / Steam 暂无测量值
+/// （帧同步对延迟敏感，没测出来时界面应显示“--”而不是 0）。
+pub fn ping_to(transport: &SteamTransport, peer: u64) -> Option<i32> {
+    use steamworks::networking_types::NetworkingIdentity;
+    let identity = NetworkingIdentity::new_steam_id(steamworks::SteamId::from_raw(peer));
+    let (_state, _info, realtime) = transport.networking_messages().get_session_connection_info(&identity);
+    let ping = realtime?.ping();
+    (ping > 0).then_some(ping)
+}
+
+// ---------------------------------------------------------------------------
+// 统计 / 成就 / 排行榜
+//
+// 规则（该记什么）在 `stats.rs`（纯函数、有单测）；这里只负责**写给 Steam**。
+// 全部 best-effort：这些 key 都要在 Steamworks 后台先定义，没配置时 set 会失败，
+// 游戏不该因此报错，只打一条日志（真接入时按日志去后台补配置即可）。
+// ---------------------------------------------------------------------------
+
+/// 本机的 Steam 统计快照（best-effort 读回；后台没定义该统计 → `None`）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StatsSnapshot {
+    /// 累计场次。
+    pub matches: Option<i32>,
+    /// 累计胜场。
+    pub wins: Option<i32>,
+    /// 累计击杀。
+    pub kills: Option<i32>,
+}
+
+/// 一次战绩上报的结果（供界面提示：解锁了哪些成就、上了多少分、是否有写入失败）。
+#[derive(Debug, Clone)]
+pub struct MatchRecordReport {
+    /// 本地判定应解锁的成就键（Steam 侧是否真解锁取决于后台是否定义了这些 key）。
+    pub achievements: Vec<&'static str>,
+    /// 本次要上传的排行榜分数。
+    pub score: i32,
+    /// 是否有任一项写失败（后台未配置 / stats 未就绪）。
+    pub had_failure: bool,
+}
+
+/// 排行榜一行。
+#[derive(Debug, Clone)]
+pub struct LeaderboardRow {
+    /// 全球名次（1 起）。
+    pub rank: i32,
+    pub steam_id: u64,
+    pub score: i32,
+}
+
+/// 异步结果槽：Steam 的查找/下载走 call-result 回调（靠 `run_callbacks` 推进），
+/// 回调签名是 `FnOnce + 'static`，借用不到这里的 transport，所以把结果写回调用方持有的共享槽。
+pub type Shared<T> = Arc<Mutex<T>>;
+
+/// 新建一个结果槽。
+pub fn shared<T>(v: T) -> Shared<T> {
+    Arc::new(Mutex::new(v))
+}
+
+/// 读回本机统计（需要先在 Steamworks 后台定义同名统计）。
+pub fn stats_snapshot(transport: &SteamTransport) -> StatsSnapshot {
+    let us = transport.user_stats();
+    StatsSnapshot {
+        matches: us.get_stat_i32(STAT_MATCHES).ok(),
+        wins: us.get_stat_i32(STAT_WINS).ok(),
+        kills: us.get_stat_i32(STAT_KILLS).ok(),
+    }
+}
+
+/// 把一场战绩写进 Steam 统计 + 成就（统计是绝对值，所以先读旧值再加增量）。
+pub fn record_match_result(transport: &SteamTransport, summary: MatchSummary) -> MatchRecordReport {
+    use crate::stats::{achievements_for, leaderboard_score};
+    let us = transport.user_stats();
+    let mut had_failure = false;
+
+    let deltas: [(&str, i32); 3] = [
+        (STAT_MATCHES, 1),
+        (STAT_WINS, if summary.won() { 1 } else { 0 }),
+        (STAT_KILLS, summary.kills as i32),
+    ];
+    for (key, delta) in deltas {
+        if delta == 0 {
+            continue;
+        }
+        let cur = us.get_stat_i32(key).unwrap_or(0);
+        if us.set_stat_i32(key, cur + delta).is_err() {
+            had_failure = true;
+            eprintln!("[steam-stats] set {key} failed（后台未定义该统计，或 stats 未就绪）");
+        }
+    }
+    let achievements = achievements_for(summary);
+    for key in achievements.iter() {
+        if us.achievement(key).set().is_err() {
+            had_failure = true;
+            eprintln!("[steam-stats] unlock {key} failed（后台未定义该成就，或 stats 未就绪）");
+        }
+    }
+    if us.store_stats().is_err() {
+        had_failure = true;
+        eprintln!("[steam-stats] store_stats failed");
+    }
+    eprintln!(
+        "[steam-stats] recorded: kills={} best=#{} players={} rounds={} achievements={:?}",
+        summary.kills, summary.best_placement, summary.players, summary.rounds, achievements
+    );
+    MatchRecordReport {
+        achievements,
+        score: leaderboard_score(summary),
+        had_failure,
+    }
+}
+
+/// 异步查找排行榜：结果写进 `slot`（`run_callbacks` 推进后可读）。
+pub fn request_leaderboard(transport: &SteamTransport, name: &str, slot: &Shared<Option<steamworks::Leaderboard>>) {
+    let name = name.to_string();
+    let slot = slot.clone();
+    // 回调要 'static，会把 `name` 移进去；查找接口又要一个 &str，所以先克隆一份给同步调用。
+    transport
+        .user_stats()
+        .find_leaderboard(&name.clone(), move |res| match res {
+            Ok(Some(lb)) => {
+                eprintln!("[steam-lb] leaderboard '{name}' found");
+                *slot.lock().unwrap() = Some(lb);
+            }
+            Ok(None) => eprintln!("[steam-lb] leaderboard '{name}' 不存在（需在 Steamworks 后台建榜）"),
+            Err(e) => eprintln!("[steam-lb] find '{name}' failed: {e:?}"),
+        });
+}
+
+/// 上传排行榜分数（KeepBest：只保留最好成绩）。
+pub fn upload_leaderboard_score(transport: &SteamTransport, lb: &steamworks::Leaderboard, score: i32) {
+    transport.user_stats().upload_leaderboard_score(
+        lb,
+        steamworks::UploadScoreMethod::KeepBest,
+        score,
+        &[],
+        move |res| match res {
+            Ok(Some(u)) => eprintln!(
+                "[steam-lb] score {score} uploaded (rank {} -> {}, changed={})",
+                u.global_rank_previous, u.global_rank_new, u.was_changed
+            ),
+            Ok(None) => eprintln!("[steam-lb] upload {score} rejected（后台未配置该榜？）"),
+            Err(e) => eprintln!("[steam-lb] upload failed: {e:?}"),
+        },
+    );
+}
+
+/// 异步下载榜单前 `n` 名，结果写进 `slot`（`run_callbacks` 推进后可读）。
+pub fn request_leaderboard_top(
+    transport: &SteamTransport,
+    lb: &steamworks::Leaderboard,
+    n: usize,
+    slot: &Shared<Vec<LeaderboardRow>>,
+) {
+    use steamworks::LeaderboardDataRequest;
+    let slot = slot.clone();
+    transport.user_stats().download_leaderboard_entries(
+        lb,
+        LeaderboardDataRequest::Global,
+        1,
+        n.max(1),
+        0,
+        move |res| match res {
+            Ok(entries) => {
+                let rows: Vec<LeaderboardRow> = entries
+                    .into_iter()
+                    .map(|e| LeaderboardRow {
+                        rank: e.global_rank,
+                        steam_id: e.user.raw(),
+                        score: e.score,
+                    })
+                    .collect();
+                eprintln!("[steam-lb] downloaded {} rows", rows.len());
+                *slot.lock().unwrap() = rows;
+            }
+            Err(e) => eprintln!("[steam-lb] download failed: {e:?}"),
+        },
+    );
 }
 
 /// 写 Rich Presence：`status` 是好友列表里看到的状态文案；`connect` 非空时好友多出「加入游戏」按钮。
