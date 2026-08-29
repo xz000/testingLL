@@ -69,9 +69,9 @@ const STEAM_MAX_PLAYERS: u8 = 64;
 /// Steam 建房：默认玩家数（创建房间界面的初始值）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_PLAYERS: u8 = 2;
-/// Steam 建房：总轮数上限允许的最大值。
+/// Steam 建房：总轮数上限允许的最大值（256 基本无限制）。
 #[cfg(feature = "steam")]
-const STEAM_MAX_ROUNDS: u32 = 10;
+const STEAM_MAX_ROUNDS: u32 = 256;
 /// Steam 建房：默认总轮数（创建房间界面的初始值，与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_ROUNDS: u32 = 3;
@@ -4360,35 +4360,59 @@ impl Game {
     fn draw_steam_create_lobby(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "创建房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.24 }, true)?;
-        draw_text(canvas, ctx, "↑/↓ 或 Tab 切换字段，输入文本，回车创建", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.24 + 54.0 }, true)?;
-        let labels = ["房间名", "备注（可空）", "玩家人数", "总轮数"];
-        let vals = [self.steam_create_name.clone(), self.steam_create_note.clone(), self.steam_create_players.to_string(), self.steam_create_rounds.to_string()];
-        let mut y = sh * 0.40;
-        let label_w = 220.0;
-        let box_w = 420.0;
-        let box_h = 56.0;
-        let left = cx - box_w / 2.0 - 40.0;
+        draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
+        draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.14 + 48.0 }, true)?;
+
+        let labels = ["房间名", "备注", "玩家人数", "总轮数"];
+        let hints = [
+            "直接输入文字，Backspace 删除",
+            "可留空；直接输入文字",
+            "+/- 步进，或直接输数字（2 ~ 64）",
+            "+/- 步进，或直接输数字（1 ~ 256）",
+        ];
+        let vals = [
+            self.steam_create_name.clone(),
+            self.steam_create_note.clone(),
+            self.steam_create_players.to_string(),
+            self.steam_create_rounds.to_string(),
+        ];
+        let box_w = 400.0;
+        let box_h = 50.0;
+        let label_w = 180.0;
+        let total_left = cx - (label_w + box_w) / 2.0;
+        let row_h = box_h + 48.0;
+        let mut y = sh * 0.28;
         for i in 0..4 {
             let selected = i == self.steam_create_focus;
-            // 标签
-            draw_text(canvas, ctx, labels[i], 24.0, Color::from_rgb(220, 224, 235), Point2 { x: left + (label_w + box_w) / 2.0, y: y + box_h / 2.0 - 16.0 }, true)?;
-            // 输入框（聚焦高亮边框 → 用背景色区分）
-            let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(30, 34, 44) };
-            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(left + label_w, y, box_w, box_h), bg_col)?;
+            // 输入框
+            let bg_col = if selected { Color::from_rgb(56, 66, 84) } else { Color::from_rgb(28, 32, 42) };
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(total_left + label_w, y, box_w, box_h), bg_col)?;
             canvas.draw(&bg, graphics::DrawParam::new());
+            // 聚焦字段：金色高亮边框
+            if selected {
+                let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), graphics::Rect::new(total_left + label_w, y, box_w, box_h), Color::from_rgb(255, 210, 120))?;
+                canvas.draw(&border, graphics::DrawParam::new());
+            }
+            // 标签
+            let label_col = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(215, 220, 232) };
+            draw_text(canvas, ctx, labels[i], 24.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 15.0 }, true)?;
+            // 值
             let disp = if i == 0 && vals[0].is_empty() {
                 "（输入房间名）".to_string()
             } else if i == 1 && vals[1].is_empty() {
-                "（可选）".to_string()
+                "（可留空）".to_string()
             } else {
-                format!("  {}", vals[i])
+                vals[i].clone()
             };
-            draw_text(canvas, ctx, &disp, 22.0, if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE }, Point2 { x: left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
-            y += box_h + 30.0;
+            let val_col = if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE };
+            draw_text(canvas, ctx, &disp, 22.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
+            // 聚焦字段下方：该字段专属操作提示
+            if selected {
+                draw_text(canvas, ctx, &format!("▶ {}", hints[i]), 17.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + box_h + 14.0 }, true)?;
+            }
+            y += row_h;
         }
-        draw_text(canvas, ctx, "人数 2-64；轮数 1-10（+/- 调，或直接输数字）", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: y + 10.0 }, true)?;
-        draw_text(canvas, ctx, "回车 创建房间    Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建房间 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         Ok(())
     }
 
