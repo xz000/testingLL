@@ -95,6 +95,9 @@
 | `ISteamFriends`（邀请） | `activate_invite_dialog(lobby)` 覆盖层邀请窗口；`Friend::invite_user_to_game(connect)` 定向邀请 | 好友邀请（第一批，2026-08-29） |
 | `ISteamFriends`（Rich Presence） | `set_rich_presence("status"\|"connect")` / `clear_rich_presence()` | 好友看到状态 +「加入游戏」（第一批，2026-08-29） |
 | 回调 `GameLobbyJoinRequested` / `GameRichPresenceJoinRequested` | 好友点「加入游戏」/接受邀请时本机收到 → 按 lobby id 自动进房 | 好友邀请（第一批，2026-08-29） |
+| `ISteamNetworkingMessages::GetSessionConnectionInfo` | 到 peer 的实时 ping | Ping 显示（第二批，2026-08-29） |
+| `ISteamFriends::GetSmallFriendAvatar` + `ISteamUtils::GetImageRGBA` | 玩家头像（32/64/184 RGBA） | 房间/好友列表头像（第二批） |
+| `ISteamUserStats`（统计/成就/排行榜） | `set_stat_i32` / `achievement().set()` / `store_stats()` / `find_leaderboard` / `upload_leaderboard_score` | 战绩上报（第二批，需后台 key） |
 | `ISteamNetworkingMessages` | `SendMessageToUser`/`ReceiveMessagesOnChannel` relay P2P 传输 | 对局传输 |
 | `Client::init_app` + `SteamId` | 初始化 / 稳定身份 | 全局 |
 
@@ -116,12 +119,21 @@
 > - connect 串统一为 `+connect_lobby <lobby_id>`（`lobby.rs` 的 `format_/parse_connect_string`，有单测）；
 >   游戏在跑 → 回调进房；没跑 → Steam 用它冷启动游戏（`parse_app_from_args` 解析，有单测）。
 
-**第二批（然后考虑）**
+**第二批（然后考虑）—— ✅ 已落（2026-08-29），待真机复验（统计/成就/排行榜还需后台配置 key）**
 | 能力 | 用途 | 价值 |
 |---|---|---|
 | **成就 + 统计 + 排行榜（UserStats）** | 击杀数/名次/胜场/成就解锁/排行榜 | 中：对局结算已有 placement/kills，长期目标感 |
 | **玩家头像（Avatar）** | 房间/结算界面显示玩家头像（`GetLargeFriendAvatar` + 图像取 RGBA） | 中：比昵称更直观 |
 | **Ping / 连接质量（NetworkingUtils）** | 房间/对局显示到 host 的延迟，帮助判断卡顿来源 | 中：帧同步对延迟敏感，值得显性展示 |
+
+> 实现要点（踩坑记录，别重复踩）：
+> - **Ping 不走 `NetworkingUtils`**（那儿只有中继网络状态），而是 `ISteamNetworkingMessages::GetSessionConnectionInfo`
+>   返回的实时信息里的 `ping()`；测不到是 `None`，界面要显示“--”而不是 0。
+> - **头像是固定尺寸**（32/64/184），steamworks 只给 RGBA 字节不给尺寸，边长按档位常量补。
+> - **统计/成就/排行榜的 key 必须先建在 Steamworks 后台**，否则 `set_stat_i32` / `achievement().set()` 直接失败；
+>   所以规则（该记什么）放在无 steam 也能编译的 `stats.rs` 并配单测，写入全部 best-effort。
+> - Steam 的 find/download 是 **call-result 回调**（`FnOnce + 'static`，拿不到 transport），
+>   结果只能写回调用方持有的 `Shared<T>` 槽位，靠 `run_callbacks` 推进后取用。
 
 **最后做**
 | 能力 | 用途 | 价值 |
@@ -150,4 +162,6 @@
 2. ~~**开始三阶段主线：阶段 1 → 阶段 2 → 阶段 3**~~ ✅ 三阶段已完成并真机复验（2026-08-25）。
 3. ~~Steamworks 第一批：好友邀请 + Rich Presence~~ ✅ 已落（2026-08-29），**待真机双账号复验**
    （复验清单见 `NEXT_STEPS.md`「Steamworks 第一批」节末）。
-4. 复验通过后接第二批：成就 / 排行榜 / 头像 / Ping → 最后云存档。
+4. ~~Steamworks 第二批：成就 / 排行榜 / 头像 / Ping~~ ✅ 已落（2026-08-29），**待真机复验 + 后台配置 key**
+   （复验清单见 `NEXT_STEPS.md`「Steamworks 第二批」节末）。
+5. 复验通过后接最后一批：**云存档**（Remote Storage）。

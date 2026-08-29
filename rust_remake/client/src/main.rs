@@ -346,6 +346,33 @@ struct Game {
     /// Steam：主菜单上是否已尝试过初始化会话（失败也不再每帧重试，避免刷屏 + 反复 SteamAPI_Init）。
     #[cfg(feature = "steam")]
     steam_session_tried: bool,
+    /// Steam：各成员的 ping（毫秒），键 = SteamID；每 ~0.5s 刷新一次（帧同步对延迟敏感，值得显性展示）。
+    #[cfg(feature = "steam")]
+    steam_pings: Vec<(u64, i32)>,
+    /// Steam：头像缓存（SteamID → 32x32 贴图）。拉过一次就缓存，Steam 首次常拉不到，下次自动重试。
+    #[cfg(feature = "steam")]
+    steam_avatars: Vec<(u64, graphics::Image)>,
+    /// Steam：ping/头像刷新的节流计数（每 30 帧一次）。
+    #[cfg(feature = "steam")]
+    steam_net_ticks: u32,
+    /// Steam：排行榜句柄槽（查找是异步回调，结果由 `run_callbacks` 推进后写回）。
+    #[cfg(feature = "steam")]
+    steam_lb_slot: net_steam::session::Shared<Option<net_steam::steamworks::Leaderboard>>,
+    /// Steam：榜单前几名（下载同样是异步回调写回）。
+    #[cfg(feature = "steam")]
+    steam_lb_rows: net_steam::session::Shared<Vec<net_steam::session::LeaderboardRow>>,
+    /// Steam：是否已对本场发起过排行榜查找（每会话只找一次）。
+    #[cfg(feature = "steam")]
+    steam_lb_requested: bool,
+    /// Steam：本场战绩是否已上报（进入 Finished 只上报一次，避免每帧重复写）。
+    #[cfg(feature = "steam")]
+    steam_stats_recorded: bool,
+    /// Steam：结算界面展示的统计快照（场次/胜场/击杀）。
+    #[cfg(feature = "steam")]
+    steam_stats_snapshot: Option<net_steam::session::StatsSnapshot>,
+    /// Steam：成就/榜单提示条（文案 + 到期时刻，秒）。
+    #[cfg(feature = "steam")]
+    steam_toast: (String, f64),
 }
 
 impl Game {
@@ -619,6 +646,24 @@ impl Game {
             steam_presence_text: String::new(),
             #[cfg(feature = "steam")]
             steam_session_tried: false,
+            #[cfg(feature = "steam")]
+            steam_pings: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_avatars: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_net_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_lb_slot: net_steam::session::shared(None),
+            #[cfg(feature = "steam")]
+            steam_lb_rows: net_steam::session::shared(Vec::new()),
+            #[cfg(feature = "steam")]
+            steam_lb_requested: false,
+            #[cfg(feature = "steam")]
+            steam_stats_recorded: false,
+            #[cfg(feature = "steam")]
+            steam_stats_snapshot: None,
+            #[cfg(feature = "steam")]
+            steam_toast: (String::new(), 0.0),
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1631,6 +1676,16 @@ impl Game {
             self.draw_reconnect_overlay(&mut canvas, ctx)?;
         }
 
+        // Steam 提示条（成就上报等）：画在最上层，几秒后自动消失。
+        #[cfg(feature = "steam")]
+        {
+            let now = ctx.time.time_since_start().as_secs_f64();
+            if !self.steam_toast.0.is_empty() && now < self.steam_toast.1 {
+                let (sw, sh) = ctx.gfx.drawable_size();
+                draw_text(&mut canvas, ctx, &self.steam_toast.0, 22.0, Color::from_rgb(255, 215, 120), Point2 { x: sw / 2.0, y: sh * 0.08 }, true)?;
+            }
+        }
+
         canvas.finish(ctx)?;
         Ok(())
     }
@@ -1682,7 +1737,7 @@ impl Game {
         };
         let card_w = (sw * 0.46).min(520.0);
         let card_x = cx - card_w / 2.0;
-        for (slot, name, _id) in self.steam_roster.iter() {
+        for (slot, name, id) in self.steam_roster.iter() {
             let is_me = *slot == self.steam_my_index;
             let (ready, col) = if is_me {
                 (self.steam_local_ready, if self.steam_local_ready { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
@@ -1702,6 +1757,14 @@ impl Game {
             let mark = if ready { "[v]" } else { "[ ]" };
             let me_tag = if is_me { "（我）" } else { "" };
             draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: card_x + 90.0, y }, true)?;
+            // 延迟：画在卡片右端（没测到显示“--”）。
+            let ping_txt = match self.steam_ping_of(*id) {
+                Some(ms) => format!("{ms} ms"),
+                None => "-- ms".to_string(),
+            };
+            draw_text(canvas, ctx, &ping_txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: card_x + card_w - 60.0, y: y + 2.0 }, true)?;
+            // 头像：画在卡片左侧外面（卡片内的昵称是居中排的，塞进去会压字），没拉到就留空。
+            self.steam_draw_avatar(canvas, *id, card_x - 36.0, y - 4.0, 30.0);
             y += 46.0;
         }
         // 「邀请好友」面板（按 I 展开）：画在成员列表下方（`y` 即成员列表末尾），卡片样式与成员列表一致。
@@ -1755,6 +1818,8 @@ impl Game {
                 let col = if selected { Color::WHITE } else { Color::from_rgb(205, 210, 222) };
                 let name = if f.name.is_empty() { f.id.to_string() } else { f.name.clone() };
                 draw_text(canvas, ctx, &format!("  {mark}  {name}{tag}"), 20.0, col, Point2 { x: card_x + 60.0, y }, true)?;
+                // 头像（与成员列表同一位置：卡片左侧外面）。
+                self.steam_draw_avatar(canvas, f.id, card_x - 36.0, y - 4.0, 30.0);
                 y += 38.0;
             }
         }
@@ -1792,6 +1857,27 @@ impl Game {
 
         match self.meta.phase {
             MatchPhase::Fighting => {
+                // 延迟指示（Steam 联机才有 ping；没测出来显示“--”）。
+                #[cfg(feature = "steam")]
+                if self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
+                    let host_id = self.steam_participants.first().copied().unwrap_or(0);
+                    let mine = if self.steam_cli_ls.is_some() {
+                        self.steam_ping_of(host_id)
+                    } else {
+                        // host：显示到各 client 里最差的一个（帧同步等最慢的那端）。
+                        let my_id = self.steam_my_id;
+                        self.steam_pings
+                            .iter()
+                            .filter(|(id, _)| *id != my_id)
+                            .map(|(_, ms)| *ms)
+                            .max()
+                    };
+                    let txt = match mine {
+                        Some(ms) => format!("延迟 {ms} ms"),
+                        None => "延迟 -- ms".to_string(),
+                    };
+                    draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh - 116.0 }, true)?;
+                }
                 // 技能冷却 HUD：底部一排 8 个键位槽，显示绑定技能图标/名称 + 冷却遮罩
                 let self_idx = self.self_index();
                 if let (Some(me), Some(me_player)) = (
@@ -1951,6 +2037,37 @@ impl Game {
                     y += 40.0;
                 }
                 y += 30.0;
+                // Steam：统计（后台配置后才有值）+ 榜单前几名 + 成就提示。
+                #[cfg(feature = "steam")]
+                if let Some(s) = self.steam_stats_snapshot {
+                    let f = |v: Option<i32>| v.map(|n| n.to_string()).unwrap_or_else(|| "--".to_string());
+                    let line = format!(
+                        "Steam 统计：场次 {}    胜场 {}    击杀 {}",
+                        f(s.matches),
+                        f(s.wins),
+                        f(s.kills)
+                    );
+                    draw_text(canvas, ctx, &line, 20.0, Color::from_rgb(170, 190, 215), Point2 { x: cx, y }, true)?;
+                    y += 34.0;
+                    // 榜单前 5（异步下载；没下载到就显示一行提示）。
+                    let rows = self.steam_lb_rows.lock().unwrap().clone();
+                    if rows.is_empty() {
+                        draw_text(canvas, ctx, "排行榜：暂无数据（需在 Steamworks 后台建榜）", 18.0, Color::from_rgb(140, 150, 168), Point2 { x: cx, y }, true)?;
+                        y += 30.0;
+                    } else {
+                        draw_text(canvas, ctx, "排行榜 TOP5", 20.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
+                        y += 30.0;
+                        for r in rows.iter().take(5) {
+                            let name = self
+                                .steam_transport()
+                                .map(|t| t.friends().get_friend(net_steam::steamworks::SteamId::from_raw(r.steam_id)).name())
+                                .unwrap_or_default();
+                            let who = if name.is_empty() { format!("{}", r.steam_id) } else { name };
+                            draw_text(canvas, ctx, &format!("#{}  {}  {} 分", r.rank, who, r.score), 18.0, Color::from_rgb(205, 212, 225), Point2 { x: cx, y }, true)?;
+                            y += 26.0;
+                        }
+                    }
+                }
                 draw_text(canvas, ctx, "对局结束 - 按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
             }
         }
@@ -2152,6 +2269,11 @@ impl event::EventHandler for Game {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
                 self.accumulator = 0.0;
+                // Steam：整场结束上报一次战绩（统计 + 成就 + 排行榜），内部有“只上报一次”保护。
+                #[cfg(feature = "steam")]
+                if self.steam_active() {
+                    self.steam_record_match_result(ctx.time.time_since_start().as_secs_f64());
+                }
                 // 允许回主菜单：按 Q。
                 use ggez::input::keyboard::Key;
                 let q = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
@@ -2192,6 +2314,8 @@ impl event::EventHandler for Game {
                 {
                     // Rich Presence：对局中 → “对局中（第 N 局）”（带 connect，好友可加入同一房间）。
                     self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
+                    // 对局中也刷新 ping（HUD 显示到对端的延迟，卡顿来源一眼可辨）。
+                    self.steam_refresh_network_info(ctx);
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
@@ -2698,6 +2822,14 @@ impl Game {
             self.steam_friends = Vec::new();
             self.steam_friend_selection = 0;
             self.steam_friend_hint = String::new();
+            // ping/头像缓存（换房间就不该复用上一房的成员数据）。
+            self.steam_pings = Vec::new();
+            self.steam_avatars = Vec::new();
+            self.steam_net_ticks = 0;
+            // 本场战绩上报标记/提示条复位（下一场重新上报）。
+            self.steam_stats_recorded = false;
+            self.steam_stats_snapshot = None;
+            self.steam_toast = (String::new(), 0.0);
             // 进房时 `steam_sess` 会被消费掉（传输归 lockstep），回到主菜单后可再初始化一次
             // （否则好友邀请与房间列表在主菜单上会永久失效）。
             self.steam_session_tried = false;
@@ -2815,6 +2947,142 @@ impl Game {
             format!("对局中（第 {} 局）", self.meta.round)
         };
         self.steam_set_presence(now, &status, Some(&connect));
+    }
+
+    /// 某位成员的 ping（毫秒）；没测到返回 `None`（界面显示“--”，不要显示 0 误导）。
+    #[cfg(feature = "steam")]
+    fn steam_ping_of(&self, id: u64) -> Option<i32> {
+        self.steam_pings.iter().find(|(k, _)| *k == id).map(|(_, ms)| *ms)
+    }
+
+    /// 节流刷新网络信息：各成员 ping + 补拉缺失头像（每 30 帧一次）。
+    /// 头像只补没缓存过的（Steam 首次进房常拉不到，下一轮自动重试）。
+    #[cfg(feature = "steam")]
+    fn steam_refresh_network_info(&mut self, ctx: &Context) {
+        self.steam_net_ticks = self.steam_net_ticks.wrapping_add(1);
+        if self.steam_net_ticks % 30 != 1 {
+            return;
+        }
+        // 先把要查的 SteamID 抄出来（避免 `steam_transport()` 的借用挡住后面的 &mut self）。
+        // 含房间成员 +（邀请面板展开时）好友列表里的人，好让两边都能显示头像。
+        let member_ids: Vec<u64> = self.steam_roster.iter().map(|(_, _, id)| *id).collect();
+        let mut ids = member_ids.clone();
+        if self.steam_friend_list {
+            for f in self.steam_friends.iter() {
+                if !ids.contains(&f.id) {
+                    ids.push(f.id);
+                }
+            }
+        }
+        let Some(t) = self.steam_transport() else { return };
+        let my_id = t.steam_id();
+        // ping：只查房间成员里的别人（自己到自己是 0，没意义；好友没建会话也测不出来）。
+        let mut pings = Vec::new();
+        for id in member_ids.iter().copied().filter(|id| *id != my_id) {
+            if let Some(ms) = net_steam::session::ping_to(t, id) {
+                pings.push((id, ms));
+            }
+        }
+        // 头像：只补缺失的。先把字节取出来（此时仍在借用 t），等 t 用完了再写回 self。
+        let mut fetched: Vec<(u64, Vec<u8>, u32)> = Vec::new();
+        for id in ids {
+            if self.steam_avatars.iter().any(|(k, _)| *k == id) {
+                continue;
+            }
+            if let Some((rgba, side)) = net_steam::session::avatar_rgba(t, id, net_steam::session::AvatarSize::Small) {
+                fetched.push((id, rgba, side));
+            }
+        }
+        // t 到此不再使用 → 可以改 self 了。
+        self.steam_pings = pings;
+        for (id, rgba, side) in fetched {
+            let img = graphics::Image::from_pixels(
+                &ctx.gfx,
+                &rgba,
+                graphics::ImageFormat::Rgba8UnormSrgb,
+                side,
+                side,
+            );
+            self.steam_avatars.push((id, img));
+        }
+    }
+
+    /// 画某位成员的头像（有缓存才画）；返回是否画了，调用方据此调整文字缩进。
+    #[cfg(feature = "steam")]
+    fn steam_draw_avatar(&self, canvas: &mut Canvas, id: u64, x: f32, y: f32, size: f32) -> bool {
+        let Some((_, img)) = self.steam_avatars.iter().find(|(k, _)| *k == id) else {
+            return false;
+        };
+        let s = size / 32.0; // 缓存的是 32x32 小头像
+        canvas.draw(img, graphics::DrawParam::new().dest(Point2 { x, y }).scale([s, s]));
+        true
+    }
+
+    /// 排行榜句柄：每会话只查找一次（Steam 的查找是异步回调，结果写回 `steam_lb_slot`）。
+    /// 建房后待在房间时就会查好，整场结束要用时直接取。
+    #[cfg(feature = "steam")]
+    fn steam_ensure_leaderboard(&mut self) {
+        if self.steam_lb_requested {
+            return;
+        }
+        let Some(t) = self.steam_transport() else { return };
+        net_steam::session::request_leaderboard(t, net_steam::stats::LEADERBOARD, &self.steam_lb_slot);
+        self.steam_lb_requested = true;
+    }
+
+    /// 整场结束（进入 Finished）时把战绩上报 Steam：统计 + 成就 + 排行榜，只上报一次。
+    /// 统计/成就/排行榜都要在 Steamworks 后台先定义 key，没配置时只会打日志、不影响游戏。
+    #[cfg(feature = "steam")]
+    fn steam_record_match_result(&mut self, now: f64) {
+        if self.steam_stats_recorded {
+            return;
+        }
+        self.steam_stats_recorded = true;
+        let Some(t) = self.steam_transport() else { return };
+        // 本场战绩摘要：从我方档案取（击杀/最佳名次/存活局数），人数与局数从 world/meta 取。
+        let me = self.self_index();
+        let (kills, best_placement, rounds_survived) = self
+            .meta
+            .profiles
+            .iter()
+            .find(|p| p.player_id == me)
+            .map(|p| (p.total_kills, p.best_placement, p.rounds_survived))
+            .unwrap_or((0, 0, 0));
+        let summary = net_steam::stats::MatchSummary {
+            kills,
+            best_placement,
+            players: self.world.players.len().max(1) as u32,
+            rounds: self.meta.round.max(1),
+            rounds_survived,
+        };
+        let report = net_steam::session::record_match_result(t, summary);
+        // 排行榜：句柄查到了就上传分数；没查到（后台没建榜/还没回调）就跳过。
+        let lb = self.steam_lb_slot.lock().unwrap().clone();
+        if let Some(lb) = lb.as_ref() {
+            net_steam::session::upload_leaderboard_score(t, lb, report.score);
+        }
+        // 结算界面要展示：读回统计 + 拉一次榜单前 5（都是异步/只读，失败不影响）。
+        let snap = net_steam::session::stats_snapshot(t);
+        if let Some(lb) = lb.as_ref() {
+            net_steam::session::request_leaderboard_top(t, lb, 5, &self.steam_lb_rows);
+        }
+        // t 到此不再使用 → 写回 self。
+        self.steam_stats_snapshot = Some(snap);
+        let msg = if !report.achievements.is_empty() {
+            let names: Vec<&str> = report
+                .achievements
+                .iter()
+                .map(|k| net_steam::stats::achievement_label(k))
+                .collect();
+            format!("成就已上报：{}", names.join("、"))
+        } else if report.had_failure {
+            "战绩上报未生效（需在 Steamworks 后台配置统计/成就）".to_string()
+        } else {
+            String::new()
+        };
+        if !msg.is_empty() {
+            self.steam_toast = (msg, now + 6.0);
+        }
     }
 
     /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。
@@ -3274,6 +3542,10 @@ impl Game {
         if self.steam_roster_refresh_ticks % 30 == 1 {
             self.steam_refresh_roster();
         }
+        // 节流刷新 ping 与头像（房间界面显示延迟/头像）。
+        self.steam_refresh_network_info(ctx);
+        // 排行榜句柄：待在房间时就查好（异步回调），整场结束要用。
+        self.steam_ensure_leaderboard();
         // Rich Presence：房间里 → “房间「名」n/m 等待中” + connect 串（好友可一键加入）。
         self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
         self.accumulator = 0.0;
@@ -3543,6 +3815,10 @@ impl Game {
         self.steam_presence_last = -999.0;
         // 会话已被消费（成功）/ 已丢弃（失败），下次回主菜单允许再初始化一次。
         self.steam_session_tried = false;
+        // 新一场：允许重新上报战绩（enter_steam_mode 是进新房间的入口）。
+        self.steam_stats_recorded = false;
+        self.steam_stats_snapshot = None;
+        self.steam_toast = (String::new(), 0.0);
         self.accumulator = 0.0;
     }
 

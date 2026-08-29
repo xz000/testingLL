@@ -74,6 +74,43 @@
 4. 回归：建房/加入/就绪/配置/统一开战主线不受影响（I 面板不吞房间网络帧）。
 
 
+## █ Steamworks 第二批：Ping / 头像 / 统计 / 成就 / 排行榜（2026-08-29 已落，待真机复验）
+> 会话起点：用户选了「Steamworks 第二批」。第一批（好友邀请 + Rich Presence）已提交 `dd3f7a0`。
+> workspace **132** 全绿（+5：stats 规则层），build/test/clippy（默认 + steam）全绿；
+> 默认与 steam 两条路径都冒烟起窗正常。
+
+**Ping（延迟）**
+- `net-steam/session.rs::ping_to(transport, peer) -> Option<i32>`：用 `ISteamNetworkingMessages::GetSessionConnectionInfo`
+  的实时信息 `ping()`；**测不到返回 None**（界面显示“-- ms”，不能显示 0 误导）。
+- client：`steam_refresh_network_info` 每 30 帧刷新一次（房间 + 对局都刷）。
+  成员卡片右端显示各人 ping；对局 HUD 左下显示「延迟 xx ms」（client=到 host；host=到各 client 里**最差**的那个，
+  因为帧同步等的是最慢那端）。
+
+**头像（Avatar）**
+- `avatar_rgba(transport, id, AvatarSize) -> Option<(Vec<u8>, 边长)>`：small 32 / medium 64 / large 184，RGBA。
+- client：`steam_avatars` 缓存（`Image::from_pixels` + `ImageFormat::Rgba8UnormSrgb`），只补缺失的
+  （Steam 首次进房常拉不到，下一轮自动重试）；画在成员卡片**左侧外面**（卡片内昵称是居中排的，塞进去会压字）；
+  邀请面板里的好友同样显示头像。
+
+**统计 / 成就 / 排行榜**
+- **规则层 `net-steam/src/stats.rs`（纯函数、无 steam 也能测，+5 单测）**：
+  `MatchSummary{kills,best_placement,players,rounds,rounds_survived}`、`won()`（≥2 人才算胜场，防刷试验场）、
+  `flawless()`、`achievements_for()`、`achievement_label()`、`leaderboard_score()`（击杀×100 + 名次加成，冠军 +500）。
+  键：`STAT_MATCHES` / `STAT_WINS` / `STAT_KILLS`；`ACH_FIRST_WIN` / `ACH_KILL_5` / `ACH_KILL_10` / `ACH_FLAWLESS`；榜名 `arena_best_score`。
+- **写入层 `session.rs`（best-effort，失败只打日志）**：`record_match_result`（统计先读旧值再加增量 + `set_achievement` + `store_stats`）、
+  `stats_snapshot`、`request_leaderboard` / `upload_leaderboard_score`（KeepBest）/ `request_leaderboard_top`。
+  ⚠ 这些 key **必须在 Steamworks 后台先定义**，否则 set 失败（日志里会写明哪一项没配上）。
+  Steam 的查找/下载是 call-result 回调（`'static` 拿不到 transport），所以结果写回调用方的 `Shared<T>` 槽位。
+- client：整场进入 `Finished` 时上报一次（`steam_stats_recorded` 防重复）；结算界面显示「Steam 统计：场次/胜场/击杀」
+  + 排行榜 TOP5；有成就时顶部弹提示条 6 秒。排行榜句柄在房间里就提前查好（`steam_ensure_leaderboard`）。
+
+**真机待复验（双机/双账号）**
+1. 房间界面能看到各成员 ping（约几十 ms，随网络变化）；对局中左下角延迟数字合理；单人时不显示。
+2. 成员/好友列表能显示头像（首次可能晚几秒出现）。
+3. 打完一整场进结算：看日志 `[steam-stats] recorded: ...`（后台没配置会有 `set ... failed` 提示）；
+   配置好后台后统计应累加、成就应解锁、排行榜应有分数与 TOP5。
+4. 回归：建房→就绪→配置→统一开战→结束回主菜单主线不受影响。
+
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 

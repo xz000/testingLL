@@ -171,6 +171,16 @@ impl SteamTransport {
         self.client.friends()
     }
 
+    /// ISteamNetworkingMessages 句柄：查某 peer 会话的实时质量（如 ping）。
+    pub fn networking_messages(&self) -> steamworks::networking_messages::NetworkingMessages {
+        self.client.networking_messages()
+    }
+
+    /// 用户统计/成就/排行榜（UserStats）句柄。
+    pub fn user_stats(&self) -> steamworks::UserStats {
+        self.client.user_stats()
+    }
+
     /// 注册一个 Steam 回调并**持有句柄**（句柄存活期间回调有效；`run_callbacks` 时触发）。
     /// 用于好友邀请/加入请求（`GameLobbyJoinRequested` / `GameRichPresenceJoinRequested`）等。
     pub fn register_callback<C, F>(&mut self, f: F)
