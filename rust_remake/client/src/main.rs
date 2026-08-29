@@ -234,6 +234,9 @@ struct Game {
     /// Steam：主菜单内是否处于「大厅选择」子菜单（H 创建 / J 加入 / Q 返回）。
     #[cfg(feature = "steam")]
     steam_lobby_menu: bool,
+    /// Steam 大厅子菜单（创建/加入/返回）的选中项（支持上下箭头 + 鼠标）。
+    #[cfg(feature = "steam")]
+    steam_lobby_selection: usize,
     /// Steam：是否处于「建房设置」界面（房间名/备注/人数，回车创建 / Q 取消）。
     #[cfg(feature = "steam")]
     steam_lobby_create: bool,
@@ -588,6 +591,8 @@ impl Game {
             steam_was_all_ready: false,
             #[cfg(feature = "steam")]
             steam_lobby_menu: false,
+            #[cfg(feature = "steam")]
+            steam_lobby_selection: 0,
             #[cfg(feature = "steam")]
             steam_lobby_create: false,
             #[cfg(feature = "steam")]
@@ -2103,6 +2108,7 @@ impl event::EventHandler for Game {
             }
             use ggez::input::keyboard::Key;
             use winit::keyboard::NamedKey;
+            use ggez::input::mouse::MouseButton;
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
             let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
             const MENU_COUNT: usize = 3;
@@ -2137,6 +2143,23 @@ impl event::EventHandler for Game {
             }
             // 执行选中项对应的动作（回车 / 数字直选共用）。
             let mut act: Option<usize> = None;
+            // 鼠标点击主菜单卡片（与键盘共用 menu_selection + act）。
+            if !in_lobby_menu && ctx.mouse.button_just_pressed(MouseButton::Left) {
+                let (sw, sh) = ctx.gfx.drawable_size();
+                let card_w = (sw * 0.62).min(560.0);
+                let card_h = 96.0;
+                let card_x = sw / 2.0 - card_w / 2.0;
+                let y0 = sh * 0.34;
+                let gap = 26.0;
+                let p = ctx.mouse.position();
+                for i in 0..3 {
+                    let y = y0 + i as f32 * (card_h + gap);
+                    if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
+                        self.menu_selection = i;
+                        act = Some(i);
+                    }
+                }
+            }
             if in_lobby_menu {
                 act = None;
             } else if just_named(NamedKey::Enter) || just('\r') {
@@ -2193,30 +2216,44 @@ impl event::EventHandler for Game {
                     _ => {}
                 }
             }
-            // Steam 大厅主界面：H 进建房设置 / J 进房间列表 / Q 返回主菜单。
+            // Steam 大厅主界面：创建 / 加入 / 返回（H/J/Q 快捷键 + 上下箭头 + 回车 + 鼠标点击）。
             #[cfg(feature = "steam")]
             if self.steam_lobby_menu && !self.steam_lobby_create && !self.steam_lobby_list {
-                if just('h') || just('H') || just(' ') {
-                    eprintln!("[menu] Steam -> create-lobby setup");
-                    // 进入建房设置：重置字段；默认房间名用「昵称的房间」（若昵称已知）。
-                    let disp = self.steam_my_display_name.clone();
-                    self.steam_create_name = if disp.is_empty() {
-                        "我的房间".to_string()
-                    } else {
-                        format!("{disp}的房间")
-                    };
-                    self.steam_create_note = String::new();
-                    self.steam_create_focus = 0;
-                    self.steam_create_players = STEAM_DEFAULT_PLAYERS;
-                    self.steam_lobby_create = true;
-                } else if just('j') || just('J') {
-                    eprintln!("[menu] Steam -> join lobby list");
-                    self.steam_lobby_list = true;
-                    self.steam_list_requested = false;
-                    self.steam_list_lobbies = Vec::new();
-                    self.steam_list_selection = 0;
-                } else if just('q') || just('Q') {
-                    self.steam_lobby_menu = false;
+                // 上下箭头切换选中。
+                if just_named(NamedKey::ArrowUp) {
+                    self.steam_lobby_selection = (self.steam_lobby_selection + 2) % 3;
+                } else if just_named(NamedKey::ArrowDown) {
+                    self.steam_lobby_selection = (self.steam_lobby_selection + 1) % 3;
+                }
+                // 鼠标点击卡片：命中即选中并执行。
+                let mut clicked = false;
+                if ctx.mouse.button_just_pressed(MouseButton::Left) {
+                    let (sw, sh) = ctx.gfx.drawable_size();
+                    let card_w = (sw * 0.62).min(560.0);
+                    let card_h = 96.0;
+                    let card_x = sw / 2.0 - card_w / 2.0;
+                    let y0 = sh * 0.34;
+                    let gap = 26.0;
+                    let p = ctx.mouse.position();
+                    for i in 0..3 {
+                        let y = y0 + i as f32 * (card_h + gap);
+                        if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
+                            self.steam_lobby_selection = i;
+                            self.steam_lobby_act(i);
+                            clicked = true;
+                        }
+                    }
+                }
+                if !clicked {
+                    if just('h') || just('H') || just(' ') {
+                        self.steam_lobby_act(0);
+                    } else if just('j') || just('J') {
+                        self.steam_lobby_act(1);
+                    } else if just('q') || just('Q') {
+                        self.steam_lobby_act(2);
+                    } else if just_named(NamedKey::Enter) || just('\r') {
+                        self.steam_lobby_act(self.steam_lobby_selection);
+                    }
                 }
             }
             self.accumulator = 0.0;
@@ -3552,6 +3589,38 @@ impl Game {
         Ok(())
     }
 
+    /// 大厅子菜单（创建/加入/返回）执行选中项。0=创建 1=加入 2=返回。
+    #[cfg(feature = "steam")]
+    fn steam_lobby_act(&mut self, sel: usize) {
+        match sel {
+            0 => {
+                eprintln!("[menu] Steam -> create-lobby setup");
+                // 进入建房设置：重置字段；默认房间名用「昵称的房间」（若昵称已知）。
+                let disp = self.steam_my_display_name.clone();
+                self.steam_create_name = if disp.is_empty() {
+                    "我的房间".to_string()
+                } else {
+                    format!("{disp}的房间")
+                };
+                self.steam_create_note = String::new();
+                self.steam_create_focus = 0;
+                self.steam_create_players = STEAM_DEFAULT_PLAYERS;
+                self.steam_lobby_create = true;
+            }
+            1 => {
+                eprintln!("[menu] Steam -> join lobby list");
+                self.steam_lobby_list = true;
+                self.steam_list_requested = false;
+                self.steam_list_lobbies = Vec::new();
+                self.steam_list_selection = 0;
+            }
+            2 => {
+                self.steam_lobby_menu = false;
+            }
+            _ => {}
+        }
+    }
+
     /// 建房设置界面输入：四个字段（房间名/备注/人数）。
     /// - ↑/↓ 或 Tab 切换字段；在文本字段可输入 ascii+空格+常用标点、Backspace 删末字符；人数字段 `+`/`-` 或直接输数字（2..=STEAM_MAX_PLAYERS）。
     /// - 回车=创建房间（用现有 steam_sess 建厅+写房间元数据）；Q=放弃返回大厅主界面。
@@ -4139,13 +4208,24 @@ impl Game {
                 ];
                 draw_text(&mut canvas, ctx, "Steam 对战 - 大厅", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.27 }, true)?;
                 draw_text(&mut canvas, ctx, "H 创建    J 加入    Q 返回", 20.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.36 }, true)?;
+                let mpos = ctx.mouse.position();
                 for (i, (name, desc)) in subs.iter().enumerate() {
                     let y = y0 + (i as f32) * (card_h + gap);
+                    // 高亮：键盘选中最亮；鼠标悬停中亮；其他深灰。
+                    let selected = i == self.steam_lobby_selection;
+                    let hover = !selected && graphics::Rect::new(card_x, y, card_w, card_h).contains(mpos);
+                    let bg_color = if selected {
+                        Color::from_rgb(52, 60, 74)
+                    } else if hover {
+                        Color::from_rgb(40, 46, 58)
+                    } else {
+                        Color::from_rgb(30, 34, 44)
+                    };
                     // 卡片背景
                     let bg = Mesh::new_rectangle(
                         &ctx.gfx, DrawMode::fill(),
                         graphics::Rect::new(card_x, y, card_w, card_h),
-                        Color::from_rgb(30, 34, 44),
+                        bg_color,
                     )?;
                     canvas.draw(&bg, graphics::DrawParam::new());
                     draw_text(&mut canvas, ctx, name, 30.0, graphics::Color::from_rgb(235, 238, 245), Point2 { x: cx, y: y + card_h * 0.5 - 16.0 }, true)?;
@@ -4168,11 +4248,19 @@ impl Game {
             (2, "局域网对战", "建设中：需命令行 --host <port> / --join <host:port>"),
             (3, "Steam 在线对战", "联网与好友实时对抗（进入 Steam 大厅）"),
         ];
+        let mpos = ctx.mouse.position();
         for (i, (num, name, desc)) in items.iter().enumerate() {
             let y = y0 + (i as f32) * (card_h + gap);
             let selected = i == self.menu_selection;
-            // 选中卡片：高亮背景条；未选中：深灰背景。
-            let bg_color = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(28, 31, 38) };
+            let hover = !selected && graphics::Rect::new(card_x, y, card_w, card_h).contains(mpos);
+            // 选中卡片：高亮背景条；悬停：中亮；未选中：深灰背景。
+            let bg_color = if selected {
+                Color::from_rgb(52, 60, 74)
+            } else if hover {
+                Color::from_rgb(40, 46, 58)
+            } else {
+                Color::from_rgb(28, 31, 38)
+            };
             let bg = Mesh::new_rectangle(
                 &ctx.gfx, DrawMode::fill(),
                 graphics::Rect::new(card_x, y, card_w, card_h),
