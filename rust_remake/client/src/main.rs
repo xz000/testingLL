@@ -2281,12 +2281,22 @@ impl event::EventHandler for Game {
                 return Ok(());
             }
             use ggez::input::keyboard::Key;
+            use winit::keyboard::NamedKey;
+            // 配置界面：按 Esc 返回主菜单（单机/局域网）。
+            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+                eprintln!("[pre-game] Esc -> back to main menu");
+                self.reset_to_main_menu();
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             self.poll_learning(ctx);
             self.poll_growth_buy(ctx);
-            // 空格（确认）开始第一轮；空格在本环境实测不可靠，故加 P 兜底。
+            // 空格（确认）开始第一轮；空格在本环境实测不可靠，故加 P 兜底，再补回车。
             let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()));
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into()));
             // 单机：超时自动用默认配置开始（防止窗口无焦点/按键收不到导致卡死）。
             let auto_done = if self.app == AppState::Solo && self.net_link.is_none() && self.net_host.is_none() && self.net_host_ls.is_none() {
                 self.pre_game_timer -= dt;
@@ -4037,10 +4047,10 @@ impl Game {
                 draw_text(&mut canvas, ctx, "选择技能后按 P 确认配好", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
             }
         } else {
-            draw_text(&mut canvas, ctx, "按 Space 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+            draw_text(&mut canvas, ctx, "按 Space/P 开始第一轮，Esc 返回主菜单", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         }
         #[cfg(not(feature = "steam"))]
-        draw_text(&mut canvas, ctx, "按 Space 开始第一轮", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
+        draw_text(&mut canvas, ctx, "按 Space/P 开始第一轮，Esc 返回主菜单", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         // 准备状态面板：显示各玩家已加入/已就绪，避免“以为卡住”。
         let me = self.self_index();
         if self.app != AppState::Solo {
