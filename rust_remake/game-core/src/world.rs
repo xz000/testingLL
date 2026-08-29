@@ -2676,8 +2676,8 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        // 敌人堵在冲锋路径前方
-        world.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        // 敌人堵在冲锋路径前方、但不在初始接触距离（验证冲锋确实移动接近敌人）。
+        world.players[1].pos = Vec2::new(Fix64::from_num(4.0), Fix64::ZERO);
         let hp1 = world.players[1].hp;
         // 施放冲锋朝 (20,0) 方向
         let input = vec![
@@ -2691,6 +2691,8 @@ mod tests {
         for _ in 0..30 {
             world.step(input.clone(), dt);
         }
+        // 冲锋应让施法者朝目标方向移动（不是原地不动）。
+        assert!(world.players[0].pos.x > 2.0, "冲锋应向前冲，实际 {:?}", world.players[0].pos);
         // 敌人应被撞伤（且位置被推开或翻腾）
         assert!(world.players[1].hp < hp1, "冲锋撞击应造成伤害");
     }

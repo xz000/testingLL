@@ -847,8 +847,11 @@ impl DefTable {
                 growth: SkillGrowth {
                     windup_base: 0.15,
                     cooldown_base: 3.0,
+                    duration_base: 0.5,
+                    speed_base: 8.0,
                     push_power_base: 6.0,
                     push_power_delta: 1.0,
+                    push_time_base: 0.6,
                     push_damage_base: 8.0,
                     push_damage_delta: 2.0,
                     ..DEF_ZERO
@@ -1408,6 +1411,7 @@ impl DefTable {
                     range_base: 10.0,
                     push_power_base: 6.0,
                     push_power_delta: 1.0,
+                    push_time_base: 1.0,
                     ..DEF_ZERO
                 },
             },
