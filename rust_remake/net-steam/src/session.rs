@@ -430,6 +430,11 @@ impl SteamSession {
             let done = done.clone();
             let slot = slot.clone();
             mm.create_lobby(LobbyType::Public, max_members, move |res| {
+                if let Err(e) = &res {
+                    eprintln!("[steam-host] CreateLobby rejected by Steam: {e:?}");
+                } else {
+                    eprintln!("[steam-host] CreateLobby OK");
+                }
                 *slot.lock().unwrap() = Some(res.map_err(|_| ()));
                 done.store(true, Ordering::SeqCst);
             });
