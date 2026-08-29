@@ -1217,7 +1217,7 @@ impl DefTable {
                     speed: Fix64::from_num(6.0),
                     damage: Fix64::from_num(10.0),
                     heal: Fix64::from_num(10.0),
-                    turn_delay: Fix64::ZERO,
+                    turn_delay: Fix64::from_num(0.3), // 先直线飞 0.3s 再转向最近敌人（转镖手感）
                     range: Fix64::from_num(12.0),
                 },
                 growth: SkillGrowth {

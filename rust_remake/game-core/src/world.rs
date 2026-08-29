@@ -145,6 +145,7 @@ pub enum ProjectileKind {
         owner: u32,
         max_chain: u32,    // 最多链跳次数（含首次命中后继续跳的累计上限；防止“吸血/跳弹”无限往返）
         hit_count: u32,    // 已命中次数；达到 max_chain 即消失
+        turn_delay: Fix64, // 转镖（TestLeech）：初始沿直线飞行这段时间后，才开始追踪最近敌人（>0 为剩余延迟）
     },
     /// 蓄力跳弹·直线炸弹（T3b）：沿方向飞行，命中玩家→伤+推+累计 damageplus+生成回返镖；
     /// 射程耗尽没命中→damageplus 归零。
@@ -800,9 +801,11 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::Chain { dir, speed, life, last_target, owner, .. } => {
-                    // 链镖：锁定最近敌人（排除上一个已命中目标与施法者）全速直追。
-                    if let Some(tgt) = self.nearest_enemy_excl(pr.pos, *owner, *last_target) {
+                ProjectileKind::Chain { dir, speed, life, last_target, owner, turn_delay, .. } => {
+                    // 链镖/跳弹：转镖先沿直线飞行 turn_delay 秒，之后才追踪最近敌人（排除上一个目标与施法者）。
+                    if *turn_delay > Fix64::ZERO {
+                        *turn_delay -= dt;
+                    } else if let Some(tgt) = self.nearest_enemy_excl(pr.pos, *owner, *last_target) {
                         let want = (tgt - pr.pos).normalized();
                         *dir = if want.length_squared() == Fix64::ZERO { *dir } else { want };
                     }
@@ -936,7 +939,7 @@ impl World {
             }
             // 链镖/跳弹族单独处理（需改动 Chain 内部状态以完成跳跃，交给可变分支）
             if matches!(pr.kind, ProjectileKind::Chain { .. }) {
-                if let ProjectileKind::Chain { damage, heal, ratio, ratio_decay, life, last_target, owner, max_chain, hit_count, .. } = &mut pr.kind {
+                if let ProjectileKind::Chain { damage, heal, ratio, ratio_decay, life, last_target, owner, max_chain, hit_count, turn_delay, .. } = &mut pr.kind {
                     let lt = *last_target;
                     if let Some((victim, _dd)) =
                         nearest_hit_with_skip(&self.players, pr.pos, *owner, Fix64::from_num(0.6), lt)
@@ -960,6 +963,7 @@ impl World {
                         let next_ratio = *ratio - *ratio_decay;
                         *last_target = victim;
                         *hit_count += 1;
+                        *turn_delay = Fix64::ZERO; // 已命中，后续跳跃直接追踪
                         // 命中后：伤害倍率衰减到 0 或链跳数达上限 → 消失；否则继续跳（重置生命/衰减倍率）。
                         // 修复“吸血/跳弹无限往返”：max_chain 硬上限，加上不再无条件重置 life 也能自然耗尽。
                         let dead = next_ratio <= Fix64::ZERO || *hit_count >= *max_chain;
@@ -1860,6 +1864,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             owner: idx,
                             max_chain: 3,
                             hit_count: 0,
+                            turn_delay: Fix64::ZERO,
                         },
                         pos: p.pos,
                         alive: true,
@@ -1867,8 +1872,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::TurnLeech { speed, damage, heal, turn_delay, range: _ } => {
-                // TestLeech 转镖吸血：命中吸血 + 链
-                let _ = turn_delay;
+                // TestLeech 转镖吸血：先直线飞 turn_delay 再转向最近敌人，命中吸血 + 链
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
@@ -1885,6 +1889,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             owner: idx,
                             max_chain: 3,
                             hit_count: 0,
+                            turn_delay,
                         },
                         pos: p.pos,
                         alive: true,
@@ -1909,6 +1914,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             owner: idx,
                             max_chain: 8,
                             hit_count: 0,
+                            turn_delay: Fix64::ZERO,
                         },
                         pos: p.pos,
                         alive: true,
@@ -3142,6 +3148,29 @@ mod tests {
         assert!(world.players[1].hp < hp1, "吸血链镖应命中敌人1");
         assert!(world.players[2].hp < hp2, "吸血链镖应链到敌人2");
         assert!(world.players[0].hp > hp0, "吸血链镖应给施法者回血");
+    }
+
+    /// 回归：转镖（TestLeech）先沿目标方向直线飞 turn_delay 后再转向最近敌人，
+    /// 而不是全程自动追踪——否则会失去“飞镖先直飞再拐”的手感。
+    #[test]
+    fn turn_leech_turns_to_hit_side_enemy() {
+        let mut world = World::new(2, 71);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].hp = Fix64::from_num(50.0); // 残血以便观察回血
+        // 敌人放在侧上方（不在施法方向 (1,0) 的正前方）：只有镖转向后才能命中。
+        world.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::from_num(2.0));
+        let hp0 = world.players[0].hp;
+        let hp1 = world.players[1].hp;
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::TestLeech, Some(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        for _ in 0..120 {
+            world.step(input.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "转镖应转向命中侧面敌人（先直线后转向）");
+        assert!(world.players[0].hp > hp0, "转镖命中应给施法者吸血回血");
     }
 
     /// 回归：吸血/跳弹镖必须**有限**（不再无限往返、也不无限重置生存时间而“永远存在”）。
