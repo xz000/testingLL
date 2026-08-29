@@ -28,6 +28,12 @@ pub const ROOM_NOTE_KEY: &str = "room_note";
 pub const ROOM_ROUNDS_KEY: &str = "room_rounds";
 /// 大厅元数据：局与局之间的准备时间（秒，host 建房时写入；加入者据此对齐 MatchConfig.learn_time_secs）。
 pub const ROOM_LEARN_KEY: &str = "room_learn";
+/// 大厅元数据：开局初始金币（host 建房时写入；加入者据此对齐 MatchConfig.starting_gold）。
+pub const ROOM_STARTING_GOLD_KEY: &str = "room_starting_gold";
+/// 大厅元数据：每轮固定金币（参与奖，host 建房时写入；加入者据此对齐 MatchConfig.gold_per_round）。
+pub const ROOM_GOLD_PER_ROUND_KEY: &str = "room_gold_per_round";
+/// 大厅元数据：单轮名次奖励（逗号分隔的档位，host 建房时写入；加入者据此对齐 MatchConfig.place_rewards）。
+pub const ROOM_PLACE_REWARD_KEY: &str = "room_place_reward";
 /// Rich Presence 键：好友列表里显示的自定义状态文案（无本地化配置时 Steam 直接显示它）。
 pub const PRESENCE_STATUS_KEY: &str = "status";
 /// Rich Presence 键：`connect` 会让好友看到「加入游戏」按钮，值由
@@ -506,6 +512,77 @@ impl SteamSession {
             .matchmaking()
             .lobby_data(l, ROOM_LEARN_KEY)
             .and_then(|s| s.parse().ok())
+    }
+
+    /// 设置开局初始金币（写进大厅元数据，供加入者读取对齐）。
+    pub fn host_set_starting_gold(&self, gold: i32) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_starting_gold: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_STARTING_GOLD_KEY, &gold.to_string());
+        Ok(())
+    }
+
+    /// 读取开局初始金币（加入者用；host 未设置时回退 None，由调用方给默认值）。
+    pub fn lobby_starting_gold(&self) -> Option<i32> {
+        let l = self.lobby?;
+        self.transport
+            .matchmaking()
+            .lobby_data(l, ROOM_STARTING_GOLD_KEY)
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// 设置每轮固定金币（参与奖，写进大厅元数据，供加入者读取对齐）。
+    pub fn host_set_gold_per_round(&self, gold: i32) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_gold_per_round: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_GOLD_PER_ROUND_KEY, &gold.to_string());
+        Ok(())
+    }
+
+    /// 读取每轮固定金币（参与奖；host 未设置时回退 None，由调用方给默认值）。
+    pub fn lobby_gold_per_round(&self) -> Option<i32> {
+        let l = self.lobby?;
+        self.transport
+            .matchmaking()
+            .lobby_data(l, ROOM_GOLD_PER_ROUND_KEY)
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// 设置单轮名次奖励档位（写进大厅元数据，逗号分隔；供加入者读取对齐）。
+    pub fn host_set_place_reward(&self, rewards: &[i32]) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_place_reward: 尚未建厅"));
+        };
+        let joined = rewards
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_PLACE_REWARD_KEY, &joined);
+        Ok(())
+    }
+
+    /// 读取单轮名次奖励档位（加入者用；host 未设置/格式非法时回退 None，由调用方给默认值）。
+    pub fn lobby_place_reward(&self) -> Option<Vec<i32>> {
+        let l = self.lobby?;
+        let raw = self.transport.matchmaking().lobby_data(l, ROOM_PLACE_REWARD_KEY)?;
+        let out: Vec<i32> = raw
+            .split(',')
+            .filter_map(|s| s.trim().parse::<i32>().ok())
+            .collect();
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 
     /// 列出 Steam 好友（供「邀请好友」界面）。见 [`list_friends`]。

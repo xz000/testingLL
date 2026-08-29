@@ -6,12 +6,16 @@
 //!
 //! 玩法逻辑全部在 `game-core` 的 `World` 中，本文件只负责输入采集与渲染。
 
+// 发布版（release）在 Windows 上使用 GUI 子系统：不弹出黑色命令行窗口，改善玩家体验。
+// debug 构建仍保留 console（便于本地看日志/调试）。publish.ps1 走 release，自动生效。
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use game_core::fix::{cos, sin, Fix64, Vec2};
 use game_core::meta::{MatchConfig, MatchPhase, MatchState};
 use game_core::rng::Rng;
 use game_core::skill::SkillId;
 use game_core::world::{PlayerInput, World};
-use ggez::event;
+use ggez::event::{self, EventHandler as _};
 use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh};
 // 让 `SteamTransport::send_stats()`（trait 默认实现由 net-steam 覆盖）在泛型代码里可直接调用。
 #[cfg(feature = "steam")]
@@ -84,6 +88,18 @@ const STEAM_MAX_LEARN_SECS: u32 = 256;
 /// Steam 建房：局间准备时间（秒）默认值（与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_LEARN_SECS: u32 = 20;
+/// Steam 建房：金币类字段的单档金额上限（初始金币 / 每轮金币 / 每档名次奖励）。
+#[cfg(feature = "steam")]
+const STEAM_MAX_GOLD: i32 = 99999;
+/// Steam 建房：开局初始金币默认值（第一局开始前一次性发放，与每轮参与奖独立叠加；默认 0）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_STARTING_GOLD: i32 = 0;
+/// Steam 建房：每轮固定金币（参与奖）默认值（与 MatchConfig 默认一致）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 20;
+/// Steam 建房：单轮名次奖励默认值（逗号分隔档位，与 MatchConfig 默认一致）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_PLACE_REWARD: &str = "30,20,10";
 /// Steam 房间列表：两次刷新（`request_lobby_list`）之间的最小间隔（秒）。
 /// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽）。
 #[cfg(feature = "steam")]
@@ -358,9 +374,36 @@ struct Game {
     /// Steam 建房设置：局间准备时间输入缓冲（字符串编辑，支持 Backspace 逐位删）。
     #[cfg(feature = "steam")]
     steam_create_learn_buf: String,
+    /// Steam 建房设置：开局初始金币（0..=STEAM_MAX_GOLD）。
+    #[cfg(feature = "steam")]
+    steam_create_starting_gold: i32,
+    /// Steam 建房设置：开局初始金币输入缓冲。
+    #[cfg(feature = "steam")]
+    steam_create_starting_gold_buf: String,
+    /// Steam 建房设置：每轮固定金币（参与奖，0..=STEAM_MAX_GOLD）。
+    #[cfg(feature = "steam")]
+    steam_create_gold_per_round: i32,
+    /// Steam 建房设置：每轮固定金币输入缓冲。
+    #[cfg(feature = "steam")]
+    steam_create_gold_per_round_buf: String,
+    /// Steam 建房设置：单轮名次奖励档位（逗号分隔字符串，如 "30,20,10"；房主编辑）。
+    #[cfg(feature = "steam")]
+    steam_create_place_buf: String,
+    /// Steam 建房设置：解析后的名次奖励档位（索引 = 名次-1）。
+    #[cfg(feature = "steam")]
+    steam_create_place: Vec<i32>,
     /// 当前场次局间准备时间（秒；host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_learn_secs: u32,
+    /// 当前场次开局初始金币（host 建房设定 / client 从大厅元数据读取，两端一致）。
+    #[cfg(feature = "steam")]
+    match_starting_gold: i32,
+    /// 当前场次每轮固定金币（参与奖；host 建房设定 / client 从大厅元数据读取，两端一致）。
+    #[cfg(feature = "steam")]
+    match_gold_per_round: i32,
+    /// 当前场次单轮名次奖励档位（host 建房设定 / client 从大厅元数据读取，两端一致）。
+    #[cfg(feature = "steam")]
+    match_place_rewards: Vec<i32>,
     /// 当前场次的总轮数（host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_rounds: u32,
@@ -455,6 +498,12 @@ impl Game {
         let mut init_rounds: u32 = STEAM_DEFAULT_ROUNDS;
         #[cfg(feature = "steam")]
         let mut init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
+        #[cfg(feature = "steam")]
+        let mut init_starting_gold: i32 = STEAM_DEFAULT_STARTING_GOLD;
+        #[cfg(feature = "steam")]
+        let mut init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
+        #[cfg(feature = "steam")]
+        let mut init_place_rewards: Vec<i32> = vec![30, 20, 10];
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
@@ -498,6 +547,9 @@ impl Game {
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
                 init_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
                 init_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
+                init_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
+                init_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
+                init_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| vec![30, 20, 10]);
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 steam_my_index = my_slot;
@@ -552,8 +604,21 @@ impl Game {
             AppState::Solo | AppState::MainMenu => vec![0],
             _ => (0..player_count).collect(),
         };
-        // 整场对抗：3 小局，所有玩家都纳入档案
-        let mut meta = MatchState::new(MatchConfig::default(), &meta_ids, 8);
+        // 整场对抗：3 小局，所有玩家都纳入档案。Steam 冷启动直通进房时用大厅元数据对齐的金币配置。
+        let mut meta = {
+            #[cfg(feature = "steam")]
+            let cfg = MatchConfig {
+                total_rounds: init_rounds,
+                learn_time_secs: init_learn_secs as f64,
+                gold_per_round: init_gold_per_round,
+                starting_gold: init_starting_gold,
+                place_rewards: init_place_rewards.clone(),
+                ..Default::default()
+            };
+            #[cfg(not(feature = "steam"))]
+            let cfg = MatchConfig::default();
+            MatchState::new(cfg, &meta_ids, 8)
+        };
         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
         if std::env::var("FASTROUND").is_ok() {
             world.arena_radius = game_core::fix::Fix64::from_num(3.0);
@@ -733,9 +798,27 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_create_learn_buf: STEAM_DEFAULT_LEARN_SECS.to_string(),
             #[cfg(feature = "steam")]
+            steam_create_starting_gold: STEAM_DEFAULT_STARTING_GOLD,
+            #[cfg(feature = "steam")]
+            steam_create_starting_gold_buf: STEAM_DEFAULT_STARTING_GOLD.to_string(),
+            #[cfg(feature = "steam")]
+            steam_create_gold_per_round: STEAM_DEFAULT_GOLD_PER_ROUND,
+            #[cfg(feature = "steam")]
+            steam_create_gold_per_round_buf: STEAM_DEFAULT_GOLD_PER_ROUND.to_string(),
+            #[cfg(feature = "steam")]
+            steam_create_place_buf: STEAM_DEFAULT_PLACE_REWARD.to_string(),
+            #[cfg(feature = "steam")]
+            steam_create_place: vec![30, 20, 10],
+            #[cfg(feature = "steam")]
             match_rounds: init_rounds,
             #[cfg(feature = "steam")]
             match_learn_secs: init_learn_secs,
+            #[cfg(feature = "steam")]
+            match_starting_gold: init_starting_gold,
+            #[cfg(feature = "steam")]
+            match_gold_per_round: init_gold_per_round,
+            #[cfg(feature = "steam")]
+            match_place_rewards: init_place_rewards.clone(),
         })
     }
 
@@ -905,14 +988,26 @@ impl Game {
         }
     }
 
+    /// 当前场次的完整 `MatchConfig`（host 建房设定 / client 从大厅元数据读取后两端一致）。
+    #[cfg(feature = "steam")]
+    fn match_config(&self) -> game_core::meta::MatchConfig {
+        game_core::meta::MatchConfig {
+            total_rounds: self.match_rounds,
+            learn_time_secs: self.match_learn_secs as f64,
+            gold_per_round: self.match_gold_per_round,
+            starting_gold: self.match_starting_gold,
+            place_rewards: self.match_place_rewards.clone(),
+            ..Default::default()
+        }
+    }
+
     /// 对局开始时把 world 与 meta 重建为“本局参与玩家数” `p`（不满员时两端角色数量由此一致）：
     /// 参与者被收缩为连续 player 0..p-1（`self.steam_my_index` 由调用方同步更新）。首局开局用 seed 从零建。
     #[cfg(feature = "steam")]
     fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
         self.world = game_core::world::World::new(p.max(1) as u32, seed);
-        let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, learn_time_secs: self.match_learn_secs as f64, ..Default::default() };
         self.meta = game_core::meta::MatchState::new(
-            cfg,
+            self.match_config(),
             &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
             8,
         );
@@ -2866,6 +2961,50 @@ impl event::EventHandler for Game {
 }
 
 impl Game {
+    /// 文本输入回调（由自定义事件循环在 winit 的 `Ime::Commit` / `ReceivedCharacter` 事件上调用）：
+    /// 把输入法确认提交的字符追加到当前聚焦的文本字段。支持中文 IME（建房界面/编辑房间信息的房间名与备注）。
+    /// 仅在对应界面且聚焦文本字段（0/1）时生效；其他界面忽略。
+    fn on_text_input(&mut self, text: &str) {
+        #[cfg(feature = "steam")]
+        {
+            if text.is_empty() {
+                return;
+            }
+            // 剔除控制字符（\r \n \t 等）；中文全角字符/空格都保留。
+            let clean: String = text.chars().filter(|c| !c.is_control()).collect();
+            if clean.is_empty() {
+                return;
+            }
+            let target: Option<&mut String> =
+                if self.steam_lobby_create && self.steam_create_focus <= 1 {
+                    Some(if self.steam_create_focus == 0 {
+                        &mut self.steam_create_name
+                    } else {
+                        &mut self.steam_create_note
+                    })
+                } else if self.steam_room_edit && self.steam_room_edit_focus <= 1 {
+                    Some(if self.steam_room_edit_focus == 0 {
+                        &mut self.steam_edit_name
+                    } else {
+                        &mut self.steam_edit_note
+                    })
+                } else {
+                    None
+                };
+            if let Some(buf) = target {
+                for ch in clean.chars() {
+                    if buf.len() < 80 {
+                        buf.push(ch);
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            let _ = text;
+        }
+    }
+
     /// 完成开局前的技能配置：第一局前同步各端 build（局域网走 HostGather/ClientWait），单机直接开打。
     /// 联网 host：接收 client 加入，全部到齐后把 `net_host` 移交为 `net_host_ls`。
     /// 在“开局配置”阶段与 Fighting 阶段都调用，确保 host 在等人时就开始收人（否则先到的 client 会握手超时）。
@@ -3715,6 +3854,12 @@ impl Game {
                 self.steam_create_rounds_buf = STEAM_DEFAULT_ROUNDS.to_string();
                 self.steam_create_learn = STEAM_DEFAULT_LEARN_SECS;
                 self.steam_create_learn_buf = STEAM_DEFAULT_LEARN_SECS.to_string();
+                self.steam_create_starting_gold = STEAM_DEFAULT_STARTING_GOLD;
+                self.steam_create_starting_gold_buf = STEAM_DEFAULT_STARTING_GOLD.to_string();
+                self.steam_create_gold_per_round = STEAM_DEFAULT_GOLD_PER_ROUND;
+                self.steam_create_gold_per_round_buf = STEAM_DEFAULT_GOLD_PER_ROUND.to_string();
+                self.steam_create_place_buf = STEAM_DEFAULT_PLACE_REWARD.to_string();
+                self.steam_create_place = vec![30, 20, 10];
                 self.steam_lobby_create = true;
             }
             1 => {
@@ -3741,11 +3886,13 @@ impl Game {
         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
-        // 切换字段 0=房名 1=备注 2=人数 3=轮数 4=准备时间。
+        let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
+        const NUM_FIELDS: usize = 8;
+        // 切换字段：0=房名 1=备注 2=人数 3=轮数 4=准备时间 5=初始金币 6=每轮金币 7=名次奖励。
         if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
-            self.steam_create_focus = (self.steam_create_focus + 4) % 5;
+            self.steam_create_focus = (self.steam_create_focus + NUM_FIELDS - 1) % NUM_FIELDS;
         } else if just_named(NamedKey::ArrowDown) {
-            self.steam_create_focus = (self.steam_create_focus + 1) % 5;
+            self.steam_create_focus = (self.steam_create_focus + 1) % NUM_FIELDS;
         }
         if just('q') || just('Q') {
             self.steam_lobby_create = false; // 返回大厅主界面
@@ -3826,6 +3973,57 @@ impl Game {
                     }
                 }
             }
+            5 | 6 => {
+                // 金币数字字段：初始金币(5) / 每轮金币(6)。0..=STEAM_MAX_GOLD。
+                let target = if self.steam_create_focus == 5 { "start" } else { "round" };
+                let clamp_gold = |v: i32| v.clamp(0, STEAM_MAX_GOLD);
+                let set = |buf: &mut String, v: i32| { *buf = clamp_gold(v).to_string(); };
+                if just('+') {
+                    if target == "start" {
+                        let v = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD);
+                        set(&mut self.steam_create_starting_gold_buf, v + 10);
+                    } else {
+                        let v = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND);
+                        set(&mut self.steam_create_gold_per_round_buf, v + 10);
+                    }
+                } else if just('-') {
+                    if target == "start" {
+                        let v = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD);
+                        set(&mut self.steam_create_starting_gold_buf, v - 10);
+                    } else {
+                        let v = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND);
+                        set(&mut self.steam_create_gold_per_round_buf, v - 10);
+                    }
+                } else if just_named(NamedKey::Backspace) {
+                    let buf = if target == "start" { &mut self.steam_create_starting_gold_buf } else { &mut self.steam_create_gold_per_round_buf };
+                    buf.pop();
+                } else {
+                    let buf = if target == "start" { &mut self.steam_create_starting_gold_buf } else { &mut self.steam_create_gold_per_round_buf };
+                    if buf.len() < 5 {
+                        for d in '0'..='9' {
+                            if just(d) {
+                                buf.push(d);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            7 => {
+                // 名次奖励字段：逗号分隔的非负整数档位（如 30,20,10）。数字 + 逗号输入，Backspace 删除。
+                if just_named(NamedKey::Backspace) {
+                    self.steam_create_place_buf.pop();
+                    return;
+                }
+                if self.steam_create_place_buf.len() < 64 {
+                    for c in [',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] {
+                        if just(c) {
+                            self.steam_create_place_buf.push(c);
+                            return;
+                        }
+                    }
+                }
+            }
             _ => {}
         }
         // 回车=创建房间（从编辑缓冲解析出最终值；空缓冲回退默认）。
@@ -3835,12 +4033,36 @@ impl Game {
             let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
             let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
                 .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
+            let starting_gold = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD)
+                .clamp(0, STEAM_MAX_GOLD);
+            let gold_per_round = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND)
+                .clamp(0, STEAM_MAX_GOLD);
+            // 名次奖励：逗号分隔解析，取最多 8 档，每档 0..=STEAM_MAX_GOLD；空/非法回退默认。
+            let place: Vec<i32> = if self.steam_create_place_buf.trim().is_empty() {
+                vec![30, 20, 10]
+            } else {
+                let out: Vec<i32> = self
+                    .steam_create_place_buf
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<i32>().ok())
+                    .map(|v| v.clamp(0, STEAM_MAX_GOLD))
+                    .take(8)
+                    .collect();
+                if out.is_empty() {
+                    vec![30, 20, 10]
+                } else {
+                    out
+                }
+            };
             self.steam_create_players = players;
             self.steam_create_rounds = rounds;
             self.steam_create_learn = learn;
+            self.steam_create_starting_gold = starting_gold;
+            self.steam_create_gold_per_round = gold_per_round;
+            self.steam_create_place = place;
             let name = self.steam_create_name.clone();
             let note = self.steam_create_note.clone();
-            eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s name='{name}' note='{note}'");
+            eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_per_round={gold_per_round} place={:?} name='{name}' note='{note}'", self.steam_create_place);
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
             self.steam_list_requested = false;
@@ -3931,8 +4153,14 @@ impl Game {
                 sess.host_set_room_info(room_name, room_note)?;
                 sess.host_set_rounds(self.steam_create_rounds)?;
                 sess.host_set_learn(self.steam_create_learn)?;
+                sess.host_set_starting_gold(self.steam_create_starting_gold)?;
+                sess.host_set_gold_per_round(self.steam_create_gold_per_round)?;
+                sess.host_set_place_reward(&self.steam_create_place)?;
                 self.match_rounds = self.steam_create_rounds;
                 self.match_learn_secs = self.steam_create_learn;
+                self.match_starting_gold = self.steam_create_starting_gold;
+                self.match_gold_per_round = self.steam_create_gold_per_round;
+                self.match_place_rewards = self.steam_create_place.clone();
                 sess.prepare_transport()?;
                 self.steam_my_index = sess.my_slot();
                 self.steam_my_id = sess.transport.steam_id();
@@ -3955,11 +4183,10 @@ impl Game {
                 self.steam_host_ls = Some(host_ls);
                 self.steam_cli_ls = None;
                 self.app = AppState::SteamHost { players };
-                // 世界/战绩：玩家数 = 请求数。
+                // 世界/战绩：玩家数 = 请求数；金币配置用建房时设定的值。
                 self.world = game_core::world::World::new(n.max(1) as u32, seed);
-                let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, learn_time_secs: self.match_learn_secs as f64, ..Default::default() };
                 self.meta = game_core::meta::MatchState::new(
-                    cfg,
+                    self.match_config(),
                     &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
                     8,
                 );
@@ -3977,6 +4204,9 @@ impl Game {
                 let host_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
                 self.match_rounds = host_rounds;
                 self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
+                self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
+                self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
+                self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| vec![30, 20, 10]);
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 self.steam_my_index = my_slot;
@@ -3997,9 +4227,8 @@ impl Game {
                 self.app = AppState::SteamJoin { lobby_id: None };
                 let n = total.max(2);
                 self.world = game_core::world::World::new(n.max(1) as u32, seed);
-                let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, learn_time_secs: self.match_learn_secs as f64, ..Default::default() };
                 self.meta = game_core::meta::MatchState::new(
-                    cfg,
+                    self.match_config(),
                     &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
                     8,
                 );
@@ -4447,16 +4676,26 @@ impl Game {
     fn draw_steam_create_lobby(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
-        draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.14 + 48.0 }, true)?;
+        draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
+        draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.12 + 44.0 }, true)?;
 
-        let labels = ["房间名", "备注", "玩家人数", "总轮数", "准备时间(秒)"];
+        let labels = [
+            "房间名", "备注", "玩家人数", "总轮数",
+            "准备时间(秒)", "初始金币", "每轮金币", "名次奖励",
+        ];
         let hints = [
-            "直接输入文字，Backspace 删除",
+            "直接输入文字，Backspace 删除（支持中文输入法）",
             "可留空；直接输入文字",
-            "+/- 步进，或直接输数字（2 ~ 64）",
-            "+/- 步进，或直接输数字（1 ~ 256）",
-            "局间准备时间（8 ~ 256 秒）",
+            "+/− 步进，或直接输数字（2 ~ 64）",
+            "+/− 步进，或直接输数字（1 ~ 256）",
+            "局与局之间的准备时间（8 ~ 256 秒）",
+            "第一局开局一次性发放，独立于每轮金币（0 ~ 99999）",
+            "每轮固定参与奖（0 ~ 99999）",
+            "逗号分隔档位，如 30,20,10（最多 8 档；超出档位不奖励）",
+        ];
+        let placeholders = [
+            "（输入房间名）", "（可留空）", "（默认 2）", "（默认 3）",
+            "（默认 20 秒）", "（默认 0）", "（默认 20）", "（默认 30,20,10）",
         ];
         let vals = [
             self.steam_create_name.clone(),
@@ -4464,48 +4703,43 @@ impl Game {
             self.steam_create_players_buf.clone(),
             self.steam_create_rounds_buf.clone(),
             self.steam_create_learn_buf.clone(),
+            self.steam_create_starting_gold_buf.clone(),
+            self.steam_create_gold_per_round_buf.clone(),
+            self.steam_create_place_buf.clone(),
         ];
-        let box_w = 400.0;
-        let box_h = 50.0;
-        let label_w = 180.0;
-        let total_left = cx - (label_w + box_w) / 2.0;
-        let row_h = box_h + 48.0;
-        let mut y = sh * 0.28;
-        for i in 0..5 {
+        let box_w = 320.0;
+        let box_h = 46.0;
+        let label_w = 150.0;
+        let col_w = label_w + box_w;
+        let gap = 70.0;
+        let total_w = col_w * 2.0 + gap;
+        let left_col_left = cx - total_w / 2.0;
+        let right_col_left = left_col_left + col_w + gap;
+        let row_h = 68.0;
+        let y0 = sh * 0.26;
+        // 字段 → 列/行：左列 0..4（房名/备注/人数/轮数），右列 4..8（准备/初始金币/每轮金币/名次奖励）。
+        for i in 0..8 {
+            let col = i / 4;
+            let row = i % 4;
+            let total_left = if col == 0 { left_col_left } else { right_col_left };
+            let y = y0 + row as f32 * row_h;
             let selected = i == self.steam_create_focus;
-            // 输入框
             let bg_col = if selected { Color::from_rgb(56, 66, 84) } else { Color::from_rgb(28, 32, 42) };
             let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(total_left + label_w, y, box_w, box_h), bg_col)?;
             canvas.draw(&bg, graphics::DrawParam::new());
-            // 聚焦字段：金色高亮边框
             if selected {
                 let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), graphics::Rect::new(total_left + label_w, y, box_w, box_h), Color::from_rgb(255, 210, 120))?;
                 canvas.draw(&border, graphics::DrawParam::new());
             }
-            // 标签
             let label_col = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(215, 220, 232) };
-            draw_text(canvas, ctx, labels[i], 24.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 15.0 }, true)?;
-            // 值
-            let disp = if i == 0 && vals[0].is_empty() {
-                "（输入房间名）".to_string()
-            } else if i == 1 && vals[1].is_empty() {
-                "（可留空）".to_string()
-            } else if i == 2 && vals[2].is_empty() {
-                "（默认 2）".to_string()
-            } else if i == 3 && vals[3].is_empty() {
-                "（默认 3）".to_string()
-            } else if i == 4 && vals[4].is_empty() {
-                "（默认 20 秒）".to_string()
-            } else {
-                vals[i].clone()
-            };
+            draw_text(canvas, ctx, labels[i], 23.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
+            let disp = if vals[i].is_empty() { placeholders[i].to_string() } else { vals[i].clone() };
             let val_col = if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE };
-            draw_text(canvas, ctx, &disp, 22.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
-            // 聚焦字段下方：该字段专属操作提示
+            draw_text(canvas, ctx, &disp, 20.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 13.0 }, true)?;
+            // 聚焦字段下方：该字段专属操作提示（左对齐到字段输入框左缘，更贴近）。
             if selected {
-                draw_text(canvas, ctx, &format!("▶ {}", hints[i]), 17.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + box_h + 14.0 }, true)?;
+                draw_text(canvas, ctx, &format!("▶ {}", hints[i]), 16.0, Color::from_rgb(150, 200, 255), Point2 { x: total_left + label_w, y: y + box_h + 8.0 }, false)?;
             }
-            y += row_h;
         }
         draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建房间 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         Ok(())
@@ -4676,6 +4910,189 @@ fn parse_app_from_args(args: &[String]) -> AppState {
     app
 }
 
+/// 自定义 winit 事件循环：在 ggez 官方 `event::run` 基础上，额外接入 winit 的
+/// `Ime` / `ReceivedCharacter` 事件，使中文输入法（IME）能输入到房间名/备注等文本字段。
+/// 其余事件（键盘/鼠标/触摸/绘制/退出）完全照搬 ggez `GgezApplicationHandler` 的分发逻辑，行为不变。
+struct GameApp {
+    ctx: Context,
+    game: Game,
+    ime_allowed: bool,
+}
+
+impl winit::application::ApplicationHandler for GameApp {
+    fn resumed(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        // 启用 IME（中文输入法）。窗口在 ContextBuilder::build 时已创建，此处仅打开 IME 能力。
+        if !self.ime_allowed {
+            self.ctx.gfx.window().set_ime_allowed(true);
+            self.ime_allowed = true;
+        }
+    }
+
+    fn new_events(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _cause: winit::event::StartCause,
+    ) {
+        use winit::event_loop::ControlFlow;
+        if self.ctx.fields.quit_requested {
+            let res = self.game.quit_event(&mut self.ctx);
+            self.ctx.fields.quit_requested = false;
+            match res {
+                Ok(false) => self.ctx.fields.continuing = false,
+                Ok(true) => {}
+                Err(e) => {
+                    eprintln!("Error on quit_event: {e:?}");
+                    event_loop.exit();
+                    return;
+                }
+            }
+        }
+        if !self.ctx.fields.continuing {
+            event_loop.exit();
+            return;
+        }
+        event_loop.set_control_flow(ControlFlow::Poll);
+    }
+
+    fn window_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        mut window_id: winit::window::WindowId,
+        mut event: winit::event::WindowEvent,
+    ) {
+        use winit::event::{ElementState, Ime, MouseScrollDelta, WindowEvent};
+        ggez::event::process_window_event(&mut self.ctx, &mut window_id, &mut event);
+        match event {
+            WindowEvent::Ime(Ime::Commit(text)) => {
+                // winit 0.30 统一用 IME 事件报告文本输入：
+                // - 普通键盘字符（英文/数字/标点）与中文输入法组合提交都走 `Ime::Commit`；
+                //   （本机 IME 已在 `resumed` 里 set_ime_allowed(true)）
+                self.game.on_text_input(&text);
+            }
+            WindowEvent::Ime(_) => {}
+
+            WindowEvent::Resized(size) => {
+                let _ = self
+                    .game
+                    .resize_event(&mut self.ctx, size.width as f32, size.height as f32);
+            }
+            WindowEvent::CloseRequested => {
+                if let Ok(false) = self.game.quit_event(&mut self.ctx) {
+                    self.ctx.fields.continuing = false;
+                }
+            }
+            WindowEvent::Focused(gained) => {
+                let _ = self.game.focus_event(&mut self.ctx, gained);
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let input = ggez::input::keyboard::KeyInput {
+                    event,
+                    mods: self.ctx.keyboard.active_modifiers,
+                };
+                let repeat = input.event.repeat;
+                match input.event.state {
+                    ElementState::Pressed => {
+                        let _ = self.game.key_down_event(&mut self.ctx, input, repeat);
+                    }
+                    ElementState::Released => {
+                        let _ = self.game.key_up_event(&mut self.ctx, input);
+                    }
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (x, y) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (x, y),
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        let scale = self.ctx.gfx.window().scale_factor();
+                        let logical = pos.to_logical::<f32>(scale);
+                        (logical.x, logical.y)
+                    }
+                };
+                let _ = self.game.mouse_wheel_event(&mut self.ctx, x, y);
+            }
+            WindowEvent::MouseInput {
+                state, button, ..
+            } => {
+                let p = self.ctx.mouse.position();
+                match state {
+                    ElementState::Pressed => {
+                        let _ =
+                            self.game
+                                .mouse_button_down_event(&mut self.ctx, button, p.x, p.y);
+                    }
+                    ElementState::Released => {
+                        let _ =
+                            self.game
+                                .mouse_button_up_event(&mut self.ctx, button, p.x, p.y);
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { .. } => {
+                let p = self.ctx.mouse.position();
+                let d = self.ctx.mouse.last_delta();
+                let _ = self
+                    .game
+                    .mouse_motion_event(&mut self.ctx, p.x, p.y, d.x, d.y);
+            }
+            WindowEvent::Touch(touch) => {
+                let _ = self.game.touch_event(
+                    &mut self.ctx,
+                    touch.phase,
+                    touch.location.x,
+                    touch.location.y,
+                );
+            }
+            WindowEvent::CursorEntered { .. } => {
+                let _ = self.game.mouse_enter_or_leave(&mut self.ctx, true);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                let _ = self.game.mouse_enter_or_leave(&mut self.ctx, false);
+            }
+            _ => {}
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        mut device_id: winit::event::DeviceId,
+        mut event: winit::event::DeviceEvent,
+    ) {
+        use winit::event::DeviceEvent;
+        ggez::event::process_device_event(&mut self.ctx, &mut device_id, &mut event);
+        if let DeviceEvent::MouseMotion { delta } = event {
+            let _ = self.game.raw_mouse_motion_event(&mut self.ctx, delta.0, delta.1);
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        self.ctx.time.tick();
+        if let Err(e) = self.game.update(&mut self.ctx) {
+            eprintln!("Error on update: {e:?}");
+            event_loop.exit();
+            return;
+        }
+        if let Err(e) = self.ctx.gfx.begin_frame() {
+            eprintln!("Error on begin_frame: {e:?}");
+            event_loop.exit();
+            return;
+        }
+        if let Err(e) = self.game.draw(&mut self.ctx) {
+            eprintln!("Error on draw: {e:?}");
+            event_loop.exit();
+            return;
+        }
+        if let Err(e) = self.ctx.gfx.end_frame() {
+            eprintln!("Error on end_frame: {e:?}");
+            event_loop.exit();
+            return;
+        }
+        self.ctx.mouse.reset_delta();
+        self.ctx.keyboard.save_keyboard_state();
+        self.ctx.mouse.save_mouse_state();
+    }
+}
+
 fn main() -> GameResult {
     // 解析命令行（可选直通入口）：--join <host:port> / --host <port> [--players N] / --solo。
     // 若无任一参数 → 进主菜单选择。
@@ -4694,7 +5111,13 @@ fn main() -> GameResult {
         .build()?;
 
     let game = Game::new(&mut ctx, app)?;
-    event::run(ctx, event_loop, game)
+    // 用自定义事件循环替代 `event::run`，以接入中文 IME 输入。
+    let mut app = GameApp {
+        ctx,
+        game,
+        ime_allowed: false,
+    };
+    event_loop.run_app(&mut app).map_err(ggez::GameError::EventLoopError)
 }
 
 #[cfg(test)]
