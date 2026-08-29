@@ -1412,6 +1412,7 @@ impl World {
     pub fn reset_round(&mut self) {
         self.eliminated_order.clear();
         self.kills_this_round.clear();
+        self.projectiles.clear(); // 清掉上轮遗留的飞行物/延时区域
         self.arena_radius = Fix64::from_num(crate::world::START_RADIUS);
         self.time = Fix64::ZERO;
         // 每轮推进布局种子 → 下一小局的柱子配置与上一轮不同（联机下两端 world 同步此字段，确定性一致）。
@@ -3112,6 +3113,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn reset_round_clears_projectiles_and_move_targets() {
+        // 新轮不应残留上轮的飞行物与移动目标（上一轮的移动指令/子弹不能带到下一轮）。
+        let mut w = World::new(2, 7);
+        w.players[0].move_target = Some(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO));
+        w.projectiles.push(Projectile {
+            owner: 0,
+            pos: Vec2::ZERO,
+            alive: true,
+            kind: ProjectileKind::Bullet {
+                dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                speed: Fix64::ONE,
+                damage: Fix64::ONE,
+                radius: Fix64::from_num(0.2),
+                remaining: Fix64::ONE,
+            },
+        });
+        // 再补一个“延时区域”类飞行物（如星域/束缚线），验证也一并清掉。
+        w.projectiles.push(Projectile {
+            owner: 0,
+            pos: Vec2::ZERO,
+            alive: true,
+            kind: ProjectileKind::Star {
+                owner: 0,
+                radius: Fix64::from_num(2.0),
+                damage_per_sec: Fix64::ONE,
+                heal_per_sec: Fix64::ZERO,
+                remaining: Fix64::from_num(3.0),
+            },
+        });
+        w.reset_round();
+        assert_eq!(w.projectiles.len(), 0, "新轮不应残留上轮的飞行物/延时区域");
+        assert!(w.players[0].move_target.is_none(), "新轮不应残留上轮的移动目标");
     }
 
     #[test]

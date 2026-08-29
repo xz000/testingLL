@@ -551,6 +551,7 @@ impl Player {
         self.control = None;
         self.pull = Vec2::ZERO;
         self.cur_vel = Vec2::ZERO;
+        self.move_target = None; // 清掉上一轮的移动目标，避免新轮继续移动
         self.clear_buffs();
         self.kick = None;
         self.shadow_anchor = None;
