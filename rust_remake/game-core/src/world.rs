@@ -1485,8 +1485,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Missile { speed, radius, damage, push_power, push_time, range } => {
-                // 追踪导弹：锁定点击处最近的敌人全速直追；命中爆炸伤+击退。
+            SkillEffect::Missile { .. } => {
+                // 追踪导弹：锁定点击处最近的敌人全速直追；命中爆炸伤+击退。（数值走 stats，随等级成长）
                 let ppos = world.players[idx as usize].pos;
                 // 找出点击出发点（target 或施法者位置）最近的非施法者敌人
                 let anchor = target.unwrap_or(ppos);
@@ -1513,19 +1513,20 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     owner: idx,
                     kind: ProjectileKind::Missile {
                         dir,
-                        speed,
-                        damage,
-                        radius,
-                        push_power,
-                        push_time,
-                        remaining: range,
+                        speed: stats.speed,
+                        damage: stats.damage,
+                        radius: stats.radius,
+                        push_power: stats.push_power,
+                        push_time: stats.push_time,
+                        remaining: stats.range,
                     },
                     pos: ppos,
                     alive: true,
                 });
             }
-            SkillEffect::Boomerang { speed, accelerate, radius, damage, push_power, push_time, life } => {
+            SkillEffect::Boomerang { accelerate, .. } => {
                 // 回旋镖（D2）：朝目标方向飞出，随后持续向施法者加速回飞；撞障碍反弹；命中爆炸伤+击退。
+                // 数值走 stats（随等级成长）；accelerate 无成长字段，用 effect 固定值。
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = match target {
                         Some(t) => {
@@ -1541,13 +1542,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::Boomerang {
-                            vel: dir * speed,
+                            vel: dir * stats.speed,
                             accelerate,
-                            damage,
-                            radius,
-                            push_power,
-                            push_time,
-                            life,
+                            damage: stats.damage,
+                            radius: stats.radius,
+                            push_power: stats.push_power,
+                            push_time: stats.push_time,
+                            life: stats.duration,
                             owner_pos: p.pos,
                         },
                         pos: p.pos,
@@ -1555,8 +1556,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Banana { count, turn_rad, speed, radius, damage, push_power, push_time, life } => {
+            SkillEffect::Banana { count, turn_rad, .. } => {
                 // 双香蕉曲线弹（D4）：朝施法方向两侧各打一发曲线弹，命中爆炸伤+击退。
+                // 数值走 stats（随等级成长）；turn_rad 无成长字段，用 effect 固定值。
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let base_dir = match target {
                         Some(t) => {
@@ -1578,13 +1580,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             owner: idx,
                             kind: ProjectileKind::Banana {
                                 dir: start_dir,
-                                speed,
+                                speed: stats.speed,
                                 turn: Fix64::from_num(turn_rad * if off < 0.0 { 1.0 } else { -1.0 }),
-                                damage,
-                                radius,
-                                push_power,
-                                push_time,
-                                life,
+                                damage: stats.damage,
+                                radius: stats.radius,
+                                push_power: stats.push_power,
+                                push_time: stats.push_time,
+                                life: stats.duration,
                             },
                             pos: p.pos,
                             alive: true,
@@ -1592,8 +1594,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                 }
             }
-            SkillEffect::RollProjectile { speed, damage_per_sec, radius, range } => {
-                // 滚动火球（E1b）：沿方向直线滚动，接触范围内持续掉血。
+            SkillEffect::RollProjectile { .. } => {
+                // 滚动火球（E1b）：沿方向直线滚动，接触范围内持续掉血。（数值走 stats，随等级成长）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = match target {
                         Some(t) => {
@@ -1610,18 +1612,18 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         owner: idx,
                         kind: ProjectileKind::Rolling {
                             dir,
-                            speed,
-                            damage_per_sec,
-                            radius,
-                            remaining: range,
+                            speed: stats.speed,
+                            damage_per_sec: stats.damage,
+                            radius: stats.radius,
+                            remaining: stats.range,
                         },
                         pos: p.pos,
                         alive: true,
                     });
                 }
             }
-            SkillEffect::ScatterBurst { speed, range, count, step_rad, bullet_speed } => {
-                // 撒弹线（E3）：到终点爆散一个扇形。
+            SkillEffect::ScatterBurst { count, step_rad, .. } => {
+                // 撒弹线（E3）：到终点爆散一个扇形。（数值走 stats，随等级成长）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = match target {
                         Some(t) => {
@@ -1638,12 +1640,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         owner: idx,
                         kind: ProjectileKind::ScatterLine {
                             dir,
-                            speed,
-                            remaining: range,
+                            speed: stats.speed,
+                            remaining: stats.range,
                             scatter: ScatterKind::Burst {
                                 count,
                                 step_rad: Fix64::from_num(step_rad),
-                                bullet_speed,
+                                bullet_speed: stats.speed,
                             },
                         },
                         pos: p.pos,
@@ -1651,8 +1653,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::ScatterPeriodic { speed, range, count, interval, bullet_speed, turn_rad } => {
-                // 撒弹线（E3b）：飞行途中周期性散射击并旋转。
+            SkillEffect::ScatterPeriodic { count, interval, turn_rad, .. } => {
+                // 撒弹线（E3b）：飞行途中周期性散射击并旋转。（数值走 stats，随等级成长）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = match target {
                         Some(t) => {
@@ -1669,13 +1671,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         owner: idx,
                         kind: ProjectileKind::ScatterLine {
                             dir,
-                            speed,
-                            remaining: range,
+                            speed: stats.speed,
+                            remaining: stats.range,
                             scatter: ScatterKind::Periodic {
                                 count,
                                 interval: Fix64::from_num(interval),
                                 elapsed: Fix64::ZERO,
-                                bullet_speed,
+                                bullet_speed: stats.speed,
                                 turn_rad: Fix64::from_num(turn_rad),
                             },
                         },
