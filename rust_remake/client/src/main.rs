@@ -337,6 +337,12 @@ struct Game {
     /// Steam 建房设置：总轮数（1..=STEAM_MAX_ROUNDS）。
     #[cfg(feature = "steam")]
     steam_create_rounds: u32,
+    /// Steam 建房设置：玩家人数输入缓冲（字符串编辑，支持 Backspace 逐位删）。
+    #[cfg(feature = "steam")]
+    steam_create_players_buf: String,
+    /// Steam 建房设置：总轮数输入缓冲（字符串编辑，支持 Backspace 逐位删）。
+    #[cfg(feature = "steam")]
+    steam_create_rounds_buf: String,
     /// 当前场次的总轮数（host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_rounds: u32,
@@ -697,6 +703,10 @@ impl Game {
             steam_create_players: STEAM_DEFAULT_PLAYERS,
             #[cfg(feature = "steam")]
             steam_create_rounds: STEAM_DEFAULT_ROUNDS,
+            #[cfg(feature = "steam")]
+            steam_create_players_buf: STEAM_DEFAULT_PLAYERS.to_string(),
+            #[cfg(feature = "steam")]
+            steam_create_rounds_buf: STEAM_DEFAULT_ROUNDS.to_string(),
             #[cfg(feature = "steam")]
             match_rounds: init_rounds,
         })
@@ -3657,6 +3667,8 @@ impl Game {
                 self.steam_create_focus = 0;
                 self.steam_create_players = STEAM_DEFAULT_PLAYERS;
                 self.steam_create_rounds = STEAM_DEFAULT_ROUNDS;
+                self.steam_create_players_buf = STEAM_DEFAULT_PLAYERS.to_string();
+                self.steam_create_rounds_buf = STEAM_DEFAULT_ROUNDS.to_string();
                 self.steam_lobby_create = true;
             }
             1 => {
@@ -3682,6 +3694,7 @@ impl Game {
         use winit::keyboard::NamedKey;
         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         // 切换字段 0=房名 1=备注 2=人数 3=轮数。
         if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
             self.steam_create_focus = (self.steam_create_focus + 3) % 4;
@@ -3714,49 +3727,53 @@ impl Game {
                 }
             }
             2 => {
-                // 人数字段：`+`/`-` 步进 + 数字直接输入（2..=STEAM_MAX_PLAYERS）。
+                // 人数字段：数字输入 + Backspace 逐位删 + +/- 步进（2..=STEAM_MAX_PLAYERS）。
                 if just('+') {
-                    self.steam_create_players = (self.steam_create_players as i32 + 1).clamp(2, STEAM_MAX_PLAYERS as i32) as u8;
+                    let v = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32);
+                    self.steam_create_players_buf = (v as i64 + 1).clamp(2, STEAM_MAX_PLAYERS as i64).to_string();
                 } else if just('-') {
-                    self.steam_create_players = (self.steam_create_players as i32 - 1).clamp(2, STEAM_MAX_PLAYERS as i32) as u8;
+                    let v = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32);
+                    self.steam_create_players_buf = (v as i64 - 1).max(2).to_string();
                 } else if just_named(NamedKey::Backspace) {
-                    self.steam_create_players = 2;
+                    self.steam_create_players_buf.pop();
                 } else {
                     for d in '0'..='9' {
-                        if just(d) {
-                            let n = d.to_digit(10).unwrap() as u8;
-                            let val = self.steam_create_players.saturating_mul(10).saturating_add(n);
-                            self.steam_create_players = val.clamp(2, STEAM_MAX_PLAYERS);
+                        if just(d) && self.steam_create_players_buf.len() < 3 {
+                            self.steam_create_players_buf.push(d);
                         }
                     }
                 }
             }
             3 => {
-                // 轮数字段：`+`/`-` 步进 + 数字直接输入（1..=STEAM_MAX_ROUNDS）。
+                // 轮数字段：数字输入 + Backspace 逐位删 + +/- 步进（1..=STEAM_MAX_ROUNDS）。
                 if just('+') {
-                    self.steam_create_rounds = (self.steam_create_rounds as i64 + 1).clamp(1, STEAM_MAX_ROUNDS as i64) as u32;
+                    let v = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS);
+                    self.steam_create_rounds_buf = (v as i64 + 1).clamp(1, STEAM_MAX_ROUNDS as i64).to_string();
                 } else if just('-') {
-                    self.steam_create_rounds = (self.steam_create_rounds as i64 - 1).clamp(1, STEAM_MAX_ROUNDS as i64) as u32;
+                    let v = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS);
+                    self.steam_create_rounds_buf = (v as i64 - 1).max(1).to_string();
                 } else if just_named(NamedKey::Backspace) {
-                    self.steam_create_rounds = 1;
+                    self.steam_create_rounds_buf.pop();
                 } else {
                     for d in '0'..='9' {
-                        if just(d) {
-                            let n = d.to_digit(10).unwrap();
-                            let val = self.steam_create_rounds.saturating_mul(10).saturating_add(n);
-                            self.steam_create_rounds = val.clamp(1, STEAM_MAX_ROUNDS);
+                        if just(d) && self.steam_create_rounds_buf.len() < 4 {
+                            self.steam_create_rounds_buf.push(d);
                         }
                     }
                 }
             }
             _ => {}
         }
-        // 回车=创建房间。
+        // 回车=创建房间（从编辑缓冲解析出最终值；空缓冲回退默认）。
         if just_named(NamedKey::Enter) || just('\r') {
-            let players = self.steam_create_players;
+            let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
+                .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
+            let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
+            self.steam_create_players = players;
+            self.steam_create_rounds = rounds;
             let name = self.steam_create_name.clone();
             let note = self.steam_create_note.clone();
-            eprintln!("[steam] create lobby: players={players} name='{name}' note='{note}'");
+            eprintln!("[steam] create lobby: players={players} rounds={rounds} name='{name}' note='{note}'");
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
             self.steam_list_requested = false;
@@ -4373,8 +4390,8 @@ impl Game {
         let vals = [
             self.steam_create_name.clone(),
             self.steam_create_note.clone(),
-            self.steam_create_players.to_string(),
-            self.steam_create_rounds.to_string(),
+            self.steam_create_players_buf.clone(),
+            self.steam_create_rounds_buf.clone(),
         ];
         let box_w = 400.0;
         let box_h = 50.0;
@@ -4401,6 +4418,10 @@ impl Game {
                 "（输入房间名）".to_string()
             } else if i == 1 && vals[1].is_empty() {
                 "（可留空）".to_string()
+            } else if i == 2 && vals[2].is_empty() {
+                "（默认 2）".to_string()
+            } else if i == 3 && vals[3].is_empty() {
+                "（默认 3）".to_string()
             } else {
                 vals[i].clone()
             };
