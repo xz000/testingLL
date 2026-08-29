@@ -271,6 +271,10 @@ struct Game {
     /// Steam：本机最近一次收到的 host 房间「就绪状态快照」（多人一致界面；client 侧显示各成员就绪用）。
     #[cfg(feature = "steam")]
     steam_roster_ready: Vec<(u8, bool)>,
+    /// Steam（client）：最近一次 host 广播快照是否为「全员就绪」。**持久记录**：
+    /// 只在收到新快照时更新，避免“本帧恰好没收到广播”就回退 false 导致界面在“按 U 就绪/倒计时”间闪烁。
+    #[cfg(feature = "steam")]
+    steam_roster_all_ready: bool,
     /// Steam：全体就绪是否为真（host 计算；房间/就绪界面显示用）。
     #[cfg(feature = "steam")]
     steam_all_ready: bool,
@@ -718,6 +722,8 @@ impl Game {
             steam_roster,
             #[cfg(feature = "steam")]
             steam_roster_ready: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_roster_all_ready: false,
             #[cfg(feature = "steam")]
             steam_all_ready: false,
             #[cfg(feature = "steam")]
@@ -3089,6 +3095,7 @@ impl Game {
             self.steam_was_all_ready = false;
             self.steam_countdown = 0.0;
             self.steam_roster_ready = Vec::new();
+            self.steam_roster_all_ready = false;
             self.steam_all_ready = false;
             self.steam_roster = Vec::new();
             self.steam_lobby_id = None;
@@ -3722,7 +3729,6 @@ impl Game {
             self.steam_lobby_silent_ticks = self.steam_lobby_silent_ticks.saturating_add(1);
             // 单次排空读 host 房间入包：StartConfig（进配置）与 RosterReady（界面）一次分类，绝不互吞。
             let mut rcv = [0u8; 8192];
-            let mut roster_all_ready = false; // 本帧 host 广播的就绪快照是否“全员就绪”
             if let Ok((got_cfg, roster)) = cli.recv_room_inbox(&mut rcv) {
                 if got_cfg {
                     eprintln!("[steam-client] host says all ready -> config menu");
@@ -3733,9 +3739,13 @@ impl Game {
                     self.steam_roster_ready = entries.clone();
                     eprintln!("[steam-client] roster ready snapshot: {entries:?}");
                     let roster_cnt = self.world.players.len();
-                    roster_all_ready = entries.len() >= roster_cnt && entries.iter().all(|(_, r)| *r);
+                    // 持久记录：仅在收到新快照时更新；若本帧恰好没收到广播，沿用上次快照，
+                    // 避免“按 U 就绪 / 倒计时”在没收到广播的帧回退 false 而闪烁。
+                    self.steam_roster_all_ready =
+                        entries.len() >= roster_cnt && entries.iter().all(|(_, r)| *r);
                 }
             }
+            let roster_all_ready = self.steam_roster_all_ready;
             // client 端就绪倒计时：与 host 一致的缓冲，避免“一看到全员就绪就抢先进配置”。
             // 正常路径由 host 倒计时归零广播 StartConfig（got_cfg）触发；此处兜底：若 StartConfig 小包被丢，
             // 用可靠 RosterReady 启动同样长度的倒计时，归零后同样进配置，保证两端同时开始。
@@ -4282,6 +4292,7 @@ impl Game {
         self.steam_build_done = false;
         self.steam_was_all_ready = false;
         self.steam_roster_ready = Vec::new();
+        self.steam_roster_all_ready = false;
         self.steam_all_ready = false;
         self.steam_countdown = 0.0;
         self.pre_game_config = false; // 由房间就绪 → StartConfig → true
