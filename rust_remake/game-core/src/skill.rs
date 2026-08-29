@@ -947,6 +947,7 @@ impl DefTable {
                     damage_delta: 0.5,
                     speed_base: 6.0,
                     range_base: 12.0,
+                    radius_base: 0.7,
                     max_distance_delta: 1.0,
                     ..DEF_ZERO
                 },
@@ -991,6 +992,7 @@ impl DefTable {
                     cooldown_base: 6.0,
                     cooldown_delta: -0.3,
                     range_base: 8.0,
+                    speed_base: 6.0,
                     ..DEF_ZERO
                 },
             },
@@ -1014,6 +1016,7 @@ impl DefTable {
                     cooldown_base: 6.0,
                     cooldown_delta: -0.3,
                     range_base: 8.0,
+                    speed_base: 6.0,
                     ..DEF_ZERO
                 },
             },
@@ -1041,6 +1044,9 @@ impl DefTable {
                     damage_delta: 3.0,
                     speed_base: 8.0,
                     push_power_base: 8.0,
+                    radius_base: 1.0,
+                    push_time_base: 1.0,
+                    duration_base: 3.0,
                     ..DEF_ZERO
                 },
             },
@@ -1069,6 +1075,8 @@ impl DefTable {
                     radius_delta: 0.1,
                     speed_base: 7.0,
                     push_power_base: 9.0,
+                    push_time_base: 1.0,
+                    range_base: 12.0,
                     ..DEF_ZERO
                 },
             },
@@ -1096,6 +1104,9 @@ impl DefTable {
                     damage_delta: 2.0,
                     speed_base: 8.0,
                     push_power_base: 5.0,
+                    radius_base: 1.0,
+                    push_time_base: 1.0,
+                    duration_base: 2.5,
                     ..DEF_ZERO
                 },
             },
