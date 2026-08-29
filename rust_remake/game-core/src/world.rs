@@ -1419,12 +1419,19 @@ impl World {
         // 用简单递增而非 LCG：LCG 在 2^64 上存在短周期点（如 20260812 经两次递推回到自身），
         // 递增保证每次严格不同（无回绕时）。Rng::new 为单射，不同 seed ⇒ 不同布局。
         self.round_seed = self.round_seed.wrapping_add(1);
-        self.obstacles.clear();
         let mut rng = Rng::new(self.round_seed);
-        _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius);
-        for p in self.players.iter_mut() {
+        // 把玩家放回出生环（0.6*arena 等分 + 整体随机旋转），与 World::new 初始布局一致。
+        let spawn_rot = Fix64::from_num(std::f64::consts::TAU) * rng.next_fix();
+        let n = self.players.len().max(1) as f64;
+        for (id, p) in self.players.iter_mut().enumerate() {
             p.reset_state();
+            let r = self.arena_radius * Fix64::from_num(0.6);
+            let angle = spawn_rot
+                + Fix64::from_num(std::f64::consts::TAU) * Fix64::from_num(id as f64 / n);
+            p.pos = Vec2::new(r * crate::fix::cos(angle), r * crate::fix::sin(angle));
         }
+        self.obstacles.clear();
+        _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius);
     }
 }
 
@@ -3148,6 +3155,31 @@ mod tests {
         w.reset_round();
         assert_eq!(w.projectiles.len(), 0, "新轮不应残留上轮的飞行物/延时区域");
         assert!(w.players[0].move_target.is_none(), "新轮不应残留上轮的移动目标");
+    }
+
+    #[test]
+    fn reset_round_respawns_players_on_spawn_ring() {
+        // 每轮结束玩家应重生回出生环（0.6*arena），而非留在上轮位置。
+        let mut w = World::new(3, 42);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].pos = Vec2::new(Fix64::from_num(100.0), Fix64::from_num(100.0));
+        w.players[2].pos = Vec2::new(Fix64::from_num(-50.0), Fix64::ZERO);
+        w.reset_round();
+        let expected_r = w.arena_radius * Fix64::from_num(0.6);
+        for (i, p) in w.players.iter().enumerate() {
+            let d = p.pos.length();
+            assert!(
+                (d - expected_r).abs() < Fix64::from_num(0.01),
+                "玩家应重生在 0.6 出生环 idx={i} d={d:?}"
+            );
+        }
+        // 出生环上玩家应等分、互不重叠。
+        for i in 0..w.players.len() {
+            for j in i + 1..w.players.len() {
+                let d = (w.players[i].pos - w.players[j].pos).length();
+                assert!(d > Fix64::ONE, "出生环上玩家应等分不重叠 {i}-{j}");
+            }
+        }
     }
 
     #[test]
