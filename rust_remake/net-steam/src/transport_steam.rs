@@ -23,6 +23,8 @@ use std::io;
 /// Steam 消息传输：持有已初始化 Client。
 pub struct SteamTransport {
     client: steamworks::Client,
+    /// 已注册的 Steam 回调句柄（`CallbackHandle` 被 drop 即注销，故必须持有）。
+    callback_handles: Vec<steamworks::CallbackHandle>,
     /// 可靠发送补发队列：`send_to` 因「会话尚未建立 / 暂不可发」而失败时，不丢包而是入队，
     /// 待会话可用后在 `flush_pending` 里按序重发（RELIABLE send 成功即保证送达）。
     /// 键=peer SteamID；值=按发送顺序的待发消息。
@@ -67,6 +69,7 @@ impl SteamTransport {
         });
         Ok(SteamTransport {
             client,
+            callback_handles: Vec::new(),
             pending_sends: HashMap::new(),
             send_fail_logs: 0,
             direct_sends: 0,
@@ -166,6 +169,17 @@ impl SteamTransport {
     /// 好友（Friends）句柄；用 `get_friend(id).name()` 拿 Steam 昵称。
     pub fn friends(&self) -> steamworks::Friends {
         self.client.friends()
+    }
+
+    /// 注册一个 Steam 回调并**持有句柄**（句柄存活期间回调有效；`run_callbacks` 时触发）。
+    /// 用于好友邀请/加入请求（`GameLobbyJoinRequested` / `GameRichPresenceJoinRequested`）等。
+    pub fn register_callback<C, F>(&mut self, f: F)
+    where
+        C: steamworks::Callback,
+        F: FnMut(C) + 'static + Send,
+    {
+        let handle = self.client.register_callback(f);
+        self.callback_handles.push(handle);
     }
 }
 

@@ -34,6 +34,46 @@
 > workspace 125 全绿，build/test/clippy（默认+steam）全绿。**阶段 3 连续迁移已验证**（host 掉线→接管→再掉线→再接管）。
 > 下一步接 Steamworks 增强：**好友邀请 + Rich Presence** → 成就/排行榜/头像/Ping → 云存档。
 
+## █ Steamworks 第一批：好友邀请 + Rich Presence（2026-08-29 已落，待真机复验）
+> 本轮起点：上一轮最后提交是 `3b6bbd5`（换用 SourceHanSansCN-VF 全量字体 17.7MB；旧 168KB 子集留作 `assets/fonts/cjk-168k.ttf`）。
+> 本轮按 `WORK_BACKLOG.md` §9 建议的起点做 Steamworks 第一批。workspace **127** 全绿（+2：connect 串解析），
+> steam feature 下 client 6 全绿（+1：`+connect_lobby` 命令行解析），build/test/clippy（默认 + steam）全绿。
+> 已冒烟：默认构建 `--solo` 能起窗跑（新字体加载正常）；steam 构建主菜单能 init 会话并读到昵称。
+
+**能力盘点（对照 steamworks 0.13 源码核实，别越界）**
+- 有：`Friends::activate_invite_dialog(lobby)`（覆盖层邀请窗口）、`Friend::invite_user_to_game(connect)`（定向邀请）、
+  `Friends::set_rich_presence(key, value)` / `clear_rich_presence()`、回调 `GameLobbyJoinRequested` / `GameRichPresenceJoinRequested`。
+- **没有** `InviteUserToLobby`（`matchmaking.rs` 里没有），所以“定向邀请某人”只能走 `invite_user_to_game` + 自定义 connect 串。
+- Rich Presence 用 `status`（好友列表直接显示文案）+ `connect`（出现「加入游戏」按钮）两个键；未做 `steam_display` 本地化（需 Steam 后台配本地化文件）。
+
+**已实现**
+- `net-steam/lobby.rs`：`CONNECT_PREFIX = "+connect_lobby "` + `format_connect_string` / `parse_connect_string`
+  （connect 串契约，无 steam feature 也能测；+2 单测锁往返与“外来/畸形串必须忽略”）。
+- `net-steam/transport_steam.rs`：`register_callback`（`CallbackHandle` **必须持有**，drop 即注销，故存进 `callback_handles`）。
+- `net-steam/session.rs`：
+  - `init` 里注册 `GameLobbyJoinRequested` / `GameRichPresenceJoinRequested` → 写入加入请求队列，`take_join_request()` 取用。
+  - 邀请与 presence 做成**自由函数**（`list_friends` / `invite_friend` / `open_invite_dialog` / `set_presence` / `clear_presence`），
+    参数是 `&SteamTransport` + lobby id——因为进房后 `SteamSession` 已被 `into_transport()` 消费、传输归 lockstep 持有；
+    `SteamSession` 上的同名方法只是它们的薄封装。
+- `client/main.rs`：
+  - **Rich Presence**：`steam_refresh_presence` 按阶段写（房间 →「房间「名」n/m 等待中」/ 配置 →「正在配置技能」/
+    对局 →「对局中（第 N 局）」，都带 `connect`；回主菜单/退出房间 → `clear_presence`，需在丢 lockstep **之前**清）。
+    内容变化立即写、不变则 3 秒节流（`STEAM_PRESENCE_INTERVAL_SECS`）。
+  - **邀请好友面板**：房间界面按 **I** 展开（↑↓ 选择、**回车 定向邀请**、**A** 开 Steam 邀请窗口、R 刷新、I/Q 收起）。
+    面板是**非模态**的：房间上行/广播/倒计时每帧照常跑（否则 host 挑人时 client 会因收不到心跳判定 host 离开而自动退房）；
+    面板展开时 Q 只收起面板、再按才退出房间，回车归面板（不触发 host 不满员手动开始）。
+  - **被邀请方进房**：主菜单/大厅每帧 `run_callbacks` + `take_join_request` → 按 lobby id 直接 `enter_steam_mode` 进房；
+    主菜单会 best-effort init 一次会话（失败只打一条日志，不影响单机/局域网）——回调只有 pump 才出得来。
+  - **冷启动加入**：Steam 用 `+connect_lobby <id>` 启动游戏时，`parse_app_from_args` 解析成 `SteamJoin{lobby_id:Some(id)}` 直接进厅（+1 单测）。
+
+**真机待复验（双机/双账号）**
+1. A 建房 → B 的好友列表里 A 应显示「房间「X」1/2 等待中」并出现「加入游戏」；B 点了 B 端应自动进 A 的房间
+   （B 游戏已开 → `[steam-invite] friend ... invited us to lobby ...`；未开 → Steam 以 `+connect_lobby` 启动它）。
+2. 房间界面按 I 能列出好友（昵称/在线/已在房间）、回车能发出邀请、按 A 能打开 Steam 邀请窗口勾多人。
+3. 进配置/开战后好友列表状态文案随之变化；退出房间/回主菜单后「加入游戏」按钮消失（presence 已清）。
+4. 回归：建房/加入/就绪/配置/统一开战主线不受影响（I 面板不吞房间网络帧）。
+
+
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 
