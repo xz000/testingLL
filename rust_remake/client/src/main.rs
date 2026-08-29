@@ -75,6 +75,15 @@ const STEAM_MAX_ROUNDS: u32 = 256;
 /// Steam 建房：默认总轮数（创建房间界面的初始值，与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_ROUNDS: u32 = 3;
+/// Steam 建房：局间准备时间（秒）的最小值。
+#[cfg(feature = "steam")]
+const STEAM_MIN_LEARN_SECS: u32 = 8;
+/// Steam 建房：局间准备时间（秒）的最大值。
+#[cfg(feature = "steam")]
+const STEAM_MAX_LEARN_SECS: u32 = 256;
+/// Steam 建房：局间准备时间（秒）默认值（与 MatchConfig 默认一致）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_LEARN_SECS: u32 = 20;
 /// Steam 房间列表：两次刷新（`request_lobby_list`）之间的最小间隔（秒）。
 /// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽）。
 #[cfg(feature = "steam")]
@@ -343,6 +352,15 @@ struct Game {
     /// Steam 建房设置：总轮数输入缓冲（字符串编辑，支持 Backspace 逐位删）。
     #[cfg(feature = "steam")]
     steam_create_rounds_buf: String,
+    /// Steam 建房设置：局间准备时间（秒，STEAM_MIN_LEARN_SECS..=STEAM_MAX_LEARN_SECS）。
+    #[cfg(feature = "steam")]
+    steam_create_learn: u32,
+    /// Steam 建房设置：局间准备时间输入缓冲（字符串编辑，支持 Backspace 逐位删）。
+    #[cfg(feature = "steam")]
+    steam_create_learn_buf: String,
+    /// 当前场次局间准备时间（秒；host 建房设定 / client 从大厅元数据读取，两端一致）。
+    #[cfg(feature = "steam")]
+    match_learn_secs: u32,
     /// 当前场次的总轮数（host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_rounds: u32,
@@ -435,6 +453,8 @@ impl Game {
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
         #[cfg(feature = "steam")]
         let mut init_rounds: u32 = STEAM_DEFAULT_ROUNDS;
+        #[cfg(feature = "steam")]
+        let mut init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
@@ -477,6 +497,7 @@ impl Game {
                 eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
                 init_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
+                init_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 steam_my_index = my_slot;
@@ -708,7 +729,13 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_create_rounds_buf: STEAM_DEFAULT_ROUNDS.to_string(),
             #[cfg(feature = "steam")]
+            steam_create_learn: STEAM_DEFAULT_LEARN_SECS,
+            #[cfg(feature = "steam")]
+            steam_create_learn_buf: STEAM_DEFAULT_LEARN_SECS.to_string(),
+            #[cfg(feature = "steam")]
             match_rounds: init_rounds,
+            #[cfg(feature = "steam")]
+            match_learn_secs: init_learn_secs,
         })
     }
 
@@ -883,7 +910,7 @@ impl Game {
     #[cfg(feature = "steam")]
     fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
         self.world = game_core::world::World::new(p.max(1) as u32, seed);
-        let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, ..Default::default() };
+        let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, learn_time_secs: self.match_learn_secs as f64, ..Default::default() };
         self.meta = game_core::meta::MatchState::new(
             cfg,
             &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -3684,6 +3711,8 @@ impl Game {
                 self.steam_create_rounds = STEAM_DEFAULT_ROUNDS;
                 self.steam_create_players_buf = STEAM_DEFAULT_PLAYERS.to_string();
                 self.steam_create_rounds_buf = STEAM_DEFAULT_ROUNDS.to_string();
+                self.steam_create_learn = STEAM_DEFAULT_LEARN_SECS;
+                self.steam_create_learn_buf = STEAM_DEFAULT_LEARN_SECS.to_string();
                 self.steam_lobby_create = true;
             }
             1 => {
@@ -3710,11 +3739,11 @@ impl Game {
         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
-        // 切换字段 0=房名 1=备注 2=人数 3=轮数。
+        // 切换字段 0=房名 1=备注 2=人数 3=轮数 4=准备时间。
         if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
-            self.steam_create_focus = (self.steam_create_focus + 3) % 4;
+            self.steam_create_focus = (self.steam_create_focus + 4) % 5;
         } else if just_named(NamedKey::ArrowDown) {
-            self.steam_create_focus = (self.steam_create_focus + 1) % 4;
+            self.steam_create_focus = (self.steam_create_focus + 1) % 5;
         }
         if just('q') || just('Q') {
             self.steam_lobby_create = false; // 返回大厅主界面
@@ -3777,6 +3806,24 @@ impl Game {
                     }
                 }
             }
+            4 => {
+                // 局间准备时间字段：数字输入 + Backspace 逐位删 + +/- 步进（STEAM_MIN_LEARN_SECS..=STEAM_MAX_LEARN_SECS）。
+                if just('+') {
+                    let v = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS);
+                    self.steam_create_learn_buf = (v as i64 + 1).clamp(STEAM_MIN_LEARN_SECS as i64, STEAM_MAX_LEARN_SECS as i64).to_string();
+                } else if just('-') {
+                    let v = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS);
+                    self.steam_create_learn_buf = (v as i64 - 1).max(STEAM_MIN_LEARN_SECS as i64).to_string();
+                } else if just_named(NamedKey::Backspace) {
+                    self.steam_create_learn_buf.pop();
+                } else {
+                    for d in '0'..='9' {
+                        if just(d) && self.steam_create_learn_buf.len() < 4 {
+                            self.steam_create_learn_buf.push(d);
+                        }
+                    }
+                }
+            }
             _ => {}
         }
         // 回车=创建房间（从编辑缓冲解析出最终值；空缓冲回退默认）。
@@ -3784,11 +3831,14 @@ impl Game {
             let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
             let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
+            let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
+                .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
             self.steam_create_players = players;
             self.steam_create_rounds = rounds;
+            self.steam_create_learn = learn;
             let name = self.steam_create_name.clone();
             let note = self.steam_create_note.clone();
-            eprintln!("[steam] create lobby: players={players} rounds={rounds} name='{name}' note='{note}'");
+            eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s name='{name}' note='{note}'");
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
             self.steam_list_requested = false;
@@ -3878,7 +3928,9 @@ impl Game {
                 self.steam_lobby_id = Some(lobby.raw());
                 sess.host_set_room_info(room_name, room_note)?;
                 sess.host_set_rounds(self.steam_create_rounds)?;
+                sess.host_set_learn(self.steam_create_learn)?;
                 self.match_rounds = self.steam_create_rounds;
+                self.match_learn_secs = self.steam_create_learn;
                 sess.prepare_transport()?;
                 self.steam_my_index = sess.my_slot();
                 self.steam_my_id = sess.transport.steam_id();
@@ -3903,7 +3955,7 @@ impl Game {
                 self.app = AppState::SteamHost { players };
                 // 世界/战绩：玩家数 = 请求数。
                 self.world = game_core::world::World::new(n.max(1) as u32, seed);
-                let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, ..Default::default() };
+                let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, learn_time_secs: self.match_learn_secs as f64, ..Default::default() };
                 self.meta = game_core::meta::MatchState::new(
                     cfg,
                     &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -3922,6 +3974,7 @@ impl Game {
                 let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
                 let host_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
                 self.match_rounds = host_rounds;
+                self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 self.steam_my_index = my_slot;
@@ -3942,7 +3995,7 @@ impl Game {
                 self.app = AppState::SteamJoin { lobby_id: None };
                 let n = total.max(2);
                 self.world = game_core::world::World::new(n.max(1) as u32, seed);
-                let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, ..Default::default() };
+                let cfg = game_core::meta::MatchConfig { total_rounds: self.match_rounds, learn_time_secs: self.match_learn_secs as f64, ..Default::default() };
                 self.meta = game_core::meta::MatchState::new(
                     cfg,
                     &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -4395,18 +4448,20 @@ impl Game {
         draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
         draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.14 + 48.0 }, true)?;
 
-        let labels = ["房间名", "备注", "玩家人数", "总轮数"];
+        let labels = ["房间名", "备注", "玩家人数", "总轮数", "准备时间(秒)"];
         let hints = [
             "直接输入文字，Backspace 删除",
             "可留空；直接输入文字",
             "+/- 步进，或直接输数字（2 ~ 64）",
             "+/- 步进，或直接输数字（1 ~ 256）",
+            "局间准备时间（8 ~ 256 秒）",
         ];
         let vals = [
             self.steam_create_name.clone(),
             self.steam_create_note.clone(),
             self.steam_create_players_buf.clone(),
             self.steam_create_rounds_buf.clone(),
+            self.steam_create_learn_buf.clone(),
         ];
         let box_w = 400.0;
         let box_h = 50.0;
@@ -4414,7 +4469,7 @@ impl Game {
         let total_left = cx - (label_w + box_w) / 2.0;
         let row_h = box_h + 48.0;
         let mut y = sh * 0.28;
-        for i in 0..4 {
+        for i in 0..5 {
             let selected = i == self.steam_create_focus;
             // 输入框
             let bg_col = if selected { Color::from_rgb(56, 66, 84) } else { Color::from_rgb(28, 32, 42) };
@@ -4437,6 +4492,8 @@ impl Game {
                 "（默认 2）".to_string()
             } else if i == 3 && vals[3].is_empty() {
                 "（默认 3）".to_string()
+            } else if i == 4 && vals[4].is_empty() {
+                "（默认 20 秒）".to_string()
             } else {
                 vals[i].clone()
             };

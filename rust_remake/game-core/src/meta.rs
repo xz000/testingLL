@@ -31,7 +31,7 @@ impl Default for MatchConfig {
     fn default() -> Self {
         MatchConfig {
             total_rounds: 3,
-            learn_time_secs: 5.0,
+            learn_time_secs: 20.0,
             gold_per_round: 20,
             gold_per_kill: 15,
             place_rewards: vec![30, 20, 10],
@@ -329,7 +329,7 @@ mod tests {
         let mut m = sample();
         m.finish_round(vec![0, 1, 2]); // → Learning
         assert_eq!(m.phase, MatchPhase::Learning);
-        let advanced = m.tick_learning(5.0); // 学习超时
+        let advanced = m.tick_learning(20.0); // 学习超时（默认 20 秒）
         assert!(advanced);
         assert_eq!(m.round, 2);
         assert_eq!(m.phase, MatchPhase::Fighting);
