@@ -3526,6 +3526,7 @@ impl Game {
             self.steam_lobby_silent_ticks = self.steam_lobby_silent_ticks.saturating_add(1);
             // 单次排空读 host 房间入包：StartConfig（进配置）与 RosterReady（界面）一次分类，绝不互吞。
             let mut rcv = [0u8; 8192];
+            let mut roster_all_ready = false; // 本帧 host 广播的就绪快照是否“全员就绪”
             if let Ok((got_cfg, roster)) = cli.recv_room_inbox(&mut rcv) {
                 if got_cfg {
                     eprintln!("[steam-client] host says all ready -> config menu");
@@ -3535,14 +3536,28 @@ impl Game {
                     self.steam_lobby_silent_ticks = 0; // 收到 host 广播 → 心跳正常。
                     self.steam_roster_ready = entries.clone();
                     eprintln!("[steam-client] roster ready snapshot: {entries:?}");
-                    // 兜底：host 广播的就绪快照若显示「所有玩家（含 host 槽 0）都已就绪」，则自触发进配置。
-                    // 因为 Steam P2P 曾实测会丢独立的小包（StartConfig/PlayerReady），而 RosterReady 广播可靠；
-                    // 用可靠的就绪快照作退出房间的判据，即使 StartConfig 被丢也能可靠进配置菜单。
                     let roster_cnt = self.world.players.len();
-                    if entries.len() >= roster_cnt && entries.iter().all(|(_, r)| *r) {
-                        eprintln!("[steam-client] roster shows all {roster_cnt} players ready -> config menu");
-                        entered_config = true;
-                    }
+                    roster_all_ready = entries.len() >= roster_cnt && entries.iter().all(|(_, r)| *r);
+                }
+            }
+            // client 端就绪倒计时：与 host 一致的缓冲，避免“一看到全员就绪就抢先进配置”。
+            // 正常路径由 host 倒计时归零广播 StartConfig（got_cfg）触发；此处兜底：若 StartConfig 小包被丢，
+            // 用可靠 RosterReady 启动同样长度的倒计时，归零后同样进配置，保证两端同时开始。
+            let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
+            if !roster_all_ready && !locked {
+                self.steam_was_all_ready = false;
+                self.steam_countdown = 0.0;
+            } else if roster_all_ready && !self.steam_was_all_ready {
+                self.steam_was_all_ready = true;
+                self.steam_countdown = STEAM_READY_COUNTDOWN_SECS;
+                eprintln!("[steam-client] all ready -> countdown {}", self.steam_countdown);
+            }
+            self.steam_all_ready = roster_all_ready || locked;
+            if self.steam_was_all_ready {
+                self.steam_countdown = (self.steam_countdown - dt.min(0.25) as f32).max(0.0);
+                if self.steam_countdown <= 0.0 {
+                    eprintln!("[steam-client] ready countdown zero -> config menu (StartConfig fallback)");
+                    entered_config = true;
                 }
             }
         } else if let Some(host) = self.steam_host_ls.as_mut() {
