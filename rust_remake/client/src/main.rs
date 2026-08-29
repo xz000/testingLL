@@ -1477,17 +1477,19 @@ impl Game {
                 canvas.draw(&sring, graphics::DrawParam::new());
             }
 
-            // 施法前摇提示：头顶一个不断消失的圆环（越接近完成越细小）
-            if let game_core::skill::CastPhase::Windup { remaining, .. } = p.caster.phase() {
-                let ring = Mesh::new_circle(
-                    &ctx.gfx,
-                    DrawMode::stroke(3.0),
-                    Point2 { x: fx, y: fy },
-                    r + 8.0 + (remaining.to_num::<f32>() * 120.0), // 前摇开始时大，结束时小
-                    0.3,
-                    Color::from_rgba(255, 180, 80, 200),
-                )?;
-                canvas.draw(&ring, graphics::DrawParam::new());
+            // 施法前摇提示：只对“自己”显示（其他客户端不应看到蓄力动画，只看到释放瞬间的效果）。
+            if p.id == me_idx {
+                if let game_core::skill::CastPhase::Windup { remaining, .. } = p.caster.phase() {
+                    let ring = Mesh::new_circle(
+                        &ctx.gfx,
+                        DrawMode::stroke(3.0),
+                        Point2 { x: fx, y: fy },
+                        r + 8.0 + (remaining.to_num::<f32>() * 120.0), // 前摇开始时大，结束时小
+                        0.3,
+                        Color::from_rgba(255, 180, 80, 200),
+                    )?;
+                    canvas.draw(&ring, graphics::DrawParam::new());
+                }
             }
 
             // HP 条
