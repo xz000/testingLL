@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 #  Steam 发布编译脚本（SteamPipe / steamcmd）
 #
 #  用途：把 client 编译成 release，收集产物（exe + steam_api64.dll），
@@ -64,7 +64,9 @@ $OutDir  = Join-Path $Staging 'output'
 $Vdf     = Join-Path $Staging "app_build_$AppId.vdf"
 
 Write-Host '== 1/4 cargo build --release (client + steam) ==' -ForegroundColor Cyan
-cargo build --release -p client --features client/steam 2>&1 | Out-Host
+# 注意：native 命令的 stderr（如 cargo 编译进度）在 PS5.1+$ErrorActionPreference='Stop' 下若被
+# 2>&1 重定向会误报为 NativeCommandError。这里不重定向，让输出直接透传，失败靠 $LASTEXITCODE 判断。
+& cargo build --release -p client --features client/steam
 if ($LASTEXITCODE -ne 0) { Write-Host '[FAIL] build 失败' -ForegroundColor Red; Pop-Location; exit 1 }
 
 # ----------------------------------------------------------------------------
@@ -101,7 +103,7 @@ Write-Host "`n--- staging content 内容 ---"
 Get-ChildItem $Content | Select-Object Name, Length | Format-Table -AutoSize
 
 if ($BuildOnly) {
-    Write-Host '`n[BuildOnly] 已编译+收集完成，未上传。' -ForegroundColor Green
+    Write-Host "`n[BuildOnly] 已编译+收集完成，未上传。" -ForegroundColor Green
     Pop-Location; exit 0
 }
 
@@ -159,7 +161,7 @@ if (-not (Test-Path $SteamCmdExe)) {
     Pop-Location; exit 1
 }
 
-& $SteamCmdExe +login "$SteamUser" "$SteamPass" +run_app_build $Vdf +quit 2>&1 | Out-Host
+& $SteamCmdExe +login "$SteamUser" "$SteamPass" +run_app_build $Vdf +quit
 if ($LASTEXITCODE -ne 0) {
     Write-Host '[FAIL] steamcmd 返回非零退出码，请检查凭据 / DepotID / 网络。' -ForegroundColor Red
     Pop-Location; exit 1
