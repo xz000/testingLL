@@ -1848,16 +1848,16 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     p.move_target = None; // 施法会取消当前移动命令
                 }
             }
-            SkillEffect::ChainLeech { speed, damage, heal, range: _ } => {
-                // T1b 吸血链镖：命中吸血 + 链下一个
+            SkillEffect::ChainLeech { heal, .. } => {
+                // T1b 吸血链镖：命中吸血 + 链下一个。（speed/damage 走 stats，随等级成长）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::Chain {
                             dir,
-                            speed,
-                            damage,
+                            speed: stats.speed,
+                            damage: stats.damage,
                             heal,
                             ratio: Fix64::ONE,
                             ratio_decay: Fix64::ZERO,
@@ -1873,7 +1873,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::TurnLeech { speed, damage, heal, turn_delay, range: _ } => {
+            SkillEffect::TurnLeech { heal, turn_delay, .. } => {
                 // TestLeech 转镖吸血：先直线飞 turn_delay 再转向最近敌人，命中吸血 + 链
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
@@ -1881,8 +1881,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         owner: idx,
                         kind: ProjectileKind::Chain {
                             dir,
-                            speed,
-                            damage,
+                            speed: stats.speed,
+                            damage: stats.damage,
                             heal,
                             ratio: Fix64::ONE,
                             ratio_decay: Fix64::ZERO,
@@ -1898,16 +1898,16 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::JumpDecay { speed, damage, range: _, ratio_decay } => {
-                // T3 跳弹·衰减：命中后跳到下一个，伤害逐跳衰减
+            SkillEffect::JumpDecay { ratio_decay, .. } => {
+                // T3 跳弹·衰减：命中后跳到下一个，伤害逐跳衰减。（speed/damage 走 stats，随等级成长）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::Chain {
                             dir,
-                            speed,
-                            damage,
+                            speed: stats.speed,
+                            damage: stats.damage,
                             heal: Fix64::ZERO,
                             ratio: Fix64::ONE,
                             ratio_decay,
@@ -1923,8 +1923,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Volley { bullet_speed, damage, count, spread_step } => {
-                // T2b 扇面齐射：从 -count/2 到 +count/2 一次喷出
+            SkillEffect::Volley { count, spread_step, .. } => {
+                // T2b 扇面齐射：从 -count/2 到 +count/2 一次喷出。（bullet_speed/damage 走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let base = towards(p.pos, target);
                     let span = (count as f64 - 1.0) / 2.0 * spread_step;
@@ -1935,8 +1935,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             owner: idx,
                             kind: ProjectileKind::Bullet {
                                 dir: d,
-                                speed: bullet_speed,
-                                damage,
+                                speed: stats.speed,
+                                damage: stats.damage,
                                 radius: Fix64::from_num(0.5),
                                 remaining: Fix64::from_num(SABULLET_RANGE),
                             },
@@ -1946,14 +1946,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                 }
             }
-            SkillEffect::Sweep { bullet_speed, damage, count, cadence, turn_step } => {
-                // T2 扇扫连射：设发射器状态，由世界逐帧依次发射
+            SkillEffect::Sweep { count, cadence, turn_step, .. } => {
+                // T2 扇扫连射：设发射器状态，由世界逐帧依次发射。（bullet_speed/damage 走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let base = towards(p.pos, target);
                     p.sweep = Some(crate::player::SweepState {
                         dir: base,
-                        bullet_speed,
-                        damage,
+                        bullet_speed: stats.speed,
+                        damage: stats.damage,
                         remaining: count,
                         cadence,
                         turn_step,
@@ -1962,21 +1962,21 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::BonusChain { speed, damage, range } => {
-                // T3b 蓄力跳弹：发射一枚直线炸弹（伤害含累计 damageplus）
+            SkillEffect::BonusChain { .. } => {
+                // T3b 蓄力跳弹：发射一枚直线炸弹（伤害含累计 damageplus）。（数值走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
-                    let dmg = damage + Fix64::from_num(p.damageplus);
+                    let dmg = stats.damage + Fix64::from_num(p.damageplus);
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::BonusBomb {
                             dir,
-                            speed,
+                            speed: stats.speed,
                             damage: dmg,
                             radius: Fix64::from_num(0.8),
                             push_power: Fix64::from_num(6.0),
                             push_time: Fix64::from_num(1.0),
-                            remaining: range,
+                            remaining: stats.range,
                             owner: idx,
                         },
                         pos: p.pos,
