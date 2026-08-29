@@ -23,7 +23,9 @@
   - **修复转镖**：`TurnLeech` 的 `turn_delay` 原被忽略 → 转镖退化为全程自动追踪；新增 `Chain.turn_delay` 恢复“先直线飞再转向最近敌人”的手感（`7c389b0`，含 world_ser 序列化）。
   - **确认回旋镖**：已实现回旋（每帧速度朝施法者加速拉拽 + 撞障碍反弹 + 命中爆炸），符合回旋镖力学，无需改。
 - 基线：workspace **136 测试全绿**（技能批次共 +4：雷电/换位/转镖转向），build/test/clippy（默认 + steam）全绿。
-- ⚠ **待办（系统性）**：部分技能 `world.rs` 用 `effect` 里的固定值（非 `stats`），导致**成长参数（damage 等）对这些技能实际不生效**——即“技能成长”只对部分技能真正生效（见下 §9）。
+- ✅ **系统性技能成长已全部接入（stats 驱动）**：批A(弹体/导弹回旋镖香蕉弹滚动火球撒弹线散射线) + 批B(链/扇/吸血链镖转镖跳弹扇面扇扫蓄力跳弹) + 批C(区域/线/回拉线撞击迟缓爆炸弹束缚线引力场星域自爆)，
+  `world.rs::execute_effects` 全部改用 `SkillGrowth` 派生的 `stats`（等级1数值不变，升级后伤害/射程/推击成长），并补全各自 growth base（防“参数脱节→为0”）。
+  仅疾跑/护盾的 buff 时长仍走 effect（时长成长意义小，留数值调参）。提交 `1e08c0c`/`a9dbc8d`/`944b369`。
 
 ---
 
@@ -113,8 +115,8 @@
 ---
 
 ## 9. 下次建议起点（按价值/依赖排序）
-0. **（不依赖真机，可先做）系统性技能成长未完全生效**：技能核对时发现，部分技能 `world.rs::execute_effects` 用 `effect` 里的固定值（如 `Volley/Missile/Boomerang/ChainLeech/PushShot` 等用 `effect.damage`），而非 `stats`（由 `SkillGrowth` 派生）→ 这些技能升级后伤害等**不成长**。
-   需逐个改成用 `stats.*`（并在 growth 补全对应 base），是“技能成长数值手感调优”的前置（见 §4）。
+0. ✅ **（已完成，2026-08-29）系统性技能成长全部接入 stats 驱动**：全部技能 `world.rs::execute_effects` 改用 `SkillGrowth` 派生值，升级后成长生效（批A/B/C，提交 `1e08c0c`/`a9dbc8d`/`944b369`）。
+   接下来可做“技能成长数值手感调优”（调各技能 growth 的 base/delta，见 §4），需真机/试验场感受。
 1. **真机复验 Steamworks 第一批 + 第二批**（清单见 `NEXT_STEPS.md` 两节末尾）：
    Ping/头像无需后台配置，复验最快见效；统计/成就/排行榜需先在 Steamworks 后台按 `net-steam/src/stats.rs` 建 key/榜。
 2. 复验通过后接最后一批：**云存档**（Remote Storage，meta 数据现成）。
