@@ -17,7 +17,7 @@ pub mod world_ser;
 
 /// 技能总数上限（用于 `skill_levels` / `cooldowns` 数组宽、档案长度）。
 /// 需 >= 所有 `SkillId::as_u32` 的最大值 + 1。
-pub const MAX_SKILL_SLOTS: usize = 34;
+pub const MAX_SKILL_SLOTS: usize = 36;
 
 /// 逻辑核心导出预置。阶段 1 已加入 Player / World / Rng。
 pub fn version() -> &'static str {

@@ -2025,6 +2025,78 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
+            SkillEffect::Lightning => {
+                // 雷电（D1）：指向性即时射线，命中敌人伤害+推，撞障碍则停在障碍前（无效果）。
+                let (ppos, pradius) = {
+                    let p = &world.players[idx as usize];
+                    (p.pos, p.radius)
+                };
+                let dir = towards(ppos, target);
+                let origin = ppos + dir * pradius;
+                let maxd = stats.range;
+                if let Some(hit) = world.raycast_first(origin, dir, maxd, idx) {
+                    // 命中点若落在某存活玩家表面 → 命中该玩家（伤害 + 沿射线方向推）。
+                    let mut hit_player: Option<u32> = None;
+                    for p in world.players.iter() {
+                        if !p.alive || p.id == idx {
+                            continue;
+                        }
+                        if (p.pos - hit).length_squared() <= p.radius * p.radius {
+                            hit_player = Some(p.id);
+                            break;
+                        }
+                    }
+                    if let Some(pid) = hit_player {
+                        world.damage_player(pid, stats.damage, Some(idx));
+                        if let Some(p) = world.players.get_mut(pid as usize) {
+                            if p.alive {
+                                p.push(dir * stats.push_power, stats.push_time.to_num::<f64>());
+                            }
+                        }
+                    }
+                    // 命中障碍：雷电被阻挡，无额外效果。
+                }
+            }
+            SkillEffect::Swap { .. } => {
+                // 换位（R3a）：点目标，若目标位置附近有敌人则与之互换位置，否则自身瞬移过去。
+                if let Some(t) = target {
+                    let ppos = world.players[idx as usize].pos;
+                    let d = t - ppos;
+                    let dist = d.length();
+                    let md = stats.max_distance;
+                    let real_dist = if dist > md { md } else { dist };
+                    // 过近不施法（< 0.51 且非零）。
+                    if real_dist > Fix64::from_num(0.51) {
+                        let dir = if dist > Fix64::ZERO {
+                            d.normalized()
+                        } else {
+                            Vec2::new(Fix64::ONE, Fix64::ZERO)
+                        };
+                        let realplace = ppos + dir * real_dist;
+                        // 目标位置附近是否有敌人（足够近视为“点到敌人”）。
+                        let enemy_pos = world.nearest_other_enemy(realplace, idx);
+                        let eid = enemy_pos.and_then(|epos| {
+                            let d2 = epos - realplace;
+                            if d2.length_squared() <= Fix64::from_num(0.51 * 0.51) {
+                                world
+                                    .players
+                                    .iter()
+                                    .find(|p| p.alive && p.id != idx && (p.pos - epos).length_squared() < Fix64::from_num(0.01))
+                                    .map(|p| p.id)
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some(eid) = eid {
+                            let epos = world.players[eid as usize].pos;
+                            world.players[eid as usize].pos = ppos;
+                            world.players[idx as usize].pos = epos;
+                        } else {
+                            world.players[idx as usize].pos = realplace;
+                        }
+                    }
+                }
+            }
             SkillEffect::BindLine { speed, count, bind_time } => {
                 // 束缚线（Y2b）：制造一段朝目标推进、收拢后束缚线上敌人的线
                 if let Some(p) = world.players.get_mut(idx as usize) {
@@ -2418,6 +2490,78 @@ mod tests {
         // 施法者满血（掷石不伤自己），受害者应已受伤且可能被击退
         assert_eq!(world.players[0].hp, hp0, "施法者不应自伤");
         assert!(world.players[1].hp < hp1, "受害者应受到爆炸伤害");
+    }
+
+    #[test]
+    fn lightning_hits_enemy_along_ray() {
+        let mut world = World::new(2, 8);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        let hp0 = world.players[0].hp;
+        let hp1 = world.players[1].hp;
+        // 玩家0 施放 D1 雷电指向 (3,0)；受害者在射线路径上。
+        let input = vec![
+            PlayerInput {
+                cast: Some((SkillId::TestLightning, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                ..Default::default()
+            },
+            PlayerInput::default(),
+        ];
+        // 前摇 0.1s，跑足够帧数完成施法。
+        for _ in 0..20 {
+            world.step(input.clone(), dt);
+        }
+        assert_eq!(world.players[0].hp, hp0, "施法者不应自伤");
+        assert!(world.players[1].hp < hp1, "雷电应命中路径上的敌人并造成伤害");
+    }
+
+    #[test]
+    fn swap_teleports_onto_empty_point() {
+        let mut world = World::new(2, 8);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人在远处，目标点 (3,0) 无敌人。
+        world.players[1].pos = Vec2::new(Fix64::from_num(8.0), Fix64::ZERO);
+        let input = vec![
+            PlayerInput {
+                cast: Some((SkillId::TestSwap, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                ..Default::default()
+            },
+            PlayerInput::default(),
+        ];
+        for _ in 0..20 {
+            world.step(input.clone(), dt);
+        }
+        // 目标点无敌人 → 自身瞬移到 (3,0)。
+        assert!(near(world.players[0].pos.x, 3.0, 0.3), "换位应瞬移到目标点，实际 {:?}", world.players[0].pos);
+        // 敌人不受影响。
+        assert!(near(world.players[1].pos.x, 8.0, 0.5), "远处敌人不应被移动");
+    }
+
+    #[test]
+    fn swap_exchanges_position_with_enemy() {
+        let mut world = World::new(2, 8);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人恰好站在目标点 (3,0)。
+        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        let input = vec![
+            PlayerInput {
+                cast: Some((SkillId::TestSwap, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                ..Default::default()
+            },
+            PlayerInput::default(),
+        ];
+        for _ in 0..20 {
+            world.step(input.clone(), dt);
+        }
+        // 施法者到敌人位置，敌人被换到施法者原位置。
+        assert!(near(world.players[0].pos.x, 3.0, 0.3), "施法者应到敌人位置，实际 {:?}", world.players[0].pos);
+        assert!(near(world.players[1].pos.x, 0.0, 0.3), "敌人应被换到施法者原位置，实际 {:?}", world.players[1].pos);
     }
 
     #[test]
