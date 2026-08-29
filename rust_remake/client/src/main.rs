@@ -76,6 +76,9 @@ const LOBBY_REFRESH_COOLDOWN_SECS: f64 = 4.0;
 /// Steam 房间（client）：连续这么多帧收不到 host 的 `RosterReady` 广播，即判定 host 已离开（自动退出房间回主菜单）。约 4 秒。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
+/// Rich Presence：相同内容的最小重写间隔（秒）。内容变化时立即写，否则节流（Steam 对频繁 set 有限速）。
+#[cfg(feature = "steam")]
+const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
 
 /// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
 /// 这里定义 8 个键字母 → CastKey 的映射。
@@ -322,6 +325,27 @@ struct Game {
     /// 主菜单「Steam 大厅」子界面里，创建房间的玩家人数上限（2..=STEAM_MAX_PLAYERS）。
     #[cfg(feature = "steam")]
     steam_create_players: u8,
+    /// Steam：房间界面是否展开「邀请好友」面板（I 开关；不是模态，房间网络逻辑照常每帧跑）。
+    #[cfg(feature = "steam")]
+    steam_friend_list: bool,
+    /// Steam：好友列表（展开面板时刷新一次；R 手动刷新）。
+    #[cfg(feature = "steam")]
+    steam_friends: Vec<net_steam::session::FriendInfo>,
+    /// Steam：好友列表当前选中项。
+    #[cfg(feature = "steam")]
+    steam_friend_selection: usize,
+    /// Steam：上次邀请动作的反馈文案（界面提示，如「已邀请 xxx」）。
+    #[cfg(feature = "steam")]
+    steam_friend_hint: String,
+    /// Steam：Rich Presence 上次写入的时刻（秒，用于节流）。
+    #[cfg(feature = "steam")]
+    steam_presence_last: f64,
+    /// Steam：Rich Presence 上次写入的内容（`状态|connect`），内容不变则不重复写。
+    #[cfg(feature = "steam")]
+    steam_presence_text: String,
+    /// Steam：主菜单上是否已尝试过初始化会话（失败也不再每帧重试，避免刷屏 + 反复 SteamAPI_Init）。
+    #[cfg(feature = "steam")]
+    steam_session_tried: bool,
 }
 
 impl Game {
@@ -581,6 +605,20 @@ impl Game {
             steam_last_roster_len: 0,
             #[cfg(feature = "steam")]
             steam_manual_start_pending: false,
+            #[cfg(feature = "steam")]
+            steam_friend_list: false,
+            #[cfg(feature = "steam")]
+            steam_friends: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_friend_selection: 0,
+            #[cfg(feature = "steam")]
+            steam_friend_hint: String::new(),
+            #[cfg(feature = "steam")]
+            steam_presence_last: -999.0,
+            #[cfg(feature = "steam")]
+            steam_presence_text: String::new(),
+            #[cfg(feature = "steam")]
+            steam_session_tried: false,
             net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
@@ -1629,9 +1667,9 @@ impl Game {
         }
         // host 附加“编辑房间”入口，显示在底部。
         if self.steam_host_ls.is_some() {
-            draw_text(canvas, ctx, "E 编辑房间名/备注与锁定    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            draw_text(canvas, ctx, "E 编辑房间名/备注与锁定    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         } else {
-            draw_text(canvas, ctx, "U 就绪/取消    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            draw_text(canvas, ctx, "U 就绪/取消    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         }
         draw_text(canvas, ctx, "== 就绪状态 ==", 20.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: sh * 0.42 }, true)?;
         let mut y = sh * 0.42 + 32.0;
@@ -1665,6 +1703,64 @@ impl Game {
             let me_tag = if is_me { "（我）" } else { "" };
             draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: card_x + 90.0, y }, true)?;
             y += 46.0;
+        }
+        // 「邀请好友」面板（按 I 展开）：画在成员列表下方（`y` 即成员列表末尾），卡片样式与成员列表一致。
+        #[cfg(feature = "steam")]
+        if self.steam_friend_list {
+            self.draw_steam_friend_panel(canvas, ctx, y)?;
+        }
+        Ok(())
+    }
+
+    /// 绘制「邀请好友」面板：好友昵称 + 在线/离线 + 是否已在房间；选中项高亮，行数按剩余空间自适应（最多 4 行）。
+    /// `roster_end_y` 是成员列表画完后的 y，面板从它下面开始，避免与成员列表叠在一起。
+    #[cfg(feature = "steam")]
+    fn draw_steam_friend_panel(&self, canvas: &mut Canvas, ctx: &Context, roster_end_y: f32) -> GameResult {
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        let title_y = (roster_end_y + 14.0).max(sh * 0.58);
+        let hint_y = sh * 0.83; // 面板操作提示
+        let card_w = (sw * 0.46).min(520.0);
+        let card_x = cx - card_w / 2.0;
+        draw_text(canvas, ctx, "== 邀请好友 ==", 20.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: title_y }, true)?;
+        if self.steam_friends.is_empty() {
+            draw_text(canvas, ctx, "（暂无好友 / 正在拉取…）", 20.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: title_y + 34.0 }, true)?;
+        } else {
+            const ROW_H: f32 = 38.0;
+            // 面板能放几行取决于离底部提示还剩多少空间（人数多时自然少放几行）。
+            let fit = ((hint_y - (title_y + 30.0)) / ROW_H).floor() as usize;
+            let max_rows = fit.clamp(1, 4);
+            let n = self.steam_friends.len();
+            // 选中项滚出可视窗口时，窗口跟着走（保证选中行总是可见）。
+            let start = if n <= max_rows {
+                0
+            } else {
+                (self.steam_friend_selection + 1).saturating_sub(max_rows).min(n - max_rows)
+            };
+            let mut y = title_y + 34.0;
+            for i in start..(start + max_rows).min(n) {
+                let f = &self.steam_friends[i];
+                let selected = i == self.steam_friend_selection;
+                let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(30, 34, 44) };
+                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(card_x, y - 6.0, card_w, 36.0), bg_col)?;
+                canvas.draw(&bg, graphics::DrawParam::new());
+                let mark = if selected { "[v]" } else { "[ ]" };
+                let tag = if f.in_lobby {
+                    "（已在房间）"
+                } else if f.online {
+                    "（在线）"
+                } else {
+                    "（离线）"
+                };
+                let col = if selected { Color::WHITE } else { Color::from_rgb(205, 210, 222) };
+                let name = if f.name.is_empty() { f.id.to_string() } else { f.name.clone() };
+                draw_text(canvas, ctx, &format!("  {mark}  {name}{tag}"), 20.0, col, Point2 { x: card_x + 60.0, y }, true)?;
+                y += 38.0;
+            }
+        }
+        draw_text(canvas, ctx, "↑/↓ 选择    回车 邀请    A Steam 邀请窗口    R 刷新    I/Q 收起", 17.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: hint_y }, true)?;
+        if !self.steam_friend_hint.is_empty() {
+            draw_text(canvas, ctx, &self.steam_friend_hint, 18.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: hint_y + 24.0 }, true)?;
         }
         Ok(())
     }
@@ -1877,6 +1973,17 @@ impl event::EventHandler for Game {
 
         // 主菜单：方向键 ↑/↓ 选中 + 回车确认 + 数字快捷；局域网（S3 完成前）保留命令行提示。
         if self.app == AppState::MainMenu {
+            // 好友从 Steam 好友列表点「加入游戏」→ 回调进房（需先有会话；Steam 没跑则静默跳过）。
+            #[cfg(feature = "steam")]
+            {
+                self.steam_ensure_session();
+                self.steam_poll_join_requests(ctx);
+                // 被邀请进房后本帧不再处理菜单输入。
+                if self.steam_in_lobby || self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
+                    self.accumulator = 0.0;
+                    return Ok(());
+                }
+            }
             use ggez::input::keyboard::Key;
             use winit::keyboard::NamedKey;
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
@@ -2083,6 +2190,8 @@ impl event::EventHandler for Game {
                 let ticking = Fix64::from_num(TICK);
                 #[cfg(feature = "steam")]
                 {
+                    // Rich Presence：对局中 → “对局中（第 N 局）”（带 connect，好友可加入同一房间）。
+                    self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
@@ -2551,6 +2660,9 @@ impl Game {
         // 放弃 Steam 会话（P2P 连接 / lockstep / 房间状态），回主菜单后重建。
         #[cfg(feature = "steam")]
         {
+            // 先清 Rich Presence：会话还活着（lockstep 仍持有 transport）时才写得到，
+            // 一旦下面把 lockstep 丢掉，Steam Client 就没了，好友会一直看到「加入游戏」。
+            self.steam_clear_presence();
             self.steam_host_ls = None;
             self.steam_cli_ls = None;
             self.steam_in_lobby = false;
@@ -2581,6 +2693,14 @@ impl Game {
             self.steam_migrate_ticks = 0;
             self.steam_new_host_id = 0;
             self.steam_host_broadcasting_takeover = false;
+            // 邀请面板/好友列表状态复位（presence 已在本块开头清掉）。
+            self.steam_friend_list = false;
+            self.steam_friends = Vec::new();
+            self.steam_friend_selection = 0;
+            self.steam_friend_hint = String::new();
+            // 进房时 `steam_sess` 会被消费掉（传输归 lockstep），回到主菜单后可再初始化一次
+            // （否则好友邀请与房间列表在主菜单上会永久失效）。
+            self.steam_session_tried = false;
         }
         // 清空运行状态。
         self.pre_game_config = false; // 主菜单不进入开局配置；选了模式后再进。
@@ -2618,6 +2738,198 @@ impl Game {
             .unwrap_or_else(|| "未命名房间".to_string());
         let note = mm.lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY).unwrap_or_default();
         (name, note)
+    }
+
+    /// 当前可用的 Steam 传输：进房后归 lockstep 持有（`into_transport`），进房前在 `steam_sess` 里。
+    /// 好友邀请 / Rich Presence 只需 `&SteamTransport`（它持有唯一的 `steamworks::Client`）。
+    #[cfg(feature = "steam")]
+    fn steam_transport(&self) -> Option<&net_steam::SteamTransport> {
+        if let Some(ls) = self.steam_host_ls.as_ref() {
+            return Some(ls.transport_ref());
+        }
+        if let Some(ls) = self.steam_cli_ls.as_ref() {
+            return Some(ls.transport_ref());
+        }
+        self.steam_sess.as_ref().map(|s| &s.transport)
+    }
+
+    /// 写 Rich Presence（内容变化立即写；不变则按 `STEAM_PRESENCE_INTERVAL_SECS` 节流，Steam 对频繁 set 有限速）。
+    #[cfg(feature = "steam")]
+    fn steam_set_presence(&mut self, now: f64, status: &str, connect: Option<&str>) {
+        let key = format!("{status}|{}", connect.unwrap_or(""));
+        let changed = key != self.steam_presence_text;
+        if !changed && now - self.steam_presence_last < STEAM_PRESENCE_INTERVAL_SECS {
+            return;
+        }
+        let Some(t) = self.steam_transport() else { return };
+        net_steam::session::set_presence(t, status, connect);
+        self.steam_presence_text = key;
+        self.steam_presence_last = now;
+        if changed {
+            eprintln!("[steam-presence] status='{status}' connect={connect:?}");
+        }
+    }
+
+    /// 清空 Rich Presence（回主菜单/退出房间：好友不再看到「加入游戏」）。
+    #[cfg(feature = "steam")]
+    fn steam_clear_presence(&mut self) {
+        if self.steam_transport().is_none() {
+            return;
+        }
+        if self.steam_presence_text.is_empty() {
+            return;
+        }
+        if let Some(t) = self.steam_transport() {
+            net_steam::session::clear_presence(t);
+        }
+        self.steam_presence_text = String::new();
+        self.steam_presence_last = -999.0;
+        eprintln!("[steam-presence] cleared");
+    }
+
+    /// 按当前所处阶段刷新 Rich Presence（每帧调用，内部节流）：主菜单/无房间 → 清空；
+    /// 房间 → 房名 + 人数 + 等待中；配置阶段 → 配置中；对局中 → 对局中（第 N 局）。
+    /// 处于房间里时带 `connect` 串 → 好友在 Steam 好友列表里看到「加入游戏」，点了能直接进同一房间。
+    #[cfg(feature = "steam")]
+    fn steam_refresh_presence(&mut self, now: f64) {
+        // 没有 Steam 传输（未初始化 / 非 Steam 模式）→ 无事可做。
+        if self.steam_transport().is_none() {
+            return;
+        }
+        let in_room = self.steam_lobby_id.is_some();
+        if !in_room {
+            self.steam_clear_presence();
+            return;
+        }
+        let connect = net_steam::lobby::format_connect_string(self.steam_lobby_id.unwrap_or(0));
+        let status = if self.steam_room_edit {
+            "正在设置房间".to_string()
+        } else if self.steam_in_lobby {
+            let (name, _) = self.steam_current_room_info();
+            let n = self.steam_roster.len();
+            let limit = self.world.players.len().max(n);
+            format!("房间「{name}」{n}/{limit} 等待中")
+        } else if self.pre_game_config {
+            "正在配置技能".to_string()
+        } else {
+            format!("对局中（第 {} 局）", self.meta.round)
+        };
+        self.steam_set_presence(now, &status, Some(&connect));
+    }
+
+    /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。
+    #[cfg(feature = "steam")]
+    fn steam_refresh_friends(&mut self) {
+        let lobby = self.steam_lobby_id;
+        let Some(t) = self.steam_transport() else { return };
+        let friends = net_steam::session::list_friends(t, lobby);
+        self.steam_friends = friends;
+        if self.steam_friend_selection >= self.steam_friends.len() {
+            self.steam_friend_selection = self.steam_friends.len().saturating_sub(1);
+        }
+    }
+
+    /// 「邀请好友」面板的输入（房间界面按 I 展开，非模态——房间网络逻辑每帧照常跑）：
+    /// ↑/↓ 选择、**回车 邀请选中好友**、A 打开 Steam 邀请窗口（可勾多位）、R 刷新、I/Q 收起面板。
+    #[cfg(feature = "steam")]
+    fn steam_friend_list_update(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
+        let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        // 收起面板（I 或 Q；Q 第一次只收起面板，再按才退出房间）。
+        if just('i') || just('I') || just('q') || just('Q') {
+            self.steam_friend_list = false;
+            return;
+        }
+        if just('r') || just('R') {
+            self.steam_refresh_friends();
+            self.steam_friend_hint = "已刷新好友列表".to_string();
+            return;
+        }
+        if just('a') || just('A') {
+            match self.steam_lobby_id {
+                Some(lid) => {
+                    if let Some(t) = self.steam_transport() {
+                        net_steam::session::open_invite_dialog(t, lid);
+                        self.steam_friend_hint = "已打开 Steam 邀请窗口（可勾选多位好友）".to_string();
+                    }
+                }
+                None => self.steam_friend_hint = "尚未在房间里，无法邀请".to_string(),
+            }
+            return;
+        }
+        let n = self.steam_friends.len();
+        if n == 0 {
+            return;
+        }
+        if just_named(NamedKey::ArrowDown) {
+            self.steam_friend_selection = (self.steam_friend_selection + 1) % n;
+        } else if just_named(NamedKey::ArrowUp) {
+            self.steam_friend_selection = (self.steam_friend_selection + n - 1) % n;
+        }
+        if just_named(NamedKey::Enter) || just('\r') {
+            let sel = self.steam_friends[self.steam_friend_selection].clone();
+            if sel.in_lobby {
+                self.steam_friend_hint = format!("{} 已经在房间里了", sel.name);
+                return;
+            }
+            match self.steam_lobby_id {
+                Some(lid) => {
+                    if let Some(t) = self.steam_transport() {
+                        net_steam::session::invite_friend(t, lid, sel.id);
+                        self.steam_friend_hint = format!("已邀请 {}{}", sel.name, if sel.online { "" } else { "（离线，邀请会等到其上线）" });
+                    }
+                }
+                None => self.steam_friend_hint = "尚未在房间里，无法邀请".to_string(),
+            }
+        }
+    }
+
+    /// 主菜单：best-effort 初始化一次 Steam 会话，好让好友从 Steam 好友列表点「加入游戏」时
+    /// 我们这边的 `GameLobbyJoinRequested` 回调能收到（回调只在 `run_callbacks` 时泵出，必须有 Client）。
+    /// 失败（Steam 未运行/未登录）不影响单机与局域网，只是收不到邀请。
+    #[cfg(feature = "steam")]
+    fn steam_ensure_session(&mut self) {
+        if self.steam_sess.is_some() || self.steam_session_tried {
+            return;
+        }
+        self.steam_session_tried = true;
+        match net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT) {
+            Ok(s) => {
+                self.steam_my_display_name = s
+                    .transport
+                    .friends()
+                    .get_friend(net_steam::steamworks::SteamId::from_raw(s.transport.steam_id()))
+                    .name();
+                eprintln!("[steam] session ready, display name='{}'", self.steam_my_display_name);
+                self.steam_sess = Some(s);
+            }
+            Err(e) => eprintln!("[steam] session init failed (邀请将不可用): {e:?}"),
+        }
+    }
+
+    /// 处理好友从 Steam 发起的「加入游戏」请求（主菜单/大厅界面每帧调用）：
+    /// 需要已初始化会话（pump 回调才拿得到）、且当前不在房间里；命中则按 lobby id 直接进房。
+    #[cfg(feature = "steam")]
+    fn steam_poll_join_requests(&mut self, ctx: &mut Context) {
+        if let Some(s) = self.steam_sess.as_ref() {
+            s.run_callbacks();
+        }
+        let Some(req) = self.steam_sess.as_ref().and_then(|s| s.take_join_request()) else {
+            return;
+        };
+        if self.steam_in_lobby || self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
+            eprintln!("[steam-invite] ignoring join request: already in a room");
+            return;
+        }
+        eprintln!("[steam-invite] friend {} invited us to lobby {}", req.from, req.lobby);
+        self.steam_join_lobby_id = Some(req.lobby);
+        self.steam_lobby_menu = false;
+        self.steam_lobby_create = false;
+        self.steam_lobby_list = false;
+        self.steam_friend_hint = "已从邀请加入房间".to_string();
+        self.enter_steam_mode(ctx, false, 2, None, None);
     }
 
     /// 房主「编辑房间信息」子界面输入：改房间名/备注，回车保存（写回 matchmaking 元数据），Q 取消；
@@ -2778,13 +3090,31 @@ impl Game {
     #[cfg(feature = "steam")]
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
         use ggez::input::keyboard::Key;
+        // 「邀请好友」面板展开时由面板优先吃键（I/Q 收起、↑↓ 选择、回车 邀请、A 开 Steam 邀请窗口、R 刷新）。
+        // 面板是**非模态**的：下面房间的网络逻辑（上行/广播/倒计时）照常每帧跑，
+        // 否则 host 打开面板挑人时 client 会因收不到 host 心跳而判定「host 已离开」自动退房。
+        let panel_open = self.steam_friend_list;
+        // I：展开/收起「邀请好友」面板（展开时拉一次好友列表）。
+        let i_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("i".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("I".into()));
+        if i_pressed && !panel_open {
+            self.steam_friend_list = true;
+            self.steam_friend_hint = String::new();
+            self.steam_refresh_friends();
+            eprintln!("[steam-invite] friend list opened ({} friends)", self.steam_friends.len());
+            self.accumulator = 0.0;
+            return Ok(());
+        }
+        if panel_open {
+            self.steam_friend_list_update(ctx);
+        }
         // 房间阶段只用 [U] 就绪/取消就绪；不再用 o/空格（避免 o 多重语义、避免与“配置确认”混淆）。
         let ready_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("u".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("U".into()));
-        // Q：退出房间（leave_lobby + 回主菜单）。
+        // Q：退出房间（leave_lobby + 回主菜单）。面板展开时 Q 只收起面板（由面板处理），避免误退出。
         let q_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
-        if q_pressed {
+        if q_pressed && !panel_open {
             self.steam_leave_room();
             self.accumulator = 0.0;
             return Ok(());
@@ -2792,7 +3122,7 @@ impl Game {
         // host 按 E 进入「编辑房间信息」子界面（改房间名/备注；人数上限建房时固定，走锁房代替）。
         let e_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("e".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("E".into()));
-        if e_pressed && self.steam_host_ls.is_some() {
+        if e_pressed && !panel_open && self.steam_host_ls.is_some() {
             let (cur_name, cur_note) = self.steam_current_room_info();
             self.steam_edit_name = cur_name;
             self.steam_edit_note = cur_note;
@@ -2804,7 +3134,7 @@ impl Game {
         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
         // 锁定窗口内忽略「按 U 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
         let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
-        if ready_pressed && !locked {
+        if ready_pressed && !locked && !panel_open {
             self.steam_local_ready = !self.steam_local_ready;
             eprintln!("[steam-lobby] local ready = {}", self.steam_local_ready);
         } else if ready_pressed && locked {
@@ -2888,7 +3218,8 @@ impl Game {
             }
             // —— 不满员路径：当前在场都就绪 → 提示并由 host 手动开始（回车）。人数不足时不自动倒计时。
             // 不满员也提示“只来了 X/上限 Y，全员就绪，host 按回车开始”。
-            if underfull_ready {
+            // 面板展开时回车归面板（邀请好友），这里让位，避免“想邀请却开局”。
+            if underfull_ready && !panel_open {
                 use winit::keyboard::NamedKey;
                 let enter = ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(NamedKey::Enter))
                     || ctx.keyboard.is_logical_key_just_pressed(&ggez::input::keyboard::Key::Character("\r".into()));
@@ -2943,6 +3274,8 @@ impl Game {
         if self.steam_roster_refresh_ticks % 30 == 1 {
             self.steam_refresh_roster();
         }
+        // Rich Presence：房间里 → “房间「名」n/m 等待中” + connect 串（好友可一键加入）。
+        self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
         self.accumulator = 0.0;
         Ok(())
     }
@@ -3201,6 +3534,15 @@ impl Game {
         self.steam_migrate_ticks = 0;
         self.steam_new_host_id = 0;
         self.steam_host_broadcasting_takeover = false;
+        // 邀请面板/好友列表状态复位；进房后立刻上报一次 Rich Presence（好友可一键加入）。
+        self.steam_friend_list = false;
+        self.steam_friends = Vec::new();
+        self.steam_friend_selection = 0;
+        self.steam_friend_hint = String::new();
+        self.steam_presence_text = String::new(); // 强制立即写（不节流）
+        self.steam_presence_last = -999.0;
+        // 会话已被消费（成功）/ 已丢弃（失败），下次回主菜单允许再初始化一次。
+        self.steam_session_tried = false;
         self.accumulator = 0.0;
     }
 
@@ -3273,6 +3615,8 @@ impl Game {
         if let Some(sync) = enter_sync {
             self.steam_enter_config_sync(sync);
         }
+        // Rich Presence：配置阶段 → “正在配置技能”（仍带 connect，好友仍可加入房间）。
+        self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
         Ok(())
     }
 
@@ -3748,6 +4092,15 @@ fn parse_app_from_args(args: &[String]) -> AppState {
                     i += 1;
                 }
             }
+            // Steam 冷启动加入：好友接受邀请时，若本游戏未在运行，Steam 会用我们自己定义的
+            // connect 串启动它（`+connect_lobby <id>`）——这里解析出来直接进那个大厅。
+            #[cfg(feature = "steam")]
+            "+connect_lobby" if i + 1 < args.len() => {
+                if let Ok(id) = args[i + 1].parse::<u64>() {
+                    app = AppState::SteamJoin { lobby_id: Some(id) };
+                }
+                i += 2;
+            }
             "--players" if i + 1 < args.len() => {
                 #[cfg(feature = "steam")]
                 if let AppState::SteamHost { players } = &mut app {
@@ -3806,5 +4159,24 @@ mod tests {
             parse_app_from_args(&s(&["exe", "--join", "127.0.0.1:5199"])),
             AppState::LanJoin { addr: "127.0.0.1:5199".parse().unwrap() }
         );
+    }
+
+    /// 好友接受邀请、而本游戏没在运行时，Steam 会用我们的 connect 串冷启动游戏
+    /// （`+connect_lobby <id>`）——解析后应直接进那个大厅（`SteamJoin { lobby_id: Some(id) }`）。
+    #[cfg(feature = "steam")]
+    #[test]
+    fn steam_connect_lobby_arg_selects_join_with_lobby_id() {
+        let s = |x: &[&str]| x.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_app_from_args(&s(&["exe", "+connect_lobby", "109775241105637376"])),
+            AppState::SteamJoin { lobby_id: Some(109775241105637376) }
+        );
+        // id 非法 → 不误进房间（留在主菜单）。
+        assert_eq!(
+            parse_app_from_args(&s(&["exe", "+connect_lobby", "not-a-number"])),
+            AppState::MainMenu
+        );
+        // 缺参数 → 主菜单（不能死循环 / 不能误解析后面的参数）。
+        assert_eq!(parse_app_from_args(&s(&["exe", "+connect_lobby"])), AppState::MainMenu);
     }
 }

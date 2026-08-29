@@ -6,10 +6,18 @@
 
 ---
 
-## 0. 当前状态快照（2026-08-25 会话末）
+## 0. 当前状态快照（2026-08-29 会话末）
 - **Steam 联机主线三阶段全部完成并真机验证**：掉线处理+重连 ✅ / 快照广播 ✅ / **主机迁移（连续迁移）✅**。
-- 基线：workspace **125 测试全绿**，build/test/clippy（默认 + steam）全绿，工作区干净，HEAD=`9bd0f5c`。
+- **Steamworks 第一批（好友邀请 + Rich Presence）已落**（2026-08-29，待真机双账号复验）：
+  房间界面按 I 展开「邀请好友」面板（定向邀请 / Steam 邀请窗口）；
+  Rich Presence 按阶段上报（房间/配置/对局）+ `connect` 串 → 好友可一键加入；
+  被邀请方支持「游戏在跑 → 回调自动进房」与「游戏未跑 → `+connect_lobby <id>` 冷启动进房」。
+  详见 `NEXT_STEPS.md`「Steamworks 第一批」节。
+- 基线：workspace **127 测试全绿**（+2 connect 串解析），steam feature 下 client 6 全绿（+1 命令行解析），
+  build/test/clippy（默认 + steam）全绿，HEAD=`3b6bbd5` + 未提交改动。
 - 架构定案：**Steam 为中心，纯玩家 P2P + 不租服务器 + 帧同步 host 权威**（见 `STEAM_MULTIPLAYER_PLAN.md`）。
+- 字体：`assets/fonts/cjk.ttf` 已换为全量 **SourceHanSansCN-VF**（17.7MB，字形齐全；旧 168KB 子集留作 `cjk-168k.ttf`）；
+  冒烟确认新字体能加载、窗口正常。
 
 ---
 
@@ -18,11 +26,14 @@
 
 | 批次 | 内容 | 价值 | 说明 |
 |---|---|---|---|
-| **第一批** | **好友邀请 + Rich Presence** | 高 | 房主邀请 Steam 好友入厅；好友看到"在玩、在对局中"可一键加入 |
+| **第一批** | **好友邀请 + Rich Presence** | 高 | ✅ **已落（2026-08-29）**，待真机双账号复验（见 `NEXT_STEPS.md`） |
 | **第二批** | 成就 / 排行榜 / 头像 / Ping | 中 | 击杀/名次/胜场、头像显示、到 host 的延迟 |
 | **最后** | 云存档 | 中 | 技能树绑定/成长/金币 meta 存云端（数据现成，延后） |
 
 > 已排除：专用服务器（不租）、商店/支付/DRM。
+>
+> 能力边界（已核实 steamworks 0.13）：**没有** `InviteUserToLobby`，定向邀请只能走
+> `Friend::invite_user_to_game(connect 串)`；Rich Presence 用 `status` + `connect` 两个键（未做 `steam_display` 本地化）。
 
 ---
 
@@ -81,16 +92,18 @@
 ---
 
 ## 9. 下次建议起点（按价值/依赖排序）
-1. **Steamworks 第一批：好友邀请 + Rich Presence**（联机主线已闭环，自然衔接，用户已定序）。
+1. **真机复验 Steamworks 第一批**（好友邀请 + Rich Presence，清单见 `NEXT_STEPS.md`「真机待复验」4 条）；
+   复验通过后第二批：**成就 / 排行榜 / 头像 / Ping**。
 2. 之后按需：**单机调试辅助**（加速数值/手感调优）→ **游戏手感调优**（击退 Impulse 等）。
 3. 表现层美术 / UI 打磨 / 延迟回滚 作为长期目标。
-4. 若有真机机会，可顺带复验联机边界（8）。
+4. 若暂不便真机，可先做不依赖 Steam 的部分：单机调试辅助 / 手感调优；
+   也可顺带把被替换成 ASCII 的 UI 符号（新字体字形齐全了）恢复成 `✓`/`→` 等。
 
 ---
 
 ## 10. 常用命令（续接用）
 ```
-cargo test --workspace                  # 回归（125 全绿基线）
+cargo test --workspace                  # 回归（127 全绿基线）
 cargo clippy --workspace -- -D warnings
 cargo clippy -p client --features client/steam -- -D warnings
 powershell -File run-steam.ps1 -Mode menu   # Steam 版主菜单（按 3 进大厅，H 建厅 / J 房间列表）

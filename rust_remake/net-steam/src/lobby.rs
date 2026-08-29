@@ -60,6 +60,21 @@ impl LobbyPlayerTable {
     }
 }
 
+/// Rich Presence 的 `connect` 串前缀：好友点「加入游戏」时，Steam 会把整串回传给我们
+/// （游戏已在跑 → `GameRichPresenceJoinRequested`；未启动 → 作为启动参数 `+connect_lobby <id>`）。
+pub const CONNECT_PREFIX: &str = "+connect_lobby ";
+
+/// 把大厅 id 编成 Rich Presence 的 `connect` 串（好友一键加入用）。
+pub fn format_connect_string(lobby_id: u64) -> String {
+    format!("{CONNECT_PREFIX}{lobby_id}")
+}
+
+/// 从 `connect` 串解析出大厅 id；格式不符或 id 非法时返回 `None`（调用方据此忽略该请求）。
+pub fn parse_connect_string(s: &str) -> Option<u64> {
+    let rest = s.trim().strip_prefix(CONNECT_PREFIX.trim_end())?;
+    rest.trim().parse::<u64>().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +101,25 @@ mod tests {
         members.sort();
         let table2 = LobbyPlayerTable::new(host, members);
         assert_eq!(table.identities_in_order(), table2.identities_in_order());
+    }
+
+    #[test]
+    fn connect_string_roundtrips_lobby_id() {
+        let s = format_connect_string(109775241105637376);
+        assert_eq!(s, "+connect_lobby 109775241105637376");
+        assert_eq!(parse_connect_string(&s), Some(109775241105637376));
+        // Steam 传回时可能带首尾空白（启动参数/回调串都可能）。
+        assert_eq!(parse_connect_string("  +connect_lobby 42  "), Some(42));
+    }
+
+    #[test]
+    fn connect_string_rejects_foreign_or_malformed() {
+        // 不是我们的串（别的游戏/旧版本/空串）→ 忽略，不能误加房间。
+        assert_eq!(parse_connect_string(""), None);
+        assert_eq!(parse_connect_string("+connect_lobby"), None);
+        assert_eq!(parse_connect_string("steam://joinlobby/908660/1/2"), None);
+        // 前缀对了但 id 不是数字 → 忽略。
+        assert_eq!(parse_connect_string("+connect_lobby abc"), None);
+        assert_eq!(parse_connect_string("+connect_lobby 12x"), None);
     }
 }

@@ -92,16 +92,29 @@
 |---|---|---|
 | `ISteamMatchmaking` 大厅 | 建房/加入/离开、`lobby_members`、`lobby_owner`、`set_lobby_data`/`lobby_data`、`set_lobby_joinable`、`request_lobby_list` | 房间与成员一致视图 |
 | `ISteamFriends`（昵称） | `get_friend(id).name()` 显示成员昵称 | 大厅 UI |
+| `ISteamFriends`（邀请） | `activate_invite_dialog(lobby)` 覆盖层邀请窗口；`Friend::invite_user_to_game(connect)` 定向邀请 | 好友邀请（第一批，2026-08-29） |
+| `ISteamFriends`（Rich Presence） | `set_rich_presence("status"\|"connect")` / `clear_rich_presence()` | 好友看到状态 +「加入游戏」（第一批，2026-08-29） |
+| 回调 `GameLobbyJoinRequested` / `GameRichPresenceJoinRequested` | 好友点「加入游戏」/接受邀请时本机收到 → 按 lobby id 自动进房 | 好友邀请（第一批，2026-08-29） |
 | `ISteamNetworkingMessages` | `SendMessageToUser`/`ReceiveMessagesOnChannel` relay P2P 传输 | 对局传输 |
 | `Client::init_app` + `SteamId` | 初始化 / 稳定身份 | 全局 |
 
 ### 建议在本游戏中使用（按用户 2026-08-25 确认的优先级排序）
 
-**第一批（先准备，紧跟主机迁移主线之后）**
+**第一批（先准备，紧跟主机迁移主线之后）—— ✅ 已落（2026-08-29），待真机双账号复验**
 | 能力 | 用途 | 价值 |
 |---|---|---|
 | **好友邀请（Invite）** | 房主从房间界面邀请 Steam 好友加入大厅/对局 | 高：「朋友对战」刚需，Steam 原生 |
 | **Rich Presence + JoinGame** | 好友列表/聊天显示「正在玩 XX 游戏、在对局中」，好友可一键加入 | 高：提升组队便利 |
+
+> 实现要点（踩坑记录，别重复踩）：
+> - **0.13 没有 `InviteUserToLobby`**，定向邀请只能 `Friend::invite_user_to_game(connect 串)`；
+>   `activate_invite_dialog(lobby)` 另给一个「勾多人」的覆盖层窗口（两条路都留了）。
+> - **回调句柄必须持有**：`Client::register_callback` 返回的 `CallbackHandle` 一 drop 就注销，
+>   所以 `SteamTransport` 里存了 `callback_handles`（见 `transport_steam.rs::register_callback`）。
+> - **进房后 `SteamSession` 已被消费**（`into_transport()`，传输归 lockstep），所以邀请/presence 的 API
+>   做成以 `&SteamTransport` + lobby id 为参数的**自由函数**（`net-steam/src/session.rs`）。
+> - connect 串统一为 `+connect_lobby <lobby_id>`（`lobby.rs` 的 `format_/parse_connect_string`，有单测）；
+>   游戏在跑 → 回调进房；没跑 → Steam 用它冷启动游戏（`parse_app_from_args` 解析，有单测）。
 
 **第二批（然后考虑）**
 | 能力 | 用途 | 价值 |
@@ -134,5 +147,7 @@
 
 ## 4. 待办（写文档后的下一步）
 1. 真机复验「人不满启动角色数一致」+ S5 房间界面（上一轮遗留，需双机）。
-2. **开始三阶段主线：阶段 1（Steam 战斗端掉线处理 + 重连）→ 阶段 2（快照广播）→ 阶段 3（主机迁移）**（2026-08-25 起）。
-3. 三阶段完成后按能力优先级接 Steamworks 增强：好友邀请 + Rich Presence → 成就/排行榜/头像/Ping → 云存档。
+2. ~~**开始三阶段主线：阶段 1 → 阶段 2 → 阶段 3**~~ ✅ 三阶段已完成并真机复验（2026-08-25）。
+3. ~~Steamworks 第一批：好友邀请 + Rich Presence~~ ✅ 已落（2026-08-29），**待真机双账号复验**
+   （复验清单见 `NEXT_STEPS.md`「Steamworks 第一批」节末）。
+4. 复验通过后接第二批：成就 / 排行榜 / 头像 / Ping → 最后云存档。

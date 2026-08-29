@@ -28,8 +28,12 @@ if ! command -v powershell >/dev/null 2>&1; then
   exit 0
 fi
 
+# Git Bash 里 pwd 给的是 POSIX 路径（/c/...），而 Windows PowerShell 只认盘符路径（c:/...）；
+# 不转换的话 powershell 会报“不识别实际参数”并以 127 退出 → 提交被误拦。
+check_ps1_win=$(printf '%s' "$check_ps1" | sed -E 's|^/([A-Za-z])/|\1:/|')
+
 echo "[hooks] 提交前回归检查启动（build + test + clippy -D warnings）..."
-powershell -NoProfile -ExecutionPolicy Bypass -File "$check_ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$check_ps1_win"
 status=$?
 if [ $status -ne 0 ]; then
   echo "[hooks] FAIL: 回归检查未通过（退出码 $status）。提交已阻止。"
