@@ -3925,13 +3925,24 @@ impl Game {
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
-        const NUM_FIELDS: usize = 8;
-        // 切换字段：0=房名 1=备注 2=人数 3=轮数 4=准备时间 5=初始金币 6=每轮金币 7=名次奖励。
-        if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
-            self.steam_create_focus = (self.steam_create_focus + NUM_FIELDS - 1) % NUM_FIELDS;
+        // 字段编号与两列布局：左列=0..3（房名/备注/人数/轮数），右列=4..7（准备/初始金币/每轮金币/名次奖励）。
+        // 二维方向键导航：↑↓ 同列上下移动，←→ 左右换列，Tab=↑（回退一格）。
+        const NUM_COLS: usize = 2;
+        const ROWS_PER_COL: usize = 4;
+        let cur_col = self.steam_create_focus / ROWS_PER_COL;
+        let cur_row = self.steam_create_focus % ROWS_PER_COL;
+        let (nc, nr) = if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
+            (cur_col, (cur_row + ROWS_PER_COL - 1) % ROWS_PER_COL)
         } else if just_named(NamedKey::ArrowDown) {
-            self.steam_create_focus = (self.steam_create_focus + 1) % NUM_FIELDS;
-        }
+            (cur_col, (cur_row + 1) % ROWS_PER_COL)
+        } else if just_named(NamedKey::ArrowLeft) {
+            ((cur_col + NUM_COLS - 1) % NUM_COLS, cur_row)
+        } else if just_named(NamedKey::ArrowRight) {
+            ((cur_col + 1) % NUM_COLS, cur_row)
+        } else {
+            (cur_col, cur_row)
+        };
+        self.steam_create_focus = nc * ROWS_PER_COL + nr;
         if just('q') || just('Q') {
             self.steam_lobby_create = false; // 返回大厅主界面
             return;
@@ -4721,7 +4732,7 @@ impl Game {
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
-        draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.12 + 44.0 }, true)?;
+        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.12 + 44.0 }, true)?;
 
         let labels = [
             "房间名", "备注", "玩家人数", "总轮数",
@@ -4785,7 +4796,7 @@ impl Game {
                 draw_text(canvas, ctx, &format!("▶ {}", hints[i]), 16.0, Color::from_rgb(150, 200, 255), Point2 { x: total_left + label_w, y: y + box_h + 8.0 }, false)?;
             }
         }
-        draw_text(canvas, ctx, "Tab / ↑↓ 切换字段 · 回车 创建房间 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         Ok(())
     }
 
