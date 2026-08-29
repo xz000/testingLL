@@ -13,6 +13,9 @@
 /Assets/Sounds.meta
 steam_appid.txt
 
+# SteamPipe 上传工具（Valve 外部二进制，不进仓库）
+/steamcmd/
+
 # Visual Studio 2015 cache directory
 /.vs/
 /.vscode/
