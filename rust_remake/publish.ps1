@@ -111,10 +111,6 @@ if ($BuildOnly) {
 # 生成 app_build VDF
 # ----------------------------------------------------------------------------
 Write-Host '== 3/4 生成 app_build VDF ==' -ForegroundColor Cyan
-if (-not $SteamUser -or -not $SteamPass) {
-    Write-Host '[FAIL] 未设置 $env:STEAM_USER / $env:STEAM_PASS，跳过上传。' -ForegroundColor Red
-    Pop-Location; exit 1
-}
 if ($DepotId -eq 'REPLACE_WITH_YOUR_DEPOT_ID') {
     Write-Host '[FAIL] 请先填写脚本顶部 $DepotId（Steamworks 后台的 Depot ID）。' -ForegroundColor Red
     Pop-Location; exit 1
@@ -155,6 +151,16 @@ Write-Host ($vdfBody)
 # 调用 steamcmd 上传
 # ----------------------------------------------------------------------------
 Write-Host '== 4/4 steamcmd 上传 ==' -ForegroundColor Cyan
+# 凭据：优先环境变量（自动化/CI 用）；否则每次上传交互输入（密码隐藏显示、不回显）。
+if (-not $SteamUser) {
+    $SteamUser = Read-Host 'Steam 登录账号'
+}
+if (-not $SteamPass) {
+    $sec = Read-Host 'Steam 密码' -AsSecureString
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+    $SteamPass = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($bstr)
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+}
 if (-not (Test-Path $SteamCmdExe)) {
     Write-Host "[FAIL] 找不到 steamcmd：$SteamCmdExe" -ForegroundColor Red
     Write-Host '       从官网下载并解压到仓库根目录的 steamcmd\ 下（与 steam_api64.dll 同级），或用 -SteamCmdExe 指定路径。'
