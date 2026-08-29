@@ -24,6 +24,8 @@ pub const MATCH_VALUE: &str = "remake_arena_v1";
 pub const ROOM_NAME_KEY: &str = "room_name";
 /// 大厅元数据：房间备注（键）。
 pub const ROOM_NOTE_KEY: &str = "room_note";
+/// 大厅元数据：房间总轮数（host 建房时写入；加入者据此对齐 MatchConfig.total_rounds）。
+pub const ROOM_ROUNDS_KEY: &str = "room_rounds";
 /// Rich Presence 键：好友列表里显示的自定义状态文案（无本地化配置时 Steam 直接显示它）。
 pub const PRESENCE_STATUS_KEY: &str = "status";
 /// Rich Presence 键：`connect` 会让好友看到「加入游戏」按钮，值由
@@ -462,6 +464,26 @@ impl SteamSession {
             mm.set_lobby_data(l, ROOM_NOTE_KEY, n.trim());
         }
         Ok(())
+    }
+
+    /// 设置房间总轮数（写进大厅元数据，供加入者读取对齐）。
+    pub fn host_set_rounds(&self, rounds: u32) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_rounds: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_ROUNDS_KEY, &rounds.to_string());
+        Ok(())
+    }
+
+    /// 读取房间总轮数（加入者用；host 未设置时回退 None，由调用方给默认值）。
+    pub fn lobby_rounds(&self) -> Option<u32> {
+        let l = self.lobby?;
+        self.transport
+            .matchmaking()
+            .lobby_data(l, ROOM_ROUNDS_KEY)
+            .and_then(|s| s.parse().ok())
     }
 
     /// 列出 Steam 好友（供「邀请好友」界面）。见 [`list_friends`]。

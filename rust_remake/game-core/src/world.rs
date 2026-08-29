@@ -1433,8 +1433,13 @@ impl World {
 /// 但保持等分角距 + 小抖动，因此仍是明显的环状均匀分布。
 /// 等分角距足够大，天然保证柱子之间不重叠（最小圆心距 ≫ 半径和），
 /// 且环半径上限使柱子不碰玩家出生环（arena*0.6）、也不出界。
+/// 每轮柱子数量随机（0~5，可为 0 = 无柱子）。
 fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64) {
-    let count = 5usize;
+    // 每轮柱子数量随机 0~5（0 = 本场无柱子），也由 round_seed 驱动、随轮次变化。
+    let count = rng.next_u64_below(6) as usize;
+    if count == 0 {
+        return;
+    }
     // 环半径围绕 0.4*arena 小幅波动（0.36~0.44），决定整环大小。
     let ring_r = arena_radius * (Fix64::from_num(0.36) + rng.next_fix() * Fix64::from_num(0.08));
     // 整环随机旋转 → 每轮布局都不同，但仍保持环状均匀。
@@ -2603,6 +2608,7 @@ mod tests {
     #[test]
     fn blink_teleports_toward_target() {
         let mut world = World::new(1, 9);
+        world.obstacles.clear(); // 本测试只验证闪烁，清掉随机柱子避免挡路
         world.players[0].pos = Vec2::ZERO;
         let dt = Fix64::from_num(1.0 / 60.0);
         let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
@@ -3029,7 +3035,7 @@ mod tests {
 
     #[test]
     fn obstacles_never_overlap_across_seeds() {
-        // 对多种种子 + 多轮布局，验证柱子：互不重叠、不出界、不碰玩家出生环。
+        // 对多种种子 + 多轮布局，验证柱子数量 ≤ 5、互不重叠、不出界、不碰玩家出生环。
         for seed in [1u64, 2, 42, 99, 908660, 20260812] {
             let mut w = World::new(2, seed);
             for round in 0..6 {
@@ -3037,7 +3043,7 @@ mod tests {
                     w.reset_round();
                 }
                 let obs = &w.obstacles;
-                assert!(!obs.is_empty(), "每轮都应有柱子");
+                assert!(obs.len() <= 5, "柱子数量应 ≤ 5，实际 {}", obs.len());
                 for i in 0..obs.len() {
                     let a = &obs[i];
                     let d = a.pos.length().to_num::<f64>();
@@ -3059,17 +3065,36 @@ mod tests {
     }
 
     #[test]
-    fn obstacles_change_each_round() {
-        // 每轮 reset 后，柱子布局应变化（不总是相同配置）。
+    fn obstacle_count_varies_including_zero() {
+        // 柱子数量每轮随机、可为 0（无柱子）；统计多种 seed 应出现不同数量且包含 0。
+        let mut counts: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for seed in 0..60u64 {
+            let mut w = World::new(2, seed);
+            counts.insert(w.obstacles.len());
+            w.reset_round();
+            counts.insert(w.obstacles.len());
+        }
+        assert!(counts.contains(&0), "柱子数量应包含 0（无柱子）");
+        assert!(counts.len() >= 2, "柱子数量应出现多种取值，实际 {counts:?}");
+        for c in &counts {
+            assert!(*c <= 5, "柱子数量应 ≤ 5，实际 {c}");
+        }
+    }
+
+    #[test]
+    fn obstacles_change_across_rounds() {
+        // 每轮 reset 用递增 round_seed，配置（数量/位置）随之变化；统计验证“不总是相同”。
+        let mut configs: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut w = World::new(2, 20260812);
-        let first = w.obstacles.clone();
-        w.reset_round();
-        let second = w.obstacles.clone();
-        w.reset_round();
-        let third = w.obstacles.clone();
-        assert_ne!(first, second, "第 2 轮柱子应不同于第 1 轮");
-        assert_ne!(second, third, "第 3 轮柱子应不同于第 2 轮");
-        assert_ne!(first, third, "第 3 轮柱子应不同于第 1 轮");
+        for _ in 0..8 {
+            configs.insert(format!("{:?}", w.obstacles));
+            w.reset_round();
+        }
+        assert!(
+            configs.len() >= 2,
+            "8 轮内柱子配置应出现变化，实际 {} 种",
+            configs.len()
+        );
     }
 
     #[test]
