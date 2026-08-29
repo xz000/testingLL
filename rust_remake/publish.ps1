@@ -44,17 +44,27 @@ $AppId    = 908660
 # 未来加 Linux 等平台：为每个平台各新建一个 depot，并在 VDF 的 Depots 里列出多个。
 $DepotId  = 908661
 
-# Steam 登录账号（带 bot 的账号）。凭据从环境变量读，避免明文进仓库：
-#   $env:STEAM_USER / $env:STEAM_PASS
-$SteamUser = $env:STEAM_USER
-$SteamPass = $env:STEAM_PASS
+# Steam 登录账号（带 bot 的账号）。
+# 默认不依赖环境变量，直接使用 steamcmd 自己的缓存；
+# 若创建了环境变量 $env:STEAM_USER / $env:STEAM_PASS，也可以在这里覆盖。
+$SteamUser = ''
+$SteamPass = ''
+if (-not $SteamUser -and $env:STEAM_USER) { $SteamUser = $env:STEAM_USER }
+if (-not $SteamPass -and $env:STEAM_PASS) { $SteamPass = $env:STEAM_PASS }
 
 # steamcmd 位置；为空时自动探测常见路径，找不到则提示从官网下载。
 # 仓库根（git 根）是 rust_remake 的上一级（含 steam_api64.dll / steam_appid.txt），
 # steamcmd.exe 放在仓库根\steamcmd\ 下，符合 run-steam.ps1 对“根目录”的约定。
+# 说明：SteamCMD 会把登录缓存写到它自己的配置目录里（常见是 steamcmd\config / steamcmd\Steam\config），
+# 这样同一台机器上的后续运行可以复用已保存的登录状态，而不是每次都要求输入密码。
 if (-not $SteamCmdExe) {
     $root = Split-Path $PSScriptRoot -Parent
     $SteamCmdExe = Join-Path $root 'steamcmd\steamcmd.exe'
+}
+$SteamCmdRoot = Split-Path $SteamCmdExe -Parent
+$SteamCmdConfigDir = Join-Path $SteamCmdRoot 'config'
+if (-not (Test-Path $SteamCmdConfigDir)) {
+    New-Item -ItemType Directory -Path $SteamCmdConfigDir -Force | Out-Null
 }
 # ----------------------------------------------------------------------------
 
@@ -82,6 +92,26 @@ $exe = Join-Path $PSScriptRoot 'target\release\client.exe'
 if (-not (Test-Path $exe)) { Write-Host "[FAIL] 找不到 $exe" -ForegroundColor Red; Pop-Location; exit 1 }
 Copy-Item $exe (Join-Path $Content 'client.exe') -Force
 Write-Host "[ok] client.exe"
+
+# 校验发布版是 GUI 子系统（subsystem=2，不弹命令行窗口）。这是发布版的关键体验要求。
+try {
+    $fs = [System.IO.File]::OpenRead($exe)
+    $br = [System.IO.BinaryReader]::new($fs)
+    $fs.Seek(0x3c, [System.IO.SeekOrigin]::Begin) | Out-Null
+    $peOff = $br.ReadInt32()
+    $fs.Seek($peOff + 24 + 68, [System.IO.SeekOrigin]::Begin) | Out-Null
+    $sub = $br.ReadUInt16()
+    $br.Dispose(); $fs.Dispose()
+    # 2=IMAGE_SUBSYSTEM_WINDOWS_GUI（无命令行窗口）；3=IMAGE_SUBSYSTEM_WINDOWS_CUI（弹命令行窗口）
+    if ($sub -eq 2) {
+        Write-Host '[ok] 发布版为 GUI 子系统（不弹命令行窗口）' -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] 发布版是 Console 子系统(subsystem=$sub)，会弹命令行窗口！" -ForegroundColor Yellow
+        Write-Host '       请确认 client/src/main.rs 顶部的 `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]` 存在且用 release 构建。'
+    }
+} catch {
+    Write-Host '[WARN] 无法读取 exe 的 PE 子系统，跳过 GUI 校验。' -ForegroundColor Yellow
+}
 
 # steam_api64.dll（从 steamworks-sys 的编译输出目录找；找不到就提示手放一个）
 $dllCands = @(
@@ -147,19 +177,28 @@ $vdfBody | Set-Content -Path $Vdf -Encoding UTF8
 Write-Host "[ok] $Vdf"
 Write-Host ($vdfBody)
 
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # 调用 steamcmd 上传
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 Write-Host '== 4/4 steamcmd 上传 ==' -ForegroundColor Cyan
-# 凭据：优先环境变量（自动化/CI 用）；否则每次上传交互输入（密码隐藏显示、不回显）。
+Write-Host "[info] SteamCMD 配置目录：$SteamCmdConfigDir"
+
+# 默认不依赖环境变量，而是优先尝试复用 steamcmd 自己的缓存。
+# 仅当没有缓存时，才回落到交互式输入用户名/密码。
 if (-not $SteamUser) {
-    $SteamUser = Read-Host 'Steam 登录账号'
+    $SteamUser = Read-Host 'Steam 登录账号（留空时尝试使用已缓存登录态）'
 }
+$cachedLoginUsers = Join-Path $SteamCmdConfigDir 'loginusers.vdf'
 if (-not $SteamPass) {
-    $sec = Read-Host 'Steam 密码' -AsSecureString
-    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-    $SteamPass = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($bstr)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    if ($SteamUser -and (Test-Path $cachedLoginUsers)) {
+        Write-Host "[info] 检测到 SteamCMD 缓存：$cachedLoginUsers"
+        Write-Host '[info] 将尝试仅用用户名复用已保存的登录态。'
+    } else {
+        $sec = Read-Host 'Steam 密码' -AsSecureString
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        $SteamPass = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($bstr)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
 }
 if (-not (Test-Path $SteamCmdExe)) {
     Write-Host "[FAIL] 找不到 steamcmd：$SteamCmdExe" -ForegroundColor Red
@@ -167,10 +206,26 @@ if (-not (Test-Path $SteamCmdExe)) {
     Pop-Location; exit 1
 }
 
-& $SteamCmdExe +login "$SteamUser" "$SteamPass" +run_app_build $Vdf +quit
+$steamArgs = @()
+if ($SteamUser) {
+    $steamArgs += '+login'
+    $steamArgs += $SteamUser
+    if ($SteamPass) {
+        $steamArgs += $SteamPass
+    }
+}
+$steamArgs += '+run_app_build'
+$steamArgs += $Vdf
+$steamArgs += '+quit'
+
+& $SteamCmdExe @steamArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Host '[FAIL] steamcmd 返回非零退出码，请检查凭据 / DepotID / 网络。' -ForegroundColor Red
+    Write-Host '       如果缓存失效，手动输入账号/密码即可；SteamCMD 会在：'
+    Write-Host "       $SteamCmdConfigDir"
+    Write-Host '       生成/更新缓存。'
     Pop-Location; exit 1
 }
 Write-Host "`n✅ 上传完成。到 Steamworks 后台「Builds」确认，并决定何时设为默认。"
+Write-Host "   当前登录缓存目录：$SteamCmdConfigDir"
 Pop-Location

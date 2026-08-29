@@ -25,6 +25,9 @@ pub struct MatchConfig {
     pub gold_per_kill: i32,
     /// 每轮结束时按名次的额外奖励（索引 = 名次-1，0=冠军；超过数组长度的名次不额外奖励）
     pub place_rewards: Vec<i32>,
+    /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
+    /// 房主可设置；默认 0（即第一局只发参与奖）。
+    pub starting_gold: i32,
 }
 
 impl Default for MatchConfig {
@@ -35,6 +38,7 @@ impl Default for MatchConfig {
             gold_per_round: 20,
             gold_per_kill: 15,
             place_rewards: vec![30, 20, 10],
+            starting_gold: 0,
         }
     }
 }
@@ -197,8 +201,16 @@ impl MatchState {
             round_placements: Vec::new(),
             config,
         };
+        m.give_starting_gold();
         m.give_round_gold();
         m
+    }
+
+    /// 开局发放初始金币（第一局开始前一次性发放，独立于每轮参与奖）。
+    fn give_starting_gold(&mut self) {
+        for p in self.profiles.iter_mut() {
+            p.gold += self.config.starting_gold;
+        }
     }
 
     fn give_round_gold(&mut self) {
@@ -300,6 +312,18 @@ mod tests {
         let m = sample();
         assert_eq!(m.profiles[0].gold, 20);
         assert_eq!(m.profiles[1].gold, 20);
+    }
+
+    #[test]
+    fn starting_gold_granted_once_at_creation_plus_round_participation() {
+        let config = MatchConfig {
+            starting_gold: 50,
+            ..Default::default()
+        };
+        let m = MatchState::new(config, &[0, 1], 8);
+        // 第一局 = 初始金币 50 + 参与奖 20 = 70
+        assert_eq!(m.profiles[0].gold, 50 + 20);
+        assert_eq!(m.profiles[1].gold, 50 + 20);
     }
 
     #[test]
