@@ -255,6 +255,8 @@ pub struct World {
     pub arena_radius: Fix64,
     /// 试验场模式（单机技能试验场）：不缩圈、不出圈掉血、不判对局结束。
     pub sandbox: bool,
+    /// 柱子/障碍布局使用的确定性种子。每轮递增，保证各小局地形不同、且两端一致。
+    pub round_seed: u64,
     /// 场景里的静态圆形障碍（柱子/墙）
     pub obstacles: Vec<Obstacle>,
     /// 场上飞行物 / 延时区域
@@ -272,11 +274,13 @@ impl World {
         let mut rng = Rng::new(seed);
         let arena_radius = Fix64::from_num(START_RADIUS);
         let mut players = Vec::with_capacity(player_count as usize);
+        // 把玩家在 arena*0.6 的环上**均匀等分**分布（并整体随机旋转一帧视角），
+        // 保证彼此初始不重叠且出界伤害不至于一开始就触发。
+        let spawn_rot = Fix64::from_num(std::f64::consts::TAU) * rng.next_fix();
         for id in 0..player_count {
-            // 把玩家均匀放到以最小半径为中心的圆周上的随机位置，
-            // 保证彼此初始不重叠且出界伤害不至于一开始就触发。
             let r = arena_radius * Fix64::from_num(0.6);
-            let angle = Fix64::from_num(std::f64::consts::TAU) * rng.next_fix();
+            let angle = spawn_rot
+                + Fix64::from_num(std::f64::consts::TAU) * Fix64::from_num(id as f64 / player_count as f64);
             let pos = Vec2::new(r * crate::fix::cos(angle), r * crate::fix::sin(angle));
             players.push(Player::new(id, pos, Fix64::from_num(crate::player::DEFAULT_RADIUS)));
         }
@@ -286,6 +290,7 @@ impl World {
             players,
             arena_radius,
             sandbox: false,
+            round_seed: seed,
             obstacles,
             projectiles: Vec::new(),
             eliminated_order: Vec::new(),
@@ -1409,24 +1414,41 @@ impl World {
         self.kills_this_round.clear();
         self.arena_radius = Fix64::from_num(crate::world::START_RADIUS);
         self.time = Fix64::ZERO;
+        // 每轮推进布局种子 → 下一小局的柱子配置与上一轮不同（联机下两端 world 同步此字段，确定性一致）。
+        // 用简单递增而非 LCG：LCG 在 2^64 上存在短周期点（如 20260812 经两次递推回到自身），
+        // 递增保证每次严格不同（无回绕时）。Rng::new 为单射，不同 seed ⇒ 不同布局。
+        self.round_seed = self.round_seed.wrapping_add(1);
+        self.obstacles.clear();
+        let mut rng = Rng::new(self.round_seed);
+        _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius);
         for p in self.players.iter_mut() {
             p.reset_state();
         }
     }
 }
 
-/// 用确定性 RNG 布几根圆形柱子（障碍）：在内圈(距圆心约 arena*0.4)等角分布并加小幅抖动。
-/// 玩家出生在 arena*0.6 的环上，和 0.4 内圈的柱子不重叠。
+/// 用确定性 RNG 布柱子（圆形障碍）：在场地内圈的一个圆环上**基本均匀**分布。
+///
+/// “每轮不同”来自三处随机：整环随机旋转、环半径小幅波动、每根半径随机；
+/// 但保持等分角距 + 小抖动，因此仍是明显的环状均匀分布。
+/// 等分角距足够大，天然保证柱子之间不重叠（最小圆心距 ≫ 半径和），
+/// 且环半径上限使柱子不碰玩家出生环（arena*0.6）、也不出界。
 fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64) {
-    let ring_r = arena_radius * Fix64::from_num(0.4);
-    let count = 5u32;
+    let count = 5usize;
+    // 环半径围绕 0.4*arena 小幅波动（0.36~0.44），决定整环大小。
+    let ring_r = arena_radius * (Fix64::from_num(0.36) + rng.next_fix() * Fix64::from_num(0.08));
+    // 整环随机旋转 → 每轮布局都不同，但仍保持环状均匀。
+    let rot = Fix64::from_num(std::f64::consts::TAU) * rng.next_fix();
+    // 每根柱子相对等分角的小抖动（保持“基本均匀”）。
+    let jitter = Fix64::from_num(0.15);
+    let min_r = Fix64::from_num(1.1);
+    let max_r = Fix64::from_num(1.6);
     for i in 0..count {
-        let base_angle = Fix64::from_num(std::f64::consts::TAU) * Fix64::from_num(i as f64 / count as f64);
-        let jitter = (rng.next_fix() - Fix64::from_num(0.5)) * Fix64::from_num(1.2); // ±0.6 rad 抖动
-        let angle = base_angle + jitter;
-        // 每根柱子半径在 1.1~1.6 之间确定性波动
-        let r = Fix64::from_num(1.1) + rng.next_fix() * Fix64::from_num(0.5);
+        let base = rot
+            + Fix64::from_num(std::f64::consts::TAU) * Fix64::from_num(i as f64 / count as f64);
+        let angle = base + (rng.next_fix() - Fix64::from_num(0.5)) * jitter * Fix64::from_num(2);
         let pos = Vec2::new(ring_r * crate::fix::cos(angle), ring_r * crate::fix::sin(angle));
+        let r = min_r + (max_r - min_r) * rng.next_fix();
         out.push(Obstacle::new(pos, r.to_num::<f64>()));
     }
 }
@@ -2423,6 +2445,7 @@ mod tests {
     #[test]
     fn movement_stops_at_target() {
         let mut world = World::new(1, 1);
+        world.obstacles.clear(); // 本测试只验证移动到目标，不依赖随机柱子（避免挡路）
         // 固定起点，避免随机布局影响断言
         world.players[0].pos = Vec2::ZERO;
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -2506,6 +2529,7 @@ mod tests {
     #[test]
     fn lightning_hits_enemy_along_ray() {
         let mut world = World::new(2, 8);
+        world.obstacles.clear(); // 清除随机柱子，避免挡雷电射线
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -2555,6 +2579,7 @@ mod tests {
     #[test]
     fn swap_exchanges_position_with_enemy() {
         let mut world = World::new(2, 8);
+        world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -2597,6 +2622,7 @@ mod tests {
     #[test]
     fn cannot_walk_while_casting() {
         let mut world = World::new(1, 11);
+        world.obstacles.clear();
         world.players[0].pos = Vec2::ZERO;
         let dt = Fix64::from_num(1.0 / 60.0);
         // 选一个前摇非零的技能（Rock：前摇 0.2s）
@@ -2684,6 +2710,7 @@ mod tests {
     #[test]
     fn dash_strike_charges_and_damages_on_contact() {
         let mut world = World::new(2, 31);
+        world.obstacles.clear(); // 清除随机柱子，避免挡冲锋路径
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -3001,6 +3028,68 @@ mod tests {
     }
 
     #[test]
+    fn obstacles_never_overlap_across_seeds() {
+        // 对多种种子 + 多轮布局，验证柱子：互不重叠、不出界、不碰玩家出生环。
+        for seed in [1u64, 2, 42, 99, 908660, 20260812] {
+            let mut w = World::new(2, seed);
+            for round in 0..6 {
+                if round > 0 {
+                    w.reset_round();
+                }
+                let obs = &w.obstacles;
+                assert!(!obs.is_empty(), "每轮都应有柱子");
+                for i in 0..obs.len() {
+                    let a = &obs[i];
+                    let d = a.pos.length().to_num::<f64>();
+                    // 不出界（含半径仍远离边缘）
+                    assert!(d + a.radius.to_num::<f64>() < w.arena_radius.to_num::<f64>() - 0.5,
+                        "柱子应远离边缘 seed={seed} round={round} idx={i}");
+                    // 不碰玩家出生环（玩家在 0.6*arena）
+                    assert!(d < w.arena_radius.to_num::<f64>() * 0.6 - a.radius.to_num::<f64>() - 0.3,
+                        "柱子不应碰玩家出生环 seed={seed} round={round} idx={i}");
+                    for j in i + 1..obs.len() {
+                        let b = &obs[j];
+                        let dist = (a.pos - b.pos).length().to_num::<f64>();
+                        assert!(dist >= a.radius.to_num::<f64>() + b.radius.to_num::<f64>() + 0.3,
+                            "柱子不应重叠 seed={seed} round={round} {i}-{j} dist={dist}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn obstacles_change_each_round() {
+        // 每轮 reset 后，柱子布局应变化（不总是相同配置）。
+        let mut w = World::new(2, 20260812);
+        let first = w.obstacles.clone();
+        w.reset_round();
+        let second = w.obstacles.clone();
+        w.reset_round();
+        let third = w.obstacles.clone();
+        assert_ne!(first, second, "第 2 轮柱子应不同于第 1 轮");
+        assert_ne!(second, third, "第 3 轮柱子应不同于第 2 轮");
+        assert_ne!(first, third, "第 3 轮柱子应不同于第 1 轮");
+    }
+
+    #[test]
+    fn players_spawn_uniformly_on_ring() {
+        // 玩家应在 0.6*arena 的环上均匀等分、互不重叠（含随机整体旋转后仍均匀）。
+        for seed in [1u64, 7, 42, 908660] {
+            for n in 2u32..=6 {
+                let w = World::new(n, seed);
+                assert_eq!(w.players.len(), n as usize);
+                for i in 0..n as usize {
+                    for j in i + 1..n as usize {
+                        let d = (w.players[i].pos - w.players[j].pos).length().to_num::<f64>();
+                        assert!(d >= 2.0, "玩家应均匀分布且不重叠 n={n} {i}-{j} dist={d}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn obstacle_pushes_player_out() {
         let mut world = World::new(1, 50);
         world.obstacles.clear();
@@ -3094,6 +3183,7 @@ mod tests {
     #[test]
     fn boomerang_fireball_spawns_and_returns() {
         let mut world = World::new(2, 60);
+        world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -3521,6 +3611,7 @@ mod tests {
     #[test]
     fn shift_queue_move_then_move() {
         let mut world = World::new(1, 100);
+        world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         // 在同一帧批量压入两条移动指令：先到 (4,0)，再到 (8,0)
@@ -3540,6 +3631,7 @@ mod tests {
     #[test]
     fn shift_queue_move_then_cast() {
         let mut world = World::new(2, 101);
+        world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[1].pos = Vec2::new(Fix64::from_num(6.0), Fix64::ZERO);
@@ -3565,29 +3657,29 @@ mod tests {
     #[test]
     fn clear_queue_signal_empties_world_queue() {
         let mut world = World::new(1, 103);
+        world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        // 先排队两条移动
+        // 同一帧排两条移动：第一条立即 pop 转成 move_target 执行，第二条留在队列等待。
         world.step(vec![PlayerInput {
-            queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(5.0), Fix64::ZERO))],
+            queued: vec![
+                Cmd::Move(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO)),
+                Cmd::Move(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO)),
+            ],
             ..Default::default()
         }], dt);
-        // 再排第二条 + 同帧清队列 → 队列应只剩第二条之后的（此处 clear 后第二条被清掉）
-        world.step(vec![PlayerInput {
-            queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO))],
-            clear_queue: true,
-            ..Default::default()
-        }], dt);
-        // 跑很长远航不到 8（因为队列被清空，第二条未执行）
+        assert_eq!(world.players[0].cmd_len, 1, "第一条已执行，队列应剩第二条");
+        // 玩家仍在朝 4 走（move_target 未到达）时清队列 → 未执行的第二条被清掉。
+        world.step(vec![PlayerInput { clear_queue: true, ..Default::default() }], dt);
+        assert!(world.players[0].cmd_empty(), "clear_queue 应清掉队列里未执行的移动");
+        // 跑足够久：第二条（到 8）已被清除，玩家不应再走向 8。
         let none = vec![PlayerInput::default()];
         for _ in 0..300 {
             world.step(none.clone(), dt);
         }
-        // 第一条到 5 后队列已空，玩家不应继续走到 8
-        assert!(world.players[0].cmd_empty(), "clear_queue 后队列应为空");
         assert!(
             world.players[0].pos.x.to_num::<f64>() < 7.0,
-            "clear_queue 应阻止第二条移动，实际 x={:?}",
+            "clear_queue 应阻止第二条移动执行，实际 x={:?}",
             world.players[0].pos
         );
     }

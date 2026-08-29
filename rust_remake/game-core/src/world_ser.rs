@@ -495,6 +495,7 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
     let mut o = Vec::new();
     wfix(&mut o, w.arena_radius);
     wu8(&mut o, w.sandbox as u8);
+    wu64(&mut o, w.round_seed);
     wfix(&mut o, w.time);
     wu32(&mut o, w.players.len() as u32);
     for p in &w.players {
@@ -525,6 +526,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     let mut p = 0usize;
     let arena_radius = fixat(b, &mut p)?;
     let sandbox = u8at(b, &mut p)? != 0;
+    let round_seed = u64at(b, &mut p)?;
     let time = fixat(b, &mut p)?;
     let np = u32at(b, &mut p)? as usize;
     let mut players = Vec::with_capacity(np);
@@ -553,7 +555,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         let v = u32at(b, &mut p)?;
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, obstacles, projectiles, eliminated_order, kills_this_round, time })
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, time })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
