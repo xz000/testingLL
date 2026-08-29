@@ -1151,6 +1151,7 @@ impl DefTable {
                     cooldown_base: 4.0,
                     damage_base: 8.0,
                     damage_delta: 1.5,
+                    speed_base: 8.0,
                     ..DEF_ZERO
                 },
             },
@@ -1172,6 +1173,7 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 8.0,
                     damage_delta: 1.5,
+                    speed_base: 8.0,
                     ..DEF_ZERO
                 },
             },
@@ -1215,6 +1217,7 @@ impl DefTable {
                     damage_base: 5.0,
                     damage_delta: 1.0,
                     speed_base: 15.0,
+                    range_base: 12.0,
                     ..DEF_ZERO
                 },
             },
@@ -1237,6 +1240,7 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 10.0,
                     damage_delta: 2.0,
+                    speed_base: 6.0,
                     ..DEF_ZERO
                 },
             },
