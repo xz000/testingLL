@@ -6,22 +6,27 @@
 
 ---
 
-## 0. 当前状态快照（2026-08-29 会话末 · 建房金币配置 + 中文房间名 IME + 发布版无命令行窗口，最新）
-- **本会话完成**（工作区已改、待提交，见底部 diff）：
+## 0. 当前状态快照（2026-08-29 会话末 · 建房金币配置 + 中文 IME + 无控制台 + 若干修复，最新）
+- **本会话完成并提交**（7 个提交：`df99301`…`37a2b5e`，工作区干净，见末尾 git log）：
   - **房主建房可设置金币配置**（走大厅元数据同步，host/client 两端一致）：
     - **初始金币**（第一局开局一次性发放，独立于每轮参与奖；`MatchConfig.starting_gold`，默认 0）；
     - **每轮固定金币**（参与奖，复用 `gold_per_round`）；
-    - **单轮名次奖励**（逗号分隔档位，如 `30,20,10`，复用 `place_rewards`，最多 8 档）。
-    每轮发金币、记录单轮排名决定奖励等逻辑本就有（`give_round_gold` / `finish_round`），本次仅补建房入口+同步。
-  - **建房界面重绘为两列 8 字段**（左：房名/备注/人数/轮数；右：准备时间/初始金币/每轮金币/名次奖励），聚焦高亮+字段专属提示。
+    - **单轮名次奖励**：**自动生成**——输一个「第一名」金额，按 ×0.6 向下取整递减到 0，覆盖任意玩家数（`auto_place_rewards`，如 `30`→`[30,18,10,6,3,1]`）；
+      仍兼容逗号分隔手动档位（如 `30,20,10`）。每轮发金币/记录单轮排名决定奖励等逻辑本就有（`give_round_gold`/`finish_round`），本次仅补建房入口+同步。
+  - **建房界面重绘为两列 8 字段**（左：房名/备注/人数/轮数；右：准备时间/初始金币/每轮金币/名次奖励），
+    **方向键二维导航**（↑↓ 同列上下、←→ 换列、Tab=↑），聚焦高亮+字段专属提示。
   - **中文房间名（IME）**：自定义 winit 事件循环替代 `ggez::event::run`（ggez 0.10 不转发 IME 事件），
     接入 `WindowEvent::Ime(Ime::Commit)` → `Game::on_text_input`，建房界面/编辑房间信息的房间名与备注支持中文输入法。
     自定义循环在 `resumed` 里 `set_ime_allowed(true)`，其余事件分发照搬 ggez（键盘/鼠标/触摸/绘制/退出），行为不变。
   - **发布版无命令行窗口**：`client/src/main.rs` 顶部 `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]`，
-    release=GUI 子系统（不弹黑色命令行），debug=Console（便于本地看日志）。`publish.ps1` 加了一步校验（读 PE subsystem，非 GUI 会警告）。
-- 基线：workspace **143 全绿**（98+31+9+5），steam feature client **6 全绿**，build/test/clippy（默认 + steam）全绿；
-  release 冒烟：窗口正常启动、无崩溃；publish.ps1 `-BuildOnly` 收集 client.exe+steam_api64.dll 且 GUI 校验通过。
-- ⚠ 待真机复验：双账号建房/加入验证金币配置两端一致、中文 IME 输入、发布版无命令行窗口体验。
+    release=GUI 子系统（不弹黑色命令行，PE subsystem=2）、debug=Console（保留日志）。`publish.ps1` 加了一步校验（读 PE subsystem，非 GUI 会警告）。
+  - **建房超时与诊断**：创建大厅等待 10s→25s（`STEAM_LOBBY_CREATE_BEATS=500`），等待中每 2.5s 打印进度；
+    `CreateLobby` 失败打印具体 `SteamError`（曾遇 **NoConnection=Steam 掉线**）并给出中文原因提示（NoConnection/AccessDenied/服务繁忙）。
+  - **修复就绪倒计时闪烁**：client 原按“本帧是否恰好收到 host 的 RosterReady 广播”判定全员就绪，某帧没收包即回退 false，
+    导致界面在“按 U 就绪/倒计时”间快速闪烁；改为持久字段 `steam_roster_all_ready` 仅在收到新快照时更新。
+- 基线：workspace **143 全绿**（98+31+9+5），steam feature client **7 全绿**（+`auto_place_rewards` 测试），
+  build/test/clippy（默认 + steam）全绿；release 冒烟窗口正常启动；publish.ps1 `-BuildOnly` 收集 client.exe+steam_api64.dll 且 GUI 校验通过。
+- ⚠ **待真机复验**（需 Steam 双账号）：建房/加入金币配置两端一致、中文 IME 输入、发布版无命令行窗口体验、方向键导航手感、就绪倒计时不再闪烁。
 
 ---
 
@@ -162,22 +167,25 @@
 ---
 
 ## 9. 下次建议起点（按价值/依赖排序）
-0. ✅ **（已完成，2026-08-29）建房金币配置 + 中文房间名 IME + 发布版无命令行窗口**（工作区已改待提交，见顶部快照）。
-1. **Steam 发布上传（暂缓中，用户密码暂忘）**：`publish.ps1` 已就绪（DepotID=908661，`-BuildOnly` 已验证产物 client.exe+steam_api64.dll）。
+0. ✅ **（已完成，2026-08-29）建房金币配置 + 中文房间名 IME + 发布版无命令行窗口 + 名次奖励自动生成 + 建房超时/诊断 + 就绪倒计时闪烁修复 + 建房界面方向键导航**
+   （7 个提交 `df99301`…`37a2b5e`，见顶部快照）。
+1. **真机双账号复验本次新功能**（最重要，见顶部快照「⚠ 待真机复验」清单）：金币配置两端一致、中文 IME 输入、方向键导航手感、就绪倒计时不闪烁、发布版无命令行窗口体验。
+2. **Steam 发布上传（暂缓中，用户密码暂忘）**：`publish.ps1` 已就绪（DepotID=908661，`-BuildOnly` 已验证产物 client.exe+steam_api64.dll）。
    真上传：设 `STEAM_USER`/`STEAM_PASS`（或交互输入）→ 处理 Steam Guard（建议带 bot 的发布账号/访问令牌）→ `-SetLive beta` 先测 → 确认后 `public`。
-2. **真机双账号复验本次新功能**：柱子每轮不同/数量随机(可0)、玩家每轮重生出生环、房主设定轮数与准备时间两端对齐、就绪倒计时同步、施法蓄力动画仅本地自己可见。
-3. **真机复验 Steamworks 第一批 + 第二批**（清单见 `NEXT_STEPS.md` 两节末尾）：Ping/头像无需后台配置最快；统计/成就/排行榜需先在后台按 `net-steam/src/stats.rs` 建 key/榜。
-4. 复验通过后接最后一批：**云存档**（Remote Storage，meta 数据现成）。
-5. **学习阶段交互（暂缓）**：选技能树/绑定仍只用字母+数字快捷键，可加鼠标/方向键（用户暂不做，留待）。
-6. 技能成长**数值手感调优**（调各技能 `SkillGrowth` 的 base/delta，见 §4，需真机/试验场感受）。
-7. 之后按需：**单机调试辅助** → **游戏手感调优**（击退 Impulse 等）。
-8. 表现层美术 / UI 打磨 / 延迟回滚 / **多语言 i18n（见 §7）** 作为长期目标。
+3. **真机双账号复验此前功能**：柱子每轮不同/数量随机(可0)、玩家每轮重生出生环、房主设定轮数与准备时间两端对齐、就绪倒计时同步、施法蓄力动画仅本地自己可见。
+4. **真机复验 Steamworks 第一批 + 第二批**（清单见 `NEXT_STEPS.md` 两节末尾）：Ping/头像无需后台配置最快；统计/成就/排行榜需先在后台按 `net-steam/src/stats.rs` 建 key/榜。
+5. 复验通过后接最后一批：**云存档**（Remote Storage，meta 数据现成）。
+6. **学习阶段交互（暂缓）**：选技能树/绑定仍只用字母+数字快捷键，可加鼠标/方向键（用户暂不做，留待）。
+7. 技能成长**数值手感调优**（调各技能 `SkillGrowth` 的 base/delta，见 §4，需真机/试验场感受）。
+8. 之后按需：**单机调试辅助** → **游戏手感调优**（击退 Impulse 等）。
+9. 表现层美术 / UI 打磨 / 延迟回滚 / **多语言 i18n（见 §7）** 作为长期目标。
 
 ---
 
 ## 10. 常用命令（续接用）
 ```
-cargo test --workspace                  # 回归（当前 97+31+9+5 = 142 全绿基线）
+cargo test --workspace                  # 回归（当前 98+31+9+5 = 143 全绿基线）
+cargo test -p client --features client/steam   # steam 版 client 7 测试
 cargo clippy --workspace -- -D warnings
 cargo clippy -p client --features client/steam -- -D warnings
 powershell -File run-steam.ps1 -Mode menu   # Steam 版主菜单（按 3 进大厅，H 建厅 / J 房间列表）
