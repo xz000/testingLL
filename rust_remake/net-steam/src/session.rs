@@ -57,6 +57,23 @@ pub struct JoinRequest {
 // 房间里的邀请/状态上报仍要能用（对 `&SteamTransport` 调用即可）。
 // ---------------------------------------------------------------------------
 
+/// 把 `CreateLobby` 的 `SteamError` 翻译成可操作的中文提示，方便玩家/开发者判断建房失败原因。
+fn create_lobby_error_hint(e: steamworks::SteamError) -> String {
+    use steamworks::SteamError;
+    match e {
+        SteamError::NoConnection => {
+            "Steam 客户端未连接（NoConnection）：请确认 Steam 处于在线状态且能联网，然后重试（若刚开机/刚重启 Steam，请稍等它就绪）。".to_string()
+        }
+        SteamError::AccessDenied => {
+            "Steam 拒绝建房（AccessDenied）：可能是当前账号未被授权本应用，请确认你能在 Steam 中正常启动/加入本游戏。".to_string()
+        }
+        SteamError::Busy | SteamError::InvalidState => {
+            "Steam 大厅服务繁忙或状态异常，请稍后重试。".to_string()
+        }
+        other => format!("lobby create failed: {other:?}"),
+    }
+}
+
 /// 列出 Steam 好友（供「邀请好友」界面）。在线优先、其次昵称升序；`in_lobby` 标记是否已在房间里。
 /// 昵称需先 `request_user_information` 刷新（异步生效；首次可能拿到空昵称，界面重开即正常）。
 pub fn list_friends(transport: &SteamTransport, lobby: Option<u64>) -> Vec<FriendInfo> {
@@ -425,7 +442,7 @@ impl SteamSession {
         use steamworks::{LobbyId, LobbyType};
         let mm = self.transport.matchmaking();
         let done = Arc::new(AtomicBool::new(false));
-        let slot = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, ()>>));
+        let slot = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, steamworks::SteamError>>));
         {
             let done = done.clone();
             let slot = slot.clone();
@@ -435,7 +452,7 @@ impl SteamSession {
                 } else {
                     eprintln!("[steam-host] CreateLobby OK");
                 }
-                *slot.lock().unwrap() = Some(res.map_err(|_| ()));
+                *slot.lock().unwrap() = Some(res);
                 done.store(true, Ordering::SeqCst);
             });
         }
@@ -458,7 +475,7 @@ impl SteamSession {
                 "lobby create timeout after {:.1}s（请确认 Steam 客户端在线、网络通畅，然后重试）",
                 beats as f64 * 0.05
             )))?
-            .map_err(|_| io::Error::other("lobby create failed"))?;
+            .map_err(|e| io::Error::other(create_lobby_error_hint(e)))?;
         // 写 matchkey 供 client 搜索。
         mm.set_lobby_data(lobby, MATCH_KEY, MATCH_VALUE);
         self.lobby = Some(lobby);
