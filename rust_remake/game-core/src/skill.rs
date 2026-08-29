@@ -43,9 +43,9 @@ impl SkillTree {
         use SkillId::*;
         match self {
             SkillTree::C => &[Boost, Shield, Shadow, Fake],
-            SkillTree::R => &[Blink, Blink2, DashStrike, DashSlash, BlinkToWall],
+            SkillTree::R => &[Blink, Blink2, DashStrike, DashSlash, TestSwap, BlinkToWall],
             SkillTree::E => &[Rock, StoneShot, StealthPush, StealthPush2, LineBeam, LineExplode],
-            SkillTree::D => &[D2Fireball, D3Missile, D4Fireball],
+            SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball],
             SkillTree::T => &[TLeech, T2Shot, T2Volley, T3Fast, T3Fast2, TestLeech],
             SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2],
             SkillTree::F => &[Test03],
@@ -162,6 +162,10 @@ pub enum SkillId {
     // 测试类
     Test01,
     Test03,
+    /// 雷电（D1）：指向性即时射线，命中敌人伤害+推，撞障碍停止。
+    TestLightning,
+    /// 换位（R3a）：点目标，有敌人则互换位置，否则瞬移过去。
+    TestSwap,
     // 预留
     _Reserved,
     _SelfExplode,
@@ -173,9 +177,9 @@ impl SkillId {
         use SkillId::*;
         match self {
             Boost | Shield | Shadow | Fake => SkillTree::C,
-            Blink | Blink2 | DashStrike | DashSlash | BlinkToWall => SkillTree::R,
+            Blink | Blink2 | DashStrike | DashSlash | TestSwap | BlinkToWall => SkillTree::R,
             Rock | StoneShot | StealthPush | StealthPush2 | LineBeam | LineExplode => SkillTree::E,
-            D2Fireball | D3Missile | D4Fireball => SkillTree::D,
+            D2Fireball | D3Missile | D4Fireball | TestLightning => SkillTree::D,
             TLeech | T2Shot | T2Volley | T3Fast | T3Fast2 | TestLeech => SkillTree::T,
             Y1BlueLine | Y1BlueLine2 | Y2Delay | Y2Suite | Y3Zone | Y3Zone2 => SkillTree::Y,
             Test03 => SkillTree::F,
@@ -220,6 +224,8 @@ impl SkillId {
             Y3Zone2 => 29,
             Test01 => 30,
             Test03 => 31,
+            TestLightning => 34,
+            TestSwap => 35,
             _Reserved => 32,
             _SelfExplode => 33,
         }
@@ -263,6 +269,8 @@ impl SkillId {
             31 => Test03,
             32 => _Reserved,
             33 => _SelfExplode,
+            34 => TestLightning,
+            35 => TestSwap,
             _ => _Reserved,
         }
     }
@@ -407,6 +415,10 @@ pub enum SkillEffect {
         push_time: Fix64,
         range: Fix64,
     },
+    /// 雷电（D1）：指向性即时射线，命中敌人伤害+推，撞障碍停止（无飞行弹体）。
+    Lightning,
+    /// 换位（R3a）：点目标，若目标位置附近有敌人则与之互换位置，否则自身瞬移到该点。
+    Swap { max_distance: Fix64 },
     /// 束缚线（Y2b）：施法者身后两点反向收拢成线，线上的敌人被束缚（禁施法）。
     BindLine {
         speed: Fix64,
@@ -1377,6 +1389,41 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 10.0,
                     damage_delta: 2.0,
+                    ..DEF_ZERO
+                },
+            },
+            // D 树：雷电（TestLightning）——指向性即时射线，命中敌人伤害+推，撞障碍停止。
+            SkillId::TestLightning => SkillDef {
+                id,
+                tree: SkillTree::D,
+                name: "雷电",
+                needs_point: true,
+                effect: Lightning,
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    damage_base: 10.0,
+                    damage_delta: 2.0,
+                    range_base: 10.0,
+                    push_power_base: 6.0,
+                    push_power_delta: 1.0,
+                    ..DEF_ZERO
+                },
+            },
+            // R 树：换位（TestSwap）——点目标，有敌人则互换位置，否则瞬移过去。
+            SkillId::TestSwap => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "换位",
+                needs_point: true,
+                effect: Swap { max_distance: Fix64::from_num(6.0) },
+                growth: SkillGrowth {
+                    windup_base: 0.1,
+                    recovery_base: 0.1,
+                    cooldown_base: 3.0,
+                    max_distance_base: 6.0,
+                    max_distance_delta: 1.0,
                     ..DEF_ZERO
                 },
             },
