@@ -1262,6 +1262,8 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 2.0,
                     damage_delta: 0.4,
+                    speed_base: 2.0,
+                    duration_base: 2.0,
                     ..DEF_ZERO
                 },
             },
@@ -1283,6 +1285,8 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 2.0,
                     damage_delta: 0.4,
+                    speed_base: 2.0,
+                    duration_base: 2.0,
                     ..DEF_ZERO
                 },
             },
@@ -1305,6 +1309,10 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 8.0,
                     damage_delta: 1.5,
+                    speed_base: 10.0,
+                    push_power_base: 9.0,
+                    push_time_base: 2.0,
+                    range_base: 12.0,
                     ..DEF_ZERO
                 },
             },
@@ -1323,6 +1331,7 @@ impl DefTable {
                     windup_base: 0.1,
                     recovery_base: 0.1,
                     cooldown_base: 6.0,
+                    speed_base: 8.0,
                     ..DEF_ZERO
                 },
             },
@@ -1343,6 +1352,10 @@ impl DefTable {
                     windup_base: 0.1,
                     recovery_base: 0.1,
                     cooldown_base: 4.0,
+                    speed_base: 4.0,
+                    radius_base: 2.5,
+                    duration_base: 4.0,
+                    range_base: 10.0,
                     ..DEF_ZERO
                 },
             },
@@ -1365,6 +1378,8 @@ impl DefTable {
                     cooldown_base: 10.0,
                     damage_base: 2.0,
                     damage_delta: 0.3,
+                    radius_base: 1.6,
+                    duration_base: 4.0,
                     ..DEF_ZERO
                 },
             },
@@ -1385,6 +1400,10 @@ impl DefTable {
                     windup_base: 1.0, // 吟唱 1s
                     recovery_base: 0.1,
                     cooldown_base: 3.0,
+                    radius_base: 2.0,
+                    damage_base: 10.0,
+                    push_power_base: 9.0,
+                    push_time_base: 1.0,
                     ..DEF_ZERO
                 },
             },
@@ -1407,6 +1426,10 @@ impl DefTable {
                     cooldown_base: 3.0,
                     damage_base: 10.0,
                     damage_delta: 2.0,
+                    speed_base: 8.0,
+                    push_power_base: 8.0,
+                    push_time_base: 1.0,
+                    range_base: 12.0,
                     ..DEF_ZERO
                 },
             },

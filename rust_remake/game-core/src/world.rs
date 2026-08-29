@@ -1984,8 +1984,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Tether { damage, pull_speed, duration, beam } => {
-                // 回拉线（Y1/Y1b）：锁定点击处最近目标，拉向施法者并持续掉血
+            SkillEffect::Tether { beam, .. } => {
+                // 回拉线（Y1/Y1b）：锁定点击处最近目标，拉向施法者并持续掉血。（数值走 stats）
                 let ppos = world.players[idx as usize].pos;
                 let anchor = target.unwrap_or(ppos);
                 let tgt = world.nearest_other_enemy(anchor, idx);
@@ -2002,9 +2002,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             kind: ProjectileKind::Tether {
                                 owner: idx,
                                 target: tid,
-                                damage_per_sec: damage,
-                                pull_speed,
-                                remaining: duration,
+                                damage_per_sec: stats.damage,
+                                pull_speed: stats.speed,
+                                remaining: stats.duration,
                                 beam,
                             },
                             pos: ppos,
@@ -2013,20 +2013,20 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                 }
             }
-            SkillEffect::PushShot { speed, damage, push_power, push_time, range } => {
-                // 撞击迟缓（Y2）：直线弹命中→伤害 + 强推 push_time
+            SkillEffect::PushShot { .. } => {
+                // 撞击迟缓（Y2）/爆炸弹（Test01）：直线弹命中→伤害 + 强推 push_time。（数值走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::PushBullet {
                             dir,
-                            speed,
-                            damage,
+                            speed: stats.speed,
+                            damage: stats.damage,
                             radius: Fix64::from_num(0.6),
-                            push_power,
-                            push_time,
-                            remaining: range,
+                            push_power: stats.push_power,
+                            push_time: stats.push_time,
+                            remaining: stats.range,
                         },
                         pos: p.pos,
                         alive: true,
@@ -2105,8 +2105,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                 }
             }
-            SkillEffect::BindLine { speed, count, bind_time } => {
-                // 束缚线（Y2b）：制造一段朝目标推进、收拢后束缚线上敌人的线
+            SkillEffect::BindLine { count, bind_time, .. } => {
+                // 束缚线（Y2b）：制造一段朝目标推进、收拢后束缚线上敌人的线。（speed 走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     let end = p.pos + dir * Fix64::from_num(6.0);
@@ -2114,7 +2114,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         owner: idx,
                         kind: ProjectileKind::BindLine {
                             dir,
-                            speed,
+                            speed: stats.speed,
                             count,
                             fired: 0,
                             bind_time: Fix64::from_num(bind_time),
@@ -2126,48 +2126,51 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::GravityZone { speed, pull_speed, radius, life, range } => {
-                // 引力场（Y3）：在点击处/朝目标方向发射一个吸引附近敌人的场
+            SkillEffect::GravityZone { pull_speed, .. } => {
+                // 引力场（Y3）：在点击处/朝目标方向发射一个吸引附近敌人的场。（数值走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
-                    let range = Fix64::from_num(range.to_num::<f64>().max(1.0));
+                    let range = Fix64::from_num(stats.range.to_num::<f64>().max(1.0));
                     let place = if let Some(t) = target { t } else { p.pos + dir * range };
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::Gravity {
                             dir,
-                            speed,
-                            radius,
+                            speed: stats.speed,
+                            radius: stats.radius,
                             pull_speed,
-                            remaining: Fix64::from_num(life),
+                            remaining: stats.duration,
                         },
                         pos: place,
                         alive: true,
                     });
                 }
             }
-            SkillEffect::StarZone { damage_per_sec, heal_per_sec, radius, duration, range } => {
-                // 星域（Y3b）：在点击处放一颗持续伤/回血的星
-                let _ = range;
+            SkillEffect::StarZone { heal_per_sec, .. } => {
+                // 星域（Y3b）：在点击处放一颗持续伤/回血的星。（数值走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let place = target.unwrap_or(p.pos);
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::Star {
                             owner: idx,
-                            radius,
-                            damage_per_sec,
+                            radius: stats.radius,
+                            damage_per_sec: stats.damage,
                             heal_per_sec,
-                            remaining: Fix64::from_num(duration),
+                            remaining: stats.duration,
                         },
                         pos: place,
                         alive: true,
                     });
                 }
             }
-            SkillEffect::SelfExplode { radius, self_stay, damage, kick, kick_time } => {
-                // 蓄力自爆（F）：以施法者为中心 AOE；自己扣到残血、范围内敌人受伤并踢开。
+            SkillEffect::SelfExplode { self_stay, .. } => {
+                // 蓄力自爆（F）：以施法者为中心 AOE；自己扣到残血、范围内敌人受伤并踢开。（数值走 stats）
                 let ppos = world.players[idx as usize].pos;
+                let radius = stats.radius;
+                let damage = stats.damage;
+                let kick = stats.push_power;
+                let kick_time = stats.push_time;
                 // 施法者自残：扣到 self_stay（若当前更低则不扣）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     if p.hp > self_stay {
