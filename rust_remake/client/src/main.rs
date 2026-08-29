@@ -70,6 +70,10 @@ const STEAM_COUNTDOWN_LOCK_SECS: f32 = 2.0;
 /// Steam 建房：玩家人数上限允许的最大值（steamworks 支持到 250，这里给竞技场设实际可玩的上限）。
 #[cfg(feature = "steam")]
 const STEAM_MAX_PLAYERS: u8 = 64;
+/// Steam 建房：创建大厅时等待回调的最大拍数（每拍 ≈50ms 内 pump 一次 Steam 回调）。
+/// 500 拍 ≈ 25s，给慢网络/Steam 后端留足时间（此前 200 拍 ≈ 10s 偶发超时）。
+#[cfg(feature = "steam")]
+const STEAM_LOBBY_CREATE_BEATS: u32 = 500;
 /// Steam 建房：默认玩家数（创建房间界面的初始值）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_PLAYERS: u8 = 2;
@@ -97,9 +101,32 @@ const STEAM_DEFAULT_STARTING_GOLD: i32 = 0;
 /// Steam 建房：每轮固定金币（参与奖）默认值（与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 20;
-/// Steam 建房：单轮名次奖励默认值（逗号分隔档位，与 MatchConfig 默认一致）。
+/// Steam 建房：名次奖励默认输入（单数字 = 第一名奖励，自动按 0.6 比例递减到 0；
+/// 也可输入逗号分隔档位 `30,20,10` 手动精确控制）。
 #[cfg(feature = "steam")]
-const STEAM_DEFAULT_PLACE_REWARD: &str = "30,20,10";
+const STEAM_DEFAULT_PLACE_REWARD: &str = "30";
+/// Steam 建房：名次奖励默认第一名金额（配合自动递减）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_PLACE_FIRST: i32 = 30;
+
+/// 由「第一名奖励」自动生成名次奖励档位：每降一名奖励 ×0.6（向下取整），直到 ≤0。
+/// 这样只需输一个数字即可覆盖任意玩家数（档位只影响前几名，后几名逐渐归零）。
+#[cfg(feature = "steam")]
+fn auto_place_rewards(first: i32) -> Vec<i32> {
+    let mut out = Vec::new();
+    let mut v = first.max(0);
+    while v > 0 {
+        out.push(v);
+        if out.len() >= 64 {
+            break;
+        }
+        v = (v as f64 * 0.6).floor() as i32;
+    }
+    if out.is_empty() {
+        out.push(0);
+    }
+    out
+}
 /// Steam 房间列表：两次刷新（`request_lobby_list`）之间的最小间隔（秒）。
 /// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽）。
 #[cfg(feature = "steam")]
@@ -386,7 +413,8 @@ struct Game {
     /// Steam 建房设置：每轮固定金币输入缓冲。
     #[cfg(feature = "steam")]
     steam_create_gold_per_round_buf: String,
-    /// Steam 建房设置：单轮名次奖励档位（逗号分隔字符串，如 "30,20,10"；房主编辑）。
+    /// Steam 建房设置：名次奖励输入（单个数字 = 第一名，自动按 0.6 递减到 0；
+    /// 或逗号分隔手动档位，如 "30,20,10"）。
     #[cfg(feature = "steam")]
     steam_create_place_buf: String,
     /// Steam 建房设置：解析后的名次奖励档位（索引 = 名次-1）。
@@ -503,7 +531,7 @@ impl Game {
         #[cfg(feature = "steam")]
         let mut init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
         #[cfg(feature = "steam")]
-        let mut init_place_rewards: Vec<i32> = vec![30, 20, 10];
+        let mut init_place_rewards: Vec<i32> = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
@@ -512,7 +540,7 @@ impl Game {
             AppState::SteamHost { players } => {
                 let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
                     .map_err(ggez::GameError::from)?;
-                let lobby = sess.host_create_lobby(players.max(1) as u32, 200).map_err(ggez::GameError::from)?;
+                let lobby = sess.host_create_lobby(players.max(1) as u32, STEAM_LOBBY_CREATE_BEATS).map_err(ggez::GameError::from)?;
                 sess.prepare_transport().map_err(ggez::GameError::from)?;
                 steam_my_index = sess.my_slot();
                 eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
@@ -549,7 +577,7 @@ impl Game {
                 init_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
                 init_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
                 init_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
-                init_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| vec![30, 20, 10]);
+                init_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 steam_my_index = my_slot;
@@ -808,7 +836,7 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_create_place_buf: STEAM_DEFAULT_PLACE_REWARD.to_string(),
             #[cfg(feature = "steam")]
-            steam_create_place: vec![30, 20, 10],
+            steam_create_place: auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST),
             #[cfg(feature = "steam")]
             match_rounds: init_rounds,
             #[cfg(feature = "steam")]
@@ -3859,7 +3887,7 @@ impl Game {
                 self.steam_create_gold_per_round = STEAM_DEFAULT_GOLD_PER_ROUND;
                 self.steam_create_gold_per_round_buf = STEAM_DEFAULT_GOLD_PER_ROUND.to_string();
                 self.steam_create_place_buf = STEAM_DEFAULT_PLACE_REWARD.to_string();
-                self.steam_create_place = vec![30, 20, 10];
+                self.steam_create_place = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
                 self.steam_lobby_create = true;
             }
             1 => {
@@ -4010,7 +4038,7 @@ impl Game {
                 }
             }
             7 => {
-                // 名次奖励字段：逗号分隔的非负整数档位（如 30,20,10）。数字 + 逗号输入，Backspace 删除。
+                // 名次奖励字段：输单个数字（第一名，自动递减）或逗号分隔手动档位（如 30,20,10）。数字 + 逗号输入。
                 if just_named(NamedKey::Backspace) {
                     self.steam_create_place_buf.pop();
                     return;
@@ -4037,21 +4065,26 @@ impl Game {
                 .clamp(0, STEAM_MAX_GOLD);
             let gold_per_round = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND)
                 .clamp(0, STEAM_MAX_GOLD);
-            // 名次奖励：逗号分隔解析，取最多 8 档，每档 0..=STEAM_MAX_GOLD；空/非法回退默认。
-            let place: Vec<i32> = if self.steam_create_place_buf.trim().is_empty() {
-                vec![30, 20, 10]
-            } else {
-                let out: Vec<i32> = self
-                    .steam_create_place_buf
-                    .split(',')
-                    .filter_map(|s| s.trim().parse::<i32>().ok())
-                    .map(|v| v.clamp(0, STEAM_MAX_GOLD))
-                    .take(8)
-                    .collect();
-                if out.is_empty() {
-                    vec![30, 20, 10]
+            // 名次奖励：单个数字=第一名，自动按 0.6 递减生成全部档位；逗号分隔=手动精确档位。
+            let place: Vec<i32> = {
+                let raw = self.steam_create_place_buf.trim();
+                if raw.is_empty() {
+                    auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
+                } else if raw.contains(',') {
+                    let out: Vec<i32> = raw
+                        .split(',')
+                        .filter_map(|s| s.trim().parse::<i32>().ok())
+                        .map(|v| v.clamp(0, STEAM_MAX_GOLD))
+                        .take(64)
+                        .collect();
+                    if out.is_empty() {
+                        auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
+                    } else {
+                        out
+                    }
                 } else {
-                    out
+                    let first = parse_i32(raw, STEAM_DEFAULT_PLACE_FIRST).clamp(0, STEAM_MAX_GOLD);
+                    auto_place_rewards(first)
                 }
             };
             self.steam_create_players = players;
@@ -4148,7 +4181,7 @@ impl Game {
                 .take()
                 .ok_or_else(|| std::io::Error::other("steam 会话未初始化（未进入 Steam 大厅？）"))?;
             if is_host {
-                let lobby = sess.host_create_lobby(players.max(1) as u32, 200)?;
+                let lobby = sess.host_create_lobby(players.max(1) as u32, STEAM_LOBBY_CREATE_BEATS)?;
                 self.steam_lobby_id = Some(lobby.raw());
                 sess.host_set_room_info(room_name, room_note)?;
                 sess.host_set_rounds(self.steam_create_rounds)?;
@@ -4206,7 +4239,7 @@ impl Game {
                 self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
                 self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
                 self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
-                self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| vec![30, 20, 10]);
+                self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
                 let host_id = sess.host_steam_id().unwrap_or(0);
                 let my_slot = sess.my_slot();
                 self.steam_my_index = my_slot;
@@ -4691,11 +4724,11 @@ impl Game {
             "局与局之间的准备时间（8 ~ 256 秒）",
             "第一局开局一次性发放，独立于每轮金币（0 ~ 99999）",
             "每轮固定参与奖（0 ~ 99999）",
-            "逗号分隔档位，如 30,20,10（最多 8 档；超出档位不奖励）",
+            "输第一名金额（如 30，自动按 0.6 递减到 0）；或用逗号分隔手动档位 30,20,10",
         ];
         let placeholders = [
             "（输入房间名）", "（可留空）", "（默认 2）", "（默认 3）",
-            "（默认 20 秒）", "（默认 0）", "（默认 20）", "（默认 30,20,10）",
+            "（默认 20 秒）", "（默认 0）", "（默认 20）", "（默认 30）",
         ];
         let vals = [
             self.steam_create_name.clone(),
@@ -5123,6 +5156,20 @@ fn main() -> GameResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "steam")]
+    #[test]
+    fn auto_place_rewards_decays_to_zero() {
+        // 30 → 30, 18, 10, 6, 3, 1（每名 ×0.6 向下取整，直到 ≤0）
+        assert_eq!(auto_place_rewards(30), vec![30, 18, 10, 6, 3, 1]);
+        assert_eq!(auto_place_rewards(0), vec![0], "0 名次奖励至少 1 档");
+        assert_eq!(auto_place_rewards(1), vec![1]);
+        // 大额也应收敛到 0（不无限增长），且覆盖多个名次。
+        let big = auto_place_rewards(99999);
+        assert!(*big.last().unwrap() >= 1);
+        assert!(big.len() > 5 && big.len() <= 64);
+        assert!(big.windows(2).all(|w| w[0] >= w[1]), "奖励应单调不增");
+    }
 
     #[test]
     fn solo_parse_does_not_hang_and_selects_solo() {

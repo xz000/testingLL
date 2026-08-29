@@ -434,18 +434,25 @@ impl SteamSession {
                 done.store(true, Ordering::SeqCst);
             });
         }
-        for _ in 0..beats {
+        for beat in 0..beats {
             self.run_callbacks();
             std::thread::sleep(std::time::Duration::from_millis(50));
             if done.load(Ordering::SeqCst) {
                 break;
+            }
+            // 每约 2.5s 打印一次等待进度，便于判断是网络慢还是卡死。
+            if beat > 0 && beat % 50 == 0 {
+                eprintln!("[steam-host] still waiting for lobby create (beat {}/{}, {:.1}s)", beat, beats, beat as f64 * 0.05);
             }
         }
         let lobby = slot
             .lock()
             .unwrap()
             .take()
-            .ok_or_else(|| io::Error::other("lobby create timeout (需 run_callbacks 驱动回调)"))?
+            .ok_or_else(|| io::Error::other(format!(
+                "lobby create timeout after {:.1}s（请确认 Steam 客户端在线、网络通畅，然后重试）",
+                beats as f64 * 0.05
+            )))?
             .map_err(|_| io::Error::other("lobby create failed"))?;
         // 写 matchkey 供 client 搜索。
         mm.set_lobby_data(lobby, MATCH_KEY, MATCH_VALUE);
