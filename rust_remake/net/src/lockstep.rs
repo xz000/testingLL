@@ -361,11 +361,6 @@ impl<T: Transport> HostLockstep<T> {
         true
     }
 
-    /// 参与玩家的原 player index 列表（host=0 在首；new/本局 index = 在该列表中的位置）。供广播给 client 对齐下标。
-    pub fn participants_orig(&self) -> &[u8] {
-        &self.participants_orig
-    }
-
     /// 本局参与玩家总数（host + 参与 client 数）。
     pub fn participants_count(&self) -> usize {
         if self.participants_orig.is_empty() {
@@ -374,11 +369,6 @@ impl<T: Transport> HostLockstep<T> {
         } else {
             self.participants_orig.len()
         }
-    }
-
-    /// 当前参与的 client 槽位数（诊断/界面用）。
-    pub fn active_clients_count(&self) -> usize {
-        (0..self.expected).filter(|&c| self.is_active(c)).count()
     }
 
     /// 累计收到过的 `PlayerReady` 包总数（诊断：区分“包没到”与“到了但值是 false”）。
@@ -411,11 +401,6 @@ impl<T: Transport> HostLockstep<T> {
             self.dropped[c] = false;
             self.latest_input[c] = None; // 等重连端重新上行，poll 会重记 peer
         }
-    }
-
-    /// 某一 client 的连续空闲（未提供输入）帧数。
-    pub fn client_idle_ticks(&self, client_seq: u8) -> u32 {
-        self.slot_of(client_seq).map(|c| self.idle_ticks[c]).unwrap_or(0)
     }
 
     /// 自动化掉线：任何一个未掉线 client 连续空闲 `threshold` 帧即标记为掉线（此后用默认输入占位、不再卡全队）。
@@ -540,12 +525,6 @@ impl<T: Transport> HostLockstep<T> {
         n += self.cfgs.iter().filter(|c| c.is_some()).count();
         n
     }
-
-    /// 全部玩家（host 自身 + 各 client）是否都已就绪。
-    pub fn all_cfgs_ready(&self) -> bool {
-        self.all_cfgs()
-    }
-
 
     /// 交给 host 自身的本地输入（参与对局时）。`None` 表示本 tick 不提供。
     pub fn set_local_input(&mut self, enc: Option<Vec<u8>>) {
@@ -716,10 +695,6 @@ impl<T: Transport> HostLockstep<T> {
         Some((seq, entries))
     }
 
-    pub fn client_peer(&self, client_seq: u8) -> Option<Peer> {
-        self.slot_of(client_seq).and_then(|c| self.client_peers[c])
-    }
-
     pub fn next_seq(&self) -> u64 {
         self.next_seq
     }
@@ -781,11 +756,6 @@ impl<T: Transport> ClientLockstep<T> {
                 Err(e) => return Err(e),
             }
         }
-    }
-
-    /// 取走缓存的最新媒体快照（`(world_bytes, seq)`）。无则 None。
-    pub fn take_latest_snapshot(&mut self) -> Option<(Vec<u8>, u64)> {
-        self.latest_snapshot.take()
     }
 
     /// 读缓存的最新媒体快照（不消费，迁移接管用）。
@@ -952,13 +922,6 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
 
-    /// 向 host 上报 READY（用于 host 知道 client 已就绪；host 可按此或首帧决定开始）。
-    pub fn send_ready(&mut self) -> io::Result<()> {
-        let pkt = Packet::Ready;
-        self.transport.send_to(&pkt.encode(), &self.host)?;
-        Ok(())
-    }
-
     /// 请求补发 `missing_seq`。
     pub fn request_frame(&mut self, missing_seq: u64) -> io::Result<()> {
         let pkt = Packet::ReqFrame { seq: missing_seq };
@@ -1108,10 +1071,6 @@ impl<T: Transport> ClientLockstep<T> {
         self.expect_seq
     }
 
-    pub fn pending_len(&self) -> usize {
-        self.pending.len()
-    }
-
     /// 只读访问底层传输（诊断用，如取 `send_stats()`）。
     pub fn transport_ref(&self) -> &T {
         &self.transport
@@ -1232,7 +1191,6 @@ mod tests {
             }
         }
         assert!(cli.expect_seq() >= 5, "丢帧后 client 应依靠请求补发追平（实际推进 seq {}", cli.expect_seq());
-        assert_eq!(cli.pending_len(), 0, "client 落点不应有未消费的乱序帧");
     }
 
     /// 就绪往返（可撤销）：client 发 PlayerReady(true) → host 收到 → client_ready/all_clients_ready；
@@ -1622,7 +1580,6 @@ mod tests {
             host.set_local_input(Some(vec![9]));
             assert!(host.try_emit().is_some());
         }
-        assert_eq!(host.client_idle_ticks(1), 0);
 
         // client 停发：host 每帧仍 poll（会因缺 client 输入无法产帧，但空闲计数逐帧累加）。
         let dropped = 3u32;
@@ -1668,7 +1625,6 @@ mod tests {
             host.set_local_input(Some(vec![9]));
             assert!(host.try_emit().is_some());
         }
-        assert_eq!(host.client_idle_ticks(1), 0);
 
         // B 段：client 停发，host 空闲超阈值自动掉线并继续产帧（默认占位，不卡全队）；期间周期保存快照。
         let dropped = 3u32;
@@ -1825,14 +1781,13 @@ mod tests {
         assert_eq!(cli.expect_seq(), 0);
         let _ = cli.step_frame(&mut rcv).unwrap(); // 消费到 Snapshot（无 Frame，返回 None 不推进）
         assert_eq!(cli.expect_seq(), 0, "缓存快照不得推进 expect_seq");
-        let cached = cli.take_latest_snapshot().expect("client 应缓存 host 广播的快照");
+        let cached = cli.cached_snapshot().expect("client 应缓存 host 广播的快照");
         assert_eq!(cached, (b"snap@10".to_vec(), 10), "缓存内容与 host 广播一致");
 
-        // 取走后清空；再广播新快照覆盖旧值。
-        assert!(cli.take_latest_snapshot().is_none(), "take 后应清空");
+        // 再广播新快照覆盖旧值。
         host.broadcast_snapshot(b"snap@11".to_vec(), 11);
         let _ = cli.step_frame(&mut rcv).unwrap();
-        assert_eq!(cli.take_latest_snapshot(), Some((b"snap@11".to_vec(), 11)), "新快照覆盖旧缓存");
+        assert_eq!(cli.cached_snapshot(), Some((b"snap@11".to_vec(), 11)), "新快照覆盖旧缓存");
     }
 
     /// 「人不满也启动」：建房上限 3（host+2 client），但只有 client1 进场就绪；host 设参与集 `[client1 参与, client2 不参与]`，
@@ -1854,7 +1809,6 @@ mod tests {
         // 设参与集：只 client1 参与 → 只要求 client1。
         assert!(host.set_participants(&[true, false]));
         assert!(host.saw_all_clients(), "按参与集只在场的 client1 应视为全在场");
-        assert_eq!(host.active_clients_count(), 1);
 
         // 产帧：只含 player0(host) + player1(client1)，不含 player2。
         let (seq, entries) = host.try_emit().expect("按参与集应能产帧");
@@ -1892,7 +1846,6 @@ mod tests {
         let mut rcv = [0u8; 4096];
 
         assert!(host.set_participants(&[false, true])); // client1 不参与、client2 参与
-        assert_eq!(host.participants_orig(), &[0, 2], "参与玩家原 index：host + client2");
         assert_eq!(host.participants_count(), 2);
 
         // 只给参与者输入（client2 上行 + host 本地）→ 应能产帧，且 new index 连续 [0,1]。

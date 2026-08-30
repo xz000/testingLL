@@ -5,6 +5,35 @@
 > 「专用服务器权威(方案 B / Dota2 式)」为最终形态，并落到现有代码的改动与落地顺序。
 > 关联：`ROADMAP.md`(三大功能) · `NET_REWRITE.md`(lockstep 重写) · `ATTRIBUTE_SYSTEM.md`
 
+---
+
+# 当前生效路径与代码组织（2026-08-30 整理）
+
+> **主线确认：Steam 联机是主干，局域网（UDP）只是过渡/可测验证**——lockstep/丢帧补发/重连快照这套逻辑先在局域网验证，再被 Steam 复用。
+> 本文档其余部分描述「方案 A(host 快照重连)+ 方案 B(服务器权威)」的设计与演进；以下是**当前代码里真正生效**的落地。
+
+## 编译双路径
+- **默认编译**（无 `--features client/steam`）：只含局域网(UDP)+ 单机，`net-steam` 走占位 stub，`steam.rs` 全不编译。用于无 Steam 环境的 CI / 局域网测试。
+- **Steam 主线**（`--features client/steam`）：`net-steam` 用真实 `SteamTransport`（ISteamNetworkingMessages P2P），编译 `steam.rs`。需要 Steam 登录 + AppID + 双账号验收。
+
+## 生效路径清单（掉线/重连）
+| 环节 | 生效代码 | 位置 |
+|------|---------|------|
+| host 判 client 掉线 | `HostLockstep::auto_drop_idle` → `mark_dropped`（默认输入占位，不卡全队） | `net/src/lockstep.rs` |
+| client 判自己掉线 | `NetLink::bump_stale` / `stale_ticks` → main 置 `conn_dropped`（冻结世界） | `client/src/netlink.rs` · `main.rs` |
+| 快照生成 | host `set_snapshot` / `broadcast_snapshot`，`SNAPSHOT_EVERY=30` 帧 | `main.rs` · `lockstep.rs` |
+| 重连握手 | `NetLink::try_reconnect`(`ReconnectReq`→`Snapshot`) + `align_after_reconnect`(`Resync`)；host `poll` 处理 `ReconnectReq` | `netlink.rs` · `lockstep.rs` |
+| 帧推进+补发 | `ClientLockstep::step_frame` → `try_advance` + `request_frame` | `lockstep.rs` |
+| Steam 掉线重连 | `steam::poll_steam_reconnect` | `client/src/steam.rs` |
+| Steam 主机迁移/接管 | `steam::poll_steam_migration` · `steam::steam_do_takeover` | `client/src/steam.rs` |
+
+## 代码组织（掉线/重连/迁移）
+- `net/src/lockstep.rs`：传输无关的核心状态机（host/client、掉线判定、快照、补发、`takeover`）。
+- `client/src/steam.rs`：Steam 主线的掉线重连 + 主机迁移 + 接管（`feature=steam` 门控，独立模块便于阅读维护）。
+- `client/src/netlink.rs`：`NetLink<T: Transport>` 客户端连接封装（局域网 UDP + Steam 共用）。
+- `client/src/main.rs`：游戏主循环；局域网(过渡)/单机路径 + Steam 辅助方法（大厅/建房/社交/统计 UI）。
+- `net-steam/`：Steam 传输适配（`session`/`transport_steam`/`lobby`/`stats`）。
+
 ## 0. 核心前提：为什么纯 lockstep 无法直接做重连
 纯 lockstep = 每个端各自跑 World，靠**输入逐位对齐**推进；没有"当前世界快照可下发"的概念（世界在每人脑内）。
 - 掉线者错过若干帧后，它的 World 停在旧处，别人继续前进 → 无法"从当前继续"。
