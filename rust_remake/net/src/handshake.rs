@@ -22,10 +22,7 @@ pub struct HostHandshake<T: Transport> {
     peers: Vec<Option<Peer>>,
     /// 各 player 的稳定身份（u64，Steam=SteamID；局域网=客户端随机）。用于按身份去重/按身份重连取槽。
     identities: Vec<Option<u64>>,
-    /// 各 player 是否已 READY。
-    ready: Vec<bool>,
     pub joined: usize,
-    pub go_sent: bool,
 }
 
 impl<T: Transport> HostHandshake<T> {
@@ -37,9 +34,7 @@ impl<T: Transport> HostHandshake<T> {
             local_base,
             peers: vec![None; total_players],
             identities: vec![None; total_players],
-            ready: vec![false; total_players],
             joined: 0,
-            go_sent: false,
         }
     }
 
@@ -101,58 +96,11 @@ impl<T: Transport> HostHandshake<T> {
         self.identities.get(player_index as usize).copied().flatten()
     }
 
-    /// 收 READY，标记对应 client 已就绪。
-    pub fn poll_ready(&mut self, rcv: &mut [u8]) {
-        let Some(transport) = self.transport.as_mut() else {
-            return;
-        };
-        loop {
-            match transport.recv_from(rcv) {
-                Ok(Some((n, from))) => {
-                    if let Some(Packet::Ready) = Packet::decode(&rcv[..n]) {
-                        if let Some(i) = self.peers.iter().position(|p| *p == Some(from)) {
-                            if i < self.ready.len() {
-                                self.ready[i] = true;
-                            }
-                        }
-                    }
-                }
-                Ok(None) => break,
-                _ => break,
-            }
-        }
-    }
-
-    /// 是否所有 client 都已 READY。
-    pub fn all_ready(&self) -> bool {
-        let start = self.local_base as usize;
-        (start..self.total).all(|i| self.ready[i])
-    }
-
-    /// 广播 GO（带起始 seq=0）给所有 client。
-    pub fn broadcast_go(&mut self) -> u64 {
-        let Some(transport) = self.transport.as_mut() else {
-            return 0;
-        };
-        let pkt = Packet::Go { start_seq: 0 };
-        let enc = pkt.encode();
-        let peers: Vec<Peer> = self.peers.iter().flatten().copied().collect();
-        for p in peers {
-            let _ = transport.send_to(&enc, &p);
-        }
-        self.go_sent = true;
-        0
-    }
-
     /// 释放 transport，交由上层（HostLockstep）使用。
     pub fn into_transport(mut self) -> T {
         self.transport.take().expect("transport already taken")
     }
 
-    /// 取某 player 的 peer（供补发/广播由 lockstep 内部记录，这里供可选用）。
-    pub fn peer_of(&self, player_index: u8) -> Option<Peer> {
-        self.peers.get(player_index as usize).copied().flatten()
-    }
 }
 
 /// client 侧建连/统一握手。
@@ -207,35 +155,6 @@ impl<T: Transport> ClientHandshake<T> {
             }
             Ok(None) => Ok(false),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(false),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// 发 READY。
-    /// （注：此后 transport 通常会移交给 lockstep；README 发送改由 lockstep 的 send_ctrl 完成。）
-    pub fn send_ready(&mut self, host: &Peer) -> io::Result<()> {
-        let Some(t) = self.transport.as_mut() else {
-            return Err(io::Error::other("transport taken"));
-        };
-        t.send_to(&Packet::Ready.encode(), host)?;
-        Ok(())
-    }
-
-    /// 收 GO（拿起始 seq）。未到返回 None。
-    pub fn recv_go(&mut self, rcv: &mut [u8]) -> io::Result<Option<u64>> {
-        let Some(t) = self.transport.as_mut() else {
-            return Ok(None);
-        };
-        match t.recv_from(rcv) {
-            Ok(Some((n, _))) => {
-                if let Some(Packet::Go { start_seq }) = Packet::decode(&rcv[..n]) {
-                    Ok(Some(start_seq))
-                } else {
-                    Ok(None)
-                }
-            }
-            Ok(None) => Ok(None),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(e),
         }
     }
