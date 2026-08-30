@@ -77,7 +77,9 @@ pub enum Packet {
     /// client→host：就绪状态变更（`index`=玩家序号，`ready`=是否就绪；可反复 toggle 供取消就绪）。
     PlayerReady { index: u8, ready: bool },
     /// host→client：房间就绪状态快照（含 host 槽 0）。`entries` = 各玩家 `(序号, ready)`。
-    RosterReady { entries: Vec<(u8, bool)> },
+    /// `manual_ms` = host「不满员手动倒计时」的剩余毫秒（host 按回车确认后广播）；0 = 无手动倒计时。
+    /// 折进同一包随心跳每帧原子下发，避免独立小包在 Steam P2P 下丢包导致 client 看不到倒计时。
+    RosterReady { entries: Vec<(u8, bool)>, manual_ms: u16 },
     /// host→client：全体就绪，进入开局配置菜单。`seq` 为 host 的起始帧号（作填充，避免 Steam P2P 丢过小的包）。
     StartConfig { seq: u64 },
     /// client→host：房间阶段状态包：`index`（玩家序号）+ `ready`（是否就绪）+ `build_done`（是否已选好技能/配完开局）+
@@ -177,8 +179,8 @@ impl Packet {
                 v.extend_from_slice(&seq.to_be_bytes());
                 v
             }
-            Packet::RosterReady { entries } => {
-                let mut v = Vec::with_capacity(1 + 1 + entries.len() * 2);
+            Packet::RosterReady { entries, manual_ms } => {
+                let mut v = Vec::with_capacity(1 + 1 + entries.len() * 2 + 2);
                 v.push(TAG_ROSTER_READY);
                 v.push(entries.len() as u8);
                 let mut sorted: Vec<(u8, bool)> = entries.clone();
@@ -187,6 +189,7 @@ impl Packet {
                     v.push(i);
                     v.push(if r { 1 } else { 0 });
                 }
+                v.extend_from_slice(&manual_ms.to_be_bytes());
                 v
             }
             Packet::RoomState { index, ready, build_done, input_bytes } => {
@@ -339,8 +342,13 @@ impl Packet {
                     entries.push((buf[pos], buf[pos + 1] != 0));
                     pos += 2;
                 }
-                let entries = Packet::RosterReady { entries };
-                Some(entries)
+                // 尾部 2 字节 = 手动倒计时剩余毫秒（无则 0，兼容极短/旧包）。
+                let manual_ms = if buf.len() >= pos + 2 {
+                    u16::from_be_bytes([buf[pos], buf[pos + 1]])
+                } else {
+                    0
+                };
+                Some(Packet::RosterReady { entries, manual_ms })
             }
             TAG_ROOM_STATE if buf.len() >= 5 => {
                 let index = buf[1];
@@ -416,7 +424,7 @@ mod tests {
             Packet::ReconnectReq { identity: 123456, last_known_seq: 123 },
             Packet::PlayerReady { index: 2, ready: true },
             Packet::StartConfig { seq: 456 },
-            Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], },
+            Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], manual_ms: 5000 },
             Packet::RoomState { index: 1, ready: true, build_done: true, input_bytes: vec![1, 2, 3, 4] },
             Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
             Packet::Resync { seq: 789 },
