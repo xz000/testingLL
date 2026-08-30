@@ -29,7 +29,7 @@
 
 ## 代码组织（掉线/重连/迁移）
 - `net/src/lockstep.rs`：传输无关的核心状态机（host/client、掉线判定、快照、补发、`takeover`）。
-- `client/src/steam.rs`：Steam 主线的掉线重连 + 主机迁移 + 接管（`feature=steam` 门控，独立模块便于阅读维护）。
+- `client/src/steam.rs`：Steam 主线的**逻辑类**方法（掉线/重连/迁移/接管、presence、社交/状态、好友/会话），`feature=steam` 门控，独立模块便于阅读维护；UI/大厅/渲染长方法仍留在 `main.rs`。
 - `client/src/netlink.rs`：`NetLink<T: Transport>` 客户端连接封装（局域网 UDP + Steam 共用）。
 - `client/src/main.rs`：游戏主循环；局域网(过渡)/单机路径 + Steam 辅助方法（大厅/建房/社交/统计 UI）。
 - `net-steam/`：Steam 传输适配（`session`/`transport_steam`/`lobby`/`stats`）。
