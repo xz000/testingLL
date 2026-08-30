@@ -2261,10 +2261,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let damage = stats.damage;
                 let kick = stats.push_power;
                 let kick_time = stats.push_time;
-                // 施法者自残：扣到 self_stay（若当前更低则不扣）
+                // 施法者自残：对照 Unity `GetHurt(min(10, hp-1))`——最多自扣 10 血、保底留 self_stay(1) 血。
+                // （旧实现把施法者固定扣到 1 血，高血量时过伤、与 Unity 不符。）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     if p.hp > self_stay {
-                        p.hp = self_stay.max(Fix64::ZERO);
+                        let dmg = (p.hp - self_stay).min(Fix64::from_num(10));
+                        p.hp = (p.hp - dmg).max(Fix64::ZERO);
                     }
                 }
                 // 范围内其他敌人：伤害 + 沿连线踢开
@@ -3849,7 +3851,39 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[1].hp < world.players[1].max_hp, "自爆应伤到范围内敌人");
-        assert!(world.players[0].hp <= Fix64::from_num(1.1), "施法者应扣到残血");
+        // Unity：GetHurt(min(10, hp-1))，满血(100)自爆应最多自扣 10 → 剩 90，而非被固定扣到 1 血。
+        let expected = world.players[0].max_hp - Fix64::from_num(10);
+        assert!(
+            (world.players[0].hp - expected).abs() < Fix64::from_num(0.01),
+            "施法者应最多自扣 10 血（Unity min(10,hp-1)），当前 {:?} 预期 {expected:?}",
+            world.players[0].hp
+        );
+        assert!(world.players[0].hp > Fix64::from_num(80.0), "自爆不应再把满血施法者打到 1 血");
+    }
+
+    #[test]
+    fn f_self_explode_low_hp_floor_is_self_stay() {
+        // Unity 低血量分支：GetHurt(min(10, hp-1))，当 hp<=11 时扣 hp-1 → 保底留 1 血。
+        let mut world = World::new(2, 93);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].hp = Fix64::from_num(5);
+        world.players[1].pos = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO); // 远离自爆，只测施法者自残
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::Test03, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..80 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.players[0].hp > Fix64::ZERO && world.players[0].hp <= Fix64::from_num(1.1),
+            "低血量(5)自爆应保底留 1 血（Unity 扣 hp-1），当前 {:?}",
+            world.players[0].hp
+        );
     }
 
     #[test]
