@@ -2378,12 +2378,18 @@ impl event::EventHandler for Game {
                                 false
                             }
                         };
-                    if client_side {
-                        eprintln!("[meta] round {} learning done -> ClientWait (config sync)", self.meta.round);
-                        self.net_cfg = NetCfgSync::ClientWait;
-                    } else if host_side {
-                        eprintln!("[meta] round {} learning done -> HostGather (config sync)", self.meta.round);
-                        self.net_cfg = NetCfgSync::HostGather;
+                    if client_side || host_side {
+                        // 进入配置同步前，清掉上一局残留的移动目标/施法请求：否则配置同步期间会随
+                        // 输入上行传给 host（host 产帧后用它设 move_target）→ 下一局角色走向上一局目标。
+                        self.player_target = None;
+                        self.pending_cast = None;
+                        let sync = if client_side {
+                            NetCfgSync::ClientWait
+                        } else {
+                            NetCfgSync::HostGather
+                        };
+                        eprintln!("[meta] round {} learning done -> {} (config sync)", self.meta.round, if client_side { "ClientWait" } else { "HostGather" });
+                        self.net_cfg = sync;
                     } else {
                         eprintln!("[meta] round {} learning done -> next round (single)", self.meta.round);
                         self.teardown_round_end();
