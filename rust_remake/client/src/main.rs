@@ -1994,7 +1994,11 @@ impl Game {
                 let cx = sw / 2.0;
                 let mut y = sh * 0.18;
 
-                let title = format!("第 {} / {} 局结束 - 学习阶段", self.meta.round, self.meta.config.total_rounds);
+                let title = if self.meta.is_first_config() {
+                    "开局配置 - 配置技能".to_string()
+                } else {
+                    format!("第 {} / {} 局结束 - 学习阶段", self.meta.round, self.meta.config.total_rounds)
+                };
                 draw_text(canvas, ctx, &title, 34.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
                 y += 64.0;
 
@@ -2252,7 +2256,8 @@ impl event::EventHandler for Game {
                         // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
                         eprintln!("[menu] -> Solo");
                         self.app = AppState::Solo;
-                        self.pre_game_config = true; // 先进开局配置
+                        self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
+                        self.pre_game_config = true;
                     }
                     1 => {
                         eprintln!("[menu] 局域网建设中：需命令行 --host <port> / --join <host:port>");
@@ -2292,58 +2297,6 @@ impl event::EventHandler for Game {
             return Ok(());
         }
 
-        // 开局前的技能配置（Solo 试验场 / 局域网）：选/升级技能，按 Space/O 开始第一局。
-        // 开局前的技能配置（Solo 试验场 / 局域网）：选/升级技能，按 Space/O 开始第一局。
-        // 注意：一旦进入配置同步（net_cfg != Idle，例如 host 按空格后 HostGather / client 上报后 ClientWait），
-        // 本块必须【放行】到下面 Fighting 分支的同步逻辑，否则会一直 return、同步永不推进 → 卡死。
-        if self.pre_game_config && self.app != AppState::MainMenu && self.net_cfg == NetCfgSync::Idle {
-            // 局域网 host：开局配置阶段就同步接收 client 加入（不必等按了 Space 才开始收人），
-            // 否则先到的 client 会因 host 未 poll_join 而握手超时。
-            self.poll_host_join_phase();
-            // Steam：配置阶段独立处理（心跳 + 选技能 + 配完确认 + 统一开战判定）。
-            // 不再让各端按 o 各自进对局（修 1）：host 收齐所有端 build_done 才产 seq=0 首帧统一开战；
-            // client 收到 host 首帧才进对局（首帧=统一开始信号）。开战后 `pre_game_config` 置 false，本块自动放行到 Fighting。
-            #[cfg(feature = "steam")]
-            if self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
-                self.steam_config_update(ctx)?;
-                self.accumulator = 0.0;
-                return Ok(());
-            }
-            use ggez::input::keyboard::Key;
-            use winit::keyboard::NamedKey;
-            // 配置界面：按 Esc 返回主菜单（单机/局域网）。
-            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
-                eprintln!("[pre-game] Esc -> back to main menu");
-                self.reset_to_main_menu();
-                self.accumulator = 0.0;
-                return Ok(());
-            }
-            self.poll_learning(ctx);
-            self.poll_growth_buy(ctx);
-            // 空格（确认）开始第一轮；空格在本环境实测不可靠，故加 P 兜底，再补回车。
-            let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into()));
-            // 单机：超时自动用默认配置开始（防止窗口无焦点/按键收不到导致卡死）。
-            let auto_done = if self.app == AppState::Solo && self.net_link.is_none() && self.net_host.is_none() && self.net_host_ls.is_none() {
-                self.pre_game_timer -= dt;
-                self.pre_game_timer <= 0.0
-            } else {
-                self.pre_game_timer = PRE_GAME_TIMEOUT_SECS; // 联网：不自动开始，重置计时供其它判断用
-                false
-            };
-            if done {
-                self.finish_pre_game();
-            } else if auto_done {
-                eprintln!("[solo] pre-game timeout -> auto-start with defaults");
-                self.finish_pre_game();
-            }
-            self.accumulator = 0.0;
-            return Ok(());
-        }
-
         match self.meta.phase {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
@@ -2367,13 +2320,68 @@ impl event::EventHandler for Game {
                 // 学习阶段：轮询购买升级输入 + 计时
                 self.poll_learning(ctx);
                 self.poll_growth_buy(ctx);
+                // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
+                if self.meta.is_first_config() && self.net_host_ls.is_none() {
+                    self.poll_host_join_phase();
+                }
+
+                // 单机试验场首局：保留手动开始（空格/回车/P），不走倒计时。
+                let solo_first = self.app == AppState::Solo
+                    && self.meta.is_first_config()
+                    && !self.steam_active()
+                    && self.net_link.is_none()
+                    && self.net_host.is_none()
+                    && self.net_host_ls.is_none();
+                if solo_first {
+                    use ggez::input::keyboard::Key;
+                    use winit::keyboard::NamedKey;
+                    let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
+                        || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
+                        || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()))
+                        || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
+                        || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into()));
+                    // 超时兜底：窗口失焦/按键收不到时仍能开（手动仍是首选，超时仅防卡死）。
+                    self.pre_game_timer -= dt;
+                    let auto_done = self.pre_game_timer <= 0.0;
+                    if done || auto_done {
+                        eprintln!("[solo] first config {}", if auto_done { "timeout -> auto-start" } else { "manual start" });
+                        self.meta.finish_first_round_config();
+                        self.teardown_round_end();
+                        self.pre_game_config = false;
+                    }
+                    self.accumulator = 0.0;
+                    return Ok(());
+                }
+
+                // 其余（联机首局/局间、单机局间）：倒计时；归零后单机直接下一局、联机进配置同步。
                 let now = self.meta.tick_learning(dt.min(0.25));
-                // 若学习结束，准备进入下一局：联网需先做「配置同步」
                 if self.meta.phase == MatchPhase::Fighting {
-                    if self.net_link.is_some() {
+                    let client_side = self.net_link.is_some()
+                        || {
+                            #[cfg(feature = "steam")]
+                            {
+                                self.steam_cli_ls.is_some()
+                            }
+                            #[cfg(not(feature = "steam"))]
+                            {
+                                false
+                            }
+                        };
+                    let host_side = self.net_host_ls.is_some()
+                        || {
+                            #[cfg(feature = "steam")]
+                            {
+                                self.steam_host_ls.is_some()
+                            }
+                            #[cfg(not(feature = "steam"))]
+                            {
+                                false
+                            }
+                        };
+                    if client_side {
                         eprintln!("[meta] round {} learning done -> ClientWait (config sync)", self.meta.round);
                         self.net_cfg = NetCfgSync::ClientWait;
-                    } else if self.net_host_ls.is_some() {
+                    } else if host_side {
                         eprintln!("[meta] round {} learning done -> HostGather (config sync)", self.meta.round);
                         self.net_cfg = NetCfgSync::HostGather;
                     } else {
@@ -2827,9 +2835,6 @@ impl event::EventHandler for Game {
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         if self.app == AppState::MainMenu {
             return self.draw_menu(ctx);
-        }
-        if self.pre_game_config {
-            return self.draw_pre_game(ctx);
         }
         self.draw_scene(ctx)
     }
@@ -3416,7 +3421,8 @@ impl Game {
         }
         if entered_config {
             self.steam_in_lobby = false;
-            self.pre_game_config = true; // 进开局配置菜单（技能/点数）。
+            self.meta.begin_first_round_config(); // 首局进配置学习（倒计时归零开战）
+            self.pre_game_config = true; // 供 Fighting 分支 stage_first 判断（首局重建 world）
             // 本端进入配置：build_done 由玩家在配置阶段重新按 o 确认（重新收集）。
             // （不再对 host 侧 client build_done 做 reset：client 会在其进入配置、按 o 后再次上报 build_done=true，
             //  避免“host 进配置晚于 client 已配完、reset 把已上报的 build_done 清掉导致 host 永远等不到”。）
@@ -3908,117 +3914,9 @@ impl Game {
         self.accumulator = 0.0;
     }
 
-    /// Steam 配置阶段统一入口：每帧
-    /// - 心跳：pump 回调 + 双向收发，防止 P2P 空闲被拆；
-    /// - 配置输入：本端未配完时才允许选技能/买成长，按空格/o 确认配完（build_done）；
-    /// - 开战判定（修 1，局域网式统一开始）：
-    ///   - host：本端配完 && 所有 client 配完 → 产帧开战；
-    ///   - client：本端配完 && 收到 host 首帧（pump_frames 感知，不推进 expect_seq）→ 进入对局。
-    ///
-    /// 返回非必要：本函数自行把 `pre_game_config` 置 false 切换对局；上层据此提前 return。
-    #[cfg(feature = "steam")]
-    fn steam_config_update(&mut self, ctx: &Context) -> GameResult {
-        use ggez::input::keyboard::Key;
-        // 先取心跳字节（借用 self.meta/self.world 前），避免与 cli/host 的 &mut 借用冲突。
-        let k = game_core::netcode::encode_player_input(&self.local_player_input());
-
-        // 配置输入：本端未配完才允许；配完即锁定（不再响应选技能/成长）。
-        // 确认配好用 [P]（配置界面 p 空闲、语义明确；空格在本环境实测不可靠，且不再用 o）。
-        if !self.steam_build_done {
-            self.poll_learning(ctx);
-            self.poll_growth_buy(ctx);
-            let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()));
-            if confirm {
-                self.steam_build_done = true;
-                eprintln!("[steam] build done -> waiting for all players configured, then start match");
-            }
-        }
-
-        let mut enter_sync: Option<NetCfgSync> = None;
-        if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
-            // client：上行（在场/就绪/配好）心跳 + pump host 包（驱动回调/保活/缓存 host 帧）。
-            let _ = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &k);
-            let mut krcv = vec![0u8; 4096];
-            if self.steam_build_done {
-                // 本端已配完：进入 ClientWait，上报我的 PlayerCfg 并以 host 广播的 PlayerCfgAll 统一开战。
-                eprintln!("[steam-client] build done -> config sync (ClientWait)");
-                enter_sync = Some(NetCfgSync::ClientWait);
-            } else {
-                // 未配完：pump 保活（不推进 expect_seq，避免分叉）。
-                let _ = cli.pump_frames(&mut krcv).unwrap_or(false);
-            }
-            self.steam_cli_ls = Some(cli);
-        } else if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
-            // host：收各端心跳 + 广播就绪快照当心跳，双向保活。
-            let mut krcv = vec![0u8; 4096];
-            host.poll(&mut krcv);
-            host.broadcast_roster_ready(self.steam_local_ready);
-            if self.steam_build_done && host.all_clients_build_done() {
-                // 本端 + 所有 client 都配完：进入 HostGather，收齐配置并广播 PlayerCfgAll 后统一开战。
-                eprintln!("[steam-host] all players configured -> config sync (HostGather)");
-                enter_sync = Some(NetCfgSync::HostGather);
-            } else if self.steam_build_done {
-                // 诊断（节流）：我配完了但还没收齐 client，打印“等谁”的配好/在场计数，便于真机定位。
-                self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
-                if self.steam_lobby_wait_ticks % 120 == 1 {
-                    let done = host.build_done_clients_count();
-                    let pres = host.present_clients_count();
-                    let exp = host.expected_clients();
-                    eprintln!(
-                        "[steam-host] config waiting: my_build_done={} clients_build_done={done}/{exp} present={pres}/{exp}",
-                        self.steam_build_done
-                    );
-                }
-            }
-            self.steam_host_ls = Some(host);
-        }
-
-        if let Some(sync) = enter_sync {
-            self.steam_enter_config_sync(sync);
-        }
-        // Rich Presence：配置阶段 → “正在配置技能”（仍带 connect，好友仍可加入房间）。
-        self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
-        Ok(())
-    }
-
-    /// Steam 进入配置同步阶段（对齐局域网 HostGather/ClientWait）：把 phase 切到 Fighting、设 net_cfg，
-    /// 让下一帧走 Fighting 分支的 cfg 同步（收齐 PlayerCfg、广播、两端 apply 后自然统一开战）。
-    /// 这样既同步了各端技能配置（两端 world 逐位一致），又同步了对局开始。
-    #[cfg(feature = "steam")]
-    fn steam_enter_config_sync(&mut self, sync: NetCfgSync) {
-        if self.meta.phase != MatchPhase::Fighting {
-            self.meta.enter_first_round();
-        }
-        self.net_cfg = sync;
-        // 保持 pre_game_config=true；配置同步完成后（Fighting 分支里）再置 false。
-    }
-
-    fn finish_pre_game(&mut self) {
-        self.meta.enter_first_round(); // Fighting，round 保持 1
-        #[cfg(feature = "steam")]
-        if self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
-            // Steam：对局开始由 `steam_config_update` 的「所有端配完统一开始」驱动（修 1），
-            // 这里仅作兜底（异常路径）：进入配置同步，下一帧由 Fighting 分支的 cfg 同步完成开战。
-            let sync = if self.steam_host_ls.is_some() { NetCfgSync::HostGather } else { NetCfgSync::ClientWait };
-            eprintln!("[steam] pre-game finish fallback -> entering config sync");
-            self.steam_enter_config_sync(sync);
-            return;
-        }
-        if self.net_link.is_some() {
-            eprintln!("[meta] pre-game done -> ClientWait config sync");
-            self.net_cfg = NetCfgSync::ClientWait;
-        } else if self.net_host_ls.is_some() {
-            eprintln!("[meta] pre-game done -> HostGather config sync");
-            self.net_cfg = NetCfgSync::HostGather;
-        } else {
-            self.teardown_round_end();
-            self.pre_game_config = false;
-            eprintln!("[meta] pre-game config done -> round {} Fighting", self.meta.round);
-        }
-    }
-
     /// 开局前配置面板：显示当前绑定/等级/金币，提示按 Space 开始第一轮。
+    /// TODO(绘制统一，阶段3)：首局已改走 Learning 界面，本函数待并入 `draw_meta_overlay` 后删除。
+    #[allow(dead_code)]
     fn draw_pre_game(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         let (sw, sh) = ctx.gfx.drawable_size();
