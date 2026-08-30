@@ -2516,8 +2516,23 @@ impl event::EventHandler for Game {
                                     self.steam_my_index = me_new;
                                     eprintln!("[steam-client] reindexed me orig={me_orig} -> new={me_new}");
                                 }
+                                // 诊断：定位首次配置技能未生效——对比 host 广播的 cfg、apply 后 profile、teardown 后 world player 的技能等级。
+                                let diag_me = self.self_index();
+                                for (idx, bytes) in &all {
+                                    if *idx == diag_me as u8 {
+                                        if let Some(cfg) = game_core::progress::PlayerConfig::decode(bytes) {
+                                            eprintln!("[diag] host cfg for me={diag_me}: skill_levels={:?}", &cfg.skill_levels[..cfg.skill_levels.len().min(8)]);
+                                        }
+                                    }
+                                }
                                 self.apply_player_cfgs(&all);
+                                if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == diag_me) {
+                                    eprintln!("[diag] after apply: me={diag_me} profile skill_levels={:?}", &pr.skill_levels[..pr.skill_levels.len().min(8)]);
+                                }
                                 self.teardown_round_end();
+                                if let Some(p) = self.world.players.get(diag_me as usize) {
+                                    eprintln!("[diag] after teardown: me={diag_me} world player skill_levels={:?}", &p.skill_levels[..p.skill_levels.len().min(8)]);
+                                }
                                 self.net_cfg = NetCfgSync::Idle;
                                 self.pre_game_config = false;
                                 self.accumulator = 0.0;
