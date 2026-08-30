@@ -8,10 +8,10 @@
 
 ## ⚠ 已知问题（待修，2026-08-30 真机双机测试发现）
 - **client 开局配置界面选技能后菜单不显示「已选」**：
-  - 现象：Steam 双机（client）在学习技能/配置菜单里选中了技能，但菜单没有显示当前选中的技能 / 绑定标记。
+  - 现象：Steam 双机，client 在学习技能/配置菜单里选中了技能，但菜单没有显示当前选中的技能 / 绑定标记；**host 正常，只有 client 显示有问题**。
+  - 更新（2026-08-30 复测）：选树大小写已修（2f3638e，`char_just`），但此显示问题仍存在，**与大小写无关**。
   - 疑似根因：`draw_pre_game` 左栏的「当前选中树」与 `[已选]` 标记依赖 `self.learn_tree_key` 与 `pr.bound_skill`；
-    「选中了却不显示」多半是 `poll_learning` 的字母键没被响应（`learn_tree_key` 未更新）——历史上 Steam 双机多次出现窗口无焦点/按键事件收不到的问题；
-    也可能是绑定状态与显示不同步。**需复现定位**。
+    host 正常而 client 不行，更可能指向 client 侧 `learn_tree_key`/绑定状态没刷新或显示分支与 host 不同——**需复现定位**。
   - 涉及：`client/src/main.rs` 的 `draw_pre_game` / `poll_learning` / `steam_config_update`。
   - 优先级：低（不影响对局，只影响配置界面提示显示）。
   - 状态：待修。
