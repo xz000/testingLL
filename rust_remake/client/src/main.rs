@@ -386,6 +386,10 @@ struct Game {
     /// 若不额外记录，倒计时会在下一帧被复位条件立刻清掉。
     #[cfg(feature = "steam")]
     steam_manual_countdown: bool,
+    /// Steam：host 广播的「不满员手动倒计时」剩余毫秒（client 端显示倒计时/最后 LOCK 秒锁定取消用）。
+    /// 0=未激活。随 RosterReady 心跳每帧下发，client 持久记录，避免没收包那一帧回退闪烁。
+    #[cfg(feature = "steam")]
+    steam_manual_ms: u16,
     /// 联网模式：开房作 host，建连/握手阶段（自身=player 0）。
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
@@ -813,6 +817,8 @@ impl Game {
             steam_manual_start_pending: false,
             #[cfg(feature = "steam")]
             steam_manual_countdown: false,
+            #[cfg(feature = "steam")]
+            steam_manual_ms: 0,
             #[cfg(feature = "steam")]
             steam_friend_list: false,
             #[cfg(feature = "steam")]
@@ -1780,7 +1786,15 @@ impl Game {
         draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: flow_y }, true)?;
         // 倒计时提示：优先区分「不满员由房主手动确认」与「满员全员就绪」，否则会显示成误导的"全员就绪"。
         if self.steam_manual_countdown {
-            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：房主已确认，{:.0} 秒后进配置（按 U 可取消）", self.steam_countdown.max(0.0)), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+            // host 本机：不满员手动倒计时（本地直接数秒）。
+            let secs = self.steam_countdown.max(0.0);
+            let hint = if secs <= STEAM_COUNTDOWN_LOCK_SECS { "即将开始（不可取消）" } else { "按 U 可取消" };
+            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：房主已确认，{secs:.0} 秒后进配置（{hint}）"), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+        } else if self.steam_manual_ms > 0 {
+            // client 端：收到 host 广播的不满足手动倒计时剩余毫秒，跨端显示同一倒计时。
+            let secs = (self.steam_manual_ms as f32) / 1000.0;
+            let hint = if secs <= STEAM_COUNTDOWN_LOCK_SECS { "即将开始（不可取消）" } else { "按 U 可取消" };
+            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：房主已确认，{secs:.0} 秒后进配置（{hint}）"), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else if self.steam_all_ready {
             draw_text(canvas, ctx, &format!("全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）", self.steam_countdown.max(0.0)), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else if self.steam_host_ls.is_some() && self.steam_manual_start_pending {
@@ -2488,7 +2502,7 @@ impl event::EventHandler for Game {
                             // 保活：HostGather 阶段也收 client 心跳（RoomState，更新在场/配好）+ 广播就绪快照当心跳，双向保活。
                             let mut k_rcv = vec![0u8; 4096];
                             host.poll(&mut k_rcv);
-                            host.broadcast_roster_ready(self.steam_local_ready);
+                            host.broadcast_roster_ready(self.steam_local_ready, 0);
                             let mut g_rcv = vec![0u8; 8192];
                             host.poll_cfg(&mut g_rcv);
                             let cfg_bytes = self.local_player_cfg();
@@ -3055,6 +3069,7 @@ impl Game {
             self.steam_countdown = 0.0;
             self.steam_manual_start_pending = false;
             self.steam_manual_countdown = false;
+            self.steam_manual_ms = 0;
             self.steam_roster_ready = Vec::new();
             self.steam_roster_all_ready = false;
             self.steam_all_ready = false;
@@ -3373,7 +3388,9 @@ impl Game {
         }
         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
         // 锁定窗口内忽略「按 U 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
-        let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
+        // client 端不满员手动倒计时用 host 广播的 manual_ms 判锁定，最后 LOCK 秒内不可按 U 取消（与 host 端一致）。
+        let locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
+            || (self.steam_cli_ls.is_some() && self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STEAM_COUNTDOWN_LOCK_SECS);
         if ready_pressed && !locked && !panel_open {
             self.steam_local_ready = !self.steam_local_ready;
             if !self.steam_local_ready {
@@ -3410,10 +3427,12 @@ impl Game {
                     eprintln!("[steam-client] host says all ready -> config menu");
                     entered_config = true;
                 }
-                if let Some(entries) = roster {
+                if let Some((entries, manual_ms)) = roster {
                     self.steam_lobby_silent_ticks = 0; // 收到 host 广播 → 心跳正常。
                     self.steam_roster_ready = entries.clone();
-                    eprintln!("[steam-client] roster ready snapshot: {entries:?}");
+                    // 持久记录 host 广播的手动倒计时剩余毫秒（仅收到新快照时更新，避免没收到包的帧回退闪烁）。
+                    self.steam_manual_ms = manual_ms;
+                    eprintln!("[steam-client] roster ready snapshot: {entries:?} manual_ms={manual_ms}");
                     let roster_cnt = self.world.players.len();
                     // 持久记录：仅在收到新快照时更新；若本帧恰好没收到广播，沿用上次快照，
                     // 避免“按 U 就绪 / 倒计时”在没收到广播的帧回退 false 而闪烁。
@@ -3425,7 +3444,10 @@ impl Game {
             // client 端就绪倒计时：与 host 一致的缓冲，避免“一看到全员就绪就抢先进配置”。
             // 正常路径由 host 倒计时归零广播 StartConfig（got_cfg）触发；此处兜底：若 StartConfig 小包被丢，
             // 用可靠 RosterReady 启动同样长度的倒计时，归零后同样进配置，保证两端同时开始。
-            let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
+            // 不满员手动倒计时期间 client 用 host 广播的 manual_ms 判锁定（最后 LOCK 秒内不可按 U 取消），
+            // 与 host 端锁定窗口一致，防止最后两秒有人取消导致两端不同步。
+            let locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
+                || (self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STEAM_COUNTDOWN_LOCK_SECS);
             if !roster_all_ready && !locked {
                 self.steam_was_all_ready = false;
                 self.steam_countdown = 0.0;
@@ -3457,7 +3479,12 @@ impl Game {
             let underfull_ready = !full && self.steam_local_ready && present > 0 && host.ready_clients_count() == present;
             self.steam_manual_start_pending = underfull_ready && !self.steam_manual_countdown;
             // 每帧广播就绪状态快照，让各端都能看到所有成员的就绪状态（多人一致界面）。
-            host.broadcast_roster_ready(self.steam_local_ready);
+            let manual_ms = if self.steam_manual_countdown {
+                (self.steam_countdown * 1000.0).ceil() as u16
+            } else {
+                0
+            };
+            host.broadcast_roster_ready(self.steam_local_ready, manual_ms);
             // —— 不满员路径：host 按回车**启动倒计时**（不再立即开始）。
             // 给其他人一个可见的缓冲，期间任何人按 U 取消就绪都会撤销这次倒计时；
             // 归零后与满员路径共用同一段「set_participants + broadcast_start_config」。
@@ -3990,6 +4017,7 @@ impl Game {
         self.steam_was_all_ready = false;
         self.steam_manual_start_pending = false;
         self.steam_manual_countdown = false;
+        self.steam_manual_ms = 0;
         self.steam_roster_ready = Vec::new();
         self.steam_roster_all_ready = false;
         self.steam_all_ready = false;

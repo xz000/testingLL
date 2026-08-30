@@ -241,7 +241,8 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 广播房间「实时就绪状态快照」给所有 client，使其显示所有成员的就绪状态（多人一致界面）。
     /// `host_ready` = host 自身（槽 0）当前是否就绪。
-    pub fn broadcast_roster_ready(&mut self, host_ready: bool) {
+    /// `manual_ms` = host「不满员手动倒计时」的剩余毫秒（host 按回车确认后随心跳下发；0=无手动倒计时）。
+    pub fn broadcast_roster_ready(&mut self, host_ready: bool, manual_ms: u16) {
         let mut entries: Vec<(u8, bool)> = Vec::with_capacity(self.expected + 1);
         if self.local_base > 0 {
             entries.push((0, host_ready));
@@ -252,7 +253,7 @@ impl<T: Transport> HostLockstep<T> {
         if entries.is_empty() {
             return;
         }
-        let pkt = Packet::RosterReady { entries };
+        let pkt = Packet::RosterReady { entries, manual_ms };
         let enc = pkt.encode();
         for peer in self.client_peers.iter().flatten() {
             let _ = self.transport.send_to(&enc, peer);
@@ -870,12 +871,13 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 尝试收 host 的房间就绪状态快照（多人一致界面）；无则 None。
-    pub fn recv_roster_ready(&mut self, rcv: &mut [u8]) -> io::Result<Option<Vec<(u8, bool)>>> {
+    /// 返回 `(entries, manual_ms)`：`manual_ms` = host 不满员手动倒计时剩余毫秒（0=未激活）。
+    pub fn recv_roster_ready(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<(u8, bool)>, u16)>> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) => {
-                    if let Some(Packet::RosterReady { entries }) = Packet::decode(&rcv[..n]) {
-                        return Ok(Some(entries));
+                    if let Some(Packet::RosterReady { entries, manual_ms }) = Packet::decode(&rcv[..n]) {
+                        return Ok(Some((entries, manual_ms)));
                     }
                 }
                 Ok(None) => return Ok(None),
@@ -885,9 +887,10 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 一次性读 host 房间阶段的入包，并分类返回：`(是否收到 StartConfig, 最新 RosterReady 快照)`。
+    /// 返回的 RosterReady 快照为 `(entries, manual_ms)`（`manual_ms` = host 不满员手动倒计时剩余毫秒，0=未激活）。
     /// 与分开的 `recv_start_config`/`recv_roster_ready` 不同，这里**单次排空队列**逐步分类，
     /// 不会出现“先读 RosterReady 的循环把 StartConfig 当非目标包消费掉”导致进不了配置菜单。
-    pub fn recv_room_inbox(&mut self, rcv: &mut [u8]) -> io::Result<(bool, Option<Vec<(u8, bool)>>)> {
+    pub fn recv_room_inbox(&mut self, rcv: &mut [u8]) -> io::Result<(bool, Option<(Vec<(u8, bool)>, u16)>)> {
         let mut start_config = false;
         let mut roster = None;
         loop {
@@ -896,7 +899,7 @@ impl<T: Transport> ClientLockstep<T> {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::StartConfig { .. } => start_config = true,
-                            Packet::RosterReady { entries } => roster = Some(entries),
+                            Packet::RosterReady { entries, manual_ms } => roster = Some((entries, manual_ms)),
                             _ => {}
                         }
                     }
@@ -1252,19 +1255,26 @@ mod tests {
         assert!(host.client_ready(1));
 
         // host 每帧广播 RosterReady 供 client 显示 → client 应收包含槽 0(host)+槽1(client) 的就绪快照。
-        host.broadcast_roster_ready(true);
-        let entries = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
+        host.broadcast_roster_ready(true, 0);
+        let (entries, manual_ms) = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
         assert_eq!(entries, vec![(0, true), (1, true)]);
+        assert_eq!(manual_ms, 0, "未手动倒计时时 manual_ms=0");
+
+        // 不满员手动倒计时：host 按回车后随心跳广播剩余毫秒，client 应收同一数值（跨端同步）。
+        host.broadcast_roster_ready(true, 3200);
+        let (_, manual_ms) = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
+        assert_eq!(manual_ms, 3200, "client 应收 host 广播的手动倒计时剩余毫秒");
 
         // 取消就绪（可撤销）：client 发 PlayerReady(false) → host 不再判全体 ready。
         cli.send_ready_state(false).unwrap();
         host.poll(&mut rcv);
         assert!(!host.all_clients_ready());
 
-        // 广播再发时，client 应看到槽 0 就绪、槽 1 取消。
-        host.broadcast_roster_ready(true);
-        let entries = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
+        // 广播再发时，client 应看到槽 0 就绪、槽 1 取消；取消后手动倒计时重置为 0。
+        host.broadcast_roster_ready(true, 0);
+        let (entries, manual_ms) = cli.recv_roster_ready(&mut rcv).unwrap().expect("client 应收 RosterReady");
         assert_eq!(entries, vec![(0, true), (1, false)]);
+        assert_eq!(manual_ms, 0);
     }
 
     /// 房间「合包」：client 用 `send_room_state(ready, input)` 单包上行，host 一次更新「在场 + 就绪」。
@@ -1352,7 +1362,7 @@ mod tests {
         let mut rcv = [0u8; 4096];
 
         // host 广播：先 roster，再 StartConfig（模拟同一帧到件、且 roster 先到）。
-        let roster_pkt = Packet::RosterReady { entries: vec![(0, true), (1, true)] };
+        let roster_pkt = Packet::RosterReady { entries: vec![(0, true), (1, true)], manual_ms: 4200 };
         let start_pkt = Packet::StartConfig { seq: 0 };
         // 直接把两个包一次性投递给 client（借用 pair 的 transport 投递方向：cli 发→host；host 发需从 host 端投）。
         // 这里我们用 host 的 transport.send_to 会投到 client 的 peer_inbox。
@@ -1361,7 +1371,9 @@ mod tests {
 
         let (got_cfg, roster) = cli.recv_room_inbox(&mut rcv).unwrap();
         assert!(got_cfg, "StartConfig 应被识别");
-        assert_eq!(roster, Some(vec![(0, true), (1, true)]), "RosterReady 也应被识别");
+        let (entries, manual_ms) = roster.expect("RosterReady 也应被识别");
+        assert_eq!(entries, vec![(0, true), (1, true)]);
+        assert_eq!(manual_ms, 4200, "manual_ms 应随 RosterReady 一起分类返回");
     }
 
     /// 配置收集/广播：client 上报 PlayerCfg → host 收齐(含自身) → 广播 PlayerCfgAll → client 收到完整配置。
