@@ -1483,6 +1483,21 @@ impl Game {
             canvas.draw(&fg, graphics::DrawParam::new());
         }
 
+        // 闪电（D1）射线可视化：从起点到命中点/终点画一条亮蓝线（Unity 原版 LineRenderer·Drawline）。
+        if let Some((la, lb, _)) = self.world.lightning_visual {
+            let lax = la.x.to_num::<f32>() * self.scale + self.offset.x;
+            let lay = la.y.to_num::<f32>() * self.scale + self.offset.y;
+            let lbx = lb.x.to_num::<f32>() * self.scale + self.offset.x;
+            let lby = lb.y.to_num::<f32>() * self.scale + self.offset.y;
+            let bolt = Mesh::new_line(
+                &ctx.gfx,
+                &[Point2 { x: lax, y: lay }, Point2 { x: lbx, y: lby }],
+                3.0,
+                Color::from_rgba(150, 210, 255, 230),
+            )?;
+            canvas.draw(&bolt, graphics::DrawParam::new());
+        }
+
         // 飞行物（石头：显影半径提示延时区；幻象假身：淡色假圆）
         for pr in self.world.projectiles.iter() {
             let px = pr.pos.x.to_num::<f32>() * self.scale + self.offset.x;

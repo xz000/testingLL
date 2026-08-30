@@ -302,6 +302,9 @@ pub struct World {
     /// 本局内发生的击杀：(击杀者 id, 被击杀者 id)
     pub(crate) kills_this_round: Vec<(u32, u32)>,
     pub(crate) time: Fix64,
+    /// 瞬态渲染痕迹（仅客户端读取，不参与确定性逻辑/序列化）：闪电射线 (起点, 终点, 剩余显示秒)。
+    /// 每帧 `step` 开头递减剩余时间、归零清空；由 `execute_effects` 的 Lightning 效果设置（Unity 原版约 0.1s），供 client 画线。
+    pub lightning_visual: Option<(Vec2, Vec2, Fix64)>,
 }
 
 impl World {
@@ -332,6 +335,7 @@ impl World {
             eliminated_order: Vec::new(),
             kills_this_round: Vec::new(),
             time: Fix64::ZERO,
+            lightning_visual: None,
         }
     }
 
@@ -343,6 +347,16 @@ impl World {
     pub fn step(&mut self, input: InputSlice, dt: Fix64) {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
+        // 瞬态渲染痕迹：每帧递减剩余显示时间，归零后清空（由本帧施放的闪电效果重新设置并计时）。
+        let expire = if let Some((_, _, rem)) = self.lightning_visual.as_mut() {
+            *rem -= dt;
+            *rem <= Fix64::ZERO
+        } else {
+            false
+        };
+        if expire {
+            self.lightning_visual = None;
+        }
 
         // 0) 先按 clear_queue 清空各玩家队列、按 stop_move 清移动目标，再入队新 shift 指令
         for (p, pi) in self.players.iter_mut().zip(input.iter()) {
@@ -2113,7 +2127,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let dir = towards(ppos, target);
                 let origin = ppos + dir * pradius;
                 let maxd = stats.range;
-                if let Some(hit) = world.raycast_first(origin, dir, maxd, idx) {
+                // 本帧闪电的终点：命中点（玩家/障碍）或射线最大距离处；供 client 画闪电线（Unity 原版 Drawline）。
+                let end = if let Some(hit) = world.raycast_first(origin, dir, maxd, idx) {
                     // 命中点若落在某存活玩家表面 → 命中该玩家（伤害 + 沿射线方向推）。
                     let mut hit_player: Option<u32> = None;
                     for p in world.players.iter() {
@@ -2134,7 +2149,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     // 命中障碍：雷电被阻挡，无额外效果。
-                }
+                    hit
+                } else {
+                    origin + dir * maxd
+                };
+                world.lightning_visual = Some((origin, end, Fix64::from_num(0.1)));
             }
             SkillEffect::Swap { .. } => {
                 // 换位（R3a）：点目标，若目标位置附近有敌人则与之互换位置，否则自身瞬移过去。
@@ -2594,11 +2613,16 @@ mod tests {
             PlayerInput::default(),
         ];
         // 前摇 0.1s，跑足够帧数完成施法。
+        let mut saw_bolt = false;
         for _ in 0..20 {
             world.step(input.clone(), dt);
+            if world.lightning_visual.is_some() {
+                saw_bolt = true; // 闪电射线可视化痕迹至少出现过一次（客户端据此画线）
+            }
         }
         assert_eq!(world.players[0].hp, hp0, "施法者不应自伤");
         assert!(world.players[1].hp < hp1, "雷电应命中路径上的敌人并造成伤害");
+        assert!(saw_bolt, "施放雷电后应设置 lightning_visual（供 client 画闪电线）");
     }
 
     #[test]
