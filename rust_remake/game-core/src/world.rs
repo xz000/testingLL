@@ -231,6 +231,42 @@ pub enum ScatterKind {
     },
 }
 
+/// 没有半径字段的飞行弹体（链镖系 / 撒弹线）用于「撞柱子」判定的碰撞半径。
+/// 取值与直射弹 `Bullet` 的常规半径（0.5~0.6）对齐。
+const PROJ_HIT_RADIUS_FALLBACK: f64 = 0.5;
+
+impl ProjectileKind {
+    /// 该弹体是否参与「撞柱子（静态圆形障碍）」判定，以及判定时用的半径。
+    ///
+    /// 返回 `None` = 不参与：都是**不飞行**的类型——
+    /// `Rock` 是落在目标点的延时爆炸物（不移动）、`Decoy` 是假身、`Beam` 是从施法者伸出的固定射线、
+    /// `Tether` 绑定在目标玩家身上、`Star` 是静态区域、`BindLine` 是两点收拢的线。
+    /// 前三者要做阻挡得改成"截断长度/改落点"，是另一类改动，本次不做。
+    fn obstacle_radius(&self) -> Option<Fix64> {
+        Some(match self {
+            ProjectileKind::Bullet { radius, .. }
+            | ProjectileKind::Missile { radius, .. }
+            | ProjectileKind::Banana { radius, .. }
+            | ProjectileKind::Rolling { radius, .. }
+            | ProjectileKind::BonusBomb { radius, .. }
+            | ProjectileKind::Returner { radius, .. }
+            | ProjectileKind::Gravity { radius, .. }
+            | ProjectileKind::PushBullet { radius, .. }
+            // 回旋镖单独处理：撞柱是**反弹**而不是消失（原版 BoomerangScript 的 MirrorBy），保留原手感。
+            | ProjectileKind::Boomerang { radius, .. } => *radius,
+            ProjectileKind::Chain { .. } | ProjectileKind::ScatterLine { .. } => {
+                Fix64::from_num(PROJ_HIT_RADIUS_FALLBACK)
+            }
+            ProjectileKind::Rock { .. }
+            | ProjectileKind::Decoy { .. }
+            | ProjectileKind::Beam { .. }
+            | ProjectileKind::Tether { .. }
+            | ProjectileKind::Star { .. }
+            | ProjectileKind::BindLine { .. } => return None,
+        })
+    }
+}
+
 /// 静态圆形障碍（原版 demo 里实际用作"墙/柱子"的碰撞体）。
 /// 用圆盘描述，几何与玩家一致，但不参与名次/击杀/死亡判定。
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -885,32 +921,32 @@ impl World {
             }
         }
 
-        // 1b) 回旋镖撞障碍：反射其速度（原版 BoomerangScript 撞墙 MirrorBy）。
+        // 1b) 弹体撞障碍（柱子）。
+        // 旧代码只判了回旋镖，导致火球/滚动火球/导弹/香蕉等**直接穿过柱子**打到后面的人。
+        // 现在对所有「会飞行的弹体」统一判定：
+        //   - 回旋镖：沿接触法线镜向反弹（原版 BoomerangScript 撞墙 MirrorBy），保留原有手感；
+        //   - 其余：被柱子**挡下并消失**（不爆炸、不穿过）。
+        // 不参与判定的类型见 `ProjectileKind::obstacle_radius`。
         for pr in ps.iter_mut() {
             if !pr.alive {
                 continue;
             }
-            let bounce: Option<Vec2> = if let ProjectileKind::Boomerang { vel, radius, .. } = pr.kind {
-                let mut hit_wall: Option<Vec2> = None;
-                for o in self.obstacles.iter() {
-                    let delta = pr.pos - o.pos;
-                    let dist = delta.length();
-                    let min = radius + o.radius;
-                    if dist > Fix64::ZERO && dist < min {
-                        let normal = delta / dist;
-                        // 把速度沿接触法线镜向（反弹）
-                        hit_wall = Some(crate::fix::mirror_by(vel, normal));
-                        pr.pos = o.pos + normal * min; // 位置推出
-                        break;
-                    }
-                }
-                hit_wall
-            } else {
-                None
+            let Some(radius) = pr.kind.obstacle_radius() else {
+                continue;
             };
-            if let Some(nv) = bounce {
-                if let ProjectileKind::Boomerang { vel, .. } = &mut pr.kind {
-                    *vel = nv;
+            for o in self.obstacles.iter() {
+                let delta = pr.pos - o.pos;
+                let dist = delta.length();
+                let min = radius + o.radius;
+                if dist > Fix64::ZERO && dist < min {
+                    let normal = delta / dist;
+                    if let ProjectileKind::Boomerang { vel, .. } = &mut pr.kind {
+                        *vel = crate::fix::mirror_by(*vel, normal);
+                        pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
+                    } else {
+                        pr.alive = false; // 被柱子挡下：直接消失
+                    }
+                    break;
                 }
             }
         }
@@ -3031,6 +3067,7 @@ mod tests {
     fn scatter_line_fans_bullets_at_end() {
         // 单玩家，无敌人干扰，验证撒弹线到终点会爆散出多个扇形子弹。
         let mut world = World::new(1, 44);
+        world.obstacles.clear(); // 本测试只验证撒弹，不依赖随机柱子（弹体撞柱会被挡下）
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -3090,6 +3127,62 @@ mod tests {
             world.step(input.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "滚动火球接触应持续掉血（DoT）");
+    }
+
+    /// 回归：弹体必须被柱子（静态圆形障碍）挡住。
+    /// 旧代码的 1b 段只判了回旋镖，火球/滚动火球/导弹/香蕉弹等都**直接穿过柱子**打到后面的人。
+    /// 现在「会飞行的弹体」一律参与判定：回旋镖反弹、其余撞柱消失。
+    #[test]
+    fn obstacle_blocks_flying_projectiles() {
+        /// 让 player0 朝 +X 发一发滚动火球（掷弹），返回（player1 掉了多少血，场上出现过的火球数）。
+        fn fire(with_pillar: bool) -> (Fix64, usize) {
+            let mut world = World::new(2, 77);
+            world.obstacles.clear();
+            world.sandbox = true; // 不缩圈、不判回合结束，保证只受柱子影响
+            world.players[0].pos = Vec2::new(Fix64::from_num(-6.0), Fix64::ZERO);
+            world.players[1].pos = Vec2::new(Fix64::from_num(6.0), Fix64::ZERO);
+            world.players[0].move_target = None;
+            world.players[1].move_target = None;
+            if with_pillar {
+                world.obstacles.push(Obstacle::new(Vec2::ZERO, 1.5));
+            }
+            let hp1 = world.players[1].hp;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            let cast = vec![
+                PlayerInput {
+                    cast: Some((SkillId::StoneShot, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))),
+                    ..Default::default()
+                },
+                PlayerInput::default(),
+            ];
+            world.step(cast, dt);
+            let none = vec![PlayerInput::default(), PlayerInput::default()];
+            let mut seen = 0usize;
+            for _ in 0..180 {
+                world.step(none.clone(), dt);
+                let n = world
+                    .projectiles
+                    .iter()
+                    .filter(|pr| pr.alive && matches!(pr.kind, ProjectileKind::Rolling { .. }))
+                    .count();
+                seen = seen.max(n);
+            }
+            (hp1 - world.players[1].hp, seen)
+        }
+
+        // 有柱子：火球被挡下，柱子后面的玩家一点伤害都不该吃到。
+        let (dmg_blocked, _) = fire(true);
+        assert!(
+            dmg_blocked <= Fix64::ZERO,
+            "柱子应完全挡住滚动火球，实际后面的玩家掉了 {dmg_blocked}"
+        );
+        // 对照组（无柱子）：同一发火球确实能打到人，证明上面不是因为施法压根没发生。
+        let (dmg_open, seen) = fire(false);
+        assert!(seen >= 1, "对照组：应至少生成一个滚动火球");
+        assert!(
+            dmg_open > Fix64::ZERO,
+            "对照组：无柱子时同一发火球应能打到后面的玩家"
+        );
     }
 
     #[test]
