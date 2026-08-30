@@ -231,6 +231,11 @@ struct Game {
     /// Steam 联机：本机在大厅里的玩家槽位（`self_index` 用）。
     #[cfg(feature = "steam")]
     steam_my_index: u8,
+    /// Steam 联机：是否处于 Steam 对局（进入房间即 true，回主菜单 false）。
+    /// 用于 `self_index`/`steam_active` 判断——**不能**依赖 `steam_cli_ls`/`steam_host_ls`
+    ///（它们会被 `mem::take` 临时置 None，导致取 `PLAYER_ID=0`、配置上报用错 profile）。
+    #[cfg(feature = "steam")]
+    steam_active: bool,
     /// Steam 联机：本机 SteamID（重连时作稳定身份发给 host 找回槽位）。
     #[cfg(feature = "steam")]
     steam_my_id: u64,
@@ -509,6 +514,8 @@ impl Game {
         #[cfg(feature = "steam")]
         let mut steam_my_index: u8 = 0;
         #[cfg(feature = "steam")]
+        let steam_active: bool = false;
+        #[cfg(feature = "steam")]
         let steam_my_id: u64 = 0;
         #[cfg(feature = "steam")]
         let steam_cli_stale_ticks: u64 = 0;
@@ -693,6 +700,8 @@ impl Game {
             steam_cli_ls,
             #[cfg(feature = "steam")]
             steam_my_index,
+            #[cfg(feature = "steam")]
+            steam_active,
             #[cfg(feature = "steam")]
             steam_my_id,
             #[cfg(feature = "steam")]
@@ -1153,7 +1162,7 @@ impl Game {
     fn steam_active(&self) -> bool {
         #[cfg(feature = "steam")]
         {
-            self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()
+            self.steam_active
         }
         #[cfg(not(feature = "steam"))]
         {
@@ -1164,7 +1173,7 @@ impl Game {
     /// 本机玩家在该次对局中的序号：单机/host 恒为 0，加入者为握手分配到的 `my_index`；Steam 用大厅槽位。
     fn self_index(&self) -> u32 {
         #[cfg(feature = "steam")]
-        if self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
+        if self.steam_active {
             return self.steam_my_index as u32;
         }
         match &self.net_link {
@@ -2895,6 +2904,7 @@ impl Game {
             self.steam_host_ls = None;
             self.steam_cli_ls = None;
             self.steam_in_lobby = false;
+            self.steam_active = false;
             self.steam_local_ready = false;
             self.steam_build_done = false;
             self.steam_was_all_ready = false;
@@ -3819,6 +3829,7 @@ impl Game {
         // 进入房间/就绪界面（无需再手动输入房间号）。
         self.steam_lobby_menu = false;
         self.steam_in_lobby = true;
+        self.steam_active = true;
         self.steam_local_ready = false;
         self.steam_build_done = false;
         self.steam_was_all_ready = false;
