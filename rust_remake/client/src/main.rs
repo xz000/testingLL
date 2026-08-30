@@ -2632,10 +2632,6 @@ impl event::EventHandler for Game {
                             // 上报我的 PlayerCfg（client 每帧发一次，确保 host 无论如何进入 HostGather 都能收到；
                             // Steam 可靠通道保证送达，重发仅为覆盖“host 尚未开始收集”的时序）。
                             let cfg_bytes = self.local_player_cfg();
-                            // 诊断：本端上报的配置是否含绑定（定位“上报没绑定”还是“host 收集/广播丢绑定”）。
-                            if let Some(s_cfg) = game_core::progress::PlayerConfig::decode(&cfg_bytes) {
-                                eprintln!("[cfg-sync] CLIENT SEND idx={} binds={:?}", self.self_index(), s_cfg.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
-                            }
                             let cfg_len = cfg_bytes.len();
                             let send_ok = if cfg_bytes.is_empty() {
                                 false
@@ -2840,10 +2836,6 @@ impl event::EventHandler for Game {
                     // 多于局：学习结束后的「配置同步」阶段——上报我的配置，等 host 广播 PlayerCfgAll 后完成。
                     if self.net_cfg == NetCfgSync::ClientWait {
                         let cfg_bytes = self.local_player_cfg();
-                        // 诊断：本端上报的配置是否含绑定（定位“上报没绑定”还是“host 收集/广播丢绑定”）。
-                        if let Some(s_cfg) = game_core::progress::PlayerConfig::decode(&cfg_bytes) {
-                            eprintln!("[cfg-sync] CLIENT SEND idx={} binds={:?}", self.self_index(), s_cfg.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
-                        }
                         if !cfg_bytes.is_empty() {
                             link.upload_cfg(&cfg_bytes)?;
                         }
