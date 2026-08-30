@@ -6,15 +6,15 @@
 
 ---
 
-## ⚠ 已知问题（待修，2026-08-30 真机双机测试发现）
-- **client 开局配置界面选技能后菜单不显示「已选」**：
-  - 现象：Steam 双机，client 在学习技能/配置菜单里选中了技能，但菜单没有显示当前选中的技能 / 绑定标记；**host 正常，只有 client 显示有问题**。
-  - 更新（2026-08-30 复测）：选树大小写已修（2f3638e，`char_just`），但此显示问题仍存在，**与大小写无关**。
-  - 疑似根因：`draw_pre_game` 左栏的「当前选中树」与 `[已选]` 标记依赖 `self.learn_tree_key` 与 `pr.bound_skill`；
-    host 正常而 client 不行，更可能指向 client 侧 `learn_tree_key`/绑定状态没刷新或显示分支与 host 不同——**需复现定位**。
-  - 涉及：`client/src/main.rs` 的 `draw_pre_game` / `poll_learning` / `steam_config_update`。
-  - 优先级：低（不影响对局，只影响配置界面提示显示）。
-  - 状态：待修。
+## ✅ 已知问题（已解决，2026-08-30 真机双机验证通过）
+- ~~client 开局配置界面选技能不显示 + 首次配置技能不进对局~~（**已解决**）
+  - 现象（原）：Steam 双机 client 在学习技能/配置菜单选中技能，但菜单不显示已选/当前选中（host 正常）；且**首次**配置的技能进对局不生效。
+  - 根因（三个 bug 组合）：
+    1. `poll_learning` 绑定/升级/洗点用写死 `PLAYER_ID=0` 而非 `self_index()` → client 技能绑到 player0 的 profile、显示却查自己(self_index)的 profile → 不显示已选（`8455b6e`）。
+    2. 字母选树区分大小写（Caps Lock/Shift 时收到大写匹配不到小写）→ 选树失效（`2f3638e`）。
+    3. `self_index()` 用 `steam_cli_ls.is_some()||steam_host_ls.is_some()` 判断是否 Steam 模式，而配置上报发生在 `std::mem::take(&mut steam_cli_ls)` 期间（两字段皆 None）→ 误判走 net_link 分支返回 `PLAYER_ID=0`，`local_player_cfg` 取了 profile0（无绑定）上报，host 广播的 cfg key_slots 为空 → 首次配置绑定丢失、不进对局（`5e160fc` / `93674b7`）。
+  - 修复验证：真机双机测试，首次配置技能已能生效、配置界面菜单实时显示已选。
+  - 状态：已解决。
 
 ## 0. 当前状态快照（2026-08-29 会话末 · 建房金币配置 + 中文 IME + 无控制台 + 若干修复，最新）
 - **本会话完成并提交**（7 个提交：`df99301`…`37a2b5e`，工作区干净，见末尾 git log）：
