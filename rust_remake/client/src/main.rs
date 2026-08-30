@@ -38,6 +38,9 @@ const PLAYER_ID: u32 = 0;
 
 /// host：客户端连续空闲这么多帧判定为掉线（自动 mark_dropped，不卡全队）。约 3 秒。
 const HOST_DROP_TICKS: u32 = 180;
+/// host 配置同步的稳定等待帧数：`all_cfgs` 满足后再等这么多帧（期间继续收最新配置），
+/// 避免上一局在途旧包让 `all_cfgs` 提前满足、广播旧配置（修复局间绑定被清空的竞态）。
+const HOST_CFG_SETTLE_TICKS: u32 = 15;
 /// host：每隔多少帧保存一次世界快照（供重连）。约 0.5 秒。
 const SNAPSHOT_EVERY: u64 = 30;
 /// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
@@ -224,6 +227,9 @@ struct Game {
     offset: Point2<f32>,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
     net_link: Option<netlink::NetLinkUdp>,
+    /// 局域网模式：本机在对局中的玩家序号（握手分配）。`net_link` 被 `mem::take` 临时置 None 时用它，
+    /// 避免 `self_index` 回落到 `PLAYER_ID=0`、导致配置同步上报错 profile（同 steam_active 的用意）。
+    lan_my_index: u8,
     /// Steam 联机：host 端帧同步（feature=steam）。
     #[cfg(feature = "steam")]
     steam_host_ls: Option<net::lockstep::HostLockstep<net_steam::SteamTransport>>,
@@ -384,6 +390,10 @@ struct Game {
     net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>>,
     /// 联网模式：开房作 host，运行阶段。
     net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>>,
+    /// host 配置同步稳定等待计数（见 HOST_CFG_SETTLE_TICKS）。
+    host_cfg_settle: u32,
+    /// host 配置同步首次进入标记：本轮 HostGather 是否已清空在途旧包（`drain_cfg`+`reset_cfgs`）。
+    host_cfg_drained: bool,
     /// 联网：是否已完成 READY/GO 统一起始（可开始推进）。host=已广播 GO；client=已收 GO。
     net_ready: bool,
     /// 联网多局：学习结束后「配置同步」阶段（见 `NetCfgSync`）。
@@ -671,7 +681,7 @@ impl Game {
         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
         if std::env::var("FASTROUND").is_ok() {
             world.arena_radius = game_core::fix::Fix64::from_num(3.0);
-            meta.config.learn_time_secs = 1.0;
+            meta.config.learn_time_secs = 3.0; // 给局间配置留 3s，方便手测时从容绑定/升级
             meta.config.total_rounds = 4;
         }
         // 开局不带任何默认技能：完全由玩家在配置/学习界面按字母选树 + 数字绑技能（4.6b/从零选择）。
@@ -700,8 +710,11 @@ impl Game {
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             net_link,
+            lan_my_index: PLAYER_ID as u8,
             net_host,
             net_host_ls,
+            host_cfg_settle: 0,
+            host_cfg_drained: false,
             #[cfg(feature = "steam")]
             steam_host_ls,
             #[cfg(feature = "steam")]
@@ -929,7 +942,6 @@ impl Game {
                     .keyboard
                     .is_logical_key_just_pressed(&Key::Character(digit.to_string().into()))
                 {
-                    eprintln!("[learn] bind tree={} digit='{}' -> {}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name);
                     if let Some(profile) = self
                         .meta
                         .profiles
@@ -937,6 +949,9 @@ impl Game {
                         .find(|pr| pr.player_id == me)
                     {
                         profile.bind_skill(key, *skill);
+                        eprintln!("[learn] bind tree={} digit='{}' -> {} onto pid={} binds={:?}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name, profile.player_id, profile.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
+                    } else {
+                        eprintln!("[learn] WARN bind failed: no profile pid={me} (pids={:?}) [self_index 找不到自己的 profile → 绑定丢失]", self.meta.profiles.iter().map(|p| p.player_id).collect::<Vec<_>>());
                     }
                 }
             }
@@ -1051,8 +1066,9 @@ impl Game {
                 Some(cfg) => {
                     if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == *player_index as u32) {
                         let before: Vec<u32> = profile.skill_levels.clone();
+                        let before_binds: Vec<Option<u32>> = profile.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect();
                         cfg.apply_to(profile);
-                        eprintln!("[cfg-sync] applied idx={} -> pid={} skill {:?}->{:?}", player_index, profile.player_id, before, profile.skill_levels);
+                        eprintln!("[cfg-sync] applied idx={} -> pid={} skill {:?}->{:?} binds {:?}->{:?}", player_index, profile.player_id, before, profile.skill_levels, before_binds, profile.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
                     } else {
                         eprintln!("[cfg-sync] WARN no profile matches idx={player_index} (pids={pids:?}) [game 技能同步若缺这段说明 profile 匹配失败]");
                     }
@@ -1198,7 +1214,7 @@ impl Game {
         }
         match &self.net_link {
             Some(l) => l.my_index() as u32,
-            None => PLAYER_ID,
+            None => self.lan_my_index as u32,
         }
     }
 
@@ -2417,6 +2433,11 @@ impl event::EventHandler for Game {
                         };
                         eprintln!("[meta] round {} learning done -> {} (config sync)", self.meta.round, if client_side { "ClientWait" } else { "HostGather" });
                         self.net_cfg = sync;
+                        // host 进入配置同步：重置“已清空在途旧包”标记，首帧会 drain + reset（避免收到旧包当本轮配置）。
+                        if sync == NetCfgSync::HostGather {
+                            self.host_cfg_drained = false;
+                            self.host_cfg_settle = 0;
+                        }
                     } else {
                         eprintln!("[meta] round {} learning done -> next round (single)", self.meta.round);
                         self.teardown_round_end();
@@ -2458,6 +2479,12 @@ impl event::EventHandler for Game {
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
                         if self.net_cfg == NetCfgSync::HostGather {
+                            // 本轮配置同步首次进入：清空上一轮残留（cfgs）+ 在途旧包，避免收到旧包当本轮配置（局间绑定被清空的竞态）。
+                            if !self.host_cfg_drained {
+                                self.host_cfg_drained = true;
+                                host.reset_cfgs();
+                                host.drain_cfg();
+                            }
                             // 保活：HostGather 阶段也收 client 心跳（RoomState，更新在场/配好）+ 广播就绪快照当心跳，双向保活。
                             let mut k_rcv = vec![0u8; 4096];
                             host.poll(&mut k_rcv);
@@ -2490,10 +2517,23 @@ impl event::EventHandler for Game {
                                 );
                             }
                             if host.all_cfgs() {
+                                // 竞态保护：等配置稳定（连续 HOST_CFG_SETTLE_TICKS 帧）再收集，避免上一局在途旧包让 all_cfgs 提前满足、广播旧配置。
+                                if self.host_cfg_settle < HOST_CFG_SETTLE_TICKS {
+                                    self.host_cfg_settle += 1;
+                                    self.steam_host_ls = Some(host);
+                                    self.accumulator = 0.0;
+                                    return Ok(());
+                                }
                                 // 提前记住参与玩家数（host 只读）与首局标志，归还 host 后据此重建 world。
                                 let p = host.participants_count();
                                 let stage_first = self.pre_game_config;
                                 let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
+                                // 诊断：host 收集到各端配置的绑定（确认 client 上报的绑定是否到了 host）。
+                                for (h_i, h_bytes) in &all {
+                                    if let Some(h_cfg) = game_core::progress::PlayerConfig::decode(h_bytes) {
+                                        eprintln!("[cfg-sync] HOST COLLECT idx={} binds={:?}", h_i, h_cfg.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
+                                    }
+                                }
                                 host.broadcast_cfgs(&all);
                                 // 广播本局参与玩家 SteamID（按 new index），供各端在 host 掉线时确定性选举新 host。
                                 let pids = host.participant_ids(self.steam_my_id);
@@ -2512,6 +2552,8 @@ impl event::EventHandler for Game {
                                 self.pre_game_config = false;
                                 self.accumulator = 0.0;
                                 return Ok(()); // 同步阶段不推进战斗
+                            } else {
+                                self.host_cfg_settle = 0;
                             }
                             self.steam_host_ls = Some(host);
                             self.accumulator = 0.0;
@@ -2576,6 +2618,10 @@ impl event::EventHandler for Game {
                             // 上报我的 PlayerCfg（client 每帧发一次，确保 host 无论如何进入 HostGather 都能收到；
                             // Steam 可靠通道保证送达，重发仅为覆盖“host 尚未开始收集”的时序）。
                             let cfg_bytes = self.local_player_cfg();
+                            // 诊断：本端上报的配置是否含绑定（定位“上报没绑定”还是“host 收集/广播丢绑定”）。
+                            if let Some(s_cfg) = game_core::progress::PlayerConfig::decode(&cfg_bytes) {
+                                eprintln!("[cfg-sync] CLIENT SEND idx={} binds={:?}", self.self_index(), s_cfg.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
+                            }
                             let cfg_len = cfg_bytes.len();
                             let send_ok = if cfg_bytes.is_empty() {
                                 false
@@ -2698,6 +2744,12 @@ impl event::EventHandler for Game {
                 if let Some(mut host) = std::mem::take(&mut self.net_host_ls) {
                     // 多于局：学习结束后的「配置同步」阶段——收齐各端配置(含自身) → 广播 PlayerCfgAll → 完成。
                     if self.net_cfg == NetCfgSync::HostGather {
+                        // 本轮配置同步首次进入：清空上一轮残留（cfgs）+ 在途旧包，避免收到旧包当本轮配置（局间绑定被清空的竞态）。
+                        if !self.host_cfg_drained {
+                            self.host_cfg_drained = true;
+                            host.reset_cfgs();
+                            host.drain_cfg();
+                        }
                         let mut g_rcv = vec![0u8; 8192];
                         host.poll_cfg(&mut g_rcv);
                         let cfg_bytes = self.local_player_cfg();
@@ -2705,7 +2757,19 @@ impl event::EventHandler for Game {
                             host.set_local_cfg(cfg_bytes);
                         }
                         if host.all_cfgs() {
+                            // 竞态保护：等配置稳定（连续 HOST_CFG_SETTLE_TICKS 帧）再收集，避免上一局在途旧包让 all_cfgs 提前满足、广播旧配置。
+                            if self.host_cfg_settle < HOST_CFG_SETTLE_TICKS {
+                                self.host_cfg_settle += 1;
+                                self.net_host_ls = Some(host);
+                                return Ok(());
+                            }
                             let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
+                            // 诊断：host 收集到各端配置的绑定（确认 client 上报的绑定是否到了 host）。
+                            for (h_i, h_bytes) in &all {
+                                if let Some(h_cfg) = game_core::progress::PlayerConfig::decode(h_bytes) {
+                                    eprintln!("[cfg-sync] HOST COLLECT idx={} binds={:?}", h_i, h_cfg.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
+                                }
+                            }
                             host.broadcast_cfgs(&all);
                             let stage = if self.pre_game_config { "pre-game" } else { "next round" };
                             eprintln!("[meta] host synced {} player configs -> {stage} (round {})", all.len(), self.meta.round);
@@ -2714,6 +2778,8 @@ impl event::EventHandler for Game {
                             host.reset_cfgs(); // 为下一局复用
                             self.net_cfg = NetCfgSync::Idle;
                             self.pre_game_config = false;
+                        } else {
+                            self.host_cfg_settle = 0;
                         }
                         self.net_host_ls = Some(host);
                         return Ok(()); // 同步阶段不推进战斗
@@ -2755,9 +2821,15 @@ impl event::EventHandler for Game {
                     }
                     self.net_host_ls = Some(host);
                 } else if let Some(mut link) = std::mem::take(&mut self.net_link) {
+                    // 缓存本机序号：net_link 已被 take，期间的 self_index()/local_player_cfg() 不能回落到 PLAYER_ID=0。
+                    self.lan_my_index = link.my_index();
                     // 多于局：学习结束后的「配置同步」阶段——上报我的配置，等 host 广播 PlayerCfgAll 后完成。
                     if self.net_cfg == NetCfgSync::ClientWait {
                         let cfg_bytes = self.local_player_cfg();
+                        // 诊断：本端上报的配置是否含绑定（定位“上报没绑定”还是“host 收集/广播丢绑定”）。
+                        if let Some(s_cfg) = game_core::progress::PlayerConfig::decode(&cfg_bytes) {
+                            eprintln!("[cfg-sync] CLIENT SEND idx={} binds={:?}", self.self_index(), s_cfg.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
+                        }
                         if !cfg_bytes.is_empty() {
                             link.upload_cfg(&cfg_bytes)?;
                         }
@@ -2809,6 +2881,12 @@ impl event::EventHandler for Game {
                     }
                     self.net_link = Some(link);
                 } else {
+                    // host 尚未收齐 client（net_host 仍在 handshake 阶段、未转 HostLockstep）：不推进世界，
+                    // 否则会误走下面的“单机带 AI”分支（bot_targets 为空）导致索引越界崩溃。
+                    if self.net_host.is_some() {
+                        self.accumulator = 0.0;
+                        return Ok(());
+                    }
                     // 单机：Solo 试验场用「本机输入 + 其余(靶子)默认」；否则带 AI 机器人。
                     let is_solo = self.app == AppState::Solo;
                     while self.accumulator >= TICK {
@@ -2956,6 +3034,7 @@ impl Game {
         self.app = AppState::MainMenu;
         // 放弃联网连接（UDP socket / 握手 / 帧同步关闭）。
         self.net_link = None;
+        self.lan_my_index = PLAYER_ID as u8;
         self.net_host = None;
         self.net_host_ls = None;
         self.net_ready = false;
