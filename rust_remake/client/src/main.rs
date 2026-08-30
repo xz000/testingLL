@@ -2521,13 +2521,13 @@ impl event::EventHandler for Game {
                                 for (idx, bytes) in &all {
                                     if *idx == diag_me as u8 {
                                         if let Some(cfg) = game_core::progress::PlayerConfig::decode(bytes) {
-                                            eprintln!("[diag] host cfg for me={diag_me}: skill_levels={:?}", &cfg.skill_levels[..cfg.skill_levels.len().min(8)]);
+                                            eprintln!("[diag] host cfg for me={diag_me}: skill_levels={:?} key_slots={:?}", &cfg.skill_levels[..cfg.skill_levels.len().min(8)], cfg.key_slots.iter().enumerate().filter_map(|(i, s)| s.map(|sk| (i, sk))).collect::<Vec<_>>());
                                         }
                                     }
                                 }
                                 self.apply_player_cfgs(&all);
                                 if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == diag_me) {
-                                    eprintln!("[diag] after apply: me={diag_me} profile skill_levels={:?}", &pr.skill_levels[..pr.skill_levels.len().min(8)]);
+                                    eprintln!("[diag] after apply: me={diag_me} profile skill_levels={:?} key_slots={:?}", &pr.skill_levels[..pr.skill_levels.len().min(8)], pr.key_slots.iter().enumerate().filter_map(|(i, s)| s.map(|sk| (i, sk))).collect::<Vec<_>>());
                                 }
                                 self.teardown_round_end();
                                 if let Some(p) = self.world.players.get(diag_me as usize) {
