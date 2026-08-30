@@ -186,6 +186,9 @@ pub struct MatchState {
     pub profiles: Vec<PlayerProfile>,
     /// 每局：玩家名次（round 结束后填充，索引 = 名次-1 位置是玩家id）。len=回合数。
     pub round_placements: Vec<Vec<u32>>,
+    /// 首局配置学习标志：仅 `begin_first_round_config()` 置 true；学习倒计时归零时据此走
+    /// `enter_first_round`（round 保持 1、不重复发参与奖），区别于局间的 `advance_round`（round+1）。
+    pending_first_round: bool,
 }
 
 impl MatchState {
@@ -200,6 +203,7 @@ impl MatchState {
                 .collect(),
             round_placements: Vec::new(),
             config,
+            pending_first_round: false,
         };
         m.give_starting_gold();
         m.give_round_gold();
@@ -273,7 +277,13 @@ impl MatchState {
         }
         self.learn_remaining -= dt;
         if self.learn_remaining <= 0.0 {
-            self.advance_round();
+            if self.pending_first_round {
+                // 首局配置：归零 → 进入第一局（round 保持 1、不重复发参与奖，构造时已发）。
+                self.pending_first_round = false;
+                self.enter_first_round();
+            } else {
+                self.advance_round();
+            }
             true
         } else {
             false
@@ -290,6 +300,25 @@ impl MatchState {
     /// 开局前的配置阶段结束 → 进入第一局（不 +round，参与奖已在构造时发放）。
     pub fn enter_first_round(&mut self) {
         self.phase = MatchPhase::Fighting;
+    }
+
+    /// 首局进入配置学习（联机用倒计时自动开始）：进入 Learning，倒计时 = learn_time_secs。
+    /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发参与奖）。
+    pub fn begin_first_round_config(&mut self) {
+        self.phase = MatchPhase::Learning;
+        self.learn_remaining = self.config.learn_time_secs;
+        self.pending_first_round = true;
+    }
+
+    /// 手动结束首局配置（单机试验场用）：直接进入第一局（不 +round、不重复发参与奖）。
+    pub fn finish_first_round_config(&mut self) {
+        self.pending_first_round = false;
+        self.enter_first_round();
+    }
+
+    /// 当前是否处于「首局配置学习」（未开过战）。client 用来区分单机首局的手动开始。
+    pub fn is_first_config(&self) -> bool {
+        self.pending_first_round
     }
 
     fn advance_round(&mut self) {
@@ -432,6 +461,31 @@ mod tests {
         assert_eq!(m.phase, MatchPhase::Fighting);
         assert_eq!(m.round, 1, "开局配置结束不应 +round");
         // 与局间 start_next_round（会 +round）区分。
+    }
+
+    #[test]
+    fn first_round_config_countdown_enters_round_one_without_extra_gold() {
+        // 首局配置学习：begin -> Learning + 倒计时；归零 -> Fighting 且 round 保持 1、不重复发参与奖。
+        let mut m = sample();
+        let gold_before = m.profiles[0].gold; // 构造时已发 starting_gold + 第一轮参与奖
+        m.begin_first_round_config();
+        assert_eq!(m.phase, MatchPhase::Learning);
+        assert_eq!(m.round, 1);
+        assert!(m.learn_remaining > 0.0, "首局配置应有倒计时");
+        // 时间到：应走 enter_first_round（round 不变、金币不加）而非 advance_round（+round、发参与奖）。
+        let advanced = m.tick_learning(m.learn_remaining + 0.1);
+        assert!(advanced);
+        assert_eq!(m.phase, MatchPhase::Fighting);
+        assert_eq!(m.round, 1, "首局配置归零不应 +round");
+        assert_eq!(m.profiles[0].gold, gold_before, "首局配置归零不应重复发参与奖");
+        // 之后再进局间学习：归零应 advance_round（+round + 参与奖）。
+        m.finish_round(vec![0, 1, 2]);
+        assert_eq!(m.phase, MatchPhase::Learning);
+        assert_eq!(m.round, 1);
+        let gold_before2 = m.profiles[0].gold;
+        m.tick_learning(m.learn_remaining + 0.1);
+        assert_eq!(m.round, 2, "局间学习归零应 +round");
+        assert!(m.profiles[0].gold > gold_before2, "局间学习归零应发参与奖");
     }
 
     /// 4.6b 成长点：发放、金币兑成长点、成长点买属性，均向 `growth_points`/`attributes` 正确记账。
