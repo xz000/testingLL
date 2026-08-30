@@ -1177,7 +1177,11 @@ impl Game {
     fn local_player_cfg(&self) -> Vec<u8> {
         let me = self.self_index();
         match self.meta.profiles.iter().find(|pr| pr.player_id == me) {
-            Some(p) => game_core::progress::PlayerConfig::from_profile(p).encode(),
+            Some(p) => {
+                let binds = p.key_slots.iter().filter(|s| s.is_some()).count();
+                eprintln!("[diag] local_player_cfg me={me}: profile key_slots binds={binds}");
+                game_core::progress::PlayerConfig::from_profile(p).encode()
+            }
             None => Vec::new(), // 异常：不应发生；空配置
         }
     }
