@@ -890,6 +890,7 @@ impl Game {
 
     fn poll_learning(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
+        let me = self.self_index();
 
         // 字母键：选中技能树
         for (letter, key) in KEY_LETTERS {
@@ -914,7 +915,7 @@ impl Game {
                         .meta
                         .profiles
                         .iter_mut()
-                        .find(|pr| pr.player_id == PLAYER_ID)
+                        .find(|pr| pr.player_id == me)
                     {
                         profile.bind_skill(key, *skill);
                     }
@@ -930,7 +931,7 @@ impl Game {
                     .meta
                     .profiles
                     .iter_mut()
-                    .find(|pr| pr.player_id == PLAYER_ID)
+                    .find(|pr| pr.player_id == me)
                 {
                     if let Some(skill) = profile.bound_skill(key) {
                         let cost = upgrade_cost(profile.skill_level(skill));
@@ -947,7 +948,7 @@ impl Game {
                 .meta
                 .profiles
                 .iter_mut()
-                .find(|pr| pr.player_id == PLAYER_ID)
+                .find(|pr| pr.player_id == me)
             {
                 profile.respec(1.0);
             }
@@ -3197,6 +3198,11 @@ impl Game {
         let locked = self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS;
         if ready_pressed && !locked && !panel_open {
             self.steam_local_ready = !self.steam_local_ready;
+            if !self.steam_local_ready {
+                // 本端取消就绪：立即重置本地倒计时（不依赖 host 快照回传，避免“取消后重准备不重新数 5 秒”）。
+                self.steam_was_all_ready = false;
+                self.steam_countdown = 0.0;
+            }
             eprintln!("[steam-lobby] local ready = {}", self.steam_local_ready);
         } else if ready_pressed && locked {
             eprintln!("[steam-lobby] ignoring ready-cancel during locked countdown");
