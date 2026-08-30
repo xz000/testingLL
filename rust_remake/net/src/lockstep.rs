@@ -443,6 +443,17 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// 丢弃在途的 PlayerCfg 旧包（不记入 `cfgs`），用于配置同步开始前清掉上一轮残留，
+    /// 避免 host 收到上一局延迟的旧配置就满足 `all_cfgs`、广播旧配置（局间绑定被清空的竞态）。
+    pub fn drain_cfg(&mut self) {
+        let mut buf = [0u8; 2048];
+        while let Ok(Some((n, _))) = self.transport.recv_from(&mut buf) {
+            if let Some(Packet::PlayerCfg { .. }) = Packet::decode(&buf[..n]) {
+                // 丢弃旧配置包
+            }
+        }
+    }
+
     /// 是否已收齐所有【参与本局】的端（host 自身 + 参与 client）的配置（未参与的 vacant 槽位不要求）。
     pub fn all_cfgs(&self) -> bool {
         if self.local_base > 0 && self.local_cfg.is_none() {
