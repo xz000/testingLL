@@ -2936,18 +2936,6 @@ impl Game {
         self.accumulator = 0.0;
     }
 
-    /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。
-    #[cfg(feature = "steam")]
-    fn steam_refresh_friends(&mut self) {
-        let lobby = self.steam_lobby_id;
-        let Some(t) = self.steam_transport() else { return };
-        let friends = net_steam::session::list_friends(t, lobby);
-        self.steam_friends = friends;
-        if self.steam_friend_selection >= self.steam_friends.len() {
-            self.steam_friend_selection = self.steam_friends.len().saturating_sub(1);
-        }
-    }
-
     /// 「邀请好友」面板的输入（房间界面按 I 展开，非模态——房间网络逻辑每帧照常跑）：
     /// ↑/↓ 选择、**回车 邀请选中好友**、A 打开 Steam 邀请窗口（可勾多位）、R 刷新、I/Q 收起面板。
     #[cfg(feature = "steam")]
@@ -3003,52 +2991,6 @@ impl Game {
                 None => self.steam_friend_hint = "尚未在房间里，无法邀请".to_string(),
             }
         }
-    }
-
-    /// 主菜单：best-effort 初始化一次 Steam 会话，好让好友从 Steam 好友列表点「加入游戏」时
-    /// 我们这边的 `GameLobbyJoinRequested` 回调能收到（回调只在 `run_callbacks` 时泵出，必须有 Client）。
-    /// 失败（Steam 未运行/未登录）不影响单机与局域网，只是收不到邀请。
-    #[cfg(feature = "steam")]
-    fn steam_ensure_session(&mut self) {
-        if self.steam_sess.is_some() || self.steam_session_tried {
-            return;
-        }
-        self.steam_session_tried = true;
-        match net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT) {
-            Ok(s) => {
-                self.steam_my_display_name = s
-                    .transport
-                    .friends()
-                    .get_friend(net_steam::steamworks::SteamId::from_raw(s.transport.steam_id()))
-                    .name();
-                eprintln!("[steam] session ready, display name='{}'", self.steam_my_display_name);
-                self.steam_sess = Some(s);
-            }
-            Err(e) => eprintln!("[steam] session init failed (邀请将不可用): {e:?}"),
-        }
-    }
-
-    /// 处理好友从 Steam 发起的「加入游戏」请求（主菜单/大厅界面每帧调用）：
-    /// 需要已初始化会话（pump 回调才拿得到）、且当前不在房间里；命中则按 lobby id 直接进房。
-    #[cfg(feature = "steam")]
-    fn steam_poll_join_requests(&mut self, ctx: &mut Context) {
-        if let Some(s) = self.steam_sess.as_ref() {
-            s.run_callbacks();
-        }
-        let Some(req) = self.steam_sess.as_ref().and_then(|s| s.take_join_request()) else {
-            return;
-        };
-        if self.steam_in_lobby || self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
-            eprintln!("[steam-invite] ignoring join request: already in a room");
-            return;
-        }
-        eprintln!("[steam-invite] friend {} invited us to lobby {}", req.from, req.lobby);
-        self.steam_join_lobby_id = Some(req.lobby);
-        self.steam_lobby_menu = false;
-        self.steam_lobby_create = false;
-        self.steam_lobby_list = false;
-        self.steam_friend_hint = "已从邀请加入房间".to_string();
-        self.enter_steam_mode(ctx, false, 2, None, None);
     }
 
     /// 房主「编辑房间信息」子界面输入：改房间名/备注，回车保存（写回 matchmaking 元数据），Q 取消；

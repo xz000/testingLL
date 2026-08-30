@@ -4,8 +4,16 @@
 //! **关键**：所有 `steam_*` 字段仍属 `Game`，方法仍通过 `impl Game` 访问 `self`——
 //! 因此这是**纯逻辑分组**，不改变任何行为与借用关系（局域网/单机路径不受影响）。
 //!
-//! **当前包含**：掉线重连（`poll_steam_reconnect`）+ 主机迁移/接管（`poll_steam_migration`/`steam_do_takeover`）+ 重建清残留（`clear_transient_input`）。
-//! 其余 Steam 辅助方法（大厅/建房/社交/统计 UI）仍在 `main.rs`，后续可按此模式继续迁入本模块。
+//! **当前包含**（逻辑类已全部迁入）：
+//! - 掉线/重连/迁移/接管：`poll_steam_reconnect` · `poll_steam_migration` · `steam_do_takeover` · `clear_transient_input`
+//! - presence：`steam_transport` · `steam_current_room_info` · `steam_set/clear/refresh_presence`
+//! - 社交/状态/工具：`steam_ping_of` · `steam_refresh_network_info` · `steam_draw_avatar` · `steam_ensure_leaderboard` · `steam_record_match_result`
+//! - 好友/会话：`steam_refresh_friends` · `steam_ensure_session` · `steam_poll_join_requests`
+//!
+//! **剩余仍在 `main.rs`**（多为 UI/大厅流程/渲染长方法，暂不迁移）：`steam_lobby_update` · `steam_lobby_act` ·
+//! `steam_lobby_create_update` · `steam_lobby_list_update` · `enter_steam_mode` · `steam_config_update` ·
+//! `steam_friend_list_update` · `steam_room_edit_update` · `steam_refresh_roster` · `steam_leave_room` ·
+//! `draw_steam_ready_overlay` · `draw_steam_friend_panel` · `draw_steam_room_edit` · `draw_steam_create_lobby` · `draw_steam_lobby_list`。
 //!
 //! 编译说明：默认构建（不启用 `steam` feature）时本模块所有方法都不编译，
 //! `main.rs` 的调用点（如 `update` 里的 steam 分支）同样被 `#[cfg(feature = "steam")]` 门控，
@@ -469,5 +477,63 @@ impl Game {
         if !msg.is_empty() {
             self.steam_toast = (msg, now + 6.0);
         }
+    }
+
+    /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_refresh_friends(&mut self) {
+        let lobby = self.steam_lobby_id;
+        let Some(t) = self.steam_transport() else { return };
+        let friends = net_steam::session::list_friends(t, lobby);
+        self.steam_friends = friends;
+        if self.steam_friend_selection >= self.steam_friends.len() {
+            self.steam_friend_selection = self.steam_friends.len().saturating_sub(1);
+        }
+    }
+
+    /// 主菜单：best-effort 初始化一次 Steam 会话，好让好友从 Steam 好友列表点「加入游戏」时
+    /// 我们这边的 `GameLobbyJoinRequested` 回调能收到（回调只在 `run_callbacks` 时泵出，必须有 Client）。
+    /// 失败（Steam 未运行/未登录）不影响单机与局域网，只是收不到邀请。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_ensure_session(&mut self) {
+        if self.steam_sess.is_some() || self.steam_session_tried {
+            return;
+        }
+        self.steam_session_tried = true;
+        match net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT) {
+            Ok(s) => {
+                self.steam_my_display_name = s
+                    .transport
+                    .friends()
+                    .get_friend(net_steam::steamworks::SteamId::from_raw(s.transport.steam_id()))
+                    .name();
+                eprintln!("[steam] session ready, display name='{}'", self.steam_my_display_name);
+                self.steam_sess = Some(s);
+            }
+            Err(e) => eprintln!("[steam] session init failed (邀请将不可用): {e:?}"),
+        }
+    }
+
+    /// 处理好友从 Steam 发起的「加入游戏」请求（主菜单/大厅界面每帧调用）：
+    /// 需要已初始化会话（pump 回调才拿得到）、且当前不在房间里；命中则按 lobby id 直接进房。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_poll_join_requests(&mut self, ctx: &mut Context) {
+        if let Some(s) = self.steam_sess.as_ref() {
+            s.run_callbacks();
+        }
+        let Some(req) = self.steam_sess.as_ref().and_then(|s| s.take_join_request()) else {
+            return;
+        };
+        if self.steam_in_lobby || self.steam_host_ls.is_some() || self.steam_cli_ls.is_some() {
+            eprintln!("[steam-invite] ignoring join request: already in a room");
+            return;
+        }
+        eprintln!("[steam-invite] friend {} invited us to lobby {}", req.from, req.lobby);
+        self.steam_join_lobby_id = Some(req.lobby);
+        self.steam_lobby_menu = false;
+        self.steam_lobby_create = false;
+        self.steam_lobby_list = false;
+        self.steam_friend_hint = "已从邀请加入房间".to_string();
+        self.enter_steam_mode(ctx, false, 2, None, None);
     }
 }
