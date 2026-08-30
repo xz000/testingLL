@@ -1022,6 +1022,8 @@ impl Game {
 
     /// 进入下一局前：把玩家的技能等级从档案同步到世界，并重置世界。
     fn teardown_round_end(&mut self) {
+        // 诊断：同步前本端 profiles 技能等级（局间技能同步关键）。
+        eprintln!("[teardown] profiles pre: {:?}", self.meta.profiles.iter().map(|pr| (pr.player_id, pr.skill_levels.clone())).collect::<Vec<_>>());
         // 把 meta.profiles 全量同步到 world.players，使所有端下一局的技能等级一致。
         // （联网下 profiles 已经由 host 广播的完整配置统一；单机下按本地各玩家档案设置。）
         for (profile, p) in self.meta.profiles.iter().zip(self.world.players.iter_mut()) {
@@ -1031,6 +1033,8 @@ impl Game {
             // 4.6b：把玩家属性（Hp/移速等）派生到战斗数值（确定性纯函数，跨端/跨局一致）。
             p.apply_attributes(&profile.attributes);
         }
+        // 诊断：同步后 world 各玩家技能等级。
+        eprintln!("[teardown] world post: {:?}", self.world.players.iter().enumerate().map(|(i, p)| (i as u32, p.skill_levels.to_vec())).collect::<Vec<_>>());
         self.world.reset_round();
         self.player_target = None;
         self.pending_cast = None;
@@ -1041,11 +1045,19 @@ impl Game {
 
     /// 把 host 广播的完整玩家配置（`PlayerCfgAll` entries）应用回本地 `meta.profiles`。
     fn apply_player_cfgs(&mut self, entries: &[(u8, Vec<u8>)]) {
+        let pids: Vec<u32> = self.meta.profiles.iter().map(|pr| pr.player_id).collect();
         for (player_index, bytes) in entries {
-            if let Some(cfg) = game_core::progress::PlayerConfig::decode(bytes) {
-                if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == *player_index as u32) {
-                    cfg.apply_to(profile);
+            match game_core::progress::PlayerConfig::decode(bytes) {
+                Some(cfg) => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == *player_index as u32) {
+                        let before: Vec<u32> = profile.skill_levels.clone();
+                        cfg.apply_to(profile);
+                        eprintln!("[cfg-sync] applied idx={} -> pid={} skill {:?}->{:?}", player_index, profile.player_id, before, profile.skill_levels);
+                    } else {
+                        eprintln!("[cfg-sync] WARN no profile matches idx={player_index} (pids={pids:?}) [game 技能同步若缺这段说明 profile 匹配失败]");
+                    }
                 }
+                None => eprintln!("[cfg-sync] WARN decode fail idx={} len={}", player_index, bytes.len()),
             }
         }
     }
