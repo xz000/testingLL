@@ -910,7 +910,7 @@ impl Game {
                     .keyboard
                     .is_logical_key_just_pressed(&Key::Character(digit.to_string().into()))
                 {
-                    eprintln!("[learn] bind tree={} digit='{}' -> {}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name);
+                    eprintln!("[learn] bind tree={} digit='{}' -> {} (me={}, n_profiles={})", key.letter(), digit, game_core::skill::DefTable::def(*skill).name, me, self.meta.profiles.len());
                     if let Some(profile) = self
                         .meta
                         .profiles
@@ -918,6 +918,9 @@ impl Game {
                         .find(|pr| pr.player_id == me)
                     {
                         profile.bind_skill(key, *skill);
+                        eprintln!("[learn] bound OK key={} -> binds={}", key.letter(), profile.key_slots.iter().filter(|s| s.is_some()).count());
+                    } else {
+                        eprintln!("[learn] WARN no profile player_id=={me}; bind NOT applied");
                     }
                 }
             }
