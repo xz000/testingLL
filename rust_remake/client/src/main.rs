@@ -1203,12 +1203,11 @@ impl Game {
     /// 单机模式把它放到 `PLAYER_ID`；联网模式由 `NetLink` 上行给 host、按我的序号归位。
     fn local_player_input(&mut self) -> PlayerInput {
         let set_target = self.player_target;
-        // 施法是**瞬时命令**：发出即消费（take）。若不消费（读而不清），会每 tick 重发同一条
-        // 施法指令（含旧落点），被冷却/前摇拒掉后，**冷却一归零就自动再放一次**（问题 2）。
-        // ⚠ 注意：`player_target`（移动目标）**保持电平量**、不能 take —— 它是持续状态；走帧同步
-        // 时若只发一次，会被 host 的输入缓存覆盖机制丢掉（try_emit 收齐才产帧、产帧后清空），
-        // 导致"要点好几次右键才生效"（把移动也改成 take 的那版方案的回归）。
-        let cast = self.pending_cast.take();
+        // 施法与移动都是**持续电平量**：在「施法被世界接受」（自己角色进入 is_busy）前持续重发，
+        // 由 `note_self_cast` 在接受的那一帧清除。这样：
+        //   - 帧同步下不会因 host 输入缓存覆盖而丢失施法指令（否则要点多次/迟滞，同移动 take 的回归）；
+        //   - 施法一旦被接受立即清，冷却归零不会自动重放（问题 2）。
+        let cast = self.pending_cast;
         let queued = self.queued_cmds.drain(..).collect();
         let clear_queue = self.pending_clear_signal;
         let stop_move = self.pending_stop_signal;
@@ -1240,6 +1239,7 @@ impl Game {
             .unwrap_or(false);
         if busy && !self.self_was_busy {
             self.player_target = None;
+            self.pending_cast = None;
         }
         self.self_was_busy = busy;
     }
