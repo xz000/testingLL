@@ -2696,6 +2696,57 @@ mod tests {
     }
 
     #[test]
+    fn move_target_is_level_blank_frames_dont_drop_it_and_cast_clears_it() {
+        // 批 A 依赖的两条 world 契约（曾把移动目标改成 take() 的那版方案的回归反例）：
+        //   1) 移动目标是**电平量**：一旦 set_target 设置过，后续空输入帧（set_target=None）
+        //      绝不能把它清掉 —— 否则在帧同步下，移动指令只发一次、被 host 输入缓存覆盖后
+        //      就永久丢失（表现为“要点好几次右键才成功”）。
+        //   2) 施法成功会清 move_target；此后若不再下发新目标（None），角色保持停住、
+        //      不再自动走向旧目标（问题 1）。
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+
+        // (1) 电平量不丢：设置移动目标后，连续空输入帧不应把它清掉。
+        let mut a = World::new(1, 31);
+        a.obstacles.clear();
+        a.players[0].pos = Vec2::ZERO;
+        a.step(
+            vec![PlayerInput { set_target: Some(far), ..Default::default() }],
+            dt,
+        );
+        assert!(a.players[0].move_target.is_some(), "设置后应有移动目标");
+        for _ in 0..8 {
+            a.step(vec![PlayerInput::default()], dt); // set_target=None
+        }
+        assert!(
+            a.players[0].move_target.is_some(),
+            "空输入帧不应清掉移动目标（电平量不丢）"
+        );
+
+        // (2) 施法成功清移动；之后不再发目标（None）→ 保持停住，不自动走向旧目标。
+        let mut b = World::new(1, 32);
+        b.obstacles.clear();
+        b.players[0].pos = Vec2::ZERO;
+        b.step(
+            vec![PlayerInput {
+                set_target: Some(far),
+                cast: Some((SkillId::Blink, Some(far))),
+                ..Default::default()
+            }],
+            dt,
+        );
+        assert!(b.players[0].move_target.is_none(), "施法成功应清掉移动目标");
+        for _ in 0..30 {
+            b.step(vec![PlayerInput::default()], dt); // 施法后不再下发旧目标
+        }
+        assert!(
+            near(b.players[0].pos.x, 6.0, 0.5),
+            "施法后不应再走向旧目标，位置应为 ~6，实际 {:?}",
+            b.players[0].pos
+        );
+    }
+
+    #[test]
     fn round_over_and_reset_cycle() {
         let mut world = World::new(2, 21);
         let dt = Fix64::from_num(1.0 / 60.0);
