@@ -198,6 +198,8 @@ struct Game {
     player_target: Option<Vec2>,
     /// 待发送的施法命令（左键确认后产生，直到世界进入前摇才清）
     pending_cast: Option<(SkillId, Option<Vec2>)>,
+    /// 本机角色上一帧是否处于施法中（`note_self_cast` 用：检测"刚进入施法"的边沿来清移动目标）。
+    self_was_busy: bool,
     /// 当前等左键确认的点目标技能（技能键按下后稳定保持，直到左键确认/右键/S 取消）
     pending_skill: Option<SkillId>,
     /// shift 键按住时压入的待执行指令队列（每帧把队首注入 PlayerInput.queued）
@@ -679,6 +681,7 @@ impl Game {
             meta,
             player_target: None,
             pending_cast: None,
+            self_was_busy: false,
             pending_skill: None,
             queued_cmds: std::collections::VecDeque::new(),
             pending_shift_skill: None,
@@ -1024,6 +1027,7 @@ impl Game {
         self.world.reset_round();
         self.player_target = None;
         self.pending_cast = None;
+        self.self_was_busy = false;
         self.pending_skill = None;
         self.accumulator = 0.0;
     }
@@ -1192,7 +1196,12 @@ impl Game {
     /// 单机模式把它放到 `PLAYER_ID`；联网模式由 `NetLink` 上行给 host、按我的序号归位。
     fn local_player_input(&mut self) -> PlayerInput {
         let set_target = self.player_target;
-        let cast = self.pending_cast;
+        // 施法是**瞬时命令**：发出即消费（take）。若不消费（读而不清），会每 tick 重发同一条
+        // 施法指令（含旧落点），被冷却/前摇拒掉后，**冷却一归零就自动再放一次**（问题 2）。
+        // ⚠ 注意：`player_target`（移动目标）**保持电平量**、不能 take —— 它是持续状态；走帧同步
+        // 时若只发一次，会被 host 的输入缓存覆盖机制丢掉（try_emit 收齐才产帧、产帧后清空），
+        // 导致"要点好几次右键才生效"（把移动也改成 take 的那版方案的回归）。
+        let cast = self.pending_cast.take();
         let queued = self.queued_cmds.drain(..).collect();
         let clear_queue = self.pending_clear_signal;
         let stop_move = self.pending_stop_signal;
@@ -1205,6 +1214,27 @@ impl Game {
             clear_queue,
             stop_move,
         }
+    }
+
+    /// 每次世界推进后调用一次：若本机角色**刚进入**施法（前摇/后摇开始），清除待发送的移动目标。
+    ///
+    /// 这是"精确版"实现：`player_target` 保持电平量（每帧重发，不会在帧同步输入缓存下丢失），
+    /// 只在施法真正开始的这一帧（`is_busy` 的 false→true 边沿）清一次 →
+    /// 施法结束（前摇结束进后摇后）不再自动走向旧目标（问题 1）；且施法失败
+    /// （冷却/蓝不足，`is_busy` 仍为 false）时角色不停下。用 `is_busy` 而非 `is_windup`，
+    /// 能覆盖零前摇技能（Windup 一帧即转 Recovery，`is_windup` 永不成立）。
+    fn note_self_cast(&mut self) {
+        let me = self.self_index();
+        let busy = self
+            .world
+            .players
+            .get(me as usize)
+            .map(|p| p.caster.is_busy())
+            .unwrap_or(false);
+        if busy && !self.self_was_busy {
+            self.player_target = None;
+        }
+        self.self_was_busy = busy;
     }
 
     /// 生成本（模拟）帧内所有玩家的输入（单机：本机玩家 + 本地 AI 机器人）。
@@ -1266,6 +1296,7 @@ impl Game {
                         // 清空本地输入残留，避免把掉线期间的输入误带到接回后。
                         self.player_target = None;
                         self.pending_cast = None;
+                        self.self_was_busy = false;
                         self.pending_skill = None;
                         self.queued_cmds.clear();
                         self.pending_shift_skill = None;
@@ -2458,6 +2489,7 @@ impl event::EventHandler for Game {
                                     }
                                 }
                                 self.world.step(inputs, ticking);
+                                self.note_self_cast();
                                 // 周期快照（重连用 + 广播给所有 client，供「host 掉线接管」用）。
                                 self.host_frame_count += 1;
                                 if self.host_frame_count % SNAPSHOT_EVERY == 0 {
@@ -2572,6 +2604,7 @@ impl event::EventHandler for Game {
                                     }
                                 }
                                 self.world.step(inputs, ticking);
+                                self.note_self_cast();
                                 // 诊断：打印推进到哪一帧（前若干帧/变化时不刷屏）。
                                 let last = cli.expect_seq().saturating_sub(1);
                                 if self.steam_cli_last_seq != last {
@@ -2649,6 +2682,7 @@ impl event::EventHandler for Game {
                                 }
                             }
                             self.world.step(inputs, ticking);
+                            self.note_self_cast();
                             // 周期保存快照（供掉线者重连时拉取当前状态接回）。
                             self.host_frame_count += 1;
                             if self.host_frame_count % SNAPSHOT_EVERY == 0 {
@@ -2698,6 +2732,7 @@ impl event::EventHandler for Game {
                         // 未收到帧【不乐观预测】——等待 host 的权威帧即可。乐观预测（4.7 阶段一）会与后续
                         // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
+                            self.note_self_cast();
                             self.accumulator -= TICK;
                         } else {
                             link.bump_stale();
@@ -2726,22 +2761,18 @@ impl event::EventHandler for Game {
                                 inputs[me as usize] = self.local_player_input();
                             }
                             self.world.step(inputs, ticking);
+                            self.note_self_cast();
                         } else {
                             let inputs = self.compute_inputs();
                             self.world.step(inputs, ticking);
+                            self.note_self_cast();
                         }
                         self.accumulator -= TICK;
                     }
                 }
                 } // end 非 Steam 分支
-                // 一旦世界已进入前摇（施法被接受），清除待发送的施法命令，避免重复发送。
-                if self.pending_cast.is_some() {
-                    if let Some(p) = self.world.players.get(PLAYER_ID as usize) {
-                        if p.caster.is_windup() {
-                            self.pending_cast = None;
-                        }
-                    }
-                }
+                // 注：施法命令 `pending_cast` 已在 `local_player_input()` 里随编码消费（take），
+                // 不需要这里按 `is_windup()` 反推清除（那段逻辑对零前摇技能永不成立，且查的是硬编码 PLAYER_ID）。
                 // 本局结束 → 结算并进入学习阶段
                 if self.world.round_over() {
                     self.settle_round();
