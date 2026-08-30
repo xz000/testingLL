@@ -881,15 +881,19 @@ impl Game {
     /// - 按数字键 1..N → 把选中的树里的第 N 个技能绑定到该键
     /// - 按 `=` → 升级当前键绑定的技能
     /// - 按 `X` → 洗点（全额退款 + 清空绑定）
+    // 判断某字符键是否刚被按下（大小写不敏感：Caps Lock / Shift 下字母也能匹配，如选树按 c 时 Caps Lock 收 `C` 也能命中）。
+    fn char_just(ctx: &Context, s: &str) -> bool {
+        use ggez::input::keyboard::Key;
+        ctx.keyboard.is_logical_key_just_pressed(&Key::Character(s.to_lowercase().into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(s.to_uppercase().into()))
+    }
+
     fn poll_learning(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
 
         // 字母键：选中技能树
         for (letter, key) in KEY_LETTERS {
-            if ctx
-                .keyboard
-                .is_logical_key_just_pressed(&Key::Character(letter.into()))
-            {
+            if Self::char_just(ctx, letter) {
                 eprintln!("[learn] select tree '{letter}' (key=Key::Character)");
                 self.learn_tree_key = Some(key);
             }
@@ -938,7 +942,7 @@ impl Game {
         }
 
         // `X`：洗点（全额退款）
-        if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("x".into())) {
+        if Self::char_just(ctx, "x") {
             if let Some(profile) = self
                 .meta
                 .profiles
