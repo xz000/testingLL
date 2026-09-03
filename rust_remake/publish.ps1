@@ -45,12 +45,11 @@ $AppId    = 908660
 $DepotId  = 908661
 
 # Steam 登录账号（带 bot 的账号）。
-# 默认不依赖环境变量，直接使用 steamcmd 自己的缓存；
-# 若创建了环境变量 $env:STEAM_USER / $env:STEAM_PASS，也可以在这里覆盖。
+# 出于安全考虑，本脚本不再把密码写进命令行（同机任意进程可读命令行参数）。
+# 改用 steamcmd 已缓存的登录态：先手动跑一次 `steamcmd +login <账号>`，
+# 凭据写入 loginusers.vdf 后即可只用账号名登录。账号可用 $env:STEAM_USER 注入。
 $SteamUser = ''
-$SteamPass = ''
 if (-not $SteamUser -and $env:STEAM_USER) { $SteamUser = $env:STEAM_USER }
-if (-not $SteamPass -and $env:STEAM_PASS) { $SteamPass = $env:STEAM_PASS }
 
 # steamcmd 位置；为空时自动探测常见路径，找不到则提示从官网下载。
 # 仓库根（git 根）是 rust_remake 的上一级（含 steam_api64.dll / steam_appid.txt），
@@ -127,6 +126,15 @@ if ($dll) {
     Write-Host '[WARN] 未找到 steam_api64.dll，请把官方 dll 放到 staging content 根目录。' -ForegroundColor Yellow
 }
 
+# 完整 CJK 字体：随 exe 分发（运行时从 exe 同目录加载，不再内联进 17.7MB 二进制）。
+$font = Join-Path $PSScriptRoot 'assets/fonts/cjk.ttf'
+if (Test-Path $font) {
+    Copy-Item $font (Join-Path $Content 'cjk.ttf') -Force
+    Write-Host '[ok] cjk.ttf'
+} else {
+    Write-Host '[WARN] 未找到 assets/fonts/cjk.ttf，发布版将回退到内联 168k 子集（稀有字可能缺）。' -ForegroundColor Yellow
+}
+
 # 【发布版刻意不复制 steam_appid.txt】—— 玩家从 Steam 客户端启动，无需该文件。
 
 Write-Host "`n--- staging content 内容 ---"
@@ -184,21 +192,21 @@ Write-Host '== 4/4 steamcmd 上传 ==' -ForegroundColor Cyan
 Write-Host "[info] SteamCMD 配置目录：$SteamCmdConfigDir"
 
 # 默认不依赖环境变量，而是优先尝试复用 steamcmd 自己的缓存。
-# 仅当没有缓存时，才回落到交互式输入用户名/密码。
+# 出于安全考虑，密码绝不进入命令行参数；无缓存时直接提示用户先手动登录以缓存凭据。
 if (-not $SteamUser) {
     $SteamUser = Read-Host 'Steam 登录账号（留空时尝试使用已缓存登录态）'
 }
 $cachedLoginUsers = Join-Path $SteamCmdConfigDir 'loginusers.vdf'
-if (-not $SteamPass) {
-    if ($SteamUser -and (Test-Path $cachedLoginUsers)) {
-        Write-Host "[info] 检测到 SteamCMD 缓存：$cachedLoginUsers"
-        Write-Host '[info] 将尝试仅用用户名复用已保存的登录态。'
-    } else {
-        $sec = Read-Host 'Steam 密码' -AsSecureString
-        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-        $SteamPass = [System.Runtime.InteropServices.Marshal]::PtrToStringUni($bstr)
-        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-    }
+if ($SteamPass) {
+    Write-Host '[WARN] 出于安全考虑不再把密码写进命令行（同机任意进程可读命令行）。已忽略。' -ForegroundColor Yellow
+    Write-Host '       请先手动运行一次 steamcmd +login <账号>，凭据写入 loginusers.vdf 后本脚本只需 +login <账号>。' -ForegroundColor Yellow
+    $SteamPass = ''
+}
+if (-not $SteamUser) {
+    Write-Host '[info] 未提供账号：将尝试直接 +run_app_build（依赖已缓存且未过期的登录态）。' -ForegroundColor Yellow
+} elseif (-not (Test-Path $cachedLoginUsers)) {
+    Write-Host '[FAIL] 未检测到 SteamCMD 缓存（loginusers.vdf）。请先手动运行一次 `steamcmd +login <账号>` 以缓存凭据，再重新运行本脚本。' -ForegroundColor Red
+    Pop-Location; exit 1
 }
 if (-not (Test-Path $SteamCmdExe)) {
     Write-Host "[FAIL] 找不到 steamcmd：$SteamCmdExe" -ForegroundColor Red
@@ -208,11 +216,9 @@ if (-not (Test-Path $SteamCmdExe)) {
 
 $steamArgs = @()
 if ($SteamUser) {
+    # 仅传账号名；密码不进命令行，依赖 steamcmd 已缓存登录态。
     $steamArgs += '+login'
     $steamArgs += $SteamUser
-    if ($SteamPass) {
-        $steamArgs += $SteamPass
-    }
 }
 $steamArgs += '+run_app_build'
 $steamArgs += $Vdf

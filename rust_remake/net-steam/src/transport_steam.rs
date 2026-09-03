@@ -256,7 +256,13 @@ impl Transport for SteamTransport {
                 buf[..data.len()].copy_from_slice(&data);
                 return Ok(Some((data.len(), Peer::Steam { id: pid, conn: None })));
             }
-            // 缓冲区过小则丢弃该包（上层 rcv 一般足够大）。
+            // S1：缓冲区过小则丢弃该包——此前是静默丢弃，迁移/重连会因此卡死且无从排查。
+            // 现打印告警（含对端/大小/上限），并丢弃该包。上层 rcv 现统一为 256KiB，正常不应再触发。
+            eprintln!(
+                "[steam-p2p] DROP oversized packet from {pid}: {} bytes > rcv buf {} bytes (snapshot 过大？)",
+                data.len(),
+                buf.len()
+            );
         }
         Ok(None)
     }
