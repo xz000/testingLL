@@ -224,9 +224,21 @@
 | P4 / D2 解码上界 | `005e6e2` | `world_ser` 的 count 经 `count_at()` 上界校验（64 玩家/256 柱/4096 弹体/4096 击杀）防 OOM；`cmd_head`/`cmd_len` 越界校验防 `cmd_buf` OOB panic |
 | D1 `from_num` 下溢对称回归 | `6b5740b` | `fix.rs` 增 `from_num_underflow_panics_instead_of_wrapping`：`f64::MIN` 在 `[profile.release] debug-assertions=true` 下 panic（与溢出同一 `debug_assert!`，行为锁定） |
 | D2 解码下界（id 范围） | `6b5740b` | `decode_player` 校验 `id < np`；`world_from_bytes` 校验 `eliminated_order`/`kills_this_round` 的 id `< np`，越界快照解码期返回 `None` 而非 step 期 OOB panic；增 3 个回归测试 |
+| S1 快照缓冲 8192→256KiB | `c6db353` | 所有 Steam 入站缓冲提到 256KiB（快照不再被 transport_steam 静默丢弃）；transport_steam 的「超界包丢弃」改可见告警；host 接管广播快照处打字节数日志；重连 stall-abort（~10s 无快照放弃，玩家可 Esc） |
+| S2 旧 host 接管通知 | `c6db353` | 新 host 接管时单发 `Takeover` 给旧 host（`HostLockstep::notify_old_host_takeover`）；旧 host 的 `HostLockstep` 收到 `Takeover` 标记 `superseded` |
+| S3 迁移阶段 B 超时 | `c6db353` | `poll_steam_migration` 阶段 B 超 `MIGRATE_BAIL_TICKS`(600) 退回主菜单，避免永久冻结在「已冻结世界」 |
+| S4 脑裂/双 host 收敛 | `c6db353` | `HostLockstep.superseded` 置位后 `try_emit` 不再产权帧；`main.rs` 的 steam host 分支检测 `is_superseded()` 退回主菜单 |
+| S5 重连每帧重发刷屏 | `c6db353` | host 对每客户端重连应答限速 `RECONNECT_RESP_INTERVAL`(30)；新增回归测试 `reconnect_resp_is_rate_limited_per_client` |
+| C1/C2 联网退出路径 | `c6db353` | 对局中 Esc 直接 `reset_to_main_menu`（联网亦可；host 离开触发既有 drop→迁移路径），消除死状态 |
+| C6 17MB 字体内联 | `c6db353` | 运行时从磁盘加载完整 `cjk.ttf`（不再 `include_bytes!` 内联 17.7MB），找不到回退内联 168k 子集；`publish.ps1` 随 exe 分发 `cjk.ttf` |
+| C7 热路径 `expect` | `c6db353` | `collect_cfgs` 竞态由 `.expect` 改为本轮重试（不 panic），下一帧再同步 |
+| C8 IME 双路径重复插入 | `c6db353` | `frame`/`last_ime_commit_frame` 去重；`just(c)` ASCII 白名单在 IME 提交帧跳过（仍需真机验证 winit 0.30 是否对同一物理键同时发 Ime::Commit 与按键） |
+| C9 注释错误 | `c6db353` | 修正：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit` |
+| C10 密码明文 | `c6db353` | `publish.ps1` 不再把 Steam 密码还原明文拼命令行，要求 `steamcmd` 已登录缓存（`loginusers.vdf`） |
 
-> 剩余未修项：S1 快照缓冲 8192、S2/S3/S4 迁移收敛、P5/P8/P9/P10/P12 网络健壮性、
-> C1/C2 联网退出路径、C10 密码明文等——多为需真机/双账号验证或涉及设计取舍的改动。
+> 剩余未修项：S6-S12 其余 Steam 迁移/健壮性细节（S10 `send_to` 恒返回 Ok、S11 掉线判定与接管竞态、`CLIENT_STALE_TICKS==HOST_DROP_TICKS`、S12 大厅 sleep 忙等）、
+> C4/C5 渲染性能（按规划暂缓）、C11-C14 工程化（钩子作用域过大/易绕过/`steam_appid.txt` 未跟踪/缺 `[profile.release]`）、
+> D3/D4/D5/D7 数值与解码边界、P5/P8-P12 网络健壮性——多为需真机/双账号验证或涉及设计取舍的改动。
 
 ---
 
