@@ -22,6 +22,10 @@ fn default_input_bytes() -> Vec<u8> {
     game_core::netcode::encode_player_input(&game_core::world::PlayerInput::default())
 }
 
+/// 重连应答限速间隔（S5，单位=host 产帧/tick）：client 每帧发 `ReconnectReq` 时，
+/// host 仅在冷却归零时回整快照+Resync，避免在迁移探测期间被反复广播整快照刷屏。
+const RECONNECT_RESP_INTERVAL: u32 = 30;
+
 /// host 侧帧同步状态机。
 pub struct HostLockstep<T: Transport> {
     transport: T,
@@ -64,6 +68,9 @@ pub struct HostLockstep<T: Transport> {
     client_identities: Vec<Option<u64>>,
     /// 各 client 连续「未在本帧提供输入」的已产帧数（用于 host 自动判定掉线）。
     idle_ticks: Vec<u32>,
+    /// 各 client 重连应答限速剩余帧数（S5）：>0 时忽略其 `ReconnectReq` 的快照/Resync 广播，
+    /// 避免 client 每帧重连探测时被 host 反复广播整快照刷屏（Steam 迁移探测即每帧发 ReconnectReq）。
+    reconnect_cooldown: Vec<u32>,
     /// 各 client 当前是否已就绪（可撤销；由 `Packet::PlayerReady` 更新）。
     clients_ready: Vec<bool>,
     /// 各 client 当前是否已配好技能/配置（开局配置阶段由 `Packet::RoomState.build_done` 更新）。
@@ -78,6 +85,9 @@ pub struct HostLockstep<T: Transport> {
     /// 距上次成功产帧/收到有效回包的 tick（用于 host 侧自动判定客户端掉线）。
     /// 仅在需要时由调用方驱动更新（见 `bump_alive`）。
     pub alive_tick: u64,
+    /// 本 host 是否已被另一新 host 的 `Takeover` 取缔（S2/S4，防脑裂）：
+    /// 置位后 `try_emit` 不再产权威帧、上层应据此降级或退回主菜单，避免与新 host 双权威。
+    superseded: bool,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -108,12 +118,14 @@ impl<T: Transport> HostLockstep<T> {
             client_addr: vec![None; expected],
             client_identities: vec![None; expected],
             idle_ticks: vec![0; expected],
+            reconnect_cooldown: vec![0; expected],
             clients_ready: vec![false; expected],
             clients_build_done: vec![false; expected],
             ready_packets_seen: 0,
             player_cfg_packets_seen: 0,
             snapshot: None,
             alive_tick: 0,
+            superseded: false,
         }
     }
 
@@ -179,6 +191,18 @@ impl<T: Transport> HostLockstep<T> {
         for peer in self.client_peers.iter().flatten() {
             let _ = self.transport.send_to(&enc, peer);
         }
+    }
+
+    /// S2：新 host 接管时，额外向「被取缔的旧 host」单发 `Takeover`，
+    /// 使其 `HostLockstep` 标记 `superseded` 并停止作为权威（防脑裂/孤儿 host 续产帧）。
+    pub fn notify_old_host_takeover(&mut self, old_host: Peer, seq: u64, participants: Vec<u64>) {
+        let pkt = Packet::Takeover { seq, participants };
+        let _ = self.transport.send_to(&pkt.encode(), &old_host);
+    }
+
+    /// S2/S4：本 host 是否已被新 host 的 `Takeover` 取缔（上层据此降级/退回主菜单）。
+    pub fn is_superseded(&self) -> bool {
+        self.superseded
     }
 
     /// 主机迁移接管：把「原 client lockstep」转换为「新 host lockstep」。
@@ -623,19 +647,39 @@ impl<T: Transport> HostLockstep<T> {
                                         self.client_identities[c] = Some(identity);
                                     }
                                 }
-                                if let Some((wb, seq)) = self.snapshot.as_ref() {
-                                    let snap_pkt = Packet::Snapshot { world_bytes: wb.clone(), seq: *seq };
-                                    let _ = self.transport.send_to(&snap_pkt.encode(), &from);
-                                }
-                                let rseq = self.snapshot.as_ref().map(|(_, s)| *s);
-                                if let Some(seq) = rseq {
-                                    let resync_pkt = Packet::Resync { seq };
-                                    let enc = resync_pkt.encode();
-                                    // 广播到已知 peer（含刚重连回来的）。
-                                    for peer in self.client_peers.iter().flatten() {
-                                        let _ = self.transport.send_to(&enc, peer);
+                                // S5：每客户端对重连应答限速。仅冷却为 0 时才回整快照+Resync，
+                                // 否则这次只恢复槽位（已做），不再重复广播整快照，抑制 client 每帧 ReconnectReq 的刷屏。
+                                let may_respond = if let Some(c) = c {
+                                    if self.reconnect_cooldown[c] == 0 {
+                                        self.reconnect_cooldown[c] = RECONNECT_RESP_INTERVAL;
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+                                if may_respond {
+                                    if let Some((wb, seq)) = self.snapshot.as_ref() {
+                                        let snap_pkt = Packet::Snapshot { world_bytes: wb.clone(), seq: *seq };
+                                        let _ = self.transport.send_to(&snap_pkt.encode(), &from);
+                                    }
+                                    let rseq = self.snapshot.as_ref().map(|(_, s)| *s);
+                                    if let Some(seq) = rseq {
+                                        let resync_pkt = Packet::Resync { seq };
+                                        let enc = resync_pkt.encode();
+                                        // 广播到已知 peer（含刚重连回来的）。
+                                        for peer in self.client_peers.iter().flatten() {
+                                            let _ = self.transport.send_to(&enc, peer);
+                                        }
                                     }
                                 }
+                            }
+                            Packet::Takeover { .. } => {
+                                // S2/S4：收到别的 host 的接管信号 → 本端已被取缔（典型：客户端误判旧 host 掉线、
+                                // 选出新 host 并广播 Takeover）。标记 superseded 并停止作为权威（try_emit 不再产帧），
+                                // 避免与新 host 双权威脑裂。上层（main.rs 的 steam host 分支）会据此退回主菜单。
+                                self.superseded = true;
                             }
                             _ => {}
                         }
@@ -647,6 +691,9 @@ impl<T: Transport> HostLockstep<T> {
         }
         // 空闲计数：本轮未提供输入且未掉线的 client 各 +1（已发送的已被 Input 臂清零）。
         for c in 0..self.expected {
+            if self.reconnect_cooldown[c] > 0 {
+                self.reconnect_cooldown[c] -= 1; // S5：重连应答限速冷却递减。
+            }
             if !self.dropped[c] && self.latest_input[c].is_none() {
                 self.idle_ticks[c] += 1;
             }
@@ -656,6 +703,10 @@ impl<T: Transport> HostLockstep<T> {
     /// 若已收齐全部 client（及 host 自身）输入，则合成一帧：入缓冲、广播，清空已用输入，
     /// 返回 `Some((seq, entries))`（供各端包括 host 自身喂给本地 World）；未收齐返回 `None`。
     pub fn try_emit(&mut self) -> Option<(u64, crate::proto::FrameData)> {
+        // S2/S4：已被新 host 取缔 → 不再产/广播权威帧，避免与新 host 双权威脑裂。
+        if self.superseded {
+            return None;
+        }
         // 若 host 参与，总玩家数 = expected + 1；需 host 本地输入 + 所有【参与】的 client 输入（未参与的 vacant 槽位不要求）。
         if !(0..self.expected).all(|c| !self.is_active(c) || self.latest_input[c].is_some()) {
             return None;
@@ -1578,6 +1629,50 @@ mod tests {
             while let Some(_) = cli.step_frame(&mut rcv).unwrap() {}
         }
         assert_eq!(cli.expect_seq(), seq + 20, "重连后应继续严格按序推进 20 帧");
+    }
+
+    /// S5 回归：host 对每客户端「重连应答」限速。client 每帧发 `ReconnectReq` 时，
+    /// host 仅在冷却（RECONNECT_RESP_INTERVAL 帧）归零时回整快照，避免被反复广播整快照刷屏；
+    /// 冷却过后恢复应答。验证「首次应答 → 窗口内限速 → 窗口后恢复」。
+    #[test]
+    fn reconnect_resp_is_rate_limited_per_client() {
+        let (ht, ct) = pair();
+        let host_sends = ht.peer_inbox.clone(); // Rc 克隆：host 发出（含快照）的包都落到这里；ht 随后被 move 进 host。
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+
+        // 让 host 登记 client 端点，并准备好快照。
+        cli.send_input(&[1]).unwrap();
+        host.poll(&mut rcv);
+        host.set_snapshot(b"snap@5".to_vec(), 5);
+
+        let count_snaps = || -> usize {
+            host_sends
+                .borrow()
+                .iter()
+                .filter(|b| matches!(Packet::decode(b), Some(Packet::Snapshot { .. })))
+                .count()
+        };
+
+        // 第 1 次重连：应回 1 个快照（冷却置为 RECONNECT_RESP_INTERVAL）。
+        cli.send_reconnect_req(0).unwrap();
+        host.poll(&mut rcv);
+        assert_eq!(count_snaps(), 1, "首次重连应答应回 1 个快照");
+        host_sends.borrow_mut().clear();
+
+        // 冷却窗口内连续重连（共 RECONNECT_RESP_INTERVAL-1 次，因 poll 当次会顺带把冷却 -1）：均不应再回快照。
+        for _ in 0..RECONNECT_RESP_INTERVAL as usize - 1 {
+            cli.send_reconnect_req(0).unwrap();
+            host.poll(&mut rcv);
+            assert_eq!(count_snaps(), 0, "冷却窗口内重连应答应被限速（不回快照）");
+            host_sends.borrow_mut().clear();
+        }
+
+        // 冷却已归零：再发一次应恢复应答，回 1 个快照。
+        cli.send_reconnect_req(0).unwrap();
+        host.poll(&mut rcv);
+        assert_eq!(count_snaps(), 1, "冷却过后应恢复重连应答");
     }
 
     /// 构造本测试专用的确定性输入字节。

@@ -221,6 +221,11 @@ struct Game {
     bot_rngs: Vec<Rng>,
     /// 累计未消费的模拟时间
     accumulator: f64,
+    /// 每帧递增的帧计数（用于 IME 去重，见 `last_ime_commit_frame`）。
+    frame: u64,
+    /// IME 去重：最近一次 `Ime::Commit` 提交的帧（置为当时 `frame+1`，即 `just(c)` 将要运行的下一帧）。
+    /// `just(c)` ASCII 白名单在该帧跳过，避免同一物理键重复插入（C8，需真机验证）。
+    last_ime_commit_frame: u64,
     /// 世界坐标 → 屏幕坐标的缩放
     scale: f32,
     /// 相机偏移（竞技场中心在画面中央）
@@ -410,6 +415,9 @@ struct Game {
     conn_dropped: bool,
     /// 客户端是否正在发起重连（已按 R，正等 host 快照）。
     reconnect_attempting: bool,
+    /// 重连已持续尝试的帧数（S1 stall-abort 用，仅 Steam 路径使用）：超过阈值仍无快照则放弃本次重连，避免无限重试卡死。
+    #[cfg(feature = "steam")]
+    reconnect_stall_ticks: u32,
     /// 主机端累计产帧数（用于周期保存快照）。
     host_frame_count: u64,
     /// 单机开局配置剩余的等待秒数（超时自动用默认配置开始，避免“按键无反应卡死”）。
@@ -518,11 +526,47 @@ struct Game {
     steam_toast: (String, f64),
 }
 
+/// 从磁盘加载完整 CJK 字体并注册为 "cjk"，避免把 17.7MB 的 cjk.ttf 内联进二进制。
+///
+/// 发布版 cjk.ttf 随 exe 一起分发（见 publish.ps1）；开发期在仓库 `assets/fonts/` 下。
+/// 候选路径依次尝试：exe 同目录、exe 同目录的 `assets/fonts/`、以及相对 cwd 的仓库布局。
+/// 全部失败（如字体文件被误删）时回退到内联的 168KB 子集（稀有字可能成豆腐块，但可执行文件仅 +168KB）。
+fn load_cjk_font(ctx: &mut Context) -> GameResult<()> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("cjk.ttf"));
+            candidates.push(dir.join("assets").join("fonts").join("cjk.ttf"));
+        }
+    }
+    // 开发期 cwd 通常为 client/，仓库字体在 ../../assets/fonts/cjk.ttf
+    candidates.push(std::path::PathBuf::from("assets/fonts/cjk.ttf"));
+    candidates.push(std::path::PathBuf::from("../assets/fonts/cjk.ttf"));
+    candidates.push(std::path::PathBuf::from("../../assets/fonts/cjk.ttf"));
+
+    for path in &candidates {
+        if let Ok(bytes) = std::fs::read(path) {
+            match ggez::graphics::FontData::from_vec(bytes) {
+                Ok(font) => {
+                    ctx.gfx.add_font("cjk", font);
+                    eprintln!("[font] 已加载 CJK 字体：{}", path.display());
+                    return Ok(());
+                }
+                Err(e) => eprintln!("[font] 解析失败 {}: {:?}", path.display(), e),
+            }
+        }
+    }
+    eprintln!("[font] 未在磁盘找到 cjk.ttf，回退到内联 168k 子集字体");
+    let font = ggez::graphics::FontData::from_vec(include_bytes!("../../assets/fonts/cjk-168k.ttf").to_vec())?;
+    ctx.gfx.add_font("cjk", font);
+    Ok(())
+}
+
 impl Game {
     fn new(ctx: &mut Context, app: AppState) -> GameResult<Self> {
-        // 注册中文字体：用 include_bytes 内嵌，避免资源路径/VFS 解析问题。
-        let font = ggez::graphics::FontData::from_slice(include_bytes!("../../assets/fonts/cjk.ttf"))?;
-        ctx.gfx.add_font("cjk", font);
+        // 注册中文字体：从磁盘加载完整 cjk.ttf（不内联进 17.7MB 二进制）；
+        // 发布版 cjk.ttf 随 exe 一起分发，开发期在仓库 assets/ 下。找不到时回退内联 168k 子集。
+        load_cjk_font(ctx)?;
 
         // 联网：加入 host 或开房作 host；否则单机（含本地 AI 机器人）。
         let mut net_link: Option<netlink::NetLinkUdp> = None;
@@ -711,6 +755,9 @@ impl Game {
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
+            frame: 0,
+            // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
+            last_ime_commit_frame: u64::MAX,
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             net_link,
@@ -857,6 +904,8 @@ impl Game {
             pre_game_config: app != AppState::MainMenu,
             conn_dropped: false,
             reconnect_attempting: false,
+            #[cfg(feature = "steam")]
+            reconnect_stall_ticks: 0,
             host_frame_count: 0,
             pre_game_timer: PRE_GAME_TIMEOUT_SECS,
             menu_selection: 0,
@@ -2172,6 +2221,8 @@ impl Game {
 
 impl event::EventHandler for Game {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
+        // 帧计数（用于 IME 去重，见 `last_ime_commit_frame`）。每帧递增，含提前返回的分支。
+        self.frame = self.frame.wrapping_add(1);
         let dt = ctx.time.delta().as_secs_f64();
 
         // Steam 房间/就绪/编辑阶段：房主按 E 进「编辑房间信息」界面；否则进房间就绪界面。
@@ -2461,23 +2512,15 @@ impl event::EventHandler for Game {
                 Ok(())
             }
             MatchPhase::Fighting => {
-                // 单机试验场：按 Esc 随时返回主菜单（无任何联网对局时才生效）。
-                #[cfg(not(feature = "steam"))]
-                let solo_no_net = self.net_link.is_none() && self.net_host.is_none();
-                #[cfg(feature = "steam")]
-                let solo_no_net = self.net_link.is_none()
-                    && self.net_host.is_none()
-                    && self.steam_cli_ls.is_none()
-                    && self.steam_host_ls.is_none();
-                if solo_no_net {
-                    use ggez::input::keyboard::Key;
-                    use winit::keyboard::NamedKey;
-                    if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
-                        eprintln!("[solo] Esc -> back to main menu");
-                        self.reset_to_main_menu();
-                        self.accumulator = 0.0;
-                        return Ok(());
-                    }
+                // 对局进行中允许随时按 Esc 返回主菜单（含联网）：client 离开=正常掉线由其余端迁移/接管；
+                // host 离开=触发现有 drop→迁移路径。与 Q 在 Finished 一致，消除 C1/C2 联网无法退出的死状态。
+                use ggez::input::keyboard::Key;
+                use winit::keyboard::NamedKey;
+                if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+                    eprintln!("[exit] Esc -> back to main menu");
+                    self.reset_to_main_menu();
+                    self.accumulator = 0.0;
+                    return Ok(());
                 }
                 // 每帧轮询输入（技能键 / 鼠标）
                 self.poll_input(ctx);
@@ -2503,7 +2546,7 @@ impl event::EventHandler for Game {
                             let mut k_rcv = vec![0u8; 4096];
                             host.poll(&mut k_rcv);
                             host.broadcast_roster_ready(self.steam_local_ready, 0);
-                            let mut g_rcv = vec![0u8; 8192];
+                            let mut g_rcv = vec![0u8; 256 * 1024];
                             host.poll_cfg(&mut g_rcv);
                             let cfg_bytes = self.local_player_cfg();
                             let local_cfg_ready = !cfg_bytes.is_empty();
@@ -2541,7 +2584,15 @@ impl event::EventHandler for Game {
                                 // 提前记住参与玩家数（host 只读）与首局标志，归还 host 后据此重建 world。
                                 let p = host.participants_count();
                                 let stage_first = self.pre_game_config;
-                                let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
+                                let all = match host.collect_cfgs() {
+                                    Some(a) => a,
+                                    None => {
+                                        eprintln!("[cfg-sync] 配置未收齐（竞态），本轮放弃同步，下一帧重试");
+                                        self.steam_host_ls = Some(host);
+                                        self.accumulator = 0.0;
+                                        return Ok(());
+                                    }
+                                };
                                 // 诊断：host 收集到各端配置的绑定（确认 client 上报的绑定是否到了 host）。
                                 for (h_i, h_bytes) in &all {
                                     if let Some(h_cfg) = game_core::progress::PlayerConfig::decode(h_bytes) {
@@ -2574,12 +2625,20 @@ impl event::EventHandler for Game {
                             return Ok(()); // 同步阶段不推进战斗
                         }
                         // Steam host：配置同步完成后这里直接产帧（收齐各端输入才产，seq=0 即统一开始）。
-                        let mut hrcv = vec![0u8; 8192];
+                        let mut hrcv = vec![0u8; 256 * 1024];
                         let mut takeover_bcast = self.steam_host_broadcasting_takeover;
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             host.set_local_input(Some(game_core::netcode::encode_player_input(&me)));
                             host.poll(&mut hrcv);
+                            // S2/S4：本 host 收到新 host 的 Takeover → 已被取缔（如客户端误判旧 host 掉线）。
+                            // 停止作为权威、退回主菜单，避免与新 host 双权威脑裂（孤儿 host 续产帧）。
+                            if host.is_superseded() {
+                                eprintln!("[steam-host] SUPERSEDED: 收到新 host 的 Takeover，已取缔，退回主菜单");
+                                self.reset_to_main_menu();
+                                self.accumulator = 0.0;
+                                return Ok(());
+                            }
                             // 迁移接管后：持续广播 Takeover（基线=快照 seq + 更新后的在线参与集），直到首个在线 client 连上产帧才停。
                             if takeover_bcast {
                                 if let Some((_, bseq)) = host.current_snapshot() {
@@ -2650,7 +2709,7 @@ impl event::EventHandler for Game {
                                     st.2,
                                 );
                             }
-                            let mut c_rcv = vec![0u8; 8192];
+                            let mut c_rcv = vec![0u8; 256 * 1024];
                             if let Some((all, participants)) = cli.recv_cfg_all(&mut c_rcv)? {
                                 let stage_first = self.pre_game_config;
                                 let stage = if stage_first { "pre-game" } else { "next round" };
@@ -2685,7 +2744,7 @@ impl event::EventHandler for Game {
                         }
                         // Steam client：就绪/配置已完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
                         // 上行用 `send_room_state`（合包，Steam P2P 下实测可靠）；`send_input` 单独发送曾实测间歇丢。
-                        let mut c_rcv = vec![0u8; 8192];
+                        let mut c_rcv = vec![0u8; 256 * 1024];
                         // 已判定掉线：冻结世界，进入重连入口（按 R 拉快照重建），不再推进世界（避免与 host 分叉）。
                         if self.conn_dropped {
                             self.poll_steam_reconnect(ctx, &mut cli);
@@ -2760,7 +2819,7 @@ impl event::EventHandler for Game {
                             host.reset_cfgs();
                             host.drain_cfg();
                         }
-                        let mut g_rcv = vec![0u8; 8192];
+                        let mut g_rcv = vec![0u8; 256 * 1024];
                         host.poll_cfg(&mut g_rcv);
                         let cfg_bytes = self.local_player_cfg();
                         if !cfg_bytes.is_empty() {
@@ -2773,7 +2832,14 @@ impl event::EventHandler for Game {
                                 self.net_host_ls = Some(host);
                                 return Ok(());
                             }
-                            let all = host.collect_cfgs().expect("all_cfgs 已确保收齐");
+                            let all = match host.collect_cfgs() {
+                                Some(a) => a,
+                                None => {
+                                    eprintln!("[cfg-sync] 配置未收齐（竞态），本轮放弃同步，下一帧重试");
+                                    self.net_host_ls = Some(host);
+                                    return Ok(());
+                                }
+                            };
                             // 诊断：host 收集到各端配置的绑定（确认 client 上报的绑定是否到了 host）。
                             for (h_i, h_bytes) in &all {
                                 if let Some(h_cfg) = game_core::progress::PlayerConfig::decode(h_bytes) {
@@ -2958,10 +3024,13 @@ impl event::EventHandler for Game {
 }
 
 impl Game {
-    /// 文本输入回调（由自定义事件循环在 winit 的 `Ime::Commit` / `ReceivedCharacter` 事件上调用）：
+    /// 文本输入回调（由自定义事件循环在 winit 的 `Ime::Commit` 事件上调用）：
     /// 把输入法确认提交的字符追加到当前聚焦的文本字段。支持中文 IME（建房界面/编辑房间信息的房间名与备注）。
+    /// 注意：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit`（见事件循环处 `WindowEvent::Ime` 分支）。
     /// 仅在对应界面且聚焦文本字段（0/1）时生效；其他界面忽略。
     fn on_text_input(&mut self, text: &str) {
+        // 标记最近一次 IME 提交发生在下一帧（即 `just(c)` 将要运行的帧），供 ASCII 白名单去重（C8）。
+        self.last_ime_commit_frame = self.frame.wrapping_add(1);
         #[cfg(feature = "steam")]
         {
             if text.is_empty() {
@@ -3233,7 +3302,8 @@ impl Game {
             return Ok(());
         }
         let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
-        if buf.len() < 80 {
+        if buf.len() < 80 && self.last_ime_commit_frame != self.frame {
+            // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
             const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
             for c in CHARS.chars() {
                 if just(c) {
@@ -3413,7 +3483,7 @@ impl Game {
             // host 离开检测：每帧先累计“沉默”帧数；收不到 host 广播（RosterReady 心跳）累计，收到即清零。
             self.steam_lobby_silent_ticks = self.steam_lobby_silent_ticks.saturating_add(1);
             // 单次排空读 host 房间入包：StartConfig（进配置）与 RosterReady（界面）一次分类，绝不互吞。
-            let mut rcv = [0u8; 8192];
+            let mut rcv = [0u8; 256 * 1024];
             if let Ok((got_cfg, roster)) = cli.recv_room_inbox(&mut rcv) {
                 if got_cfg {
                     eprintln!("[steam-client] host says all ready -> config menu");
@@ -3458,7 +3528,7 @@ impl Game {
             }
         } else if let Some(host) = self.steam_host_ls.as_mut() {
             // host：每帧 poll 收客户端（持续在场 + PlayerReady）；要求所有 client 在场 && 全体就绪。
-            let mut rcv = [0u8; 8192];
+            let mut rcv = [0u8; 256 * 1024];
             host.poll(&mut rcv);
             let all_present = host.saw_all_clients(); // 所有 expected client 都已上行过输入（满员在场）
             let all_clients_ready = host.all_clients_ready();
@@ -3664,11 +3734,14 @@ impl Game {
                     return;
                 }
                 // 可打印 ascii 字符（字母大小写/数字/空格/常用标点）。
-                const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
-                for c in CHARS.chars() {
-                    if just(c) {
-                        buf.push(c);
-                        return;
+                // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
+                if self.last_ime_commit_frame != self.frame {
+                    const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
+                    for c in CHARS.chars() {
+                        if just(c) {
+                            buf.push(c);
+                            return;
+                        }
                     }
                 }
             }
@@ -4566,7 +4639,7 @@ fn parse_app_from_args(args: &[String]) -> AppState {
 }
 
 /// 自定义 winit 事件循环：在 ggez 官方 `event::run` 基础上，额外接入 winit 的
-/// `Ime` / `ReceivedCharacter` 事件，使中文输入法（IME）能输入到房间名/备注等文本字段。
+/// `Ime::Commit` 事件（winit 0.30 已移除 `ReceivedCharacter`），使中文输入法（IME）能输入到房间名/备注等文本字段。
 /// 其余事件（键盘/鼠标/触摸/绘制/退出）完全照搬 ggez `GgezApplicationHandler` 的分发逻辑，行为不变。
 struct GameApp {
     ctx: Context,

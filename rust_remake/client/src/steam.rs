@@ -81,6 +81,17 @@ impl Game {
             return Ok(Some(cli));
         }
         // —— 阶段 B：已决定新 host。我是新 host → 接管（消费 cli）；否则等 Takeover。
+        // S3：阶段 B 超时保护——已选出新 host 却迟迟收不到 Takeover（如新 host 也掉线）→ 放弃迁移，
+        // 退回主菜单，避免永久冻结在「已冻结世界」状态。阈值远大于探测超时，给足重连窗口。
+        const MIGRATE_BAIL_TICKS: u64 = 600;
+        if self.steam_migrate_ticks >= MIGRATE_BAIL_TICKS {
+            eprintln!(
+                "[steam-client] migration Phase-B STALL: 收不到新 host 的 Takeover（{MIGRATE_BAIL_TICKS} 帧），放弃并退回主菜单"
+            );
+            self.reset_to_main_menu();
+            self.accumulator = 0.0;
+            return Ok(None); // 不归还 cli（reset_to_main_menu 已清 steam_cli_ls），避免呆cli被重新存回。
+        }
         if self.steam_new_host_id == self.steam_my_id {
             self.steam_do_takeover(cli, rcv)?;
             Ok(None)
@@ -121,6 +132,7 @@ impl Game {
         }
         if !self.reconnect_attempting {
             self.reconnect_attempting = true;
+            self.reconnect_stall_ticks = 0;
             eprintln!("[steam-client] reconnect flow: sending ReconnectReq...");
         }
         // 发重连请求（带本机 SteamID 作稳定身份，host 按身份找回槽位）。
@@ -129,7 +141,7 @@ impl Game {
             self.reconnect_attempting = false;
             return;
         }
-        let mut rcv = vec![0u8; 8192];
+        let mut rcv = vec![0u8; 256 * 1024];
         match cli.recv_snapshot(&mut rcv) {
             Ok(Some((world_bytes, seq))) => {
                 eprintln!("[steam-client] got Snapshot seq={seq}, rebuilding World ({n} bytes)", n = world_bytes.len());
@@ -157,7 +169,15 @@ impl Game {
                 }
             }
             Ok(None) => {
-                // 尚未收到快照：保持等待（下帧再试）。
+                // 尚未收到快照：累计 stall；超过阈值（~10s@60fps）判定 host 不可达，放弃本次重连，
+                // 留给玩家按 Esc 退回主菜单（C1/C2），不再无限重试卡死。
+                self.reconnect_stall_ticks = self.reconnect_stall_ticks.saturating_add(1);
+                const STALL_LIMIT: u32 = 600;
+                if self.reconnect_stall_ticks >= STALL_LIMIT {
+                    eprintln!("[steam-client] reconnect STALL: 无快照超过 {STALL_LIMIT} 帧，放弃重连（host 可能已掉线）；可按 Esc 退回主菜单");
+                    self.reconnect_attempting = false;
+                    self.reconnect_stall_ticks = 0;
+                }
             }
             Err(e) => {
                 eprintln!("[steam-client] reconnect error: {e:?}");
@@ -174,7 +194,9 @@ impl Game {
     pub(crate) fn steam_do_takeover(&mut self, cli: net::lockstep::ClientLockstep<net_steam::SteamTransport>, _rcv: &mut [u8]) -> GameResult {
         // 取本端缓存的快照重建 world（迁移基线）。
         let snap = cli.cached_snapshot();
-        let old_host_id = match cli.host_peer() {
+        // S2：接管前先记下旧 host 的 peer，接管后单发 `Takeover` 通知它已被取缔（防脑裂/孤儿 host 续产帧）。
+        let old_host_peer = cli.host_peer();
+        let old_host_id = match old_host_peer {
             net::transport::Peer::Steam { id, .. } => id,
             _ => 0,
         };
@@ -220,8 +242,13 @@ impl Game {
         // 广播 Takeover（带更新后的在线参与集）+ Snapshot（接管基线）给其余在线端。
         let seq = host.next_seq();
         if let Some((wb, _)) = &snap {
+            // S1 诊断：广播的快照字节数（迁移基线）。若接近接收端缓冲上限（256KiB）需留意，避免被 transport 静默丢弃。
+            eprintln!("[steam-host] TAKEOVER broadcast snapshot: {} bytes (seq={seq})", wb.len());
             host.broadcast_takeover(seq, new_online.clone());
             host.broadcast_snapshot(wb.clone(), seq);
+            // S2：单发 Takeover 给旧 host，令其标记 superseded 并停止作为权威（防脑裂）。
+            host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
+            eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");
         }
         self.steam_my_index = my_index;
         eprintln!("[steam-host] TAKEOVER: I am new host (player {my_index}/{total}), resume seq={seq}, online={new_online:?}");
