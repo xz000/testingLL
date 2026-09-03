@@ -562,6 +562,17 @@ fn load_cjk_font(ctx: &mut Context) -> GameResult<()> {
     Ok(())
 }
 
+/// C8 去重判定（纯函数，便于单测）：本帧是否应抑制 ASCII 白名单插入。
+///
+/// `update` 开头 `frame = frame.wrapping_add(1)`；`on_text_input` 把 `last_ime_commit_frame`
+/// 设为当时的 `frame+1`。若同一物理键在同一帧既触发 IME 提交（`last = frame_before+1`）又在该帧
+/// `update` 时 `just(c)` 命中（此时 `frame` 已变为 `frame_before+1`），则二者相等 → 抑制，避免重复插入。
+#[cfg(feature = "steam")]
+#[inline]
+fn ime_commit_suppresses_ascii(frame: u64, last_ime_commit_frame: u64) -> bool {
+    last_ime_commit_frame == frame
+}
+
 impl Game {
     fn new(ctx: &mut Context, app: AppState) -> GameResult<Self> {
         // 注册中文字体：从磁盘加载完整 cjk.ttf（不内联进 17.7MB 二进制）；
@@ -3302,7 +3313,7 @@ impl Game {
             return Ok(());
         }
         let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
-        if buf.len() < 80 && self.last_ime_commit_frame != self.frame {
+        if buf.len() < 80 && !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame) {
             // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
             const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
             for c in CHARS.chars() {
@@ -3735,7 +3746,7 @@ impl Game {
                 }
                 // 可打印 ascii 字符（字母大小写/数字/空格/常用标点）。
                 // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
-                if self.last_ime_commit_frame != self.frame {
+                if !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame) {
                     const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
                     for c in CHARS.chars() {
                         if just(c) {
@@ -4851,6 +4862,52 @@ fn main() -> GameResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // C8：IME 去重判定（与 `ime_commit_suppresses_ascii` 对应）。
+    // 设备验证（真机 IME 日志）已确认 c6db353 实现在 winit 0.30 下正确；
+    // 以下为无头逻辑验证，覆盖两种事件时序。
+    #[cfg(feature = "steam")]
+    #[test]
+    fn c8_same_frame_double_emission_is_suppressed() {
+        // 物理键在帧 N 同时触发 IME 提交与 just(c)：
+        //  - on_text_input 在 update 前执行，设 last_ime_commit_frame = N+1
+        //  - update 开头 frame 变为 N+1
+        // 期望：该帧 just(c) 被抑制（不重复插入）。
+        let frame_before = 10u64;
+        let last = frame_before.wrapping_add(1);
+        let frame = frame_before.wrapping_add(1);
+        assert!(
+            ime_commit_suppresses_ascii(frame, last),
+            "同帧 IME 提交 + just(c) 应被抑制，避免重复插入"
+        );
+    }
+
+    #[cfg(feature = "steam")]
+    #[test]
+    fn c8_no_ime_commit_allows_ascii_insert() {
+        // 普通键盘输入（未走 IME）：last_ime_commit_frame 保持初始 u64::MAX。
+        let frame = 5u64;
+        let last = u64::MAX;
+        assert!(
+            !ime_commit_suppresses_ascii(frame, last),
+            "无 IME 提交时应正常允许 ASCII 白名单插入"
+        );
+    }
+
+    #[cfg(feature = "steam")]
+    #[test]
+    fn c8_cross_frame_double_emission_residual_risk() {
+        // 残留风险：若 winit 对同一物理键跨帧（≥2 帧后）双发 just(c)，当前方案不抑制。
+        // 真实 IME 下几乎不可能（just_pressed 每帧清空，重复键同帧到达即被上例覆盖），
+        // 但记录此边界以便后续若发现交叉输入法行为可快速定位。
+        let ime_frame = 10u64;
+        let last = ime_frame.wrapping_add(1); // 帧 N 提交
+        let frame = ime_frame.wrapping_add(2); // 帧 N+1 的 update 后 frame = N+2
+        assert!(
+            !ime_commit_suppresses_ascii(frame, last),
+            "跨帧(≥2帧)双发不被当前方案抑制——残留风险边界"
+        );
+    }
 
     #[cfg(feature = "steam")]
     #[test]
