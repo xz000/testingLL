@@ -7,3 +7,16 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# 帧同步确定性：dev 与 release 的「溢出/断言」行为必须完全一致。
+#
+# 原因（RISK_ANALYSIS.md D1）：定点数库 fixed 1.28 的 `Fix64::from_num` 溢出只有
+# `debug_assert!(!overflow)`（fixed-1.28.0/src/prim_traits.rs:377），由 debug-assertions 控制
+# —— dev 直接 panic、release 静默回绕。若两端（或同端不同构建）profile 不一致，
+# 同一个世界会算出不同结果且**毫无报错**，即静默 desync，这是 lockstep 最难查的故障。
+#
+# 开启后 release 同样 panic：对帧同步而言，宁可崩得响，不要静默分叉。
+# overflow-checks 同时覆盖我们自己的整数运算（金币 i32 / 升级花费 u32 等回绕）。
+[profile.release]
+debug-assertions = true
+overflow-checks = true
