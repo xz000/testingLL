@@ -4,7 +4,7 @@
 //! 淇濊瘉 `to_bytes` 鈫?`from_bytes` 鍚庨€愪綅涓€鑷达紝渚涢噸杩炵閲嶅缓鏁村満 World 鍚庣户缁?lockstep銆?
 
 use crate::fix::{Fix64, Vec2};
-use crate::player::{Buff, BuffKind, Cmd, Control, Kick, Player, SweepState};
+use crate::player::{Buff, BuffKind, Cmd, Control, Kick, Player, SweepState, MAX_CMDS};
 use crate::skill::{CastPhase, Caster, SkillId};
 use crate::world::{Obstacle, Projectile, ProjectileKind, ScatterKind, World};
 
@@ -47,6 +47,37 @@ fn fixat(b: &[u8], p: &mut usize) -> Option<Fix64> {
 }
 fn vecat(b: &[u8], p: &mut usize) -> Option<Vec2> {
     Some(Vec2::new(fixat(b, p)?, fixat(b, p)?))
+}
+
+// ===== 不可信输入的上界防护（RISK_ANALYSIS.md P4 / D2） =====
+//
+// 快照字节来自网络（重连 / 主机迁移），长度前缀是对方完全可控的 u32。
+// 若在 `Vec::with_capacity` 里直接使用，一个 `count = 0xFFFFFFFF` 的**小包**
+// 就能让进程申请数十 GB 后 abort（OOM / DoS）。上界取远大于任何合法对局的宽松值，
+// 超限即视为快照非法并返回 `None`，由调用方按「快照无效」处理。
+
+const MAX_DECODE_PLAYERS: usize = 64;
+const MAX_DECODE_OBSTACLES: usize = 256;
+const MAX_DECODE_PROJECTILES: usize = 4096;
+const MAX_DECODE_ELIMINATED: usize = 64;
+const MAX_DECODE_KILLS: usize = 4096;
+
+/// 读取一个长度前缀并校验上界；超限返回 `None` 拒绝该快照。
+fn count_at(b: &[u8], p: &mut usize, max: usize) -> Option<usize> {
+    let n = u32at(b, p)? as usize;
+    if n > max {
+        None
+    } else {
+        Some(n)
+    }
+}
+
+/// 校验指令环形缓冲的下标范围。
+///
+/// `cmd_buf` 只有 `MAX_CMDS` 个槽（game-core/src/player.rs:29），损坏/恶意快照给出的
+/// 越界 `cmd_head` 会让 `Player` 的 `cmd_buf[cmd_head]`（player.rs:586）越界 panic。
+fn cmd_indices_valid(head: usize, len: usize) -> bool {
+    head < MAX_CMDS && len <= MAX_CMDS
 }
 
 fn wopt_vec(o: &mut Vec<u8>, v: Option<Vec2>) {
@@ -358,6 +389,11 @@ fn decode_player(b: &[u8], p: &mut usize) -> Option<Player> {
     }
     let cmd_head = u32at(b, p)? as usize;
     let cmd_len = u32at(b, p)? as usize;
+    // 越界防护（RISK_ANALYSIS.md D2）：cmd_buf 只有 MAX_CMDS 个槽，
+    // 损坏/恶意快照的越界 head/len 会让 Player::peek_cmd 的 cmd_buf[cmd_head] 越界 panic。
+    if !cmd_indices_valid(cmd_head, cmd_len) {
+        return None;
+    }
     let alive = u8at(b, p)? != 0;
 
     let mut pl = Player::new(id, Vec2::ZERO, Fix64::ONE);
@@ -528,27 +564,27 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     let sandbox = u8at(b, &mut p)? != 0;
     let round_seed = u64at(b, &mut p)?;
     let time = fixat(b, &mut p)?;
-    let np = u32at(b, &mut p)? as usize;
+    let np = count_at(b, &mut p, MAX_DECODE_PLAYERS)?;
     let mut players = Vec::with_capacity(np);
     for _ in 0..np {
         players.push(decode_player(b, &mut p)?);
     }
-    let no = u32at(b, &mut p)? as usize;
+    let no = count_at(b, &mut p, MAX_DECODE_OBSTACLES)?;
     let mut obstacles = Vec::with_capacity(no);
     for _ in 0..no {
         obstacles.push(Obstacle { pos: vecat(b, &mut p)?, radius: fixat(b, &mut p)? });
     }
-    let npr = u32at(b, &mut p)? as usize;
+    let npr = count_at(b, &mut p, MAX_DECODE_PROJECTILES)?;
     let mut projectiles = Vec::with_capacity(npr);
     for _ in 0..npr {
         projectiles.push(decode_projectile(b, &mut p)?);
     }
-    let ne = u32at(b, &mut p)? as usize;
+    let ne = count_at(b, &mut p, MAX_DECODE_ELIMINATED)?;
     let mut eliminated_order = Vec::with_capacity(ne);
     for _ in 0..ne {
         eliminated_order.push(u32at(b, &mut p)?);
     }
-    let nk = u32at(b, &mut p)? as usize;
+    let nk = count_at(b, &mut p, MAX_DECODE_KILLS)?;
     let mut kills_this_round = Vec::with_capacity(nk);
     for _ in 0..nk {
         let k = u32at(b, &mut p)?;
@@ -597,5 +633,36 @@ mod tests {
         assert_eq!(w.projectiles, back.projectiles, "projectiles equal");
         assert_eq!(w.eliminated_order, back.eliminated_order);
         assert_eq!(w.kills_this_round, back.kills_this_round);
+    }
+
+    #[test]
+    fn decode_rejects_absurd_counts_instead_of_huge_allocation() {
+        // 回归 P4：count=0xFFFFFFFF 的小包若直接喂给 Vec::with_capacity，
+        // 会申请数十 GB 后 abort（OOM / 远程 DoS），必须被拒绝。
+        let huge = 0xFFFF_FFFFu32.to_be_bytes();
+        let mut p = 0;
+        assert_eq!(count_at(&huge, &mut p, MAX_DECODE_PLAYERS), None);
+        let ok = 3u32.to_be_bytes();
+        let mut p2 = 0;
+        assert_eq!(count_at(&ok, &mut p2, MAX_DECODE_PLAYERS), Some(3));
+    }
+
+    #[test]
+    fn decode_rejects_out_of_range_cmd_indices() {
+        // 回归 D2：cmd_buf 只有 MAX_CMDS 个槽，越界 head/len 会让 cmd_buf[cmd_head] panic。
+        assert!(cmd_indices_valid(0, 0));
+        assert!(cmd_indices_valid(MAX_CMDS - 1, MAX_CMDS));
+        assert!(!cmd_indices_valid(MAX_CMDS, 0), "head 越界应拒绝");
+        assert!(!cmd_indices_valid(0, MAX_CMDS + 1), "len 越界应拒绝");
+    }
+
+    #[test]
+    fn world_from_bytes_rejects_absurd_player_count() {
+        // 端到端：把合法快照里的玩家数改成 0xFFFFFFFF，必须被拒绝而非巨额分配。
+        let w = World::new(3, 99);
+        let mut bytes = world_to_bytes(&w);
+        // 头部：arena_radius(8) + sandbox(1) + round_seed(8) + time(8) = 25，紧接玩家数 u32
+        bytes[25..29].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
+        assert!(world_from_bytes(&bytes).is_none(), "超大玩家数必须被拒绝");
     }
 }
