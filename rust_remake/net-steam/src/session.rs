@@ -716,7 +716,8 @@ impl SteamSession {
     }
 
     /// client：按 `matchkey` 大厅元数据过滤公开大厅并加入（异步，S12）。两阶段：先搜列表再 join，
-    /// 阶段切换由 `tick_lobby` 内部完成。`beats` 为每个阶段（搜/加入）的超时拍数上限。
+    /// 阶段切换由 `tick_lobby` 内部完成。`beats` 为两阶段**合计**的超时拍数上限
+    /// （搜列表 + 加入共享同一预算，并非每阶段各 `beats` 拍；如 `start_find_and_join(480)` = 两阶段共 8s@60fps）。
     /// 注意：steamworks 的 `add_request_lobby_list_string_filter` 需要 `LobbyKey`（pub(crate) 字段）无法从本 crate 构造，
     /// 故改为 request_lobby_list 后用 `lobby_data(matchkey)` 过滤（公开 API）。
     pub fn start_find_and_join(&mut self, beats: u32) -> io::Result<()> {
