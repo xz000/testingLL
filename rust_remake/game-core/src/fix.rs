@@ -234,4 +234,17 @@ mod tests {
         // Fix64 是 I32F32（上限约 2.1e9），f64::MAX 必然溢出。
         let _ = Fix64::from_num(f64::MAX);
     }
+
+    /// 回归 D1（对称下界）：`Fix64::from_num` **下溢**也必须 panic，而不是静默回绕。
+    ///
+    /// fixed 1.28 的 `to_fixed` 用同一个 `debug_assert!(!overflow)` 同时覆盖正溢出与负下溢
+    /// （`f64::MIN` 幅值远超 I32F32 下界约 -2.1e9，会被判为 overflow）。若不开启
+    /// `debug-assertions`，release 同样会静默回绕，导致两端同一世界算出不同结果（静默 desync）。
+    /// 本测试与上方的 overflow 测试一起锁定「越界即 panic」。
+    #[test]
+    #[should_panic]
+    fn from_num_underflow_panics_instead_of_wrapping() {
+        // Fix64 是 I32F32（下界约 -2.1e9），f64::MIN（约 -1.8e308）必然下溢。
+        let _ = Fix64::from_num(f64::MIN);
+    }
 }
