@@ -211,6 +211,18 @@
 
 ---
 
+## 修复进度（2026-09-03，P0 全部完成）
+
+| 项 | 提交 | 说明 |
+|---|---|---|
+| P1 / P2 协议解码越界（DoS） | `9f80eba` | `proto.rs` 长度守卫 `>=10→>=11` / `>=5→>=6`；补边界回归测试 `decode_length_guard_exact_boundary_does_not_panic` |
+| P3 击杀记账丢失 | `37d2f7e` | `damage_player`/`explode_at` 致死瞬间记账（每玩家一次）；补测试 `projectile_kill_is_recorded_in_kills_and_eliminated_order` |
+| C3 门禁覆盖 steam | `eeec84b` | `check.ps1` 增 `-p client --features client/steam` 的 build+test+clippy（已验证干净：7 测试通过、无 clippy 警告） |
+
+> P1 及更低的项（S1 快照缓冲、S2/S3/S4 迁移收敛、P4/D2 解码上界、D1 溢出分叉等）多为需真机/双账号验证或涉及设计取舍的改动，留待下一步决策。
+
+---
+
 ## 附：审查过程与可信度
 
 - 由 4 个并行只读 Agent 分别审查 网络同步层 / Steam 联机层 / 世界确定性 / 客户端与工程化，再由人工逐条复核关键证据（`proto.rs`、`world.rs` 死亡记账路径、`rng.rs`、`world_ser.rs`、`transport_steam.rs`、`main.rs` 退出判定、`publish.ps1`、`Cargo.toml`）。
