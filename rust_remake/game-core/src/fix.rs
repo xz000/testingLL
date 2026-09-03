@@ -220,4 +220,18 @@ mod tests {
             prev = Some(r);
         }
     }
+
+    /// 回归 D1：`Fix64::from_num` 溢出必须 panic，而不是静默回绕。
+    ///
+    /// 定点数库 fixed 1.28 的 `from_num` 溢出只有 `debug_assert!`，
+    /// release 默认会**静默回绕**；那样两端若用不同 profile 构建，同一世界会算出
+    /// 不同结果且毫无报错（静默 desync，lockstep 最难查的故障）。
+    /// 工作区根 `Cargo.toml` 的 `[profile.release] debug-assertions = true` 正是
+    /// 为了让 dev 与 release 行为一致——本测试锁定「溢出会 panic」这一行为。
+    #[test]
+    #[should_panic]
+    fn from_num_overflow_panics_instead_of_wrapping() {
+        // Fix64 是 I32F32（上限约 2.1e9），f64::MAX 必然溢出。
+        let _ = Fix64::from_num(f64::MAX);
+    }
 }
