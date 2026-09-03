@@ -249,7 +249,7 @@ impl Packet {
                 Some(Packet::Join { identity })
             }
             TAG_READY => Some(Packet::Ready),
-            TAG_ACK if buf.len() >= 10 => {
+            TAG_ACK if buf.len() >= 11 => {
                 let players = buf[1];
                 let my_index = buf[2];
                 let identity = u64::from_be_bytes(buf[3..11].try_into().ok()?);
@@ -350,7 +350,7 @@ impl Packet {
                 };
                 Some(Packet::RosterReady { entries, manual_ms })
             }
-            TAG_ROOM_STATE if buf.len() >= 5 => {
+            TAG_ROOM_STATE if buf.len() >= 6 => {
                 let index = buf[1];
                 let ready = buf[2] != 0;
                 let build_done = buf[3] != 0;
@@ -448,6 +448,14 @@ mod tests {
         assert!(Packet::decode(&[TAG_JOIN]).is_none());
         // 未知 tag。
         assert!(Packet::decode(&[99, 1, 2, 3]).is_none());
+    }
+
+    #[test]
+    fn decode_length_guard_exact_boundary_does_not_panic() {
+        // Ack 实际需 11 字节（tag+players+index+identity:u64），给恰好 10 字节必须拒绝而非越界 panic。
+        assert!(Packet::decode(&[TAG_ACK, 0, 0, 0, 0, 0, 0, 0, 0, 0]).is_none());
+        // RoomState 实际需 6 字节（tag+index+ready+build_done+len_hi+len_lo），给恰好 5 字节必须拒绝。
+        assert!(Packet::decode(&[TAG_ROOM_STATE, 0, 0, 0, 0]).is_none());
     }
 
     #[test]
