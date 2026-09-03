@@ -305,8 +305,14 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wu8(o, p.alive as u8);
 }
 
-fn decode_player(b: &[u8], p: &mut usize) -> Option<Player> {
+fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let id = u32at(b, p)?;
+    // 下界防护（RISK_ANALYSIS.md D2）：玩家 id 直接作为 `players[id as usize]` 下标，
+    // 在 step / record_death 等路径里被广泛使用（world.rs:738/746/1104/1199…）。
+    // 损坏/恶意快照给出越界 id 会在后续逻辑里 OOB panic。合法快照的 id 一定 < np。
+    if (id as usize) >= np {
+        return None;
+    }
     let pos = vecat(b, p)?;
     let radius = fixat(b, p)?;
     let hp = fixat(b, p)?;
@@ -567,7 +573,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     let np = count_at(b, &mut p, MAX_DECODE_PLAYERS)?;
     let mut players = Vec::with_capacity(np);
     for _ in 0..np {
-        players.push(decode_player(b, &mut p)?);
+        players.push(decode_player(b, &mut p, np)?);
     }
     let no = count_at(b, &mut p, MAX_DECODE_OBSTACLES)?;
     let mut obstacles = Vec::with_capacity(no);
@@ -579,16 +585,26 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     for _ in 0..npr {
         projectiles.push(decode_projectile(b, &mut p)?);
     }
+    // 下界防护（RISK_ANALYSIS.md D2）：eliminated_order / kills_this_round 里的 id
+    // 同样作为 `players[id as usize]` 下标（world.rs:738-740 record_death）。
+    // 损坏/恶意快照给出越界 id 会在结算名次/击杀赏金时 OOB panic，故需 < np。
     let ne = count_at(b, &mut p, MAX_DECODE_ELIMINATED)?;
     let mut eliminated_order = Vec::with_capacity(ne);
     for _ in 0..ne {
-        eliminated_order.push(u32at(b, &mut p)?);
+        let e = u32at(b, &mut p)?;
+        if (e as usize) >= np {
+            return None;
+        }
+        eliminated_order.push(e);
     }
     let nk = count_at(b, &mut p, MAX_DECODE_KILLS)?;
     let mut kills_this_round = Vec::with_capacity(nk);
     for _ in 0..nk {
         let k = u32at(b, &mut p)?;
         let v = u32at(b, &mut p)?;
+        if (k as usize) >= np || (v as usize) >= np {
+            return None;
+        }
         kills_this_round.push((k, v));
     }
     Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, time, lightning_visual: None })
@@ -664,5 +680,39 @@ mod tests {
         // 头部：arena_radius(8) + sandbox(1) + round_seed(8) + time(8) = 25，紧接玩家数 u32
         bytes[25..29].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
         assert!(world_from_bytes(&bytes).is_none(), "超大玩家数必须被拒绝");
+    }
+
+    #[test]
+    fn world_from_bytes_rejects_out_of_range_player_id() {
+        // 回归 D2（下界）：玩家 id 直接作 `players[id as usize]` 下标，
+        // 越界 id 应在解码期被拒绝，而非在 step 里 OOB panic。
+        let w = World::new(3, 99);
+        let mut bytes = world_to_bytes(&w);
+        // 头部(25) + 玩家数 u32(4) = 29，紧接第一个玩家 id。改成 0xFFFFFFFF（>= np=3）。
+        bytes[29..33].copy_from_slice(&0xFFFF_FFFFu32.to_be_bytes());
+        assert!(world_from_bytes(&bytes).is_none(), "越界玩家 id 必须被拒绝");
+    }
+
+    #[test]
+    fn world_from_bytes_rejects_out_of_range_eliminated_id() {
+        // 回归 D2（下界）：eliminated_order 里的 id 也作 players[id] 下标，必须 < np。
+        let mut w = World::new(2, 99);
+        w.eliminated_order.push(0xFFFF_FFFF); // >= np=2，非法
+        let bytes = world_to_bytes(&w);
+        assert!(world_from_bytes(&bytes).is_none(), "越界 eliminated_order id 必须被拒绝");
+    }
+
+    #[test]
+    fn world_from_bytes_rejects_out_of_range_kill_id() {
+        // 回归 D2（下界）：kills_this_round 的 (击杀者, 被击杀者) 都作 players[id] 下标，必须 < np。
+        let mut w = World::new(2, 99);
+        w.kills_this_round.push((0xFFFF_FFFF, 1)); // 击杀者越界
+        let bytes = world_to_bytes(&w);
+        assert!(world_from_bytes(&bytes).is_none(), "越界击杀者 id 必须被拒绝");
+
+        let mut w2 = World::new(2, 99);
+        w2.kills_this_round.push((0, 0xFFFF_FFFF)); // 被击杀者越界
+        let bytes2 = world_to_bytes(&w2);
+        assert!(world_from_bytes(&bytes2).is_none(), "越界被击杀者 id 必须被拒绝");
     }
 }
