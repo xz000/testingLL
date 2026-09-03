@@ -222,8 +222,8 @@
 | C3 门禁覆盖 steam | `eeec84b` | `check.ps1` 增 `-p client --features client/steam` 的 build+test+clippy（已验证干净：7 测试通过、无 clippy 警告） |
 | D1 `from_num` 溢出 release 静默分叉 | `46ddbbc` | `[profile.release]` 开 `debug-assertions` + `overflow-checks`；`from_num` 溢出在 release 与 dev 一致地 panic。验证：release 全量 152 测试通过无误触发，回归测试在 dev/release 均 panic |
 | P4 / D2 解码上界 | `005e6e2` | `world_ser` 的 count 经 `count_at()` 上界校验（64 玩家/256 柱/4096 弹体/4096 击杀）防 OOM；`cmd_head`/`cmd_len` 越界校验防 `cmd_buf` OOB panic |
-| D1 `from_num` 下溢对称回归 | （本次，待提交） | `fix.rs` 增 `from_num_underflow_panics_instead_of_wrapping`：`f64::MIN` 在 `[profile.release] debug-assertions=true` 下 panic（与溢出同一 `debug_assert!`，行为锁定） |
-| D2 解码下界（id 范围） | （本次，待提交） | `decode_player` 校验 `id < np`；`world_from_bytes` 校验 `eliminated_order`/`kills_this_round` 的 id `< np`，越界快照解码期返回 `None` 而非 step 期 OOB panic；增 3 个回归测试 |
+| D1 `from_num` 下溢对称回归 | `6b5740b` | `fix.rs` 增 `from_num_underflow_panics_instead_of_wrapping`：`f64::MIN` 在 `[profile.release] debug-assertions=true` 下 panic（与溢出同一 `debug_assert!`，行为锁定） |
+| D2 解码下界（id 范围） | `6b5740b` | `decode_player` 校验 `id < np`；`world_from_bytes` 校验 `eliminated_order`/`kills_this_round` 的 id `< np`，越界快照解码期返回 `None` 而非 step 期 OOB panic；增 3 个回归测试 |
 
 > 剩余未修项：S1 快照缓冲 8192、S2/S3/S4 迁移收敛、P5/P8/P9/P10/P12 网络健壮性、
 > C1/C2 联网退出路径、C10 密码明文等——多为需真机/双账号验证或涉及设计取舍的改动。
