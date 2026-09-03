@@ -187,6 +187,17 @@ enum AppState {
     SteamJoin { lobby_id: Option<u64> },
 }
 
+/// 进行中的 Steam 大厅操作类型（S12：帧驱动异步，避免在游戏线程 `std::thread::sleep` 忙等）。
+/// `enter_steam_mode` / CLI 启动只发起操作（`start_*`）并记下类型，真正「进房」由 `update` 每帧
+/// `run_callbacks` 后 `tick_lobby` 完成、再调用 `finish_enter_steam_mode` 落地（建 lockstep/世界/战绩）。
+#[cfg(feature = "steam")]
+enum SteamLobbyPending {
+    /// 建房（host）。`players` = 请求的玩家总数（含 host），进房后据此建 HostLockstep。
+    Host { players: u8 },
+    /// 加入（client）。`lobby_id` = 手动指定的大厅 id（好友分享/LobbyId），`None` = 按 matchkey 自动搜索。
+    Join { lobby_id: Option<u64> },
+}
+
 /// 升级到某个等级的价格（简单坡度，后期可调）
 fn upgrade_cost(current_level: u32) -> i32 {
     (current_level * 5 + 5) as i32
@@ -356,6 +367,10 @@ struct Game {
     /// Steam：客户端要加入的指定大厅 LobbyId（从房间列表选中时设置；`enter_steam_mode` client 分支优先用其加入）。
     #[cfg(feature = "steam")]
     steam_join_lobby_id: Option<u64>,
+    /// Steam：进行中的大厅操作（S12 异步）。`Some` = 已 `start_*` 发起、等待 `update` 每帧 `tick_lobby` 完成；
+    /// 同时充当「连接中」状态（`draw`/`update` 据此显示「连接中…」并跳过菜单/房间输入）。`None` = 空闲/已进房。
+    #[cfg(feature = "steam")]
+    steam_lobby_pending: Option<SteamLobbyPending>,
     /// Steam：房主是否处于「编辑房间信息」子界面（房间就绪界面按 E 进入，回车保存 / Q 取消）。
     #[cfg(feature = "steam")]
     steam_room_edit: bool,
@@ -584,11 +599,15 @@ impl Game {
         let mut net_host: Option<net::handshake::HostHandshake<net::transport::StdUdpTransport>> = None;
         let net_host_ls: Option<net::lockstep::HostLockstep<net::transport::StdUdpTransport>> = None;
         #[cfg(feature = "steam")]
-        let mut steam_host_ls: Option<net::lockstep::HostLockstep<net_steam::SteamTransport>> = None;
+        let steam_host_ls: Option<net::lockstep::HostLockstep<net_steam::SteamTransport>> = None;
         #[cfg(feature = "steam")]
-        let mut steam_cli_ls: Option<net::lockstep::ClientLockstep<net_steam::SteamTransport>> = None;
+        let steam_cli_ls: Option<net::lockstep::ClientLockstep<net_steam::SteamTransport>> = None;
         #[cfg(feature = "steam")]
-        let mut steam_my_index: u8 = 0;
+        let steam_my_index: u8 = 0;
+        #[cfg(feature = "steam")]
+        let mut steam_sess: Option<net_steam::session::SteamSession> = None;
+        #[cfg(feature = "steam")]
+        let mut steam_lobby_pending: Option<SteamLobbyPending> = None;
         #[cfg(feature = "steam")]
         let steam_active: bool = false;
         #[cfg(feature = "steam")]
@@ -608,84 +627,48 @@ impl Game {
         #[cfg(feature = "steam")]
         let steam_host_broadcasting_takeover: bool = false;
         #[cfg(feature = "steam")]
-        let mut steam_roster: Vec<(u8, String, u64)> = Vec::new();
-        #[cfg(feature = "steam")]
-        let steam_in_lobby_flag = matches!(app, AppState::SteamHost { .. }) || matches!(app, AppState::SteamJoin { .. });
+        let steam_roster: Vec<(u8, String, u64)> = Vec::new();
+        // CLI `--steam-host`/`--steam-join` 直通：大厅操作是帧驱动异步（S12），构造时尚未进房，
+        // 由 `update` 每帧 `tick_lobby` 完成后才置 `steam_in_lobby=true`，故这里固定 false（true 会让 draw/update 误以为已进房）。
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
         #[cfg(feature = "steam")]
-        let mut init_rounds: u32 = STEAM_DEFAULT_ROUNDS;
+        let init_rounds: u32 = STEAM_DEFAULT_ROUNDS;
         #[cfg(feature = "steam")]
-        let mut init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
+        let init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
         #[cfg(feature = "steam")]
-        let mut init_starting_gold: i32 = STEAM_DEFAULT_STARTING_GOLD;
+        let init_starting_gold: i32 = STEAM_DEFAULT_STARTING_GOLD;
         #[cfg(feature = "steam")]
-        let mut init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
+        let init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
         #[cfg(feature = "steam")]
-        let mut init_place_rewards: Vec<i32> = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
+        let init_place_rewards: Vec<i32> = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
             AppState::Solo => {}
             #[cfg(feature = "steam")]
             AppState::SteamHost { players } => {
+                // 帧驱动异步（S12）：只发起建厅，真正进房由 `update` 每帧 `tick_lobby` 完成后落地。
                 let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
                     .map_err(ggez::GameError::from)?;
-                let lobby = sess.host_create_lobby(players.max(1) as u32, STEAM_LOBBY_CREATE_BEATS).map_err(ggez::GameError::from)?;
-                sess.prepare_transport().map_err(ggez::GameError::from)?;
-                steam_my_index = sess.my_slot();
-                eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
-                // 房间成员名单（昵称）：identities + Friends 昵称。
-                {
-                    let fr = sess.transport.friends();
-                    for (slot, id) in sess.identities() {
-                        let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
-                        steam_roster.push((slot, name, id));
-                    }
-                }
-                // 建 HostLockstep<SteamTransport>：总玩家数= host 请求的 players（不是当前唯一成员 1）。
-                let n = players.max(1) as usize;
-                // 传给 set_client_identities 的身份必须是 client（不含 host 槽 0）：sess.identities() 含 host，需跳过。
-                let ids: Vec<Option<u64>> = sess.identities().iter().skip(1).map(|(_, v)| Some(*v)).collect();
-                let transport = sess.into_transport();
-                let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
-                host_ls.set_client_identities(&ids);
-                steam_host_ls = Some(host_ls);
-                player_count = n as u32;
+                sess.start_host_create(players.max(1) as u32, STEAM_LOBBY_CREATE_BEATS)
+                    .map_err(ggez::GameError::from)?;
+                steam_sess = Some(sess);
+                steam_lobby_pending = Some(SteamLobbyPending::Host { players });
+                player_count = players.max(1) as u32;
             }
             #[cfg(feature = "steam")]
             AppState::SteamJoin { lobby_id } => {
+                // 同上：只发起加入，进房由 `update` 落地。
                 let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
                     .map_err(ggez::GameError::from)?;
-                let lobby = match lobby_id {
-                    Some(id) => sess.join_lobby_by_id(id, 240).map_err(ggez::GameError::from)?,
-                    None => sess.client_find_and_join(240).map_err(ggez::GameError::from)?,
-                };
-                sess.prepare_transport().map_err(ggez::GameError::from)?;
-                eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
-                let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
-                init_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
-                init_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
-                init_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
-                init_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
-                init_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
-                let host_id = sess.host_steam_id().unwrap_or(0);
-                let my_slot = sess.my_slot();
-                steam_my_index = my_slot;
-                // 房间成员名单（昵称）。
-                {
-                    let fr = sess.transport.friends();
-                    for (slot, id) in sess.identities() {
-                        let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
-                        steam_roster.push((slot, name, id));
-                    }
+                match lobby_id {
+                    Some(id) => sess.start_join_by_id(id, 240),
+                    None => sess.start_find_and_join(240),
                 }
-                let transport = sess.into_transport();
-                steam_cli_ls = Some(net::lockstep::ClientLockstep::new(
-                    transport,
-                    my_slot,
-                    net::transport::Peer::Steam { id: host_id, conn: None },
-                ));
-                player_count = total.max(2) as u32;
+                .map_err(ggez::GameError::from)?;
+                steam_sess = Some(sess);
+                steam_lobby_pending = Some(SteamLobbyPending::Join { lobby_id });
+                player_count = 2;
             }            AppState::LanJoin { addr } => {
                 let mut link: netlink::NetLinkUdp =
                     netlink::NetLink::connect_udp(addr).map_err(ggez::GameError::from)?;
@@ -810,7 +793,7 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_last_sent_ready: None,
             #[cfg(feature = "steam")]
-            steam_in_lobby: steam_in_lobby_flag,
+            steam_in_lobby: false,
             #[cfg(feature = "steam")]
             steam_local_ready: false,
             #[cfg(feature = "steam")]
@@ -848,11 +831,13 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_list_last_refresh: -999.0,
             #[cfg(feature = "steam")]
-            steam_sess: None,
+            steam_sess,
             #[cfg(feature = "steam")]
             steam_my_display_name: String::new(),
             #[cfg(feature = "steam")]
             steam_join_lobby_id: None,
+            #[cfg(feature = "steam")]
+            steam_lobby_pending,
             #[cfg(feature = "steam")]
             steam_room_edit: false,
             #[cfg(feature = "steam")]
@@ -2236,6 +2221,15 @@ impl event::EventHandler for Game {
         self.frame = self.frame.wrapping_add(1);
         let dt = ctx.time.delta().as_secs_f64();
 
+        // S12：进行中的大厅操作（建厅/加入）是帧驱动异步，由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 推进。
+        // 连接期间跳过其余菜单/房间输入（也不应被认为已进房），只泵回调 + 推进，完成后才落地进房。
+        #[cfg(feature = "steam")]
+        if self.steam_lobby_pending.is_some() {
+            self.steam_poll_lobby_pending(ctx);
+            self.accumulator = 0.0;
+            return Ok(());
+        }
+
         // Steam 房间/就绪/编辑阶段：房主按 E 进「编辑房间信息」界面；否则进房间就绪界面。
         #[cfg(feature = "steam")]
         if self.steam_in_lobby {
@@ -3027,6 +3021,11 @@ impl event::EventHandler for Game {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        // S12：大厅操作进行中（连接中）显示「连接中…」，不进房间/菜单界面。
+        #[cfg(feature = "steam")]
+        if self.steam_lobby_pending.is_some() {
+            return self.draw_steam_connecting(ctx);
+        }
         if self.app == AppState::MainMenu {
             return self.draw_menu(ctx);
         }
@@ -3155,6 +3154,7 @@ impl Game {
             self.steam_lobby_menu = false;
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;
+            self.steam_lobby_pending = None;
             self.steam_list_requested = false;
             self.steam_list_lobbies = Vec::new();
             self.steam_join_lobby_id = None;
@@ -3915,6 +3915,7 @@ impl Game {
     }
 
     /// 房间列表界面输入：首次进入拉一次公开大厅列表，供浏览选房加入。
+    /// 列表拉取是帧驱动异步（S12）：`start_list_lobbies` 注册回调后立即返回，每帧 `tick_lobby_list` 推进后落地。
     /// - ↑/↓ 选择；回车=加入选中的大厅；R=重新刷新；Q=返回大厅主界面。
     #[cfg(feature = "steam")]
     fn steam_lobby_list_update(&mut self, ctx: &mut Context) {
@@ -3929,25 +3930,33 @@ impl Game {
         if want_refresh && (first || now - self.steam_list_last_refresh >= LOBBY_REFRESH_COOLDOWN_SECS) {
             self.steam_list_requested = true;
             self.steam_list_last_refresh = now;
-            if let Some(sess) = self.steam_sess.as_ref() {
-                match sess.client_list_lobbies(120) {
-                    Ok(mut list) => {
-                        // 人数已满的大厅仍显示但不可选（steamworks 加入会失败）；这里仅排序展示。
-                        list.sort_by_key(|l| (l.members >= l.limit, l.members));
-                        self.steam_list_lobbies = list;
-                        if self.steam_list_selection >= self.steam_list_lobbies.len() {
-                            self.steam_list_selection = self.steam_list_lobbies.len().saturating_sub(1);
-                        }
-                        eprintln!("[steam-list] {} lobbies found", self.steam_list_lobbies.len());
-                    }
-                    Err(e) => {
-                        eprintln!("[steam-list] list failed: {e:?}");
-                        self.steam_list_lobbies = Vec::new();
-                    }
+            // 发起异步列表拉取（S12：不 sleep，注册回调后返回；结果由下面 tick 推进）。
+            if let Some(sess) = self.steam_sess.as_mut() {
+                if let Err(e) = sess.start_list_lobbies(120) {
+                    eprintln!("[steam-list] start list failed: {e:?}");
                 }
             }
         } else if want_refresh {
             eprintln!("[steam-list] 刷新太快（Steam 搜索限速），请几秒后再按 R");
+        }
+        // 每帧推进异步列表拉取（无论是否刚刷新都要推进，直到 Done）。
+        if let Some(sess) = self.steam_sess.as_mut() {
+            match sess.tick_lobby_list() {
+                net_steam::session::LobbyListProgress::Done(Ok(mut list)) => {
+                    // 人数已满的大厅仍显示但不可选（steamworks 加入会失败）；这里仅排序展示。
+                    list.sort_by_key(|l| (l.members >= l.limit, l.members));
+                    self.steam_list_lobbies = list;
+                    if self.steam_list_selection >= self.steam_list_lobbies.len() {
+                        self.steam_list_selection = self.steam_list_lobbies.len().saturating_sub(1);
+                    }
+                    eprintln!("[steam-list] {} lobbies found", self.steam_list_lobbies.len());
+                }
+                net_steam::session::LobbyListProgress::Done(Err(e)) => {
+                    eprintln!("[steam-list] list failed: {e:?}");
+                    self.steam_list_lobbies = Vec::new();
+                }
+                net_steam::session::LobbyListProgress::Pending | net_steam::session::LobbyListProgress::Idle => {}
+            }
         }
         if just('q') || just('Q') {
             self.steam_lobby_list = false;
@@ -3977,111 +3986,179 @@ impl Game {
         }
     }
 
-    /// 从主菜单进入 Steam 大厅模式：重建真实 Steam 会话（建厅/加入）+ lockstep + 世界/战绩，
-    /// 然后停在「房间/就绪界面」（`steam_in_lobby=true`）。`is_host`=创建大厅，否则加入；
-    /// `players` 仅 host 用（请求的玩家总数，含 host）；`room_name`/`room_note` 仅 host 建厅时写进房间元数据（可空）。
+    /// 从主菜单进入 Steam 大厅模式（S12 异步）：只发起建厅/加入（`start_*`），
+    /// 真正「进房」由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 完成、再调 `finish_enter_steam_mode` 落地
+    /// （建 lockstep / 世界 / 战绩）。`is_host`=创建大厅，否则加入；`players` 仅 host 用；
+    /// `room_name`/`room_note` 现为兼容保留（落地时改读 `self.steam_create_*`）。
     #[cfg(feature = "steam")]
-    fn enter_steam_mode(&mut self, _ctx: &mut Context, is_host: bool, players: u8, room_name: Option<&str>, room_note: Option<&str>) {
+    fn enter_steam_mode(&mut self, _ctx: &mut Context, is_host: bool, players: u8, _room_name: Option<&str>, _room_note: Option<&str>) {
+        let kind = if is_host {
+            SteamLobbyPending::Host { players }
+        } else {
+            // client：若从房间列表选中了具体大厅，优先按其加入（取走 steam_join_lobby_id）。
+            SteamLobbyPending::Join { lobby_id: self.steam_join_lobby_id.take() }
+        };
+        if !self.steam_begin_lobby(kind) {
+            // 会话缺失/发起失败 → 退回大厅主界面，等待用户重试。
+            eprintln!("[steam-menu] enter_steam_mode: 无法发起大厅操作（会话缺失？）");
+            self.steam_lobby_menu = true;
+            self.steam_lobby_create = false;
+            self.steam_lobby_list = false;
+        }
+    }
+
+    /// 发起一个 Steam 大厅操作（S12 异步）：`start_*` 注册 steamworks 回调后立即返回，
+    /// 后续由 `update` 每帧 `tick_lobby` 推进（必须在 `run_callbacks` 之后）。`steam_sess` 须已初始化；成功返回 true。
+    #[cfg(feature = "steam")]
+    fn steam_begin_lobby(&mut self, kind: SteamLobbyPending) -> bool {
+        let Some(mut sess) = self.steam_sess.take() else {
+            return false;
+        };
+        let r = match &kind {
+            SteamLobbyPending::Host { players } => {
+                sess.start_host_create((*players).max(1) as u32, STEAM_LOBBY_CREATE_BEATS)
+            }
+            SteamLobbyPending::Join { lobby_id } => match lobby_id {
+                // 指定大厅 id 直接加入：单阶段，4s 超时足够。
+                Some(id) => sess.start_join_by_id(*id, 240),
+                // 按 matchkey 搜索+加入：两阶段共用 beats，给足 8s（原同步实现每阶段各 240 拍）。
+                None => sess.start_find_and_join(480),
+            },
+        };
+        match r {
+            Ok(()) => {
+                self.steam_sess = Some(sess);
+                self.steam_lobby_pending = Some(kind);
+                true
+            }
+            Err(e) => {
+                eprintln!("[steam] begin lobby failed: {e:?}");
+                self.steam_sess = Some(sess);
+                false
+            }
+        }
+    }
+
+    /// 每帧推进进行中的大厅操作（S12）：须先 `run_callbacks` 泵出 steamworks 回调，再 `tick_lobby`。
+    /// 完成（返回 `Done`）即落地进房或退回菜单。在 `update` 顶部、`steam_in_lobby` 检查之前调用。
+    #[cfg(feature = "steam")]
+    fn steam_poll_lobby_pending(&mut self, ctx: &mut Context) {
+        if let Some(sess) = self.steam_sess.as_ref() {
+            sess.run_callbacks();
+        }
+        let prog = match self.steam_sess.as_mut() {
+            Some(sess) => sess.tick_lobby(),
+            None => net_steam::session::LobbyProgress::Idle,
+        };
+        match prog {
+            net_steam::session::LobbyProgress::Done(Ok(lobby)) => {
+                self.finish_enter_steam_mode(ctx, lobby);
+            }
+            net_steam::session::LobbyProgress::Done(Err(e)) => {
+                eprintln!("[steam] lobby op failed: {e:?}");
+                self.steam_lobby_pending = None;
+                self.steam_lobby_menu = true;
+                self.steam_lobby_create = false;
+                self.steam_lobby_list = false;
+                self.steam_in_lobby = false;
+            }
+            net_steam::session::LobbyProgress::Pending | net_steam::session::LobbyProgress::Idle => {}
+        }
+    }
+
+    /// 大厅操作完成后的落地（S12）：建 lockstep / 世界 / 战绩，并停在「房间/就绪界面」。
+    /// `lobby` 已由 `tick_lobby` 的 `finalize_lobby` 写入 `sess.lobby` / `sess.table`。
+    #[cfg(feature = "steam")]
+    fn finish_enter_steam_mode(&mut self, _ctx: &mut Context, lobby: net_steam::steamworks::LobbyId) {
+        let Some(kind) = self.steam_lobby_pending.take() else {
+            return;
+        };
         let seed = 20260812u64;
         let res = (|| -> std::io::Result<()> {
-            // 复用进入大厅主界面时初始化的一次性 Steam 会话（避免重复 init 单实例 steamworks）。
             let mut sess = self
                 .steam_sess
                 .take()
-                .ok_or_else(|| std::io::Error::other("steam 会话未初始化（未进入 Steam 大厅？）"))?;
-            if is_host {
-                let lobby = sess.host_create_lobby(players.max(1) as u32, STEAM_LOBBY_CREATE_BEATS)?;
-                self.steam_lobby_id = Some(lobby.raw());
-                sess.host_set_room_info(room_name, room_note)?;
-                sess.host_set_rounds(self.steam_create_rounds)?;
-                sess.host_set_learn(self.steam_create_learn)?;
-                sess.host_set_starting_gold(self.steam_create_starting_gold)?;
-                sess.host_set_gold_per_round(self.steam_create_gold_per_round)?;
-                sess.host_set_place_reward(&self.steam_create_place)?;
-                self.match_rounds = self.steam_create_rounds;
-                self.match_learn_secs = self.steam_create_learn;
-                self.match_starting_gold = self.steam_create_starting_gold;
-                self.match_gold_per_round = self.steam_create_gold_per_round;
-                self.match_place_rewards = self.steam_create_place.clone();
-                sess.prepare_transport()?;
-                self.steam_my_index = sess.my_slot();
-                self.steam_my_id = sess.transport.steam_id();
-                eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
-                // 房间成员名单（昵称）。
-                let fr = sess.transport.friends();
-                let mut roster = Vec::new();
-                for (slot, id) in sess.identities() {
-                    let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
-                    roster.push((slot, name, id));
+                .ok_or_else(|| std::io::Error::other("steam 会话丢失"))?;
+            self.steam_lobby_id = Some(lobby.raw());
+            let n: usize;
+            match kind {
+                SteamLobbyPending::Host { players } => {
+                    sess.host_set_room_info(Some(self.steam_create_name.as_str()), Some(self.steam_create_note.as_str()))?;
+                    sess.host_set_rounds(self.steam_create_rounds)?;
+                    sess.host_set_learn(self.steam_create_learn)?;
+                    sess.host_set_starting_gold(self.steam_create_starting_gold)?;
+                    sess.host_set_gold_per_round(self.steam_create_gold_per_round)?;
+                    sess.host_set_place_reward(&self.steam_create_place)?;
+                    self.match_rounds = self.steam_create_rounds;
+                    self.match_learn_secs = self.steam_create_learn;
+                    self.match_starting_gold = self.steam_create_starting_gold;
+                    self.match_gold_per_round = self.steam_create_gold_per_round;
+                    self.match_place_rewards = self.steam_create_place.clone();
+                    sess.prepare_transport()?;
+                    self.steam_my_index = sess.my_slot();
+                    self.steam_my_id = sess.transport.steam_id();
+                    eprintln!("[steam-host] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
+                    let fr = sess.transport.friends();
+                    let mut roster = Vec::new();
+                    for (slot, id) in sess.identities() {
+                        let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+                        roster.push((slot, name, id));
+                    }
+                    self.steam_roster = roster;
+                    n = players.max(1) as usize;
+                    let ids: Vec<Option<u64>> = sess.identities().iter().skip(1).map(|(_, v)| Some(*v)).collect();
+                    let transport = sess.into_transport();
+                    let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
+                    host_ls.set_client_identities(&ids);
+                    self.steam_host_ls = Some(host_ls);
+                    self.steam_cli_ls = None;
+                    self.app = AppState::SteamHost { players };
                 }
-                self.steam_roster = roster;
-                // 建 HostLockstep<SteamTransport>：总玩家数 = 请求的 players。
-                let n = players.max(1) as usize;
-                // 传给 set_client_identities 的身份必须是 client（不含 host 槽 0）：sess.identities() 含 host，需跳过。
-                let ids: Vec<Option<u64>> = sess.identities().iter().skip(1).map(|(_, v)| Some(*v)).collect();
-                let transport = sess.into_transport();
-                let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
-                host_ls.set_client_identities(&ids);
-                self.steam_host_ls = Some(host_ls);
-                self.steam_cli_ls = None;
-                self.app = AppState::SteamHost { players };
-                // 世界/战绩：玩家数 = 请求数；金币配置用建房时设定的值。
-                self.world = game_core::world::World::new(n.max(1) as u32, seed);
-                self.meta = game_core::meta::MatchState::new(
-                    self.match_config(),
-                    &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
-                    8,
-                );
-            } else {
-                // 从房间列表选中了具体大厅 → 按其加入；否则沿用 matchkey 自动搜索加入。
-                let lobby = match self.steam_join_lobby_id.take() {
-                    Some(id) => sess.join_lobby_by_id(id, 240)?,
-                    None => sess.client_find_and_join(240)?,
-                };
-                self.steam_lobby_id = Some(lobby.raw());
-                sess.prepare_transport()?;
-                eprintln!("[steam-join] lobby={:?}, my slot={}", lobby.raw(), sess.my_slot());
-                self.steam_my_id = sess.transport.steam_id();
-                let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
-                let host_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
-                self.match_rounds = host_rounds;
-                self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
-                self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
-                self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
-                self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
-                let host_id = sess.host_steam_id().unwrap_or(0);
-                let my_slot = sess.my_slot();
-                self.steam_my_index = my_slot;
-                let fr = sess.transport.friends();
-                let mut roster = Vec::new();
-                for (slot, id) in sess.identities() {
-                    let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
-                    roster.push((slot, name, id));
+                SteamLobbyPending::Join { lobby_id: _ } => {
+                    sess.prepare_transport()?;
+                    self.steam_my_id = sess.transport.steam_id();
+                    let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
+                    self.match_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
+                    self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
+                    self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
+                    self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
+                    self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
+                    let host_id = sess.host_steam_id().unwrap_or(0);
+                    let my_slot = sess.my_slot();
+                    self.steam_my_index = my_slot;
+                    let fr = sess.transport.friends();
+                    let mut roster = Vec::new();
+                    for (slot, id) in sess.identities() {
+                        let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+                        roster.push((slot, name, id));
+                    }
+                    self.steam_roster = roster;
+                    let transport = sess.into_transport();
+                    self.steam_cli_ls = Some(net::lockstep::ClientLockstep::new(
+                        transport,
+                        my_slot,
+                        net::transport::Peer::Steam { id: host_id, conn: None },
+                    ));
+                    self.steam_host_ls = None;
+                    self.app = AppState::SteamJoin { lobby_id: None };
+                    n = total.max(2);
                 }
-                self.steam_roster = roster;
-                let transport = sess.into_transport();
-                self.steam_cli_ls = Some(net::lockstep::ClientLockstep::new(
-                    transport,
-                    my_slot,
-                    net::transport::Peer::Steam { id: host_id, conn: None },
-                ));
-                self.steam_host_ls = None;
-                self.app = AppState::SteamJoin { lobby_id: None };
-                let n = total.max(2);
-                self.world = game_core::world::World::new(n.max(1) as u32, seed);
-                self.meta = game_core::meta::MatchState::new(
-                    self.match_config(),
-                    &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
-                    8,
-                );
             }
+            self.world = game_core::world::World::new(n.max(1) as u32, seed);
+            self.meta = game_core::meta::MatchState::new(
+                self.match_config(),
+                &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
+                8,
+            );
             Ok(())
         })();
         if let Err(e) = res {
             eprintln!("[steam-menu] failed to enter steam mode: {e:?}");
-            // 失败则退回主菜单（保留沙盒世界）。
-            self.steam_lobby_menu = false;
+            self.steam_lobby_menu = true;
+            self.steam_lobby_create = false;
+            self.steam_lobby_list = false;
             self.steam_in_lobby = false;
+            self.steam_lobby_pending = None;
             return;
         }
         // 进入房间/就绪界面（无需再手动输入房间号）。
@@ -4121,9 +4198,9 @@ impl Game {
         self.steam_friend_hint = String::new();
         self.steam_presence_text = String::new(); // 强制立即写（不节流）
         self.steam_presence_last = -999.0;
-        // 会话已被消费（成功）/ 已丢弃（失败），下次回主菜单允许再初始化一次。
+        // 会话已被消费（成功），下次回主菜单允许再初始化一次。
         self.steam_session_tried = false;
-        // 新一场：允许重新上报战绩（enter_steam_mode 是进新房间的入口）。
+        // 新一场：允许重新上报战绩（进新房间的入口）。
         self.steam_stats_recorded = false;
         self.steam_stats_snapshot = None;
         self.steam_toast = (String::new(), 0.0);
@@ -4481,6 +4558,19 @@ impl Game {
             }
         }
         draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        Ok(())
+    }
+
+    /// 连接中界面（S12 异步建厅/加入期间）：显示「连接中…」，避免空帧或误进房间界面。
+    #[cfg(feature = "steam")]
+    fn draw_steam_connecting(&self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        let cy = sh / 2.0;
+        draw_text(&mut canvas, ctx, "连接中…", 44.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: cy - 30.0 }, true)?;
+        draw_text(&mut canvas, ctx, "正在连接 Steam 大厅，请稍候", 20.0, graphics::Color::from_rgb(180, 190, 205), Point2 { x: cx, y: cy + 24.0 }, true)?;
+        canvas.finish(ctx)?;
         Ok(())
     }
 

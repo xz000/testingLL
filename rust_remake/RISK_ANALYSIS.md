@@ -139,7 +139,7 @@
 - **S9 · 迁移后大厅侧与 lockstep 侧槽位不一致 `[已核实]`**：`main.rs:3290-3294` 用 `t.steam_id()` 当 host 重建表，而 lockstep 里新 host 仍是原 player index(`steam.rs:182/211`)；HUD 仍取 `steam_participants.first()` 当 host 查 ping(`main.rs:1954`)。
 - **S10 · `send_to` 恒返回 Ok `[已核实]`**：`transport_steam.rs:217/232` 入队也算成功；`PENDING_MAX=1024` 满时丢最老一条(`transport_steam.rs:132-138`)，破坏 RELIABLE 有序语义、只打 10 条日志后静默。
 - **S11 · 掉线判定与接管竞态 `[已核实]`**：`CLIENT_STALE_TICKS == HOST_DROP_TICKS == 180`(`main.rs:40/47`)，迁移期 client 不再上行 RoomState → 双方几乎同时判定对方已死。
-- **S12 · 大厅操作在主线程 sleep 忙等 `[已核实]`**：`session.rs:459-469/666-672/707-713/773-779`，`join_lobby_by_id(id, 240)`(`main.rs:3954`) 最长阻塞 12 秒。
+- **S12 · 大厅操作在主线程 sleep 忙等 `[已修复]`**：原 `session.rs` 的 `host_create_lobby`/`join_lobby_by_id`/`client_find_and_join`/`client_list_lobbies` 各含 `for _ in 0..beats { run_callbacks(); std::thread::sleep(50ms); }` 忙等（最长 12s）。已改为帧驱动异步：每个同步方法拆成 `start_*`（`register_callback` 后立即返回、写 `pending_lobby`/`pending_list`）+ `tick_lobby()`/`tick_lobby_list()`（在 `update` 每帧 `run_callbacks` 之后泵），完成才落地进房。FindJoin 的两阶段（搜列表→join）由 `tick_lobby` 内部切；超时由 `beats` 计帧控制。调用点（`Game::new` CLI、`enter_steam_mode`、`steam_lobby_list_update`）改为发起 + 状态机轮询，新增 `steam_lobby_pending` 标记「连接中」并绘制「连接中…」界面。零 `std::thread::sleep`。
 
 ### 轻
 
@@ -230,13 +230,13 @@
 | S4 脑裂/双 host 收敛 | `c6db353` | `HostLockstep.superseded` 置位后 `try_emit` 不再产权帧；`main.rs` 的 steam host 分支检测 `is_superseded()` 退回主菜单 |
 | S5 重连每帧重发刷屏 | `c6db353` | host 对每客户端重连应答限速 `RECONNECT_RESP_INTERVAL`(30)；新增回归测试 `reconnect_resp_is_rate_limited_per_client` |
 | C1/C2 联网退出路径 | `c6db353` | 对局中 Esc 直接 `reset_to_main_menu`（联网亦可；host 离开触发既有 drop→迁移路径），消除死状态 |
-| C6 17MB 字体内联 | `c6db353` | 运行时从磁盘加载完整 `cjk.ttf`（不再 `include_bytes!` 内联 17.7MB），找不到回退内联 168k 子集；`publish.ps1` 随 exe 分发 `cjk.ttf` |
+| C6 17MB 字体内联 | `c6db353` | 运行时从磁盘加载完整 `cjk.ttf`（不再 `include_bytes!` 内联 17.7MB），找不到回退内联 168k 子集；`publish.ps1` 随 exe 分发 `cjk.ttf`；`cjk.ttf` 为思源黑体 / Noto CJK（SIL OFL-1.1，可商用+可再分发），`publish.ps1` 一并打包 `FONT_LICENSE.md` 以合规 |
 | C7 热路径 `expect` | `c6db353` | `collect_cfgs` 竞态由 `.expect` 改为本轮重试（不 panic），下一帧再同步 |
 | C8 IME 双路径重复插入 | `c6db353` | `frame`/`last_ime_commit_frame` 去重；`just(c)` ASCII 白名单在 IME 提交帧跳过。**已真机验证通过**：winit 0.30 在 `set_ime_allowed(true)` 下，IME 组合键走 `Named(Process)` 而非独立 `Character` 键，不双发；`sadf`/`大幅度` 各精确插入一次，IME 后直接 ASCII 输入不被误抑制。补充无头单测 `c8_*` 覆盖同帧抑制/无 IME 正常插入/跨帧残留风险 |
 | C9 注释错误 | `c6db353` | 修正：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit` |
 | C10 密码明文 | `c6db353` | `publish.ps1` 不再把 Steam 密码还原明文拼命令行，要求 `steamcmd` 已登录缓存（`loginusers.vdf`） |
 
-> 剩余未修项：S6-S12 其余 Steam 迁移/健壮性细节（S10 `send_to` 恒返回 Ok、S11 掉线判定与接管竞态、`CLIENT_STALE_TICKS==HOST_DROP_TICKS`、S12 大厅 sleep 忙等）、
+> 剩余未修项：S6-S11 其余 Steam 迁移/健壮性细节（S10 `send_to` 恒返回 Ok、S11 掉线判定与接管竞态、`CLIENT_STALE_TICKS==HOST_DROP_TICKS`；S12 大厅 sleep 忙等已改为帧驱动异步 `[已修复]`）、
 > C4/C5 渲染性能（按规划暂缓）、C11-C14 工程化（钩子作用域过大/易绕过/`steam_appid.txt` 未跟踪/缺 `[profile.release]`）、
 > D3/D4/D5/D7 数值与解码边界、P5/P8-P12 网络健壮性——多为需真机/双账号验证或涉及设计取舍的改动。
 
