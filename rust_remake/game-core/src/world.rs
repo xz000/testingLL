@@ -730,25 +730,44 @@ impl World {
     }
 
     /// 对一位玩家施加一笔伤害。有护盾 buff 先吸收，再扣真血；记录击杀来源。
+    /// 玩家死亡记账：记录淘汰顺序与击杀者，供 `placement()` / `take_kills()` 用。
+    ///
+    /// 调用约定：victim 在此前已 `alive = false`。每个玩家只死一次
+    /// （`damage_player` 早退 / `explode_at` continue 已保证），故不会重复记账。
+    fn record_death(&mut self, victim: u32) {
+        self.eliminated_order.push(victim);
+        if let Some(k) = self.players[victim as usize].last_hit_by {
+            self.kills_this_round.push((k, victim));
+        }
+    }
+
     fn damage_player(&mut self, id: u32, amount: Fix64, from: Option<u32>) {
-        let p = &mut self.players[id as usize];
-        if !p.alive {
-            return;
-        }
-        // 4.6b：玩家造成伤害按目标护甲×法抗折算。
-        let amount = if from.is_some() {
-            amount * Fix64::from_num(p.armor_factor * p.spell_factor)
-        } else {
-            amount
+        let died = {
+            let p = &mut self.players[id as usize];
+            if !p.alive {
+                return;
+            }
+            // 4.6b：玩家造成伤害按目标护甲×法抗折算。
+            let amount = if from.is_some() {
+                amount * Fix64::from_num(p.armor_factor * p.spell_factor)
+            } else {
+                amount
+            };
+            if let Some(hitter) = from {
+                p.last_hit_by = Some(hitter);
+            }
+            // C1 疾跑：boost 期间返还一半伤害回血（soak_boost 返回净扣血）
+            let net = p.soak_boost(amount);
+            p.hp = (p.hp - net).max(Fix64::ZERO);
+            if p.hp == Fix64::ZERO {
+                p.alive = false;
+                true
+            } else {
+                false
+            }
         };
-        if let Some(hitter) = from {
-            p.last_hit_by = Some(hitter);
-        }
-        // C1 疾跑：boost 期间返还一半伤害回血（soak_boost 返回净扣血）
-        let net = p.soak_boost(amount);
-        p.hp = (p.hp - net).max(Fix64::ZERO);
-        if p.hp == Fix64::ZERO {
-            p.alive = false;
+        if died {
+            self.record_death(id);
         }
     }
 
@@ -1388,6 +1407,7 @@ impl World {
     /// 在 (pos) 处半径 `radius` 的爆炸：对范围内玩家造成伤害并按中心连线击退。
     fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64) {
         let r_sq = radius * radius;
+        let mut deaths: Vec<u32> = Vec::new();
         for p in self.players.iter_mut() {
             if !p.alive {
                 continue;
@@ -1404,6 +1424,7 @@ impl World {
                 p.hp = (p.hp - net).max(Fix64::ZERO);
                 if p.hp == Fix64::ZERO {
                     p.alive = false;
+                    deaths.push(p.id);
                 }
                 // 击退（沿中心连线远离，随距离衰减；走控制/强制速度；击退抗性在 push 内统一折算）
                 if d_sq > Fix64::ZERO {
@@ -1413,6 +1434,10 @@ impl World {
                     p.push(dir * (bomb_force * falloff), 0.3);
                 }
             }
+        }
+        // 循环外记账，避免在 iter_mut 借用期间再借 self。
+        for victim in deaths {
+            self.record_death(victim);
         }
     }
 
@@ -3901,6 +3926,33 @@ mod tests {
             world.step(input.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "爆炸弹应命中造成伤害");
+    }
+
+    #[test]
+    fn projectile_kill_is_recorded_in_kills_and_eliminated_order() {
+        // 回归 P3：被弹体/爆炸击杀曾因 step-7 死亡结算循环 `if !alive { continue }`
+        // 跳过而永不记账，导致击杀金币全不发、名次奖励发错人。
+        let mut world = World::new(2, 91);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        world.players[1].hp = Fix64::from_num(1.0); // 一击致命，但需靠 Test01 爆炸弹打死
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::Test01, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        let mut guard = 0;
+        while world.players[1].alive && guard < 120 {
+            world.step(input.clone(), dt);
+            guard += 1;
+        }
+        assert!(!world.players[1].alive, "玩家1 应被爆炸弹击杀");
+        // 击杀记账应非空，且记录为 (击杀者=玩家0, 受害者=玩家1)
+        assert!(!world.kills_this_round.is_empty(), "击杀应被记账（原 bug：空）");
+        assert!(world.kills_this_round.contains(&(0, 1)), "kills_this_round 应含 (0,1)，实际 {:?}", world.kills_this_round);
+        assert!(world.eliminated_order.contains(&1), "eliminated_order 应含玩家1，实际 {:?}", world.eliminated_order);
+        // placement 冠军应为存活者（玩家0）
+        assert_eq!(world.placement()[0], 0, "冠军应是存活者玩家0");
     }
 
     #[test]
