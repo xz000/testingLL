@@ -213,9 +213,13 @@ impl<T: Transport> HostLockstep<T> {
     /// - `peers`：与 `other_indices` 一一对应的 peer（掉线端给 None）。
     /// - `dropped`：与 `other_indices` 对应的掉线标记（原 host 那槽为 true，输入用默认占位）。
     /// - `identities`：与 `other_indices` 对应的稳定身份。
+    /// - `fallback_snapshot`：本端（新 host）没有缓存的 host 快照时（如原 host 在首个 `SNAPSHOT_EVERY` 周期前掉线、
+    ///   从未广播过快照）用的接管基线——调用方应传「本端已回放的最新 World 字节 + 当前期望帧 seq」。
+    ///   这样即便没有任何缓存快照，新 host 仍能正常广播 Takeover + 快照接管，避免「零 host」（S7）。
     ///
-    /// 新 host 从 client 缓存的快照续打（next_seq = 快照 seq），并已把掉线端占位。
-    /// 调用方应保证各参数长度一致且符合总人数。
+    /// 新 host 优先从 client 缓存的快照续打（next_seq = 快照 seq）；无缓存快照时退回 `fallback_snapshot`，
+    /// 并已把掉线端占位。调用方应保证各参数长度一致且符合总人数。
+    #[allow(clippy::too_many_arguments)]
     pub fn takeover(
         client: ClientLockstep<T>,
         my_index: u8,
@@ -224,8 +228,10 @@ impl<T: Transport> HostLockstep<T> {
         peers: Vec<Option<Peer>>,
         dropped: Vec<bool>,
         identities: Vec<Option<u64>>,
+        fallback_snapshot: Option<(Vec<u8>, u64)>,
     ) -> Self {
-        let snapshot = client.cached_snapshot();
+        // 优先用 host 周期广播缓存的快照；没有（开局早期 host 掉线）则退回调用方提供的本端基线。
+        let snapshot = client.cached_snapshot().or(fallback_snapshot);
         let transport = client.into_transport();
         let mut host = HostLockstep::new(transport, total_players, true); // host 参与（占 my_index）
         host.host_index = my_index;
@@ -1797,12 +1803,42 @@ mod tests {
         cli.step_frame(&mut rcv).unwrap();
         assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 42)), "client 应已缓存快照");
         // 原 host(player0) 掉线，client(player1) 接管为 new host。
-        let mut host = HostLockstep::takeover(cli, 1, 2, vec![0], vec![None], vec![true], vec![None]);
+        let mut host = HostLockstep::takeover(cli, 1, 2, vec![0], vec![None], vec![true], vec![None], None);
         // 新 host 从快照 seq 继续产帧（next_seq = 42）。
         host.set_local_input(Some(vec![99])); // 新 host(player1) 的输入
         let (seq, frame) = host.try_emit().expect("新 host 应收齐（player0 掉线占位 + 自身输入）后产帧");
         assert_eq!(seq, 42, "新 host 应从缓存快照的 seq 续打");
         // 产帧应含：player0(掉线默认) + player1(新 host)。
+        assert_eq!(frame.len(), 2, "2 人局迁移后仍产 2 个玩家的帧");
+        assert!(frame.iter().any(|(i, b)| *i == 0 && !b.is_empty()), "player0 用默认占位输入");
+        assert!(frame.iter().any(|(i, b)| *i == 1 && b == &vec![99]), "player1 = 新 host 输入");
+    }
+
+    /// S7：原 host 在首个快照周期前掉线（client 无任何缓存快照）时，新 host 仍能从
+    /// 「本端已回放 world + 期望帧 seq」基线接管续打，而不是因快照缺失导致零 host。
+    #[test]
+    fn host_takeover_resumes_without_cached_snapshot() {
+        let (mut ht, ct) = pair();
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+        // 前置：不注入任何 Snapshot，client 无缓存快照。
+        assert!(cli.cached_snapshot().is_none(), "前置：client 应无任何缓存快照");
+        // 模拟本端已回放若干帧（期望帧 = 17），并以该帧序 world 字节作为接管基线。
+        let baseline_seq: u64 = 17;
+        let baseline_world = vec![7u8, 7, 7];
+        // 原 host(player0) 掉线，client(player1) 接管为 new host，fallback = (本端 world, 期望帧 seq)。
+        let mut host = HostLockstep::takeover(
+            cli, 1, 2, vec![0], vec![None], vec![true], vec![None],
+            Some((baseline_world.clone(), baseline_seq)),
+        );
+        assert_eq!(
+            host.current_snapshot(),
+            Some(&(baseline_world.clone(), baseline_seq)),
+            "无缓存快照时应以 fallback 为基线快照"
+        );
+        host.set_local_input(Some(vec![99])); // 新 host(player1) 输入
+        let (seq, frame) = host.try_emit().expect("新 host 应能从 baseline 产帧");
+        assert_eq!(seq, baseline_seq, "新 host 应从 fallback 基线 seq 续打");
         assert_eq!(frame.len(), 2, "2 人局迁移后仍产 2 个玩家的帧");
         assert!(frame.iter().any(|(i, b)| *i == 0 && !b.is_empty()), "player0 用默认占位输入");
         assert!(frame.iter().any(|(i, b)| *i == 1 && b == &vec![99]), "player1 = 新 host 输入");
@@ -1830,7 +1866,7 @@ mod tests {
         p1t.send_to(&snap.encode(), &host_peer).unwrap();
         cli.step_frame(&mut rcv).unwrap();
         // 原 3 人局：host(player0) 掉线，本端(player2) 接管。其他参与端 index = [0(掉线原host), 1(在线player1)]。
-        let mut host = HostLockstep::takeover(cli, 2, 3, vec![0, 1], vec![None, Some(p1_peer.clone())], vec![true, false], vec![None, Some(555)]);
+        let mut host = HostLockstep::takeover(cli, 2, 3, vec![0, 1], vec![None, Some(p1_peer.clone())], vec![true, false], vec![None, Some(555)], None);
         host.set_local_input(Some(vec![77])); // 新 host(player2) 输入
         // 在线 client（player1）上行输入给新 host。
         let mut p1_cli = ClientLockstep::new(p1t, 1, host_peer.clone());
