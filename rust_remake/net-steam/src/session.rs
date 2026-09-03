@@ -1,8 +1,10 @@
 //! `SteamSession` —— 大厅生命周期 + 把 `SteamTransport` 接到 lockstep 的高层封装。
 //!
 //! 职责（供 `main.rs` 的 `--steam-host` / `--steam-join` 使用）：
-//!   - host：`init` → `host_create_lobby`（公开大厅写 `matchkey` 元数据）→ `listen()` 开 P2P 监听。
-//!   - client：`init` → `find_and_join`（按 `matchkey` 搜索并加入 host 的大厅）→ `connect_to(host_steamid)`。
+//!   - host：`init` → `start_host_create`（公开大厅写 `matchkey` 元数据）→ 每帧 `tick_lobby` 推进。
+//!   - client：`init` → `start_join_by_id` / `start_find_and_join`（按 `matchkey` 搜并加入）→ 每帧 `tick_lobby` 推进。
+//!   - 大厅操作为帧驱动异步（S12）：`start_*` 注册回调后立即返回，由 `update` 每帧 `run_callbacks` 后调用
+//!     `tick_lobby` / `tick_lobby_list` 推进，杜绝主线程 `std::thread::sleep` 忙等。
 //!   - 两者都可从大厅成员名单 `LobbyPlayerTable` 得到“成员→玩家槽位 + 稳定身份”，喂给 `set_client_identities`。
 //!
 //! 复用已就绪的地基：`SteamTransport`（P2P 收发）、`LobbyPlayerTable`（成员→槽位）、
@@ -374,6 +376,56 @@ pub struct SteamSession {
     /// 待处理的「加入游戏」请求（Steam 回调写入；`take_join_request` 取走）。
     /// 回调只在 `run_callbacks()` 时被泵出，所以持有会话的一端要每帧 pump。
     join_requests: Arc<Mutex<VecDeque<JoinRequest>>>,
+    /// 大厅异步操作状态（S12：发起后由 `tick_lobby` 每帧推进，避免主线程 sleep 忙等）。
+    pending_lobby: Option<PendingLobbyOp>,
+    /// 房间列表异步拉取状态（同上）。
+    pending_list: Option<PendingListOp>,
+}
+
+/// 大厅异步操作的推进进度（由 `update` 每帧泵 `run_callbacks` 后查询）。
+pub enum LobbyProgress {
+    /// 无进行中的大厅操作。
+    Idle,
+    /// 已发起，尚未完成（每帧继续推进）。
+    Pending,
+    /// 完成（成功或失败）。
+    Done(io::Result<steamworks::LobbyId>),
+}
+
+/// 房间列表异步拉取的进度。
+pub enum LobbyListProgress {
+    Idle,
+    Pending,
+    Done(io::Result<Vec<LobbyInfo>>),
+}
+
+/// 进行中的大厅操作类型（驱动 `tick_lobby` 的阶段切换）。
+enum LobbyOp {
+    Create,
+    JoinById,
+    FindJoin,
+}
+
+/// 大厅异步操作的内部状态（持有 steamworks 回调完成槽，跨帧存活）。
+struct PendingLobbyOp {
+    op: LobbyOp,
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    slot: std::sync::Arc<std::sync::Mutex<Option<io::Result<steamworks::LobbyId>>>>,
+    ticks: u32,
+    beats: u32,
+    /// FindJoin 阶段 A（搜列表）的完成槽。
+    list_done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    list_res: std::sync::Arc<std::sync::Mutex<Option<Vec<steamworks::LobbyId>>>>,
+    /// FindJoin 阶段 B（join）是否已发起（避免每帧重复注册 join 回调）。
+    phase_b_started: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// 房间列表异步拉取的内部状态。
+struct PendingListOp {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    cands: std::sync::Arc<std::sync::Mutex<Option<Vec<steamworks::LobbyId>>>>,
+    ticks: u32,
+    beats: u32,
 }
 
 /// 房间列表里一间公开大厅的展示信息（加入前即可读取；房主昵称由调用方用 Friends 补）。
@@ -423,6 +475,8 @@ impl SteamSession {
             lobby: None,
             table: None,
             join_requests,
+            pending_lobby: None,
+            pending_list: None,
         })
     }
 
@@ -437,12 +491,14 @@ impl SteamSession {
     }
 
     /// host：创建公开大厅（max_members 含 host），写入 matchkey，返回 LobbyId。
-    /// 需要 `run_callbacks` 驱动回调后才完成；`max_wait_beats` 限制等待拍数。
-    pub fn host_create_lobby(&mut self, max_members: u32, beats: u32) -> io::Result<steamworks::LobbyId> {
+    /// host：创建公开大厅（异步，S12）。注册 steamworks 回调后立即返回；
+    /// 完成由 `tick_lobby` 每帧推进（必须在 `run_callbacks` 之后调用）。
+    /// `beats` 为建厅超时拍数上限（沿用 `STEAM_LOBBY_CREATE_BEATS`）。
+    pub fn start_host_create(&mut self, max_members: u32, beats: u32) -> io::Result<()> {
         use steamworks::{LobbyId, LobbyType};
         let mm = self.transport.matchmaking();
-        let done = Arc::new(AtomicBool::new(false));
-        let slot = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, steamworks::SteamError>>));
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<io::Result<LobbyId>>));
         {
             let done = done.clone();
             let slot = slot.clone();
@@ -452,38 +508,21 @@ impl SteamSession {
                 } else {
                     eprintln!("[steam-host] CreateLobby OK");
                 }
-                *slot.lock().unwrap() = Some(res);
-                done.store(true, Ordering::SeqCst);
+                *slot.lock().unwrap() = Some(res.map_err(|e| io::Error::other(create_lobby_error_hint(e))));
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
             });
         }
-        for beat in 0..beats {
-            self.run_callbacks();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if done.load(Ordering::SeqCst) {
-                break;
-            }
-            // 每约 2.5s 打印一次等待进度，便于判断是网络慢还是卡死。
-            if beat > 0 && beat % 50 == 0 {
-                eprintln!("[steam-host] still waiting for lobby create (beat {}/{}, {:.1}s)", beat, beats, beat as f64 * 0.05);
-            }
-        }
-        let lobby = slot
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| io::Error::other(format!(
-                "lobby create timeout after {:.1}s（请确认 Steam 客户端在线、网络通畅，然后重试）",
-                beats as f64 * 0.05
-            )))?
-            .map_err(|e| io::Error::other(create_lobby_error_hint(e)))?;
-        // 写 matchkey 供 client 搜索。
-        mm.set_lobby_data(lobby, MATCH_KEY, MATCH_VALUE);
-        self.lobby = Some(lobby);
-        // host 自己是首个成员 → 建玩家表（host=自己）。
-        let host_id = self.transport.steam_id();
-        let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
-        self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
-        Ok(lobby)
+        self.pending_lobby = Some(PendingLobbyOp {
+            op: LobbyOp::Create,
+            done,
+            slot,
+            ticks: 0,
+            beats,
+            list_done: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            list_res: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            phase_b_started: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        });
+        Ok(())
     }
 
     /// 设置/修改房间名与备注（大厅元数据）。`None` = 不改该项。开房后可随时调用（编辑房间信息）。
@@ -647,137 +686,108 @@ impl SteamSession {
         clear_presence(&self.transport);
     }
 
-    /// client：用 host 打印的 LobbyId 直接加入（自动搜厅失败时的 fallback）。
-    pub fn join_lobby_by_id(&mut self, lobby_id: u64, beats: u32) -> io::Result<steamworks::LobbyId> {
+    /// client：用 host 打印的 LobbyId 直接加入（异步，S12）。完成由 `tick_lobby` 推进。
+    pub fn start_join_by_id(&mut self, lobby_id: u64, beats: u32) -> io::Result<()> {
         use steamworks::LobbyId;
         let mm = self.transport.matchmaking();
         let lobby = LobbyId::from_raw(lobby_id);
         eprintln!("[steam-sess] joining lobby by id {lobby_id} ...");
-        let join_done = Arc::new(AtomicBool::new(false));
-        let join_res = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, ()>>));
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<io::Result<LobbyId>>));
         {
-            let join_done = join_done.clone();
-            let join_res = join_res.clone();
+            let done = done.clone();
+            let slot = slot.clone();
             mm.join_lobby(lobby, move |r| {
-                *join_res.lock().unwrap() = Some(r.map_err(|_| ()));
-                join_done.store(true, Ordering::SeqCst);
+                *slot.lock().unwrap() = Some(r.map_err(|_| io::Error::other("join lobby by id failed")));
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
             });
         }
-        for _ in 0..beats {
-            self.run_callbacks();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if join_done.load(Ordering::SeqCst) {
-                break;
-            }
-        }
-        let lobby = join_res
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| io::Error::other("join lobby by id timeout"))?
-            .map_err(|_| io::Error::other("join lobby by id failed"))?;
-        eprintln!("[steam-sess] joined lobby by id {:?}", lobby.raw());
-        self.lobby = Some(lobby);
-        let host_id = mm.lobby_owner(lobby).raw();
-        let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
-        self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
-        Ok(lobby)
+        self.pending_lobby = Some(PendingLobbyOp {
+            op: LobbyOp::JoinById,
+            done,
+            slot,
+            ticks: 0,
+            beats,
+            list_done: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            list_res: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            phase_b_started: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        });
+        Ok(())
     }
 
-    /// client：按 `matchkey` 大厅元数据过滤公开大厅并加入。返回 LobbyId。
+    /// client：按 `matchkey` 大厅元数据过滤公开大厅并加入（异步，S12）。两阶段：先搜列表再 join，
+    /// 阶段切换由 `tick_lobby` 内部完成。`beats` 为每个阶段（搜/加入）的超时拍数上限。
     /// 注意：steamworks 的 `add_request_lobby_list_string_filter` 需要 `LobbyKey`（pub(crate) 字段）无法从本 crate 构造，
     /// 故改为 request_lobby_list 后用 `lobby_data(matchkey)` 过滤（公开 API）。
-    pub fn client_find_and_join(&mut self, beats: u32) -> io::Result<steamworks::LobbyId> {
+    pub fn start_find_and_join(&mut self, beats: u32) -> io::Result<()> {
         use steamworks::LobbyId;
         let mm = self.transport.matchmaking();
-        // 搜大厅列表。
+        // 搜大厅列表（阶段 A）。
         eprintln!("[steam-sess] requesting lobby list (matchkey)...");
-        let list_done = Arc::new(AtomicBool::new(false));
-        let candidates = Arc::new(std::sync::Mutex::new(Vec::<LobbyId>::new()));
+        let list_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let list_res = std::sync::Arc::new(std::sync::Mutex::new(None::<Vec<LobbyId>>));
         {
             let list_done = list_done.clone();
-            let candidates = candidates.clone();
+            let list_res = list_res.clone();
             mm.request_lobby_list(move |res| {
                 if let Ok(l) = res {
-                    *candidates.lock().unwrap() = l;
+                    *list_res.lock().unwrap() = Some(l);
                 }
-                list_done.store(true, Ordering::SeqCst);
+                list_done.store(true, std::sync::atomic::Ordering::SeqCst);
             });
         }
-        for _ in 0..beats {
-            self.run_callbacks();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if list_done.load(Ordering::SeqCst) {
-                break;
-            }
-        }
-        // 过滤：找 matchkey 匹配的大厅。
-        let lobby = candidates
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|l| mm.lobby_data(**l, MATCH_KEY).as_deref() == Some(MATCH_VALUE))
-            .copied()
-            .ok_or_else(|| io::Error::other("未找到 matchkey 匹配的大厅（host 是否已 `--steam-host` 并建厅？）"))?;
-        eprintln!("[steam-sess] found host lobby {:?}, joining...", lobby.raw());
-        // 加入。
-        let join_done = Arc::new(AtomicBool::new(false));
-        let join_res = Arc::new(std::sync::Mutex::new(None::<Result<LobbyId, ()>>));
-        {
-            let join_done = join_done.clone();
-            let join_res = join_res.clone();
-            mm.join_lobby(lobby, move |r| {
-                *join_res.lock().unwrap() = Some(r.map_err(|_| ()));
-                join_done.store(true, Ordering::SeqCst);
-            });
-        }
-        for _ in 0..beats {
-            self.run_callbacks();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if join_done.load(Ordering::SeqCst) {
-                break;
-            }
-        }
-        let lobby = join_res
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| io::Error::other("join lobby timeout"))?
-            .map_err(|_| io::Error::other("join lobby failed"))?;
-        self.lobby = Some(lobby);
-        // 建玩家表：host=owner，其余成员按 SteamID 排序。
-        let host_id = mm.lobby_owner(lobby).raw();
-        let members: Vec<SteamID> = mm.lobby_members(lobby).iter().map(|s| SteamID(s.raw())).collect();
-        self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
-        Ok(lobby)
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<io::Result<LobbyId>>));
+        self.pending_lobby = Some(PendingLobbyOp {
+            op: LobbyOp::FindJoin,
+            done,
+            slot,
+            ticks: 0,
+            beats,
+            list_done,
+            list_res,
+            phase_b_started: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        });
+        Ok(())
     }
 
-    /// 列出当前可加入的公开大厅（供「房间列表」界面浏览选房）。
-    /// 只跑一次 `request_lobby_list` 回调；对每个大厅读人数/上限/房主/房名/备注（加入前即可读）。
+    /// 列出当前可加入的公开大厅（供「房间列表」界面浏览选房，异步 S12）。
+    /// 注册 `request_lobby_list` 回调后立即返回；结果由 `tick_lobby_list` 每帧推进后可读。
     /// 返回空列表表示暂无可加入房间（host 未建厅或都已满）。
-    pub fn client_list_lobbies(&self, beats: u32) -> io::Result<Vec<LobbyInfo>> {
+    pub fn start_list_lobbies(&mut self, beats: u32) -> io::Result<()> {
         use steamworks::LobbyId;
         let mm = self.transport.matchmaking();
-        let count = Arc::new(AtomicBool::new(false));
-        let cands = Arc::new(std::sync::Mutex::new(Vec::<LobbyId>::new()));
+        let done = Arc::new(AtomicBool::new(false));
+        let cands = Arc::new(std::sync::Mutex::new(None::<Vec<LobbyId>>));
         {
-            let count = count.clone();
+            let done = done.clone();
             let cands = cands.clone();
             mm.request_lobby_list(move |res| {
                 if let Ok(l) = res {
-                    *cands.lock().unwrap() = l;
+                    *cands.lock().unwrap() = Some(l);
                 }
-                count.store(true, Ordering::SeqCst);
+                done.store(true, Ordering::SeqCst);
             });
         }
-        for _ in 0..beats {
-            self.run_callbacks();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            if count.load(Ordering::SeqCst) {
-                break;
-            }
+        self.pending_list = Some(PendingListOp { done, cands, ticks: 0, beats });
+        Ok(())
+    }
+
+    /// 推进房间列表拉取（须在 `run_callbacks` 之后每帧调用）。见 [`LobbyListProgress`]。
+    pub fn tick_lobby_list(&mut self) -> LobbyListProgress {
+        let Some(mut p) = self.pending_list.take() else {
+            return LobbyListProgress::Idle;
+        };
+        p.ticks += 1;
+        if p.ticks > p.beats {
+            return LobbyListProgress::Done(Err(io::Error::other("lobby list request timed out")));
         }
-        let ids = cands.lock().unwrap().clone();
+        if !p.done.load(Ordering::SeqCst) {
+            self.pending_list = Some(p);
+            return LobbyListProgress::Pending;
+        }
+        let ids = p.cands.lock().unwrap().take().unwrap_or_default();
+        let mm = self.transport.matchmaking();
         let mut out = Vec::with_capacity(ids.len());
         for l in ids {
             let members = mm.lobby_member_count(l);
@@ -794,7 +804,91 @@ impl SteamSession {
                 note,
             });
         }
-        Ok(out)
+        LobbyListProgress::Done(Ok(out))
+    }
+
+    /// 推进进行中的大厅操作（须在 `run_callbacks` 之后每帧调用）。
+    /// 完成时会写入 `self.lobby` / `self.table`（host 还会写 matchkey 元数据），
+    /// 调用方据此进入下一阶段（建 lockstep / 设身份 / 设 `steam_in_lobby`）。
+    pub fn tick_lobby(&mut self) -> LobbyProgress {
+        let Some(mut p) = self.pending_lobby.take() else {
+            return LobbyProgress::Idle;
+        };
+        p.ticks += 1;
+        if p.ticks > p.beats {
+            return LobbyProgress::Done(Err(io::Error::other("lobby operation timed out")));
+        }
+        // FindJoin 阶段 A：等列表回来后再发起 join（阶段 B）。
+        if let LobbyOp::FindJoin = p.op {
+            if !p.list_done.load(Ordering::SeqCst) {
+                self.pending_lobby = Some(p);
+                return LobbyProgress::Pending;
+            }
+            if !p.phase_b_started.load(Ordering::SeqCst) {
+                let done = p.done.clone();
+                let slot = p.slot.clone();
+                let list = p.list_res.lock().unwrap().clone().unwrap_or_default();
+                let mm = self.transport.matchmaking();
+                let cand = list
+                    .iter()
+                    .find(|l| mm.lobby_data(**l, MATCH_KEY).as_deref() == Some(MATCH_VALUE))
+                    .copied();
+                match cand {
+                    Some(lobby) => {
+                        eprintln!("[steam-sess] found host lobby {:?}, joining...", lobby.raw());
+                        mm.join_lobby(lobby, move |r| {
+                            *slot.lock().unwrap() =
+                                Some(r.map_err(|_| io::Error::other("join lobby failed")));
+                            done.store(true, Ordering::SeqCst);
+                        });
+                        p.phase_b_started.store(true, Ordering::SeqCst);
+                    }
+                    None => {
+                        return LobbyProgress::Done(Err(io::Error::other(
+                            "未找到 matchkey 匹配的大厅（host 是否已 --steam-host 并建厅？）",
+                        )));
+                    }
+                }
+            }
+        }
+        if !p.done.load(Ordering::SeqCst) {
+            self.pending_lobby = Some(p);
+            return LobbyProgress::Pending;
+        }
+        // 完成：取出结果并落地到会话状态。
+        let res = p.slot.lock().unwrap().take();
+        let op = p.op;
+        match res {
+            Some(Ok(lobby)) => {
+                let is_host = matches!(op, LobbyOp::Create);
+                self.finalize_lobby(lobby, is_host);
+                LobbyProgress::Done(Ok(lobby))
+            }
+            Some(Err(e)) => LobbyProgress::Done(Err(e)),
+            None => LobbyProgress::Done(Err(io::Error::other("lobby op: 无结果"))),
+        }
+    }
+
+    /// 大厅操作完成后的落地：写入 `self.lobby` / `self.table`。
+    /// `is_host` = true 时额外写 matchkey 元数据（公开大厅过滤键）。host 的槽 0 = 自己；
+    /// client 的槽 0 = 大厅 owner。
+    fn finalize_lobby(&mut self, lobby: steamworks::LobbyId, is_host: bool) {
+        self.lobby = Some(lobby);
+        let mm = self.transport.matchmaking();
+        if is_host {
+            mm.set_lobby_data(lobby, MATCH_KEY, MATCH_VALUE);
+        }
+        let host_id = if is_host {
+            self.transport.steam_id()
+        } else {
+            mm.lobby_owner(lobby).raw()
+        };
+        let members: Vec<SteamID> = mm
+            .lobby_members(lobby)
+            .iter()
+            .map(|s| SteamID(s.raw()))
+            .collect();
+        self.table = Some(LobbyPlayerTable::new(SteamID(host_id), members));
     }
 
     /// 在 messages 接口下为“无”需额外准备：`SendMessageToUser` 会隐式建立会话、`AutoRestartBrokenSession`

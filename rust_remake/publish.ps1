@@ -134,6 +134,15 @@ if (Test-Path $font) {
 } else {
     Write-Host '[WARN] 未找到 assets/fonts/cjk.ttf，发布版将回退到内联 168k 子集（稀有字可能缺）。' -ForegroundColor Yellow
 }
+# SIL OFL-1.1 要求字体随附许可文本：cjk.ttf 是思源黑体（Source Han Sans / Noto CJK），
+# 商用/再分发均允许，但必须一并打包许可说明，否则违反开源字体许可。
+$lic = Join-Path $PSScriptRoot 'assets/fonts/FONT_LICENSE.md'
+if (Test-Path $lic) {
+    Copy-Item $lic (Join-Path $Content 'FONT_LICENSE.md') -Force
+    Write-Host '[ok] FONT_LICENSE.md (OFL-1.1)'
+} else {
+    Write-Host '[WARN] 未找到 assets/fonts/FONT_LICENSE.md，发布版缺少字体许可文本（OFL-1.1 合规要求）。' -ForegroundColor Yellow
+}
 
 # 【发布版刻意不复制 steam_appid.txt】—— 玩家从 Steam 客户端启动，无需该文件。
 
