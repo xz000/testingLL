@@ -173,7 +173,7 @@
 - **C5 · `draw_scene` 每帧新建约 40 个 Mesh 无缓存 `[已核实]`**：`main.rs:1377-1728` 粒子/子弹/圆环逐条 `Mesh::new_*`，无批处理/复用。
 - **C6 · 17MB 字体 `include_bytes!` 内联 `[已核实]`**：`main.rs:524` 直接 +17.7MB 进二进制；`assets/fonts/cjk-168k.ttf`(168KB) 已入库但代码无任何引用（死资源）。
 - **C7 · 联网热路径上的 `expect` `[已核实]`**：`main.rs:2544/2776` `host.collect_cfgs().expect("all_cfgs 已确保收齐")`；一旦竞态使两者不一致直接 panic 退出进程。
-- **C8 · 文本输入两条独立写入路径，有重复插入风险 `[已核实]`**：`Ime::Commit`→`on_text_input`(`main.rs:2964`) 直接 `buf.push`，与每帧遍历 81 字符白名单 `just(c)`(`main.rs:3236/3665`) 写同一 buffer，二者互不感知。**是否真重复需真机验证（取决于 winit 0.30 在 `set_ime_allowed(true)` 后普通 ASCII 键是否也发 `Ime::Commit`）。**
+- **C8 · 文本输入两条独立写入路径，有重复插入风险 `[已修复-已验证]`**：`Ime::Commit`→`on_text_input`(`main.rs:2964`) 直接 `buf.push`，与每帧遍历 81 字符白名单 `just(c)`(`main.rs:3236/3665`) 写同一 buffer，二者互不感知。已由 `c6db353` 用去重守卫修复，并**真机验证通过**（winit 0.30 下 IME 组合键走 `Named(Process)`，不双发 `Character`，无重复插入；IME 后直接 ASCII 输入正常）。
 - **C9 · IME 声称支持 `ReceivedCharacter`，实际未实现 `[已核实]`**：注释(`main.rs:4569/2961`)说接入两者，但事件循环只有 `WindowEvent::Ime(Ime::Commit)`(`main.rs:4621`) 一个分支；`key_down_event`(`main.rs:2942`) 只 `eprintln!`，`text_input_event` 全文件不存在。
 
 ### 轻
@@ -232,7 +232,7 @@
 | C1/C2 联网退出路径 | `c6db353` | 对局中 Esc 直接 `reset_to_main_menu`（联网亦可；host 离开触发既有 drop→迁移路径），消除死状态 |
 | C6 17MB 字体内联 | `c6db353` | 运行时从磁盘加载完整 `cjk.ttf`（不再 `include_bytes!` 内联 17.7MB），找不到回退内联 168k 子集；`publish.ps1` 随 exe 分发 `cjk.ttf` |
 | C7 热路径 `expect` | `c6db353` | `collect_cfgs` 竞态由 `.expect` 改为本轮重试（不 panic），下一帧再同步 |
-| C8 IME 双路径重复插入 | `c6db353` | `frame`/`last_ime_commit_frame` 去重；`just(c)` ASCII 白名单在 IME 提交帧跳过（仍需真机验证 winit 0.30 是否对同一物理键同时发 Ime::Commit 与按键） |
+| C8 IME 双路径重复插入 | `c6db353` | `frame`/`last_ime_commit_frame` 去重；`just(c)` ASCII 白名单在 IME 提交帧跳过。**已真机验证通过**：winit 0.30 在 `set_ime_allowed(true)` 下，IME 组合键走 `Named(Process)` 而非独立 `Character` 键，不双发；`sadf`/`大幅度` 各精确插入一次，IME 后直接 ASCII 输入不被误抑制。补充无头单测 `c8_*` 覆盖同帧抑制/无 IME 正常插入/跨帧残留风险 |
 | C9 注释错误 | `c6db353` | 修正：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit` |
 | C10 密码明文 | `c6db353` | `publish.ps1` 不再把 Steam 密码还原明文拼命令行，要求 `steamcmd` 已登录缓存（`loginusers.vdf`） |
 
