@@ -669,7 +669,8 @@ impl Game {
                 steam_sess = Some(sess);
                 steam_lobby_pending = Some(SteamLobbyPending::Join { lobby_id });
                 player_count = 2;
-            }            AppState::LanJoin { addr } => {
+            }
+            AppState::LanJoin { addr } => {
                 let mut link: netlink::NetLinkUdp =
                     netlink::NetLink::connect_udp(addr).map_err(ggez::GameError::from)?;
                 eprintln!("[client] connecting to {addr}, my stable identity = {}", link.my_identity());
