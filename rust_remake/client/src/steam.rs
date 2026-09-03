@@ -102,6 +102,9 @@ impl Game {
                 // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打；并同步更新在线参与集。
                 self.steam_online = online; // 排除掉线 host 后的在线参与集（供下一次迁移选举）
                 cli.retarget_host(from);
+                // S7：用 Takeover 携带的基线 seq 把本端期望帧对齐到新 host（接管基线），
+                // 避免各端因帧序不一致在接管后卡在缺口处反复请求重传（包括无缓存快照的早期接管）。
+                cli.set_start_seq(seq);
                 if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
                     if let Some(w) = game_core::world_ser::world_from_bytes(&wb) {
                         self.world = w;
@@ -193,7 +196,13 @@ impl Game {
     #[cfg(feature = "steam")]
     pub(crate) fn steam_do_takeover(&mut self, cli: net::lockstep::ClientLockstep<net_steam::SteamTransport>, _rcv: &mut [u8]) -> GameResult {
         // 取本端缓存的快照重建 world（迁移基线）。
-        let snap = cli.cached_snapshot();
+        // S7：若原 host 在首个 `SNAPSHOT_EVERY` 周期前掉线（从未广播过快照），`cached_snapshot()` 为 None，
+        // 则用本端已回放的最新 world（self.world）+ 当前期望帧 seq 作为接管基线，保证仍能广播 Takeover + 快照接管。
+        let cached = cli.cached_snapshot();
+        let effective_snap: (Vec<u8>, u64) = match &cached {
+            Some(s) => s.clone(),
+            None => (game_core::world_ser::world_to_bytes(&self.world), cli.expect_seq()),
+        };
         // S2：接管前先记下旧 host 的 peer，接管后单发 `Takeover` 通知它已被取缔（防脑裂/孤儿 host 续产帧）。
         let old_host_peer = cli.host_peer();
         let old_host_id = match old_host_peer {
@@ -203,10 +212,8 @@ impl Game {
         // 本端 world index = 在原始参与列表中的位置（对局开始时确定，迁移不变）。
         let my_index = self.steam_participants.iter().position(|&id| id == self.steam_my_id).unwrap_or(0) as u8;
         let total = self.steam_participants.len().max(1);
-        if let Some((wb, _)) = &snap {
-            if let Some(w) = game_core::world_ser::world_from_bytes(wb) {
-                self.world = w;
-            }
+        if let Some(w) = game_core::world_ser::world_from_bytes(&effective_snap.0) {
+            self.world = w;
         }
         // 更新在线参与集：排除掉线的旧 host（供下一次迁移选举）。
         let new_online: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
@@ -230,6 +237,8 @@ impl Game {
                 identities.push(Some(self.steam_participants[i]));
             }
         }
+        // S7：无缓存快照时把本端 world 基线作为 fallback 交给 takeover，保证新 host 仍能续打并广播。
+        let fallback = cached.is_none().then(|| effective_snap.clone());
         let mut host = net::lockstep::HostLockstep::takeover(
             cli,
             my_index,
@@ -238,18 +247,19 @@ impl Game {
             peers,
             dropped,
             identities,
+            fallback,
         );
         // 广播 Takeover（带更新后的在线参与集）+ Snapshot（接管基线）给其余在线端。
+        // S7：即便没有缓存快照也必广播（基线取自本端 world），否则其余端收不到 Takeover → 零 host。
         let seq = host.next_seq();
-        if let Some((wb, _)) = &snap {
-            // S1 诊断：广播的快照字节数（迁移基线）。若接近接收端缓冲上限（256KiB）需留意，避免被 transport 静默丢弃。
-            eprintln!("[steam-host] TAKEOVER broadcast snapshot: {} bytes (seq={seq})", wb.len());
-            host.broadcast_takeover(seq, new_online.clone());
-            host.broadcast_snapshot(wb.clone(), seq);
-            // S2：单发 Takeover 给旧 host，令其标记 superseded 并停止作为权威（防脑裂）。
-            host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
-            eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");
-        }
+        let (wb, _) = &effective_snap;
+        // S1 诊断：广播的快照字节数（迁移基线）。若接近接收端缓冲上限（256KiB）需留意，避免被 transport 静默丢弃。
+        eprintln!("[steam-host] TAKEOVER broadcast snapshot: {} bytes (seq={seq})", wb.len());
+        host.broadcast_takeover(seq, new_online.clone());
+        host.broadcast_snapshot(wb.clone(), seq);
+        // S2：单发 Takeover 给旧 host，令其标记 superseded 并停止作为权威（防脑裂）。
+        host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
+        eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");
         self.steam_my_index = my_index;
         eprintln!("[steam-host] TAKEOVER: I am new host (player {my_index}/{total}), resume seq={seq}, online={new_online:?}");
         self.steam_host_ls = Some(host);

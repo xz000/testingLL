@@ -134,7 +134,7 @@
 
 ### 中
 
-- **S7 · 无缓存快照时不广播 Takeover `[已核实]`**：`steam.rs:222-225`/`main.rs:2584-2588` 要求 `current_snapshot()` 有值。`SNAPSHOT_EVERY=30`(`main.rs:45`)，开局 0.5 秒内 host 掉线 → **零 host**。
+- **S7 · 无缓存快照时不广播 Takeover `[已修复]`**：原 `steam.rs`/`main.rs` 的接管广播依赖 `current_snapshot()` 有值，`SNAPSHOT_EVERY=30`(`main.rs:45`) 下开局 0.5 秒内 host 掉线 → 零 host。已修：`HostLockstep::takeover` 新增 `fallback_snapshot` 参数；`steam_do_takeover` 在无缓存快照时用「本端已回放 world(`self.world`)+ 期望帧 `cli.expect_seq()`」作基线，且接管广播改为无条件执行（不再 `if let Some` 跳过）；`main.rs` 持续广播 Takeover 因 `current_snapshot()` 现已必有值而可正常触发。另：迁移 client 用 `Takeover.seq` 经 `set_start_seq` 对齐期望帧，避免各端帧序不一致在接管后卡缺口。新增 `host_takeover_resumes_without_cached_snapshot` 单测。
 - **S8 · 选举集不随 host 自动掉线更新 `[已核实]`**：`main.rs:2590` 只 `mark_dropped`，不改 `steam_online`；下次迁移可能选到早已掉线的端(`steam.rs:72`)。
 - **S9 · 迁移后大厅侧与 lockstep 侧槽位不一致 `[已核实]`**：`main.rs:3290-3294` 用 `t.steam_id()` 当 host 重建表，而 lockstep 里新 host 仍是原 player index(`steam.rs:182/211`)；HUD 仍取 `steam_participants.first()` 当 host 查 ping(`main.rs:1954`)。
 - **S10 · `send_to` 恒返回 Ok `[已核实]`**：`transport_steam.rs:217/232` 入队也算成功；`PENDING_MAX=1024` 满时丢最老一条(`transport_steam.rs:132-138`)，破坏 RELIABLE 有序语义、只打 10 条日志后静默。
@@ -236,7 +236,7 @@
 | C9 注释错误 | `c6db353` | 修正：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit` |
 | C10 密码明文 | `c6db353` | `publish.ps1` 不再把 Steam 密码还原明文拼命令行，要求 `steamcmd` 已登录缓存（`loginusers.vdf`） |
 
-> 剩余未修项：S6-S11 其余 Steam 迁移/健壮性细节（S10 `send_to` 恒返回 Ok、S11 掉线判定与接管竞态、`CLIENT_STALE_TICKS==HOST_DROP_TICKS`；S12 大厅 sleep 忙等已改为帧驱动异步 `[已修复]`）、
+> 剩余未修项：S8-S11 其余 Steam 迁移/健壮性细节（S8 选举集不随 host 自动掉线更新、S9 迁移后大厅/lockstep 槽位不一致、S10 `send_to` 恒返回 Ok、S11 掉线判定与接管竞态、`CLIENT_STALE_TICKS==HOST_DROP_TICKS`；S7 无缓存快照接管 `[已修复]`、S12 大厅 sleep 忙等已改为帧驱动异步 `[已修复]`）、
 > C4/C5 渲染性能（按规划暂缓）、C11-C14 工程化（钩子作用域过大/易绕过/`steam_appid.txt` 未跟踪/缺 `[profile.release]`）、
 > D3/D4/D5/D7 数值与解码边界、P5/P8-P12 网络健壮性——多为需真机/双账号验证或涉及设计取舍的改动。
 
