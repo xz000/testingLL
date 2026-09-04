@@ -68,8 +68,15 @@ Buff/弹体原型（直射/追踪/回旋/弹跳/链式/撒弹/场）、障碍与
 
 **落地**：
 - 伤害公式的 `(100 + 蓝量) × 0.03` 折叠为具名常量 **`DAMAGE_BASE = 303.0`**（100+10000=10100 满蓝），
-  写入 `balance.rs`，注释保留原式出处。移植技能时 `kI = DAMAGE_BASE × gX × ... × JI`。
-  注：KI 公式取的是**受击者**的蓝（`UnitState(F[hR],MANA)`，hR=受击方）——恒满时取谁的蓝都是常数。
+  写入 `balance.rs`，注释保留原式出处。
+  **语义修正（M1，读码后确认）**：该项只出现在**击退速度**里——KI 公式
+  `Q[hR] += (100+mana)×gX×Gn×hn×.03×Hn×JI×dir` 是击退速度累积；**实际伤害走 FI：
+  `伤害 = gX × Gn[攻方] × hn[受击方]`**（不含蓝量、不含 0.03；火球 L1 gX=7.0 → 7 HP，
+  对 100 HP 英雄 ~14 发，量级自洽）。098b 移植口径：
+  - 伤害 = `gX(等级公式) × Gn(攻方放大，M1=1) × hn(受击方受伤系数，M1=1)`；
+  - 击退初速 = `DAMAGE_BASE × gX × JI`（098b 为逐帧衰减模型，M1 先以恒速 push 近似，
+    时长/封顶为手感标定值，TODO 对齐衰减模型 `每帧×0.96`）。
+  注：KI 公式取的蓝量项是**受击者**的（`UnitState(F[hR],MANA)`，hR=受击方）——恒满时取谁的蓝都是常数。
 - 删除：`Player.mana/max_mana/mana_regen`、`regen_mana`/`spend_mana`、施法蓝量门槛、
   `Attributes.mana_max/mana_regen` 与 `GrowthAttr::ManaMax/ManaRegen`、技能 `mana_cost` 字段、
   HUD/学习界面 U/I 购买键、快照与配置编码中的蓝量字段（CONFIG_VERSION 4→5）。
@@ -86,6 +93,11 @@ Buff/弹体原型（直射/追踪/回旋/弹跳/链式/撒弹/场）、障碍与
 
 - `DefTable` 逐技能替换为 098b 数值（`port_spec_098b.json` + `abilities_consolidated_098b.md`），
   热键槽位对齐 G/F/D/E/R/T/Y/C/P；现有 Unity 版 30 技能仅作机制原型参考。
+- **098b 条目走 `warlock098b_def` 直通**（不经 `legacy_scale_def` 缩放）；Unity 版旧技能走
+  `raw_def → legacy_scale_def` 过渡链。名册替换完成后把旧链整体删除。
+- **growth 口径（M1 踩坑记录）**：`SkillGrowth` 语义是 `base + delta×(L-1)`，而 098b 公式是
+  `基数 + 斜率×L`（L 从 1 起）——**base 必须填 L1 值**（如火球 gX=6.3+0.7L → base=7.0/delta=0.7），
+  对账测试按 L1 与 Lmax 两端断言。
 - **过渡缩放**（M0 引入，**名册替换完成时整体删除**）：旧技能的空间数值按三类因子一次性放大，
   集中在 `skill.rs` 的 `legacy_scale_def()` 单点生效（不在 30 个 def 条目里逐个改字面量）：
   - 速度类 ×65.625（=210/3.2，含 push_power/kick 击退力）
@@ -100,8 +112,8 @@ Buff/弹体原型（直射/追踪/回旋/弹跳/链式/撒弹/场）、障碍与
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
-| **M0 尺度与系统切换** | 本文件决策落地：war3 尺度、蓝量移除、DAMAGE_BASE、过渡缩放、相机自适应、CONFIG_VERSION=5 | 进行中 |
-| **M1 098b 名册脚手架** | 热键槽位 G/F/D/E/R/T/Y/C/P 重构；`port_spec_098b.json` 接入（构建期嵌入或代码生成）；S000 火球 + S003 追踪弹 + S004 回旋镖走通新管线（含 KI 伤害公式的 gX/Gn/JI 缩放框架） | 未开始 |
+| **M0 尺度与系统切换** | 本文件决策落地：war3 尺度、蓝量移除、DAMAGE_BASE、过渡缩放、相机自适应、CONFIG_VERSION=5 | ✅ 完成（`d63480c`） |
+| **M1 098b 名册脚手架** | `SkillId` 098b 段（S000/S003/S004，id 36+）；`Warlock098b` effect + `ProjectileKind::W098b`（Straight/Homing/Boomerang 三种运动学）；KI/FI 结算框架（FI 伤害=gx×Gn×hn，M1 Gn/hn=1；击退=`min(DAMAGE_BASE×gx×JI, 2000)`×0.35s 恒速近似，TODO 对齐逐帧衰减）；S000 命中点燃场（复用 Star，75 半径 2.5s）；热键槽复用现有 CastKey（集合本就=098b 的 G/F/D/E/R/T/Y/C）；`MAX_SKILL_SLOTS` 36→64；数值对账测试 4 个 + 行为测试 3 个 | ✅ 完成（试点管线已通；M2 起逐技能往 `warlock098b_def` 加条目） |
 | **M2 全技能** | 41 技能逐个移植（投射物类复用管线；控制/位移/场走 handler）；S032–S036 双形态；升级标志分支（Fa/Ga/Ha/ha/ga） | 未开始 |
 | **M3 物品 + 商店** | 24 物品（多为「携带技能」→ 复用技能系统）；开局购物 Wo=40s、每轮 wo=30s；乔丹之石破上限；沉默 W000–007 | 未开始 |
 | **M4 流程改造** | 死亡→尸体→复活 to=10±0.5（确定性 Rng）；击杀/助攻金；连杀播报；En1–5 模式；现有回合淘汰制保留为可选模式 | 未开始 |

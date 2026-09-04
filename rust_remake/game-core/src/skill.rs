@@ -45,11 +45,11 @@ impl SkillTree {
             SkillTree::C => &[Boost, Shield, Shadow, Fake],
             SkillTree::R => &[Blink, Blink2, DashStrike, DashSlash, TestSwap, BlinkToWall],
             SkillTree::E => &[Rock, StoneShot, StealthPush, StealthPush2, LineBeam, LineExplode],
-            SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball],
+            SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball, S003, S004],
             SkillTree::T => &[TLeech, T2Shot, T2Volley, T3Fast, T3Fast2, TestLeech],
             SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2],
             SkillTree::F => &[Test03],
-            SkillTree::G => &[Test01],
+            SkillTree::G => &[Test01, S000],
         }
     }
 }
@@ -169,6 +169,13 @@ pub enum SkillId {
     // 预留
     _Reserved,
     _SelfExplode,
+    // ===== 098b 名册（PORT_098B_DECISIONS.md M1；编号=war3 技能 ID，数值 port_spec_098b.json） =====
+    /// S000 火球（热键 G）：直射弹，命中 KI 伤害+击退并点燃 AoE（xc，2.5s DoT）。
+    S000,
+    /// S003 追踪弹（热键 D）：锁定点击处最近敌人全速直追，命中 KI 伤害+击退。
+    S003,
+    /// S004 回旋镖（热键 D）：飞出后回旋拉回施法者，命中 KI + qI 区域二次伤害（M1 先近似回程）。
+    S004,
 }
 
 impl SkillId {
@@ -185,6 +192,9 @@ impl SkillId {
             Test03 => SkillTree::F,
             Test01 => SkillTree::G,
             _Reserved | _SelfExplode => SkillTree::G,
+            // 098b 热键（mechanics §6.1）：G=火球；D=闪电/追踪弹/回旋镖。
+            S000 => SkillTree::G,
+            S003 | S004 => SkillTree::D,
         }
     }
 
@@ -228,6 +238,9 @@ impl SkillId {
             TestSwap => 35,
             _Reserved => 32,
             _SelfExplode => 33,
+            S000 => 36,
+            S003 => 37,
+            S004 => 38,
         }
     }
 
@@ -271,6 +284,9 @@ impl SkillId {
             33 => _SelfExplode,
             34 => TestLightning,
             35 => TestSwap,
+            36 => S000,
+            37 => S003,
+            38 => S004,
             _ => _Reserved,
         }
     }
@@ -489,6 +505,37 @@ pub enum SkillEffect {
     },
     /// 尚未实现/占位：契约上存在但暂不落地效果（绑定后施法会被消耗，但不产生作用）。
     Unimplemented,
+    /// 098b 名册投射物（PORT_098B_DECISIONS.md M1；数值来自 `port_098b/data/port_spec_098b.json`，
+    /// 已是 war3 尺度——**直通 DefTable::def，不经 legacy_scale_def 缩放**）。
+    ///
+    /// 伤害/击退在命中时按 KI/FI 公式结算（`world::warlock_ki_impact`）：
+    /// - 伤害（FI）= `gX × Gn[攻] × hn[守]`；gX = growth.damage_base/damage_delta 随等级。
+    /// - 击退初速（KI）= `balance::DAMAGE_BASE × gX × kb_ji`（JI 系数，如火球 1.1×eb）。
+    Warlock098b {
+        /// 运动学形态（直线/追踪/回旋）。
+        proj: W098bProjKind,
+        /// 弹速（war3 单位/秒，spec.projectile.speed）。
+        speed: Fix64,
+        /// 命中半径（spec.projectile.radius）。
+        radius: Fix64,
+        /// 存活秒数（spec.projectile.life 已按 oi=0 求值）。
+        life: Fix64,
+        /// 击退系数 JI（KI 公式的末项，如火球 `1.1*eb` → eb=1 时 1.1）。
+        kb_ji: Fix64,
+        /// 命中点燃：DoT 总伤害（在 IGNITE_SEC 内均摊；098b 火球 xc 点燃）。
+        ignite: Option<Fix64>,
+    },
+}
+
+/// 098b 投射物运动学形态。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum W098bProjKind {
+    /// 直线飞行（S000 火球等）。
+    Straight,
+    /// 锁定目标全速直追（S003 追踪弹：速度含施法者动量，M1 忽略动量项）。
+    Homing,
+    /// 回旋镖（S004）：飞出后半程拉回施法者（098b 为侧向分量公式，M1 以出-回近似，TODO M2 对齐）。
+    Boomerang,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。
@@ -969,6 +1016,8 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
             kick_time,
         },
         Unimplemented => Unimplemented,
+        // 098b 名册已是 war3 尺度，透传不缩放（PORT_098B_DECISIONS.md D4）。
+        w @ Warlock098b { .. } => w,
     };
     // growth：速度/击退力/距离/半径类基础与斜率同比放大；时长/伤害/冷却不动。
     let g = &mut d.growth;
@@ -991,7 +1040,97 @@ pub struct DefTable;
 
 impl DefTable {
     pub fn def(id: SkillId) -> SkillDef {
+        // 098b 名册：数值已是 war3 尺度（port_spec_098b.json），直通返回，不经 legacy 缩放。
+        if let Some(d) = Self::warlock098b_def(id) {
+            return d;
+        }
         legacy_scale_def(Self::raw_def(id))
+    }
+
+    /// 098b 名册定义（M1：S000/S003/S004）。每个条目的数值都注明 spec 来源，
+    /// 改动前先回 `port_098b/data/port_spec_098b.json` 与 `01_技能/abilities_consolidated_098b.md` 对账。
+    fn warlock098b_def(id: SkillId) -> Option<SkillDef> {
+        use SkillEffect::*;
+        let def = match id {
+            // S000 火球（G 键）——spec: CD 4.8 恒定 24 级；speed 1000 / radius 25 / life (1+.1*oi)=1.0s；
+            // 伤害 gX = 6.3+.7*Xv（consolidated S000 行），JI = 1.1*eb（M1 eb=1）；
+            // 点燃 xc：总量 (6+1.5*等级+xi)*jn²，时长 2.5*jn（M1 xi=0, jn=1, L1 总量 7.5）。
+            SkillId::S000 => SkillDef {
+                id,
+                tree: SkillTree::G,
+                name: "火球",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(1000.0),
+                    radius: Fix64::from_num(25.0),
+                    life: Fix64::from_num(1.0),
+                    kb_ji: Fix64::from_num(1.1),
+                    ignite: Some(Fix64::from_num(7.5)),
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 4.8,
+                    // growth 语义 = base + delta×(L-1)，base 填 L1 值：gX = 6.3+0.7×L（L 从 1 起）→ L1=7.0。
+                    damage_base: 7.0,
+                    damage_delta: 0.7,
+                    // 点燃总量 = 6+1.5×L → L1=7.5。
+                    extra_base: 7.5,
+                    extra_delta: 1.5,
+                    ..DEF_ZERO
+                },
+            },
+            // S003 追踪弹（D 键）——spec: CD 15→9.5（9 级，步长 -0.6875）；speed 900 / radius 29；
+            // life 4.5*(1+1.5*.1*oi)=4.5s；伤害 gX = jb(Er)（M1 用 6+0.5*Xv 近似，consolidated 标注公式 jb 未解码）。
+            SkillId::S003 => SkillDef {
+                id,
+                tree: SkillTree::D,
+                name: "追踪弹",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Homing,
+                    speed: Fix64::from_num(900.0),
+                    radius: Fix64::from_num(29.0),
+                    life: Fix64::from_num(4.5),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 15.0,
+                    cooldown_delta: -0.6875,
+                    // gX = jb(Er) 未解码，M1 近似 6+0.5×L → L1=6.5。
+                    damage_base: 6.5,
+                    damage_delta: 0.5,
+                    ..DEF_ZERO
+                },
+            },
+            // S004 回旋镖（D 键）——spec: CD 16→8.2（9 级，步长 -0.975）；radius 40；
+            // 伤害 gX = 6.4+.8*Xv（consolidated S004 行，直伤）+ qI 区域二次 0.5*mI（M2 补）；
+            // 速度：098b 为侧向分量公式（spec note），M1 用「出 400 / 回拉加速」近似，speed 字段存初速。
+            SkillId::S004 => SkillDef {
+                id,
+                tree: SkillTree::D,
+                name: "回旋镖",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Boomerang,
+                    speed: Fix64::from_num(700.0),
+                    radius: Fix64::from_num(40.0),
+                    life: Fix64::from_num(1.6),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 16.0,
+                    cooldown_delta: -0.975,
+                    // gX = 6.4+0.8×L → L1=7.2。
+                    damage_base: 7.2,
+                    damage_delta: 0.8,
+                    ..DEF_ZERO
+                },
+            },
+            _ => return None,
+        };
+        Some(def)
     }
 
     /// 旧（Unity demo）尺度的原始定义表；仅被 [`Self::def`] 的过渡缩放消费。
@@ -1726,6 +1865,86 @@ mod tests {
 
     fn near(a: Fix64, b: f64, tol: f64) -> bool {
         (a.to_num::<f64>() - b).abs() < tol
+    }
+
+    // ===== 098b 名册数值对账（PORT_098B_DECISIONS.md M1 §9 数值对账） =====
+    // 每个断言都注明 port_spec_098b.json / abilities_consolidated_098b.md 的来源；
+    // 改动 def 数值前先回知识库对账，改知识库后同步更新此处。
+
+    #[test]
+    fn s000_fireball_matches_spec() {
+        // spec S000：CD 4.8 恒定 24 级；speed 1000 / radius 25 / life (1+.1*oi)=1.0；
+        // consolidated：gX = 6.3+.7*Xv，JI = 1.1*eb（M1 eb=1）；点燃 = (6+1.5L)*jn²，2.5s。
+        let def = DefTable::def(SkillId::S000);
+        assert_eq!(def.name, "火球");
+        let s1 = def.stats_at(1);
+        assert!(near(s1.cooldown, 4.8, 1e-3), "L1 CD 应 4.8，实际 {:?}", s1.cooldown);
+        assert!(near(s1.damage, 7.0, 1e-3), "L1 gX 应 6.3+0.7×1=7.0，实际 {:?}", s1.damage);
+        let s24 = def.stats_at(24);
+        assert!(near(s24.cooldown, 4.8, 1e-3), "L24 CD 应仍 4.8（恒定），实际 {:?}", s24.cooldown);
+        assert!(near(s24.damage, 6.3 + 0.7 * 24.0, 1e-3), "L24 gX 应 6.3+0.7×24，实际 {:?}", s24.damage);
+        assert!(near(s24.extra, 6.0 + 1.5 * 24.0, 1e-3), "L24 点燃总量应 6+1.5×24，实际 {:?}", s24.extra);
+        match def.effect {
+            SkillEffect::Warlock098b { proj: W098bProjKind::Straight, speed, radius, life, kb_ji, ignite } => {
+                assert!(near(speed, 1000.0, 1e-3), "speed 应 1000（spec），实际 {speed:?}");
+                assert!(near(radius, 25.0, 1e-3), "radius 应 25（spec），实际 {radius:?}");
+                assert!(near(life, 1.0, 1e-3), "life 应 (1+.1*oi)=1.0，实际 {life:?}");
+                assert!(near(kb_ji, 1.1, 1e-3), "JI 应 1.1*eb=1.1，实际 {kb_ji:?}");
+                assert!(ignite.is_some(), "火球应带点燃");
+            }
+            ref e => panic!("S000 effect 应为 Warlock098b(Straight)，实际 {e:?}"),
+        }
+    }
+
+    #[test]
+    fn s003_homing_matches_spec() {
+        // spec S003：CD 15→9.5（9 级，步长 -0.6875）；speed 900 / radius 29 / life 4.5。
+        let def = DefTable::def(SkillId::S003);
+        assert_eq!(def.name, "追踪弹");
+        let s1 = def.stats_at(1);
+        let s9 = def.stats_at(9);
+        assert!(near(s1.cooldown, 15.0, 1e-3), "L1 CD 应 15（spec l1），实际 {:?}", s1.cooldown);
+        assert!(near(s9.cooldown, 9.5, 1e-2), "L9 CD 应 9.5（spec lmax），实际 {:?}", s9.cooldown);
+        match def.effect {
+            SkillEffect::Warlock098b { proj: W098bProjKind::Homing, speed, radius, life, ignite, .. } => {
+                assert!(near(speed, 900.0, 1e-3), "speed 应 900（spec），实际 {speed:?}");
+                assert!(near(radius, 29.0, 1e-3), "radius 应 Dr=29（spec），实际 {radius:?}");
+                assert!(near(life, 4.5, 1e-3), "life 应 4.5*(1+.15*oi)=4.5，实际 {life:?}");
+                assert!(ignite.is_none(), "追踪弹无点燃");
+            }
+            ref e => panic!("S003 effect 应为 Warlock098b(Homing)，实际 {e:?}"),
+        }
+    }
+
+    #[test]
+    fn s004_boomerang_matches_spec() {
+        // spec S004：CD 16→8.2（9 级，步长 -0.975）；radius 40；consolidated gX = 6.4+.8*Xv。
+        let def = DefTable::def(SkillId::S004);
+        assert_eq!(def.name, "回旋镖");
+        let s1 = def.stats_at(1);
+        let s9 = def.stats_at(9);
+        assert!(near(s1.cooldown, 16.0, 1e-3), "L1 CD 应 16（spec l1），实际 {:?}", s1.cooldown);
+        assert!(near(s9.cooldown, 8.2, 1e-2), "L9 CD 应 8.2（spec lmax），实际 {:?}", s9.cooldown);
+        assert!(near(s1.damage, 7.2, 1e-3), "L1 gX 应 6.4+0.8×1=7.2，实际 {:?}", s1.damage);
+        assert!(near(s9.damage, 6.4 + 0.8 * 9.0, 1e-3), "L9 gX 应 6.4+0.8×9，实际 {:?}", s9.damage);
+        match def.effect {
+            SkillEffect::Warlock098b { proj: W098bProjKind::Boomerang, radius, .. } => {
+                assert!(near(radius, 40.0, 1e-3), "radius 应 40（spec），实际 {radius:?}");
+            }
+            ref e => panic!("S004 effect 应为 Warlock098b(Boomerang)，实际 {e:?}"),
+        }
+    }
+
+    #[test]
+    fn warlock098b_defs_bypass_legacy_scaling() {
+        // 098b 数值已是 war3 尺度，直通 DefTable::def、绝不经过 legacy_scale_def 缩放
+        //（若误缩放，S000 speed 会变成 1000*65.625 之类的荒谬值）。
+        match DefTable::def(SkillId::S000).effect {
+            SkillEffect::Warlock098b { speed, .. } => {
+                assert!(near(speed, 1000.0, 1e-3), "098b speed 不得被 legacy 缩放，实际 {speed:?}");
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]
