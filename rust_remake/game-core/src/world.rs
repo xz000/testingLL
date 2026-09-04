@@ -346,6 +346,9 @@ pub struct World {
     pub obstacles: Vec<Obstacle>,
     /// 场上飞行物 / 延时区域
     pub projectiles: Vec<Projectile>,
+    /// 本局伤害矩阵：`damage_matrix[攻][受]` = 累计伤害（助攻/最高伤害统计用，D6）；
+    /// 随 `reset_round` 清空、随快照同步。
+    pub damage_matrix: Vec<Vec<Fix64>>,
     /// 按死亡先后记录的玩家 id（用于本局名次结算）
     pub(crate) eliminated_order: Vec<u32>,
     /// 本局内发生的击杀：(击杀者 id, 被击杀者 id)
@@ -383,6 +386,7 @@ impl World {
             projectiles: Vec::new(),
             eliminated_order: Vec::new(),
             kills_this_round: Vec::new(),
+            damage_matrix: vec![vec![Fix64::ZERO; player_count as usize]; player_count as usize],
             time: Fix64::ZERO,
             lightning_visual: None,
         }
@@ -833,6 +837,12 @@ impl World {
                 false
             }
         };
+        // 伤害矩阵记账（D6）：助攻/最高伤害统计的数据源。
+        if let Some(f) = from {
+            if f < self.players.len() as u32 && id < self.players.len() as u32 {
+                self.damage_matrix[f as usize][id as usize] += amount;
+            }
+        }
         // 死亡面具/鲜血之剑（M3 2c）：攻方生命偷取（lifesteal×原始伤害）与受伤点恢复。
         if let Some(f) = from.and_then(|f| self.players.get(f as usize).map(|a| a.id)) {
             let (lifesteal, odh) = {
@@ -1771,6 +1781,17 @@ impl World {
         list
     }
 
+    /// 本局对 `victim` 造成过伤害的玩家（排除 victim 自身；供助攻判定，D6）。
+    pub fn damage_dealers_of(&self, victim: u32) -> Vec<u32> {
+        let mut out = Vec::new();
+        for (attacker, row) in self.damage_matrix.iter().enumerate() {
+            if attacker != victim as usize && row[victim as usize] > Fix64::ZERO {
+                out.push(attacker as u32);
+            }
+        }
+        out
+    }
+
     /// 取走本局统计到的击杀记录（供 meta 层结算），并清空。
     pub fn take_kills(&mut self) -> Vec<(u32, u32)> {
         std::mem::take(&mut self.kills_this_round)
@@ -1789,6 +1810,11 @@ impl World {
     pub fn reset_round(&mut self) {
         self.eliminated_order.clear();
         self.kills_this_round.clear();
+        for row in self.damage_matrix.iter_mut() {
+            for v in row.iter_mut() {
+                *v = Fix64::ZERO;
+            }
+        }
         self.projectiles.clear(); // 清掉上轮遗留的飞行物/延时区域
         self.arena_radius = Fix64::from_num(crate::world::START_RADIUS);
         self.time = Fix64::ZERO;
