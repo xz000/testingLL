@@ -47,7 +47,7 @@ impl SkillTree {
             SkillTree::E => &[Rock, StoneShot, StealthPush, StealthPush2, LineBeam, LineExplode, S008, S009, S010],
             SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball, S002, S003, S004],
             SkillTree::T => &[TLeech, T2Shot, T2Volley, T3Fast, T3Fast2, TestLeech, S014, S015, S016],
-            SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2],
+            SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2, S017, S018, S019],
             SkillTree::F => &[Test03],
             SkillTree::G => &[Test01, S000],
         }
@@ -203,6 +203,13 @@ pub enum SkillId {
     S012,
     /// S013 移形换位（热键 R）：与 660 内目标互换位置（098b mB；弹体化 TODO）。
     S013,
+    // ---- M2 批次C：场/线控制系 ----
+    /// S017 致残（热键 Y）：弹体命中 KI+残废 Tied (4+0.25L)s（098b eC；AoE 分支 TODO）。
+    S017,
+    /// S018 引力（热键 Y）：飞出引力场吸拉敌人（098b mc 升级版语义；拉速占位 TODO）。
+    S018,
+    /// S019 锁链（热键 Y）：弹体命中把目标拉向施法者 + 定身 0.5s（098b tc；S031 附加 TODO）。
+    S019,
 }
 
 impl SkillId {
@@ -227,6 +234,7 @@ impl SkillId {
             S014 | S015 | S016 => SkillTree::T,
             S011 | S012 | S013 => SkillTree::R,
             S005 | S006 | S007 => SkillTree::C,
+            S017 | S018 | S019 => SkillTree::Y,
         }
     }
 
@@ -286,6 +294,9 @@ impl SkillId {
             S011 => 49,
             S012 => 50,
             S013 => 51,
+            S017 => 52,
+            S018 => 53,
+            S019 => 54,
         }
     }
 
@@ -345,6 +356,9 @@ impl SkillId {
             49 => S011,
             50 => S012,
             51 => S013,
+            52 => S017,
+            53 => S018,
+            54 => S019,
             _ => _Reserved,
         }
     }
@@ -588,6 +602,8 @@ pub enum SkillEffect {
         count: u32,
         /// 连发角度步进（弧度，喷火 5.5°≈0.096；count=1 时忽略）。
         spread_step: f64,
+        /// 命中副作用（默认 Ki；S017 残废 / S019 拉拽）。
+        on_hit: W098bOnHit,
     },
     /// 098b 即时射线（S002 闪电）：无弹体，沿施法方向找首个命中（玩家或障碍截断），
     /// KI 伤害+击退并写 `lightning_visual` 供 client 画闪电线。
@@ -640,6 +656,17 @@ pub enum W098bProjKind {
     Boomerang,
     /// 弹跳弹（S016）：命中后跳向最近下一个目标（跳过上一目标），伤害 ×0.8/跳。
     Bounce,
+}
+
+/// 098b 弹体命中副作用（附加在 KI 伤害+击退之上的控制效果；时长走 growth.duration）。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum W098bOnHit {
+    /// 默认：仅 KI 伤害+击退。
+    Ki,
+    /// S017 致残：命中附加 Tied（残废禁施法/禁移动近似）(4+0.25L)s。
+    Cripple,
+    /// S019 锁链：把目标拉向施法者（朝施法者 600/s × 0.5s）+ Tied 0.5s。
+    ChainPull,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。
@@ -1176,6 +1203,7 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 4.8,
@@ -1205,6 +1233,7 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 15.0,
@@ -1233,6 +1262,7 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
@@ -1277,6 +1307,7 @@ impl DefTable {
                     blast: Some(Fix64::from_num(200.0)),
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
@@ -1303,6 +1334,7 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 30.0,
@@ -1330,6 +1362,7 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 22.0,
@@ -1357,6 +1390,7 @@ impl DefTable {
                     blast: None,
                     count: 5,
                     spread_step: 5.5_f64.to_radians(),
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
@@ -1383,6 +1417,7 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
@@ -1506,6 +1541,91 @@ impl DefTable {
                     cooldown_base: 16.0,
                     cooldown_delta: -0.6316,
                     max_distance_base: 660.0,
+                    ..DEF_ZERO
+                },
+            },
+            // ===== M2 批次C：场/线控制系 =====
+            // S017 致残（Y 键）——spec：CD 25→12.5（20 级，步长 -0.658）；speed 900 / radius 23；
+            // durations：残废 (4+0.25L)*jn → L1 4.25；eC 的 ri>0 AoE 分支无属性系统（TODO）；
+            // 伤害 MI 公式未解码 → M1 恒 3 占位（TODO）。
+            SkillId::S017 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "致残",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(900.0),
+                    radius: Fix64::from_num(23.0),
+                    life: Fix64::from_num(2.0),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Cripple,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 25.0,
+                    cooldown_delta: -0.658,
+                    damage_base: 3.0,
+                    duration_base: 4.25,
+                    duration_delta: 0.25,
+                    ..DEF_ZERO
+                },
+            },
+            // S018 引力（Y 键）——spec：CD 26 恒定（20 级）；speed 850 / aoe 200 / 漩涡 5*jn。
+            // 复用现有 GravityZone 原型（飞行场沿途吸拉）——该臂的 speed/radius/duration/range
+            // 读 growth（stats），数值故放 growth；仅 pull_speed 走 effect 字段（spec 未给，占位 300 TODO）。
+            // 098b 升级版为「落点原地漩涡」，差异 TODO M2 后续标定。
+            SkillId::S018 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "引力",
+                needs_point: true,
+                effect: GravityZone {
+                    speed: Fix64::ZERO,
+                    pull_speed: Fix64::from_num(300.0),
+                    radius: Fix64::ZERO,
+                    life: 0.0,
+                    range: Fix64::ZERO,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 26.0,
+                    // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
+                    // ——语义不同。贴 098b 升级版（落点原地漩涡 5s）取 0（场不漂移）；飞行段弹体化 TODO。
+                    speed_base: 0.0,
+                    radius_base: 200.0,
+                    duration_base: 5.0,
+                    range_base: 1200.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S019 锁链（Y 键）——spec：CD 17→16（20 级，步长 -0.0526）；radius 35；
+            // speed 未给（VengeanceMissile 类）→ M1 占位 800；命中拉向施法者 + Tied 0.5s
+            //（098b 拉拽+链光+S031 附加动作 TODO）；伤害 KI 公式未解码 → 恒 3 占位（TODO）。
+            SkillId::S019 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "锁链",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(800.0),
+                    radius: Fix64::from_num(35.0),
+                    life: Fix64::from_num(2.0),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::ChainPull,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 17.0,
+                    cooldown_delta: -0.0526,
+                    damage_base: 3.0,
+                    duration_base: 0.5,
                     ..DEF_ZERO
                 },
             },
@@ -2380,6 +2500,40 @@ mod tests {
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 4.0, 1e-1), "L20 CD 应 ≈4，实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).max_distance, 660.0, 1e-3), "射程应 600×1.1");
+    }
+
+    #[test]
+    fn s017_s018_s019_match_spec() {
+        // S017 致残：CD 25→12.5（20 级）；残废 (4+0.25L) → L1 4.25。
+        let d = DefTable::def(SkillId::S017);
+        assert_eq!(d.name, "致残");
+        assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
+        assert!(near(d.stats_at(20).cooldown, 12.5, 1e-1), "L20 CD 应 ≈12.5，实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(1).duration, 4.25, 1e-3), "L1 残废应 4+0.25");
+        match d.effect {
+            SkillEffect::Warlock098b { speed, radius, on_hit: W098bOnHit::Cripple, .. } => {
+                assert!(near(speed, 900.0, 1e-3) && near(radius, 23.0, 1e-3));
+            }
+            ref e => panic!("S017 effect 错：{e:?}"),
+        }
+        // S018 引力：CD 26 恒定；漩涡半径 200 / 5s。
+        let d = DefTable::def(SkillId::S018);
+        assert_eq!(d.name, "引力");
+        assert!(near(d.stats_at(1).cooldown, 26.0, 1e-3) && near(d.stats_at(20).cooldown, 26.0, 1e-3));
+        let s20 = d.stats_at(20);
+        assert!(near(s20.speed, 0.0, 1e-3) && near(s20.radius, 200.0, 1e-3), "原地漩涡（speed=0）半径 200 走 growth");
+        assert!(near(s20.duration, 5.0, 1e-3), "漩涡应持续 5*jn 秒");
+        // S019 锁链：CD 17→16（20 级）；radius 35；拉拽+0.5s 定身。
+        let d = DefTable::def(SkillId::S019);
+        assert_eq!(d.name, "锁链");
+        assert!(near(d.stats_at(1).cooldown, 17.0, 1e-3));
+        assert!(near(d.stats_at(20).cooldown, 16.0, 1e-1), "L20 CD 应 ≈16，实际 {:?}", d.stats_at(20).cooldown);
+        match d.effect {
+            SkillEffect::Warlock098b { radius, on_hit: W098bOnHit::ChainPull, .. } => {
+                assert!(near(radius, 35.0, 1e-3));
+            }
+            ref e => panic!("S019 effect 错：{e:?}"),
+        }
     }
 
     #[test]

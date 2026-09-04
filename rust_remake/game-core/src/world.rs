@@ -240,6 +240,10 @@ pub enum ProjectileKind {
         target: Option<u32>,
         /// Boomerang 是否已转入回程。
         returning: bool,
+        /// 命中副作用（S017 残废 / S019 拉拽；默认 Ki）。
+        on_hit: crate::skill::W098bOnHit,
+        /// 副作用时长（growth.duration 求值：残废 (4+0.25L)s / 锁链 0.5s）。
+        debuff_dur: Fix64,
     },
 }
 
@@ -1106,6 +1110,9 @@ impl World {
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
         // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
         let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
+        // 098b on_hit 控制效果：(受害者, Tied 时长) 与 (受害者, 拉向施法者速度, 时长)。
+        let mut debuffs: Vec<(u32, f64)> = Vec::new();
+        let mut pulls_toward: Vec<(u32, Vec2, f64)> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量)
 
@@ -1384,7 +1391,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = DAMAGE_BASE × gx × kb_ji（JI 系数），方向沿弹-目标连线。
@@ -1398,7 +1405,9 @@ impl World {
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
                         events.push((victim, *gx, Some(pr.owner)));
-                        if dd.length_squared() > Fix64::ZERO {
+                        // 锁链（ChainPull）以拉拽为主：跳过 KI 击退（击退 700 位移会盖过 300 的拉拽）。
+                        let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull;
+                        if !is_pull && dd.length_squared() > Fix64::ZERO {
                             let kb = warlock_ki_knockback(*gx, *kb_ji);
                             pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME));
                         }
@@ -1407,6 +1416,24 @@ impl World {
                         }
                         if let Some(br) = blast {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
+                        }
+                        // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
+                        match on_hit {
+                            crate::skill::W098bOnHit::Ki => {}
+                            crate::skill::W098bOnHit::Cripple => {
+                                // 残废：禁施法/禁移动近似为 Tied，时长 (4+0.25L)。
+                                debuffs.push((victim, debuff_dur.to_num::<f64>()));
+                            }
+                            crate::skill::W098bOnHit::ChainPull => {
+                                // 锁链：把目标拉向施法者（朝施法者 600/s × 0.5s）+ Tied。
+                                debuffs.push((victim, debuff_dur.to_num::<f64>()));
+                                if let Some(o) = self.players.get(pr.owner as usize) {
+                                    let to_owner = o.pos - self.players[victim as usize].pos;
+                                    if to_owner.length_squared() > Fix64::ZERO {
+                                        pulls_toward.push((victim, to_owner.normalized() * Fix64::from_num(600.0), debuff_dur.to_num::<f64>()));
+                                    }
+                                }
+                            }
                         }
                         // Bounce（S016 弹跳弹）：命中不消失——伤害 ×0.8（下限 0.2），
                         // 重定向到**全场**最近的「非 owner、非上一跳目标」敌人（不限判定半径——
@@ -1454,6 +1481,21 @@ impl World {
             }
         }
 
+        // 2b2) 应用 098b on_hit 控制效果（Tied debuff / 拉向施法者）。
+        for (vid, dur) in debuffs {
+            if let Some(p) = self.players.get_mut(vid as usize) {
+                if p.alive {
+                    p.add_buff(BuffKind::Tied, dur);
+                }
+            }
+        }
+        for (vid, vel, dur) in pulls_toward {
+            if let Some(p) = self.players.get_mut(vid as usize) {
+                if p.alive {
+                    p.push(vel, dur);
+                }
+            }
+        }
         // 2c) 应用 098b 弹跳弹的重定向（衰减后的 gx、朝下一目标的速度、记录上一跳受害者）。
         // 098b 弹跳弹的 life 是**单跳飞行时间**（spec ev），故每跳重置寿命。
         for (pi, last_victim, new_gx, new_vel) in bounce_redirs {
@@ -1804,7 +1846,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Warlock098b { proj, speed, radius, life, kb_ji, ignite, blast, count, spread_step } => {
+            SkillEffect::Warlock098b { proj, speed, radius, life, kb_ji, ignite, blast, count, spread_step, on_hit } => {
                 // 098b 名册弹体（M2 批次A 扩展：blast AoE/锥形连发）。
                 // gx/点燃总量走 stats（growth.damage/extra 已按等级求值）；
                 // 命中结算统一走 KI/FI（FI 伤害=gx×Gn×hn，KI 击退=DAMAGE_BASE×gx×JI）。
@@ -1850,6 +1892,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             blast,
                             target: homing_target,
                             returning: false,
+                            on_hit,
+                            debuff_dur: stats.duration,
                         },
                         pos: ppos,
                         alive: true,
@@ -4169,6 +4213,83 @@ mod tests {
             .iter()
             .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
         assert!(!still, "回旋镖回程到家应收回消失（3s 足够出+回）");
+    }
+
+    /// S017 致残：命中后目标被 Tied（禁施法），持续 (4+0.25L)。
+    #[test]
+    fn s017_cripple_ties_target() {
+        let mut world = World::new(2, 960);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut tied = false;
+        for _ in 0..90 {
+            world.step(none.clone(), dt);
+            if world.players[1].tied() { tied = true; }
+        }
+        assert!(world.players[1].hp < hp1, "致残弹应造成 KI 伤害");
+        assert!(tied, "命中后目标应被残废（Tied）");
+    }
+
+    /// S019 锁链：命中后目标被拉向施法者（位移朝施法者）+ 短暂 Tied。
+    #[test]
+    fn s019_chain_pulls_target_toward_caster() {
+        let mut world = World::new(2, 961);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人在 +x 方向 480 处；命中后应被拉向 -x（施法者方向）
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let x_before = world.players[1].pos.x;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..90 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].pos.x < x_before, "锁链应把目标拉向施法者（-x），实际 {:?}", world.players[1].pos.x);
+    }
+
+    /// S018 引力：施放后场上出现吸拉场，附近敌人被拉近。
+    #[test]
+    fn s018_gravity_zone_pulls_enemy() {
+        let mut world = World::new(2, 962);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人在场心 (360,0) 半径 200 内（距场心 120），应被吸向场心
+        world.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
+        world.players[1].move_target = None;
+        let dist_before = (world.players[1].pos - Vec2::new(d60(6.0), Fix64::ZERO)).length();
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut gravity_seen = false;
+        for _ in 0..180 {
+            world.step(none.clone(), dt);
+            if world.projectiles.iter().any(|pr| matches!(pr.kind, ProjectileKind::Gravity { .. })) {
+                gravity_seen = true;
+            }
+        }
+        assert!(gravity_seen, "施放后场上应出现引力场弹体");
+        let dist_after = (world.players[1].pos - Vec2::new(d60(6.0), Fix64::ZERO)).length();
+        assert!(dist_after < dist_before, "引力场应把附近敌人吸向场心，{} -> {}", dist_before, dist_after);
     }
 
     /// S006 时光回溯：施放记锚点 → 受伤+位移 → 3.6s 后闪回锚点并还原 HP。
