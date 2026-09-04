@@ -1218,6 +1218,36 @@ impl DefTable {
         legacy_scale_def(Self::raw_def(id))
     }
 
+    /// 098b 升级上限（物体数据 `alev`；consolidated 总表「等级」列）。乔丹之石 +2 在此之上。
+    /// 未列入的（Unity 版遗留技能）沿用统一上限 20。
+    pub fn max_level(id: SkillId) -> u32 {
+        match id {
+            SkillId::S000 => 24,
+            SkillId::S002 => 9,
+            SkillId::S003 => 9,
+            SkillId::S004 => 9,
+            SkillId::S005 => 9,
+            SkillId::S006 => 8,
+            SkillId::S007 => 20,
+            SkillId::S008 => 20,
+            SkillId::S009 => 20,
+            SkillId::S010 => 20,
+            SkillId::S011 => 9,
+            SkillId::S012 => 20,
+            SkillId::S013 => 20,
+            SkillId::S014 => 20,
+            SkillId::S015 => 20,
+            SkillId::S016 => 20,
+            SkillId::S017 => 20,
+            SkillId::S018 => 20,
+            SkillId::S019 => 20,
+            SkillId::S020 => 4,
+            SkillId::S021 => 4,
+            SkillId::S001 => 4,
+            _ => 20,
+        }
+    }
+
     /// 098b 名册定义（M1：S000/S003/S004）。每个条目的数值都注明 spec 来源，
     /// 改动前先回 `port_098b/data/port_spec_098b.json` 与 `01_技能/abilities_consolidated_098b.md` 对账。
     fn warlock098b_def(id: SkillId) -> Option<SkillDef> {

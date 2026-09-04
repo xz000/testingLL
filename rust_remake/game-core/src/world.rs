@@ -833,6 +833,21 @@ impl World {
                 false
             }
         };
+        // 死亡面具/鲜血之剑（M3 2c）：攻方生命偷取（lifesteal×原始伤害）与受伤点恢复。
+        if let Some(f) = from.and_then(|f| self.players.get(f as usize).map(|a| a.id)) {
+            let (lifesteal, odh) = {
+                let a = &self.players[f as usize];
+                (a.item_fx.lifesteal, a.item_fx.on_damage_heal)
+            };
+            if lifesteal > 0.0 || odh > 0.0 {
+                if let Some(a) = self.players.get_mut(f as usize) {
+                    if a.alive {
+                        let heal = amount.to_num::<f64>() * lifesteal + odh;
+                        a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
+                    }
+                }
+            }
+        }
         if died {
             self.record_death(id);
         }
@@ -1532,7 +1547,7 @@ impl World {
 
         // 3) 结算爆炸（石头 / 导弹）
         for e in &explode {
-            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false);
+            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false);
         }
 
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
@@ -1583,7 +1598,7 @@ impl World {
         // 4d-0) 098b AoE 爆炸（陨石命中/到期）：复用 explode_at（中心伤害+距离衰减+连线击退），
         // 伤害=gx（explode_at 内部做护甲折算），击退力=KI 公式 warlock_ki_knockback。
         for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, gx, warlock_ki_knockback(gx, ji), false);
+            self.explode_at(center, owner, br, gx, warlock_ki_knockback(gx, ji), false, false);
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -1680,7 +1695,9 @@ impl World {
 
     /// 在 (pos) 处半径 `radius` 的爆炸：对范围内玩家造成伤害并按中心连线击退。
     /// `exclude_owner`：以自身为中心的 nova（098b S001/S020/S021）不伤施法者。
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool) {
+    /// `is_smite`：天罚系 nova（S001/S020/S021）——受害者的守护之盾减免生效（M3 2c）。
+    #[allow(clippy::too_many_arguments)]
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool) {
         let r_sq = radius * radius;
         // 攻方 Gn 系数（灼烧 ×0.1，D7）：循环前取出，避免 iter_mut 借用冲突。
         let owner_gn = self
@@ -1700,7 +1717,11 @@ impl World {
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
                 }
-                let dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor * owner_gn);
+                let mut dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor * owner_gn);
+                // 守护之盾（M3 2c）：天罚伤害减免（I00H 25% / I00I 75%）。
+                if is_smite && p.item_fx.smite_reduction > 0.0 {
+                    dmg *= Fix64::from_num(1.0 - p.item_fx.smite_reduction);
+                }
                 let net = p.soak_boost(dmg);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
                 if p.hp == Fix64::ZERO {
@@ -1901,6 +1922,18 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                 };
+                // 火球法杖（M3 2c，I00D）：持杖者 S000 火球直伤改 5.5+0.5×L、点燃总量改 3+0.5×L。
+                let (gx, ignite_total) = if world.players[idx as usize].item_fx.fireball_burn
+                    && id == crate::skill::SkillId::S000
+                {
+                    let lv = caster_level as f64;
+                    (
+                        Fix64::from_num(5.5 + 0.5 * lv),
+                        Some(Fix64::from_num(3.0 + 0.5 * lv)),
+                    )
+                } else {
+                    (stats.damage, ignite.map(|base| if stats.extra > Fix64::ZERO { stats.extra } else { base }))
+                };
                 // 连发（count>1）：以施法方向为中心、±spread_step 对称扇出（火焰喷射锥形 5 道）。
                 let half = (count.max(1) as i64 - 1) / 2;
                 for k in -half..=half {
@@ -1915,10 +1948,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             radius,
                             remaining: life,
                             life,
-                            gx: stats.damage,
+                            gx,
                             kb_ji,
                             // 点燃总量随施法等级（growth.extra = 6+1.5×L；effect.ignite 仅作开关+L1 基准）。
-                            ignite: ignite.map(|base| if stats.extra > Fix64::ZERO { stats.extra } else { base }),
+                            ignite: ignite_total,
                             blast,
                             target: homing_target,
                             returning: false,
@@ -1934,11 +1967,16 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 098b AoE nova（M2 批次D）：以自身为中心，复用 explode_at（中心伤害+
                 // 距离衰减+连线击退，护甲折算/击杀记账在 explode_at 内）。
                 let ppos = world.players[idx as usize].pos;
-                let gx = stats.damage;
+                let mut gx = stats.damage;
+                // 鲜血之剑（M3 2c）：天罚伤害「增至」12/13（098b set 语义 → 取 max）。
+                let smite_bonus = world.players[idx as usize].item_fx.smite_bonus;
+                if smite_bonus > 0.0 {
+                    gx = gx.max(Fix64::from_num(smite_bonus));
+                }
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚：固定 250 半径、KI($A) 恒定伤害。
-                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true);
+                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true, true);
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
@@ -1946,14 +1984,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let stage = world.players[idx as usize].catastrophe_stage % 3;
                         let r = if stage == 2 { Fix64::from_num(400.0) } else { radius };
                         let stage_gx = gx + Fix64::from_num(stage as i64 * 4);
-                        world.explode_at(ppos, idx, r, stage_gx, warlock_ki_knockback(stage_gx, kb_ji), true);
+                        world.explode_at(ppos, idx, r, stage_gx, warlock_ki_knockback(stage_gx, kb_ji), true, true);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
                         // S021 虔诚：敌 250 伤（KI 距离衰减）+ 自奶 gx×0.5 + 移速（友方奶 TODO 无队伍）。
-                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true);
+                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true, true);
                         let heal = gx * Fix64::from_num(0.5);
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             if p.alive {
@@ -4337,6 +4375,65 @@ mod tests {
             dealt > 0.5 && dealt < 2.0,
             "灼烧者输出应 ×0.1（≈1），实际 {dealt}"
         );
+    }
+
+    /// M3 2c：死亡面具吸血——攻方按伤害 24% 回血；火球法杖改写火球直伤 5.5+0.5L。
+    #[test]
+    fn item_combat_hooks_lifesteal_and_firestaff() {
+        // 吸血：玩家1 持面具，闪电打玩家0 → 回血 24%×10=2.4
+        let mut world = World::new(2, 969);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::ZERO;
+        world.players[1].move_target = None;
+        world.players[1].hp = Fix64::from_num(50.0);
+        world.players[1].set_items(&[crate::item::ItemId::FireMask]);
+        world.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::TestLightning, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..20 {
+            if world.players[1].hp > Fix64::from_num(50.0) { break; }
+            world.step(none.clone(), dt);
+        }
+        let healed = (world.players[1].hp - Fix64::from_num(50.0)).to_num::<f64>();
+        assert!((healed - 2.4).abs() < 0.3, "面具应吸血 24%×10≈2.4，实际 {healed}");
+        assert!(world.players[0].hp < world.players[0].max_hp, "目标应受伤");
+    }
+
+    /// M3 2c：天罚改件——鲜血之剑把天罚伤害增至 12；守护之盾减伤 75%。
+    #[test]
+    fn smite_items_sword_and_shield() {
+        let mut world = World::new(3, 970);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 施法者持剑（天罚伤害增至 12）
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].set_items(&[crate::item::ItemId::BloodSword1]);
+        // 目标1 持盾（75% 减伤）、目标2 无盾，都在 250 半径内
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[1].set_items(&[crate::item::ItemId::GuardianShield2]);
+        world.players[2].pos = Vec2::new(d60(-2.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let (hp1, hp2) = (world.players[1].hp, world.players[2].hp);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(); 3];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
+        let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
+        assert!((d2 - 12.0).abs() < 0.5, "无盾目标应吃满剑后天罚 12，实际 {d2}");
+        assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
     }
 
     /// M3 物品派生数值：靴加速度、斗篷回血、头盔 kb 取 max、坠饰加生命上限。
