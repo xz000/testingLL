@@ -2852,6 +2852,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 蓄力自爆（F）：以施法者为中心 AOE；自己扣到残血、范围内敌人受伤并踢开。（数值走 stats）
                 let ppos = world.players[idx as usize].pos;
                 let radius = stats.radius;
+                eprintln!("[dbg-se] radius={:?} ppos={:?} epos={:?} dist={:?}", radius, ppos, world.players[1].pos, (world.players[1].pos - ppos).length());
                 let damage = stats.damage;
                 let kick = stats.push_power;
                 let kick_time = stats.push_time;
@@ -3671,10 +3672,10 @@ mod tests {
         let mut world = World::new(2, 42);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        world.players[1].pos = Vec2::new(d60(10.0), d60(10.0)); // 不在直线上
+        world.players[1].pos = Vec2::new(d60(5.0), d60(5.0)); // 不在直线上（且在 640 场地内）
         let hp1 = world.players[1].hp;
         let input = vec![
-            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::new(d60(12.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ];
         // 火球朝 (12,0) 直射，射程 14；跑足够长让它飞出/消失
@@ -5155,16 +5156,16 @@ mod tests {
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        world.players[1].pos = Vec2::new(Fix64::from_num(6.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
         world.players[1].move_target = None;
         let hp1 = world.players[1].hp;
-        // 压入：先移动到 (3,0)，再朝 (6,0) 施放掷弹(Rock)
+        // 压入：先移动到 (3,0)，再朝 (6,0) 施放掷弹(Rock)（war3 尺度布阵，碰撞 32 下不初始重叠）
         world.step(vec![
-            PlayerInput { queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO))], ..Default::default() },
+            PlayerInput { queued: vec![Cmd::Move(Vec2::new(d60(3.0), Fix64::ZERO))], ..Default::default() },
             PlayerInput::default(),
         ], dt);
         world.step(vec![
-            PlayerInput { queued: vec![Cmd::Cast(SkillId::Rock, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))], ..Default::default() },
+            PlayerInput { queued: vec![Cmd::Cast(SkillId::Rock, Some(Vec2::new(d60(6.0), Fix64::ZERO)))], ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];

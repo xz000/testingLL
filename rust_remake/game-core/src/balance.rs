@@ -29,13 +29,17 @@ pub struct Balance {
     /// 全局生命恢复（HP/秒）。098b `zd()` 每玩家 `Nn=0.05`（每 20s 回 1 血，-C#9 可调）；
     /// 陨石灼烧「烤肉饼」期间清零禁疗（PORT_098B_DECISIONS.md D7）。
     pub hp_regen: f64,
-    /// 玩家默认半径（碰撞半径）。h000 未覆盖 Collision → 继承基础单位 hpea=16；TODO(M5) 真机核对。
+    /// 玩家默认半径（碰撞半径）。h000 未覆盖 Collision → 继承 war3 原版 hpea=32
+    /// （2026-09-05 用户体感「地图直径 ≈ 20 个术士并排」交叉验证：碰撞直径 64 × 10 = 半径 640，两项自洽）。
     pub default_radius: f64,
 
     // ---- 场地 / 世界 ----
-    /// 场地初始半径。**占位**：知识库未给场地尺寸（陨石射程 1200、闪现 700+ 佐证 1000+ 量级）；TODO(M5) 对齐 098b 场地。
+    /// 场地初始半径 = 20 个术士并排（碰撞直径 64）× 10 = 640。
+    /// 交叉验证：火球弹程 1000 = 1.56 半径（横穿压制技）、闪现 770 = 1.2 半径（非全图）、
+    /// 陨石 cast_range 1200 > 640（全图落点）、8 人混战密度合理。2026-09-05 定案（原占位 1200 偏大）。
     pub start_radius: f64,
-    /// 缩圈速度（半径减少/秒）。占位：保持旧比例 1.75%/s × 1200。
+    /// 缩圈速度（半径减少/秒）。比例口径与原占位一致（1.75%/s × 640）；
+    /// 098b 受 war3 地形限制只能整块消失，连续缩圈为本重制版刻意设计（用户确认）。
     pub shrink_speed: f64,
     /// 出界掉血（HP/秒）。（098b 熔岩 Uo×10 = 0.9×10 = 9，mechanics §五）
     pub out_hurt: f64,
@@ -56,9 +60,9 @@ impl Balance {
             decel: 2625.0,
             max_hp: 100.0,
             hp_regen: 0.05,
-            default_radius: 16.0,
-            start_radius: 1200.0,
-            shrink_speed: 21.0,
+            default_radius: 32.0,
+            start_radius: 640.0,
+            shrink_speed: 11.2,
             out_hurt: 9.0,
             overlap_damage: 2.0,
             sabullet_damage: 2.0,
@@ -90,9 +94,9 @@ mod tests {
         // war3 尺度（PORT_098B_DECISIONS.md D2 来源表）
         assert_eq!(a.base_speed, 210.0);
         assert_eq!(a.max_hp, 100.0);
-        assert_eq!(a.default_radius, 16.0);
-        assert_eq!(a.start_radius, 1200.0);
-        assert_eq!(a.shrink_speed, 21.0);
+        assert_eq!(a.default_radius, 32.0);
+        assert_eq!(a.start_radius, 640.0);
+        assert_eq!(a.shrink_speed, 11.2);
         assert_eq!(a.out_hurt, 9.0);
     }
 
