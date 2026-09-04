@@ -14,7 +14,10 @@ use crate::skill::{SkillEffect, SkillId, DefTable};
 pub const START_RADIUS: f64 = Balance::default().start_radius;
 pub const SHRINK_SPEED: f64 = Balance::default().shrink_speed; // 半径减少量 / 秒
 /// 出界伤害：球心距圆点 > 圈半径时，每帧扣除的 HP / 秒。
-pub const OUT_HURT: f64 = Balance::default().out_hurt;
+/// 圈外 = 熔岩（098b 语义统一，D8/M5）：踩上（出圈）每秒受 `Uo×10` 伤害。
+pub const LAVA_HURT: f64 = Balance::default().out_hurt;
+/// 兼容旧名（测试引用）。
+pub const OUT_HURT: f64 = LAVA_HURT;
 /// 玩家相互挤压（重叠）时受到的伤害 / 秒。
 pub const OVERLAP_DAMAGE: f64 = Balance::default().overlap_damage;
 /// E3/E3b 撒出的扇形子弹（原版 `SABulletScript`）的伤害与射程。
@@ -508,7 +511,11 @@ impl World {
             }
             if !self.sandbox && p.pos.length() > self.arena_radius {
                 // 球心已出圈：持续掉血。回去靠自己走位。（boost 期间返一半回血）
-                let net = p.soak_boost(Fix64::from_num(OUT_HURT) * dt);
+                // 圈外 = 熔岩（098b 语义统一，D8）：踩上即受 Uo×10=9/s；
+                // 熔岩靴抵抗 87.5%（M5 简化为常驻被动；098b 原版为「熔岩上天罚激活 3-5s
+                // 窗口 + CD25s」，激活式 TODO）、-0.1 hp/s 惩罚照常生效。
+                let lava_mult = 1.0 - p.item_fx.lava_resist_frac;
+                let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult) * dt);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
             }
             if p.hp <= Fix64::ZERO && p.alive {
@@ -4469,6 +4476,32 @@ mod tests {
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
         assert!((d2 - 12.0).abs() < 0.5, "无盾目标应吃满剑后天罚 12，实际 {d2}");
         assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
+    }
+
+    /// M5 熔岩（圈外=熔岩统一，D8）：熔岩靴抵抗 87.5% → 净伤 9×0.125=1.125/s；
+    /// -0.1 hp/s 惩罚使自然回血为 0（0.05-0.1<0 clamp）。
+    #[test]
+    fn lava_boots_resist_out_of_bounds_damage() {
+        let mut world = World::new(1, 971);
+        world.players[0].pos = Vec2::new(d60(20.5), d60(20.5)); // 场外（熔岩上）
+        world.players[0].set_items(&[crate::item::ItemId::LavaBoots1]);
+        world.players[0].hp = Fix64::from_num(50.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let none = vec![PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt); // 1s
+        }
+        let lost = 50.0 - world.players[0].hp.to_num::<f64>();
+        assert!((lost - 1.125).abs() < 0.05, "穿熔岩靴 1s 应净伤 1.125（9×12.5%），实际 {lost}");
+        // 无靴对照：1s 掉 9
+        let mut world2 = World::new(1, 971);
+        world2.players[0].pos = Vec2::new(d60(20.5), d60(20.5));
+        world2.players[0].hp = Fix64::from_num(50.0);
+        for _ in 0..60 {
+            world2.step(none.clone(), dt);
+        }
+        let lost2 = 50.0 - world2.players[0].hp.to_num::<f64>();
+        assert!((lost2 - 9.0).abs() < 0.1, "无靴 1s 应掉 9，实际 {lost2}");
     }
 
     /// M3 物品派生数值：靴加速度、斗篷回血、头盔 kb 取 max、坠饰加生命上限。

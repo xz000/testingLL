@@ -118,8 +118,8 @@ pub struct ItemEffects {
     pub buff_dur_mult: f64,
     /// 受到减益时长除数（怀表 1.15/1.25）。
     pub debuff_dur_div: f64,
-    /// 熔岩抵抗激活秒数（熔岩靴 3/4/5；熔岩地形 TODO M5）。
-    pub lava_resist_secs: f64,
+    /// 熔岩伤害抵抗比例（熔岩靴 87.5%；098b 原版为激活式窗口，简化为常驻被动 TODO）。
+    pub lava_resist_frac: f64,
 }
 
 /// 物品定义。
@@ -153,7 +153,7 @@ const fn fx() -> ItemEffects {
         jordan_levels: 0,
         buff_dur_mult: 1.0,
         debuff_dur_div: 1.0,
-        lava_resist_secs: 0.0,
+        lava_resist_frac: 0.0,
     }
 }
 
@@ -197,12 +197,12 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 6, sell: 12, name: "守护之盾", fx: ItemEffects { smite_reduction: 0.25, hp_add: -10.0, ..fx() } },
     // I00I 守护之盾 2：天罚 75% 减伤，-10 最大生命
     ItemDef { id: ItemId::GuardianShield2, family: ItemFamily::GuardianShield, tier: 2, cost: 6, sell: 12, name: "守护之盾 2", fx: ItemEffects { smite_reduction: 0.75, hp_add: -10.0, ..fx() } },
-    // I00J 熔岩靴 1：+15 移速 / 岩浆抵抗 3s / -0.1 回复惩罚（岩浆系统 TODO M5）
-    ItemDef { id: ItemId::LavaBoots1, family: ItemFamily::LavaBoots, tier: 1, cost: 5, sell: 5, name: "熔岩靴 1", fx: ItemEffects { speed_add: 15.0, lava_resist_secs: 3.0, regen_penalty: 0.1, ..fx() } },
+    // I00J 熔岩靴 1：+15 移速 / 岩浆抵抗 87.5% / -0.1 回复惩罚（圈外=熔岩，D8 统一）
+    ItemDef { id: ItemId::LavaBoots1, family: ItemFamily::LavaBoots, tier: 1, cost: 5, sell: 5, name: "熔岩靴 1", fx: ItemEffects { speed_add: 15.0, lava_resist_frac: 0.875, regen_penalty: 0.1, ..fx() } },
     // I00K 熔岩靴 2：+30 移速 / 4s
-    ItemDef { id: ItemId::LavaBoots2, family: ItemFamily::LavaBoots, tier: 2, cost: 10, sell: 10, name: "熔岩靴 2", fx: ItemEffects { speed_add: 30.0, lava_resist_secs: 4.0, regen_penalty: 0.1, ..fx() } },
+    ItemDef { id: ItemId::LavaBoots2, family: ItemFamily::LavaBoots, tier: 2, cost: 10, sell: 10, name: "熔岩靴 2", fx: ItemEffects { speed_add: 30.0, lava_resist_frac: 0.875, regen_penalty: 0.1, ..fx() } },
     // I00L 熔岩靴 3：+39 移速 / 5s
-    ItemDef { id: ItemId::LavaBoots3, family: ItemFamily::LavaBoots, tier: 3, cost: 15, sell: 15, name: "熔岩靴 3", fx: ItemEffects { speed_add: 39.0, lava_resist_secs: 5.0, regen_penalty: 0.1, ..fx() } },
+    ItemDef { id: ItemId::LavaBoots3, family: ItemFamily::LavaBoots, tier: 3, cost: 15, sell: 15, name: "熔岩靴 3", fx: ItemEffects { speed_add: 39.0, lava_resist_frac: 0.875, regen_penalty: 0.1, ..fx() } },
     // I00M 怀表 1：增益时长 ×1.15 / 减益时长 ÷1.15（另降沉默，见 S030）
     ItemDef { id: ItemId::PocketWatch1, family: ItemFamily::PocketWatch, tier: 1, cost: 6, sell: 6, name: "怀表 1", fx: ItemEffects { buff_dur_mult: 1.15, debuff_dur_div: 1.15, ..fx() } },
     // I00N 怀表 2：×1.25
@@ -267,7 +267,7 @@ pub fn aggregate(items: &[ItemId]) -> ItemEffects {
         out.jordan_levels += f.jordan_levels;
         out.buff_dur_mult = out.buff_dur_mult.max(f.buff_dur_mult);
         out.debuff_dur_div = out.debuff_dur_div.max(f.debuff_dur_div);
-        out.lava_resist_secs = out.lava_resist_secs.max(f.lava_resist_secs);
+        out.lava_resist_frac = out.lava_resist_frac.max(f.lava_resist_frac);
     }
     out
 }
