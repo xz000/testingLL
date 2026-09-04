@@ -1773,6 +1773,17 @@ impl Game {
                     let line = Mesh::new_line(&ctx.gfx, &[Point2 { x: fx, y: fy }, Point2 { x: ex, y: ey }], 4.0, Color::from_rgba(200, 120, 255, 200))?;
                     canvas.draw(&line, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::W098b { proj, radius, .. } => {
+                    // 098b 名册弹体（M1）：按形态配色——火球橙红实心、追踪弹亮紫、回旋镖青蓝描边。
+                    let r = (radius.to_num::<f32>() * self.scale).max(4.0);
+                    let color = match proj {
+                        game_core::skill::W098bProjKind::Straight => Color::from_rgb(255, 130, 60),
+                        game_core::skill::W098bProjKind::Homing => Color::from_rgb(200, 110, 255),
+                        game_core::skill::W098bProjKind::Boomerang => Color::from_rgb(90, 220, 230),
+                    };
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
             }
         }
 

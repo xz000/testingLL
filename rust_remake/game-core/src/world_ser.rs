@@ -493,6 +493,15 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, target, returning } => {
+            wu8(o, 17);
+            wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2 });
+            wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *kb_ji);
+            wu8(o, ignite.is_some() as u8);
+            if let Some(v) = ignite { wfix(o, *v); }
+            wu32(o, target.unwrap_or(u32::MAX));
+            wu8(o, *returning as u8);
+        }
     }
 }
 
@@ -518,6 +527,26 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
         14 => PK::Star { owner: u32at(b, p)?, radius: fixat(b, p)?, damage_per_sec: fixat(b, p)?, heal_per_sec: fixat(b, p)?, remaining: fixat(b, p)? },
         15 => PK::BindLine { dir: vecat(b, p)?, speed: fixat(b, p)?, count: u32at(b, p)?, fired: u32at(b, p)?, bind_time: fixat(b, p)?, from: vecat(b, p)?, end: vecat(b, p)? },
         16 => PK::PushBullet { dir: vecat(b, p)?, speed: fixat(b, p)?, damage: fixat(b, p)?, radius: fixat(b, p)?, push_power: fixat(b, p)?, push_time: fixat(b, p)?, remaining: fixat(b, p)? },
+        17 => {
+            let proj = match u8at(b, p)? {
+                0 => crate::skill::W098bProjKind::Straight,
+                1 => crate::skill::W098bProjKind::Homing,
+                2 => crate::skill::W098bProjKind::Boomerang,
+                _ => return None,
+            };
+            let vel = vecat(b, p)?;
+            let speed = fixat(b, p)?;
+            let radius = fixat(b, p)?;
+            let remaining = fixat(b, p)?;
+            let life = fixat(b, p)?;
+            let gx = fixat(b, p)?;
+            let kb_ji = fixat(b, p)?;
+            let ignite = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
+            let tid = u32at(b, p)?;
+            let target = if tid == u32::MAX { None } else { Some(tid) };
+            let returning = u8at(b, p)? != 0;
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, target, returning }
+        }
         _ => return None,
     };
     Some(Projectile { owner, kind, pos, alive })
