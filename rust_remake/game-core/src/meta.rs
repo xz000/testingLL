@@ -26,19 +26,30 @@ pub struct MatchConfig {
     /// 每轮结束时按名次的额外奖励（索引 = 名次-1，0=冠军；超过数组长度的名次不额外奖励）
     pub place_rewards: Vec<i32>,
     /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
-    /// 房主可设置；默认 0（即第一局只发参与奖）。
+    /// 房主可设置；098b 默认 So=20（D6）。
     pub starting_gold: i32,
+    /// 击杀得分（098b lo，默认 1；D6 分数体系）。
+    pub score_per_kill: u32,
+    /// 助攻得分（098b Lo，默认 1）。
+    pub score_per_assist: u32,
+    /// 轮胜利得分（098b po，默认 1；胜利 = 每轮最后存活者）。
+    pub score_per_round_win: u32,
 }
 
 impl Default for MatchConfig {
     fn default() -> Self {
+        // 经济默认值对齐 098b ed()（PORT_098B_DECISIONS.md D6）：
+        // 开局 So=20、每轮 so=10、击杀金 mo=0（默认只给分不给钱）、名次奖励无此机制（默认空）。
         MatchConfig {
             total_rounds: 3,
-            learn_time_secs: 20.0,
-            gold_per_round: 20,
-            gold_per_kill: 15,
-            place_rewards: vec![30, 20, 10],
-            starting_gold: 0,
+            learn_time_secs: 30.0, // 098b wo=30
+            gold_per_round: 10,
+            gold_per_kill: 0,
+            place_rewards: Vec::new(),
+            starting_gold: 20,
+            score_per_kill: 1,
+            score_per_assist: 1,
+            score_per_round_win: 1,
         }
     }
 }
@@ -51,6 +62,10 @@ pub struct PlayerProfile {
     pub total_kills: u32,
     /// 存活过的小局数
     pub rounds_survived: u32,
+    /// 累计得分（击杀/助攻/轮胜，098b lo/Lo/po；En1 按总分定胜负，D6）。
+    pub score: u32,
+    /// 当前连杀数（死亡清零；>=3 触发连杀播报，098b Mn[3..10]）。
+    pub current_streak: u32,
     /// 本场最佳名次（1 = 冠军；0 = 未结束任何局）
     pub best_placement: u32,
     /// 各技能当前等级（索引 = SkillId::as_u32）
@@ -75,6 +90,8 @@ impl PlayerProfile {
             player_id,
             gold: 0,
             total_kills: 0,
+            score: 0,
+            current_streak: 0,
             rounds_survived: 0,
             best_placement: 0,
             skill_levels: vec![1; n],
@@ -282,6 +299,61 @@ impl MatchState {
         {
             p.total_kills += 1;
             p.gold += self.config.gold_per_kill;
+            p.score += self.config.score_per_kill;
+            p.current_streak += 1; // 连杀计数（死亡清零在 register_death）
+        }
+    }
+
+    /// 死亡结算（D6）：受害者连杀清零（连杀播报由调用方在清零前读取）。
+    pub fn register_death(&mut self, victim_id: u32) -> u32 {
+        let mut streak = 0;
+        if let Some(p) = self
+            .profiles
+            .iter_mut()
+            .find(|pr| pr.player_id == victim_id)
+        {
+            streak = p.current_streak;
+            p.current_streak = 0;
+        }
+        streak
+    }
+
+    /// 助攻结算（D6）：对本局伤害过死者（但非击杀者）的玩家发分/金。
+    pub fn register_assists(&mut self, victim_id: u32, killer_id: u32, assists: &[u32]) {
+        for &a in assists {
+            if a == killer_id || a == victim_id {
+                continue;
+            }
+            if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == a) {
+                p.score += self.config.score_per_assist;
+                p.gold += 0; // 098b Mo=0（金钱-助攻默认 0，可调）
+            }
+        }
+    }
+
+    /// 轮胜利结算（D6）：每轮最后存活者 +分（组队模式待 M4 队伍系统）。
+    pub fn register_round_win(&mut self, winner_id: u32) {
+        if let Some(p) = self
+            .profiles
+            .iter_mut()
+            .find(|pr| pr.player_id == winner_id)
+        {
+            p.score += self.config.score_per_round_win;
+        }
+    }
+
+    /// 连杀播报（098b Mn[3..10]）：大杀特杀(3)…超越神了(10)；None = 无播报。
+    pub fn streak_label(streak: u32) -> Option<&'static str> {
+        match streak {
+            3 => Some("大杀特杀"),
+            4 => Some("主宰比赛"),
+            5 => Some("迈向胜利"),
+            6 => Some("狂暴了"),
+            7 => Some("无法阻挡"),
+            8 => Some("变态了"),
+            9 => Some("接近神了"),
+            10..=u32::MAX => Some("超越神了"),
+            _ => None,
         }
     }
 
@@ -348,15 +420,25 @@ impl MatchState {
 mod tests {
     use super::*;
 
+    /// 机制验证用的旧口径配置（每轮 20/击杀 15/名次 30/20/10——非 098b 默认，D6 默认值另有对账测试）。
     fn sample() -> MatchState {
-        MatchState::new(MatchConfig::default(), &[0, 1, 2], 8)
+        MatchState::new(
+            MatchConfig {
+                gold_per_round: 20,
+                gold_per_kill: 15,
+                place_rewards: vec![30, 20, 10],
+                ..MatchConfig::default()
+            },
+            &[0, 1, 2],
+            8,
+        )
     }
 
     #[test]
     fn round_start_gives_participation_gold() {
         let m = sample();
-        assert_eq!(m.profiles[0].gold, 20);
-        assert_eq!(m.profiles[1].gold, 20);
+        assert_eq!(m.profiles[0].gold, 40, "So20 + 首轮参与奖 20");
+        assert_eq!(m.profiles[1].gold, 40);
     }
 
     #[test]
@@ -366,16 +448,16 @@ mod tests {
             ..Default::default()
         };
         let m = MatchState::new(config, &[0, 1], 8);
-        // 第一局 = 初始金币 50 + 参与奖 20 = 70
-        assert_eq!(m.profiles[0].gold, 50 + 20);
-        assert_eq!(m.profiles[1].gold, 50 + 20);
+        // 第一局 = 初始金币 50 + 参与奖（默认 so=10）= 60
+        assert_eq!(m.profiles[0].gold, 50 + 10);
+        assert_eq!(m.profiles[1].gold, 50 + 10);
     }
 
     #[test]
     fn kill_gives_gold() {
         let mut m = sample();
         m.register_kill(0);
-        assert_eq!(m.profiles[0].gold, 20 + 15);
+        assert_eq!(m.profiles[0].gold, 40 + 15, "基础 40 + 击杀 15");
         assert_eq!(m.profiles[0].total_kills, 1);
     }
 
@@ -384,9 +466,9 @@ mod tests {
         let mut m = sample();
         // 名次：0=冠军（+30+存活），1=第二（+20），2=第三（+10）
         m.finish_round(vec![0, 1, 2]);
-        assert_eq!(m.profiles[0].gold, 20 + 30);
-        assert_eq!(m.profiles[1].gold, 20 + 20);
-        assert_eq!(m.profiles[2].gold, 20 + 10);
+        assert_eq!(m.profiles[0].gold, 40 + 30);
+        assert_eq!(m.profiles[1].gold, 40 + 20);
+        assert_eq!(m.profiles[2].gold, 40 + 10);
         assert_eq!(m.profiles[0].best_placement, 1);
         assert_eq!(m.profiles[1].best_placement, 2);
         assert_eq!(m.round_placements.len(), 1);
@@ -398,12 +480,40 @@ mod tests {
         let mut m = sample();
         m.finish_round(vec![0, 1, 2]); // → Learning
         assert_eq!(m.phase, MatchPhase::Learning);
-        let advanced = m.tick_learning(20.0); // 学习超时（默认 20 秒）
+        let advanced = m.tick_learning(30.01); // 学习超时（098b wo=30）
         assert!(advanced);
         assert_eq!(m.round, 2);
         assert_eq!(m.phase, MatchPhase::Fighting);
         // 第二局参与奖已发放
-        assert_eq!(m.profiles[0].gold, 20 + 30 + 20);
+        assert_eq!(m.profiles[0].gold, 40 + 30 + 20);
+    }
+
+    #[test]
+    fn d6_economy_defaults_match_098b() {
+        // PORT_098B_DECISIONS.md D6：So=20 / so=10 / 击杀金 0（只给分）/ 名次奖默认空。
+        let config = MatchConfig::default();
+        assert_eq!(config.starting_gold, 20);
+        assert_eq!(config.gold_per_round, 10);
+        assert_eq!(config.gold_per_kill, 0);
+        assert!(config.place_rewards.is_empty());
+        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 1));
+        let mut m = MatchState::new(config, &[0, 1], 8);
+        assert_eq!(m.profiles[0].gold, 20 + 10, "开局 20 + 首轮 10");
+        // 击杀只给分
+        m.register_kill(0);
+        assert_eq!(m.profiles[0].gold, 30, "击杀金默认 0");
+        assert_eq!(m.profiles[0].score, 1);
+        assert_eq!(m.profiles[0].current_streak, 1);
+        // 助攻
+        m.register_assists(1, 0, &[0, 1]);
+        assert_eq!(m.profiles[0].score, 1, "击杀者不算助攻");
+        // 轮胜分
+        m.register_round_win(0);
+        assert_eq!(m.profiles[0].score, 2);
+        // 连杀标签
+        assert_eq!(MatchState::streak_label(2), None);
+        assert_eq!(MatchState::streak_label(3), Some("大杀特杀"));
+        assert_eq!(MatchState::streak_label(12), Some("超越神了"));
     }
 
     #[test]
@@ -429,12 +539,12 @@ mod tests {
     #[test]
     fn upgrade_skill_spends_gold_and_fails_when_poor() {
         let mut m = sample();
-        // 升一级 Rock(id=6) 花费 10
+        // 升一级 Rock(id=6) 花费 10（sample 基础 40）
         assert!(m.profiles[0].upgrade_skill(SkillId::Rock, 10));
-        assert_eq!(m.profiles[0].gold, 10);
+        assert_eq!(m.profiles[0].gold, 30);
         assert_eq!(m.profiles[0].skill_level(SkillId::Rock), 2);
-        // 再花 20 不够 → 失败
-        assert!(!m.profiles[0].upgrade_skill(SkillId::Rock, 20));
+        // 再花 40 不够（剩 30）→ 失败
+        assert!(!m.profiles[0].upgrade_skill(SkillId::Rock, 40));
         assert_eq!(m.profiles[0].skill_level(SkillId::Rock), 2);
     }
 

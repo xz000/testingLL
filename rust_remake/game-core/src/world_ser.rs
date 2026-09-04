@@ -611,6 +611,13 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
     for p in &w.players {
         encode_player(&mut o, p);
     }
+    // 伤害矩阵（D6）：n×n Fix64（行主序）
+    let n = w.players.len();
+    for row in &w.damage_matrix {
+        for v in row.iter().take(n) {
+            wfix(&mut o, *v);
+        }
+    }
     wu32(&mut o, w.obstacles.len() as u32);
     for ob in &w.obstacles {
         wvec(&mut o, ob.pos);
@@ -642,6 +649,13 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     let mut players = Vec::with_capacity(np);
     for _ in 0..np {
         players.push(decode_player(b, &mut p, np)?);
+    }
+    // 伤害矩阵（D6）：n×n Fix64，紧跟玩家（与编码顺序一致）
+    let mut damage_matrix = vec![vec![Fix64::ZERO; np]; np];
+    for row in damage_matrix.iter_mut() {
+        for v in row.iter_mut() {
+            *v = fixat(b, &mut p)?;
+        }
     }
     let no = count_at(b, &mut p, MAX_DECODE_OBSTACLES)?;
     let mut obstacles = Vec::with_capacity(no);
@@ -675,7 +689,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, time, lightning_visual: None })
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, damage_matrix, time, lightning_visual: None })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?

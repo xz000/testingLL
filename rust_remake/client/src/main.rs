@@ -1119,10 +1119,26 @@ impl Game {
 
     /// 本局进行中：结算击杀、名次，进入学习阶段。
     fn settle_round(&mut self) {
-        for (killer, _victim) in self.world.take_kills() {
+        // 击杀结算（D6）：击杀分/金 + 连杀播报 + 死者连杀清零 + 助攻（伤害矩阵）。
+        for (killer, victim) in self.world.take_kills() {
             self.meta.register_kill(killer);
+            let victim_streak = self.meta.register_death(victim);
+            if let Some(label) = game_core::meta::MatchState::streak_label(victim_streak.max(3)) {
+                eprintln!("[streak] {} 结束了 {} 的{}!", killer, victim, if victim_streak >= 3 { label } else { "" });
+            }
+            let assists = self.world.damage_dealers_of(victim);
+            self.meta.register_assists(victim, killer, &assists);
+            if victim_streak >= 3 {
+                eprintln!("[streak] 玩家{killer} 终结了 {victim_streak} 连杀");
+            }
         }
         let placement = self.world.placement();
+        // 轮胜利分（D6）：最后存活者 +1（全员死光则不发）。
+        if let Some(&winner) = placement.first() {
+            if winner != u32::MAX {
+                self.meta.register_round_win(winner);
+            }
+        }
         self.meta.finish_round(placement);
         // 4.6b：每局给所有玩家发成长点（用于买属性）。
         for profile in self.meta.profiles.iter_mut() {
