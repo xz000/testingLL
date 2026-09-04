@@ -217,6 +217,8 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
         }
         None => wu8(o, 0),
     }
+    // catastrophe_stage（S020 灾变三级递进）
+    wu8(o, p.catastrophe_stage);
     wopt_vec(o, p.move_target);
     encode_caster(o, &p.caster);
     for lv in &p.skill_levels {
@@ -333,6 +335,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     } else {
         None
     };
+    let catastrophe_stage = u8at(b, p)?;
     let move_target = opt_vec(b, p)?;
     let mut caster = Caster::new();
     decode_caster(&mut caster, b, p)?;
@@ -422,6 +425,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.spell_factor = spell_factor;
     pl.kb_factor = kb_factor;
     pl.rewind = rewind;
+    pl.catastrophe_stage = catastrophe_stage;
     pl.move_target = move_target;
     pl.caster = caster;
     pl.skill_levels = skill_levels;

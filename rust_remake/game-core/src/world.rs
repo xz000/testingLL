@@ -1509,7 +1509,7 @@ impl World {
 
         // 3) 结算爆炸（石头 / 导弹）
         for e in &explode {
-            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force);
+            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false);
         }
 
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
@@ -1560,7 +1560,7 @@ impl World {
         // 4d-0) 098b AoE 爆炸（陨石命中/到期）：复用 explode_at（中心伤害+距离衰减+连线击退），
         // 伤害=gx（explode_at 内部做护甲折算），击退力=KI 公式 warlock_ki_knockback。
         for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, gx, warlock_ki_knockback(gx, ji));
+            self.explode_at(center, owner, br, gx, warlock_ki_knockback(gx, ji), false);
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -1656,11 +1656,12 @@ impl World {
     }
 
     /// 在 (pos) 处半径 `radius` 的爆炸：对范围内玩家造成伤害并按中心连线击退。
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64) {
+    /// `exclude_owner`：以自身为中心的 nova（098b S001/S020/S021）不伤施法者。
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool) {
         let r_sq = radius * radius;
         let mut deaths: Vec<u32> = Vec::new();
         for p in self.players.iter_mut() {
-            if !p.alive {
+            if !p.alive || (exclude_owner && p.id == owner) {
                 continue;
             }
             let d = p.pos - pos;
@@ -1898,6 +1899,40 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         pos: ppos,
                         alive: true,
                     });
+                }
+            }
+            SkillEffect::W098bNova { kind, radius, kb_ji } => {
+                // 098b AoE nova（M2 批次D）：以自身为中心，复用 explode_at（中心伤害+
+                // 距离衰减+连线击退，护甲折算/击杀记账在 explode_at 内）。
+                let ppos = world.players[idx as usize].pos;
+                let gx = stats.damage;
+                match kind {
+                    crate::skill::W098bNovaKind::Smiting => {
+                        // S001 天罚：固定 250 半径、KI($A) 恒定伤害。
+                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true);
+                    }
+                    crate::skill::W098bNovaKind::Catastrophe => {
+                        // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
+                        //（damage_base=12、+4/级 ≈ $B/$C/$E 占位）；放完 stage+1；命中者+50 移速简化为自加速。
+                        let stage = world.players[idx as usize].catastrophe_stage % 3;
+                        let r = if stage == 2 { Fix64::from_num(400.0) } else { radius };
+                        let stage_gx = gx + Fix64::from_num(stage as i64 * 4);
+                        world.explode_at(ppos, idx, r, stage_gx, warlock_ki_knockback(stage_gx, kb_ji), true);
+                        world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
+                        let p = &mut world.players[idx as usize];
+                        p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
+                    }
+                    crate::skill::W098bNovaKind::Devotion => {
+                        // S021 虔诚：敌 250 伤（KI 距离衰减）+ 自奶 gx×0.5 + 移速（友方奶 TODO 无队伍）。
+                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true);
+                        let heal = gx * Fix64::from_num(0.5);
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            if p.alive {
+                                p.hp = (p.hp + heal).min(p.max_hp);
+                                p.add_buff(BuffKind::Speed(1.0 + 60.0 / 210.0), 4.0);
+                            }
+                        }
+                    }
                 }
             }
             SkillEffect::W098bUtility { kind, speed, max_distance } => {
@@ -4213,6 +4248,93 @@ mod tests {
             .iter()
             .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
         assert!(!still, "回旋镖回程到家应收回消失（3s 足够出+回）");
+    }
+
+    /// S001 天罚：以自身为中心 nova——伤附近敌人但不伤自己（exclude_owner）。
+    #[test]
+    fn s001_smiting_nova_hits_enemies_not_self() {
+        let mut world = World::new(3, 963);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO); // 120 < 250 内
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(8.0), Fix64::ZERO); // 480 > 250 外
+        world.players[2].move_target = None;
+        let (hp0, hp1, hp2) = (world.players[0].hp, world.players[1].hp, world.players[2].hp);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(); 3];
+        for _ in 0..60 {
+            world.step(none.clone(), dt); // windup 0.7s
+        }
+        assert_eq!(world.players[0].hp, hp0, "天罚不应自伤");
+        assert!(world.players[1].hp < hp1, "250 内敌人应受伤");
+        assert_eq!(world.players[2].hp, hp2, "250 外敌人不应受伤");
+    }
+
+    /// S020 灾变：三级递进——伤害随 stage 递增且 stage 循环。
+    #[test]
+    fn s020_catastrophe_stages_escalate_and_cycle() {
+        let mut world = World::new(2, 964);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 180 < 300/400
+        world.players[1].move_target = None;
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut drops: Vec<f64> = Vec::new();
+        for stage in 0..3 {
+            // 上一级的 KI 击退（~700 位移）会把敌人推出半径——每轮拉回原位再放。
+            world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+            world.players[1].move_target = None;
+            let hp = world.players[1].hp;
+            // 清冷却以连放（灾变 CD 3s）
+            world.players[0].caster = crate::skill::Caster::new();
+            world.step(vec![
+                PlayerInput { cast: Some((SkillId::S020, None)), ..Default::default() },
+                PlayerInput::default(),
+            ], dt);
+            for _ in 0..60 {
+                world.step(none.clone(), dt);
+            }
+            let drop = (hp - world.players[1].hp).to_num::<f64>();
+            drops.push(drop);
+            let expect_stage = (stage + 1) % 3;
+            assert_eq!(world.players[0].catastrophe_stage, expect_stage, "stage 应递进循环");
+        }
+        assert!(drops[0] > 0.0 && drops[1] > drops[0], "第二级伤害应高于第一级：{drops:?}");
+        // 第三级半径 400（伤害也更高）；三级后回到 stage 0
+        assert!(drops[2] > drops[1], "第三级应最强：{drops:?}");
+    }
+
+    /// S021 虔诚：伤敌人 + 自奶 gx×0.5（无队伍时只奶自己）。
+    #[test]
+    fn s021_devotion_hurts_enemy_and_heals_self() {
+        let mut world = World::new(2, 965);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].hp = Fix64::from_num(50.0); // 半血施法者
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S021, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].hp < hp1, "虔诚应伤 250 内敌人");
+        assert!(near(world.players[0].hp, 54.0, 0.1), "应自奶 gx×0.5=4（50→54），实际 {:?}", world.players[0].hp);
     }
 
     /// S017 致残：命中后目标被 Tied（禁施法），持续 (4+0.25L)。
