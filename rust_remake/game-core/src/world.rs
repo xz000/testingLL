@@ -214,12 +214,12 @@ pub enum ProjectileKind {
         push_time: Fix64,
         remaining: Fix64,
     },
-    /// 098b 名册弹体（M1：S000/S003/S004）。运动学见 `W098bProjKind`；
-    /// 命中统一走 `warlock_ki_impact`（FI 伤害 + KI 击退，PORT_098B_DECISIONS.md D3/M1）。
+    /// 098b 名册弹体（M1/M2：S000/S003/S004/S008/S009/S014/S015/S016）。运动学见 `W098bProjKind`；
+    /// 命中统一走 KI/FI 结算（FI 伤害 + KI 击退，PORT_098B_DECISIONS.md D3/M1）。
     W098b {
         /// 运动学形态。
         proj: crate::skill::W098bProjKind,
-        /// 当前速度矢量（回旋镖回程时朝施法者加速）。
+        /// 当前速度矢量（回旋镖回程时朝施法者加速；弹跳弹命中后重定向）。
         vel: Vec2,
         /// 弹速标量（Homing 全速直追用）。
         speed: Fix64,
@@ -228,13 +228,15 @@ pub enum ProjectileKind {
         remaining: Fix64,
         /// 出程时长（Boomerang 出/回分界 = life/2）。
         life: Fix64,
-        /// FI 伤害系数 gX（随施法等级已求值）。
+        /// FI 伤害系数 gX（随施法等级已求值；Bounce 每跳 ×0.8）。
         gx: Fix64,
         /// KI 击退系数 JI。
         kb_ji: Fix64,
-        /// 命中点燃 DoT 总量（S003/S004 为 None）。
+        /// 命中点燃 DoT 总量（无则 None）。
         ignite: Option<Fix64>,
-        /// Homing：锁定目标玩家 id。
+        /// AoE 爆炸半径（陨石 200；None=单体命中）。命中或寿命尽时触发。
+        blast: Option<Fix64>,
+        /// Homing：锁定目标玩家 id；Bounce：上一跳命中的玩家 id（跳过）。
         target: Option<u32>,
         /// Boomerang 是否已转入回程。
         returning: bool,
@@ -822,6 +824,8 @@ impl World {
         let mut spawn: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         // T3b 命中的子弹生成的回返镖：(owner, pos, dir, speed)
         let mut returners: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
+        // 098b AoE 爆炸（陨石命中/到期）：中心 KI 全额、线性距离衰减到 20%（近似 qI 衰减）。
+        let mut expiry_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64)> = Vec::new(); // (owner, 中心, 半径, gx, ji)
         let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
@@ -985,15 +989,19 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, life, target, returning, .. } => {
-                    // 098b 弹体运动学：Straight 直线；Homing 全速直追锁定目标；
-                    // Boomerang 出程恒速、过半程后朝施法者当前位置回拉（加速）。
+                ProjectileKind::W098b { proj, vel, speed, remaining, life, blast, target, returning, gx, kb_ji, .. } => {
+                    // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
+                    // Homing 全速直追锁定目标；Boomerang 出程恒速、过半程后朝施法者当前位置回拉。
+                    // 到期时带 blast 的弹体（陨石）在原地爆炸。
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
                         pr.alive = false;
+                        if let Some(br) = blast {
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
+                        }
                     }
                     match proj {
-                        crate::skill::W098bProjKind::Straight => {
+                        crate::skill::W098bProjKind::Straight | crate::skill::W098bProjKind::Bounce => {
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Homing => {
@@ -1085,6 +1093,8 @@ impl World {
         let mut explode: Vec<ProjExplosion> = Vec::new();
         let mut pushes: Vec<(u32, Vec2, f64)> = Vec::new(); // (受害者 id, 击退方向, 时长)
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
+        // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
+        let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量)
 
@@ -1363,12 +1373,19 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { radius, gx, kb_ji, ignite, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = DAMAGE_BASE × gx × kb_ji（JI 系数），方向沿弹-目标连线。
-                    if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, pr.owner, *radius) {
-                        pr.alive = false;
+                    // Bounce 命中判定排除上一跳受害者（target）——重定向瞬间还贴着旧目标，
+                    // 不排除会每帧重复结算同一目标刷伤害。
+                    let hit = if *proj == crate::skill::W098bProjKind::Bounce {
+                        nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
+                    } else {
+                        nearest_hit(&self.players, pr.pos, pr.owner, *radius)
+                    };
+                    if let Some((victim, dd)) = hit {
+                        let skip = *target;
                         events.push((victim, *gx, Some(pr.owner)));
                         if dd.length_squared() > Fix64::ZERO {
                             let kb = warlock_ki_knockback(*gx, *kb_ji);
@@ -1376,6 +1393,41 @@ impl World {
                         }
                         if let Some(total) = ignite {
                             ignites.push((pr.owner, pr.pos, *total));
+                        }
+                        if let Some(br) = blast {
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
+                        }
+                        // Bounce（S016 弹跳弹）：命中不消失——伤害 ×0.8（下限 0.2），
+                        // 重定向到**全场**最近的「非 owner、非上一跳目标」敌人（不限判定半径——
+                        // 半径内扫描会因 or_else 兜底重新选中贴脸的旧目标，弹永远到不了下一家）；
+                        // 无新目标才消失。（重定向经 bounce_redirs 在 2c 段统一写回。）
+                        if *proj == crate::skill::W098bProjKind::Bounce {
+                            let new_gx = (*gx * Fix64::from_num(0.8)).max(Fix64::from_num(0.2));
+                            let skip_id = skip.unwrap_or(victim);
+                            let mut best: Option<(Fix64, u32)> = None;
+                            for q in self.players.iter() {
+                                if !q.alive || q.id == pr.owner || q.id == skip_id {
+                                    continue;
+                                }
+                                let ds = (q.pos - pr.pos).length_squared();
+                                if best.map(|(b, _)| ds < b).unwrap_or(true) {
+                                    best = Some((ds, q.id));
+                                }
+                            }
+                            match best {
+                                Some((_, nid)) => {
+                                    let ndd = self.players[nid as usize].pos - pr.pos;
+                                    if ndd.length_squared() > Fix64::ZERO {
+                                        bounce_redirs.push((pi, victim, new_gx, ndd.normalized() * *speed));
+                                        // 不置 alive=false：继续飞向下一目标
+                                    } else {
+                                        pr.alive = false;
+                                    }
+                                }
+                                None => pr.alive = false, // 无下一目标：消失
+                            }
+                        } else {
+                            pr.alive = false;
                         }
                     }
                 }
@@ -1388,6 +1440,17 @@ impl World {
             if let ProjectileKind::Bullet { dir, .. } = &mut ps[pi].kind {
                 *dir = new_dir;
                 // 可让被反射的弹体仍归属原施法者（原版弹一次）
+            }
+        }
+
+        // 2c) 应用 098b 弹跳弹的重定向（衰减后的 gx、朝下一目标的速度、记录上一跳受害者）。
+        // 098b 弹跳弹的 life 是**单跳飞行时间**（spec ev），故每跳重置寿命。
+        for (pi, last_victim, new_gx, new_vel) in bounce_redirs {
+            if let ProjectileKind::W098b { gx, vel, target, remaining, life, .. } = &mut ps[pi].kind {
+                *gx = new_gx;
+                *vel = new_vel;
+                *target = Some(last_victim); // 下一跳跳过本次受害者
+                *remaining = *life; // 单跳寿命重置（ev 语义）
             }
         }
 
@@ -1440,6 +1503,11 @@ impl World {
                 pos,
                 alive: true,
             });
+        }
+        // 4d-0) 098b AoE 爆炸（陨石命中/到期）：复用 explode_at（中心伤害+距离衰减+连线击退），
+        // 伤害=gx（explode_at 内部做护甲折算），击退力=KI 公式 warlock_ki_knockback。
+        for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
+            self.explode_at(center, owner, br, gx, warlock_ki_knockback(gx, ji));
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -1725,10 +1793,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     });
                 }
             }
-            SkillEffect::Warlock098b { proj, speed, radius, life, kb_ji, ignite } => {
-                // 098b 名册弹体（M1：S000 火球/S003 追踪弹/S004 回旋镖）。
+            SkillEffect::Warlock098b { proj, speed, radius, life, kb_ji, ignite, blast, count, spread_step } => {
+                // 098b 名册弹体（M2 批次A 扩展：blast AoE/锥形连发）。
                 // gx/点燃总量走 stats（growth.damage/extra 已按等级求值）；
-                // 命中结算统一走 warlock_ki_impact（FI 伤害 + KI 击退）。
+                // 命中结算统一走 KI/FI（FI 伤害=gx×Gn×hn，KI 击退=DAMAGE_BASE×gx×JI）。
                 let ppos = world.players[idx as usize].pos;
                 // Homing：锁定「点击处最近敌人」（098b S003 语义，复用 Missile 原型的锚点搜索）。
                 let homing_target = if proj == crate::skill::W098bProjKind::Homing {
@@ -1750,25 +1818,69 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                 };
-                world.projectiles.push(Projectile {
-                    owner: idx,
-                    kind: ProjectileKind::W098b {
-                        proj,
-                        vel: dir * speed,
-                        speed,
-                        radius,
-                        remaining: life,
-                        life,
-                        gx: stats.damage,
-                        kb_ji,
-                        // 点燃总量随施法等级（growth.extra = 6+1.5×L；effect.ignite 仅作开关+L1 基准）。
-                        ignite: ignite.map(|base| if stats.extra > Fix64::ZERO { stats.extra } else { base }),
-                        target: homing_target,
-                        returning: false,
-                    },
-                    pos: ppos,
-                    alive: true,
-                });
+                // 连发（count>1）：以施法方向为中心、±spread_step 对称扇出（火焰喷射锥形 5 道）。
+                let half = (count.max(1) as i64 - 1) / 2;
+                for k in -half..=half {
+                    let ang = Fix64::from_num(spread_step) * Fix64::from_num(k);
+                    let d = crate::fix::rotate_ccw(dir, ang);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::W098b {
+                            proj,
+                            vel: d * speed,
+                            speed,
+                            radius,
+                            remaining: life,
+                            life,
+                            gx: stats.damage,
+                            kb_ji,
+                            // 点燃总量随施法等级（growth.extra = 6+1.5×L；effect.ignite 仅作开关+L1 基准）。
+                            ignite: ignite.map(|base| if stats.extra > Fix64::ZERO { stats.extra } else { base }),
+                            blast,
+                            target: homing_target,
+                            returning: false,
+                        },
+                        pos: ppos,
+                        alive: true,
+                    });
+                }
+            }
+            SkillEffect::W098bBolt { range, kb_ji } => {
+                // 098b 即时射线（S002 闪电）：沿方向 raycast 首个命中（玩家或障碍截断）；
+                // FI 伤害 = gx×Gn×hn（growth.damage 随等级；走 damage_player 现有管线，含击杀记账）；
+                // KI 击退 = DAMAGE_BASE×gx×JI（098b 口径）；lightning_visual 复用 D1 原型视觉通道。
+                let gx = stats.damage;
+                let (ppos, pradius) = {
+                    let p = &world.players[idx as usize];
+                    (p.pos, p.radius)
+                };
+                let dir = towards(ppos, target);
+                let origin = ppos + dir * pradius;
+                let end = if let Some(hit) = world.raycast_first(origin, dir, range, idx) {
+                    let mut hit_player: Option<u32> = None;
+                    for p in world.players.iter() {
+                        if !p.alive || p.id == idx {
+                            continue;
+                        }
+                        if (p.pos - hit).length_squared() <= p.radius * p.radius {
+                            hit_player = Some(p.id);
+                            break;
+                        }
+                    }
+                    if let Some(pid) = hit_player {
+                        world.damage_player(pid, gx, Some(idx));
+                        if let Some(p) = world.players.get_mut(pid as usize) {
+                            if p.alive {
+                                let kb = warlock_ki_knockback(gx, kb_ji);
+                                p.push(dir * kb, W098B_KB_TIME);
+                            }
+                        }
+                    }
+                    hit
+                } else {
+                    origin + dir * range
+                };
+                world.lightning_visual = Some((origin, end, Fix64::from_num(0.1)));
             }
             SkillEffect::Missile { .. } => {
                 // 追踪导弹：锁定点击处最近的敌人全速直追；命中爆炸伤+击退。（数值走 stats，随等级成长）
@@ -3955,6 +4067,100 @@ mod tests {
             .iter()
             .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
         assert!(!still, "回旋镖回程到家应收回消失（3s 足够出+回）");
+    }
+
+    /// S002 闪电：瞬发射线立即伤害（无前摇等待弹体），写 lightning_visual，KI 击退。
+    #[test]
+    fn s002_lightning_bolt_hits_instantly() {
+        let mut world = World::new(2, 953);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO); // 300 < 射程 600
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S002, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        // 施法帧即结算（execute_effects 在 step 内同步跑）。
+        assert!(world.players[1].hp < hp1, "闪电应瞬发命中（L1 伤 7），hp {hp1} -> {}", world.players[1].hp);
+        assert!(hp1 - world.players[1].hp >= Fix64::from_num(7.0), "直伤至少 7");
+        assert!(world.lightning_visual.is_some(), "应写 lightning_visual 供 client 画线");
+        assert!(world.players[1].pos.x > d60(5.0), "闪电应击退敌人");
+    }
+
+    /// S008 陨石：直飞命中（或到期）触发 200 半径 AoE 爆炸——旁边玩家被波及。
+    #[test]
+    fn s008_meteor_blast_hits_nearby_players() {
+        let mut world = World::new(3, 954);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 直线上两个敌人：500（被弹体直接命中）与 620（只在爆炸半径 200 内）。
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(10.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let hp1 = world.players[1].hp;
+        let hp2 = world.players[2].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(12.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..150 {
+            world.step(none.clone(), dt); // 速度 400 → 800 距离需 2s
+        }
+        assert!(world.players[1].hp < hp1, "陨石直击目标应受伤");
+        assert!(world.players[2].hp < hp2, "爆炸半径 200（≈3.3 旧距离）应波及 620 处的第二敌人");
+    }
+
+    /// S016 弹跳弹：两敌布阵——第一跳全额 6、跳向第二敌 ×0.8≈4.8；寿命耗尽后消失。
+    ///（跳序由 nearest 决定；击退方向沿来向推离，不会把目标推进下一跳判定圈。）
+    #[test]
+    fn s016_bounce_jumps_with_decay() {
+        let mut world = World::new(3, 955);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(-5.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let hp1 = world.players[1].hp;
+        let hp2 = world.players[2].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 3];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+        }
+        let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
+        let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
+        assert!((d1 - 6.0).abs() < 0.3, "第一跳应全额 6，实际 {d1}");
+        assert!((d2 - 6.0 * 0.8).abs() < 0.3, "第二跳应 ×0.8≈4.8，实际 {d2}");
+        let still = world
+            .projectiles
+            .iter()
+            .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, .. }));
+        assert!(!still, "弹跳弹寿命（1s）耗尽后应消失，不得无限弹");
     }
 
     #[test]
