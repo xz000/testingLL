@@ -34,6 +34,14 @@ pub struct MatchConfig {
     pub score_per_assist: u32,
     /// 轮胜利得分（098b po，默认 1；胜利 = 每轮最后存活者）。
     pub score_per_round_win: u32,
+    /// 对局模式（098b En：1=回合制打满 N 轮按总分排名，2=死亡竞赛先到胜利分；
+    /// En3-5 化身/弑君/生存 TODO）。默认 1。
+    pub game_mode: u8,
+    /// 死亡竞赛（En2）的胜利得分（098b `-+胜利得分` 开局设置）。
+    pub win_score: u32,
+    /// 开局购物时长（098b Wo=40；独立于每轮 wo=30 的 `learn_time_secs`）。
+    /// 开局购物阶段与单机/Steam 进局流程的耦合见 M4 TODO。
+    pub shopping_time_secs: f64,
 }
 
 impl Default for MatchConfig {
@@ -50,6 +58,9 @@ impl Default for MatchConfig {
             score_per_kill: 1,
             score_per_assist: 1,
             score_per_round_win: 1,
+            game_mode: 1,
+            win_score: 10,
+            shopping_time_secs: 40.0,
         }
     }
 }
@@ -282,12 +293,27 @@ impl MatchState {
             }
         }
         // 进入学习阶段，或整场结束
-        if self.round >= self.config.total_rounds {
+        // En2 死亡竞赛：有人达到胜利分 → 提前终局（D6/En 批）。
+        let early_win = self.config.game_mode == 2
+            && self.profiles.iter().any(|pr| pr.score >= self.config.win_score);
+        if early_win || self.round >= self.config.total_rounds {
             self.phase = MatchPhase::Finished;
         } else {
             self.phase = MatchPhase::Learning;
             self.learn_remaining = self.config.learn_time_secs;
         }
+    }
+
+    /// 终局排名（En 批）：按分数降序、最优名次升序；返回 (player_id, score)。
+    /// En1（打满轮数）与 En2（先到胜利分）共用。
+    pub fn final_ranking(&self) -> Vec<(u32, u32)> {
+        let mut v: Vec<(u32, u32, u32)> = self
+            .profiles
+            .iter()
+            .map(|pr| (pr.player_id, pr.score, pr.best_placement))
+            .collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
+        v.into_iter().map(|(id, score, _)| (id, score)).collect()
     }
 
     /// 记录击杀（由 World 报告或由外部按规则上报），给击杀者发金币。
@@ -486,6 +512,50 @@ mod tests {
         assert_eq!(m.phase, MatchPhase::Fighting);
         // 第二局参与奖已发放
         assert_eq!(m.profiles[0].gold, 40 + 30 + 20);
+    }
+
+    #[test]
+    fn en2_deathmatch_early_win_and_ranking() {
+        // En2：先到胜利分提前终局；final_ranking 按分数排序。
+        let mut m = MatchState::new(
+            MatchConfig { game_mode: 2, win_score: 3, ..Default::default() },
+            &[0, 1],
+            34,
+        );
+        // 打两轮（每轮胜者 0 得 1 分 + 击杀分）
+        for _ in 0..2 {
+            m.register_kill(0);
+            m.register_round_win(0);
+            m.finish_round(vec![0, 1]);
+        }
+        // score = 2 轮胜 2 + 2 击杀 2 = 4 ≥ 3 → 已提前终局
+        assert_eq!(m.phase, MatchPhase::Finished, "En2 达到胜利分应提前终局");
+        let ranking = m.final_ranking();
+        assert_eq!(ranking[0], (0, 4), "按分数降序，实际 {ranking:?}");
+        // En1 同分数时按 best_placement 升序
+        let mut m1 = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        m1.finish_round(vec![0, 1]);
+        m1.profiles[1].score = m1.profiles[0].score;
+        let r = m1.final_ranking();
+        assert_eq!(r[0].0, 0, "同分按最优名次排（0 是冠军）");
+    }
+
+    #[test]
+    fn en1_default_runs_full_rounds_without_early_win() {
+        // En1（默认）：分数不影响轮数——打满 3 轮才终局。
+        let mut m = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        for round in 1..=3 {
+            for _ in 0..5 {
+                m.register_kill(0); // 击杀分累计但不触发 En2（mode=1）
+                m.register_round_win(0);
+            }
+            m.finish_round(vec![0, 1]);
+            if round < 3 {
+                assert_eq!(m.phase, MatchPhase::Learning, "En1 打满轮数前不应终局");
+                m.tick_learning(30.01);
+            }
+        }
+        assert_eq!(m.phase, MatchPhase::Finished);
     }
 
     #[test]
