@@ -126,7 +126,8 @@ pub struct SweepState {
 }
 
 /// 单个玩家的确定性状态。
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// （物品栏引入 Vec 后不再 Copy；快照/帧同步路径均按引用或 clone 处理。）
+#[derive(Clone, Debug, PartialEq)]
 pub struct Player {
     /// 累计在技能升级上花费的金币（未用）
 
@@ -182,6 +183,10 @@ pub struct Player {
     pub rewind: Option<(Vec2, Fix64, Fix64)>,
     /// S020 灾变（098b MC）三级递进阶段：0→1→2 循环（每放一次 +1）；半径 300/300/400。
     pub catastrophe_stage: u8,
+    /// 持有的物品（098b 6 格；随快照/配置同步）。
+    pub items: Vec<crate::item::ItemId>,
+    /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
+    pub item_fx: crate::item::ItemEffects,
     /// 潜行踢·连推（E2b）：撞障碍后需延迟重新踢击的时间；`None` = 无待重踢。
     pub ricochet_pending: Option<Fix64>,
     /// 潜行踢·连推：碰撞障碍时重放的踢击参数。
@@ -230,6 +235,8 @@ impl Player {
             dash_vel: Vec2::ZERO,
             rewind: None,
             catastrophe_stage: 0,
+            items: Vec::new(),
+            item_fx: crate::item::aggregate(&[]),
             ricochet_pending: None,
             ricochet_kick: None,
             ricochet_window: Fix64::ZERO,
@@ -273,7 +280,12 @@ impl Player {
 
     /// 加一个 buff（同种刷新 / 取更久者，覆盖到一个空闲槽；无空槽则忽略）。
     pub fn add_buff(&mut self, kind: BuffKind, remaining: f64) {
-        self.add_buff_fix(kind, Fix64::from_num(remaining));
+        // 怀表（M3）：增益时长 ×mult、减益时长 ÷div（098b I00M/I00N）。
+        let adjusted = match kind {
+            BuffKind::Tied | BuffKind::Scorched => remaining / self.item_fx.debuff_dur_div.max(1.0),
+            _ => remaining * self.item_fx.buff_dur_mult,
+        };
+        self.add_buff_fix(kind, Fix64::from_num(adjusted));
     }
 
     fn add_buff_fix(&mut self, kind: BuffKind, remaining: Fix64) {
@@ -347,6 +359,11 @@ impl Player {
         self.buffs.iter().any(|b| b.remaining > Fix64::ZERO && b.kind == BuffKind::Scorched)
     }
 
+    /// 有效受击退减免（M3）：属性与物品（头盔不叠加）取最大。
+    pub fn effective_kb_reduction(&self) -> f64 {
+        (1.0 - self.kb_factor).max(self.item_fx.kb_resist_frac)
+    }
+
     /// 攻击方伤害输出系数（KI 公式的 `Gn[攻]` 项，D7）：灼烧期间 ×0.1，否则 1。
     pub fn gn_factor(&self) -> f64 {
         if self.healing_blocked() { 0.1 } else { 1.0 }
@@ -370,9 +387,16 @@ impl Player {
 
     /// 本帧移动速度（自走速度 × 属性移速倍率 × 移速 buff 倍率）。
     #[inline]
+    /// 测试用：当前基础移速（含物品平加）。
+    pub fn base_speed_for_test(&self) -> Fix64 {
+        self.base_speed()
+    }
+
     fn base_speed(&self) -> Fix64 {
         let mult = self.buff_value(BuffKind::Speed(1.0)).max(1.0);
-        Fix64::from_num(BASE_SPEED * self.speed_mult) * Fix64::from_num(mult)
+        // 物品平加/惩罚（war3 口径，M3）：速度之靴 +20 等、头盔/斗篷 -5 等。
+        let flat = self.item_fx.speed_add - self.item_fx.speed_penalty;
+        (Fix64::from_num(BASE_SPEED * self.speed_mult) + Fix64::from_num(flat)) * Fix64::from_num(mult)
     }
 
     /// 依据"朝目标直线前进 + 加速度/减速度 + 附加速度"推进一帧的位移（整个速度合成模型）。
@@ -513,6 +537,18 @@ impl Player {
 
     /// 应用玩家属性（4.6b 派生）：按相加系数重设最大生命（保持当前血比）与移速倍率。
     /// 确定性纯函数（只依赖属性）；跨局/跨端一致地在 `teardown_round_end` 或重置时调用。
+    /// 重算物品聚合效果（items 变更后调用）。
+    pub fn recompute_item_fx(&mut self) {
+        self.item_fx = crate::item::aggregate(&self.items);
+    }
+
+    /// 同步持有物品（学习期购买/升级后由档案下发；M3）。
+    /// 只重算聚合效果；生命落账由 [`Self::apply_attributes`] 统一处理（调用顺序：先本函数再 apply_attributes）。
+    pub fn set_items(&mut self, items: &[crate::item::ItemId]) {
+        self.items = items.to_vec();
+        self.recompute_item_fx();
+    }
+
     pub fn apply_attributes(&mut self, a: &crate::attribute::Attributes) {
         let ratio = if self.max_hp > Fix64::ZERO {
             self.hp / self.max_hp
@@ -526,6 +562,13 @@ impl Player {
         self.armor_factor = a.armor_factor();
         self.spell_factor = a.spell_factor();
         self.kb_factor = a.kb_factor();
+        // 物品生命加成（M3）：派生值之上平加，保持现有血量比例。
+        let bonus = self.item_fx.hp_add;
+        if bonus != 0.0 {
+            let ratio = if self.max_hp > Fix64::ZERO { self.hp / self.max_hp } else { Fix64::ONE };
+            self.max_hp = (self.max_hp + Fix64::from_num(bonus)).max(Fix64::ONE);
+            self.hp = (self.max_hp * ratio).max(Fix64::ONE);
+        }
     }
 
     /// 新一轮开始时重置回合相关状态（保留 id / pos / 技能等级 / 半径）。

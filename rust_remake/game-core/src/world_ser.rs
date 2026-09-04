@@ -221,6 +221,11 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     }
     // catastrophe_stage（S020 灾变三级递进）
     wu8(o, p.catastrophe_stage);
+    // items（M3）：u8 数量 + u32 id（解码后重算 item_fx）
+    wu8(o, p.items.len() as u8);
+    for it in &p.items {
+        wu32(o, it.as_u32());
+    }
     wopt_vec(o, p.move_target);
     encode_caster(o, &p.caster);
     for lv in &p.skill_levels {
@@ -338,6 +343,11 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
         None
     };
     let catastrophe_stage = u8at(b, p)?;
+    let n_items = u8at(b, p)? as usize;
+    let mut items = Vec::with_capacity(n_items);
+    for _ in 0..n_items {
+        items.push(crate::item::ItemId::from_u32(u32at(b, p)?)?);
+    }
     let move_target = opt_vec(b, p)?;
     let mut caster = Caster::new();
     decode_caster(&mut caster, b, p)?;
@@ -428,6 +438,8 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.kb_factor = kb_factor;
     pl.rewind = rewind;
     pl.catastrophe_stage = catastrophe_stage;
+    pl.items = items;
+    pl.recompute_item_fx();
     pl.move_target = move_target;
     pl.caster = caster;
     pl.skill_levels = skill_levels;

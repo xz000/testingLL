@@ -1097,6 +1097,7 @@ impl Game {
                 p.skill_levels[i] = profile.skill_levels[i];
             }
             // 4.6b：把玩家属性（Hp/移速等）派生到战斗数值（确定性纯函数，跨端/跨局一致）。
+            p.set_items(&profile.items);
             p.apply_attributes(&profile.attributes);
         }
         // 诊断：同步后 world 各玩家技能等级。

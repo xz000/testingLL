@@ -464,9 +464,10 @@ impl World {
         for p in self.players.iter_mut() {
             p.step_velocity(dt);
             p.tick_buffs(dt);
-            // 098b 全局生命恢复 Nn=0.05/s（每 20s 回 1 血，D7）；灼烧「烤肉饼」期间禁疗。
+            // 098b 全局生命恢复 Nn=0.05/s（D7）+ 物品回复（斗篷/坠饰，M3）；灼烧期间禁疗。
             if p.alive && !p.healing_blocked() {
-                p.hp = (p.hp + Fix64::from_num(crate::balance::Balance::default().hp_regen) * dt).min(p.max_hp);
+                let regen = (crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty).max(0.0);
+                p.hp = (p.hp + Fix64::from_num(regen) * dt).min(p.max_hp);
             }
             // S006 时光回溯（098b ER）：倒计时到点闪回锚点并还原 HP（不低于 1，避免回溯自杀）。
             if let Some((pos, hp, rem)) = p.rewind {
@@ -2943,7 +2944,7 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
             if !players[i].alive || !players[j].alive {
                 continue;
             }
-            let (a, b) = (players[i], players[j]);
+            let (a, b) = (players[i].clone(), players[j].clone());
             let delta = b.pos - a.pos;
             let dist_sq = delta.length_squared();
             let min_dist = a.radius + b.radius;
@@ -4336,6 +4337,32 @@ mod tests {
             dealt > 0.5 && dealt < 2.0,
             "灼烧者输出应 ×0.1（≈1），实际 {dealt}"
         );
+    }
+
+    /// M3 物品派生数值：靴加速度、斗篷回血、头盔 kb 取 max、坠饰加生命上限。
+    #[test]
+    fn item_effects_apply_to_player_stats() {
+        let mut world = World::new(1, 968);
+        let p = &mut world.players[0];
+        p.set_items(&[
+            crate::item::ItemId::Boots3,   // +40 移速
+            crate::item::ItemId::Cloak3,   // +0.5 回复 -5 移速
+            crate::item::ItemId::Helm3,    // -32% kb +20 生命 -15 移速
+            crate::item::ItemId::Amulet3,  // +30 生命 +0.1 回复
+        ]);
+        // 移速平加：+40 +15(熔岩?否) - 5 - 15 = +20（靴 40 + 坠饰 0 - 斗篷 5 - 头盔 15）
+        let expected_flat = 40.0 + 0.0 - 5.0 - 15.0;
+        let expected_speed = crate::player::BASE_SPEED + expected_flat;
+        let got = p.base_speed_for_test().to_num::<f64>();
+        assert!((got - expected_speed).abs() < 0.01, "移速应 {expected_speed}，实际 {got}");
+        // 回复：0.05 基础 + 0.5 + 0.1 = 0.65
+        let regen = crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty;
+        assert!((regen - 0.65).abs() < 1e-6, "回复应 0.65/s，实际 {regen}");
+        // kb：属性 0 → 物品 0.32
+        assert!((p.effective_kb_reduction() - 0.32).abs() < 1e-9);
+        // 生命上限：100 属性派生 + 20 + 30 = 150（apply_attributes 落账）
+        p.apply_attributes(&crate::attribute::Attributes::default());
+        assert!(near(p.max_hp, 150.0, 0.01), "生命上限应 150，实际 {:?}", p.max_hp);
     }
 
     /// 全局回血 Nn=0.05/s（D7）：无伤 2 秒回 0.1 血；灼烧期间禁疗。
