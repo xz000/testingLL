@@ -140,12 +140,7 @@ pub struct Player {
     pub spell_factor: f64,
     /// 属性派生的击退抗性剩余倍率（0..1，越小越抗推）。
     pub kb_factor: f64,
-    /// 当前法力值（MP）。施法消耗、每帧回蓝。
-    pub mana: Fix64,
-    /// 最大法力值（由属性派生）。
-    pub max_mana: Fix64,
-    /// 每秒回蓝（由属性派生）。
-    pub mana_regen: Fix64,
+    // 蓝量（mana/max_mana/mana_regen）已移除（PORT_098B_DECISIONS.md D3，无蓝量系统）。
     /// 当前移动目标点；`None` 表示本帧没有移动命令（停下来）。
     pub move_target: Option<Vec2>,
     /// 施法状态机（前摇 / 后摇 / 冷却 / 打断）
@@ -210,9 +205,6 @@ impl Player {
             armor_factor: 1.0,
             spell_factor: 1.0,
             kb_factor: 1.0,
-            mana: Fix64::from_num(crate::attribute::BASE_MAX_MANA),
-            max_mana: Fix64::from_num(crate::attribute::BASE_MAX_MANA),
-            mana_regen: Fix64::from_num(crate::attribute::BASE_MANA_REGEN),
             move_target: None,
             caster: Caster::new(),
             skill_levels: [1; SKILL_SLOTS],
@@ -515,35 +507,11 @@ impl Player {
         self.armor_factor = a.armor_factor();
         self.spell_factor = a.spell_factor();
         self.kb_factor = a.kb_factor();
-        // MP：由属性派生蓝上限与回蓝；保持当前蓝量比例。
-        let ratio = if self.max_mana > Fix64::ZERO {
-            self.mana / self.max_mana
-        } else {
-            Fix64::ONE
-        };
-        self.max_mana = Fix64::from_num(a.derived_max_mana());
-        self.mana_regen = Fix64::from_num(a.derived_mana_regen());
-        self.mana = (self.max_mana * ratio).max(Fix64::ZERO);
-    }
-
-    /// 每帧回蓝（在满蓝前不回超）。
-    pub fn regen_mana(&mut self, dt: Fix64) {
-        let regen = self.mana_regen * dt;
-        self.mana = (self.mana + regen).min(self.max_mana);
-    }
-
-    /// 施法消耗：蓝不足返回 false，足够则扣蓝。
-    pub fn spend_mana(&mut self, cost: Fix64) -> bool {
-        if self.mana >= cost {
-            self.mana -= cost;
-            true
-        } else {
-            false
-        }
     }
 
     /// 新一轮开始时重置回合相关状态（保留 id / pos / 技能等级 / 半径）。
     /// 注意：保留 `max_hp`（由属性派生，跨局保留）；这里只恢复满血。
+    // 蓝量方法（regen_mana/spend_mana）已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
     pub fn reset_state(&mut self) {
         self.hp = self.max_hp;
         self.alive = true;
@@ -709,18 +677,27 @@ mod tests {
     fn self_walk_accelerates_gradually() {
         let mut p = Player::new(0, Vec2::ZERO, Fix64::ONE);
         let dt = Fix64::from_num(1.0 / 60.0);
-        let target = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO); // 足够远
+        // war3 尺度：满速 210（BASE_SPEED），起步 = ACCEL*dt ≈ 21.9
+        let target = Vec2::new(Fix64::from_num(6000.0), Fix64::ZERO); // 足够远
         p.move_target = Some(target);
-        // 第 1 帧：起步速度 = ACCEL * dt ≈ 0.33，而非瞬时满速 3.2
+        // 第 1 帧：起步速度 = ACCEL * dt（≈21.9），而非瞬时满速 210
         p.step_velocity(dt);
         let first_speed = p.cur_vel.length().to_num::<f64>();
-        assert!(first_speed > 0.0 && first_speed < 1.0, "起步应渐加速，第一帧速度约 {}, 不应瞬满", first_speed);
-        // 跑几秒应接近满速 3.2（但略低于，因尚未完全到达满速）
+        assert!(
+            first_speed > 0.0 && first_speed < BASE_SPEED,
+            "起步应渐加速，第一帧速度约 {}, 不应瞬满",
+            first_speed
+        );
+        // 跑几秒应接近满速 BASE_SPEED=210（但略低于，因尚未完全到达满速）
         for _ in 0..120 {
             p.step_velocity(dt);
         }
         let speed = p.cur_vel.length().to_num::<f64>();
-        assert!(speed > 3.0 && speed <= 3.2 + 0.01, "渐加速后应接近满速 3.2，实际 {}", speed);
+        assert!(
+            speed > BASE_SPEED * 0.95 && speed <= BASE_SPEED + 0.5,
+            "渐加速后应接近满速 {BASE_SPEED}，实际 {}",
+            speed
+        );
     }
 
     #[test]

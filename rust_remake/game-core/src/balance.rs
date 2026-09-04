@@ -8,55 +8,71 @@
 //! - 直接读默认值：`Balance::default().base_speed`
 //! - 旧常量名保持兼容：`pub const BASE_SPEED: f64 = Balance::default().base_speed;`
 //! - 未来若支持"运行时可调"，`World` 可持有 `Balance` 并随版本校验。
+//!
+//! **[2026-09-04 尺度切换]** 默认值已从 Unity demo 微缩尺度切到 **war3 单位尺度**
+//! （Warlock 0.98b 复刻，见 `PORT_098B_DECISIONS.md` D2）：
+//! 距离/半径/速度直接用 war3 单位（`port_spec_098b.json` 的 speed 即单位/秒）；
+//! 伤害/HP 尺度不变（098b 英雄 HP=100，与旧值相同）。
 
 /// 玩法/手感数值的权威结构。全 `f64`，`Copy`，可 const 求默认值。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Balance {
     // ---- 玩家基础手感 ----
-    /// 基础移动速度（单位/秒）。（原 `player::BASE_SPEED`）
+    /// 基础移动速度（war3 单位/秒）。（098b 英雄移速，port_spec engine.hero_movespeed）
     pub base_speed: f64,
-    /// 移动加速度（向目标逼近的速度增量/秒）。（原 `player::ACCEL`）
+    /// 移动加速度（向目标逼近的速度增量/秒）。占位：保持旧加速时间 210/1312.5≈0.16s 到全速。
     pub accel: f64,
-    /// 移动减速度（无目标时刹停的速度削减/秒）。（原 `player::DECEL`）
+    /// 移动减速度（无目标时刹停的速度削减/秒）。占位：保持旧刹停时间 210/2625≈0.08s。
     pub decel: f64,
-    /// 玩家初始/最大生命。（原 `player::MAX_HP`）
+    /// 玩家初始/最大生命。（098b h000 术士 HP=100，w3u 导出；与旧值相同 → 伤害数值不随尺度切换变）
     pub max_hp: f64,
-    /// 玩家默认半径。（原 `player::DEFAULT_RADIUS`）
+    /// 玩家默认半径（碰撞半径）。h000 未覆盖 Collision → 继承基础单位 hpea=16；TODO(M5) 真机核对。
     pub default_radius: f64,
 
     // ---- 场地 / 世界 ----
-    /// 场地初始半径。（原 `world::START_RADIUS`）
+    /// 场地初始半径。**占位**：知识库未给场地尺寸（陨石射程 1200、闪现 700+ 佐证 1000+ 量级）；TODO(M5) 对齐 098b 场地。
     pub start_radius: f64,
-    /// 缩圈速度（半径减少/秒）。（原 `world::SHRINK_SPEED`）
+    /// 缩圈速度（半径减少/秒）。占位：保持旧比例 1.75%/s × 1200。
     pub shrink_speed: f64,
-    /// 出界掉血（HP/秒）。（原 `world::OUT_HURT`）
+    /// 出界掉血（HP/秒）。（098b 熔岩 Uo×10 = 0.9×10 = 9，mechanics §五）
     pub out_hurt: f64,
-    /// 玩家相互挤压损伤（HP/秒）。（原 `world::OVERLAP_DAMAGE`）
+    /// 玩家相互挤压损伤（HP/秒）。伤害尺度不变，维持旧值。
     pub overlap_damage: f64,
-    /// E3/E3b 扇形子弹伤害。（原 `world::SABULLET_DAMAGE`）
+    /// E3/E3b 扇形子弹伤害。伤害尺度不变，维持旧值。
     pub sabullet_damage: f64,
-    /// E3/E3b 扇形子弹射程。（原 `world::SABULLET_RANGE`）
+    /// E3/E3b 扇形子弹射程。按距离因子 ×60 过渡。
     pub sabullet_range: f64,
 }
 
 impl Balance {
-    /// 默认手感数值（保持与历史实现完全一致，纯重构不改玩法）。
+    /// 默认手感数值（war3 尺度；来源与占位标注见各字段 doc）。
     pub const fn default() -> Self {
         Balance {
-            base_speed: 3.2,
-            accel: 20.0,
-            decel: 40.0,
+            base_speed: 210.0,
+            accel: 1312.5,
+            decel: 2625.0,
             max_hp: 100.0,
-            default_radius: 1.0,
-            start_radius: 20.0,
-            shrink_speed: 0.35,
-            out_hurt: 5.0,
+            default_radius: 16.0,
+            start_radius: 1200.0,
+            shrink_speed: 21.0,
+            out_hurt: 9.0,
             overlap_damage: 2.0,
             sabullet_damage: 2.0,
-            sabullet_range: 6.0,
+            sabullet_range: 360.0,
         }
     }
 }
+
+/// 098b 伤害公式的基值折叠（无蓝量系统的推导，`PORT_098B_DECISIONS.md` D3）。
+///
+/// 原式（`port_098b/03_JASS/jass_deobf.md` KI/jI）：
+/// `kI = ('d' + UnitState(F[hR], MANA)) * gX * ... * .03 * JI`，其中 `'d' = 100`，
+/// 蓝量项取的是**受击者**当前蓝。098b 中施法不耗蓝、无回蓝（蓝恒满 10000），
+/// 故该项恒为 `(100 + 10000) * 0.03 = 303`，折叠为常量。
+///
+/// 移植技能时的口径：`kI = DAMAGE_BASE * gX * JI`（其余 Gn/hn/Hn 缩放随技能带入）。
+/// 注意：`0.03` 是**几何换算常量**（速率×时间空间化），与逻辑步长 TICK 无关，按字面保留。
+pub const DAMAGE_BASE: f64 = (100.0 + 10000.0) * 0.03;
 
 #[cfg(test)]
 mod tests {
@@ -67,11 +83,18 @@ mod tests {
         let a = Balance::default();
         let b = a; // Copy
         assert_eq!(a, b);
-        assert_eq!(a.base_speed, 3.2);
-        assert_eq!(a.accel, 20.0);
-        assert_eq!(a.decel, 40.0);
+        // war3 尺度（PORT_098B_DECISIONS.md D2 来源表）
+        assert_eq!(a.base_speed, 210.0);
         assert_eq!(a.max_hp, 100.0);
-        assert_eq!(a.start_radius, 20.0);
-        assert_eq!(a.shrink_speed, 0.35);
+        assert_eq!(a.default_radius, 16.0);
+        assert_eq!(a.start_radius, 1200.0);
+        assert_eq!(a.shrink_speed, 21.0);
+        assert_eq!(a.out_hurt, 9.0);
+    }
+
+    #[test]
+    fn damage_base_folds_full_mana_term() {
+        // D3：蓝恒满 10000 时 (100+10000)*0.03 的折叠值锁定，防止被误改回含蓝形式。
+        assert!((DAMAGE_BASE - 303.0).abs() < 1e-9);
     }
 }

@@ -415,7 +415,6 @@ impl World {
         for p in self.players.iter_mut() {
             p.step_velocity(dt);
             p.tick_buffs(dt);
-            p.regen_mana(dt);
         }
 
         // 4) 场地收缩（随时间）—— 试验场不缩圈
@@ -540,7 +539,8 @@ impl World {
                         let d = t - p.pos;
                         let dist = d.length();
                         if dist > Fix64::ZERO {
-                            let md = Fix64::from_num(4.0); // 短闪距离
+                            // 短闪距离（旧尺度 4 → war3 尺度 ×60，过渡换算见 PORT_098B_DECISIONS.md D4）
+                            let md = Fix64::from_num(4.0 * 60.0);
                             if dist > md {
                                 p.pos += d.normalized() * md;
                             } else {
@@ -553,14 +553,11 @@ impl World {
                     continue;
                 }
                 let def = DefTable::def(skill);
-                // MP：蓝不足则本次施法放不出（0 耗蓝不算）。
-                let mc = def.mana_cost();
-                let can_afford = mc <= Fix64::ZERO || p.spend_mana(mc);
-                if can_afford
-                    && p
-                        .caster
-                        .try_cast(&def, p.skill_level(skill), target, p.pos, p.radius)
-                        .is_ok()
+                // 无蓝量系统（PORT_098B_DECISIONS.md D3）：098b 施法不耗蓝，仅冷却/前摇门控。
+                if p
+                    .caster
+                    .try_cast(&def, p.skill_level(skill), target, p.pos, p.radius)
+                    .is_ok()
                 {
                     // 施法开始：取消当前移动命令（施法优先于走位）
                     p.move_target = None;
@@ -1245,7 +1242,8 @@ impl World {
                         if !p.alive {
                             continue;
                         }
-                        if point_near_segment(p.pos, *from, *end, p.radius + Fix64::from_num(0.2)) {
+                        // 判定余量（旧尺度 0.2 半径 → war3 尺度 ×16，过渡换算见 PORT_098B_DECISIONS.md D4）
+                        if point_near_segment(p.pos, *from, *end, p.radius + Fix64::from_num(0.2 * 16.0)) {
                             to_bind.push(p.id);
                         }
                     }
@@ -2188,23 +2186,24 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     let dist = d.length();
                     let md = stats.max_distance;
                     let real_dist = if dist > md { md } else { dist };
-                    // 过近不施法（< 0.51 且非零）。
-                    if real_dist > Fix64::from_num(0.51) {
+                    // 过近不施法（旧尺度 0.51 → war3 尺度 ×60 ≈ 两个英雄半径；过渡换算见 PORT_098B_DECISIONS.md D4）。
+                    if real_dist > Fix64::from_num(0.51 * 60.0) {
                         let dir = if dist > Fix64::ZERO {
                             d.normalized()
                         } else {
                             Vec2::new(Fix64::ONE, Fix64::ZERO)
                         };
                         let realplace = ppos + dir * real_dist;
-                        // 目标位置附近是否有敌人（足够近视为“点到敌人”）。
+                        // 目标位置附近是否有敌人（足够近视为"点到敌人"；判定半径同上 ×60）。
                         let enemy_pos = world.nearest_other_enemy(realplace, idx);
+                        let near_r = Fix64::from_num(0.51 * 60.0);
                         let eid = enemy_pos.and_then(|epos| {
                             let d2 = epos - realplace;
-                            if d2.length_squared() <= Fix64::from_num(0.51 * 0.51) {
+                            if d2.length_squared() <= near_r * near_r {
                                 world
                                     .players
                                     .iter()
-                                    .find(|p| p.alive && p.id != idx && (p.pos - epos).length_squared() < Fix64::from_num(0.01))
+                                    .find(|p| p.alive && p.id != idx && (p.pos - epos).length_squared() < Fix64::from_num(1.0))
                                     .map(|p| p.id)
                             } else {
                                 None
@@ -2224,7 +2223,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 束缚线（Y2b）：制造一段朝目标推进、收拢后束缚线上敌人的线。（speed 走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
-                    let end = p.pos + dir * Fix64::from_num(6.0);
+                    // 线长（旧尺度 6 → war3 尺度 ×60，过渡换算见 PORT_098B_DECISIONS.md D4）
+                    let end = p.pos + dir * Fix64::from_num(6.0 * 60.0);
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::BindLine {
@@ -2537,6 +2537,22 @@ mod tests {
         (a.to_num::<f64>() - b).abs() < tol
     }
 
+    // ===== 测试尺度换算辅助（098b 过渡，PORT_098B_DECISIONS.md D4） =====
+    // 世界已切 war3 尺度而测试直觉仍是旧（Unity demo 微缩）尺度：空间字面量经此换算，
+    // 测试语义（机制验证）不变。legacy_scale_def 删除（名册替换完成）时一并清理。
+    /// 旧尺度距离/坐标 → war3 尺度（×60 = 1200/20）。
+    fn d60(x: f64) -> Fix64 {
+        Fix64::from_num(x * 60.0)
+    }
+    /// 旧尺度半径 → war3 尺度（×16 = 16/1）。
+    fn r16(x: f64) -> Fix64 {
+        Fix64::from_num(x * 16.0)
+    }
+    /// 距离语义的 near：期望与容差同为旧尺度，×60 后比较。
+    fn near_d(a: Fix64, b: f64, tol: f64) -> bool {
+        near(a, b * 60.0, tol * 60.0)
+    }
+
     #[test]
     fn movement_stops_at_target() {
         let mut world = World::new(1, 1);
@@ -2558,7 +2574,7 @@ mod tests {
     fn out_of_bounds_drains_hp() {
         let mut world = World::new(1, 1);
         // 直接把玩家放在场地很边缘
-        world.players[0].pos = Vec2::new(Fix64::from_num(19.0), Fix64::from_num(19.0));
+        world.players[0].pos = Vec2::new(d60(20.5), d60(20.5));
         let dt = Fix64::from_num(1.0 / 60.0);
         let hp_before = world.players[0].hp;
         for _ in 0..60 {
@@ -2599,14 +2615,14 @@ mod tests {
         // 施法者固定，受害者放在落点附近
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
 
         let hp0 = world.players[0].hp;
         let hp1 = world.players[1].hp;
         // 玩家0 施放 E1 掷石到 (3,0)；玩家1 不动
         let input = vec![
             PlayerInput {
-                cast: Some((SkillId::Rock, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                cast: Some((SkillId::Rock, Some(Vec2::new(d60(3.0), Fix64::ZERO)))),
                 ..Default::default()
             },
             PlayerInput::default(),
@@ -2628,13 +2644,13 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
         let hp0 = world.players[0].hp;
         let hp1 = world.players[1].hp;
         // 玩家0 施放 D1 雷电指向 (3,0)；受害者在射线路径上。
         let input = vec![
             PlayerInput {
-                cast: Some((SkillId::TestLightning, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                cast: Some((SkillId::TestLightning, Some(Vec2::new(d60(3.0), Fix64::ZERO)))),
                 ..Default::default()
             },
             PlayerInput::default(),
@@ -2655,14 +2671,15 @@ mod tests {
     #[test]
     fn swap_teleports_onto_empty_point() {
         let mut world = World::new(2, 8);
+        world.obstacles.clear(); // 清随机柱子：否则敌人可能被柱子分离推开，误判为"被移动"
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
         // 敌人在远处，目标点 (3,0) 无敌人。
-        world.players[1].pos = Vec2::new(Fix64::from_num(8.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO);
         let input = vec![
             PlayerInput {
-                cast: Some((SkillId::TestSwap, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                cast: Some((SkillId::TestSwap, Some(Vec2::new(d60(3.0), Fix64::ZERO)))),
                 ..Default::default()
             },
             PlayerInput::default(),
@@ -2671,9 +2688,9 @@ mod tests {
             world.step(input.clone(), dt);
         }
         // 目标点无敌人 → 自身瞬移到 (3,0)。
-        assert!(near(world.players[0].pos.x, 3.0, 0.3), "换位应瞬移到目标点，实际 {:?}", world.players[0].pos);
+        assert!(near_d(world.players[0].pos.x, 3.0, 0.3), "换位应瞬移到目标点，实际 {:?}", world.players[0].pos);
         // 敌人不受影响。
-        assert!(near(world.players[1].pos.x, 8.0, 0.5), "远处敌人不应被移动");
+        assert!(near_d(world.players[1].pos.x, 8.0, 0.5), "远处敌人不应被移动");
     }
 
     #[test]
@@ -2684,10 +2701,10 @@ mod tests {
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
         // 敌人恰好站在目标点 (3,0)。
-        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
         let input = vec![
             PlayerInput {
-                cast: Some((SkillId::TestSwap, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
+                cast: Some((SkillId::TestSwap, Some(Vec2::new(d60(3.0), Fix64::ZERO)))),
                 ..Default::default()
             },
             PlayerInput::default(),
@@ -2696,7 +2713,7 @@ mod tests {
             world.step(input.clone(), dt);
         }
         // 施法者到敌人位置，敌人被换到施法者原位置。
-        assert!(near(world.players[0].pos.x, 3.0, 0.3), "施法者应到敌人位置，实际 {:?}", world.players[0].pos);
+        assert!(near_d(world.players[0].pos.x, 3.0, 0.3), "施法者应到敌人位置，实际 {:?}", world.players[0].pos);
         assert!(near(world.players[1].pos.x, 0.0, 0.3), "敌人应被换到施法者原位置，实际 {:?}", world.players[1].pos);
     }
 
@@ -2706,7 +2723,7 @@ mod tests {
         world.obstacles.clear(); // 本测试只验证闪烁，清掉随机柱子避免挡路
         world.players[0].pos = Vec2::ZERO;
         let dt = Fix64::from_num(1.0 / 60.0);
-        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        let far = Vec2::new(d60(100.0), Fix64::ZERO);
         // R1 闪烁：前摇为 0（DEF_ZERO 的 rock 有 0.2 前摇，但 blink growth 用 DEF_ZERO windup_base=0）
         let input = vec![PlayerInput {
             cast: Some((SkillId::Blink, Some(far))),
@@ -2717,7 +2734,7 @@ mod tests {
             world.step(input.clone(), dt);
         }
         // 应已瞬移到 max_distance(6) 方向
-        assert!(near(world.players[0].pos.x, 6.0, 0.3), "瞬移距离应为 6，实际 {:?}", world.players[0].pos);
+        assert!(near_d(world.players[0].pos.x, 6.0, 0.3), "瞬移距离应为 6，实际 {:?}", world.players[0].pos);
     }
 
     #[test]
@@ -2760,7 +2777,7 @@ mod tests {
         let mut world = World::new(1, 13);
         world.players[0].pos = Vec2::ZERO;
         let dt = Fix64::from_num(1.0 / 60.0);
-        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        let far = Vec2::new(d60(100.0), Fix64::ZERO);
         // 第一帧：给了“很远”的移动目标 + 施放闪烁。施法应取消旧的移动命令并瞬移到 (6,0)。
         let first = vec![PlayerInput {
             set_target: Some(far),
@@ -2776,7 +2793,7 @@ mod tests {
         // 落地后应立即停在瞬移点，不应继续朝 (100,0) 走
         let p = &world.players[0];
         assert!(
-            near(p.pos.x, 6.0, 0.3),
+            near_d(p.pos.x, 6.0, 0.3),
             "闪烁落地后不应继续走向旧目标，位置应为 ~6，实际 {:?}",
             p.pos
         );
@@ -2791,7 +2808,7 @@ mod tests {
         //   2) 施法成功会清 move_target；此后若不再下发新目标（None），角色保持停住、
         //      不再自动走向旧目标（问题 1）。
         let dt = Fix64::from_num(1.0 / 60.0);
-        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        let far = Vec2::new(d60(100.0), Fix64::ZERO);
 
         // (1) 电平量不丢：设置移动目标后，连续空输入帧不应把它清掉。
         let mut a = World::new(1, 31);
@@ -2827,7 +2844,7 @@ mod tests {
             b.step(vec![PlayerInput::default()], dt); // 施法后不再下发旧目标
         }
         assert!(
-            near(b.players[0].pos.x, 6.0, 0.5),
+            near_d(b.players[0].pos.x, 6.0, 0.5),
             "施法后不应再走向旧目标，位置应为 ~6，实际 {:?}",
             b.players[0].pos
         );
@@ -2840,7 +2857,7 @@ mod tests {
         world.players[0].pos = Vec2::ZERO; // 站桩存活
         // 玩家1 放到场地外很远，会因出界伤害持续掉血致死；先给它很低血量加速
         world.players[1].hp = Fix64::from_num(1.0);
-        world.players[1].pos = Vec2::new(Fix64::from_num(30.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(30.0), Fix64::ZERO);
         let input = vec![PlayerInput::default(), PlayerInput::default()];
         let mut guard = 0;
         while !world.round_over() && guard < 600 {
@@ -3043,7 +3060,7 @@ mod tests {
         assert!(world.players[0].has_buff(BuffKind::Boost), "疾跑应已激活");
         let hp0 = world.players[0].hp;
         // 出界扣血：boost 返还一半 → 净扣一半。
-        world.players[0].pos = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        world.players[0].pos = Vec2::new(d60(100.0), Fix64::ZERO);
         for _ in 0..30 {
             world.step(none.clone(), dt);
         }
@@ -3078,10 +3095,10 @@ mod tests {
         let mut world = World::new(2, 42);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        world.players[1].pos = Vec2::new(Fix64::from_num(10.0), Fix64::from_num(10.0)); // 不在直线上
+        world.players[1].pos = Vec2::new(d60(10.0), d60(10.0)); // 不在直线上
         let hp1 = world.players[1].hp;
         let input = vec![
-            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::new(Fix64::from_num(12.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::D2Fireball, Some(Vec2::new(d60(12.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ];
         // 火球朝 (12,0) 直射，射程 14；跑足够长让它飞出/消失
@@ -3190,18 +3207,18 @@ mod tests {
             let mut world = World::new(2, 77);
             world.obstacles.clear();
             world.sandbox = true; // 不缩圈、不判回合结束，保证只受柱子影响
-            world.players[0].pos = Vec2::new(Fix64::from_num(-6.0), Fix64::ZERO);
-            world.players[1].pos = Vec2::new(Fix64::from_num(6.0), Fix64::ZERO);
+            world.players[0].pos = Vec2::new(d60(-6.0), Fix64::ZERO);
+            world.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
             world.players[0].move_target = None;
             world.players[1].move_target = None;
             if with_pillar {
-                world.obstacles.push(Obstacle::new(Vec2::ZERO, 1.5));
+                world.obstacles.push(Obstacle::new(Vec2::ZERO, 1.5 * 16.0));
             }
             let hp1 = world.players[1].hp;
             let dt = Fix64::from_num(1.0 / 60.0);
             let cast = vec![
                 PlayerInput {
-                    cast: Some((SkillId::StoneShot, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))),
+                    cast: Some((SkillId::StoneShot, Some(Vec2::new(d60(30.0), Fix64::ZERO)))),
                     ..Default::default()
                 },
                 PlayerInput::default(),
@@ -3399,7 +3416,7 @@ mod tests {
         let mut world = World::new(1, 51);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        let far = Vec2::new(d60(100.0), Fix64::ZERO);
         let cast = |skill: SkillId, t: Vec2| vec![PlayerInput { cast: Some((skill, Some(t))), ..Default::default() }];
         // 第一段：普通闪烁到 max_distance(5)
         world.step(cast(SkillId::Blink2, far), dt);
@@ -3410,12 +3427,12 @@ mod tests {
         }
         assert!(world.players[0].blink2_window.is_some(), "第一段后应开启二段窗口");
         let x1 = world.players[0].pos.x.to_num::<f64>();
-        assert!(x1 > 4.9, "第一段应闪 ~5，实际 {}", x1);
+        assert!(x1 > 4.9 * 60.0, "第一段应闪 ~5，实际 {}", x1);
         // 第二段：窗口内再施放 = 免冷却短闪 4
         let x_before = world.players[0].pos.x;
         world.step(cast(SkillId::Blink2, far), dt);
         let dx = (world.players[0].pos.x - x_before).to_num::<f64>();
-        assert!(dx > 3.9 && dx < 4.1, "第二段应短闪 ~4，实际 {}", dx);
+        assert!(dx > 3.9 * 60.0 && dx < 4.1 * 60.0, "第二段应短闪 ~4，实际 {}", dx);
         assert!(world.players[0].blink2_window.is_none(), "第二段后窗口应清空");
     }
 
@@ -3424,7 +3441,7 @@ mod tests {
         let mut world = World::new(1, 52);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
-        let far = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        let far = Vec2::new(d60(100.0), Fix64::ZERO);
         // 施放冲刺斩朝 (100,0)
         world.step(vec![PlayerInput { cast: Some((SkillId::DashSlash, Some(far))), ..Default::default() }], dt);
         let none = vec![PlayerInput::default()];
@@ -3453,19 +3470,19 @@ mod tests {
         world.obstacles.clear();
         world.players[0].pos = Vec2::ZERO;
         // 在正前方 (10,0) 放一根半径 1 的柱子
-        world.obstacles.push(Obstacle::new(Vec2::new(Fix64::from_num(10.0), Fix64::ZERO), 1.0));
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(10.0), Fix64::ZERO), 1.0 * 16.0));
         // 朝 (30,0) 闪到墙：射线应命中柱子，落在柱子前（比 10 更近）
-        world.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        world.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(d60(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
         let x = world.players[0].pos.x.to_num::<f64>();
-        assert!(x > 1.0 && x < 9.9, "闪到墙应落在障碍前（<10），实际 {}", x);
+        assert!(x > 1.0 * 60.0 && x < 9.9 * 60.0, "闪到墙应落在障碍前（<10），实际 {}", x);
 
         // 无障碍方向：闪 max_distance(6)
         let mut world2 = World::new(1, 54);
         world2.obstacles.clear();
         world2.players[0].pos = Vec2::ZERO;
-        world2.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(Fix64::from_num(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        world2.step(vec![PlayerInput { cast: Some((SkillId::BlinkToWall, Some(Vec2::new(d60(30.0), Fix64::ZERO)))), ..Default::default() }], dt);
         let x2 = world2.players[0].pos.x.to_num::<f64>();
-        assert!(x2 > 5.9 && x2 < 6.1, "无障碍应闪 max_distance(6)，实际 {}", x2);
+        assert!(x2 > 5.9 * 60.0 && x2 < 6.1 * 60.0, "无障碍应闪 max_distance(6)，实际 {}", x2);
     }
 
     #[test]
@@ -3658,37 +3675,7 @@ mod tests {
         assert!(w.players[1].control.map(|c| c.remaining.to_num::<f64>()).unwrap() < 2.0, "击退抗性应缩短击退");
     }
 
-    /// 4.6b/法力机制：施法扣蓝、蓝不足禁施法、每帧回蓝（占位数值）。
-    #[test]
-    fn mana_drains_gates_and_regens() {
-        let mut world = World::new(2, 940);
-        let dt = Fix64::from_num(1.0 / 60.0);
-        // 主对象：给玩家1降低蓝量，验证 Rock 耗蓝 30 且能回蓝。
-        let rock_cost = crate::skill::DefTable::def(SkillId::Rock).mana_cost();
-        assert_eq!(rock_cost, Fix64::from_num(30.0), "Rock 占位耗蓝应 30");
-
-        // 满蓝施法一次 → 蓝减少 30。
-        world.players[0].pos = Vec2::ZERO;
-        world.players[0].mana = world.players[0].max_mana;
-        let mana0 = world.players[0].mana;
-        assert!(world.players[0].spend_mana(rock_cost), "满蓝应可施法");
-        assert_eq!(world.players[0].mana, mana0 - rock_cost);
-        // 蓝不足（把蓝压到低于成本）应禁施。
-        world.players[0].mana = rock_cost - Fix64::ONE;
-        assert!(!world.players[0].spend_mana(rock_cost), "蓝不足应禁止施法");
-
-        // 回蓝：空蓝下一小段应缓慢回升，且不超过 max_mana。
-        world.players[0].mana = Fix64::ZERO;
-        let mut seen = false;
-        for _ in 0..120 {
-            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
-            if world.players[0].mana > Fix64::ZERO {
-                seen = true;
-            }
-        }
-        assert!(seen, "回蓝应随时间上升");
-        assert!(world.players[0].mana <= world.players[0].max_mana, "回蓝不应超上限");
-    }
+    // mana_drains_gates_and_regens 测试已随无蓝量系统删除（PORT_098B_DECISIONS.md D3）。
 
     #[test]
     fn t3_jump_decays_damage() {
@@ -3767,12 +3754,12 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(Fix64::from_num(8.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO);
         world.players[1].move_target = None;
         let hp1 = world.players[1].hp;
         // 施放蓝线回拉，点击在敌人附近锁定它
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::Y1BlueLine, Some(Vec2::new(Fix64::from_num(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::Y1BlueLine, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
@@ -3782,7 +3769,7 @@ mod tests {
         assert!(world.players[1].hp < hp1, "回拉线应持续掉血");
         // 敌人应被拉近施法者
         let dist = (world.players[1].pos - world.players[0].pos).length().to_num::<f64>();
-        assert!(dist < 7.5, "回拉线应把敌人拉向施法者，实际距离 {}", dist);
+        assert!(dist < 7.5 * 60.0, "回拉线应把敌人拉向施法者，实际距离 {}", dist);
     }
 
     #[test]
@@ -3811,10 +3798,10 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(Fix64::from_num(4.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
         world.players[1].move_target = None;
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::Y2Suite, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::Y2Suite, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
@@ -3864,7 +3851,7 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(Fix64::from_num(1.5), Fix64::ZERO); // 在自爆半径内
+        world.players[1].pos = Vec2::new(r16(1.5), Fix64::ZERO); // 在自爆半径内
         world.players[1].move_target = None;
         // 施放蓄力自爆（windup 1s），随后空输入让它吟唱完成
         world.step(vec![

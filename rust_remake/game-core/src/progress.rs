@@ -13,7 +13,9 @@ use crate::skill::SkillId;
 /// v2（4.6b）：加入 attributes。
 /// v3：attributes 扩充（mana_max / mana_regen）。
 /// v4：加入 growth_points。
-pub const CONFIG_VERSION: u8 = 4;
+/// v5（098b 复刻 M0）：attributes 收缩为 5 个 u32（移除 mana_max / mana_regen，
+///     无蓝量系统 PORT_098B_DECISIONS.md D3）。
+pub const CONFIG_VERSION: u8 = 5;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -102,14 +104,12 @@ impl PlayerConfig {
         }
         put_i64(&mut out, self.gold);
         put_i64(&mut out, self.gold_spent);
-        // attributes（v3）：固定的 7 个 u32。
+        // attributes（v5）：固定的 5 个 u32（蓝量属性已移除）。
         put_u32(&mut out, self.attributes.hp_bonus);
         put_u32(&mut out, self.attributes.speed_bonus);
         put_u32(&mut out, self.attributes.armor);
         put_u32(&mut out, self.attributes.spell_resist);
         put_u32(&mut out, self.attributes.kb_resist);
-        put_u32(&mut out, self.attributes.mana_max);
-        put_u32(&mut out, self.attributes.mana_regen);
         // growth_points（v4）。
         put_u32(&mut out, self.growth_points);
         out
@@ -148,17 +148,15 @@ impl PlayerConfig {
         pos += 8;
         let gold_spent = i64_at(buf, pos)?;
         pos += 8;
-        // attributes（v3）。
+        // attributes（v5）：5 个 u32（蓝量属性已移除）。
         let attributes = crate::attribute::Attributes {
             hp_bonus: u32_at(buf, pos)?,
             speed_bonus: u32_at(buf, pos + 4)?,
             armor: u32_at(buf, pos + 8)?,
             spell_resist: u32_at(buf, pos + 12)?,
             kb_resist: u32_at(buf, pos + 16)?,
-            mana_max: u32_at(buf, pos + 20)?,
-            mana_regen: u32_at(buf, pos + 24)?,
         };
-        let growth_points = u32_at(buf, pos + 28)?;
+        let growth_points = u32_at(buf, pos + 20)?;
         Some(PlayerConfig {
             skill_levels,
             key_slots,
