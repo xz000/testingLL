@@ -1,0 +1,1530 @@
+# Units (war3map.w3u) — 098b_CN
+
+- 基础(修改自原版): 2　自定义: 38
+
+## hpea  (基础: hpea)
+- 全部修改字段:
+    - Abilities [string] (lvl=1634037864) = 'Aetl,Ahar,Amil,Ahrp'
+    - Model [string] (lvl=1634037864) = 'Abilities\\Spells\\Human\\Invisibility\\InvisibilityTarget.mdl'
+
+## hfoo  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = 'doodads\\cinematic\\ShimmeringPortal\\ShimmeringPortal.mdl'
+
+## e000  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'origin.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Dummy'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 0.0
+    - MaxHP [unreal] (lvl=0) = 65.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - DeathType [int] (lvl=0) = 2
+    - DropOnDeath [int] (lvl=0) = 0
+    - TooltipLocal [string] (lvl=0) = ''
+    - BlendTime [int] (lvl=0) = 1
+    - Flexible [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - Height [string] (lvl=0) = 'none'
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Regeneration [int] (lvl=0) = 0
+    - MaxSpeed [int] (lvl=0) = 0
+
+## u000  (基础: ugar)
+- 全部修改字段:
+    - BuildDamage [int] (lvl=1918986101) = 1
+    - Model [string] (lvl=1918986101) = 'units\\undead\\Acolyte\\Acolyte.mdl'
+    - BuildIcon [int] (lvl=1918986101) = 1
+    - Collision [int] (lvl=1918986101) = 1
+    - FoodCost [int] (lvl=1918986101) = 0
+    - BaseBuild [int] (lvl=1918986101) = 0
+    - BuildTime [int] (lvl=1918986101) = 0
+    - ubsi [int] (lvl=1918986101) = 0
+    - GoldCost [int] (lvl=1918986101) = 0
+    - HP [int] (lvl=1918986101) = 500000
+    - HPRegen [unreal] (lvl=1918986101) = 1000.0
+    - Height [string] (lvl=1918986101) = 'always'
+    - DefaultAcquire [string] (lvl=1918986101) = ''
+    - Requirements [string] (lvl=1918986101) = ''
+    - UpgradesUsed [string] (lvl=1918986101) = ''
+    - Hotkey [string] (lvl=1918986101) = ''
+    - Attack1Enabled [string] (lvl=1918986101) = ''
+    - AttackEnabled [int] (lvl=1918986101) = 0
+    - MoveType [string] (lvl=1918986101) = ''
+    - MoveSpeedBase [int] (lvl=1918986101) = 0
+    - MoveSpeed [unreal] (lvl=1918986101) = 0.10000000149011612
+    - TargetAs [string] (lvl=1918986101) = 'structure'
+    - GoldRep [int] (lvl=1918986101) = 0
+    - LumberRep [int] (lvl=1918986101) = 0
+    - TrainTime [int] (lvl=1918986101) = 1
+    - Sleight [int] (lvl=1918986101) = 0
+    - Sin [int] (lvl=1918986101) = 0
+    - MaxSpeed [int] (lvl=1918986101) = 0
+    - Regeneration [int] (lvl=1918986101) = 0
+    - Priority [int] (lvl=1918986101) = 1
+    - Lumber [int] (lvl=1918986101) = 0
+    - BlendTime [int] (lvl=1918986101) = 1
+    - Sound [string] (lvl=1918986101) = 'Acolyte'
+    - Name [string] (lvl=0) = '|cff800080商店|r'
+    - Tooltip [string] (lvl=0) = ''
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Abilities [string] (lvl=0) = 'Avul,S027,S025,S026,S024'
+    - Defense [int] (lvl=0) = 0
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - Requirable [string] (lvl=0) = 'R00Y,R00D,R00I,R000'
+    - SpeedE [int] (lvl=0) = 1
+    - Home [int] (lvl=0) = 1
+    - Color [unreal] (lvl=0) = 0.0
+    - UberTip [string] (lvl=0) = ''
+
+## u001  (基础: ugrm)
+- 全部修改字段:
+    - BuildDamage [int] (lvl=1836214133) = 1
+    - Model [string] (lvl=1836214133) = 'units\\undead\\Acolyte\\Acolyte.mdl'
+    - FoodCost [int] (lvl=1836214133) = 0
+    - BaseBuild [int] (lvl=1836214133) = 0
+    - BuildTime [int] (lvl=1836214133) = 0
+    - ubsi [int] (lvl=1836214133) = 0
+    - HP [int] (lvl=1836214133) = 500000
+    - GoldCost [int] (lvl=1836214133) = 0
+    - HPRegen [unreal] (lvl=1836214133) = 1000.0
+    - Home [int] (lvl=1836214133) = 1
+    - Height [string] (lvl=1836214133) = 'always'
+    - GoldRep [int] (lvl=1836214133) = 0
+    - LumberRep [int] (lvl=1836214133) = 0
+    - TrainTime [int] (lvl=1836214133) = 1
+    - Sleight [int] (lvl=1836214133) = 0
+    - Sin [int] (lvl=1836214133) = 0
+    - Regeneration [int] (lvl=1836214133) = 0
+    - MaxSpeed [int] (lvl=1836214133) = 0
+    - UpgradesUsed [string] (lvl=1836214133) = ''
+    - Hotkey [string] (lvl=1836214133) = ''
+    - Lumber [int] (lvl=1836214133) = 0
+    - BlendTime [int] (lvl=1836214133) = 1
+    - BuildIcon [int] (lvl=1836214133) = 1
+    - Collision [int] (lvl=1836214133) = 1
+    - Requirements [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = '|cff800080法术 1|r'
+    - Abilities [string] (lvl=0) = 'S033,S034,Avul,S025'
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Defense [int] (lvl=0) = 0
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - Requirable [string] (lvl=0) = 'R013,R014,R003,R00K,R00Z,R010,R00L,R00J,R00O,R00W,R00P,R00V,R00E,R001,R005,R007,R009,R004,R002'
+    - Sound [string] (lvl=0) = 'Acolyte'
+    - Color [unreal] (lvl=0) = 0.0
+
+## u002  (基础: ugrm)
+- 全部修改字段:
+    - BuildDamage [int] (lvl=1836214133) = 1
+    - Model [string] (lvl=1836214133) = 'units\\undead\\Acolyte\\Acolyte.mdl'
+    - FoodCost [int] (lvl=1836214133) = 0
+    - BaseBuild [int] (lvl=1836214133) = 0
+    - BuildTime [int] (lvl=1836214133) = 0
+    - ubsi [int] (lvl=1836214133) = 0
+    - HP [int] (lvl=1836214133) = 500000
+    - GoldCost [int] (lvl=1836214133) = 0
+    - HPRegen [unreal] (lvl=1836214133) = 1000.0
+    - Home [int] (lvl=1836214133) = 1
+    - Height [string] (lvl=1836214133) = 'always'
+    - GoldRep [int] (lvl=1836214133) = 0
+    - LumberRep [int] (lvl=1836214133) = 0
+    - TrainTime [int] (lvl=1836214133) = 1
+    - Sleight [int] (lvl=1836214133) = 0
+    - Sin [int] (lvl=1836214133) = 0
+    - Regeneration [int] (lvl=1836214133) = 0
+    - MaxSpeed [int] (lvl=1836214133) = 0
+    - UpgradesUsed [string] (lvl=1836214133) = ''
+    - Hotkey [string] (lvl=1836214133) = ''
+    - Lumber [int] (lvl=1836214133) = 0
+    - BlendTime [int] (lvl=1836214133) = 1
+    - BuildIcon [int] (lvl=1836214133) = 1
+    - Collision [int] (lvl=1836214133) = 1
+    - Requirements [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = '|cff800080法术 2|r'
+    - Abilities [string] (lvl=0) = 'S036,S032,S035,Avul,S026'
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Defense [int] (lvl=0) = 0
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - Requirable [string] (lvl=0) = 'R012,R011,R00M,R008,R00N,R00Q,R00X,R00T,R00R,R00U,R016,R00S,R00G,R00B,R00F,R00C,R00A,R00H,R006'
+    - Sound [string] (lvl=0) = 'Acolyte'
+    - Color [unreal] (lvl=0) = 0.0
+
+## u003  (基础: ugrm)
+- 全部修改字段:
+    - BuildDamage [int] (lvl=1836214133) = 1
+    - Model [string] (lvl=1836214133) = 'units\\undead\\Acolyte\\Acolyte.mdl'
+    - FoodCost [int] (lvl=1836214133) = 0
+    - BaseBuild [int] (lvl=1836214133) = 0
+    - BuildTime [int] (lvl=1836214133) = 0
+    - ubsi [int] (lvl=1836214133) = 0
+    - HP [int] (lvl=1836214133) = 500000
+    - GoldCost [int] (lvl=1836214133) = 0
+    - HPRegen [unreal] (lvl=1836214133) = 1000.0
+    - Home [int] (lvl=1836214133) = 1
+    - Height [string] (lvl=1836214133) = 'always'
+    - GoldRep [int] (lvl=1836214133) = 0
+    - LumberRep [int] (lvl=1836214133) = 0
+    - TrainTime [int] (lvl=1836214133) = 1
+    - Sleight [int] (lvl=1836214133) = 0
+    - Sin [int] (lvl=1836214133) = 0
+    - Regeneration [int] (lvl=1836214133) = 0
+    - MaxSpeed [int] (lvl=1836214133) = 0
+    - UpgradesUsed [string] (lvl=1836214133) = ''
+    - Hotkey [string] (lvl=1836214133) = ''
+    - Lumber [int] (lvl=1836214133) = 0
+    - BlendTime [int] (lvl=1836214133) = 1
+    - BuildIcon [int] (lvl=1836214133) = 1
+    - Collision [int] (lvl=1836214133) = 1
+    - Requirements [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = '|cff800080物品|r'
+    - Abilities [string] (lvl=0) = 'Avul,S024,Apit'
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Defense [int] (lvl=0) = 0
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - Sound [string] (lvl=0) = 'Acolyte'
+    - DropOnDeath [int] (lvl=0) = 0
+    - Trainer [string] (lvl=0) = 'h006,h00E,h00C,h008,h007,h004,h00B,h002,h00A,h005,h001'
+    - Color [unreal] (lvl=0) = 0.0
+
+## h00A  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '坠饰'
+    - UberTip [string] (lvl=0) = '增加生命值.|n等级 1: |cffffff0010 hp|r |n等级 2: |cffffff0020 hp|r|n等级 3: |cffffff0030 hp |r+|cffffff00 0.10 生命回复|r|n|cff00ff00可叠加|r|n|cffff8000卖出价格: 4 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520坠饰|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 5
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTN3M1.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 1
+    - MaxSpeed [int] (lvl=0) = 4
+    - Hotkey [string] (lvl=0) = ''
+
+## h00B  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '速度之靴'
+    - UberTip [string] (lvl=0) = '增加移动速度|n等级 1: |cffffff0020|r|n等级 2: |cffffff0030|r|n等级 3: |cffffff0040|r|n|cffff8000卖出价格: 4 每级|r|n'
+    - Tooltip [string] (lvl=0) = '|cffdaa520速度之靴|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 5
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNSlippersOfAgility.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 2
+    - Hotkey [string] (lvl=0) = ''
+
+## thrd  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '冲撞 dummy'
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 1024
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'nightelf'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'BloodelfWizard.mdl'
+    - Sound [string] (lvl=0) = ''
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Scale [real] (lvl=0) = 0.9200000166893005
+    - Color [unreal] (lvl=0) = 0.0
+    - AcqRange [unreal] (lvl=0) = 0.0
+    - Height [string] (lvl=0) = 'none'
+    - MoveType [string] (lvl=0) = 'fly'
+    - DeathTime [unreal] (lvl=0) = 0.5
+    - DeathType [int] (lvl=0) = 0
+
+## h001  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '死亡面具'
+    - UberTip [string] (lvl=0) = '增加生命偷取 |cffffff0024%|r 和 |cffffff0012%|r 受伤点恢复|n|cff008000天罚 |r生命偷取和伤害点回复|cffffff00加倍|r|cffff0000|n惩罚:|r|cffffff00|n|r降低生命回复 |cffffff000.3|r|n|cffff8000卖出价格: 10|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520死亡面具|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 14
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNMaskOfDeath.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 2
+    - ArtY [int] (lvl=0) = 2
+    - Hotkey [string] (lvl=0) = ''
+    - Required [string] (lvl=0) = '3'
+
+## h002  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '斗篷'
+    - UberTip [string] (lvl=0) = '增加生命回复速度|n|cffff0000移动速度惩罚: |r|cffffff00-5 速度|r|cffff0000 |r|n等级 1: |cffffff000.3 hp/秒|r|n等级 2: |cffffff000.4 hp/秒|r|n等级 3: |cffffff000.5 hp/秒|r|n|cffff8000卖出价格: 6 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520斗篷|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 7
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNCloak.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Hotkey [string] (lvl=0) = ''
+    - ArtX [int] (lvl=0) = 1
+    - ArtY [int] (lvl=0) = 1
+
+## test  (基础: hwtw)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '追踪弹 caster'
+    - UberTip [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Abilities [string] (lvl=0) = 'homi'
+    - Flexible [int] (lvl=0) = 0
+    - BuildIcon [int] (lvl=0) = 1
+    - BuildDamage [int] (lvl=0) = 0
+
+## shld  (基础: ewsp)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '反射盾 graphic2'
+    - Model [string] (lvl=0) = 'Abilities\\Spells\\Undead\\ReplenishMana\\ReplenishManaCasterOverhead.mdl'
+    - XP [real] (lvl=0) = -90.0
+    - Type [string] (lvl=0) = 'mechanical'
+    - HP [int] (lvl=0) = 1
+    - HPRegen [unreal] (lvl=0) = -1.0
+    - Height [string] (lvl=0) = 'always'
+    - Race [string] (lvl=0) = 'human'
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MaxHP [unreal] (lvl=0) = 60.0
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - SpeedA [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNGenericSpellImmunity.blp'
+
+## h005  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Name [string] (lvl=0) = '头盔'
+    - UberTip [string] (lvl=0) = '降低受击退并增加生命值.|n|cffff0000有移动速度惩罚|r|n等级 1: |cffffff00-16% 击退|r, |cffffff0010 hp|r, |cffffff00-5 速度|r |n等级 2: |cffffff00-24% 击退|r, |cffffff0015 hp|r, |cffffff00-10 速度|r|n等级 3: |cffffff00-32% 击退|r, |cffffff0020 hp|r, |cffffff00-15 速度|r|n|cffff8000卖出价格: 8 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520头盔|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 9
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNHelmutPurple.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Abilities [string] (lvl=0) = ''
+    - GoldRep [int] (lvl=0) = 0
+    - Priority [int] (lvl=0) = 1
+    - ArtX [int] (lvl=0) = 3
+    - Hotkey [string] (lvl=0) = ''
+
+## cast  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = 'test caster'
+    - Abilities [string] (lvl=0) = 'mete,shot'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 522
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 100
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'nightelf'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 1800
+    - Sin [int] (lvl=0) = 750
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = 'R000'
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'units\\undead\\KelThuzadGhost\\KelThuzadGhost.mdl'
+    - Sound [string] (lvl=0) = 'Tichondrius'
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Color [unreal] (lvl=0) = 0.0
+    - HPRegen [unreal] (lvl=0) = 0.5
+
+## h006  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Name [string] (lvl=0) = '火球法杖'
+    - UberTip [string] (lvl=0) = '火球将附加持续伤害，但是降低它的直接伤害. |n天罚后倍化点燃持续时间.|n火球伤害: |cffffff005.5 + 0.5 x 火球 等级|r|n持续总伤害: |cffffff003 + 0.5 x 火球 等级|n|r持续: |cffffff002.5|n|r|cff008000天罚加倍持续时间和伤害|r|cffffff00|n|r|cffff8000卖出价格: 7|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520火球法杖|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 8
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNfireStaff.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtY [int] (lvl=0) = 2
+    - Abilities [string] (lvl=0) = ''
+    - GoldRep [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 1
+    - Hotkey [string] (lvl=0) = ''
+
+## obs1  (基础: ewsp)
+- 全部修改字段:
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Cityscape\\Structures\\City_ColumnSingle\\City_ColumnSingle.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 1'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Abilities [string] (lvl=0) = ''
+
+## obs2  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Barrens\\Rocks\\RockPillar\\RockPillar1.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 2'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.7000000476837158
+
+## h003  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '术士'
+    - Abilities [string] (lvl=0) = 'S128,S000,S001'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 210
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 100
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'commoner'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 1800
+    - Sin [int] (lvl=0) = 1800
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'units\\undead\\HeroLich\\HeroLich_V1.mdl'
+    - Sound [string] (lvl=0) = 'Tichondrius'
+    - Mana [int] (lvl=0) = 10000
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Scale [real] (lvl=0) = 0.9200000166893005
+    - Color [unreal] (lvl=0) = 0.0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - TargetAs [string] (lvl=0) = 'ancient,ground'
+    - Height [string] (lvl=0) = 'none'
+    - DeathType [int] (lvl=0) = 0
+
+## thr2  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '冲撞 dummy skin'
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 1024
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'nightelf'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'units\\undead\\HeroLich\\HeroLich_V1.mdl'
+    - Sound [string] (lvl=0) = ''
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Scale [real] (lvl=0) = 0.9200000166893005
+    - Color [unreal] (lvl=0) = 0.0
+    - AcqRange [unreal] (lvl=0) = 0.0
+    - Height [string] (lvl=0) = 'none'
+    - MoveType [string] (lvl=0) = 'fly'
+    - DeathTime [unreal] (lvl=0) = 0.5
+    - DeathType [int] (lvl=0) = 0
+
+## h000  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '术士'
+    - Abilities [string] (lvl=0) = 'W001,W003,W007,W004,W005,W006,W002,W000,S128,S000,S001'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 210
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 100
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'commoner'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 1800
+    - Sin [int] (lvl=0) = 1800
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'BloodelfWizard.mdl'
+    - Sound [string] (lvl=0) = 'Tichondrius'
+    - Mana [int] (lvl=0) = 10000
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Scale [real] (lvl=0) = 0.9200000166893005
+    - Color [unreal] (lvl=0) = 0.0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - TargetAs [string] (lvl=0) = 'ancient,ground'
+    - Height [string] (lvl=0) = 'none'
+    - DeathType [int] (lvl=0) = 0
+
+## h004  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '乔丹之石戒指'
+    - UberTip [string] (lvl=0) = '购买后允许技能升级超过最大等级|cffffff002|r级.|n|cff008000这个奖励将会使用在你购买该物品后首次升级的技能|r|n|cffff8000无法售出|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520乔丹之石戒指|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 5
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNRingJadeFalcon.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 2
+    - ArtY [int] (lvl=0) = 1
+    - Hotkey [string] (lvl=0) = ''
+    - Required [string] (lvl=0) = '2'
+
+## obs0  (基础: ewsp)
+- 全部修改字段:
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Cityscape\\Structures\\City_ColumnSingle1_Ruined\\City_ColumnSingle1_Ruined.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 0'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Abilities [string] (lvl=0) = ''
+
+## obs3  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Barrens\\Rocks\\RockPillar\\RockPillar0.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 3'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.7000000476837158
+
+## obs4  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Barrens\\Plants\\Barrens_TreeDoodad\\Barrens_TreeDoodad1.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 4'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.600000023841858
+
+## obs5  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Barrens\\Plants\\Barrens_TreeDoodad\\Barrens_TreeDoodad0.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 5'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.600000023841858
+
+## e001  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'origin.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'DummyShadow'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 0.0
+    - MaxHP [unreal] (lvl=0) = 40.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - ShadowH [string] (lvl=0) = 'ShadowFlyer'
+    - ShadowX [real] (lvl=0) = 40.0
+    - ShadowY [real] (lvl=0) = 40.0
+    - Shadow [real] (lvl=0) = 80.0
+    - ShadowW [real] (lvl=0) = 80.0
+    - DeathType [int] (lvl=0) = 2
+    - DropOnDeath [int] (lvl=0) = 0
+    - TooltipLocal [string] (lvl=0) = ''
+    - BlendTime [int] (lvl=0) = 1
+    - Flexible [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - Height [string] (lvl=0) = 'none'
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+
+## h007  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '鲜血之剑'
+    - UberTip [string] (lvl=0) = '增加天罚伤害.|n鲜血之剑 1: |cffffff00+2 伤害|n|r鲜血之剑 2: |cffffff00+1 伤害|r|n鲜血之剑 2: 天罚每击中一个敌方目标将为你回复|cffffff004 |r点受伤值.|n|cffff8000卖出价格: 12 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520鲜血之剑|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 13
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNThoriumMelee.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 3
+    - ArtY [int] (lvl=0) = 1
+    - Hotkey [string] (lvl=0) = ''
+    - Required [string] (lvl=0) = '2'
+
+## h008  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '守护之盾'
+    - UberTip [string] (lvl=0) = '天罚后进入防御姿态，明显降低所受伤害和击退. 火球命中目标后充能. |n|cffff0000生命值惩罚: |r|cffffff00-10 hp|n|r守护之盾激活效果:|n|cffffff00-25% 伤害|r,|cffffff00 -50% 击退|r|n|cffff8000卖出价格: 12 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520守护之盾|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 13
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNHumanArmorUpThree.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtX [int] (lvl=0) = 3
+    - ArtY [int] (lvl=0) = 2
+    - Hotkey [string] (lvl=0) = ''
+    - Required [string] (lvl=0) = '3'
+
+## run0  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = 'aur0,Aloc'
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\BlackCitadel\\Props\\RuneArt\\RuneArt2.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Rune'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+
+## obs6  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Ruins\\Props\\RuinsPillar\\RuinsPillar0.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 6'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.600000023841858
+
+## obs7  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Ruins\\Props\\RuinsPillar\\RuinsPillar2.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 7'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.600000023841858
+
+## obs8  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Ashenvale\\Props\\Obelisk\\Obelisk1.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 8'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.7999999523162842
+
+## obs9  (基础: ewsp)
+- 全部修改字段:
+    - Abilities [string] (lvl=0) = ''
+    - CastBackswing [unreal] (lvl=0) = 0.0010000000474974513
+    - Model [string] (lvl=0) = 'Doodads\\Ashenvale\\Props\\Obelisk\\Obelisk2.mdl'
+    - XP [real] (lvl=0) = 0.0
+    - XPRegen [real] (lvl=0) = 0.0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\WorldEditUI\\DoodadPlaceholder.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - MoveType [string] (lvl=0) = 'fly'
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - MoveSpeed [unreal] (lvl=0) = 3.0
+    - Sound [string] (lvl=0) = ''
+    - Type [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - UI? [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = 'Obstacle 9'
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - Color [unreal] (lvl=0) = 70.0
+    - HP [int] (lvl=0) = 1000
+    - Home [int] (lvl=0) = 1
+    - Scale? [real] (lvl=0) = 0.10000000149011612
+    - TeamColor [int] (lvl=0) = 1
+    - DeathTime [unreal] (lvl=0) = 1.0
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Point [int] (lvl=0) = 0
+    - Scale [real] (lvl=0) = 1.600000023841858
+
+## u004  (基础: ugrm)
+- 全部修改字段:
+    - BuildDamage [int] (lvl=1836214133) = 1
+    - Model [string] (lvl=1836214133) = 'units\\undead\\Acolyte\\Acolyte.mdl'
+    - FoodCost [int] (lvl=1836214133) = 0
+    - BaseBuild [int] (lvl=1836214133) = 0
+    - BuildTime [int] (lvl=1836214133) = 0
+    - ubsi [int] (lvl=1836214133) = 0
+    - HP [int] (lvl=1836214133) = 500000
+    - GoldCost [int] (lvl=1836214133) = 0
+    - HPRegen [unreal] (lvl=1836214133) = 1000.0
+    - Home [int] (lvl=1836214133) = 1
+    - Height [string] (lvl=1836214133) = 'always'
+    - GoldRep [int] (lvl=1836214133) = 0
+    - LumberRep [int] (lvl=1836214133) = 0
+    - TrainTime [int] (lvl=1836214133) = 1
+    - Sleight [int] (lvl=1836214133) = 0
+    - Sin [int] (lvl=1836214133) = 0
+    - Regeneration [int] (lvl=1836214133) = 0
+    - MaxSpeed [int] (lvl=1836214133) = 0
+    - UpgradesUsed [string] (lvl=1836214133) = ''
+    - Hotkey [string] (lvl=1836214133) = ''
+    - Lumber [int] (lvl=1836214133) = 0
+    - BlendTime [int] (lvl=1836214133) = 1
+    - BuildIcon [int] (lvl=1836214133) = 1
+    - Collision [int] (lvl=1836214133) = 1
+    - Requirements [string] (lvl=0) = ''
+    - Name [string] (lvl=0) = '|cff800080乔丹之石戒指|r'
+    - Abilities [string] (lvl=0) = 'Avul,S027'
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Defense [int] (lvl=0) = 0
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - Sound [string] (lvl=0) = 'Acolyte'
+    - Color [unreal] (lvl=0) = 0.0
+    - Requirable [string] (lvl=0) = 'T000,T004,T005,T006,T001,T002,T003'
+
+## h00C  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '熔岩靴'
+    - UberTip [string] (lvl=0) = '增加移动速度并在激活后能暂时免疫岩浆伤害. |nCD: |cffffff0025|r|n|cffff0000岩浆上使用天罚激活|r|n等级 1: |cffffff0015 速度, 3 持续|r|n等级 2: |cffffff0027 速度, 4 持续|n|r等级 3: |cffffff0039 速度, 5 持续|n|r|cffff0000-0.10 hp/秒 惩罚|r|n|cffff8000卖出价格: 5 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520熔岩靴|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 7
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNINV_Boots_08.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtY [int] (lvl=0) = 1
+    - Hotkey [string] (lvl=0) = ''
+    - Required [string] (lvl=0) = '2'
+
+## dead  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '冲撞 dummy'
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 1024
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'nightelf'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'Doodads\\Northrend\\Props\\NorthrendTombstone\\NorthrendTombstone2.mdl'
+    - Sound [string] (lvl=0) = ''
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Scale [real] (lvl=0) = 0.9200000166893005
+    - Color [unreal] (lvl=0) = 0.0
+    - AcqRange [unreal] (lvl=0) = 0.0
+    - Height [string] (lvl=0) = 'none'
+    - MoveType [string] (lvl=0) = 'fly'
+    - DeathTime [unreal] (lvl=0) = 0.5
+    - DeathType [int] (lvl=0) = 0
+
+## daed  (基础: hpea)
+- 全部修改字段:
+    - Name [string] (lvl=0) = '冲撞 dummy'
+    - Abilities [string] (lvl=0) = 'Aloc'
+    - SpeedA [string] (lvl=0) = ''
+    - Attack1Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageSides [string] (lvl=0) = ''
+    - CastPoint [string] (lvl=0) = ''
+    - Attack2Type [string] (lvl=0) = 'unknown'
+    - Attack1DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack1DamageBase [int] (lvl=0) = 0
+    - Attack1DamageDice [int] (lvl=0) = 0
+    - Attack1Speed [int] (lvl=0) = 0
+    - TurnRate [int] (lvl=0) = 0
+    - Attack1Range [int] (lvl=0) = 0
+    - Repair1 [unreal] (lvl=0) = 0.0
+    - Weapon1 [int] (lvl=0) = 0
+    - Attack2DamageCrit [unreal] (lvl=0) = 0.0
+    - Attack2DamageDice [int] (lvl=0) = 0
+    - Attack2Speed [int] (lvl=0) = 0
+    - TurnRate2 [int] (lvl=0) = 0
+    - Attack2Range [int] (lvl=0) = 0
+    - Repair2 [unreal] (lvl=0) = 0.0
+    - Weapon2 [int] (lvl=0) = 0
+    - CastPoint2 [string] (lvl=0) = ''
+    - UnitType [string] (lvl=0) = 'divine'
+    - Duplicate [int] (lvl=0) = 0
+    - DropOnDeath [int] (lvl=0) = 0
+    - MoveSpeedBase [int] (lvl=0) = 1
+    - BlendTime [int] (lvl=0) = 1
+    - FoodCost [int] (lvl=0) = 0
+    - Formation [int] (lvl=0) = 0
+    - FoodMax [int] (lvl=0) = 1
+    - BaseBuild [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - ubsi [int] (lvl=0) = 0
+    - GoldCost [int] (lvl=0) = 0
+    - HP [int] (lvl=0) = 1024
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - Priority [int] (lvl=0) = 0
+    - Race [string] (lvl=0) = 'nightelf'
+    - GoldRep [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - Sleight [int] (lvl=0) = 0
+    - Sin [int] (lvl=0) = 0
+    - MaxSpeed [int] (lvl=0) = 0
+    - Regeneration [int] (lvl=0) = 0
+    - Cargo [int] (lvl=0) = 0
+    - Type [string] (lvl=0) = 'ancient'
+    - UI? [string] (lvl=0) = ''
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Hotkey [string] (lvl=0) = ''
+    - Tooltip [string] (lvl=0) = ''
+    - UberTip [string] (lvl=0) = ''
+    - Point [int] (lvl=0) = 0
+    - Model [string] (lvl=0) = 'Doodads\\Northrend\\Props\\NorthrendTombstone\\NorthrendTombstone1.mdl'
+    - Sound [string] (lvl=0) = ''
+    - AttackEnabled [int] (lvl=0) = 0
+    - Flexible [int] (lvl=0) = 0
+    - ubs1 [unreal] (lvl=0) = 0.4000000059604645
+    - Drop [unreal] (lvl=0) = 0.30000001192092896
+    - Scale [real] (lvl=0) = 0.9200000166893005
+    - Color [unreal] (lvl=0) = 0.0
+    - AcqRange [unreal] (lvl=0) = 0.0
+    - Height [string] (lvl=0) = 'none'
+    - MoveType [string] (lvl=0) = 'fly'
+    - DeathTime [unreal] (lvl=0) = 0.5
+    - DeathType [int] (lvl=0) = 0
+
+## h00E  (基础: hfoo)
+- 全部修改字段:
+    - Model [string] (lvl=1869571688) = '.mdl'
+    - Abilities [string] (lvl=1869571688) = ''
+    - Name [string] (lvl=0) = '怀表'
+    - UberTip [string] (lvl=0) = '增加所有增益效果持续时间|cffffff00|n|r降低所有负面效果持续时间|n怀表 1: |cffffff0015%|n|r怀表 2: |cffffff0025%|r|n|cffff8000卖出价格: 6 每级|r'
+    - Tooltip [string] (lvl=0) = '|cffdaa520怀表|r'
+    - UpgradesUsed [string] (lvl=0) = ''
+    - Sin [int] (lvl=0) = 0
+    - Sleight [int] (lvl=0) = 0
+    - TrainTime [int] (lvl=0) = 1
+    - GoldRep [int] (lvl=0) = 0
+    - HPRegen [unreal] (lvl=0) = 0.0
+    - HP [int] (lvl=0) = 1
+    - GoldCost [int] (lvl=0) = 7
+    - ubsi [int] (lvl=0) = 0
+    - BuildTime [int] (lvl=0) = 0
+    - BaseBuild [int] (lvl=0) = 0
+    - BlendTime [int] (lvl=0) = 1
+    - Sound [string] (lvl=0) = ''
+    - Color [unreal] (lvl=0) = 0.0
+    - MoveType [string] (lvl=0) = ''
+    - MoveSpeedBase [int] (lvl=0) = 0
+    - MoveSpeed [unreal] (lvl=0) = 0.10000000149011612
+    - AttackEnabled [int] (lvl=0) = 0
+    - Icon [string] (lvl=0) = 'ReplaceableTextures\\CommandButtons\\BTNXClock.blp'
+    - SpeedA [string] (lvl=0) = ''
+    - FoodCost [int] (lvl=0) = 0
+    - ArtY [int] (lvl=0) = 2
+    - Hotkey [string] (lvl=0) = ''
+    - Required [string] (lvl=0) = '3'
+

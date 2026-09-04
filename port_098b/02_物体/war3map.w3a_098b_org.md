@@ -1,0 +1,3223 @@
+# Abilities (war3map.w3a) — 098b_CN
+
+- 基础(修改自原版): 5　自定义: 53
+
+## ARal  (基础: ARal)
+- 全部修改字段:
+    - Art(Normal) [string] (lvl=0,col=0) = 'pix.blp'
+    - Icon [string] (lvl=0,col=0) = 'pix.blp'
+    - Name [string] (lvl=0,col=0) = ''
+
+## Apiv  (基础: Apiv)
+- 全部修改字段:
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.25
+    - Duration [unreal] (lvl=1,col=0) = 0.25
+    - achd [int] (lvl=0,col=0) = 0
+
+## ANcl  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - ItemAbility [int] (lvl=0,col=0) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = 'P'
+    - achd [int] (lvl=0,col=0) = 0
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+
+## Amls  (基础: Amls)
+- 全部修改字段:
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffff0000Draw! |r|cffff8000One more round to |r|cff556b2fdecide the battle|r'
+    - EffectCaster [string] (lvl=0,col=0) = 'Environment\\\\SmallBuildingFire\\\\SmallBuildingFire2.mdl'
+
+## Afbt  (基础: Afbt)
+- 全部修改字段:
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDarkRitual.blp'
+
+## A00D  (基础: AIlf)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Ilif [int] (lvl=1,col=1) = 15
+    - Name [string] (lvl=0,col=0) = 'Item Life Bonus 1'
+
+## A004  (基础: AIlf)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Ilif [int] (lvl=1,col=1) = 20
+    - Name [string] (lvl=0,col=0) = 'Item Life Bonus 2'
+
+## Ash2  (基础: AEar)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '反射盾 dummy'
+    - CasterArt [string] (lvl=0,col=0) = 'Abilities\\Spells\\Human\\MagicSentry\\MagicSentryCaster.mdl'
+    - EffectArt [string] (lvl=0,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNGenericSpellImmunity.blp'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNGenericSpellImmunity.blp'
+    - ArtX [int] (lvl=0,col=0) = 0
+    - ArtY [int] (lvl=0,col=0) = 2
+    - BuffArtX [int] (lvl=0,col=0) = 0
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ear1 [unreal] (lvl=1,col=1) = 0.0
+    - Ear3 [int] (lvl=1,col=3) = 0
+    - Targets [string] (lvl=1,col=0) = ''
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00008080反射盾|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '反射盾 is |c00008080ON|r.'
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - TargetType [string] (lvl=0,col=0) = 'overhead'
+    - Buffs [string] (lvl=1,col=0) = ''
+
+## A007  (基础: AIlf)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Ilif [int] (lvl=1,col=1) = 10
+    - Name [string] (lvl=0,col=0) = 'Item Life Bonus 0'
+
+## Atsi  (基础: Apiv)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = 'TS invis'
+    - Race [string] (lvl=0,col=0) = 'human'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+
+## A00F  (基础: AIlf)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Ilif [int] (lvl=1,col=1) = 25
+    - Name [string] (lvl=0,col=0) = 'Item Life Bonus 3'
+
+## A00H  (基础: AIlf)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Ilif [int] (lvl=1,col=1) = 30
+    - Name [string] (lvl=0,col=0) = 'Item Life Bonus 4'
+
+## aur0  (基础: Aoar)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = 'AoE heal'
+    - Oar1 [unreal] (lvl=1,col=1) = 0.009999999776482582
+    - Area [unreal] (lvl=1,col=0) = 200.0
+    - Targets [string] (lvl=1,col=0) = 'ancient'
+
+## A005  (基础: AIlf)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = 'Avatar hp'
+    - Levels [int] (lvl=0,col=0) = 24
+    - Ilif [int] (lvl=11,col=1) = 810
+    - Ilif [int] (lvl=10,col=1) = 720
+    - Ilif [int] (lvl=9,col=1) = 630
+    - Ilif [int] (lvl=8,col=1) = 540
+    - Ilif [int] (lvl=7,col=1) = 450
+    - Ilif [int] (lvl=6,col=1) = 360
+    - Ilif [int] (lvl=5,col=1) = 270
+    - Ilif [int] (lvl=4,col=1) = 180
+    - Ilif [int] (lvl=3,col=1) = 90
+    - Ilif [int] (lvl=12,col=1) = 900
+    - Ilif [int] (lvl=16,col=1) = -180
+    - Ilif [int] (lvl=17,col=1) = -270
+    - Ilif [int] (lvl=18,col=1) = -360
+    - Ilif [int] (lvl=19,col=1) = -450
+    - Ilif [int] (lvl=20,col=1) = -540
+    - Ilif [int] (lvl=21,col=1) = -630
+    - Ilif [int] (lvl=22,col=1) = -720
+    - Ilif [int] (lvl=23,col=1) = -810
+    - Ilif [int] (lvl=24,col=1) = -900
+    - Ilif [int] (lvl=1,col=1) = 0
+    - Ilif [int] (lvl=15,col=1) = -90
+
+## A009  (基础: Aetl)
+- 全部修改字段:
+    - achd [int] (lvl=0,col=0) = 0
+    - BuffArtX [int] (lvl=0,col=0) = 0
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - ItemAbility [int] (lvl=0,col=0) = 1
+
+## S000  (基础: AHbz)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '火球'
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - Hbz1 [int] (lvl=1,col=1) = 0
+    - Hbz6 [unreal] (lvl=1,col=6) = 0.0
+    - Hbz2 [unreal] (lvl=1,col=2) = 0.0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Hotkey [string] (lvl=0,col=0) = 'G'
+    - TooltipExtended [string] (lvl=1,col=0) = '释放一枚火球|n伤害: |cffffff007.0|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00FF9933火球 1|r'
+    - Cooldown [unreal] (lvl=1,col=0) = 4.800000190734863
+    - Area [unreal] (lvl=1,col=0) = 75.0
+    - Hbz2 [unreal] (lvl=3,col=2) = 0.0
+    - Hbz6 [unreal] (lvl=2,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=3,col=6) = 0.0
+    - Hbz3 [int] (lvl=1,col=3) = 0
+    - Hbz3 [int] (lvl=2,col=3) = 0
+    - Hbz3 [int] (lvl=3,col=3) = 0
+    - Hbz1 [int] (lvl=2,col=1) = 0
+    - Hbz1 [int] (lvl=3,col=1) = 0
+    - Buffs [string] (lvl=3,col=0) = ''
+    - Buffs [string] (lvl=2,col=0) = ''
+    - CastTypeExtra [unreal] (lvl=2,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=3,col=0) = 0.0
+    - Cooldown [unreal] (lvl=2,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=3,col=0) = 4.800000190734863
+    - EffectTarget [string] (lvl=2,col=0) = ''
+    - EffectTarget [string] (lvl=3,col=0) = ''
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00FF9933火球 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00FF9933火球 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '释放一枚火球|n伤害: |cffffff007.7|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '释放一枚火球|n伤害: |cffffff008.4|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - Area [unreal] (lvl=2,col=0) = 75.0
+    - CastTypeExtra [unreal] (lvl=1,col=0) = 0.0
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Area [unreal] (lvl=3,col=0) = 75.0
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Levels [int] (lvl=0,col=0) = 24
+    - TooltipExtended [string] (lvl=4,col=0) = '释放一枚火球|n伤害: |cffffff009.1|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '释放一枚火球|n伤害: |cffffff009.8|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=5,col=0) = 4.800000190734863
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Buffs [string] (lvl=4,col=0) = ''
+    - Buffs [string] (lvl=5,col=0) = ''
+    - Area [unreal] (lvl=4,col=0) = 75.0
+    - Area [unreal] (lvl=5,col=0) = 75.0
+    - Hbz1 [int] (lvl=4,col=1) = 0
+    - Hbz1 [int] (lvl=5,col=1) = 0
+    - Hbz3 [int] (lvl=4,col=3) = 0
+    - Hbz3 [int] (lvl=5,col=3) = 0
+    - Hbz6 [unreal] (lvl=4,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=5,col=6) = 0.0
+    - Hbz2 [unreal] (lvl=4,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=5,col=2) = 0.0
+    - CastRange [int] (lvl=4,col=0) = 0
+    - CastRange [int] (lvl=5,col=0) = 0
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00FF9933火球 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00FF9933火球 5|r'
+    - CastTypeExtra [unreal] (lvl=4,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=5,col=0) = 0.0
+    - EffectTarget [string] (lvl=4,col=0) = ''
+    - EffectTarget [string] (lvl=5,col=0) = ''
+    - Hbz2 [unreal] (lvl=6,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=7,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=8,col=2) = 0.0
+    - Hbz6 [unreal] (lvl=6,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=7,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=8,col=6) = 0.0
+    - Hbz3 [int] (lvl=6,col=3) = 0
+    - Hbz3 [int] (lvl=7,col=3) = 0
+    - Hbz3 [int] (lvl=8,col=3) = 0
+    - Hbz1 [int] (lvl=6,col=1) = 0
+    - Hbz1 [int] (lvl=7,col=1) = 0
+    - Hbz1 [int] (lvl=8,col=1) = 0
+    - Area [unreal] (lvl=6,col=0) = 75.0
+    - Area [unreal] (lvl=7,col=0) = 75.0
+    - Area [unreal] (lvl=8,col=0) = 75.0
+    - Buffs [string] (lvl=6,col=0) = ''
+    - Buffs [string] (lvl=7,col=0) = ''
+    - Buffs [string] (lvl=8,col=0) = ''
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - CastTypeExtra [unreal] (lvl=6,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=7,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=8,col=0) = 0.0
+    - Cooldown [unreal] (lvl=6,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=7,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=8,col=0) = 4.800000190734863
+    - EffectTarget [string] (lvl=6,col=0) = ''
+    - EffectTarget [string] (lvl=7,col=0) = ''
+    - EffectTarget [string] (lvl=8,col=0) = ''
+    - CastRange [int] (lvl=6,col=0) = 0
+    - CastRange [int] (lvl=7,col=0) = 0
+    - CastRange [int] (lvl=8,col=0) = 0
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00FF9933火球 6|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00FF9933火球 7|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00FF9933火球 8|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '释放一枚火球|n伤害: |cffffff0010.5|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '释放一枚火球|n伤害: |cffffff0011.2|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '释放一枚火球|n伤害: |cffffff0011.9|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - Hbz2 [unreal] (lvl=9,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=10,col=2) = 0.0
+    - Hbz6 [unreal] (lvl=9,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=10,col=6) = 0.0
+    - Hbz3 [int] (lvl=9,col=3) = 0
+    - Hbz1 [int] (lvl=9,col=1) = 0
+    - Hbz1 [int] (lvl=10,col=1) = 0
+    - Area [unreal] (lvl=9,col=0) = 75.0
+    - Area [unreal] (lvl=10,col=0) = 75.0
+    - Buffs [string] (lvl=9,col=0) = ''
+    - Buffs [string] (lvl=10,col=0) = ''
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - CastTypeExtra [unreal] (lvl=9,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=10,col=0) = 0.0
+    - Cooldown [unreal] (lvl=9,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=10,col=0) = 4.800000190734863
+    - EffectTarget [string] (lvl=9,col=0) = ''
+    - EffectTarget [string] (lvl=10,col=0) = ''
+    - CastRange [int] (lvl=9,col=0) = 0
+    - CastRange [int] (lvl=10,col=0) = 0
+    - TooltipNormal [string] (lvl=9,col=0) = '|c00FF9933火球 9|r'
+    - TooltipNormal [string] (lvl=10,col=0) = '|c00FF9933火球 10|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '释放一枚火球|n伤害: |cffffff0012.6|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=10,col=0) = '释放一枚火球|n伤害: |cffffff0013.3|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - Hbz4 [unreal] (lvl=1,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=2,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=3,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=4,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=5,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=6,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=7,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=8,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=9,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=10,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=11,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=12,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=13,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=14,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=15,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=16,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=17,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=18,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=19,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=20,col=4) = 0.0
+    - Hbz2 [unreal] (lvl=11,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=12,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=13,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=14,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=15,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=16,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=17,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=18,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=19,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=20,col=2) = 0.0
+    - Hbz6 [unreal] (lvl=11,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=12,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=13,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=14,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=15,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=16,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=17,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=18,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=19,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=20,col=6) = 0.0
+    - Hbz3 [int] (lvl=11,col=3) = 0
+    - Hbz3 [int] (lvl=12,col=3) = 0
+    - Hbz3 [int] (lvl=13,col=3) = 0
+    - Hbz3 [int] (lvl=14,col=3) = 0
+    - Hbz3 [int] (lvl=15,col=3) = 0
+    - Hbz3 [int] (lvl=16,col=3) = 0
+    - Hbz3 [int] (lvl=17,col=3) = 0
+    - Hbz3 [int] (lvl=18,col=3) = 0
+    - Hbz3 [int] (lvl=19,col=3) = 0
+    - Hbz3 [int] (lvl=20,col=3) = 0
+    - Hbz3 [int] (lvl=10,col=3) = 0
+    - Buffs [string] (lvl=11,col=0) = ''
+    - Buffs [string] (lvl=12,col=0) = ''
+    - Buffs [string] (lvl=13,col=0) = ''
+    - Buffs [string] (lvl=14,col=0) = ''
+    - Buffs [string] (lvl=15,col=0) = ''
+    - Buffs [string] (lvl=16,col=0) = ''
+    - Buffs [string] (lvl=17,col=0) = ''
+    - Buffs [string] (lvl=18,col=0) = ''
+    - Buffs [string] (lvl=19,col=0) = ''
+    - Buffs [string] (lvl=20,col=0) = ''
+    - Hbz1 [int] (lvl=11,col=1) = 0
+    - Hbz1 [int] (lvl=12,col=1) = 0
+    - Hbz1 [int] (lvl=13,col=1) = 0
+    - Hbz1 [int] (lvl=14,col=1) = 0
+    - Hbz1 [int] (lvl=15,col=1) = 0
+    - Hbz1 [int] (lvl=16,col=1) = 0
+    - Hbz1 [int] (lvl=17,col=1) = 0
+    - Hbz1 [int] (lvl=18,col=1) = 0
+    - Hbz1 [int] (lvl=19,col=1) = 0
+    - Hbz1 [int] (lvl=20,col=1) = 0
+    - Cooldown [unreal] (lvl=11,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=12,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=13,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=14,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=15,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=16,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=17,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=18,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=19,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=20,col=0) = 4.800000190734863
+    - EffectTarget [string] (lvl=11,col=0) = ''
+    - EffectTarget [string] (lvl=12,col=0) = ''
+    - EffectTarget [string] (lvl=13,col=0) = ''
+    - EffectTarget [string] (lvl=14,col=0) = ''
+    - EffectTarget [string] (lvl=15,col=0) = ''
+    - EffectTarget [string] (lvl=16,col=0) = ''
+    - EffectTarget [string] (lvl=17,col=0) = ''
+    - EffectTarget [string] (lvl=18,col=0) = ''
+    - EffectTarget [string] (lvl=19,col=0) = ''
+    - EffectTarget [string] (lvl=20,col=0) = ''
+    - CastRange [int] (lvl=11,col=0) = 0
+    - CastRange [int] (lvl=12,col=0) = 0
+    - CastRange [int] (lvl=13,col=0) = 0
+    - CastRange [int] (lvl=14,col=0) = 0
+    - CastRange [int] (lvl=15,col=0) = 0
+    - CastRange [int] (lvl=16,col=0) = 0
+    - CastRange [int] (lvl=17,col=0) = 0
+    - CastRange [int] (lvl=18,col=0) = 0
+    - CastRange [int] (lvl=19,col=0) = 0
+    - CastRange [int] (lvl=20,col=0) = 0
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffff9933火球 11|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffff9933火球 12|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffff9933火球 1|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffff9933火球 2|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffff9933火球 3|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffff9933火球 4|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffff9933火球 5|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffff9933火球 6|r'
+    - TooltipNormal [string] (lvl=19,col=0) = '|cffff9933火球 7|r'
+    - TooltipNormal [string] (lvl=20,col=0) = '|cffff9933火球 8|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '释放一枚火球|n伤害: |cffffff0014.0|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '释放一枚火球|n伤害: |cffffff0014.7|n|rCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '释放一枚火球|n伤害: |cffffff005.5|n|r持续总伤害: |cffffff003.0|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '释放一枚火球|n伤害: |cffffff006.0|n|r持续总伤害: |cffffff003.5|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '释放一枚火球|n伤害: |cffffff006.5|n|r持续总伤害: |cffffff004.0|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '释放一枚火球|n伤害: |cffffff007.0|n|r持续总伤害: |cffffff004.5|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '释放一枚火球|n伤害: |cffffff007.5|n|r持续总伤害: |cffffff005.0|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '释放一枚火球|n伤害: |cffffff008.0|n|r持续总伤害: |cffffff005.5|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=19,col=0) = '释放一枚火球|n伤害: |cffffff008.5|n|r持续总伤害: |cffffff006.0|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=20,col=0) = '释放一枚火球|n伤害: |cffffff009.0|n|r持续总伤害: |cffffff006.5|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 75.0
+    - Area [unreal] (lvl=12,col=0) = 75.0
+    - Area [unreal] (lvl=13,col=0) = 75.0
+    - Area [unreal] (lvl=14,col=0) = 75.0
+    - Area [unreal] (lvl=15,col=0) = 75.0
+    - Area [unreal] (lvl=16,col=0) = 75.0
+    - Area [unreal] (lvl=17,col=0) = 75.0
+    - Area [unreal] (lvl=18,col=0) = 75.0
+    - Area [unreal] (lvl=19,col=0) = 75.0
+    - Area [unreal] (lvl=20,col=0) = 75.0
+    - Hbz4 [unreal] (lvl=21,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=22,col=4) = 0.0
+    - Hbz2 [unreal] (lvl=21,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=22,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=2,col=2) = 0.0
+    - Hbz6 [unreal] (lvl=21,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=22,col=6) = 0.0
+    - Hbz3 [int] (lvl=21,col=3) = 0
+    - Hbz3 [int] (lvl=22,col=3) = 0
+    - Hbz1 [int] (lvl=21,col=1) = 0
+    - Hbz1 [int] (lvl=22,col=1) = 0
+    - Area [unreal] (lvl=21,col=0) = 75.0
+    - Area [unreal] (lvl=22,col=0) = 75.0
+    - Buffs [string] (lvl=21,col=0) = ''
+    - Buffs [string] (lvl=22,col=0) = ''
+    - Area [unreal] (lvl=21,col=0) = 99999.0
+    - Area [unreal] (lvl=22,col=0) = 99999.0
+    - CastTypeExtra [unreal] (lvl=11,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=12,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=13,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=14,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=15,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=16,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=17,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=18,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=19,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=20,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=21,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=22,col=0) = 0.0
+    - Cooldown [unreal] (lvl=21,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=22,col=0) = 4.800000190734863
+    - EffectTarget [string] (lvl=21,col=0) = ''
+    - EffectTarget [string] (lvl=22,col=0) = ''
+    - CastRange [int] (lvl=21,col=0) = 0
+    - CastRange [int] (lvl=22,col=0) = 0
+    - TooltipNormal [string] (lvl=21,col=0) = '|cffff9933火球 9|r'
+    - TooltipNormal [string] (lvl=22,col=0) = '|cffff9933火球 10|r'
+    - TooltipExtended [string] (lvl=22,col=0) = '释放一枚火球|n伤害: |cffffff0010.0|n|r持续总伤害: |cffffff007.5|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=21,col=0) = '释放一枚火球|n伤害: |cffffff009.5|n|r持续总伤害: |cffffff007.0|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - Hbz4 [unreal] (lvl=23,col=4) = 0.0
+    - Hbz4 [unreal] (lvl=24,col=4) = 0.0
+    - Hbz2 [unreal] (lvl=23,col=2) = 0.0
+    - Hbz2 [unreal] (lvl=24,col=2) = 0.0
+    - Hbz6 [unreal] (lvl=23,col=6) = 0.0
+    - Hbz6 [unreal] (lvl=24,col=6) = 0.0
+    - Hbz3 [int] (lvl=23,col=3) = 0
+    - Hbz3 [int] (lvl=24,col=3) = 0
+    - Hbz1 [int] (lvl=23,col=1) = 0
+    - Hbz1 [int] (lvl=24,col=1) = 0
+    - Area [unreal] (lvl=23,col=0) = 75.0
+    - Area [unreal] (lvl=24,col=0) = 75.0
+    - Buffs [string] (lvl=23,col=0) = ''
+    - Buffs [string] (lvl=24,col=0) = ''
+    - Area [unreal] (lvl=23,col=0) = 99999.0
+    - Area [unreal] (lvl=24,col=0) = 99999.0
+    - CastTypeExtra [unreal] (lvl=23,col=0) = 0.0
+    - CastTypeExtra [unreal] (lvl=24,col=0) = 0.0
+    - Cooldown [unreal] (lvl=23,col=0) = 4.800000190734863
+    - Cooldown [unreal] (lvl=24,col=0) = 4.800000190734863
+    - EffectTarget [string] (lvl=23,col=0) = ''
+    - EffectTarget [string] (lvl=24,col=0) = ''
+    - CastRange [int] (lvl=23,col=0) = 0
+    - CastRange [int] (lvl=24,col=0) = 0
+    - TooltipNormal [string] (lvl=23,col=0) = '|cffff9933火球 11|r'
+    - TooltipNormal [string] (lvl=24,col=0) = '|cffff9933火球 12|r'
+    - TooltipExtended [string] (lvl=23,col=0) = '释放一枚火球|n伤害: |cffffff0010.5|n|r持续总伤害: |cffffff008.0|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+    - TooltipExtended [string] (lvl=24,col=0) = '释放一枚火球|n伤害: |cffffff0011.0|n|r持续总伤害: |cffffff008.5|r|nCD: |cffffff004.8|r|n快捷键: |cffff0000G|r'
+
+## S001  (基础: AHtc)
+- 全部修改字段:
+    - Targets [string] (lvl=1,col=0) = '_'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWraith2.blp'
+    - EffectArt [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNagaBurrow.blp'
+    - ArtX [int] (lvl=0,col=0) = 0
+    - Name [string] (lvl=0,col=0) = '天罚'
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Htc1 [unreal] (lvl=1,col=1) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Hotkey [string] (lvl=0,col=0) = 'F'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - CastType [string] (lvl=0,col=0) = 'Abilities\\Spells\\Orc\\Disenchant\\DisenchantSpecialArt.mdl'
+    - Buffs [string] (lvl=1,col=0) = 'B001'
+    - TooltipExtended [string] (lvl=1,col=0) = '对周围术士造成伤害 |c00FFFF0010|r 包括|c00FF0000自身|r\r\n快捷键: |cffff0000F|r'
+    - Htc4 [unreal] (lvl=1,col=4) = 0.0
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - Htc1 [unreal] (lvl=2,col=1) = 0.0
+    - Htc1 [unreal] (lvl=3,col=1) = 0.0
+    - Htc4 [unreal] (lvl=2,col=4) = 0.0
+    - Htc4 [unreal] (lvl=3,col=4) = 0.0
+    - Htc3 [unreal] (lvl=2,col=3) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Buffs [string] (lvl=2,col=0) = 'B001'
+    - Buffs [string] (lvl=3,col=0) = 'B001'
+    - Area [unreal] (lvl=4,col=0) = 0.0
+    - Htc3 [unreal] (lvl=4,col=3) = 0.0
+    - Buffs [string] (lvl=4,col=0) = 'B001'
+    - Cooldown [unreal] (lvl=2,col=0) = 3.0
+    - Cooldown [unreal] (lvl=3,col=0) = 3.0
+    - Cooldown [unreal] (lvl=4,col=0) = 3.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - CastRange [int] (lvl=4,col=0) = 0
+    - Targets [string] (lvl=2,col=0) = 'ancient,enemies'
+    - Targets [string] (lvl=3,col=0) = 'ancient,enemies'
+    - Targets [string] (lvl=4,col=0) = 'ancient,enemies'
+    - TooltipNormal [string] (lvl=2,col=0) = '天罚'
+    - TooltipNormal [string] (lvl=3,col=0) = '天罚'
+    - TooltipNormal [string] (lvl=4,col=0) = '天罚'
+    - TooltipExtended [string] (lvl=2,col=0) = '对周围术士造成伤害 |cffffff0012|r 包括|cffff0000自身|r|n|n快捷键: |cffff0000F|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '对周围术士造成伤害 |cffffff0013|r 包括|cffff0000自身|r|n|n快捷键: |cffff0000F|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '对周围术士造成伤害 |c00FFFF0013|r 包括|c00FF0000自身|r\r\n快捷键: |cffff0000F|r'
+    - Htc1 [unreal] (lvl=4,col=1) = 0.0
+    - Htc4 [unreal] (lvl=4,col=4) = 0.0
+    - CastTypeExtra [unreal] (lvl=2,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=3,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=4,col=0) = 0.699999988079071
+    - Htc3 [unreal] (lvl=3,col=3) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - CastTypeCap [string] (lvl=0,col=0) = 'weapon'
+    - Animations [string] (lvl=0,col=0) = 'spell'
+    - Htc3 [unreal] (lvl=1,col=3) = 0.0
+    - TooltipNormal [string] (lvl=1,col=0) = '天罚'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 3.0
+    - CasterArtCount [int] (lvl=0,col=0) = 1
+    - CastTypeExtra [unreal] (lvl=1,col=0) = 0.699999988079071
+
+## S002  (基础: AOfs)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '闪电'
+    - achd [int] (lvl=0,col=0) = 0
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Ofs1 [int] (lvl=1,col=1) = 0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - TooltipExtended [string] (lvl=1,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff007|r|nCD: |cffffff0016.5|r|n快捷键: |cffff0000D|r|n'
+    - Hotkey [string] (lvl=0,col=0) = 'D'
+    - Hotkey2 [string] (lvl=0,col=0) = 'D'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - TooltipExtended [string] (lvl=2,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff008|r|nCD: |cffffff0015.5|r|n快捷键: |cffff0000D|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff009|r|nCD: |cffffff0015|r|n快捷键: |cffff0000D|r|n'
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00FF9696闪电 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00FF9696闪电 3|r'
+    - Cooldown [unreal] (lvl=1,col=0) = 16.5
+    - Cooldown [unreal] (lvl=2,col=0) = 15.5
+    - Cooldown [unreal] (lvl=3,col=0) = 15.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - EffectTarget [string] (lvl=2,col=0) = ''
+    - EffectTarget [string] (lvl=3,col=0) = ''
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - Ofs1 [int] (lvl=2,col=1) = 0
+    - Ofs1 [int] (lvl=3,col=1) = 0
+    - Levels [int] (lvl=0,col=0) = 9
+    - CastRange [int] (lvl=4,col=0) = 0
+    - CastRange [int] (lvl=5,col=0) = 0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=5,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=5,col=0) = 0.0
+    - Cooldown [unreal] (lvl=4,col=0) = 14.5
+    - Cooldown [unreal] (lvl=5,col=0) = 14.0
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00FF9696闪电 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00FF9696闪电 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff0010|r|nCD: |cffffff0014.5|r|n快捷键: |cffff0000D|r|n'
+    - TooltipExtended [string] (lvl=5,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff0011|r|nCD: |cffffff0014|r|n快捷键: |cffff0000D|r|n'
+    - EffectTarget [string] (lvl=4,col=0) = ''
+    - EffectTarget [string] (lvl=5,col=0) = ''
+    - Area [unreal] (lvl=4,col=0) = 0.0
+    - Area [unreal] (lvl=5,col=0) = 0.0
+    - Ofs1 [int] (lvl=4,col=1) = 0
+    - Ofs1 [int] (lvl=5,col=1) = 0
+    - Animations [string] (lvl=0,col=0) = 'spell'
+    - Ofs1 [int] (lvl=6,col=1) = 0
+    - Area [unreal] (lvl=6,col=0) = 0.0
+    - Cooldown [unreal] (lvl=6,col=0) = 13.5
+    - HeroAbility [unreal] (lvl=6,col=0) = 0.0
+    - Duration [unreal] (lvl=6,col=0) = 0.0
+    - EffectTarget [string] (lvl=6,col=0) = ''
+    - CastRange [int] (lvl=6,col=0) = 0
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00FF9696闪电 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff0012|r|nCD: |cffffff0013.5|r|n快捷键: |cffff0000D|r|n'
+    - Ofs1 [int] (lvl=7,col=1) = 0
+    - Area [unreal] (lvl=7,col=0) = 0.0
+    - Cooldown [unreal] (lvl=7,col=0) = 13.0
+    - HeroAbility [unreal] (lvl=7,col=0) = 0.0
+    - Duration [unreal] (lvl=7,col=0) = 0.0
+    - EffectTarget [string] (lvl=7,col=0) = ''
+    - CastRange [int] (lvl=7,col=0) = 0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00FF9696闪电 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff0013|r|nCD: |cffffff0013|r|n快捷键: |cffff0000D|r|n'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Cooldown [unreal] (lvl=8,col=0) = 12.5
+    - HeroAbility [unreal] (lvl=8,col=0) = 0.0
+    - Duration [unreal] (lvl=8,col=0) = 0.0
+    - EffectTarget [string] (lvl=8,col=0) = ''
+    - CastRange [int] (lvl=8,col=0) = 0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00FF9696闪电 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff0014|r|nCD: |cffffff0012.5|r|n快捷键: |cffff0000D|r'
+    - Area [unreal] (lvl=8,col=0) = 0.0
+    - Ofs1 [int] (lvl=8,col=1) = 0
+    - Ofs1 [int] (lvl=9,col=1) = 0
+    - Area [unreal] (lvl=9,col=0) = 0.0
+    - Cooldown [unreal] (lvl=9,col=0) = 12.0
+    - HeroAbility [unreal] (lvl=9,col=0) = 0.0
+    - Duration [unreal] (lvl=9,col=0) = 0.0
+    - EffectTarget [string] (lvl=9,col=0) = ''
+    - CastRange [int] (lvl=9,col=0) = 0
+    - TooltipNormal [string] (lvl=9,col=0) = '|c00FF9696闪电 9|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '发出一道闪电攻击目标|n伤害: |cffffff0015|r|nCD: |cffffff0012|r|n快捷键: |cffff0000D|r'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff9696闪电 1|r'
+
+## S004  (基础: AOfs)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '回旋镖'
+    - achd [int] (lvl=0,col=0) = 0
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Ofs1 [int] (lvl=1,col=1) = 0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - TooltipExtended [string] (lvl=1,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff007.2|r|nCD: |cffffff0016.0|r|n快捷键: |cffff0000D|r|n'
+    - Hotkey [string] (lvl=0,col=0) = 'D'
+    - Hotkey2 [string] (lvl=0,col=0) = 'D'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - TooltipExtended [string] (lvl=2,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff008.0|r|nCD: |cffffff0013.9|r|n快捷键: |cffff0000D|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff008.8|r|nCD: |cffffff0012.5|r|n快捷键: |cffff0000D|r|n'
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00FF9696回旋镖 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00FF9696回旋镖 3|r'
+    - Cooldown [unreal] (lvl=1,col=0) = 16.0
+    - Cooldown [unreal] (lvl=2,col=0) = 13.899999618530273
+    - Cooldown [unreal] (lvl=3,col=0) = 12.5
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - EffectTarget [string] (lvl=2,col=0) = ''
+    - EffectTarget [string] (lvl=3,col=0) = ''
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - Ofs1 [int] (lvl=2,col=1) = 0
+    - Ofs1 [int] (lvl=3,col=1) = 0
+    - CastRange [int] (lvl=4,col=0) = 0
+    - CastRange [int] (lvl=5,col=0) = 0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=5,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=5,col=0) = 0.0
+    - Cooldown [unreal] (lvl=4,col=0) = 11.699999809265137
+    - Cooldown [unreal] (lvl=5,col=0) = 11.0
+    - EffectTarget [string] (lvl=4,col=0) = ''
+    - EffectTarget [string] (lvl=5,col=0) = ''
+    - Area [unreal] (lvl=4,col=0) = 0.0
+    - Area [unreal] (lvl=5,col=0) = 0.0
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - Levels [int] (lvl=0,col=0) = 9
+    - Ofs1 [int] (lvl=4,col=1) = 0
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00FF9696回旋镖 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff009.6|r|nCD: |cffffff0011.7|r|n快捷键: |cffff0000D|r|n'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00FF9696回旋镖 1|r'
+    - Ofs1 [int] (lvl=5,col=1) = 0
+    - Ofs1 [int] (lvl=6,col=1) = 0
+    - Area [unreal] (lvl=6,col=0) = 0.0
+    - Cooldown [unreal] (lvl=6,col=0) = 10.300000190734863
+    - HeroAbility [unreal] (lvl=6,col=0) = 0.0
+    - Duration [unreal] (lvl=6,col=0) = 0.0
+    - EffectTarget [string] (lvl=6,col=0) = ''
+    - CastRange [int] (lvl=6,col=0) = 0
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00FF9696回旋镖 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00FF9696回旋镖 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff0010.4|r|nCD: |cffffff0011.0|r|n快捷键: |cffff0000D|r|n'
+    - TooltipExtended [string] (lvl=6,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff0011.2|r|nCD: |cffffff0010.3|r|n快捷键: |cffff0000D|r|n'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Ofs1 [int] (lvl=7,col=1) = 0
+    - Area [unreal] (lvl=7,col=0) = 0.0
+    - Cooldown [unreal] (lvl=7,col=0) = 9.600000381469727
+    - Duration [unreal] (lvl=7,col=0) = 0.0
+    - EffectTarget [string] (lvl=7,col=0) = ''
+    - CastRange [int] (lvl=7,col=0) = 0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00FF9696回旋镖 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff0012.0|r|nCD: |cffffff009.6|r|n快捷键: |cffff0000D|r|n'
+    - HeroAbility [unreal] (lvl=7,col=0) = 0.0
+    - Ofs1 [int] (lvl=8,col=1) = 0
+    - Area [unreal] (lvl=8,col=0) = 0.0
+    - Cooldown [unreal] (lvl=8,col=0) = 8.899999618530273
+    - HeroAbility [unreal] (lvl=8,col=0) = 0.0
+    - Duration [unreal] (lvl=8,col=0) = 0.0
+    - EffectTarget [string] (lvl=8,col=0) = ''
+    - CastRange [int] (lvl=8,col=0) = 0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00FF9696回旋镖 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff0012.8|r|nCD: |cffffff008.9|r|n快捷键: |cffff0000D|r'
+    - Ofs1 [int] (lvl=9,col=1) = 0
+    - Area [unreal] (lvl=9,col=0) = 0.0
+    - Cooldown [unreal] (lvl=9,col=0) = 8.199999809265137
+    - HeroAbility [unreal] (lvl=9,col=0) = 0.0
+    - Duration [unreal] (lvl=9,col=0) = 0.0
+    - EffectTarget [string] (lvl=9,col=0) = ''
+    - CastRange [int] (lvl=9,col=0) = 0
+    - TooltipNormal [string] (lvl=9,col=0) = '|c00FF9696回旋镖 9|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '回旋镖会旋转者飞回使用者手里|n伤害: |cffffff0013.6|r|nCD: |cffffff008.2|r|n快捷键: |cffff0000D|r'
+
+## S005  (基础: Arpl)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '反射盾'
+    - Rpb5 [int] (lvl=1,col=5) = 0
+    - Rpb6 [int] (lvl=1,col=0) = 0
+    - Rej1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - CastType [string] (lvl=0,col=0) = ''
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Levels [int] (lvl=0,col=0) = 9
+    - Hotkey [string] (lvl=0,col=0) = 'C'
+    - Hotkey2 [string] (lvl=0,col=0) = 'C'
+    - Targets [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 25.0
+    - Cooldown [unreal] (lvl=2,col=0) = 22.5
+    - Cooldown [unreal] (lvl=3,col=0) = 20.5
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c006633FF反射盾 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c006633FF反射盾 3|r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - OrderOff [string] (lvl=0,col=0) = ''
+    - OrderOn [string] (lvl=0,col=0) = ''
+    - OrderUse [string] (lvl=0,col=0) = 'recharge,replenish'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c006633FF反射盾 1|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c006633FF反射盾 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c006633FF反射盾 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|c006633FF反射盾 6|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 19.0
+    - Cooldown [unreal] (lvl=5,col=0) = 18.0
+    - Cooldown [unreal] (lvl=6,col=0) = 17.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - TooltipExtended [string] (lvl=2,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff003.0|r|nCD: |cffffff0022.5|r|n快捷键: |cffff0000C|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff003.2|r|nCD: |cffffff0020.5|r|n快捷键: |cffff0000C|r|n'
+    - TooltipExtended [string] (lvl=4,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff003.4|r|nCD: |cffffff0019.0|r|n快捷键: |cffff0000C|r|n'
+    - TooltipExtended [string] (lvl=5,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff003.6|r|nCD: |cffffff0018.0|r|n快捷键: |cffff0000C|r|n'
+    - TooltipExtended [string] (lvl=6,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff003.8|r|nCD: |cffffff0017.0|r|n快捷键: |cffff0000C|r|n'
+    - Cooldown [unreal] (lvl=7,col=0) = 16.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c006633FF反射盾 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff004.0|r|nCD: |cffffff0016.0|r|n快捷键: |cffff0000C|r|n'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=2,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=3,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=4,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=5,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=6,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=7,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormalOff [string] (lvl=2,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormalOff [string] (lvl=3,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormalOff [string] (lvl=4,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormalOff [string] (lvl=5,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormalOff [string] (lvl=6,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormalOff [string] (lvl=7,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormal [string] (lvl=8,col=0) = '|c006633FF反射盾 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff004.2|r|nCD: |cffffff0015.0|r|n快捷键: |cffff0000C|r'
+    - TooltipNormalOff [string] (lvl=8,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=8,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipNormal [string] (lvl=9,col=0) = '|c006633FF反射盾 9|r'
+    - TooltipNormalOff [string] (lvl=9,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - TooltipTurnOff [string] (lvl=9,col=0) = '|c00ff0000极近情况下可能不起作用|r|n'
+    - Art(Normal) [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff002.8|r|nCD: |cffffff0025.0|r|n快捷键: |cffff0000C|r'
+    - Cooldown [unreal] (lvl=8,col=0) = 15.0
+    - Cooldown [unreal] (lvl=9,col=0) = 14.0
+    - TooltipExtended [string] (lvl=9,col=0) = '反射所有飞弹魔法|n|cff00ff00驱散锁链|r|n持续: |cffffff004.2|r|nCD: |cffffff0014.0|r|n快捷键: |cffff0000C|r'
+
+## S006  (基础: Arpl)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '时光回溯'
+    - Rpb5 [int] (lvl=1,col=5) = 0
+    - Rpb6 [int] (lvl=1,col=0) = 0
+    - Rej1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - CastType [string] (lvl=0,col=0) = ''
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Levels [int] (lvl=0,col=0) = 8
+    - Hotkey [string] (lvl=0,col=0) = 'C'
+    - Hotkey2 [string] (lvl=0,col=0) = 'C'
+    - Targets [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 22.0
+    - Cooldown [unreal] (lvl=2,col=0) = 19.5
+    - Cooldown [unreal] (lvl=3,col=0) = 17.5
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c006633FF时光回溯 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c006633FF时光回溯 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0070%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0022|r|n快捷键: |cffff0000C|r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - OrderOff [string] (lvl=0,col=0) = ''
+    - OrderOn [string] (lvl=0,col=0) = ''
+    - OrderUse [string] (lvl=0,col=0) = 'recharge,replenish'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c006633FF时光回溯 1|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c006633FF时光回溯 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c006633FF时光回溯 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|c006633FF时光回溯 6|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 16.0
+    - Cooldown [unreal] (lvl=5,col=0) = 15.0
+    - Cooldown [unreal] (lvl=6,col=0) = 14.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - TooltipExtended [string] (lvl=2,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0060%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0019.5|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0050%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0017.5|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0040%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0016|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0030%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0015|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0020%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0014|r|n快捷键: |cffff0000C|r'
+    - Cooldown [unreal] (lvl=7,col=0) = 13.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c006633FF时光回溯 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将保留 |cffffff0010%|r 受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0013|r|n快捷键: |cffff0000C|r'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - Animations [string] (lvl=0,col=0) = 'stand'
+    - TooltipTurnOff [string] (lvl=2,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipTurnOff [string] (lvl=3,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipTurnOff [string] (lvl=4,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipTurnOff [string] (lvl=5,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipNormalOff [string] (lvl=2,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipNormalOff [string] (lvl=3,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipNormalOff [string] (lvl=4,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipNormalOff [string] (lvl=5,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipNormalOff [string] (lvl=6,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipTurnOff [string] (lvl=6,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipNormalOff [string] (lvl=7,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipTurnOff [string] (lvl=7,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - Cooldown [unreal] (lvl=8,col=0) = 12.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c006633FF时光回溯 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '回到过去.|n|cffffff003.6 |r秒后，位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留. 你将不会保留受伤点数.|n|cff00ff00驱散锁链和负面效果|r|nCD: |cffffff0012|r|n快捷键: |cffff0000C|r'
+    - TooltipNormalOff [string] (lvl=8,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - TooltipTurnOff [string] (lvl=8,col=0) = '|c00ff0000冷却时间不会重置|r|n'
+    - Art(Normal) [string] (lvl=0,col=0) = ''
+
+## S007  (基础: Arpl)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '急行'
+    - Rpb5 [int] (lvl=1,col=5) = 0
+    - Rpb6 [int] (lvl=1,col=0) = 0
+    - Rej1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - CastType [string] (lvl=0,col=0) = ''
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Levels [int] (lvl=0,col=0) = 20
+    - Hotkey [string] (lvl=0,col=0) = 'C'
+    - Hotkey2 [string] (lvl=0,col=0) = 'C'
+    - Targets [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 21.0
+    - Cooldown [unreal] (lvl=2,col=0) = 21.0
+    - Cooldown [unreal] (lvl=3,col=0) = 21.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c006633FF急行 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c006633FF急行 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff007.0|n|r最大吸收: |cffffff005.0|r|n快捷键: |cffff0000C|r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = ' '
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - OrderOff [string] (lvl=0,col=0) = ''
+    - OrderOn [string] (lvl=0,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|c006633FF急行 1|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c006633FF急行 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c006633FF急行 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|c006633FF急行 6|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 21.0
+    - Cooldown [unreal] (lvl=5,col=0) = 21.0
+    - Cooldown [unreal] (lvl=6,col=0) = 21.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=7,col=0) = 21.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c006633FF急行 7|r'
+    - TooltipNormalOff [string] (lvl=1,col=0) = ' '
+    - Animations [string] (lvl=0,col=0) = 'stand'
+    - TooltipExtended [string] (lvl=2,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff007.8|n|r最大吸收: |cffffff007.0|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff008.6|n|r最大吸收: |cffffff009|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff009.4|n|r最大吸收: |cffffff0011|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff0010.2|n|r最大吸收: |cffffff0013|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff0011.0|n|r最大吸收: |cffffff0015|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff0011.8|n|r最大吸收: |cffffff0017|r|n快捷键: |cffff0000C|r'
+    - Cooldown [unreal] (lvl=8,col=0) = 21.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c006633FF急行 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|n|r吸收|cffffff0050%|r伤害|cff00ff00|n|r每点伤害转化为|cffffff0015移动速度|r|nCD: |cffffff0021|r|n持续: |cffffff0012.6|n|r最大吸收: |cffffff0019|r|n快捷键: |cffff0000C|r'
+    - Art(Normal) [string] (lvl=0,col=0) = ''
+    - OrderUse [string] (lvl=0,col=0) = 'recharge'
+    - TooltipNormal [string] (lvl=9,col=0) = '|c006633FF急行 9|r'
+    - TooltipNormal [string] (lvl=10,col=0) = '|c006633FF急行 10|r'
+    - TooltipNormal [string] (lvl=11,col=0) = '|cff6633ff急行 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cff6633ff急行 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|c006633FF急行 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|c006633FF急行 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|c006633FF急行 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|c006633FF急行 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|c006633FF急行 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|c006633FF急行 8|r'
+    - TooltipNormal [string] (lvl=19,col=0) = '|c006633FF急行 9|r'
+    - TooltipNormal [string] (lvl=20,col=0) = '|c006633FF急行 10|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0033|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff000%|r |n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0028|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0012.5%|r |n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0024|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0025%|r |n快捷键: |cffff0000C|r|n'
+    - TooltipExtended [string] (lvl=14,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0021|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0037.5%|r |n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0019|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0050%|r |n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0017|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0062.5%|r |n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0015|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0075%|r |n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '短时间内将速度提升到极限, while taking reduced 伤害.|n|cff00ff00驱散锁链|r|nCD: |cffffff0013|r|n持续: |cffffff004|n|r伤害 reduced: |cffffff0087.5%|r |n快捷键: |cffff0000C|r'
+    - Cooldown [unreal] (lvl=11,col=0) = 33.0
+    - Cooldown [unreal] (lvl=12,col=0) = 28.0
+    - Cooldown [unreal] (lvl=13,col=0) = 24.0
+    - Cooldown [unreal] (lvl=14,col=0) = 21.0
+    - Cooldown [unreal] (lvl=15,col=0) = 19.0
+    - Cooldown [unreal] (lvl=16,col=0) = 17.0
+    - Cooldown [unreal] (lvl=17,col=0) = 15.0
+    - Cooldown [unreal] (lvl=18,col=0) = 13.0
+
+## S008  (基础: AUdd)
+- 全部修改字段:
+    - EffectArt [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Udd1 [unreal] (lvl=1,col=1) = 0.0
+    - Udd2 [unreal] (lvl=1,col=2) = 0.0
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Targets [string] (lvl=1,col=0) = ''
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Area [unreal] (lvl=1,col=0) = 200.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 20.0
+    - RequiredLevel [int] (lvl=0,col=0) = 1
+    - Area [unreal] (lvl=1,col=0) = 1200.0
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00CCCC33陨石 1|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff007-14|r 根据命中位置远近决定.|nCD: |cffffff0020|r|n快捷键: |cffff0000E|r|n'
+    - Name [string] (lvl=0,col=0) = '陨石'
+    - BuffArtX [int] (lvl=0,col=0) = 1
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Levels [int] (lvl=0,col=0) = 20
+    - Hotkey [string] (lvl=0,col=0) = 'E'
+    - Area [unreal] (lvl=2,col=0) = 200.0
+    - Area [unreal] (lvl=3,col=0) = 200.0
+    - Area [unreal] (lvl=2,col=0) = 1200.0
+    - Area [unreal] (lvl=3,col=0) = 1200.0
+    - Cooldown [unreal] (lvl=2,col=0) = 19.5
+    - Cooldown [unreal] (lvl=3,col=0) = 19.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - EffectTarget [string] (lvl=2,col=0) = ''
+    - EffectTarget [string] (lvl=3,col=0) = ''
+    - Targets [string] (lvl=2,col=0) = ''
+    - Targets [string] (lvl=3,col=0) = ''
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - Udd1 [unreal] (lvl=2,col=1) = 0.0
+    - Udd1 [unreal] (lvl=3,col=1) = 0.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00CCCC33陨石 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00CCCC33陨石 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff008-16|r 根据命中位置远近决定.|nCD: |cffffff0019.5|r|n快捷键: |cffff0000E|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff009-18|r 根据命中位置远近决定.|nCD: |cffffff0019|r|n快捷键: |cffff0000E|r|n'
+    - CasterArtCount [int] (lvl=0,col=0) = 1
+    - CastTypeCap [string] (lvl=0,col=0) = 'weapon'
+    - CastType [string] (lvl=0,col=0) = 'Abilities\\Spells\\Items\\AIfb\\AIfbSpecialArt.mdl'
+    - Priority [int] (lvl=0,col=0) = 1
+    - Udd1 [unreal] (lvl=4,col=1) = 0.0
+    - Area [unreal] (lvl=4,col=0) = 200.0
+    - Buffs [string] (lvl=2,col=0) = ''
+    - Buffs [string] (lvl=3,col=0) = ''
+    - Buffs [string] (lvl=4,col=0) = ''
+    - Area [unreal] (lvl=4,col=0) = 1200.0
+    - Cooldown [unreal] (lvl=4,col=0) = 18.5
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - EffectTarget [string] (lvl=4,col=0) = ''
+    - CastRange [int] (lvl=4,col=0) = 0
+    - Targets [string] (lvl=4,col=0) = ''
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00CCCC33陨石 4|r'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - TooltipExtended [string] (lvl=4,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff0010-20|r 根据命中位置远近决定.|nCD: |cffffff0018.5|r|n快捷键: |cffff0000E|r|n'
+    - Udd1 [unreal] (lvl=5,col=1) = 0.0
+    - Area [unreal] (lvl=5,col=0) = 200.0
+    - Buffs [string] (lvl=5,col=0) = ''
+    - Area [unreal] (lvl=5,col=0) = 1200.0
+    - Cooldown [unreal] (lvl=5,col=0) = 18.0
+    - Duration [unreal] (lvl=5,col=0) = 0.0
+    - EffectTarget [string] (lvl=5,col=0) = ''
+    - CastRange [int] (lvl=5,col=0) = 0
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00CCCC33陨石 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff0011-22|r 根据命中位置远近决定.|nCD: |cffffff0018|r|n快捷键: |cffff0000E|r|n'
+    - Udd1 [unreal] (lvl=6,col=1) = 0.0
+    - Area [unreal] (lvl=6,col=0) = 200.0
+    - Area [unreal] (lvl=6,col=0) = 1200.0
+    - Cooldown [unreal] (lvl=6,col=0) = 17.5
+    - HeroAbility [unreal] (lvl=6,col=0) = 0.0
+    - Duration [unreal] (lvl=6,col=0) = 0.0
+    - EffectTarget [string] (lvl=6,col=0) = ''
+    - CastRange [int] (lvl=6,col=0) = 0
+    - Targets [string] (lvl=6,col=0) = ''
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00CCCC33陨石 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff0012-24|r 根据命中位置远近决定.|nCD: |cffffff0017.5|r|n快捷键: |cffff0000E|r|n'
+    - Udd1 [unreal] (lvl=7,col=1) = 0.0
+    - Area [unreal] (lvl=7,col=0) = 200.0
+    - Buffs [string] (lvl=6,col=0) = ''
+    - Buffs [string] (lvl=7,col=0) = ''
+    - Area [unreal] (lvl=7,col=0) = 1200.0
+    - Cooldown [unreal] (lvl=7,col=0) = 17.0
+    - HeroAbility [unreal] (lvl=7,col=0) = 0.0
+    - EffectTarget [string] (lvl=7,col=0) = ''
+    - CastRange [int] (lvl=7,col=0) = 0
+    - Targets [string] (lvl=5,col=0) = ''
+    - Targets [string] (lvl=7,col=0) = ''
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00CCCC33陨石 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff0013-26|r 根据命中位置远近决定.|nCD: |cffffff0017.0|r|n快捷键: |cffff0000E|r'
+    - Area [unreal] (lvl=8,col=0) = 200.0
+    - Area [unreal] (lvl=8,col=0) = 1200.0
+    - Cooldown [unreal] (lvl=8,col=0) = 16.5
+    - HeroAbility [unreal] (lvl=5,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=8,col=0) = 0.0
+    - Duration [unreal] (lvl=7,col=0) = 0.0
+    - Duration [unreal] (lvl=8,col=0) = 0.0
+    - EffectTarget [string] (lvl=8,col=0) = ''
+    - CastRange [int] (lvl=8,col=0) = 0
+    - Targets [string] (lvl=8,col=0) = ''
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00CCCC33陨石 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '召唤一颗陨石砸向目标.|n伤害: |cffffff0014-28|r 根据命中位置远近决定.|nCD: |cffffff0016.5|r|n快捷键: |cffff0000E|r'
+    - Udd1 [unreal] (lvl=8,col=1) = 0.0
+    - Udd1 [unreal] (lvl=9,col=1) = 0.0
+    - Udd1 [unreal] (lvl=10,col=1) = 0.0
+    - Udd1 [unreal] (lvl=11,col=1) = 0.0
+    - Udd1 [unreal] (lvl=12,col=1) = 0.0
+    - Udd1 [unreal] (lvl=13,col=1) = 0.0
+    - Udd1 [unreal] (lvl=14,col=1) = 0.0
+    - Udd1 [unreal] (lvl=15,col=1) = 0.0
+    - Udd1 [unreal] (lvl=16,col=1) = 0.0
+    - Udd1 [unreal] (lvl=17,col=1) = 0.0
+    - Udd1 [unreal] (lvl=18,col=1) = 0.0
+    - Udd1 [unreal] (lvl=19,col=1) = 0.0
+    - Udd1 [unreal] (lvl=20,col=1) = 0.0
+    - Area [unreal] (lvl=9,col=0) = 200.0
+    - Area [unreal] (lvl=10,col=0) = 200.0
+    - Area [unreal] (lvl=11,col=0) = 70.0
+    - Area [unreal] (lvl=12,col=0) = 70.0
+    - Area [unreal] (lvl=13,col=0) = 70.0
+    - Area [unreal] (lvl=14,col=0) = 70.0
+    - Area [unreal] (lvl=15,col=0) = 70.0
+    - Area [unreal] (lvl=16,col=0) = 70.0
+    - Area [unreal] (lvl=17,col=0) = 70.0
+    - Area [unreal] (lvl=18,col=0) = 70.0
+    - Area [unreal] (lvl=19,col=0) = 70.0
+    - Area [unreal] (lvl=20,col=0) = 70.0
+    - Buffs [string] (lvl=8,col=0) = ''
+    - Buffs [string] (lvl=9,col=0) = ''
+    - Buffs [string] (lvl=10,col=0) = ''
+    - Buffs [string] (lvl=11,col=0) = ''
+    - Buffs [string] (lvl=12,col=0) = ''
+    - Buffs [string] (lvl=13,col=0) = ''
+    - Buffs [string] (lvl=14,col=0) = ''
+    - Buffs [string] (lvl=15,col=0) = ''
+    - Buffs [string] (lvl=16,col=0) = ''
+    - Buffs [string] (lvl=17,col=0) = ''
+    - Buffs [string] (lvl=18,col=0) = ''
+    - Buffs [string] (lvl=19,col=0) = ''
+    - Buffs [string] (lvl=20,col=0) = ''
+    - Area [unreal] (lvl=9,col=0) = 1200.0
+    - Area [unreal] (lvl=10,col=0) = 1200.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=11,col=0) = 20.0
+    - Cooldown [unreal] (lvl=12,col=0) = 19.5
+    - Cooldown [unreal] (lvl=13,col=0) = 19.0
+    - Cooldown [unreal] (lvl=14,col=0) = 18.5
+    - Cooldown [unreal] (lvl=15,col=0) = 18.0
+    - Cooldown [unreal] (lvl=16,col=0) = 17.5
+    - Cooldown [unreal] (lvl=17,col=0) = 17.0
+    - Cooldown [unreal] (lvl=18,col=0) = 16.5
+    - HeroAbility [unreal] (lvl=9,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=10,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=11,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=12,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=13,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=14,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=15,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=16,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=17,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=18,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=19,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=20,col=0) = 0.0
+    - Duration [unreal] (lvl=9,col=0) = 0.0
+    - Duration [unreal] (lvl=10,col=0) = 0.0
+    - Duration [unreal] (lvl=11,col=0) = 0.0
+    - Duration [unreal] (lvl=12,col=0) = 0.0
+    - Duration [unreal] (lvl=13,col=0) = 0.0
+    - Duration [unreal] (lvl=14,col=0) = 0.0
+    - Duration [unreal] (lvl=15,col=0) = 0.0
+    - Duration [unreal] (lvl=16,col=0) = 0.0
+    - Duration [unreal] (lvl=17,col=0) = 0.0
+    - Duration [unreal] (lvl=18,col=0) = 0.0
+    - Duration [unreal] (lvl=19,col=0) = 0.0
+    - Duration [unreal] (lvl=20,col=0) = 0.0
+    - EffectTarget [string] (lvl=9,col=0) = ''
+    - EffectTarget [string] (lvl=10,col=0) = ''
+    - EffectTarget [string] (lvl=11,col=0) = ''
+    - EffectTarget [string] (lvl=12,col=0) = ''
+    - EffectTarget [string] (lvl=13,col=0) = ''
+    - EffectTarget [string] (lvl=14,col=0) = ''
+    - EffectTarget [string] (lvl=15,col=0) = ''
+    - EffectTarget [string] (lvl=16,col=0) = ''
+    - EffectTarget [string] (lvl=17,col=0) = ''
+    - EffectTarget [string] (lvl=18,col=0) = ''
+    - EffectTarget [string] (lvl=19,col=0) = ''
+    - EffectTarget [string] (lvl=20,col=0) = ''
+    - CastRange [int] (lvl=9,col=0) = 0
+    - CastRange [int] (lvl=10,col=0) = 0
+    - CastRange [int] (lvl=11,col=0) = 0
+    - CastRange [int] (lvl=12,col=0) = 0
+    - CastRange [int] (lvl=13,col=0) = 0
+    - CastRange [int] (lvl=14,col=0) = 0
+    - CastRange [int] (lvl=15,col=0) = 0
+    - CastRange [int] (lvl=16,col=0) = 0
+    - CastRange [int] (lvl=17,col=0) = 0
+    - CastRange [int] (lvl=18,col=0) = 0
+    - CastRange [int] (lvl=19,col=0) = 0
+    - CastRange [int] (lvl=20,col=0) = 0
+    - Targets [string] (lvl=9,col=0) = ''
+    - Targets [string] (lvl=10,col=0) = ''
+    - Targets [string] (lvl=11,col=0) = ''
+    - Targets [string] (lvl=12,col=0) = ''
+    - Targets [string] (lvl=13,col=0) = ''
+    - Targets [string] (lvl=14,col=0) = ''
+    - Targets [string] (lvl=15,col=0) = ''
+    - Targets [string] (lvl=16,col=0) = ''
+    - Targets [string] (lvl=17,col=0) = ''
+    - Targets [string] (lvl=18,col=0) = ''
+    - Targets [string] (lvl=19,col=0) = ''
+    - Targets [string] (lvl=20,col=0) = ''
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffcccc33陨石 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffcccc33陨石 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffcccc33陨石 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffcccc33陨石 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffcccc33陨石 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffcccc33陨石 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffcccc33陨石 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffcccc33陨石 8|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff000.6|r|n最大爆炸伤害: |cffffff004.5|r|nCD: |cffffff0020|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff000.9|r|n最大爆炸伤害: |cffffff006.0|r|nCD: |cffffff0019.5|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff001.2|r|n最大爆炸伤害: |cffffff007.5|r|nCD: |cffffff0019|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff001.5|r|n最大爆炸伤害: |cffffff009|r|nCD: |cffffff0018.5|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff001.8|r|n最大爆炸伤害: |cffffff0010.5|r|nCD: |cffffff0018|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff002.1|r|n最大爆炸伤害: |cffffff0012.0|r|nCD: |cffffff0017.5|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff002.4|r|n最大爆炸伤害: |cffffff0013.5|r|nCD: |cffffff0017|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '召唤一个滚石碾压敌方术士并吸收飞弹技能|n滚石降低目标移动速度|cffffff0050%|r，滚到最大范围后爆炸.|n伤害系数: |cffffff002.7|r|n最大爆炸伤害: |cffffff0015|r|nCD: |cffffff0016.5|r|n快捷键: |cffff0000E|r'
+
+## S009  (基础: Afla)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '分裂弹'
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - BuffArtX [int] (lvl=0,col=0) = 1
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - CastType [string] (lvl=0,col=0) = ''
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Hotkey [string] (lvl=0,col=0) = 'E'
+    - Fla1 [int] (lvl=1,col=1) = 0
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=1,col=0) = 30.0
+    - Cooldown [unreal] (lvl=2,col=0) = 27.0
+    - Cooldown [unreal] (lvl=3,col=0) = 25.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00CCFF99分裂弹 1|r'
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00CCFF99分裂弹 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00CCFF99分裂弹 3|r'
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Fla2 [unreal] (lvl=1,col=2) = 0.0
+    - TooltipExtended [string] (lvl=1,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff003.0|n|rCD: |cffffff0030|r|n快捷键: |cffff0000E|r'
+    - Levels [int] (lvl=0,col=0) = 20
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=4,col=0) = 24.0
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00CCFF99分裂弹 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff003.5|n|rCD: |cffffff0027|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff004.0|n|rCD: |cffffff0025|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff004.5|n|rCD: |cffffff0024|r|n快捷键: |cffff0000E|r'
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 23.0
+    - Cooldown [unreal] (lvl=6,col=0) = 22.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00CCFF99分裂弹 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00CCFF99分裂弹 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff005.0|n|rCD: |cffffff0023|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff005.5|n|rCD: |cffffff0022|r|n快捷键: |cffff0000E|r'
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - TooltipExtended [string] (lvl=11,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff003.0|n|rCD: |cffffff0030|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff003.5|n|rCD: |cffffff0027|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff004.0|n|rCD: |cffffff0025|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff004.5|n|rCD: |cffffff0024|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff005.0|n|rCD: |cffffff0023|r|n快捷键: |cffff0000E|r'
+    - Cooldown [unreal] (lvl=11,col=0) = 30.0
+    - Cooldown [unreal] (lvl=12,col=0) = 27.0
+    - Cooldown [unreal] (lvl=13,col=0) = 25.0
+    - Cooldown [unreal] (lvl=14,col=0) = 24.0
+    - Cooldown [unreal] (lvl=15,col=0) = 23.0
+    - TooltipExtended [string] (lvl=16,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff005.5|n|rCD: |cffffff0022|r|n快捷键: |cffff0000E|r'
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffccff99分裂弹 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|c00CCFF99分裂弹 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|c00CCFF99分裂弹 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|c00CCFF99分裂弹 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|c00CCFF99分裂弹 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|c00CCFF99分裂弹 6|r'
+    - Cooldown [unreal] (lvl=16,col=0) = 22.0
+    - Cooldown [unreal] (lvl=7,col=0) = 21.0
+    - Cooldown [unreal] (lvl=17,col=0) = 21.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00CCFF99分裂弹 7|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00CCFF99分裂弹 8|r'
+    - TooltipNormal [string] (lvl=9,col=0) = '|c00CCFF99分裂弹 9|r'
+    - TooltipNormal [string] (lvl=10,col=0) = '|c00CCFF99分裂弹 10|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|c00CCFF99分裂弹 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|c00CCFF99分裂弹 8|r'
+    - TooltipNormal [string] (lvl=19,col=0) = '|c00CCFF99分裂弹 9|r'
+    - TooltipNormal [string] (lvl=20,col=0) = '|cffccff99分裂弹 10|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff006.0|n|rCD: |cffffff0021|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff006.0|n|rCD: |cffffff0021|r|n快捷键: |cffff0000E|r'
+    - Cooldown [unreal] (lvl=8,col=0) = 20.0
+    - Cooldown [unreal] (lvl=18,col=0) = 20.0
+    - TooltipExtended [string] (lvl=8,col=0) = '主弹撞击后散射成小飞弹|n每飞弹伤害: |cffffff006.5|n|rCD: |cffffff0020|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '飞弹不断向四面八方散射|n每飞弹伤害: |cffffff006.5|n|rCD: |cffffff0020|r|n快捷键: |cffff0000E|r'
+    - Animations [string] (lvl=0,col=0) = 'spell'
+    - Requirements [string] (lvl=0,col=0) = ''
+
+## S010  (基础: AOwk)
+- 全部修改字段:
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Cooldown [unreal] (lvl=1,col=0) = 30.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = 'E'
+    - TooltipExtended [string] (lvl=1,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff005.4|r|n持续: |cffffff003.1|r|nCD: |cffffff0030|r|n快捷键: |cffff0000E|r'
+    - Owk1 [unreal] (lvl=1,col=1) = 0.0
+    - Owk2 [unreal] (lvl=1,col=2) = 0.0
+    - BuffArtX [int] (lvl=0,col=0) = 1
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Owk3 [unreal] (lvl=1,col=3) = 0.0
+    - Owk4 [int] (lvl=1,col=4) = 0
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00CCCC33疾风步 1|r'
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Owk3 [unreal] (lvl=2,col=3) = 0.0
+    - Owk3 [unreal] (lvl=3,col=3) = 0.0
+    - Owk2 [unreal] (lvl=2,col=2) = 0.0
+    - Owk2 [unreal] (lvl=3,col=2) = 0.0
+    - Owk1 [unreal] (lvl=2,col=1) = 0.0
+    - Owk1 [unreal] (lvl=3,col=1) = 0.0
+    - Buffs [string] (lvl=2,col=0) = ''
+    - Buffs [string] (lvl=3,col=0) = ''
+    - Cooldown [unreal] (lvl=2,col=0) = 26.0
+    - Cooldown [unreal] (lvl=3,col=0) = 23.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - Duration [unreal] (lvl=2,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=3,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00CCCC33疾风步 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00CCCC33疾风步 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff006.2|r|n持续: |cffffff003.1|r|nCD: |cffffff0026|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff007|r|n持续: |cffffff003.1|r|nCD: |cffffff0023|r|n快捷键: |cffff0000E|r'
+    - Levels [int] (lvl=0,col=0) = 20
+    - Owk3 [unreal] (lvl=4,col=3) = 0.0
+    - Owk3 [unreal] (lvl=5,col=3) = 0.0
+    - Owk4 [int] (lvl=2,col=4) = 0
+    - Owk4 [int] (lvl=3,col=4) = 0
+    - Owk4 [int] (lvl=4,col=4) = 0
+    - Owk4 [int] (lvl=5,col=4) = 0
+    - Owk2 [unreal] (lvl=4,col=2) = 0.0
+    - Owk2 [unreal] (lvl=5,col=2) = 0.0
+    - Owk1 [unreal] (lvl=4,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=5,col=1) = 0.0010000000474974513
+    - Buffs [string] (lvl=4,col=0) = ''
+    - Buffs [string] (lvl=5,col=0) = ''
+    - Cooldown [unreal] (lvl=4,col=0) = 21.0
+    - Cooldown [unreal] (lvl=5,col=0) = 20.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=5,col=0) = 0.0
+    - Duration [unreal] (lvl=4,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=5,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=4,col=0) = 0
+    - CastRange [int] (lvl=5,col=0) = 0
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00CCCC33疾风步 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00CCCC33疾风步 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff007.8|r|n持续: |cffffff003.1|r|nCD: |cffffff0021|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff008.6|r|n持续: |cffffff003.1|r|nCD: |cffffff0020|r|n快捷键: |cffff0000E|r'
+    - Name [string] (lvl=0,col=0) = '疾风步'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Owk3 [unreal] (lvl=6,col=3) = 0.0
+    - Owk4 [int] (lvl=6,col=4) = 0
+    - Owk2 [unreal] (lvl=6,col=2) = 0.0
+    - Owk1 [unreal] (lvl=6,col=1) = 0.0010000000474974513
+    - Buffs [string] (lvl=6,col=0) = ''
+    - Cooldown [unreal] (lvl=6,col=0) = 19.0
+    - HeroAbility [unreal] (lvl=6,col=0) = 0.0
+    - Duration [unreal] (lvl=6,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=6,col=0) = 0
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00CCCC33疾风步 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff009.4|r|n持续: |cffffff003.1|r|nCD: |cffffff0019|r|n快捷键: |cffff0000E|r'
+    - Owk3 [unreal] (lvl=7,col=3) = 0.0
+    - Owk4 [int] (lvl=7,col=4) = 0
+    - Owk2 [unreal] (lvl=7,col=2) = 0.0
+    - Owk1 [unreal] (lvl=7,col=1) = 0.0010000000474974513
+    - Cooldown [unreal] (lvl=7,col=0) = 18.0
+    - HeroAbility [unreal] (lvl=7,col=0) = 0.0
+    - Duration [unreal] (lvl=7,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=7,col=0) = 0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00CCCC33疾风步 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff0010.2|r|n持续: |cffffff003.1|r|nCD: |cffffff0018|r|n快捷键: |cffff0000E|r'
+    - Buffs [string] (lvl=7,col=0) = ''
+    - Cooldown [unreal] (lvl=8,col=0) = 17.0
+    - HeroAbility [unreal] (lvl=8,col=0) = 0.0
+    - Duration [unreal] (lvl=8,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=8,col=0) = 0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00CCCC33疾风步 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '进入隐身状态并获得|cffffff00200|r移动速度提升. |n对贴身目标进行破隐一击.|n伤害: |cffffff0011|r|n持续: |cffffff003.1|r|nCD: |cffffff0017|r|n快捷键: |cffff0000E|r'
+    - Owk3 [unreal] (lvl=8,col=3) = 0.0
+    - Owk4 [int] (lvl=8,col=4) = 0
+    - Owk2 [unreal] (lvl=8,col=2) = 0.0
+    - Owk1 [unreal] (lvl=8,col=1) = 0.0010000000474974513
+    - Buffs [string] (lvl=8,col=0) = ''
+    - Owk3 [unreal] (lvl=9,col=3) = 0.0
+    - Owk3 [unreal] (lvl=10,col=3) = 0.0
+    - Owk3 [unreal] (lvl=11,col=3) = 0.0
+    - Owk3 [unreal] (lvl=12,col=3) = 0.0
+    - Owk3 [unreal] (lvl=13,col=3) = 0.0
+    - Owk3 [unreal] (lvl=14,col=3) = 0.0
+    - Owk3 [unreal] (lvl=15,col=3) = 0.0
+    - Owk3 [unreal] (lvl=16,col=3) = 0.0
+    - Owk3 [unreal] (lvl=17,col=3) = 0.0
+    - Owk3 [unreal] (lvl=18,col=3) = 0.0
+    - Owk3 [unreal] (lvl=19,col=3) = 0.0
+    - Owk3 [unreal] (lvl=20,col=3) = 0.0
+    - Owk4 [int] (lvl=9,col=4) = 0
+    - Owk4 [int] (lvl=10,col=4) = 0
+    - Owk4 [int] (lvl=11,col=4) = 0
+    - Owk4 [int] (lvl=12,col=4) = 0
+    - Owk4 [int] (lvl=13,col=4) = 0
+    - Owk4 [int] (lvl=14,col=4) = 0
+    - Owk4 [int] (lvl=15,col=4) = 0
+    - Owk4 [int] (lvl=16,col=4) = 0
+    - Owk4 [int] (lvl=17,col=4) = 0
+    - Owk4 [int] (lvl=18,col=4) = 0
+    - Owk4 [int] (lvl=19,col=4) = 0
+    - Owk4 [int] (lvl=20,col=4) = 0
+    - Owk2 [unreal] (lvl=9,col=2) = 0.0
+    - Owk2 [unreal] (lvl=10,col=2) = 0.0
+    - Owk2 [unreal] (lvl=11,col=2) = 0.0
+    - Owk2 [unreal] (lvl=12,col=2) = 0.0
+    - Owk2 [unreal] (lvl=13,col=2) = 0.0
+    - Owk2 [unreal] (lvl=14,col=2) = 0.0
+    - Owk2 [unreal] (lvl=15,col=2) = 0.0
+    - Owk2 [unreal] (lvl=16,col=2) = 0.0
+    - Owk2 [unreal] (lvl=17,col=2) = 0.0
+    - Owk2 [unreal] (lvl=18,col=2) = 0.0
+    - Owk2 [unreal] (lvl=19,col=2) = 0.0
+    - Owk2 [unreal] (lvl=20,col=2) = 0.0
+    - Owk1 [unreal] (lvl=9,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=10,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=11,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=12,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=13,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=14,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=15,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=16,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=17,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=18,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=19,col=1) = 0.0010000000474974513
+    - Owk1 [unreal] (lvl=20,col=1) = 0.0010000000474974513
+    - Buffs [string] (lvl=9,col=0) = ''
+    - Buffs [string] (lvl=10,col=0) = ''
+    - Buffs [string] (lvl=11,col=0) = ''
+    - Buffs [string] (lvl=12,col=0) = ''
+    - Buffs [string] (lvl=13,col=0) = ''
+    - Buffs [string] (lvl=14,col=0) = ''
+    - Buffs [string] (lvl=15,col=0) = ''
+    - Buffs [string] (lvl=16,col=0) = ''
+    - Buffs [string] (lvl=17,col=0) = ''
+    - Buffs [string] (lvl=18,col=0) = ''
+    - Buffs [string] (lvl=19,col=0) = ''
+    - Buffs [string] (lvl=20,col=0) = ''
+    - Cooldown [unreal] (lvl=11,col=0) = 30.0
+    - Cooldown [unreal] (lvl=12,col=0) = 26.0
+    - Cooldown [unreal] (lvl=13,col=0) = 23.0
+    - Cooldown [unreal] (lvl=14,col=0) = 21.0
+    - Cooldown [unreal] (lvl=15,col=0) = 20.0
+    - Cooldown [unreal] (lvl=16,col=0) = 19.0
+    - Cooldown [unreal] (lvl=17,col=0) = 18.0
+    - Cooldown [unreal] (lvl=18,col=0) = 17.0
+    - HeroAbility [unreal] (lvl=9,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=10,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=11,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=12,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=13,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=14,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=15,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=16,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=17,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=18,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=19,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=20,col=0) = 0.0
+    - Duration [unreal] (lvl=9,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=10,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=11,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=12,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=13,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=14,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=15,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=16,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=17,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=18,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=19,col=0) = 0.009999999776482582
+    - Duration [unreal] (lvl=20,col=0) = 0.009999999776482582
+    - CastRange [int] (lvl=9,col=0) = 0
+    - CastRange [int] (lvl=10,col=0) = 0
+    - CastRange [int] (lvl=11,col=0) = 0
+    - CastRange [int] (lvl=12,col=0) = 0
+    - CastRange [int] (lvl=13,col=0) = 0
+    - CastRange [int] (lvl=14,col=0) = 0
+    - CastRange [int] (lvl=15,col=0) = 0
+    - CastRange [int] (lvl=16,col=0) = 0
+    - CastRange [int] (lvl=17,col=0) = 0
+    - CastRange [int] (lvl=18,col=0) = 0
+    - CastRange [int] (lvl=19,col=0) = 0
+    - CastRange [int] (lvl=20,col=0) = 0
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffcccc33疾风步 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffcccc33疾风步 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffcccc33疾风步 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffcccc33疾风步 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffcccc33疾风步 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffcccc33疾风步 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffcccc33疾风步 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffcccc33疾风步 8|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0030|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0026|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0023|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0021|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0020|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0019|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0018|r|n快捷键: |cffff0000E|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '进入短暂隐身状态，效果可以传递给队友.|n持续: |cffffff004|r|nCD: |cffffff0017|r|n快捷键: |cffff0000E|r'
+
+## S011  (基础: AHta)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '瞬间移动'
+    - Idet [int] (lvl=1,col=1) = 0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - CastType [string] (lvl=0,col=0) = ''
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 16.0
+    - Levels [int] (lvl=0,col=0) = 9
+    - TooltipNormal [string] (lvl=2,col=0) = '|c006969FF瞬间移动 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c006969FF瞬间移动 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '瞬间移动至目标位置|n距离: |cffffff00770|r, CD: |cffffff0016|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '瞬间移动至目标位置|n距离: |cffffff00840|r, CD: |cffffff0013.5|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '瞬间移动至目标位置|n距离: |cffffff00910|r, CD: |cffffff0011.5|r|n快捷键: |cffff0000R|r'
+    - Cooldown [unreal] (lvl=2,col=0) = 13.5
+    - Cooldown [unreal] (lvl=3,col=0) = 11.5
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - TooltipNormal [string] (lvl=1,col=0) = '|c006969FF瞬间移动 1|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '瞬间移动至目标位置|n距离: |cffffff00980|r, CD: |cffffff0010|r|n快捷键: |cffff0000R|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c006969FF瞬间移动 4|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 10.0
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 9.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|c006969FF瞬间移动 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '瞬间移动至目标位置|n距离: |cffffff001050|r, CD: |cffffff009|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=6,col=0) = 8.0
+    - TooltipNormal [string] (lvl=6,col=0) = '|c006969FF瞬间移动 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '瞬间移动至目标位置|n距离: |cffffff001120|r, CD: |cffffff008|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=7,col=0) = 7.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c006969FF瞬间移动 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '瞬间移动至目标位置|n距离: |cffffff001190|r, CD: |cffffff007|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 6.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c006969FF瞬间移动 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '瞬间移动至目标位置|n距离: |cffffff001260|r, CD: |cffffff006|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=9,col=0) = 5.5
+    - TooltipNormal [string] (lvl=9,col=0) = '|c006969FF瞬间移动 9|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '瞬间移动至目标位置|n距离: |cffffff001330|r, CD: |cffffff005.5|r|n快捷键: |cffff0000R|r'
+    - Requirements [string] (lvl=0,col=0) = ''
+
+## S012  (基础: AHta)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '冲撞'
+    - Idet [int] (lvl=1,col=1) = 0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - CastType [string] (lvl=0,col=0) = ''
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 16.5
+    - Levels [int] (lvl=0,col=0) = 20
+    - TooltipNormal [string] (lvl=2,col=0) = '|c006969FF冲撞 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c006969FF冲撞 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff005.4|r|nCD: |cffffff0016.5|r|n距离: |cffffff00700|r|n快捷键: |cffff0000R|r|n'
+    - TooltipExtended [string] (lvl=2,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff005.8|r|nCD: |cffffff0014.5|r|n距离: |cffffff00750|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff006.2|r|nCD: |cffffff0013.0|r|n距离: |cffffff00800|r|n快捷键: |cffff0000R|r'
+    - Cooldown [unreal] (lvl=2,col=0) = 14.5
+    - Cooldown [unreal] (lvl=3,col=0) = 13.0
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - TooltipNormal [string] (lvl=1,col=0) = '|c006969FF冲撞 1|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff006.6|r|nCD: |cffffff0012.0|r|n距离: |cffffff00850|r|n快捷键: |cffff0000R|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c006969FF冲撞 4|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 12.0
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 11.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|c006969FF冲撞 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff007|r|nCD: |cffffff0011.0|r|n距离: |cffffff00900|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=6,col=0) = 10.0
+    - TooltipNormal [string] (lvl=6,col=0) = '|c006969FF冲撞 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff007.4|r|nCD: |cffffff0010.0|r|n距离: |cffffff00950|r|n快捷键: |cffff0000R|r'
+    - Cooldown [unreal] (lvl=7,col=0) = 9.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c006969FF冲撞 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff007.8|r|nCD: |cffffff009.0|r|n距离: |cffffff001000|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 8.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|c006969FF冲撞 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff008.2|r|nCD: |cffffff008.0|r|n距离: |cffffff001050|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=9,col=0) = 7.0
+    - TooltipNormal [string] (lvl=9,col=0) = '|c006969FF冲撞 9|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '加速冲向目标撞击造成伤害|n伤害: |cffffff008.6|r|nCD: |cffffff007.0|r|n距离: |cffffff001100|r|n快捷键: |cffff0000R|r'
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - Requirements [string] (lvl=0,col=0) = ''
+    - Cooldown [unreal] (lvl=11,col=0) = 17.5
+    - Cooldown [unreal] (lvl=12,col=0) = 15.0
+    - Cooldown [unreal] (lvl=13,col=0) = 13.0
+    - Cooldown [unreal] (lvl=14,col=0) = 11.5
+    - Cooldown [unreal] (lvl=15,col=0) = 10.0
+    - Cooldown [unreal] (lvl=16,col=0) = 9.5
+    - Cooldown [unreal] (lvl=17,col=0) = 9.0
+    - Cooldown [unreal] (lvl=18,col=0) = 8.5
+    - Cooldown [unreal] (lvl=19,col=0) = 8.0
+    - TooltipExtended [string] (lvl=11,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff0017.5|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff0015|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff0013|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff0011.5|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff0010|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff009.5|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff009|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff008.5|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - TooltipExtended [string] (lvl=19,col=0) = '短时间内将速度提升到极限|n|cff00ff00驱散锁链|r|nCD: |cffffff008|r|n持续: |cffffff003.1|r|n快捷键: |cffff0000C|r'
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+
+## S013  (基础: AHta)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '移形换位'
+    - Idet [int] (lvl=1,col=1) = 0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - CastType [string] (lvl=0,col=0) = ''
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 16.0
+    - Levels [int] (lvl=0,col=0) = 20
+    - TooltipNormal [string] (lvl=2,col=0) = '|cff6969ff移形换位 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cff6969ff移形换位 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '和目标术士交换位置.|nCD: |cffffff0016|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '和目标术士交换位置.|nCD: |cffffff0013.5|r|n快捷键: |cffff0000R|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '和目标术士交换位置.|nCD: |cffffff0011.5|r|n快捷键: |cffff0000R|r|n'
+    - Cooldown [unreal] (lvl=2,col=0) = 13.5
+    - Cooldown [unreal] (lvl=3,col=0) = 11.5
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - TooltipNormal [string] (lvl=1,col=0) = '|cff6969ff移形换位 1|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '和目标术士交换位置.|nCD: |cffffff0010|r|n快捷键: |cffff0000R|r|n'
+    - TooltipNormal [string] (lvl=4,col=0) = '|cff6969ff移形换位 4|r'
+    - Cooldown [unreal] (lvl=4,col=0) = 10.0
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 9.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|cff6969ff移形换位 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '和目标术士交换位置.|nCD: |cffffff009|r|n快捷键: |cffff0000R|r|n'
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=6,col=0) = 8.0
+    - TooltipNormal [string] (lvl=6,col=0) = '|cff6969ff移形换位 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '和目标术士交换位置.|nCD: |cffffff008|r|n快捷键: |cffff0000R|r|n'
+    - Cooldown [unreal] (lvl=7,col=0) = 7.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|cff6969ff移形换位 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '和目标术士交换位置.|nCD: |cffffff007|r|n快捷键: |cffff0000R|r'
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 6.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|cff6969ff移形换位 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '和目标术士交换位置.|nCD: |cffffff006|r|n快捷键: |cffff0000R|r'
+    - TooltipNormal [string] (lvl=11,col=0) = '|cff6969ff移形换位 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cff6969ff移形换位 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cff6969ff移形换位 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cff6969ff移形换位 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cff6969ff移形换位 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cff6969ff移形换位 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cff6969ff移形换位 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cff6969ff移形换位 8|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff0014|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff0011.5|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff009.5|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff008|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff007|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff006|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff005|r|n快捷键: |cffff0000R|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '和目标飞弹或柱子交换位置.|nCD: |cffffff004|r|n快捷键: |cffff0000R|r'
+    - Cooldown [unreal] (lvl=11,col=0) = 14.0
+    - Cooldown [unreal] (lvl=12,col=0) = 11.5
+    - Cooldown [unreal] (lvl=13,col=0) = 9.5
+    - Cooldown [unreal] (lvl=14,col=0) = 8.0
+    - Cooldown [unreal] (lvl=15,col=0) = 7.0
+    - Cooldown [unreal] (lvl=16,col=0) = 6.0
+    - Cooldown [unreal] (lvl=17,col=0) = 5.0
+    - Cooldown [unreal] (lvl=18,col=0) = 4.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Requirements [string] (lvl=0,col=0) = ''
+
+## S014  (基础: Advm)
+- 全部修改字段:
+    - dvm5 [unreal] (lvl=1,col=5) = 0.0
+    - dvm2 [unreal] (lvl=1,col=2) = 0.0
+    - dvm1 [unreal] (lvl=1,col=1) = 0.0
+    - CastArt [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - CastingSpeed [int] (lvl=0,col=0) = 0
+    - ManaCost [unreal] (lvl=0,col=0) = 0.0
+    - Targets [string] (lvl=1,col=0) = 'sapper'
+    - Area [unreal] (lvl=1,col=0) = 75.0
+    - Cooldown [unreal] (lvl=1,col=0) = 22.0
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00FF9696汲取 1|r'
+    - Levels [int] (lvl=0,col=0) = 20
+    - dvm6 [int] (lvl=2,col=6) = 1
+    - dvm6 [int] (lvl=3,col=6) = 1
+    - Targets [string] (lvl=2,col=0) = 'sapper'
+    - Targets [string] (lvl=3,col=0) = 'sapper'
+    - Area [unreal] (lvl=2,col=0) = 75.0
+    - Area [unreal] (lvl=3,col=0) = 75.0
+    - Cooldown [unreal] (lvl=2,col=0) = 20.0
+    - Cooldown [unreal] (lvl=3,col=0) = 19.0
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00FF9696汲取 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00FF9696汲取 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff006|n|r持续: |cffffff004 + 0.5 x 吸血精通|r|nCD: |cffffff0022.0|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff007|n|r持续: |cffffff005 + 0.5 x 吸血精通|r|nCD: |cffffff0020.0|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff008|n|r持续: |cffffff006 + 0.5 x 吸血精通|r|nCD: |cffffff0019.0|r|n快捷键: |cffff0000T|r'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - Hotkey [string] (lvl=0,col=0) = 'T'
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - dvm6 [int] (lvl=4,col=6) = 1
+    - Area [unreal] (lvl=4,col=0) = 75.0
+    - Cooldown [unreal] (lvl=4,col=0) = 18.5
+    - TooltipExtended [string] (lvl=4,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff009|n|r持续: |cffffff007 + 0.5 x 吸血精通|r|nCD: |cffffff0018.5|r|n快捷键: |cffff0000T|r'
+    - Targets [string] (lvl=4,col=0) = 'sapper'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00FF9696汲取 4|r'
+    - Name [string] (lvl=0,col=0) = '汲取'
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - dvm6 [int] (lvl=5,col=6) = 1
+    - Area [unreal] (lvl=5,col=0) = 75.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 18.0
+    - Targets [string] (lvl=5,col=0) = 'sapper'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00FF9696汲取 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff0010|n|r持续: |cffffff008 + 0.5 x 吸血精通|r|nCD: |cffffff0018.0|r|n快捷键: |cffff0000T|r'
+    - Area [unreal] (lvl=6,col=0) = 75.0
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=6,col=0) = 17.5
+    - Targets [string] (lvl=6,col=0) = 'sapper'
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00FF9696汲取 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff0011|n|r持续: |cffffff009 + 0.5 x 吸血精通|r|nCD: |cffffff0017.5|r|n快捷键: |cffff0000T|r'
+    - dvm6 [int] (lvl=6,col=6) = 1
+    - dvm6 [int] (lvl=7,col=6) = 1
+    - Area [unreal] (lvl=7,col=0) = 75.0
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=7,col=0) = 17.0
+    - Targets [string] (lvl=7,col=0) = 'sapper'
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00FF9696汲取 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff0012|n|r持续: |cffffff0010 + 0.5 x 吸血精通|r|nCD: |cffffff0017.0|r|n快捷键: |cffff0000T|r'
+    - dvm6 [int] (lvl=8,col=6) = 1
+    - Area [unreal] (lvl=8,col=0) = 75.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 16.5
+    - Targets [string] (lvl=8,col=0) = 'sapper'
+    - TooltipNormal [string] (lvl=8,col=0) = '|c00FF9696汲取 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '吸取生命并减速敌人或者治疗并加速友军.|n伤害: |cffffff0013|n|r持续: |cffffff0011 + 0.5 x 吸血精通|r|nCD: |cffffff0016.5|r|n快捷键: |cffff0000T|r'
+    - dvm6 [int] (lvl=9,col=6) = 1
+    - dvm6 [int] (lvl=10,col=6) = 1
+    - dvm6 [int] (lvl=11,col=6) = 1
+    - dvm6 [int] (lvl=12,col=6) = 1
+    - dvm6 [int] (lvl=13,col=6) = 1
+    - dvm6 [int] (lvl=14,col=6) = 1
+    - dvm6 [int] (lvl=15,col=6) = 1
+    - dvm6 [int] (lvl=16,col=6) = 1
+    - dvm6 [int] (lvl=17,col=6) = 1
+    - dvm6 [int] (lvl=18,col=6) = 1
+    - dvm6 [int] (lvl=19,col=6) = 1
+    - dvm6 [int] (lvl=20,col=6) = 1
+    - Area [unreal] (lvl=9,col=0) = 75.0
+    - Area [unreal] (lvl=10,col=0) = 75.0
+    - Area [unreal] (lvl=11,col=0) = 75.0
+    - Area [unreal] (lvl=12,col=0) = 75.0
+    - Area [unreal] (lvl=13,col=0) = 75.0
+    - Area [unreal] (lvl=14,col=0) = 75.0
+    - Area [unreal] (lvl=15,col=0) = 75.0
+    - Area [unreal] (lvl=16,col=0) = 75.0
+    - Area [unreal] (lvl=17,col=0) = 75.0
+    - Area [unreal] (lvl=18,col=0) = 75.0
+    - Area [unreal] (lvl=19,col=0) = 75.0
+    - Area [unreal] (lvl=20,col=0) = 75.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=12,col=0) = 21.5
+    - Cooldown [unreal] (lvl=11,col=0) = 22.0
+    - Cooldown [unreal] (lvl=13,col=0) = 21.0
+    - Cooldown [unreal] (lvl=14,col=0) = 20.5
+    - Cooldown [unreal] (lvl=15,col=0) = 20.0
+    - Cooldown [unreal] (lvl=16,col=0) = 19.5
+    - Cooldown [unreal] (lvl=17,col=0) = 19.0
+    - Cooldown [unreal] (lvl=18,col=0) = 18.5
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffff9696汲取 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffff9696汲取 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffff9696汲取 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffff9696汲取 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffff9696汲取 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffff9696汲取 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffff9696汲取 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffff9696汲取 8|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff005|n|r持续: |cffffff007.5 + 吸血精通|r|nCD: |cffffff0022.0|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff006|n|r持续: |cffffff009 + 吸血精通|r|nCD: |cffffff0021.5|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff007|n|r持续: |cffffff0010.5 + 吸血精通|r|nCD: |cffffff0021.0|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff008|n|r持续: |cffffff0012 + 吸血精通|r|nCD: |cffffff0020.5|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff009|n|r持续: |cffffff0013.5 + 吸血精通|r|nCD: |cffffff0020.0|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff009|n|r持续: |cffffff0015 + 吸血精通|r|nCD: |cffffff0019.5|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff0010|n|r持续: |cffffff0016.5 + 吸血精通|r|nCD: |cffffff0019.0|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '击中敌方目标后降低目标伤害|cffffff0050%|n|r击中自己或友军则增加伤害|cffffff0010%|r，并弹向附近敌人。.|n伤害: |cffffff0011|n|r持续: |cffffff0018 + 吸血精通|r|nCD: |cffffff0018.5|r|n快捷键: |cffff0000T|r'
+
+## S015  (基础: ACcv)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '火焰喷射'
+    - Ucs2 [unreal] (lvl=1,col=2) = 0.0
+    - Ucs1 [unreal] (lvl=1,col=1) = 0.0
+    - Ucs3 [unreal] (lvl=1,col=3) = 0.0
+    - Ucs4 [unreal] (lvl=1,col=4) = 0.0
+    - CastArt [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - CastingSpeed [int] (lvl=0,col=0) = 0
+    - Targets [string] (lvl=1,col=0) = '_'
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - Hotkey [string] (lvl=0,col=0) = 'T'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c00CCCC33火焰喷射 1|r'
+    - Levels [int] (lvl=0,col=0) = 20
+    - TooltipNormal [string] (lvl=2,col=0) = '|c00CCCC33火焰喷射 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c00CCCC33火焰喷射 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '连续发射|n伤害: |cffffff002.6 |r(60% 击退)|n飞弹: |cffffff006|r|nCD: |cffffff0016|r|n快捷键: |cffff0000T|r|n'
+    - TooltipExtended [string] (lvl=2,col=0) = '连续发射|n伤害: |cffffff002.8 |r(60% 击退)|n飞弹: |cffffff007|r|nCD: |cffffff0015|r|n快捷键: |cffff0000T|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '连续发射|n伤害: |cffffff003.0 |r(60% 击退)|n飞弹: |cffffff008|r|nCD: |cffffff0014|r|n快捷键: |cffff0000T|r|n'
+    - Cooldown [unreal] (lvl=2,col=0) = 15.0
+    - Cooldown [unreal] (lvl=3,col=0) = 14.0
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Cooldown [unreal] (lvl=1,col=0) = 16.0
+    - Cooldown [unreal] (lvl=4,col=0) = 13.0
+    - TooltipNormal [string] (lvl=4,col=0) = '|c00CCCC33火焰喷射 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '连续发射|n伤害: |cffffff003.2 |r(60% 击退)|n飞弹: |cffffff009|r|nCD: |cffffff0013|r|n快捷键: |cffff0000T|r|n'
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 12.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|c00CCCC33火焰喷射 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '连续发射|n伤害: |cffffff003.4 |r(60% 击退)|n飞弹: |cffffff0010|r|nCD: |cffffff0012|r|n快捷键: |cffff0000T|r|n'
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=6,col=0) = 11.0
+    - TooltipNormal [string] (lvl=6,col=0) = '|c00CCCC33火焰喷射 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '连续发射|n伤害: |cffffff003.6 |r(60% 击退)|n飞弹: |cffffff0011|r|nCD: |cffffff0011|r|n快捷键: |cffff0000T|r|n'
+    - Art(Normal) [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtonsDisabled\\DISBTNSpell_Shadow_RainOfFire.blp'
+    - Cooldown [unreal] (lvl=7,col=0) = 10.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|c00CCCC33火焰喷射 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '连续发射|n伤害: |cffffff003.8 |r(60% 击退)|n飞弹: |cffffff0012|r|nCD: |cffffff0010|r|n快捷键: |cffff0000T|r'
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=11,col=0) = 14.0
+    - Cooldown [unreal] (lvl=12,col=0) = 13.0
+    - Cooldown [unreal] (lvl=13,col=0) = 12.0
+    - Cooldown [unreal] (lvl=14,col=0) = 11.0
+    - Cooldown [unreal] (lvl=15,col=0) = 10.0
+    - Cooldown [unreal] (lvl=16,col=0) = 9.0
+    - Cooldown [unreal] (lvl=17,col=0) = 8.0
+    - TooltipNormal [string] (lvl=11,col=0) = '|c00CCCC33火焰喷射 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|c00CCCC33火焰喷射 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|c00CCCC33火焰喷射 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|c00CCCC33火焰喷射 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|c00CCCC33火焰喷射 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|c00CCCC33火焰喷射 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|c00CCCC33火焰喷射 7|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '5发齐射|n每发伤害: |cffffff003 |r(65% 击退)|nCD: |cffffff0014|r 秒|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '5发齐射|n每发伤害: |cffffff003.4 |r(65% 击退)|nCD: |cffffff0013|r 秒|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '5发齐射|n每发伤害: |cffffff003.8 |r(65% 击退)|nCD: |cffffff0012|r 秒|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '5发齐射|n每发伤害: |cffffff004.2 |r(65% 击退)|nCD: |cffffff0011|r 秒|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '5发齐射|n每发伤害: |cffffff004.6 |r(65% 击退)|nCD: |cffffff0010|r 秒|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '5发齐射|n每发伤害: |cffffff005.0 |r(65% 击退)|nCD: |cffffff009|r 秒|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '5发齐射|n每发伤害: |cffffff005.4 |r(65% 击退)|nCD: |cffffff008|r 秒|n快捷键: |cffff0000T|r'
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 9.0
+    - Cooldown [unreal] (lvl=18,col=0) = 7.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|cffcccc33火焰喷射 8|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffcccc33火焰喷射 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '连续发射|n伤害: |cffffff004.0 |r(60% 击退)|n飞弹: |cffffff0013|r|nCD: |cffffff009|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '5发齐射|n每发伤害: |cffffff005.8 |r(65% 击退)|nCD: |cffffff007|r 秒|n快捷键: |cffff0000T|r'
+    - Animations [string] (lvl=0,col=0) = 'death'
+
+## S016  (基础: Advm)
+- 全部修改字段:
+    - dvm5 [unreal] (lvl=1,col=5) = 0.0
+    - dvm2 [unreal] (lvl=1,col=2) = 0.0
+    - dvm1 [unreal] (lvl=1,col=1) = 0.0
+    - CastArt [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - CastingSpeed [int] (lvl=0,col=0) = 0
+    - ManaCost [unreal] (lvl=0,col=0) = 0.0
+    - Targets [string] (lvl=1,col=0) = '_'
+    - Area [unreal] (lvl=1,col=0) = 75.0
+    - Cooldown [unreal] (lvl=1,col=0) = 20.0
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffcccc33弹跳弹 1|r'
+    - Levels [int] (lvl=0,col=0) = 20
+    - dvm6 [int] (lvl=2,col=6) = 1
+    - dvm6 [int] (lvl=3,col=6) = 1
+    - Area [unreal] (lvl=2,col=0) = 75.0
+    - Area [unreal] (lvl=3,col=0) = 75.0
+    - Cooldown [unreal] (lvl=2,col=0) = 19.0
+    - Cooldown [unreal] (lvl=3,col=0) = 18.0
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffcccc33弹跳弹 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffcccc33弹跳弹 3|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff00900|r|n伤害: |cffffff006|r|nCD: |cffffff0020|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001050|r|n伤害: |cffffff007|r|nCD: |cffffff0019|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001200|r|n伤害: |cffffff008|r|nCD: |cffffff0018|r|n快捷键: |cffff0000T|r'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - Hotkey [string] (lvl=0,col=0) = 'T'
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - dvm6 [int] (lvl=4,col=6) = 1
+    - Area [unreal] (lvl=4,col=0) = 75.0
+    - Cooldown [unreal] (lvl=4,col=0) = 17.0
+    - TooltipExtended [string] (lvl=4,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001350|r|n伤害: |cffffff009|r|nCD: |cffffff0017|r|n快捷键: |cffff0000T|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '|cffcccc33弹跳弹 4|r'
+    - Name [string] (lvl=0,col=0) = '弹跳弹'
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - dvm6 [int] (lvl=5,col=6) = 1
+    - Area [unreal] (lvl=5,col=0) = 75.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 16.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|cffcccc33弹跳弹 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001500|r|n伤害: |cffffff0010|r|nCD: |cffffff0016|r|n快捷键: |cffff0000T|r'
+    - dvm6 [int] (lvl=6,col=6) = 1
+    - Area [unreal] (lvl=6,col=0) = 75.0
+    - Cooldown [unreal] (lvl=6,col=0) = 15.0
+    - TooltipNormal [string] (lvl=6,col=0) = '|cffcccc33弹跳弹 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001650|r|n伤害: |cffffff0011|r|nCD: |cffffff0015|r|n快捷键: |cffff0000T|r'
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|cffcccc33弹跳弹 7|r'
+    - Cooldown [unreal] (lvl=7,col=0) = 14.0
+    - dvm6 [int] (lvl=7,col=6) = 1
+    - Area [unreal] (lvl=7,col=0) = 75.0
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - TooltipExtended [string] (lvl=7,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001800|r|n伤害: |cffffff0012|r|nCD: |cffffff0014|r|n快捷键: |cffff0000T|r'
+    - dvm6 [int] (lvl=8,col=6) = 1
+    - Area [unreal] (lvl=8,col=0) = 75.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 13.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|cffcccc33弹跳弹 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值.|n距离: |cffffff001950|r|n伤害: |cffffff0013|r|nCD: |cffffff0013|r|n快捷键: |cffff0000T|r'
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffcccc33弹跳弹 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffcccc33弹跳弹 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffcccc33弹跳弹 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffcccc33弹跳弹 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffcccc33弹跳弹 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffcccc33弹跳弹 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffcccc33弹跳弹 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffcccc33弹跳弹 8|r'
+    - TooltipNormal [string] (lvl=19,col=0) = '|cffcccc33弹跳弹 9|r'
+    - TooltipNormal [string] (lvl=20,col=0) = '|cffcccc33弹跳弹 10|r'
+    - TooltipNormal [string] (lvl=9,col=0) = '|cffcccc33弹跳弹 9|r'
+    - TooltipNormal [string] (lvl=10,col=0) = '|cffcccc33弹跳弹 10|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff006|n|rCD: |cffffff0027|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff006.9|n|rCD: |cffffff0026|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff007.8|n|rCD: |cffffff0025|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff008.7|n|rCD: |cffffff0024|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff009.6|n|rCD: |cffffff0023|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff0010.5|n|rCD: |cffffff0022|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff0011.4|n|rCD: |cffffff0021|r|n快捷键: |cffff0000T|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '击中后返回自己并重置CD.|n距离: |cffffff00900|r|n伤害: |cffffff0012.3|n|rCD: |cffffff0020|r|n快捷键: |cffff0000T|r'
+    - Cooldown [unreal] (lvl=11,col=0) = 27.0
+    - Cooldown [unreal] (lvl=12,col=0) = 26.0
+    - Cooldown [unreal] (lvl=13,col=0) = 25.0
+    - Cooldown [unreal] (lvl=14,col=0) = 24.0
+    - Cooldown [unreal] (lvl=15,col=0) = 23.0
+    - Cooldown [unreal] (lvl=16,col=0) = 22.0
+    - Cooldown [unreal] (lvl=17,col=0) = 21.0
+    - Cooldown [unreal] (lvl=18,col=0) = 20.0
+    - Area [unreal] (lvl=9,col=0) = 75.0
+    - Area [unreal] (lvl=10,col=0) = 75.0
+    - Area [unreal] (lvl=11,col=0) = 75.0
+    - Area [unreal] (lvl=12,col=0) = 75.0
+    - Area [unreal] (lvl=13,col=0) = 75.0
+    - Area [unreal] (lvl=14,col=0) = 75.0
+    - Area [unreal] (lvl=15,col=0) = 75.0
+    - Area [unreal] (lvl=16,col=0) = 75.0
+    - Area [unreal] (lvl=17,col=0) = 75.0
+    - Area [unreal] (lvl=18,col=0) = 75.0
+    - Area [unreal] (lvl=19,col=0) = 75.0
+    - Area [unreal] (lvl=20,col=0) = 75.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+
+## S017  (基础: ACmo)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '致残'
+    - Esf2 [unreal] (lvl=1,col=2) = 0.0
+    - Esf3 [unreal] (lvl=1,col=3) = 0.0
+    - Esf1 [unreal] (lvl=1,col=1) = 0.0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - Targets [string] (lvl=1,col=0) = ''
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - TooltipExtended [string] (lvl=1,col=0) = '将目标定身|nCD: |cffffff0025|r|n持续: |cffffff004.5|r|n快捷键: |cffff0000Y|r'
+    - Hotkey [string] (lvl=0,col=0) = 'Y'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Levels [int] (lvl=0,col=0) = 20
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=2,col=0) = 21.0
+    - Cooldown [unreal] (lvl=3,col=0) = 18.0
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffff9696致残 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffff9696致残 3|r'
+    - Area [unreal] (lvl=2,col=0) = 75.0
+    - Area [unreal] (lvl=3,col=0) = 75.0
+    - TooltipExtended [string] (lvl=2,col=0) = '将目标定身|nCD: |cffffff0021|r|n持续: |cffffff004.75|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '将目标定身|nCD: |cffffff0018|r|n持续: |cffffff005|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '将目标定身|nCD: |cffffff0016|r|n持续: |cffffff005.25|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=4,col=0) = 75.0
+    - Cooldown [unreal] (lvl=4,col=0) = 16.0
+    - TooltipNormal [string] (lvl=4,col=0) = '|cffff9696致残 4|r'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Area [unreal] (lvl=1,col=0) = 75.0
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff9696致残 1|r'
+    - CasterArtCount [int] (lvl=0,col=0) = 1
+    - Hotkey2 [string] (lvl=0,col=0) = 'Y'
+    - Cooldown [unreal] (lvl=1,col=0) = 25.0
+    - Area [unreal] (lvl=5,col=0) = 75.0
+    - Area [unreal] (lvl=6,col=0) = 75.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 14.5
+    - Cooldown [unreal] (lvl=6,col=0) = 13.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|cffff9696致残 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|cffff9696致残 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '将目标定身|nCD: |cffffff0014.5|r|n持续: |cffffff005.5|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '将目标定身|nCD: |cffffff0013|r|n持续: |cffffff005.75|r|n快捷键: |cffff0000Y|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '|cffff9696致残 7|r'
+    - Cooldown [unreal] (lvl=7,col=0) = 11.5
+    - Area [unreal] (lvl=7,col=0) = 75.0
+    - TooltipExtended [string] (lvl=7,col=0) = '将目标定身|nCD: |cffffff0011.5|r|n持续: |cffffff006|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 75.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 10.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|cffff9696致残 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '将目标定身|nCD: |cffffff0010|r|n持续: |cffffff006.25|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=9,col=0) = 75.0
+    - Area [unreal] (lvl=10,col=0) = 75.0
+    - Area [unreal] (lvl=11,col=0) = 75.0
+    - Area [unreal] (lvl=12,col=0) = 75.0
+    - Area [unreal] (lvl=13,col=0) = 75.0
+    - Area [unreal] (lvl=14,col=0) = 75.0
+    - Area [unreal] (lvl=15,col=0) = 75.0
+    - Area [unreal] (lvl=16,col=0) = 75.0
+    - Area [unreal] (lvl=17,col=0) = 75.0
+    - Area [unreal] (lvl=18,col=0) = 75.0
+    - Area [unreal] (lvl=19,col=0) = 75.0
+    - Area [unreal] (lvl=20,col=0) = 75.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=11,col=0) = 16.0
+    - Cooldown [unreal] (lvl=12,col=0) = 15.5
+    - Cooldown [unreal] (lvl=13,col=0) = 15.0
+    - Cooldown [unreal] (lvl=14,col=0) = 14.5
+    - Cooldown [unreal] (lvl=15,col=0) = 14.0
+    - Cooldown [unreal] (lvl=16,col=0) = 13.5
+    - Cooldown [unreal] (lvl=17,col=0) = 13.0
+    - Cooldown [unreal] (lvl=18,col=0) = 12.5
+    - TooltipNormal [string] (lvl=9,col=0) = '|cffff9696致残 9|r'
+    - TooltipNormal [string] (lvl=10,col=0) = '|cffff9696致残 10|r'
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffff9696致残 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffff9696致残 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffff9696致残 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffff9696致残 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffff9696致残 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffff9696致残 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffff9696致残 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffff9696致残 8|r'
+    - TooltipNormal [string] (lvl=19,col=0) = '|cffff9696致残 9|r'
+    - TooltipNormal [string] (lvl=20,col=0) = '|cffff9696致残 20|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0016.0|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0015.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0015.0|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0014.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0014.0|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0013.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0013.0|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '沉默目标|cffffff005秒+双方技能差.|n|rCD: |cffffff0012.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r|n快捷键: |cffff0000Y|r'
+
+## S018  (基础: ACmo)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '引力'
+    - Esf2 [unreal] (lvl=1,col=2) = 0.0
+    - Esf3 [unreal] (lvl=1,col=3) = 0.0
+    - Esf1 [unreal] (lvl=1,col=1) = 0.0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Animations [string] (lvl=0,col=0) = 'spell'
+    - Targets [string] (lvl=1,col=0) = ''
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 26.0
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - TooltipExtended [string] (lvl=1,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0012|n|r伤害: |cffffff000.3|r|n快捷键: |cffff0000Y|r'
+    - Hotkey [string] (lvl=0,col=0) = 'Y'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Levels [int] (lvl=0,col=0) = 20
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=2,col=0) = 26.0
+    - Cooldown [unreal] (lvl=3,col=0) = 26.0
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffA020F0引力 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffA020F0引力 3|r'
+    - Area [unreal] (lvl=2,col=0) = 200.0
+    - Area [unreal] (lvl=3,col=0) = 200.0
+    - TooltipExtended [string] (lvl=2,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0013|n|r伤害: |cffffff000.5|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0014|n|r伤害: |cffffff000.7|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0015|n|r伤害: |cffffff000.9|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=4,col=0) = 200.0
+    - Cooldown [unreal] (lvl=4,col=0) = 26.0
+    - TooltipNormal [string] (lvl=4,col=0) = '|cffA020F0引力 4|r'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - Area [unreal] (lvl=5,col=0) = 200.0
+    - Area [unreal] (lvl=6,col=0) = 200.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 26.0
+    - Cooldown [unreal] (lvl=6,col=0) = 26.0
+    - TooltipExtended [string] (lvl=5,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0016|n|r伤害: |cffffff001.1|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0017|n|r伤害: |cffffff001.3|r|n快捷键: |cffff0000Y|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|cffA020F0引力 5|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '|cffA020F0引力 6|r'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffA020F0引力 1|r'
+    - CastTypeCap [string] (lvl=0,col=0) = 'weapon'
+    - CasterArtCount [int] (lvl=0,col=0) = 1
+    - CastType [string] (lvl=0,col=0) = 'Abilities\\Weapons\\GreenDragonMissile\\GreenDragonMissile.mdl'
+    - Area [unreal] (lvl=7,col=0) = 200.0
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=7,col=0) = 26.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|cffA020F0引力 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0018|n|r伤害: |cffffff001.5|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=8,col=0) = 200.0
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=8,col=0) = 26.0
+    - TooltipNormal [string] (lvl=8,col=0) = '|cffA020F0引力 8|r'
+    - Area [unreal] (lvl=9,col=0) = 200.0
+    - Area [unreal] (lvl=10,col=0) = 200.0
+    - Area [unreal] (lvl=11,col=0) = 200.0
+    - Area [unreal] (lvl=12,col=0) = 200.0
+    - Area [unreal] (lvl=13,col=0) = 200.0
+    - Area [unreal] (lvl=14,col=0) = 200.0
+    - Area [unreal] (lvl=15,col=0) = 200.0
+    - Area [unreal] (lvl=16,col=0) = 200.0
+    - Area [unreal] (lvl=17,col=0) = 200.0
+    - Area [unreal] (lvl=18,col=0) = 200.0
+    - Area [unreal] (lvl=19,col=0) = 200.0
+    - Area [unreal] (lvl=20,col=0) = 200.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=9,col=0) = 26.0
+    - Cooldown [unreal] (lvl=10,col=0) = 26.0
+    - Cooldown [unreal] (lvl=11,col=0) = 26.0
+    - Cooldown [unreal] (lvl=12,col=0) = 26.0
+    - Cooldown [unreal] (lvl=13,col=0) = 26.0
+    - Cooldown [unreal] (lvl=14,col=0) = 26.0
+    - Cooldown [unreal] (lvl=15,col=0) = 26.0
+    - Cooldown [unreal] (lvl=16,col=0) = 26.0
+    - Cooldown [unreal] (lvl=17,col=0) = 26.0
+    - Cooldown [unreal] (lvl=18,col=0) = 26.0
+    - Cooldown [unreal] (lvl=19,col=0) = 26.0
+    - Cooldown [unreal] (lvl=20,col=0) = 26.0
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffa020f0引力 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffa020f0引力 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffa020f0引力 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffa020f0引力 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffa020f0引力 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffa020f0引力 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffa020f0引力 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffa020f0引力 8|r'
+    - Area [unreal] (lvl=1,col=0) = 200.0
+    - TooltipExtended [string] (lvl=8,col=0) = '吸入飞弹和敌人，对附近的敌人造成伤害.|n引力: |cffffff0019|n|r伤害: |cffffff001.7|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff002.25|n|r每秒治疗: |cffffff001.0|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff003.50|n|r每秒治疗: |cffffff001.2|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=13,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff004.25|n|r每秒治疗: |cffffff001.4|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff005.00|n|r每秒治疗: |cffffff001.6|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff005.75|n|r每秒治疗: |cffffff001.8|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff006.50|n|r每秒治疗: |cffffff002.0|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff007.25|n|r每秒治疗: |cffffff002.2|n|rCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '创造一个立场，伤害并减速其中的敌人.|n持续: |cffffff005 秒|r|n每秒伤害: |cffffff008.00|n|r每秒治疗: |cffffff002.4|r|nCD: |cffffff0026|r|n快捷键: |cffff0000Y|r'
+
+## S019  (基础: ACmo)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '锁链'
+    - Esf2 [unreal] (lvl=1,col=2) = 0.0
+    - Esf3 [unreal] (lvl=1,col=3) = 0.0
+    - Esf1 [unreal] (lvl=1,col=1) = 0.0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - Targets [string] (lvl=1,col=0) = ''
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Area [unreal] (lvl=1,col=0) = 99999.0
+    - TooltipExtended [string] (lvl=1,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff0017|n|r伤害: |cffffff000.2|r|n快捷键: |cffff0000Y|r'
+    - Hotkey [string] (lvl=0,col=0) = 'Y'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Levels [int] (lvl=0,col=0) = 20
+    - Area [unreal] (lvl=2,col=0) = 99999.0
+    - Area [unreal] (lvl=3,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=2,col=0) = 14.5
+    - Cooldown [unreal] (lvl=3,col=0) = 12.5
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffA020F0锁链 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffA020F0锁链 3|r'
+    - Area [unreal] (lvl=2,col=0) = 60.0
+    - Area [unreal] (lvl=3,col=0) = 60.0
+    - TooltipExtended [string] (lvl=2,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff0014.5|n|r伤害: |cffffff000.4|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff0012.5|n|r伤害: |cffffff000.6|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff0011|n|r伤害: |cffffff000.8|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=4,col=0) = 60.0
+    - Cooldown [unreal] (lvl=4,col=0) = 11.0
+    - TooltipNormal [string] (lvl=4,col=0) = '|cffA020F0锁链 4|r'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Area [unreal] (lvl=1,col=0) = 60.0
+    - Area [unreal] (lvl=4,col=0) = 99999.0
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffA020F0锁链 1|r'
+    - Area [unreal] (lvl=5,col=0) = 60.0
+    - Area [unreal] (lvl=5,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=5,col=0) = 10.0
+    - TooltipNormal [string] (lvl=5,col=0) = '|cffA020F0锁链 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff0010|n|r伤害: |cffffff001|r|n快捷键: |cffff0000Y|r'
+    - Cooldown [unreal] (lvl=1,col=0) = 17.0
+    - Cooldown [unreal] (lvl=6,col=0) = 9.5
+    - TooltipNormal [string] (lvl=6,col=0) = '|cffA020F0锁链 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff009.5|n|r伤害: |cffffff001.2|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=6,col=0) = 99999.0
+    - Area [unreal] (lvl=6,col=0) = 60.0
+    - Area [unreal] (lvl=7,col=0) = 60.0
+    - Area [unreal] (lvl=7,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=7,col=0) = 9.0
+    - TooltipNormal [string] (lvl=7,col=0) = '|cffA020F0锁链 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff009|n|r伤害: |cffffff001.4|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=8,col=0) = 99999.0
+    - Area [unreal] (lvl=8,col=0) = 60.0
+    - Cooldown [unreal] (lvl=8,col=0) = 8.5
+    - TooltipNormal [string] (lvl=8,col=0) = '|cffA020F0锁链 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff008.5|n|r伤害: |cffffff001.6|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=9,col=0) = 60.0
+    - Area [unreal] (lvl=9,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=9,col=0) = 8.0
+    - TooltipNormal [string] (lvl=9,col=0) = '|cffA020F0锁链 9|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害.|nCD: |cffffff008|n|r伤害: |cffffff001.8|r|n快捷键: |cffff0000Y|r'
+    - Cooldown [unreal] (lvl=11,col=0) = 16.0
+    - Cooldown [unreal] (lvl=12,col=0) = 16.0
+    - Cooldown [unreal] (lvl=13,col=0) = 16.0
+    - Cooldown [unreal] (lvl=14,col=0) = 16.0
+    - Cooldown [unreal] (lvl=15,col=0) = 16.0
+    - Cooldown [unreal] (lvl=16,col=0) = 16.0
+    - Cooldown [unreal] (lvl=17,col=0) = 16.0
+    - Cooldown [unreal] (lvl=18,col=0) = 16.0
+    - Cooldown [unreal] (lvl=19,col=0) = 16.0
+    - TooltipNormal [string] (lvl=11,col=0) = '|cffa020f0锁链 1|r'
+    - TooltipNormal [string] (lvl=12,col=0) = '|cffa020f0锁链 2|r'
+    - TooltipNormal [string] (lvl=13,col=0) = '|cffa020f0锁链 3|r'
+    - TooltipNormal [string] (lvl=14,col=0) = '|cffa020f0锁链 4|r'
+    - TooltipNormal [string] (lvl=15,col=0) = '|cffa020f0锁链 5|r'
+    - TooltipNormal [string] (lvl=16,col=0) = '|cffa020f0锁链 6|r'
+    - TooltipNormal [string] (lvl=17,col=0) = '|cffa020f0锁链 7|r'
+    - TooltipNormal [string] (lvl=18,col=0) = '|cffa020f0锁链 8|r'
+    - TooltipNormal [string] (lvl=19,col=0) = '|cffa020f0锁链 9|r'
+    - TooltipNormal [string] (lvl=20,col=0) = '|cffa020f0锁链 1|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff000.2|n|r闪电伤害: |cffffff001.0|r|n快捷键: |cffff0000Y|r'
+    - Area [unreal] (lvl=10,col=0) = 60.0
+    - Area [unreal] (lvl=11,col=0) = 60.0
+    - Area [unreal] (lvl=12,col=0) = 60.0
+    - Area [unreal] (lvl=13,col=0) = 60.0
+    - Area [unreal] (lvl=14,col=0) = 60.0
+    - Area [unreal] (lvl=15,col=0) = 60.0
+    - Area [unreal] (lvl=16,col=0) = 60.0
+    - Area [unreal] (lvl=17,col=0) = 60.0
+    - Area [unreal] (lvl=18,col=0) = 60.0
+    - Area [unreal] (lvl=19,col=0) = 60.0
+    - Area [unreal] (lvl=20,col=0) = 60.0
+    - Area [unreal] (lvl=10,col=0) = 99999.0
+    - Area [unreal] (lvl=11,col=0) = 99999.0
+    - Area [unreal] (lvl=12,col=0) = 99999.0
+    - Area [unreal] (lvl=13,col=0) = 99999.0
+    - Area [unreal] (lvl=14,col=0) = 99999.0
+    - Area [unreal] (lvl=15,col=0) = 99999.0
+    - Area [unreal] (lvl=16,col=0) = 99999.0
+    - Area [unreal] (lvl=17,col=0) = 99999.0
+    - Area [unreal] (lvl=18,col=0) = 99999.0
+    - Area [unreal] (lvl=19,col=0) = 99999.0
+    - Area [unreal] (lvl=20,col=0) = 99999.0
+    - Cooldown [unreal] (lvl=20,col=0) = 16.0
+    - TooltipExtended [string] (lvl=13,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff000.6|n|r闪电伤害: |cffffff001.6|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=12,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff000.4|n|r闪电伤害: |cffffff001.3|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=14,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff000.8|n|r闪电伤害: |cffffff001.9|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=15,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff001.0|n|r闪电伤害: |cffffff002.2|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=16,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff001.2|n|r闪电伤害: |cffffff002.5|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=17,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff001.4|n|r闪电伤害: |cffffff002.8|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=18,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff001.6|n|r闪电伤害: |cffffff003.1|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=19,col=0) = '将自己和目标术士链在一起，会持续给对方造成伤害. 如果命中队友或柱子，会建立一道可维持的闪电.|nCD: |cffffff0016|n|r伤害: |cffffff001.8|n|r闪电伤害: |cffffff003.4|r|n快捷键: |cffff0000Y|r'
+    - TooltipExtended [string] (lvl=20,col=0) = 'j'
+
+## S020  (基础: AHtc)
+- 全部修改字段:
+    - Targets [string] (lvl=1,col=0) = '_'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMetamorphosis.blp'
+    - EffectArt [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNagaBurrow.blp'
+    - ArtX [int] (lvl=0,col=0) = 0
+    - Name [string] (lvl=0,col=0) = '灾变'
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Htc1 [unreal] (lvl=1,col=1) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Hotkey [string] (lvl=0,col=0) = 'F'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - CastType [string] (lvl=0,col=0) = 'Abilities\\Spells\\Orc\\Disenchant\\DisenchantSpecialArt.mdl'
+    - Buffs [string] (lvl=1,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = '伤害周围术士包括|cffff0000自身|r|n伤害取决于距离和自身灾变层数. 在变会增加你的移动速度并驱散锁链.|n快捷键: |cffff0000F|r'
+    - Htc4 [unreal] (lvl=1,col=4) = 0.0
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - Htc1 [unreal] (lvl=2,col=1) = 0.0
+    - Htc1 [unreal] (lvl=3,col=1) = 0.0
+    - Htc4 [unreal] (lvl=2,col=4) = 0.0
+    - Htc4 [unreal] (lvl=3,col=4) = 0.0
+    - Htc3 [unreal] (lvl=2,col=3) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Buffs [string] (lvl=2,col=0) = 'B001'
+    - Buffs [string] (lvl=3,col=0) = 'B001'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Area [unreal] (lvl=4,col=0) = 0.0
+    - Htc3 [unreal] (lvl=4,col=3) = 0.0
+    - Buffs [string] (lvl=4,col=0) = 'B001'
+    - Cooldown [unreal] (lvl=2,col=0) = 3.0
+    - Cooldown [unreal] (lvl=3,col=0) = 3.0
+    - Cooldown [unreal] (lvl=4,col=0) = 3.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - CastRange [int] (lvl=4,col=0) = 0
+    - Targets [string] (lvl=2,col=0) = 'ancient,enemies'
+    - Targets [string] (lvl=3,col=0) = 'ancient,enemies'
+    - Targets [string] (lvl=4,col=0) = 'ancient,enemies'
+    - TooltipNormal [string] (lvl=2,col=0) = '天罚'
+    - TooltipNormal [string] (lvl=3,col=0) = '天罚'
+    - TooltipNormal [string] (lvl=4,col=0) = '天罚'
+    - TooltipExtended [string] (lvl=2,col=0) = '对周围术士造成伤害 |c00FFFF0011|r 包括|c00FF0000自身|r\r\n快捷键: |cffff0000F|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '对周围术士造成伤害 |c00FFFF0012|r 包括|c00FF0000自身|r\r\n快捷键: |cffff0000F|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '对周围术士造成伤害 |c00FFFF0013|r 包括|c00FF0000自身|r\r\n快捷键: |cffff0000F|r'
+    - Htc1 [unreal] (lvl=4,col=1) = 0.0
+    - Htc4 [unreal] (lvl=4,col=4) = 0.0
+    - CastTypeExtra [unreal] (lvl=1,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=2,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=3,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=4,col=0) = 0.699999988079071
+    - Htc3 [unreal] (lvl=3,col=3) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - CasterArtCount [int] (lvl=0,col=0) = 1
+    - CastTypeCap [string] (lvl=0,col=0) = 'weapon'
+    - Animations [string] (lvl=0,col=0) = 'spell'
+    - Htc3 [unreal] (lvl=1,col=3) = 0.0
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000灾变|r'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 2.0
+
+## S024  (基础: Arav)
+- 全部修改字段:
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDust.blp'
+    - Art(Normal) [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Eme3 [unreal] (lvl=1,col=3) = 0.0
+    - Eme4 [unreal] (lvl=1,col=4) = 0.0
+    - Eme2 [int] (lvl=1,col=2) = 0
+    - Eme1 [string] (lvl=1,col=1) = 'u000'
+    - CastTypeExtra [unreal] (lvl=1,col=0) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'undead'
+    - Requirements [string] (lvl=0,col=0) = ''
+    - Hotkey [string] (lvl=0,col=0) = 'E'
+    - Hotkey2 [string] (lvl=0,col=0) = 'E'
+    - Name [string] (lvl=0,col=0) = '物品'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cff800080物品|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|r'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|cff800080商店|r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = '快捷键: |cffff0000E|r'
+    - BuffArtX [int] (lvl=0,col=0) = 0
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOff [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOn [int] (lvl=0,col=0) = 0
+    - Emeu [string] (lvl=1,col=0) = 'u003'
+
+## S025  (基础: Astn)
+- 全部修改字段:
+    - Requirements [string] (lvl=0,col=0) = ''
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOn [int] (lvl=0,col=0) = 0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNecromancerAdept.blp'
+    - Art(Normal) [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Hotkey [string] (lvl=0,col=0) = 'R'
+    - Hotkey2 [string] (lvl=0,col=0) = 'R'
+    - Name [string] (lvl=0,col=0) = '法术 1'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cff800080主要法术|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|r'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|cff800080商店|r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = '快捷键: |cffff0000R|r'
+    - Emeu [string] (lvl=1,col=0) = 'u001'
+    - Eme1 [string] (lvl=1,col=1) = 'u000'
+    - BuffArtX [int] (lvl=0,col=0) = 1
+
+## S026  (基础: Abrf)
+- 全部修改字段:
+    - Eme1 [string] (lvl=1,col=1) = 'u000'
+    - Emeu [string] (lvl=1,col=0) = 'u002'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Requirements [string] (lvl=0,col=0) = ''
+    - Race [string] (lvl=0,col=0) = 'undead'
+    - CastRange [int] (lvl=1,col=0) = 0
+    - RequiredAbility [string] (lvl=0,col=0) = ''
+    - Hotkey [string] (lvl=0,col=0) = 'T'
+    - Hotkey2 [string] (lvl=0,col=0) = 'T'
+    - Eme2 [int] (lvl=1,col=2) = 0
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOff [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOn [int] (lvl=0,col=0) = 0
+    - Name [string] (lvl=0,col=0) = '法术 2'
+    - Art(Normal) [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTomeOfRetraining.blp'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cff800080进阶法术|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|cff800080商店|r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r'
+
+## S128  (基础: Aihn)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '|cffdaa520物品栏|r'
+    - inv2 [int] (lvl=1,col=2) = 0
+    - inv1 [int] (lvl=2,col=1) = 3
+    - inv1 [int] (lvl=3,col=1) = 6
+    - inv1 [int] (lvl=4,col=1) = 4
+    - inv1 [int] (lvl=5,col=1) = 5
+    - inv1 [int] (lvl=6,col=1) = 6
+    - inv3 [int] (lvl=1,col=3) = 1
+    - inv3 [int] (lvl=2,col=3) = 1
+    - inv3 [int] (lvl=3,col=3) = 1
+    - inv3 [int] (lvl=5,col=3) = 1
+    - inv3 [int] (lvl=4,col=3) = 1
+    - inv3 [int] (lvl=6,col=3) = 1
+    - inv4 [int] (lvl=2,col=4) = 1
+    - inv4 [int] (lvl=4,col=4) = 1
+    - inv4 [int] (lvl=3,col=4) = 1
+    - inv4 [int] (lvl=5,col=4) = 1
+    - inv4 [int] (lvl=6,col=4) = 1
+    - TooltipNormal [string] (lvl=1,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - Race [string] (lvl=0,col=0) = 'undead'
+    - inv5 [int] (lvl=2,col=5) = 1
+    - inv5 [int] (lvl=3,col=5) = 1
+    - inv5 [int] (lvl=4,col=5) = 1
+    - inv5 [int] (lvl=5,col=5) = 1
+    - inv5 [int] (lvl=6,col=5) = 1
+    - inv1 [int] (lvl=1,col=1) = 1
+    - Requirements [string] (lvl=0,col=0) = 'R000'
+    - Levels [int] (lvl=0,col=0) = 3
+    - achd [int] (lvl=0,col=0) = 0
+
+## S027  (基础: Absk)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'undead'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - bsk2 [unreal] (lvl=1,col=2) = 0.0
+    - bsk3 [unreal] (lvl=1,col=3) = 0.0
+    - bsk1 [unreal] (lvl=1,col=1) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - achd [int] (lvl=0,col=0) = 0
+    - OrderUse [string] (lvl=0,col=0) = 'stoneform'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNRingJadeFalcon.blp'
+    - Name [string] (lvl=0,col=0) = '法术 3'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cff800080乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n|cffffd700将一个技能突破最大升级限制|r 通过使用乔丹之石戒指'
+    - Hotkey [string] (lvl=0,col=0) = 'Y'
+    - Hotkey2 [string] (lvl=0,col=0) = 'Y'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|cff800080商店|r'
+    - Art(Normal) [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAcolyte.blp'
+
+## S003  (基础: AOfs)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '追踪弹'
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Ofs1 [int] (lvl=1,col=1) = 0
+    - EffectTarget [string] (lvl=1,col=0) = ''
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - TooltipExtended [string] (lvl=1,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff007 + 额外距离伤害|r|nCD: |cffffff0015|r|n快捷键: |cffff0000D|r'
+    - Hotkey [string] (lvl=0,col=0) = 'D'
+    - Hotkey2 [string] (lvl=0,col=0) = 'D'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - TooltipExtended [string] (lvl=2,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff008 + 额外距离伤害|r|nCD: |cffffff0013.5|r|n快捷键: |cffff0000D|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff009 + 额外距离伤害|r|nCD: |cffffff0012.5|r|n快捷键: |cffff0000D|r'
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffff9696追踪弹 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffff9696追踪弹 3|r'
+    - Cooldown [unreal] (lvl=1,col=0) = 15.0
+    - Cooldown [unreal] (lvl=2,col=0) = 13.5
+    - Cooldown [unreal] (lvl=3,col=0) = 12.5
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - EffectTarget [string] (lvl=2,col=0) = ''
+    - EffectTarget [string] (lvl=3,col=0) = ''
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - Ofs1 [int] (lvl=2,col=1) = 0
+    - Ofs1 [int] (lvl=3,col=1) = 0
+    - Levels [int] (lvl=0,col=0) = 9
+    - CastRange [int] (lvl=4,col=0) = 0
+    - CastRange [int] (lvl=5,col=0) = 0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=5,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=5,col=0) = 0.0
+    - Cooldown [unreal] (lvl=4,col=0) = 12.0
+    - Cooldown [unreal] (lvl=5,col=0) = 11.5
+    - TooltipNormal [string] (lvl=4,col=0) = '|cffff9696追踪弹 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|cffff9696追踪弹 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff0010 + 额外距离伤害|r|nCD: |cffffff0012|r|n快捷键: |cffff0000D|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff0011 + 额外距离伤害|r|nCD: |cffffff0011.5|r|n快捷键: |cffff0000D|r'
+    - EffectTarget [string] (lvl=4,col=0) = ''
+    - EffectTarget [string] (lvl=5,col=0) = ''
+    - Area [unreal] (lvl=4,col=0) = 0.0
+    - Area [unreal] (lvl=5,col=0) = 0.0
+    - Ofs1 [int] (lvl=4,col=1) = 0
+    - Ofs1 [int] (lvl=5,col=1) = 0
+    - Animations [string] (lvl=0,col=0) = 'death'
+    - Ofs1 [int] (lvl=6,col=1) = 0
+    - Area [unreal] (lvl=6,col=0) = 0.0
+    - Cooldown [unreal] (lvl=6,col=0) = 11.0
+    - HeroAbility [unreal] (lvl=6,col=0) = 0.0
+    - Duration [unreal] (lvl=6,col=0) = 0.0
+    - EffectTarget [string] (lvl=6,col=0) = ''
+    - CastRange [int] (lvl=6,col=0) = 0
+    - TooltipNormal [string] (lvl=6,col=0) = '|cffff9696追踪弹 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff0012 + 额外距离伤害|r|nCD: |cffffff0011|r|n快捷键: |cffff0000D|r'
+    - Ofs1 [int] (lvl=7,col=1) = 0
+    - Area [unreal] (lvl=7,col=0) = 0.0
+    - Cooldown [unreal] (lvl=7,col=0) = 10.5
+    - HeroAbility [unreal] (lvl=7,col=0) = 0.0
+    - Duration [unreal] (lvl=7,col=0) = 0.0
+    - EffectTarget [string] (lvl=7,col=0) = ''
+    - CastRange [int] (lvl=7,col=0) = 0
+    - TooltipNormal [string] (lvl=7,col=0) = '|cffff9696追踪弹 7|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff0013 + 额外距离伤害|r|nCD: |cffffff0010.5|r|n快捷键: |cffff0000D|r'
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Cooldown [unreal] (lvl=8,col=0) = 10.0
+    - HeroAbility [unreal] (lvl=8,col=0) = 0.0
+    - Duration [unreal] (lvl=8,col=0) = 0.0
+    - EffectTarget [string] (lvl=8,col=0) = ''
+    - CastRange [int] (lvl=8,col=0) = 0
+    - TooltipNormal [string] (lvl=8,col=0) = '|cffff9696追踪弹 8|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff0014 + 额外距离伤害|r|nCD: |cffffff0010|r|n快捷键: |cffff0000D|r'
+    - Area [unreal] (lvl=8,col=0) = 0.0
+    - Ofs1 [int] (lvl=8,col=1) = 0
+    - Ofs1 [int] (lvl=9,col=1) = 0
+    - Area [unreal] (lvl=9,col=0) = 0.0
+    - Cooldown [unreal] (lvl=9,col=0) = 9.5
+    - HeroAbility [unreal] (lvl=9,col=0) = 0.0
+    - Duration [unreal] (lvl=9,col=0) = 0.0
+    - EffectTarget [string] (lvl=9,col=0) = ''
+    - CastRange [int] (lvl=9,col=0) = 0
+    - TooltipNormal [string] (lvl=9,col=0) = '|cffff9696追踪弹 9|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '飞弹自动跟踪目标|n伤害: |cffffff0015 + 额外距离伤害|r|nCD: |cffffff009.5|r|n快捷键: |cffff0000D|r'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff9696追踪弹 1|r'
+
+## A000  (基础: AIlf)
+- 全部修改字段:
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Ilif [int] (lvl=1,col=1) = -10
+    - Name [string] (lvl=0,col=0) = 'Item Life 惩罚 0'
+
+## S030  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - ItemAbility [int] (lvl=0,col=0) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = 'P'
+    - achd [int] (lvl=0,col=0) = 0
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Name [string] (lvl=0,col=0) = '怀表 item details'
+    - CasterArt [string] (lvl=0,col=0) = ''
+
+## S021  (基础: AHtc)
+- 全部修改字段:
+    - Targets [string] (lvl=1,col=0) = '_'
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNCloakOfFlames.blp'
+    - EffectArt [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNagaBurrow.blp'
+    - ArtX [int] (lvl=0,col=0) = 0
+    - Name [string] (lvl=0,col=0) = '虔诚'
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Htc1 [unreal] (lvl=1,col=1) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Hotkey [string] (lvl=0,col=0) = 'F'
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - CastType [string] (lvl=0,col=0) = 'Abilities\\Spells\\Orc\\Disenchant\\DisenchantSpecialArt.mdl'
+    - Buffs [string] (lvl=1,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = '对周围术士造成伤害 |cffffff0010|r 包括|cffff0000自身|r|n|cff008000增益附近友方:|r|n治疗 |cffffff005|n|r降低受伤点数 |cffffff005|n|r增加移动速度 |cffffff0060 |r持续|cffffff004|r秒|n快捷键: |cffff0000F|r'
+    - Htc4 [unreal] (lvl=1,col=4) = 0.0
+    - BuffArtX [int] (lvl=0,col=0) = 2
+    - Htc1 [unreal] (lvl=2,col=1) = 0.0
+    - Htc1 [unreal] (lvl=3,col=1) = 0.0
+    - Htc4 [unreal] (lvl=2,col=4) = 0.0
+    - Htc4 [unreal] (lvl=3,col=4) = 0.0
+    - Htc3 [unreal] (lvl=2,col=3) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Buffs [string] (lvl=2,col=0) = ''
+    - Area [unreal] (lvl=4,col=0) = 0.0
+    - Htc3 [unreal] (lvl=4,col=3) = 0.0
+    - Buffs [string] (lvl=4,col=0) = 'B001'
+    - Cooldown [unreal] (lvl=2,col=0) = 3.0
+    - Cooldown [unreal] (lvl=3,col=0) = 3.0
+    - Cooldown [unreal] (lvl=4,col=0) = 3.0
+    - HeroAbility [unreal] (lvl=2,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=3,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=4,col=0) = 0.0
+    - Duration [unreal] (lvl=2,col=0) = 0.0
+    - Duration [unreal] (lvl=3,col=0) = 0.0
+    - Duration [unreal] (lvl=4,col=0) = 0.0
+    - CastRange [int] (lvl=2,col=0) = 0
+    - CastRange [int] (lvl=3,col=0) = 0
+    - CastRange [int] (lvl=4,col=0) = 0
+    - Targets [string] (lvl=2,col=0) = 'ancient,enemies'
+    - Targets [string] (lvl=3,col=0) = 'ancient,enemies'
+    - Targets [string] (lvl=4,col=0) = 'ancient,enemies'
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffffd700虔诚|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffffd700虔诚|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '天罚'
+    - TooltipExtended [string] (lvl=2,col=0) = '对周围术士造成伤害 |cffffff0010|r 包括|cffff0000自身|r|n|cff008000增益附近友方:|r|n治疗 |cffffff006|n|r降低受伤点数 |cffffff006|n|r增加移动速度 |cffffff0060 |r持续|cffffff004|r秒|n快捷键: |cffff0000F|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '对周围术士造成伤害 |cffffff0010|r 包括|cffff0000自身|r|n|cff008000增益附近友方:|r|n治疗 |cffffff006.5|n|r降低受伤点数 |cffffff006.5|n|r增加移动速度 |cffffff0060 |r持续|cffffff004|r秒|n快捷键: |cffff0000F|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '对周围术士造成伤害 |c00FFFF0013|r 包括|c00FF0000自身|r\r\n快捷键: |cffff0000F|r'
+    - Htc1 [unreal] (lvl=4,col=1) = 0.0
+    - Htc4 [unreal] (lvl=4,col=4) = 0.0
+    - CastTypeExtra [unreal] (lvl=2,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=3,col=0) = 0.699999988079071
+    - CastTypeExtra [unreal] (lvl=4,col=0) = 0.699999988079071
+    - Htc3 [unreal] (lvl=3,col=3) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - CastTypeCap [string] (lvl=0,col=0) = 'weapon'
+    - Animations [string] (lvl=0,col=0) = 'spell'
+    - Htc3 [unreal] (lvl=1,col=3) = 0.0
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffffd700虔诚|r'
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Cooldown [unreal] (lvl=1,col=0) = 3.0
+    - CasterArtCount [int] (lvl=0,col=0) = 1
+    - CastTypeExtra [unreal] (lvl=1,col=0) = 0.699999988079071
+    - Buffs [string] (lvl=3,col=0) = ''
+
+## S031  (基础: Arpm)
+- 全部修改字段:
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOff [int] (lvl=0,col=0) = 0
+    - TooltipExtendedOn [int] (lvl=0,col=0) = 0
+    - SpellDetail [string] (lvl=0,col=0) = ''
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - Rej2 [unreal] (lvl=1,col=2) = 0.0
+    - Rpb6 [int] (lvl=1,col=0) = 0
+    - Rpb5 [int] (lvl=1,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Targets [string] (lvl=1,col=0) = ''
+    - Hotkey [string] (lvl=0,col=0) = 'Y'
+    - Hotkey2 [string] (lvl=0,col=0) = 'Y'
+    - TooltipExtended [string] (lvl=1,col=0) = '释放锁链'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffb8860b释放|r'
+    - TooltipNormalOff [string] (lvl=1,col=0) = '|cffc3dbff |r'
+    - TooltipTurnOff [string] (lvl=1,col=0) = '|cffc3dbff .|r'
+    - Speed [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNImprovedUnholyStrength.blp'
+    - Levels [int] (lvl=0,col=0) = 2
+    - Cooldown [unreal] (lvl=2,col=0) = 1.0
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffb8860b维持|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '|cffb8860b增加引导持续时间|r'
+    - TooltipNormalOff [string] (lvl=2,col=0) = '|cffc3dbff |r'
+    - TooltipTurnOff [string] (lvl=2,col=0) = '|cffc3dbff .|r'
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=0,col=0) = '锁链附加动作'
+
+## S032  (基础: AHtc)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '切换 E 快捷键 法术'
+    - CastType [string] (lvl=0,col=0) = ''
+    - Levels [int] (lvl=0,col=0) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'creeps'
+    - OrderUse [string] (lvl=0,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '切换 E 快捷键 法术'
+    - TooltipExtended [string] (lvl=1,col=0) = '陨石: |n|cffffff00星落|r - |cffffff00滚石|n|r|n分裂弹: |n|cffffff00范围|r - |cffffff00指向|n|r|n疾风步: |n|cffffff00撞击|r - |cffffff00隐身|r'
+    - CastTypeCap [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHire.blp'
+    - Targets [string] (lvl=1,col=0) = ''
+    - Htc1 [unreal] (lvl=1,col=1) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - Htc4 [unreal] (lvl=1,col=4) = 0.0
+    - Htc3 [unreal] (lvl=1,col=3) = 0.0
+    - achd [int] (lvl=0,col=0) = 0
+
+## S033  (基础: ACro)
+- 全部修改字段:
+    - CastType [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHumanCaptureFlag.blp'
+    - Roa1 [unreal] (lvl=1,col=1) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - Targets [string] (lvl=1,col=0) = ''
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '切换 T 快捷键 法术'
+    - OrderUse [string] (lvl=0,col=0) = ''
+    - Name [string] (lvl=0,col=0) = '切换 T 快捷键 法术'
+    - TooltipExtended [string] (lvl=1,col=0) = '火焰喷射: |n|cffffff00连珠|r - |cffffff00齐射|n|r|n汲取: |n|cffffff00减速|r - |cffffff00虚弱|r'
+
+## S034  (基础: AHtc)
+- 全部修改字段:
+    - Name [string] (lvl=0,col=0) = '切换 R 快捷键 法术'
+    - CastType [string] (lvl=0,col=0) = ''
+    - Levels [int] (lvl=0,col=0) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - CastRange [int] (lvl=1,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'creeps'
+    - OrderUse [string] (lvl=0,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '切换 R 快捷键 法术'
+    - TooltipExtended [string] (lvl=1,col=0) = '移形换位: |n|cffffff00换人|r - |cffffff00换物|r'
+    - CastTypeCap [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUndeadCaptureFlag.blp'
+    - Targets [string] (lvl=1,col=0) = ''
+    - Htc1 [unreal] (lvl=1,col=1) = 0.0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Buffs [string] (lvl=1,col=0) = ''
+    - Cooldown [unreal] (lvl=1,col=0) = 0.0
+    - HeroAbility [unreal] (lvl=1,col=0) = 0.0
+    - Duration [unreal] (lvl=1,col=0) = 0.0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - Htc4 [unreal] (lvl=1,col=4) = 0.0
+    - Htc3 [unreal] (lvl=1,col=3) = 0.0
+    - achd [int] (lvl=0,col=0) = 0
+    - BuffArtX [int] (lvl=0,col=0) = 2
+
+## S035  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - achd [int] (lvl=0,col=0) = 0
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNOrcCaptureFlag.blp'
+    - Name [string] (lvl=0,col=0) = '切换 Y 快捷键 法术'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = '引力: |n|cffffff00黑洞|r - |cffffff00力场|r|n|n锁链:|n|cffffff00勾取|r - |cffffff00引导|r|n'
+    - TooltipNormal [string] (lvl=1,col=0) = '切换 Y 快捷键 法术'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 2
+
+## S036  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - achd [int] (lvl=0,col=0) = 0
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNOrcBattleStandard.blp'
+    - Name [string] (lvl=0,col=0) = '切换 C 快捷键 法术'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = '急行: |n|cffffff00吸收|r - |cffffff00扫射|r'
+    - TooltipNormal [string] (lvl=1,col=0) = '切换 C 快捷键 法术'
+    - BuffArtY [int] (lvl=0,col=0) = 2
+    - Ncl6 [string] (lvl=1,col=6) = 'revive'
+
+## W000  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 2
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W001  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtX [int] (lvl=0,col=0) = 1
+    - BuffArtY [int] (lvl=0,col=0) = 2
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W002  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtX [int] (lvl=0,col=0) = 1
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W003  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W004  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - BuffArtY [int] (lvl=0,col=0) = 1
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W005  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtX [int] (lvl=0,col=0) = 3
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W006  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果'
+    - BuffArtX [int] (lvl=0,col=0) = 0
+    - BuffArtY [int] (lvl=0,col=0) = 2
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+
+## W007  (基础: ANcl)
+- 全部修改字段:
+    - Ncl5 [int] (lvl=1,col=5) = 0
+    - Ncl5 [int] (lvl=2,col=5) = 0
+    - Ncl5 [int] (lvl=3,col=5) = 0
+    - Area [unreal] (lvl=1,col=0) = 0.0
+    - Area [unreal] (lvl=2,col=0) = 0.0
+    - Area [unreal] (lvl=3,col=0) = 0.0
+    - Ncl4 [unreal] (lvl=1,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=2,col=4) = 0.0
+    - Ncl4 [unreal] (lvl=3,col=4) = 0.0
+    - Ncl6 [string] (lvl=2,col=6) = 'channel'
+    - Ncl6 [string] (lvl=3,col=6) = 'channel'
+    - Levels [int] (lvl=0,col=0) = 1
+    - Ncl3 [int] (lvl=1,col=3) = 1
+    - HeroAbility [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=0,col=0) = ''
+    - EffectCaster [string] (lvl=0,col=0) = ''
+    - CastType [string] (lvl=0,col=0) = ''
+    - Animations [string] (lvl=0,col=0) = ''
+    - Icon [string] (lvl=0,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Name [string] (lvl=0,col=0) = '已致残'
+    - Ncl1 [unreal] (lvl=1,col=1) = 0.0
+    - CasterArt [string] (lvl=0,col=0) = ''
+    - TargetType [string] (lvl=0,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果|n'
+    - BuffArtY [int] (lvl=0,col=0) = 2
+    - Requirements [string] (lvl=0,col=0) = 'Q000'
+    - RequiredAbility [string] (lvl=0,col=0) = '1'
+

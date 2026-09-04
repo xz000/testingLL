@@ -1,0 +1,1878 @@
+# Upgrades (war3map.w3q) — 098b_CN
+
+- 基础(修改自原版): 2　自定义: 53
+
+## Rhme  (基础: Rhme)
+- 全部修改字段:
+    - Name [string] (lvl=1,col=0) = '已致残 in this test version'
+
+## Rhpm  (基础: Rhpm)
+- 全部修改字段:
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffff0000Player comm和s:|r|n|cff00ff00-cam### or -cam ### |r- sets zoom to distance ### (st和ard 300)|n|cff00ff00-stats |r- displays movespeed 和 other information|n|cff00ff00-apm |r- display action per minutes of all players|n|cff00ff00-fbc RRR GGG BBB |r- changes 火球 color to specified Red-Green-Blue color code (with entries from 0 to 255)|n|cff00ff00-sell # |r- sells item on 物品栏 position #|n|cff00ff00-quit local |r- exit game instantly|n|cff00ff00-title or -untitle |r- add or remove title (only if you have won a title)|cffff0000|nHost only comm和s:|r|cff00ff00|n-tea速度huffle |r- scramble tea速度'
+
+## R000  (基础: Ropm)
+- 全部修改字段:
+    - Name [string] (lvl=1,col=0) = '物品栏'
+    - ArtX [int] (lvl=0,col=0) = 0
+    - GoldCost(inc) [int] (lvl=0,col=0) = 3
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNPackBeast.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNPackBeast.blp'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNPackBeast.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNPackBeast.blp'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNPackBeast.blp'
+    - Requirements [string] (lvl=1,col=0) = ''
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=1,col=0) = '研究 物品栏'
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=2,col=0) = '研究 物品栏'
+    - TooltipNormal [string] (lvl=3,col=0) = '研究 物品栏'
+    - TooltipNormal [string] (lvl=4,col=0) = '研究 物品栏'
+    - TooltipNormal [string] (lvl=5,col=0) = '研究 物品栏'
+    - TooltipNormal [string] (lvl=6,col=0) = '研究 物品栏'
+    - TooltipExtended [string] (lvl=2,col=0) = '获得 2 额外物品格'
+    - TooltipExtended [string] (lvl=3,col=0) = '获得 3 额外物品格'
+    - TooltipExtended [string] (lvl=4,col=0) = '获得 an additional item slot'
+    - TooltipExtended [string] (lvl=5,col=0) = '获得 an additional item slot'
+    - TooltipExtended [string] (lvl=6,col=0) = '获得 an additional item slot'
+    - Name [string] (lvl=2,col=0) = '物品栏 1'
+    - Name [string] (lvl=3,col=0) = '物品栏 2'
+    - Name [string] (lvl=4,col=0) = '物品栏'
+    - Name [string] (lvl=5,col=0) = '物品栏'
+    - Name [string] (lvl=6,col=0) = '物品栏'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - Levels [int] (lvl=0,col=0) = 3
+
+## R004  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 12
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006969FF瞬间移动|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - Name [string] (lvl=2,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006969FF瞬间移动 2|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000R|r\r\n(等级 1) 距离: |c00FFFF00800|r, CD: |c00FFFF0013|r\r\n(等级 2) 距离: |c00FFFF001000|r, CD: |c00FFFF0010|r\r\n(等级 3) 距离: |c00FFFF001200|r, CD: |c00FFFF008|r\r\n(等级 4) 距离: |c00FFFF001250|r, CD: |c00FFFF007|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Name [string] (lvl=3,col=0) = '瞬间移动 (技能)'
+    - Name [string] (lvl=4,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006969FF瞬间移动 4|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006969FF瞬间移动 3|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000R|r\r\n(等级 1) 距离: |c00FFFF00800|r, CD: |c00FFFF0013|r\r\n(等级 2) 距离: |c00FFFF001000|r, CD: |c00FFFF0010|r\r\n(等级 3) 距离: |c00FFFF001200|r, CD: |c00FFFF008|r\r\n(等级 4) 距离: |c00FFFF001250|r, CD: |c00FFFF007|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |c00FF0000R|r\r\n(等级 1) 距离: |c00FFFF00800|r, CD: |c00FFFF0013|r\r\n(等级 2) 距离: |c00FFFF001000|r, CD: |c00FFFF0010|r\r\n(等级 3) 距离: |c00FFFF001200|r, CD: |c00FFFF008|r\r\n(等级 4) 距离: |c00FFFF001250|r, CD: |c00FFFF007|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - ArtX [int] (lvl=0,col=0) = 2
+
+## R002  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 5
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '火球 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9933火球 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000G|r|n|n(等级 2) 增加伤害 |cffffff000.70|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '火球 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9933火球 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000G|r|n|n(等级 3) 增加伤害 |cffffff000.70|r'
+    - Levels [int] (lvl=0,col=0) = 11
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000G|r|n|n(等级 4) 增加伤害 |cffffff000.70|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000G|r|n|n(等级 5) 增加伤害 |cffffff000.70|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9933火球 4|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00FF9933火球 5|r'
+    - Name [string] (lvl=3,col=0) = '火球 (技能)'
+    - Name [string] (lvl=4,col=0) = '火球 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00FF9933火球 6|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00FF9933火球 7|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |c00FF9933火球 8|r'
+    - Name [string] (lvl=5,col=0) = '火球 (技能)'
+    - Name [string] (lvl=6,col=0) = '火球 (技能)'
+    - Name [string] (lvl=7,col=0) = '火球 (技能)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000G|r|n|n(等级 6) 增加伤害 |cffffff000.70|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000G|r|n|n(等级 7) 增加伤害 |cffffff000.70|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000G|r|n|n(等级 8) 增加伤害 |cffffff000.70|r'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Name [string] (lvl=8,col=0) = '火球 (技能)'
+    - Name [string] (lvl=9,col=0) = '火球 (技能)'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |c00FF9933火球 9|r'
+    - TooltipNormal [string] (lvl=9,col=0) = '学习 |c00FF9933火球 10|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000G|r|n|n(等级 9) 增加伤害 |cffffff000.70|r'
+    - TooltipExtended [string] (lvl=9,col=0) = '快捷键: |cffff0000G|r|n|n(等级 10) 增加伤害 |cffffff000.70|r'
+    - Requirements [string] (lvl=5,col=0) = 'R017'
+    - Requirements [string] (lvl=6,col=0) = 'R017'
+    - Requirements [string] (lvl=7,col=0) = 'R017'
+    - Requirements [string] (lvl=8,col=0) = 'R017'
+    - Requirements [string] (lvl=9,col=0) = 'R017'
+    - ReqCost [string] (lvl=5,col=0) = '2'
+    - ReqCost [string] (lvl=7,col=0) = '3'
+    - ReqCost [string] (lvl=9,col=0) = '4'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - Requirements [string] (lvl=10,col=0) = 'R017'
+    - Name [string] (lvl=10,col=0) = '火球 (技能)'
+    - TooltipNormal [string] (lvl=10,col=0) = '学习 |cffff9933火球 11|r'
+    - TooltipExtended [string] (lvl=10,col=0) = '快捷键: |cffff0000D|r|n(等级 11) |cffffff00受到了乔丹之石戒指的效果|r'
+    - Requirements [string] (lvl=11,col=0) = 'R017'
+    - ReqCost [string] (lvl=11,col=0) = '5'
+    - Name [string] (lvl=11,col=0) = '火球 (技能)'
+    - TooltipNormal [string] (lvl=11,col=0) = '学习 |cffff9933火球 12|r'
+    - TooltipExtended [string] (lvl=11,col=0) = '快捷键: |cffff0000G|r|n(等级 12) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ReqCost [string] (lvl=3,col=0) = '1'
+    - ReqCost [string] (lvl=2,col=0) = '1'
+    - ReqCost [string] (lvl=4,col=0) = '2'
+    - ReqCost [string] (lvl=6,col=0) = '3'
+    - ReqCost [string] (lvl=8,col=0) = '4'
+    - ReqCost [string] (lvl=10,col=0) = '5'
+    - Requirements [string] (lvl=2,col=0) = 'R017'
+    - Requirements [string] (lvl=3,col=0) = 'R017'
+    - Requirements [string] (lvl=4,col=0) = 'R017'
+
+## R006  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 13
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '急行 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FF急行|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|cffff0000 C|r|n一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|r|n有 |cffffff006 |r等级|cffffff00|n|rCD: |cffffff0021|n|r持续: |cffffff007 + 0.8 x 升级|n|r最大吸收: |cffffff005 + 2 x 升级|n|r吸收|cffffff0050%|r伤害，每点伤害转化为|cffffff0015移动速度|r. |n|cffffff0035 |r初始移动速度增加'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FFOath 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FFOath 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '|c00FF0000Autocast|r\r\nAvoid enemy 法术. 受伤点数 are received, but no hit points are lost 和 you will recover from 击退 quickly.\r\n(等级 1) CD: |c00FFFF0021|r\r\n(等级 2) CD: |c00FFFF0018|r\r\n(等级 3) CD: |c00FFFF0015|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|c00FF0000Autocast|r\r\nAvoid enemy 法术. 受伤点数 are received, but no hit points are lost 和 you will recover from 击退 quickly.\r\n(等级 1) CD: |c00FFFF0021|r\r\n(等级 2) CD: |c00FFFF0018|r\r\n(等级 3) CD: |c00FFFF0015|r'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFrostArmor.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFrostArmor.blp'
+    - Name [string] (lvl=2,col=0) = 'Oath (技能)'
+    - Name [string] (lvl=3,col=0) = 'Oath (技能)'
+
+## R009  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 9
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9696闪电|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - Name [string] (lvl=2,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9696闪电 2|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000D|r\r\n发出一道闪电 which will 伤害 the first 术士 it 突击s at a CD on |c00FFFF0016|r 秒\r\n(等级 1) 伤害: |c00FFFF008|r, 距离: |c00FFFF00750|r\r\n(等级 2) 伤害: |c00FFFF009|r, 距离: |c00FFFF00900|r\r\n(等级 3) 伤害: |c00FFFF0010|r, 距离: |c00FFFF001050|r\r\n(等级 4) 伤害: |c00FFFF0011|r, 距离: |c00FFFF001200|r \r\n(等级 5) 伤害: |c00FFFF0012|r, 距离: |c00FFFF001350|r'
+    - Name [string] (lvl=3,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9696闪电 3|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000D|r\r\n发出一道闪电 which will 伤害 the first 术士 it 突击s at a CD on |c00FFFF0016|r 秒\r\n(等级 1) 伤害: |c00FFFF008|r, 距离: |c00FFFF00750|r\r\n(等级 2) 伤害: |c00FFFF009|r, 距离: |c00FFFF00900|r\r\n(等级 3) 伤害: |c00FFFF0010|r, 距离: |c00FFFF001050|r\r\n(等级 4) 伤害: |c00FFFF0011|r, 距离: |c00FFFF001200|r \r\n(等级 5) 伤害: |c00FFFF0012|r, 距离: |c00FFFF001350|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNChainLightning.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNChainLightning.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNChainLightning.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNChainLightning.blp'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00FF9696闪电 4|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00FF9696闪电 5|r'
+    - Name [string] (lvl=4,col=0) = '闪电 (技能)'
+    - Name [string] (lvl=5,col=0) = '闪电 (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |c00FF0000D|r\r\n发出一道闪电 which will 伤害 the first 术士 it 突击s at a CD on |c00FFFF0016|r 秒\r\n(等级 1) 伤害: |c00FFFF008|r, 距离: |c00FFFF00750|r\r\n(等级 2) 伤害: |c00FFFF009|r, 距离: |c00FFFF00900|r\r\n(等级 3) 伤害: |c00FFFF0010|r, 距离: |c00FFFF001050|r\r\n(等级 4) 伤害: |c00FFFF0011|r, 距离: |c00FFFF001200|r \r\n(等级 5) 伤害: |c00FFFF0012|r, 距离: |c00FFFF001350|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |c00FF0000D|r\r\n发出一道闪电 which will 伤害 the first 术士 it 突击s at a CD on |c00FFFF0016|r 秒\r\n(等级 1) 伤害: |c00FFFF008|r, 距离: |c00FFFF00750|r\r\n(等级 2) 伤害: |c00FFFF009|r, 距离: |c00FFFF00900|r\r\n(等级 3) 伤害: |c00FFFF0010|r, 距离: |c00FFFF001050|r\r\n(等级 4) 伤害: |c00FFFF0011|r, 距离: |c00FFFF001200|r \r\n(等级 5) 伤害: |c00FFFF0012|r, 距离: |c00FFFF001350|r'
+
+## R00A  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 15
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCFF99陨石|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|n|r召唤一颗陨石砸向目标或者向前方滚动.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 星落 和 滚石:|n|rCD: |cffffff0020 - 0.5 x 升级|r|cff00ff00|n星落:|r|n伤害: |cffffff007-14 + (1-2) x 升级|n|r|cff00ff00滚石:|n|r伤害系数: |cffffff000.6 +  0.3 x 升级|n|r伤害: |cffffff002.25-4.5 + (0.75-1.5) x 升级|r|cff00ff00|n|r击中后减速|n受到飞弹攻击后变大'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+
+## R007  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 13
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '冲撞 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006969FF冲撞|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - Name [string] (lvl=2,col=0) = 'Trust (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006969FF冲撞 2|r'
+    - Name [string] (lvl=3,col=0) = 'Trust (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006969FF冲撞 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006969FF冲撞 4|r'
+    - Name [string] (lvl=4,col=0) = 'Trust (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - ReqCost [string] (lvl=1,col=0) = '1'
+
+## R00B  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 13
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cffA020F0锁链|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - Name [string] (lvl=2,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffA020F0锁链 2|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000Y|r                                                     锁链s yourself to 指向 术士, causing both of you to accelerate toward each other.                                                                     (等级 1) 距离: |c00FFFF001000|r                                         (等级 2) 距离: |c00FFFF001200|r                              (等级 3) 距离: |c00FFFF001400|r'
+    - Name [string] (lvl=3,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffA020F0锁链 3|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000Y|r                                                     锁链s yourself to 指向 术士, causing both of you to accelerate toward each other.                                                                     (等级 1) 距离: |c00FFFF001000|r                                         (等级 2) 距离: |c00FFFF001200|r                              (等级 3) 距离: |c00FFFF001400|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - ReqCost [string] (lvl=1,col=0) = '1'
+
+## R001  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 15
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33火焰喷射|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r|n发射多枚火焰弹.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 连珠 和 齐射|n连珠:|n|r60% 击退|cff00ff00|n|r伤害: |cffffff002.6 + 0.2 x 升级|n|r飞弹: |cffffff006 + 1 x 升级|n|rCD: |cffffff0016 - 1 x 升级|n|r|cff00ff00齐射:|n|r65% 击退|cff00ff00|n|r伤害: |cffffff003.0 + 0.4 x 升级|n|rCD: |cffffff0014 - 1 x 升级|r'
+    - Name [string] (lvl=2,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33弹跳弹 2|r'
+    - Name [string] (lvl=3,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33弹跳弹 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBanish.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBanish.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000T|r\r\nCast a projectile which 弹射s between enemy 术士s dealing 伤害 和 refreshes its 持续 on each hit\r\n(等级 1) 伤害: |c00FFFF007|r, 距离: |c00FFFF001000|r\r\n(等级 2) 伤害: |c00FFFF008|r, 距离: |c00FFFF001200|r\r\n(等级 2) 伤害: |c00FFFF009|r, 距离: |c00FFFF001400|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000T|r\r\nCast a projectile which 弹射s between enemy 术士s dealing 伤害 和 refreshes its 持续 on each hit\r\n(等级 1) 伤害: |c00FFFF007|r, 距离: |c00FFFF001000|r\r\n(等级 2) 伤害: |c00FFFF008|r, 距离: |c00FFFF001200|r\r\n(等级 2) 伤害: |c00FFFF009|r, 距离: |c00FFFF001400|r'
+    - ReqCost [string] (lvl=1,col=0) = '1'
+    - ArtY [int] (lvl=0,col=0) = 1
+
+## R005  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 10
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9696追踪弹|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9696追踪弹 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9696追踪弹 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000D|r\r\nFires a 追踪弹 missile that will track enemy 术士s\r\n(等级 1) 伤害: |c00FFFF008.5|r, 持续: |c00FFFF005|r\r\n(等级 2) 伤害: |c00FFFF0010.0|r 持续: |c00FFFF006|r\r\n(等级 3) 伤害: |c00FFFF0011.5|r 持续: |c00FFFF007|r\r\n(等级 4) 伤害: |c00FFFF0013.0|r 持续: |c00FFFF008|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000D|r\r\nFires a 追踪弹 missile that will track enemy 术士s\r\n(等级 1) 伤害: |c00FFFF008.5|r, 持续: |c00FFFF005|r\r\n(等级 2) 伤害: |c00FFFF0010.0|r 持续: |c00FFFF006|r\r\n(等级 3) 伤害: |c00FFFF0011.5|r 持续: |c00FFFF007|r\r\n(等级 4) 伤害: |c00FFFF0013.0|r 持续: |c00FFFF008|r'
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNManaFlare.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNManaFlare.blp'
+    - Name [string] (lvl=2,col=0) = '追踪弹 (技能)'
+    - Name [string] (lvl=3,col=0) = '追踪弹 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNManaFlare.blp'
+    - Name [string] (lvl=4,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00FF9696追踪弹 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |c00FF0000D|r\r\nFires a 追踪弹 missile that will track enemy 术士s\r\n(等级 1) 伤害: |c00FFFF008.5|r, 持续: |c00FFFF005|r\r\n(等级 2) 伤害: |c00FFFF0010.0|r 持续: |c00FFFF006|r\r\n(等级 3) 伤害: |c00FFFF0011.5|r 持续: |c00FFFF007|r\r\n(等级 4) 伤害: |c00FFFF0013.0|r 持续: |c00FFFF008|r'
+
+## R00C  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 14
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FF反射盾|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|cffff0000 C|r|n反射|cffffff00所有飞弹魔法|r和|cffffff00冲撞|r|n|cff00ff00驱散锁链|n|rCD: |cffffff0025 / 22.5 / 20.5 / 19 / 18 / 17|n|r持续: |cffffff002.8 / 3.0 / 3.2 / 3.4 / 3.6 / 3.8|r'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FF反射盾 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - ArtY [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+
+## R00D  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNMagicImmunity.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '吸血精通 1 (精通)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33吸血精通 1|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffff0000精通|r|n获得 |cffffff008% |r生命吸取|n获得 |cffffff004% |r受伤点恢复|n额外获得 |cffffff000.5 |r秒的减速 |cffffff00汲取|r'
+    - Levels [int] (lvl=0,col=0) = 6
+    - Name [string] (lvl=2,col=0) = '吸血精通 2 (精通)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33吸血精通 2|r'
+    - Name [string] (lvl=3,col=0) = '吸血精通 3 (精通)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33吸血精通 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNMagicImmunity.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNMagicImmunity.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '|cffff0000精通|r|n获得 |cffffff0016% |r生命吸取|n获得 |cffffff008% |r受伤点恢复|n额外获得 |cffffff000.5 |r秒的减速 |cffffff00汲取|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|cffff0000精通|r|n获得 |cffffff0024% |r生命吸取|n获得 |cffffff0012% |r受伤点恢复|n额外获得 |cffffff000.5 |r秒的减速 |cffffff00汲取|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=4,col=0) = '吸血精通 4 (精通)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCCC33吸血精通 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|cffff0000精通|r|n获得 |cffffff0032% |r生命吸取|n获得 |cffffff0016% |r受伤点恢复|n额外获得 |cffffff000.5 |r秒的减速 |cffffff00汲取|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNMagicImmunity.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNMagicImmunity.blp'
+    - Name [string] (lvl=5,col=0) = '吸血精通 5 (精通)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCCC33吸血精通 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '|cffff0000精通|r|n获得 |cffffff0040% |r生命吸取|n获得 |cffffff0020% |r受伤点恢复|n额外获得 |cffffff000.5 |r秒的减速 |cffffff00汲取|r'
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNMagicImmunity.blp'
+    - Name [string] (lvl=6,col=0) = '吸血精通 6 (精通)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00CCCC33吸血精通 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '|cffff0000精通|r|n获得 |cffffff0048% |r生命吸取|n获得 |cffffff0024% |r受伤点恢复|n额外获得 |cffffff000.5 |r秒的减速 |cffffff00汲取|r'
+
+## R00E  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 15
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33汲取|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r|n吸取目标生命.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 减速 和 虚弱|n减速:|n|r减少敌人或增加友军速度 |cffffff0070|n|r伤害: |cffffff006 + 升级|n|r持续: |cffffff004 + 升级|n|rCD: |cffffff0022 / 20 / 19 / 18.5 / 18 / 17.5|r|n|cff00ff00虚弱:|n|r降低敌人伤害 |cffffff0050%|n|r伤害: |cffffff005 + 升级|n|r持续: |cffffff007.5 + 1.5 x 升级|n|rCD: |cffffff0022 - 0.5 x 升级|r'
+    - Name [string] (lvl=2,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33汲取 2|r'
+    - Name [string] (lvl=3,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33汲取 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNCripple.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNCripple.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000T|r\r\nCast a projectile which 弹射s between 术士s, dealing 伤害 to enemy 和 heals friendly. Basic 伤害 is |c00FFFF003|r. Bonus 伤害 depends on how far the missile 有 travelled\r\n(等级 1) hits: |c00FFFF002|r, max 伤害 bonus: |c00FFFF007.5|r\r\n(等级 2) hits: |c00FFFF003|r, max 伤害 bonus: |c00FFFF0010.0|r\r\n(等级 3) hits: |c00FFFF004|r, max 伤害 bonus: |c00FFFF0012.5|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000T|r\r\nCast a projectile which 弹射s between 术士s, dealing 伤害 to enemy 和 heals friendly. Basic 伤害 is |c00FFFF003|r. Bonus 伤害 depends on how far the missile 有 travelled\r\n(等级 1) hits: |c00FFFF002|r, max 伤害 bonus: |c00FFFF007.5|r\r\n(等级 2) hits: |c00FFFF003|r, max 伤害 bonus: |c00FFFF0010.0|r\r\n(等级 3) hits: |c00FFFF004|r, max 伤害 bonus: |c00FFFF0012.5|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - ReqCost [string] (lvl=1,col=0) = '1'
+
+## R00F  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 16
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '疾风步 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCFF99疾风步|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|n|r使自己进入短暂的隐身状态，撞击目标或者隐身并攻击敌人.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 撞击 和 隐身:|n|rCD: |cffffff0030 / 26 / 23 / 21 / 20 / 19|r|cff00ff00|n撞击:|r|n持续: |cffffff003.1|n|r速度提升: |cffffff00200|n|r伤害: |cffffff005.4 + 0.8 x 升级|n|r|cff00ff00隐身:|n|r持续: |cffffff004|n|r速度提升: |cffffff00100|n|r攻击后保持隐身'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - GoldCost(base) [int] (lvl=0,col=0) = 2
+    - Name [string] (lvl=2,col=0) = '疾风步 (技能)'
+    - Name [string] (lvl=3,col=0) = '疾风步 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99疾风步 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99疾风步 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\nGain 隐身 和 a speed bonus. When you come within 距离 of an enemy 术士, you will 伤害 all near 术士s\r\n(等级 1)  伤害: |c00FFFF008|r, 持续:  |c00FFFF003.0|r sec\r\n(等级 2)  伤害: |c00FFFF009|r, 持续:  |c00FFFF003.5|r sec\r\n(等级 3)  伤害: |c00FFFF0010|r, 持续:  |c00FFFF004.0|r sec\r\n|cff32CD32Bonus from Melee 精通|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\nGain 隐身 和 a speed bonus. When you come within 距离 of an enemy 术士, you will 伤害 all near 术士s\r\n(等级 1)  伤害: |c00FFFF008|r, 持续:  |c00FFFF003.0|r sec\r\n(等级 2)  伤害: |c00FFFF009|r, 持续:  |c00FFFF003.5|r sec\r\n(等级 3)  伤害: |c00FFFF0010|r, 持续:  |c00FFFF004.0|r sec\r\n|cff32CD32Bonus from Melee 精通|r'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+
+## R008  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 13
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '致残 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cffa020f0致残|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n致残你的目标，使之无法移动或施放魔法. |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n缠绕:|n|r持续: |cffffff004.5 + 0.25 x 升级|n|rCD: |cffffff0025 / 21 / 18 / 16 / 14.5 / 13|n|r|cff00ff00沉默:|n|r沉默目标|cffffff005秒+双方技能差 |r和 |cffffff00驱散目标的所有增益效果|n|rCD: |cffffff0016 / 15.5 / 15 / 14.5 / 14 / 13.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r'
+    - Name [string] (lvl=2,col=0) = 'Freeze (技能)'
+    - Name [string] (lvl=3,col=0) = 'Freeze (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9696Freeze 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9696Freeze 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000D|r\r\nCast an ice bolt to freeze enemy, making them unable to move or cast 法术. Frozen 术士s have reduced friction\r\n(等级 1) 持续: |c00FFFF002.5|r\r\n(等级 2) 持续: |c00FFFF003.5|r\r\n(等级 3) 持续: |c00FFFF004.5|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000D|r\r\nCast an ice bolt to freeze enemy, making them unable to move or cast 法术. Frozen 术士s have reduced friction\r\n(等级 1) 持续: |c00FFFF002.5|r\r\n(等级 2) 持续: |c00FFFF003.5|r\r\n(等级 3) 持续: |c00FFFF004.5|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBreathOfFrost.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBreathOfFrost.blp'
+    - ArtY [int] (lvl=0,col=0) = 1
+
+## R003  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 15
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33弹跳弹|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r|n在目标之间反弹攻击或者飞回使用者手里.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 弹射 和 充能|n弹射:|n|r在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值. 距离: |cffffff00750 + 150 x 法术等级|n|r伤害: |cffffff006 + 升级|n|rCD: |cffffff0020 / 19 / 18 / 17 / 16 / 15|r|n|cff00ff00充能:|n|r击中后返回自己并重置CD |cffffff00|n|r伤害: |cffffff006 + 0.9 x 升级|n|rCD: |cffffff0027 / 26 / 25 / 24 / 23 / 22|r'
+    - Name [string] (lvl=2,col=0) = '齐射 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33齐射 2|r'
+    - Name [string] (lvl=3,col=0) = '齐射 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33齐射 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFlare.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFlare.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n5发齐射\r\n(等级 1) 伤害: |c00FFFF002.5|r, CD: |c00FFFF0014|r\r\n(等级 2) 伤害: |c00FFFF003.0|r, CD: |c00FFFF0013|r\r\n(等级 3) 伤害: |c00FFFF003.5|r, CD: |c00FFFF0012|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n5发齐射\r\n(等级 1) 伤害: |c00FFFF002.5|r, CD: |c00FFFF0014|r\r\n(等级 2) 伤害: |c00FFFF003.0|r, CD: |c00FFFF0013|r\r\n(等级 3) 伤害: |c00FFFF003.5|r, CD: |c00FFFF0012|r'
+
+## R00G  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 15
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cffA020F0引力|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n施放黑洞吸取敌人或者创造一个立场减速并造成伤害.|nCD: |cffffff0026|r|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n黑洞:|n|r引力: |cffffff0012 + 升级|n|r伤害: |cffffff000.3 + 0.2 x 升级|n|r|cff00ff00力场:|n|r降低移动速度 |cffffff0050%|n|r伤害系数: |cffffff000.3 + 0.2 x 升级|n|r每秒治疗: |cffffff001 + 0.2 x 升级|r'
+    - Name [string] (lvl=2,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '|cffA020F0引力 2|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000Y|r                                                     锁链s yourself to 指向 术士, causing both of you to accelerate toward each other.                                                                     (等级 1) 距离: |c00FFFF001000|r                                         (等级 2) 距离: |c00FFFF001200|r                              (等级 3) 距离: |c00FFFF001400|r'
+    - Name [string] (lvl=3,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '|cffA020F0引力 3|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000Y|r                                                     锁链s yourself to 指向 术士, causing both of you to accelerate toward each other.                                                                     (等级 1) 距离: |c00FFFF001000|r                                         (等级 2) 距离: |c00FFFF001200|r                              (等级 3) 距离: |c00FFFF001400|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Requirements [string] (lvl=2,col=0) = 'R00I'
+    - Requirements [string] (lvl=3,col=0) = 'R00I'
+    - ReqCost [string] (lvl=2,col=0) = '2'
+    - ReqCost [string] (lvl=3,col=0) = '3'
+
+## R00H  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 16
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCFF99分裂弹|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|r|n主飞弹分裂成许多小飞弹发射出去.|n有 |cffffff006|r 等级.|n|cff00ff00有2种模式: 范围 和 指向|n|r飞弹伤害: |cffffff003.0 + 0.5 x 升级|r|cff00ff00|n|rCD: |cffffff0030/27/25/24/23/22...|r|cff00ff00|n范围:|r|cffffff00|n|r飞弹不断向四面八方散射|cffffff00|n|r|cff00ff00指向:|r|cffffff00|n|r主弹撞击后散射成小飞弹'
+    - Name [string] (lvl=2,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99分裂弹 2|r'
+    - Name [string] (lvl=3,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99分裂弹 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWispSplode.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWispSplode.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000T|r\r\nCast a projectile which 弹射s between 术士s, dealing 伤害 to enemy 和 heals friendly. Basic 伤害 is |c00FFFF003|r. Bonus 伤害 depends on how far the missile 有 travelled\r\n(等级 1) hits: |c00FFFF002|r, max 伤害 bonus: |c00FFFF007.5|r\r\n(等级 2) hits: |c00FFFF003|r, max 伤害 bonus: |c00FFFF0010.0|r\r\n(等级 3) hits: |c00FFFF004|r, max 伤害 bonus: |c00FFFF0012.5|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000T|r\r\nCast a projectile which 弹射s between 术士s, dealing 伤害 to enemy 和 heals friendly. Basic 伤害 is |c00FFFF003|r. Bonus 伤害 depends on how far the missile 有 travelled\r\n(等级 1) hits: |c00FFFF002|r, max 伤害 bonus: |c00FFFF007.5|r\r\n(等级 2) hits: |c00FFFF003|r, max 伤害 bonus: |c00FFFF0010.0|r\r\n(等级 3) hits: |c00FFFF004|r, max 伤害 bonus: |c00FFFF0012.5|r'
+    - Requirements [string] (lvl=2,col=0) = 'R00I'
+    - Requirements [string] (lvl=3,col=0) = 'R00I'
+    - ReqCost [string] (lvl=2,col=0) = '2'
+    - ReqCost [string] (lvl=3,col=0) = '3'
+    - ReqCost [string] (lvl=1,col=0) = '1'
+
+## R00I  (基础: Rhde)
+- 全部修改字段:
+    - GoldCost(inc) [int] (lvl=0,col=0) = 8
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '范围精通 1 (精通)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33范围精通 1|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffff0000精通|r|n给予范围奖励: |cffffff00火球|r, |cffffff00回旋镖|r, |cffffff00闪电|r, |cffffff00追踪弹|r, |cffffff00疾风步(撞击)|r, |cffffff00冲撞|r, |cffffff00陨石|r, |cffffff00引力(力场) |r和 |cffffff00致残(缠绕)|n|r|n爆炸距离和伤害/距离随精通升级而增加|n'
+    - Levels [int] (lvl=0,col=0) = 6
+    - Name [string] (lvl=2,col=0) = '范围精通 2 (精通)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33范围精通 2|r'
+    - Name [string] (lvl=3,col=0) = '范围精通 3 (精通)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33范围精通 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNScatterRockets.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNScatterRockets.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '|cffff0000精通|r|n给予范围奖励: |cffffff00火球|r, |cffffff00回旋镖|r, |cffffff00闪电|r, |cffffff00追踪弹|r, |cffffff00疾风步(撞击)|r, |cffffff00冲撞|r, |cffffff00陨石|r, |cffffff00引力(力场) |r和 |cffffff00致残(缠绕)|n|r|n爆炸距离和伤害/距离随精通升级而增加'
+    - TooltipExtended [string] (lvl=3,col=0) = '|cffff0000精通|r|n给予范围奖励: |cffffff00火球|r, |cffffff00回旋镖|r, |cffffff00闪电|r, |cffffff00追踪弹|r, |cffffff00疾风步(撞击)|r, |cffffff00冲撞|r, |cffffff00陨石|r, |cffffff00引力(力场) |r和 |cffffff00致残(缠绕)|n|r|n爆炸距离和伤害/距离随精通升级而增加|n'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=4,col=0) = '范围精通 4 (精通)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCCC33范围精通 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|cffff0000精通|r|n给予范围奖励: |cffffff00火球|r, |cffffff00回旋镖|r, |cffffff00闪电|r, |cffffff00追踪弹|r, |cffffff00疾风步(撞击)|r, |cffffff00冲撞|r, |cffffff00陨石|r, |cffffff00引力(力场) |r和 |cffffff00致残(缠绕)|n|r|n爆炸距离和伤害/距离随精通升级而增加|n'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNScatterRockets.blp'
+    - Name [string] (lvl=5,col=0) = '范围精通 5 (精通)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCCC33范围精通 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '|cffff0000精通|r|n给予范围奖励: |cffffff00火球|r, |cffffff00回旋镖|r, |cffffff00闪电|r, |cffffff00追踪弹|r, |cffffff00疾风步(撞击)|r, |cffffff00冲撞|r, |cffffff00陨石|r, |cffffff00引力(力场) |r和 |cffffff00致残(缠绕)|n|r|n爆炸距离和伤害/距离随精通升级而增加|n'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNScatterRockets.blp'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNScatterRockets.blp'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNScatterRockets.blp'
+    - Name [string] (lvl=6,col=0) = '范围精通 6 (精通)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00CCCC33范围精通 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '|cffff0000精通|r|n给予范围奖励: |cffffff00火球|r, |cffffff00回旋镖|r, |cffffff00闪电|r, |cffffff00追踪弹|r, |cffffff00疾风步(撞击)|r, |cffffff00冲撞|r, |cffffff00陨石|r, |cffffff00引力(力场) |r和 |cffffff00致残(缠绕)|n|r|n爆炸距离和伤害/距离随精通升级而增加|n'
+
+## R00J  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33火焰喷射 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r|n发射多枚火焰弹.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 连珠 和 齐射|n连珠:|n|r60% 击退|cff00ff00|n|r伤害: |cffffff002.6 + 0.2 x 升级|n|r飞弹: |cffffff006 + 1 x 升级|n|rCD: |cffffff0016 - 1 x 升级|n|r|cff00ff00齐射:|n|r65% 击退|cff00ff00|n|r伤害: |cffffff003.0 + 0.4 x 升级|n|rCD: |cffffff0014 - 1 x 升级|r'
+    - Name [string] (lvl=2,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33火焰喷射 3|r'
+    - Name [string] (lvl=3,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33火焰喷射 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000T|r|n发射多枚火焰弹.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 连珠 和 齐射|n连珠:|n|r60% 击退|cff00ff00|n|r伤害: |cffffff002.6 + 0.2 x 升级|n|r飞弹: |cffffff006 + 1 x 升级|n|rCD: |cffffff0016 - 1 x 升级|n|r|cff00ff00齐射:|n|r65% 击退|cff00ff00|n|r伤害: |cffffff003.0 + 0.4 x 升级|n|rCD: |cffffff0014 - 1 x 升级|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000T|r|n发射多枚火焰弹.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 连珠 和 齐射|n连珠:|n|r60% 击退|cff00ff00|n|r伤害: |cffffff002.6 + 0.2 x 升级|n|r飞弹: |cffffff006 + 1 x 升级|n|rCD: |cffffff0016 - 1 x 升级|n|r|cff00ff00齐射:|n|r65% 击退|cff00ff00|n|r伤害: |cffffff003.0 + 0.4 x 升级|n|rCD: |cffffff0014 - 1 x 升级|r'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Name [string] (lvl=4,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCCC33火焰喷射 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000T|r|n发射多枚火焰弹.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 连珠 和 齐射|n连珠:|n|r60% 击退|cff00ff00|n|r伤害: |cffffff002.6 + 0.2 x 升级|n|r飞弹: |cffffff006 + 1 x 升级|n|rCD: |cffffff0016 - 1 x 升级|n|r|cff00ff00齐射:|n|r65% 击退|cff00ff00|n|r伤害: |cffffff003.0 + 0.4 x 升级|n|rCD: |cffffff0014 - 1 x 升级|r'
+    - Name [string] (lvl=5,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCCC33火焰喷射 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000T|r|n发射多枚火焰弹.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 连珠 和 齐射|n连珠:|n|r60% 击退|cff00ff00|n|r伤害: |cffffff002.6 + 0.2 x 升级|n|r飞弹: |cffffff006 + 1 x 升级|n|rCD: |cffffff0016 - 1 x 升级|n|r|cff00ff00齐射:|n|r65% 击退|cff00ff00|n|r伤害: |cffffff003.0 + 0.4 x 升级|n|rCD: |cffffff0014 - 1 x 升级|r'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Requirements [string] (lvl=6,col=0) = 'R00Y'
+    - Name [string] (lvl=6,col=0) = '火焰喷射 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00CCCC33火焰喷射 7|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNSpell_Shadow_RainOfFire.blp'
+    - Name [string] (lvl=7,col=0) = '火焰喷射 (技能)'
+    - Name [string] (lvl=8,col=0) = '火焰喷射 (技能)'
+    - Name [string] (lvl=9,col=0) = '火焰喷射 (技能)'
+    - Name [string] (lvl=10,col=0) = '火焰喷射 (技能)'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000T|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000T|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffcccc33火焰喷射 8|r'
+
+## R00K  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33弹跳弹 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r|n在目标之间反弹攻击或者飞回使用者手里.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 弹射 和 充能|n弹射:|n|r在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值. 距离: |cffffff00750 + 150 x 法术等级|n|r伤害: |cffffff006 + 升级|n|rCD: |cffffff0020 / 19 / 18 / 17 / 16 / 15|r|n|cff00ff00充能:|n|r击中后返回自己并重置CD |cffffff00|n|r伤害: |cffffff006 + 0.9 x 升级|n|rCD: |cffffff0027 / 26 / 25 / 24 / 23 / 22|r'
+    - Name [string] (lvl=2,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33弹跳弹 3|r'
+    - Name [string] (lvl=3,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33弹跳弹 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Levels [int] (lvl=0,col=0) = 10
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000T|r|n在目标之间反弹攻击或者飞回使用者手里.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 弹射 和 充能|n弹射:|n|r在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值. 距离: |cffffff00750 + 150 x 法术等级|n|r伤害: |cffffff006 + 升级|n|rCD: |cffffff0020 / 19 / 18 / 17 / 16 / 15|r|n|cff00ff00充能:|n|r击中后返回自己并重置CD |cffffff00|n|r伤害: |cffffff006 + 0.9 x 升级|n|rCD: |cffffff0027 / 26 / 25 / 24 / 23 / 22|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000T|r|n在目标之间反弹攻击或者飞回使用者手里.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 弹射 和 充能|n弹射:|n|r在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值. 距离: |cffffff00750 + 150 x 法术等级|n|r伤害: |cffffff006 + 升级|n|rCD: |cffffff0020 / 19 / 18 / 17 / 16 / 15|r|n|cff00ff00充能:|n|r击中后返回自己并重置CD |cffffff00|n|r伤害: |cffffff006 + 0.9 x 升级|n|rCD: |cffffff0027 / 26 / 25 / 24 / 23 / 22|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Name [string] (lvl=4,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCCC33弹跳弹 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000T|r|n在目标之间反弹攻击或者飞回使用者手里.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 弹射 和 充能|n弹射:|n|r在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值. 距离: |cffffff00750 + 150 x 法术等级|n|r伤害: |cffffff006 + 升级|n|rCD: |cffffff0020 / 19 / 18 / 17 / 16 / 15|r|n|cff00ff00充能:|n|r击中后返回自己并重置CD |cffffff00|n|r伤害: |cffffff006 + 0.9 x 升级|n|rCD: |cffffff0027 / 26 / 25 / 24 / 23 / 22|r'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Name [string] (lvl=5,col=0) = '弹跳弹 (技能)'
+    - Requirements [string] (lvl=4,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=4,col=0) = '1'
+    - ReqCost [string] (lvl=5,col=0) = '2'
+    - Requirements [string] (lvl=5,col=0) = 'R00Y'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000T|r|n在目标之间反弹攻击或者飞回使用者手里.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 弹射 和 充能|n弹射:|n|r在目标之间反弹，每弹一次伤害减少|cffffff0020%|r直到最小值. 距离: |cffffff00750 + 150 x 法术等级|n|r伤害: |cffffff006 + 升级|n|rCD: |cffffff0020 / 19 / 18 / 17 / 16 / 15|r|n|cff00ff00充能:|n|r击中后返回自己并重置CD |cffffff00|n|r伤害: |cffffff006 + 0.9 x 升级|n|rCD: |cffffff0027 / 26 / 25 / 24 / 23 / 22|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |cffcccc33弹跳弹 6|r'
+    - Requirements [string] (lvl=6,col=0) = 'R00Y'
+    - Requirements [string] (lvl=7,col=0) = 'R00Y'
+    - Requirements [string] (lvl=8,col=0) = 'R00Y'
+    - Requirements [string] (lvl=9,col=0) = 'R00Y'
+    - Requirements [string] (lvl=10,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=6,col=0) = '2'
+    - ReqCost [string] (lvl=7,col=0) = '2'
+    - ReqCost [string] (lvl=8,col=0) = '2'
+    - ReqCost [string] (lvl=9,col=0) = '2'
+    - ReqCost [string] (lvl=10,col=0) = '2'
+    - Name [string] (lvl=6,col=0) = '弹跳弹 (技能)'
+    - Name [string] (lvl=7,col=0) = '弹跳弹 (技能)'
+    - Name [string] (lvl=8,col=0) = '弹跳弹 (技能)'
+    - Name [string] (lvl=9,col=0) = '弹跳弹 (技能)'
+    - Name [string] (lvl=10,col=0) = '弹跳弹 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffcccc33弹跳弹 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000T|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBouncerActive.blp'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000T|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+
+## R00L  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33汲取 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000T|r|n吸取目标生命.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 减速 和 虚弱|n减速:|n|r减少敌人或增加友军速度 |cffffff0070|n|r伤害: |cffffff006 + 升级|n|r持续: |cffffff004 + 升级|n|rCD: |cffffff0022 / 20 / 19 / 18.5 / 18 / 17.5|r|n|cff00ff00虚弱:|n|r降低敌人伤害 |cffffff0050%|n|r伤害: |cffffff005 + 升级|n|r持续: |cffffff007.5 + 1.5 x 升级|n|rCD: |cffffff0022 - 0.5 x 升级|r'
+    - Name [string] (lvl=2,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33汲取 3|r'
+    - Name [string] (lvl=3,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33汲取 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000T|r|n吸取目标生命.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 减速 和 虚弱|n减速:|n|r减少敌人或增加友军速度 |cffffff0070|n|r伤害: |cffffff006 + 升级|n|r持续: |cffffff004 + 升级|n|rCD: |cffffff0022 / 20 / 19 / 18.5 / 18 / 17.5|r|n|cff00ff00虚弱:|n|r降低敌人伤害 |cffffff0050%|n|r伤害: |cffffff005 + 升级|n|r持续: |cffffff007.5 + 1.5 x 升级|n|rCD: |cffffff0022 - 0.5 x 升级|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000T|r|n吸取目标生命.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 减速 和 虚弱|n减速:|n|r减少敌人或增加友军速度 |cffffff0070|n|r伤害: |cffffff006 + 升级|n|r持续: |cffffff004 + 升级|n|rCD: |cffffff0022 / 20 / 19 / 18.5 / 18 / 17.5|r|n|cff00ff00虚弱:|n|r降低敌人伤害 |cffffff0050%|n|r伤害: |cffffff005 + 升级|n|r持续: |cffffff007.5 + 1.5 x 升级|n|rCD: |cffffff0022 - 0.5 x 升级|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Levels [int] (lvl=0,col=0) = 10
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000T|r|n吸取目标生命.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 减速 和 虚弱|n减速:|n|r减少敌人或增加友军速度 |cffffff0070|n|r伤害: |cffffff006 + 升级|n|r持续: |cffffff004 + 升级|n|rCD: |cffffff0022 / 20 / 19 / 18.5 / 18 / 17.5|r|n|cff00ff00虚弱:|n|r降低敌人伤害 |cffffff0050%|n|r伤害: |cffffff005 + 升级|n|r持续: |cffffff007.5 + 1.5 x 升级|n|rCD: |cffffff0022 - 0.5 x 升级|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCCC33汲取 5|r'
+    - Name [string] (lvl=4,col=0) = '汲取 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Name [string] (lvl=5,col=0) = '汲取 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCCC33汲取 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000T|r|n吸取目标生命.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式: 减速 和 虚弱|n减速:|n|r减少敌人或增加友军速度 |cffffff0070|n|r伤害: |cffffff006 + 升级|n|r持续: |cffffff004 + 升级|n|rCD: |cffffff0022 / 20 / 19 / 18.5 / 18 / 17.5|r|n|cff00ff00虚弱:|n|r降低敌人伤害 |cffffff0050%|n|r伤害: |cffffff005 + 升级|n|r持续: |cffffff007.5 + 1.5 x 升级|n|rCD: |cffffff0022 - 0.5 x 升级|r'
+    - Name [string] (lvl=6,col=0) = '汲取 (技能)'
+    - Name [string] (lvl=7,col=0) = '汲取 (技能)'
+    - Name [string] (lvl=8,col=0) = '汲取 (技能)'
+    - Name [string] (lvl=9,col=0) = '汲取 (技能)'
+    - Name [string] (lvl=10,col=0) = '汲取 (技能)'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffcccc33汲取 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000D|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffcccc33汲取 8|r'
+
+## R00M  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '致残 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cffa020f0致残 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n致残你的目标，使之无法移动或施放魔法. |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n缠绕:|n|r持续: |cffffff004.5 + 0.25 x 升级|n|rCD: |cffffff0025 / 21 / 18 / 16 / 14.5 / 13|n|r|cff00ff00沉默:|n|r沉默目标|cffffff005秒+双方技能差 |r和 |cffffff00驱散目标的所有增益效果|n|rCD: |cffffff0016 / 15.5 / 15 / 14.5 / 14 / 13.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '致残 (技能)'
+    - Name [string] (lvl=3,col=0) = '致残 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |cffa020f0致残 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |cffa020f0致残 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000Y|r|n致残你的目标，使之无法移动或施放魔法. |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n缠绕:|n|r持续: |cffffff004.5 + 0.25 x 升级|n|rCD: |cffffff0025 / 21 / 18 / 16 / 14.5 / 13|n|r|cff00ff00沉默:|n|r沉默目标|cffffff005秒+双方技能差 |r和 |cffffff00驱散目标的所有增益效果|n|rCD: |cffffff0016 / 15.5 / 15 / 14.5 / 14 / 13.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000Y|r|n致残你的目标，使之无法移动或施放魔法. |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n缠绕:|n|r持续: |cffffff004.5 + 0.25 x 升级|n|rCD: |cffffff0025 / 21 / 18 / 16 / 14.5 / 13|n|r|cff00ff00沉默:|n|r沉默目标|cffffff005秒+双方技能差 |r和 |cffffff00驱散目标的所有增益效果|n|rCD: |cffffff0016 / 15.5 / 15 / 14.5 / 14 / 13.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Name [string] (lvl=4,col=0) = '致残 (技能)'
+    - Name [string] (lvl=5,col=0) = '致残 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |cffa020f0致残 5|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |cffa020f0致残 6|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000Y|r|n致残你的目标，使之无法移动或施放魔法. |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n缠绕:|n|r持续: |cffffff004.5 + 0.25 x 升级|n|rCD: |cffffff0025 / 21 / 18 / 16 / 14.5 / 13|n|r|cff00ff00沉默:|n|r沉默目标|cffffff005秒+双方技能差 |r和 |cffffff00驱散目标的所有增益效果|n|rCD: |cffffff0016 / 15.5 / 15 / 14.5 / 14 / 13.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000Y|r|n致残你的目标，使之无法移动或施放魔法. |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n缠绕:|n|r持续: |cffffff004.5 + 0.25 x 升级|n|rCD: |cffffff0025 / 21 / 18 / 16 / 14.5 / 13|n|r|cff00ff00沉默:|n|r沉默目标|cffffff005秒+双方技能差 |r和 |cffffff00驱散目标的所有增益效果|n|rCD: |cffffff0016 / 15.5 / 15 / 14.5 / 14 / 13.5|n|r|cffff0000R技能只受一半的沉默效果，天罚不受沉默|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffa020f0致残 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000D|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - Name [string] (lvl=6,col=0) = '致残 (技能)'
+    - Name [string] (lvl=7,col=0) = '致残 (技能)'
+    - Name [string] (lvl=8,col=0) = '致残 (技能)'
+    - Name [string] (lvl=9,col=0) = '致残 (技能)'
+    - Name [string] (lvl=10,col=0) = '致残 (技能)'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFaerieFire.blp'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffa020f0致残 8|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |cffa020f0致残 9|r'
+    - TooltipNormal [string] (lvl=9,col=0) = '学习 |cffa020f0致残 10|r'
+    - TooltipNormal [string] (lvl=10,col=0) = '学习 |cffa020f0致残 11|r'
+
+## R00N  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cffA020F0引力 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n施放黑洞吸取敌人或者创造一个立场减速并造成伤害.|nCD: |cffffff0026|r|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n黑洞:|n|r引力: |cffffff0012 + 升级|n|r伤害: |cffffff000.3 + 0.2 x 升级|n|r|cff00ff00力场:|n|r降低移动速度 |cffffff0050%|n|r伤害系数: |cffffff000.3 + 0.2 x 升级|n|r每秒治疗: |cffffff001 + 0.2 x 升级|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |cffA020F0引力 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000Y|r|n施放黑洞吸取敌人或者创造一个立场减速并造成伤害.|nCD: |cffffff0026|r|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n黑洞:|n|r引力: |cffffff0012 + 升级|n|r伤害: |cffffff000.3 + 0.2 x 升级|n|r|cff00ff00力场:|n|r降低移动速度 |cffffff0050%|n|r伤害系数: |cffffff000.3 + 0.2 x 升级|n|r每秒治疗: |cffffff001 + 0.2 x 升级|r'
+    - Name [string] (lvl=3,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |cffA020F0引力 4|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000Y|r|n施放黑洞吸取敌人或者创造一个立场减速并造成伤害.|nCD: |cffffff0026|r|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n黑洞:|n|r引力: |cffffff0012 + 升级|n|r伤害: |cffffff000.3 + 0.2 x 升级|n|r|cff00ff00力场:|n|r降低移动速度 |cffffff0050%|n|r伤害系数: |cffffff000.3 + 0.2 x 升级|n|r每秒治疗: |cffffff001 + 0.2 x 升级|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Levels [int] (lvl=0,col=0) = 10
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000Y|r|n施放黑洞吸取敌人或者创造一个立场减速并造成伤害.|nCD: |cffffff0026|r|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n黑洞:|n|r引力: |cffffff0012 + 升级|n|r伤害: |cffffff000.3 + 0.2 x 升级|n|r|cff00ff00力场:|n|r降低移动速度 |cffffff0050%|n|r伤害系数: |cffffff000.3 + 0.2 x 升级|n|r每秒治疗: |cffffff001 + 0.2 x 升级|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000D|r|n(等级 6) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |cffA020F0引力 5|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |cffA020F0引力 6|r'
+    - Name [string] (lvl=4,col=0) = '引力 (技能)'
+    - Name [string] (lvl=5,col=0) = '引力 (技能)'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNStarfall.blp'
+    - Name [string] (lvl=6,col=0) = '引力 (技能)'
+    - Name [string] (lvl=7,col=0) = '引力 (技能)'
+    - Name [string] (lvl=8,col=0) = '引力 (技能)'
+    - Name [string] (lvl=9,col=0) = '引力 (技能)'
+    - Name [string] (lvl=10,col=0) = '引力 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffa020f0引力 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000Y|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+
+## R00O  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 8
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9696追踪弹 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9696追踪弹 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9696追踪弹 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Name [string] (lvl=2,col=0) = '追踪弹 (技能)'
+    - Name [string] (lvl=3,col=0) = '追踪弹 (技能)'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Name [string] (lvl=4,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00FF9696追踪弹 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Name [string] (lvl=5,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00FF9696追踪弹 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Name [string] (lvl=6,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00FF9696追踪弹 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000D|r|n飞弹自动跟踪目标|n持续 |cffffff004.5|n|r|cffadff2f追踪弹|r|cffffff002.25秒|r后充能|cffadff2f, 造成额外伤害. |r|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0015.0|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0013.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0012.5|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0012.0 |r(任意 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0011.5|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0011.0 |r(任意 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0010.5 |r(任意 3)'
+    - Requirements [string] (lvl=3,col=0) = 'R017'
+    - Requirements [string] (lvl=4,col=0) = 'R017'
+    - Requirements [string] (lvl=5,col=0) = 'R017'
+    - Requirements [string] (lvl=6,col=0) = 'R017'
+    - ReqCost [string] (lvl=3,col=0) = '1'
+    - ReqCost [string] (lvl=4,col=0) = '1'
+    - ReqCost [string] (lvl=5,col=0) = '2'
+    - ReqCost [string] (lvl=6,col=0) = '3'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNANA_WaterShockwave.BLP'
+    - Requirements [string] (lvl=7,col=0) = 'R017'
+    - Requirements [string] (lvl=8,col=0) = 'R017'
+    - Requirements [string] (lvl=9,col=0) = 'R017'
+    - Requirements [string] (lvl=10,col=0) = 'R017'
+    - ReqCost [string] (lvl=7,col=0) = '3'
+    - ReqCost [string] (lvl=8,col=0) = '3'
+    - ReqCost [string] (lvl=9,col=0) = '3'
+    - ReqCost [string] (lvl=10,col=0) = '3'
+    - Name [string] (lvl=7,col=0) = '追踪弹 (技能)'
+    - Name [string] (lvl=8,col=0) = '追踪弹 (技能)'
+    - Name [string] (lvl=9,col=0) = '追踪弹 (技能)'
+    - Name [string] (lvl=10,col=0) = '追踪弹 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffff9696追踪弹 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000D|r|n(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |cffff9696追踪弹 9|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+
+## R00P  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 8
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9696闪电 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9696闪电 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - Name [string] (lvl=3,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9696闪电 4|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00FF9696闪电 5|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00FF9696闪电 6|r'
+    - Name [string] (lvl=4,col=0) = '闪电 (技能)'
+    - Name [string] (lvl=5,col=0) = '闪电 (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - Name [string] (lvl=6,col=0) = '闪电 (技能)'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00FF9696闪电 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000D|r|n发出一道闪电|n(等级 1) 伤害: |cffffff007|r, CD: |cffffff0016.5|r|n(等级 2) 伤害: |cffffff008|r, CD: |cffffff0015.5|r|n(等级 3) 伤害: |cffffff009|r, CD: |cffffff0015.0|r|n(等级 4) 伤害: |cffffff0010|r, CD: |cffffff0014.5 |r(距离 1)|n(等级 5) 伤害: |cffffff0011|r, CD: |cffffff0014.0|r|n(等级 6) 伤害: |cffffff0012|r, CD: |cffffff0013.5 |r(距离 2)|n(等级 7) 伤害: |cffffff0013|r, CD: |cffffff0013.0 |r(距离 3)'
+    - Requirements [string] (lvl=3,col=0) = 'R00Y'
+    - Requirements [string] (lvl=4,col=0) = 'R00Y'
+    - Requirements [string] (lvl=5,col=0) = 'R00Y'
+    - Requirements [string] (lvl=6,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=4,col=0) = '1'
+    - ReqCost [string] (lvl=5,col=0) = '2'
+    - ReqCost [string] (lvl=6,col=0) = '3'
+    - ReqCost [string] (lvl=3,col=0) = '1'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - Requirements [string] (lvl=7,col=0) = 'R00Y'
+    - Requirements [string] (lvl=8,col=0) = 'R00Y'
+    - Requirements [string] (lvl=9,col=0) = 'R00Y'
+    - Requirements [string] (lvl=10,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=7,col=0) = '3'
+    - ReqCost [string] (lvl=8,col=0) = '3'
+    - ReqCost [string] (lvl=9,col=0) = '3'
+    - ReqCost [string] (lvl=10,col=0) = '3'
+    - Name [string] (lvl=7,col=0) = '闪电 (技能)'
+    - Name [string] (lvl=8,col=0) = '闪电 (技能)'
+    - Name [string] (lvl=9,col=0) = '闪电 (技能)'
+    - Name [string] (lvl=10,col=0) = '闪电 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffff9696闪电 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+
+## R00Q  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 3
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 5
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cffA020F0锁链 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |cffA020F0锁链 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - Name [string] (lvl=3,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |cffA020F0锁链 4|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Levels [int] (lvl=0,col=0) = 10
+    - ArtY [int] (lvl=0,col=0) = 0
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |cffA020F0锁链 5|r'
+    - Name [string] (lvl=4,col=0) = '锁链 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Name [string] (lvl=5,col=0) = '锁链 (技能)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |cffA020F0锁链 6|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Name [string] (lvl=6,col=0) = '锁链 (技能)'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000Y|r|n将你和目标链接起来.|n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n|r伤害: |cffffff000.2 + 0.2 x 升级|r|cff00ff00|n勾取:|r|cffffff00|n|rCD: |cffffff0017 / 14.5 / 12.5 / 11 / 10 / 9.5|n|r将术士拉向你或者自己拉向柱子|cffffff00|n|r|cff00ff00引导:|n|rCD: |cffffff0016|n|r闪电伤害: |cffffff001.0 + 0.3 x 升级|n|r拉取术士，或者在自己和队友或柱子间创建一道闪电.'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffa020F0锁链 7|r'
+    - Name [string] (lvl=7,col=0) = '锁链 (技能)'
+    - Name [string] (lvl=8,col=0) = '锁链 (技能)'
+    - Name [string] (lvl=9,col=0) = '锁链 (技能)'
+    - Name [string] (lvl=10,col=0) = '锁链 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffa020f0锁链 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - TooltipExtended [string] (lvl=8,col=0) = '(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+
+## R00R  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 8
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|n|r召唤一颗陨石砸向目标或者向前方滚动.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 星落 和 滚石:|n|rCD: |cffffff0020 - 0.5 x 升级|r|cff00ff00|n星落:|r|n伤害: |cffffff007-14 + (1-2) x 升级|n|r|cff00ff00滚石:|n|r伤害系数: |cffffff000.6 +  0.3 x 升级|n|r伤害: |cffffff002.25-4.5 + (0.75-1.5) x 升级|r|cff00ff00|n|r击中后减速|n受到飞弹攻击后变大'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Levels [int] (lvl=0,col=0) = 10
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000E|n|r召唤一颗陨石砸向目标或者向前方滚动.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 星落 和 滚石:|n|rCD: |cffffff0020 - 0.5 x 升级|r|cff00ff00|n星落:|r|n伤害: |cffffff007-14 + (1-2) x 升级|n|r|cff00ff00滚石:|n|r伤害系数: |cffffff000.6 +  0.3 x 升级|n|r伤害: |cffffff002.25-4.5 + (0.75-1.5) x 升级|r|cff00ff00|n|r击中后减速|n受到飞弹攻击后变大'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000E|n|r召唤一颗陨石砸向目标或者向前方滚动.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 星落 和 滚石:|n|rCD: |cffffff0020 - 0.5 x 升级|r|cff00ff00|n星落:|r|n伤害: |cffffff007-14 + (1-2) x 升级|n|r|cff00ff00滚石:|n|r伤害系数: |cffffff000.6 +  0.3 x 升级|n|r伤害: |cffffff002.25-4.5 + (0.75-1.5) x 升级|r|cff00ff00|n|r击中后减速|n受到飞弹攻击后变大'
+    - GoldCost(base) [int] (lvl=0,col=0) = 2
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Requirements [string] (lvl=3,col=0) = 'R00I'
+    - ReqCost [string] (lvl=3,col=0) = '1'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Requirements [string] (lvl=4,col=0) = 'R00I'
+    - ReqCost [string] (lvl=4,col=0) = '2'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCFF99陨石 5|r'
+    - Name [string] (lvl=4,col=0) = '陨石 (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000E|n|r召唤一颗陨石砸向目标或者向前方滚动.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 星落 和 滚石:|n|rCD: |cffffff0020 - 0.5 x 升级|r|cff00ff00|n星落:|r|n伤害: |cffffff007-14 + (1-2) x 升级|n|r|cff00ff00滚石:|n|r伤害系数: |cffffff000.6 +  0.3 x 升级|n|r伤害: |cffffff002.25-4.5 + (0.75-1.5) x 升级|r|cff00ff00|n|r击中后减速|n受到飞弹攻击后变大'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - ReqCost [string] (lvl=5,col=0) = '3'
+    - Requirements [string] (lvl=5,col=0) = 'R00I'
+    - Name [string] (lvl=5,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCFF99陨石 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000E|n|r召唤一颗陨石砸向目标或者向前方滚动.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 星落 和 滚石:|n|rCD: |cffffff0020 - 0.5 x 升级|r|cff00ff00|n星落:|r|n伤害: |cffffff007-14 + (1-2) x 升级|n|r|cff00ff00滚石:|n|r伤害系数: |cffffff000.6 +  0.3 x 升级|n|r伤害: |cffffff002.25-4.5 + (0.75-1.5) x 升级|r|cff00ff00|n|r击中后减速|n受到飞弹攻击后变大'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - Requirements [string] (lvl=6,col=0) = 'R00I'
+    - Requirements [string] (lvl=7,col=0) = 'R00I'
+    - Requirements [string] (lvl=8,col=0) = 'R00I'
+    - Requirements [string] (lvl=9,col=0) = 'R00I'
+    - Requirements [string] (lvl=10,col=0) = 'R00I'
+    - ReqCost [string] (lvl=6,col=0) = '3'
+    - ReqCost [string] (lvl=7,col=0) = '3'
+    - ReqCost [string] (lvl=8,col=0) = '3'
+    - ReqCost [string] (lvl=9,col=0) = '3'
+    - ReqCost [string] (lvl=10,col=0) = '3'
+    - Name [string] (lvl=6,col=0) = '陨石 (技能)'
+    - Name [string] (lvl=7,col=0) = '陨石 (技能)'
+    - Name [string] (lvl=8,col=0) = '陨石 (技能)'
+    - Name [string] (lvl=9,col=0) = '陨石 (技能)'
+    - Name [string] (lvl=10,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffccff99陨石 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000E|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000E|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+
+## R00S  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '急行 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FF急行 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|cffff0000 C|r|n一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|r|n有 |cffffff006 |r等级|cffffff00|n|rCD: |cffffff0021|n|r持续: |cffffff007 + 0.8 x 升级|n|r最大吸收: |cffffff005 + 2 x 升级|n|r吸收|cffffff0050%|r伤害，每点伤害转化为|cffffff0015移动速度|r. |n|cffffff0035 |r初始移动速度增加'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FF急行 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF急行 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键:|cffff0000 C|r|n一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|r|n有 |cffffff006 |r等级|cffffff00|n|rCD: |cffffff0021|n|r持续: |cffffff007 + 0.8 x 升级|n|r最大吸收: |cffffff005 + 2 x 升级|n|r吸收|cffffff0050%|r伤害，每点伤害转化为|cffffff0015移动速度|r. |n|cffffff0035 |r初始移动速度增加'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键:|cffff0000 C|r|n一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|r|n有 |cffffff006 |r等级|cffffff00|n|rCD: |cffffff0021|n|r持续: |cffffff007 + 0.8 x 升级|n|r最大吸收: |cffffff005 + 2 x 升级|n|r吸收|cffffff0050%|r伤害，每点伤害转化为|cffffff0015移动速度|r. |n|cffffff0035 |r初始移动速度增加'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Name [string] (lvl=2,col=0) = '急行 (技能)'
+    - Name [string] (lvl=3,col=0) = '急行 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF急行 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键:|cffff0000 C|r|n一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|r|n有 |cffffff006 |r等级|cffffff00|n|rCD: |cffffff0021|n|r持续: |cffffff007 + 0.8 x 升级|n|r最大吸收: |cffffff005 + 2 x 升级|n|r吸收|cffffff0050%|r伤害，每点伤害转化为|cffffff0015移动速度|r. |n|cffffff0035 |r初始移动速度增加'
+    - Name [string] (lvl=4,col=0) = '急行 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Name [string] (lvl=5,col=0) = '急行 (技能)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键:|cffff0000 C|r|n一小段时间内移动加快并且吸收一半所受伤害并按比例转化为移动速度.|n|cff00ff00驱散锁链|r|n有 |cffffff006 |r等级|cffffff00|n|rCD: |cffffff0021|n|r持续: |cffffff007 + 0.8 x 升级|n|r最大吸收: |cffffff005 + 2 x 升级|n|r吸收|cffffff0050%|r伤害，每点伤害转化为|cffffff0015移动速度|r. |n|cffffff0035 |r初始移动速度增加'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c006633FF急行 6|r'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Name [string] (lvl=6,col=0) = '急行 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cff6633ff急行 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000D|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - Name [string] (lvl=7,col=0) = '急行 (技能)'
+    - Name [string] (lvl=8,col=0) = '急行 (技能)'
+    - Name [string] (lvl=9,col=0) = '急行 (技能)'
+    - Name [string] (lvl=10,col=0) = '急行 (技能)'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cff6633ff急行 8|r'
+
+## R00T  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FF反射盾 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|cffff0000 C|r|n反射|cffffff00所有飞弹魔法|r和|cffffff00冲撞|r|n|cff00ff00驱散锁链|n|rCD: |cffffff0025 / 22.5 / 20.5 / 19 / 18 / 17|n|r持续: |cffffff002.8 / 3.0 / 3.2 / 3.4 / 3.6 / 3.8|r'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键:|cffff0000 C|r|n反射|cffffff00所有飞弹魔法|r和|cffffff00冲撞|r|n|cff00ff00驱散锁链|n|rCD: |cffffff0025 / 22.5 / 20.5 / 19 / 18 / 17|n|r持续: |cffffff002.8 / 3.0 / 3.2 / 3.4 / 3.6 / 3.8|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键:|cffff0000 C|r|n反射|cffffff00所有飞弹魔法|r和|cffffff00冲撞|r|n|cff00ff00驱散锁链|n|rCD: |cffffff0025 / 22.5 / 20.5 / 19 / 18 / 17|n|r持续: |cffffff002.8 / 3.0 / 3.2 / 3.4 / 3.6 / 3.8|r'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键:|cffff0000 C|r|n反射|cffffff00所有飞弹魔法|r和|cffffff00冲撞|r|n|cff00ff00驱散锁链|n|rCD: |cffffff0025 / 22.5 / 20.5 / 19 / 18 / 17|n|r持续: |cffffff002.8 / 3.0 / 3.2 / 3.4 / 3.6 / 3.8|r'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=5,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c006633FF反射盾 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键:|cffff0000 C|r|n反射|cffffff00所有飞弹魔法|r和|cffffff00冲撞|r|n|cff00ff00驱散锁链|n|rCD: |cffffff0025 / 22.5 / 20.5 / 19 / 18 / 17|n|r持续: |cffffff002.8 / 3.0 / 3.2 / 3.4 / 3.6 / 3.8|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=6,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c006633FF反射盾 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000C|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=7,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=8,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=9,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=10,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cff6633ff反射盾 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000C|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |cff6633ff反射盾 9|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000C|r|n(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+
+## R00U  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 8
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCFF99分裂弹 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|r|n主飞弹分裂成许多小飞弹发射出去.|n有 |cffffff006|r 等级.|n|cff00ff00有2种模式: 范围 和 指向|n|r飞弹伤害: |cffffff003.0 + 0.5 x 升级|r|cff00ff00|n|rCD: |cffffff0030/27/25/24/23/22...|r|cff00ff00|n范围:|r|cffffff00|n|r飞弹不断向四面八方散射|cffffff00|n|r|cff00ff00指向:|r|cffffff00|n|r主弹撞击后散射成小飞弹'
+    - Name [string] (lvl=2,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99分裂弹 3|r'
+    - Name [string] (lvl=3,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99分裂弹 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000E|r|n主飞弹分裂成许多小飞弹发射出去.|n有 |cffffff006|r 等级.|n|cff00ff00有2种模式: 范围 和 指向|n|r飞弹伤害: |cffffff003.0 + 0.5 x 升级|r|cff00ff00|n|rCD: |cffffff0030/27/25/24/23/22...|r|cff00ff00|n范围:|r|cffffff00|n|r飞弹不断向四面八方散射|cffffff00|n|r|cff00ff00指向:|r|cffffff00|n|r主弹撞击后散射成小飞弹'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000E|r|n主飞弹分裂成许多小飞弹发射出去.|n有 |cffffff006|r 等级.|n|cff00ff00有2种模式: 范围 和 指向|n|r飞弹伤害: |cffffff003.0 + 0.5 x 升级|r|cff00ff00|n|rCD: |cffffff0030/27/25/24/23/22...|r|cff00ff00|n范围:|r|cffffff00|n|r飞弹不断向四面八方散射|cffffff00|n|r|cff00ff00指向:|r|cffffff00|n|r主弹撞击后散射成小飞弹'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Levels [int] (lvl=0,col=0) = 10
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Name [string] (lvl=4,col=0) = '分裂弹 (技能)'
+    - Name [string] (lvl=5,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCFF99分裂弹 5|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCFF99分裂弹 6|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000E|r|n主飞弹分裂成许多小飞弹发射出去.|n有 |cffffff006|r 等级.|n|cff00ff00有2种模式: 范围 和 指向|n|r飞弹伤害: |cffffff003.0 + 0.5 x 升级|r|cff00ff00|n|rCD: |cffffff0030/27/25/24/23/22...|r|cff00ff00|n范围:|r|cffffff00|n|r飞弹不断向四面八方散射|cffffff00|n|r|cff00ff00指向:|r|cffffff00|n|r主弹撞击后散射成小飞弹'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000E|r|n主飞弹分裂成许多小飞弹发射出去.|n有 |cffffff006|r 等级.|n|cff00ff00有2种模式: 范围 和 指向|n|r飞弹伤害: |cffffff003.0 + 0.5 x 升级|r|cff00ff00|n|rCD: |cffffff0030/27/25/24/23/22...|r|cff00ff00|n范围:|r|cffffff00|n|r飞弹不断向四面八方散射|cffffff00|n|r|cff00ff00指向:|r|cffffff00|n|r主弹撞击后散射成小飞弹'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMulti2.BLP'
+    - Name [string] (lvl=6,col=0) = '分裂弹 (技能)'
+    - Name [string] (lvl=7,col=0) = '分裂弹 (技能)'
+    - Name [string] (lvl=8,col=0) = '分裂弹 (技能)'
+    - Name [string] (lvl=9,col=0) = '分裂弹 (技能)'
+    - Name [string] (lvl=10,col=0) = '分裂弹 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffccff99分裂弹 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000E|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000E|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+
+## R00V  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006969FF瞬间移动 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - Levels [int] (lvl=0,col=0) = 10
+    - Name [string] (lvl=2,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006969FF瞬间移动 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Name [string] (lvl=3,col=0) = '瞬间移动 (技能)'
+    - Name [string] (lvl=4,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006969FF瞬间移动 5|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006969FF瞬间移动 4|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Name [string] (lvl=5,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c006969FF瞬间移动 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Name [string] (lvl=6,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c006969FF瞬间移动 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000R|r|n(等级 1) 距离: |cffffff00770|r, CD: |cffffff0016.0|r|n(等级 2) 距离: |cffffff00840|r, CD: |cffffff0013.5|r|n(等级 3) 距离: |cffffff00910|r, CD: |cffffff0011.5|r|n(等级 4) 距离: |cffffff00980|r, CD: |cffffff0010|r|n(等级 5) 距离: |cffffff001050|r, CD: |cffffff009|r|n(等级 6) 距离: |cffffff001120|r, CD: |cffffff008|r|n(等级 7) 距离: |cffffff001190|r, CD: |cffffff007|r'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - Name [string] (lvl=7,col=0) = '瞬间移动 (技能)'
+    - Name [string] (lvl=8,col=0) = '瞬间移动 (技能)'
+    - Name [string] (lvl=9,col=0) = '瞬间移动 (技能)'
+    - Name [string] (lvl=10,col=0) = '瞬间移动 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cff6969ff瞬间移动 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000R|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000R|r|n(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |cff6969ff瞬间移动 9|r'
+
+## R00W  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '冲撞 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006969FF冲撞 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '冲撞 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006969FF冲撞 3|r'
+    - Name [string] (lvl=3,col=0) = '冲撞 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006969FF冲撞 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Levels [int] (lvl=0,col=0) = 10
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006969FF冲撞 5|r'
+    - Name [string] (lvl=4,col=0) = '冲撞 (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Name [string] (lvl=5,col=0) = '冲撞 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c006969FF冲撞 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000R|n|r有 |cffffff007 |r等级|n|cff00ff00有2种模式:|n突击:|r|cffffff00|n|rCD: |cffffff0016.5 / 14.5 / 13 / 12 / 11 / 10 / 9|n|r距离: |cffffff00700 + 50 x 升级|n|r伤害: |cffffff005.4 + 0.4 x 升级|r|n|cff00ff00凤凰:|n|rCD: |cffffff0017.5 / 15 / 13 / 11.5 / 10 / 9.5 / 9|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c006969FF冲撞 7|r'
+    - Name [string] (lvl=6,col=0) = '冲撞 (技能)'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Name [string] (lvl=7,col=0) = '冲撞 (技能)'
+    - Name [string] (lvl=8,col=0) = '冲撞 (技能)'
+    - Name [string] (lvl=9,col=0) = '冲撞 (技能)'
+    - Name [string] (lvl=10,col=0) = '冲撞 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |c006969FF冲撞 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000R|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000R|r|n(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+
+## R00X  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '疾风步 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCFF99疾风步 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000E|n|r使自己进入短暂的隐身状态，撞击目标或者隐身并攻击敌人.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 撞击 和 隐身:|n|rCD: |cffffff0030 / 26 / 23 / 21 / 20 / 19|r|cff00ff00|n撞击:|r|n持续: |cffffff003.1|n|r速度提升: |cffffff00200|n|r伤害: |cffffff005.4 + 0.8 x 升级|n|r|cff00ff00隐身:|n|r持续: |cffffff004|n|r速度提升: |cffffff00100|n|r攻击后保持隐身'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '疾风步 (技能)'
+    - Name [string] (lvl=3,col=0) = '疾风步 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99疾风步 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99疾风步 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000E|n|r使自己进入短暂的隐身状态，撞击目标或者隐身并攻击敌人.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 撞击 和 隐身:|n|rCD: |cffffff0030 / 26 / 23 / 21 / 20 / 19|r|cff00ff00|n撞击:|r|n持续: |cffffff003.1|n|r速度提升: |cffffff00200|n|r伤害: |cffffff005.4 + 0.8 x 升级|n|r|cff00ff00隐身:|n|r持续: |cffffff004|n|r速度提升: |cffffff00100|n|r攻击后保持隐身'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000E|n|r使自己进入短暂的隐身状态，撞击目标或者隐身并攻击敌人.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 撞击 和 隐身:|n|rCD: |cffffff0030 / 26 / 23 / 21 / 20 / 19|r|cff00ff00|n撞击:|r|n持续: |cffffff003.1|n|r速度提升: |cffffff00200|n|r伤害: |cffffff005.4 + 0.8 x 升级|n|r|cff00ff00隐身:|n|r持续: |cffffff004|n|r速度提升: |cffffff00100|n|r攻击后保持隐身'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Name [string] (lvl=4,col=0) = '疾风步 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCFF99疾风步 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000E|n|r使自己进入短暂的隐身状态，撞击目标或者隐身并攻击敌人.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 撞击 和 隐身:|n|rCD: |cffffff0030 / 26 / 23 / 21 / 20 / 19|r|cff00ff00|n撞击:|r|n持续: |cffffff003.1|n|r速度提升: |cffffff00200|n|r伤害: |cffffff005.4 + 0.8 x 升级|n|r|cff00ff00隐身:|n|r持续: |cffffff004|n|r速度提升: |cffffff00100|n|r攻击后保持隐身'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Name [string] (lvl=5,col=0) = '疾风步 (技能)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000E|n|r使自己进入短暂的隐身状态，撞击目标或者隐身并攻击敌人.|n有 |cffffff006 |r等级.|n|cff00ff00有2种模式: 撞击 和 隐身:|n|rCD: |cffffff0030 / 26 / 23 / 21 / 20 / 19|r|cff00ff00|n撞击:|r|n持续: |cffffff003.1|n|r速度提升: |cffffff00200|n|r伤害: |cffffff005.4 + 0.8 x 升级|n|r|cff00ff00隐身:|n|r持续: |cffffff004|n|r速度提升: |cffffff00100|n|r攻击后保持隐身'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCFF99疾风步 6|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWindWalkOn.blp'
+    - Name [string] (lvl=6,col=0) = '疾风步 (技能)'
+    - Name [string] (lvl=7,col=0) = '疾风步 (技能)'
+    - Name [string] (lvl=8,col=0) = '疾风步 (技能)'
+    - Name [string] (lvl=9,col=0) = '疾风步 (技能)'
+    - Name [string] (lvl=10,col=0) = '疾风步 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cffccff99疾风步 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000E|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffccff99疾风步 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000E|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+
+## R00Y  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNTrueShot.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '距离精通 1 (精通)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00CCCC33距离精通 1|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffff0000精通|n|r增加距离|n|cffffff00闪电|r,|cffffff00 追踪弹 |r和|cffffff00 回旋镖 |r |cffffff0015%|r|n|cffffff00所有其他技能距离|r  |cffffff0010%|r'
+    - Levels [int] (lvl=0,col=0) = 6
+    - Name [string] (lvl=2,col=0) = '距离精通 2 (精通)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCCC33距离精通 2|r'
+    - Name [string] (lvl=3,col=0) = '距离精通 3 (精通)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCCC33距离精通 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNTrueShot.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNTrueShot.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '|cffff0000精通|n|r增加距离|n|cffffff00闪电|r,|cffffff00 追踪弹 |r和|cffffff00 回旋镖 |r |cffffff0030%|r|n|cffffff00所有其他技能距离|r  |cffffff0020%|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|cffff0000精通|n|r增加距离|n|cffffff00闪电|r,|cffffff00 追踪弹 |r和|cffffff00 回旋镖 |r |cffffff0045%|r|n|cffffff00所有其他技能距离|r  |cffffff0030%|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=4,col=0) = '距离精通 4 (精通)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00CCCC33距离精通 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|cffff0000精通|n|r增加距离|n|cffffff00闪电|r,|cffffff00 追踪弹 |r和|cffffff00 回旋镖 |r |cffffff0060%|r|n|cffffff00所有其他技能距离|r  总共 |cffffff0040%|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNTrueShot.blp'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNTrueShot.blp'
+    - Name [string] (lvl=5,col=0) = '距离精通 5 (精通)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00CCCC33距离精通 5|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '|cffff0000精通|n|r增加距离|n|cffffff00闪电|r,|cffffff00 追踪弹 |r和|cffffff00 回旋镖 |r |cffffff0075%|r|n|cffffff00所有其他技能距离|r  总共 |cffffff0050%|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\PassiveButtons\\PASBTNTrueShot.blp'
+    - Name [string] (lvl=6,col=0) = '距离精通 6 (精通)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00CCCC33距离精通 6|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '|cffff0000精通|n|r增加距离|n|cffffff00闪电|r,|cffffff00 追踪弹 |r和|cffffff00 回旋镖 |r |cffffff0090%|r|n|cffffff00所有其他技能距离|r  总共 |cffffff0060%|r'
+
+## R00Z  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 9
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '回旋镖 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9696回旋镖|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - Name [string] (lvl=2,col=0) = 'Trust (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006969FF冲撞 2|r'
+    - Name [string] (lvl=3,col=0) = 'Trust (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006969FF冲撞 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006969FF冲撞 4|r'
+    - Name [string] (lvl=4,col=0) = 'Trust (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+
+## R010  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '回旋镖 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c00FF9696回旋镖 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - Name [string] (lvl=2,col=0) = '回旋镖 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00FF9696回旋镖 3|r'
+    - Name [string] (lvl=3,col=0) = '回旋镖 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00FF9696回旋镖 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c00FF9696回旋镖 5|r'
+    - Name [string] (lvl=4,col=0) = '回旋镖 (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Levels [int] (lvl=0,col=0) = 10
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c00FF9696回旋镖 6|r'
+    - Name [string] (lvl=5,col=0) = '回旋镖 (技能)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - Requirements [string] (lvl=4,col=0) = 'R00Y'
+    - Requirements [string] (lvl=5,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=4,col=0) = '1'
+    - ReqCost [string] (lvl=5,col=0) = '1'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000D|r|n回旋镖会旋转者飞回使用者手里.|n(等级 1) 伤害: |cffffff007.2|r, CD: |cffffff0016.0|r|n(等级 2) 伤害: |cffffff008.0|r, CD: |cffffff0013.9|r|n(等级 3) 伤害: |cffffff008.8|r, CD: |cffffff0011.5|r|n(等级 4) 伤害: |cffffff009.6|r, CD: |cffffff0010.7|r|n(等级 5) 伤害: |cffffff0010.4|r, CD: |cffffff0010.0 |r(距离 1)|n(等级 6) 伤害: |cffffff0011.2|r, CD: |cffffff009.3|r|n(等级 7) 伤害: |cffffff0012.0|r, CD: |cffffff008.6 |r(距离 2)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c00FF9696回旋镖 7|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Requirements [string] (lvl=6,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=6,col=0) = '2'
+    - Name [string] (lvl=6,col=0) = '回旋镖 (技能)'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNBoomerangActive.blp'
+    - Requirements [string] (lvl=7,col=0) = 'R00Y'
+    - Requirements [string] (lvl=8,col=0) = 'R00Y'
+    - Requirements [string] (lvl=9,col=0) = 'R00Y'
+    - Requirements [string] (lvl=10,col=0) = 'R00Y'
+    - ReqCost [string] (lvl=7,col=0) = '2'
+    - ReqCost [string] (lvl=8,col=0) = '2'
+    - ReqCost [string] (lvl=9,col=0) = '2'
+    - ReqCost [string] (lvl=10,col=0) = '2'
+    - Name [string] (lvl=7,col=0) = '回旋镖 (技能)'
+    - Name [string] (lvl=8,col=0) = '回旋镖 (技能)'
+    - Name [string] (lvl=9,col=0) = '回旋镖 (技能)'
+    - Name [string] (lvl=10,col=0) = '回旋镖 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cffff9696回旋镖 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000D|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000D|r|n(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |cffff9696回旋镖 9|r'
+
+## R011  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 14
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '时光回溯 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FF时光回溯|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|cffff0000 C|r|n回到|cffffff003.6|r秒以前.|n位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留.|n|cff00ff00驱散锁链和负面效果|r|n(等级 1) CD: |cffffff0022.0|r, 伤害: |cffffff0070%|r|n(等级 2) CD: |cffffff0019.5|r, 伤害: |cffffff0060%|r|n(等级 3) CD: |cffffff0017.5|r, 伤害: |cffffff0050%|n|r(等级 4) CD: |cffffff0016.0|r, 伤害: |cffffff0040%|r|n(等级 5) CD: |cffffff0015.0|r, 伤害: |cffffff0030%|n|r(等级 6) CD: |cffffff0014.0|r, 伤害: |cffffff0020%|r'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FF反射盾 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - ReqCost [string] (lvl=1,col=0) = '1'
+
+## R012  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 7
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '时光回溯 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '|c006633FF时光回溯 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|cffff0000 C|r|n回到|cffffff003.6|r秒以前.|n位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留.|n|cff00ff00驱散锁链和负面效果|r|n(等级 1) CD: |cffffff0022.0|r, 伤害: |cffffff0070%|r|n(等级 2) CD: |cffffff0019.5|r, 伤害: |cffffff0060%|r|n(等级 3) CD: |cffffff0017.5|r, 伤害: |cffffff0050%|n|r(等级 4) CD: |cffffff0016.0|r, 伤害: |cffffff0040%|r|n(等级 5) CD: |cffffff0015.0|r, 伤害: |cffffff0030%|n|r(等级 6) CD: |cffffff0014.0|r, 伤害: |cffffff0020%|r'
+    - TooltipNormal [string] (lvl=2,col=0) = '|c006633FF时光回溯 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '|c006633FF时光回溯 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键:|cffff0000 C|r|n回到|cffffff003.6|r秒以前.|n位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留.|n|cff00ff00驱散锁链和负面效果|r|n(等级 1) CD: |cffffff0022.0|r, 伤害: |cffffff0070%|r|n(等级 2) CD: |cffffff0019.5|r, 伤害: |cffffff0060%|r|n(等级 3) CD: |cffffff0017.5|r, 伤害: |cffffff0050%|n|r(等级 4) CD: |cffffff0016.0|r, 伤害: |cffffff0040%|r|n(等级 5) CD: |cffffff0015.0|r, 伤害: |cffffff0030%|n|r(等级 6) CD: |cffffff0014.0|r, 伤害: |cffffff0020%|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键:|cffff0000 C|r|n回到|cffffff003.6|r秒以前.|n位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留.|n|cff00ff00驱散锁链和负面效果|r|n(等级 1) CD: |cffffff0022.0|r, 伤害: |cffffff0070%|r|n(等级 2) CD: |cffffff0019.5|r, 伤害: |cffffff0060%|r|n(等级 3) CD: |cffffff0017.5|r, 伤害: |cffffff0050%|n|r(等级 4) CD: |cffffff0016.0|r, 伤害: |cffffff0040%|r|n(等级 5) CD: |cffffff0015.0|r, 伤害: |cffffff0030%|n|r(等级 6) CD: |cffffff0014.0|r, 伤害: |cffffff0020%|r'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Name [string] (lvl=2,col=0) = '时光回溯 (技能)'
+    - Name [string] (lvl=3,col=0) = '时光回溯 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Name [string] (lvl=4,col=0) = '时光回溯 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '|c006633FF时光回溯 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键:|cffff0000 C|r|n回到|cffffff003.6|r秒以前.|n位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留.|n|cff00ff00驱散锁链和负面效果|r|n(等级 1) CD: |cffffff0022.0|r, 伤害: |cffffff0070%|r|n(等级 2) CD: |cffffff0019.5|r, 伤害: |cffffff0060%|r|n(等级 3) CD: |cffffff0017.5|r, 伤害: |cffffff0050%|n|r(等级 4) CD: |cffffff0016.0|r, 伤害: |cffffff0040%|r|n(等级 5) CD: |cffffff0015.0|r, 伤害: |cffffff0030%|n|r(等级 6) CD: |cffffff0014.0|r, 伤害: |cffffff0020%|r'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Name [string] (lvl=5,col=0) = '时光回溯 (技能)'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键:|cffff0000 C|r|n回到|cffffff003.6|r秒以前.|n位置、血量、惯性都会回复到过去的状态，部分受伤点数将会保留.|n|cff00ff00驱散锁链和负面效果|r|n(等级 1) CD: |cffffff0022.0|r, 伤害: |cffffff0070%|r|n(等级 2) CD: |cffffff0019.5|r, 伤害: |cffffff0060%|r|n(等级 3) CD: |cffffff0017.5|r, 伤害: |cffffff0050%|n|r(等级 4) CD: |cffffff0016.0|r, 伤害: |cffffff0040%|r|n(等级 5) CD: |cffffff0015.0|r, 伤害: |cffffff0030%|n|r(等级 6) CD: |cffffff0014.0|r, 伤害: |cffffff0020%|r'
+    - TooltipNormal [string] (lvl=5,col=0) = '|c006633FF时光回溯 6|r'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNTimeSpell.blp'
+    - Name [string] (lvl=6,col=0) = '时光回溯 (技能)'
+    - Name [string] (lvl=7,col=0) = '时光回溯 (技能)'
+    - Name [string] (lvl=8,col=0) = '时光回溯 (技能)'
+    - Name [string] (lvl=9,col=0) = '时光回溯 (技能)'
+    - Name [string] (lvl=10,col=0) = '时光回溯 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '|cff6633ff时光回溯 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000C|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000C|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - TooltipNormal [string] (lvl=7,col=0) = '|cff6633ff时光回溯 8|r'
+
+## R013  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 12
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '移形换位 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cff6969ff移形换位|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|r|n将自己和目标位置交换 |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n换人:|r|cffffff00|n|rCD: |cffffff0016 / 13.5 / 11.5 / 10 / 9 / 8|n|r|cff00ff00换物:|n|r飞弹速度缓慢|n不会交换术士玩家|cffffff00|n|rCD: |cffffff0014 / 11.5 / 9.5 / 8 / 5 / 4|r'
+    - Name [string] (lvl=2,col=0) = 'Trust (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006969FF冲撞 2|r'
+    - Name [string] (lvl=3,col=0) = 'Trust (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006969FF冲撞 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006969FF冲撞 4|r'
+    - Name [string] (lvl=4,col=0) = 'Trust (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNInvisibility.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000R|r\r\nAccelerates toward 指向 point dealing |c00FFFF006|r 伤害 to the first 术士 in your way\r\n(等级 1) CD: |c00FFFF0017|r, 距离: |c00FFFF00900|r\r\n(等级 2) CD: |c00FFFF0014|r, 距离: |c00FFFF001050|r\r\n(等级 3) CD: |c00FFFF0012|r, 距离: |c00FFFF001200|r\r\n(等级 4) CD: |c00FFFF0011|r, 距离: |c00FFFF001350|r\r\n|cff32CD32Bonus from Melee 精通|r'
+
+## R014  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 6
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '移形换位 (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |cff6969ff移形换位 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键: |cffff0000R|r|n将自己和目标位置交换 |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n换人:|r|cffffff00|n|rCD: |cffffff0016 / 13.5 / 11.5 / 10 / 9 / 8|n|r|cff00ff00换物:|n|r飞弹速度缓慢|n不会交换术士玩家|cffffff00|n|rCD: |cffffff0014 / 11.5 / 9.5 / 8 / 5 / 4|r'
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Name [string] (lvl=2,col=0) = '移形换位 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |cff6969ff移形换位 3|r'
+    - Name [string] (lvl=3,col=0) = '移形换位 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |cff6969ff移形换位 4|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Levels [int] (lvl=0,col=0) = 10
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |cff6969ff移形换位 5|r'
+    - Name [string] (lvl=4,col=0) = '移形换位 (技能)'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键: |cffff0000R|r|n将自己和目标位置交换 |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n换人:|r|cffffff00|n|rCD: |cffffff0016 / 13.5 / 11.5 / 10 / 9 / 8|n|r|cff00ff00换物:|n|r飞弹速度缓慢|n不会交换术士玩家|cffffff00|n|rCD: |cffffff0014 / 11.5 / 9.5 / 8 / 5 / 4|r'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |cffff0000R|r|n将自己和目标位置交换 |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n换人:|r|cffffff00|n|rCD: |cffffff0016 / 13.5 / 11.5 / 10 / 9 / 8|n|r|cff00ff00换物:|n|r飞弹速度缓慢|n不会交换术士玩家|cffffff00|n|rCD: |cffffff0014 / 11.5 / 9.5 / 8 / 5 / 4|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |cffff0000R|r|n将自己和目标位置交换 |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n换人:|r|cffffff00|n|rCD: |cffffff0016 / 13.5 / 11.5 / 10 / 9 / 8|n|r|cff00ff00换物:|n|r飞弹速度缓慢|n不会交换术士玩家|cffffff00|n|rCD: |cffffff0014 / 11.5 / 9.5 / 8 / 5 / 4|r'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Name [string] (lvl=5,col=0) = '移形换位 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |cff6969ff移形换位 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键: |cffff0000R|r|n将自己和目标位置交换 |n有 |cffffff006 |r等级|n|cff00ff00有2种模式:|n换人:|r|cffffff00|n|rCD: |cffffff0016 / 13.5 / 11.5 / 10 / 9 / 8|n|r|cff00ff00换物:|n|r飞弹速度缓慢|n不会交换术士玩家|cffffff00|n|rCD: |cffffff0014 / 11.5 / 9.5 / 8 / 5 / 4|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键: |cffff0000R|r|n(等级 7) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |cff6969ff移形换位 7|r'
+    - Name [string] (lvl=6,col=0) = '移形换位 (技能)'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNWandOfNeutralization.blp'
+    - Name [string] (lvl=7,col=0) = '移形换位 (技能)'
+    - Name [string] (lvl=8,col=0) = '移形换位 (技能)'
+    - Name [string] (lvl=9,col=0) = '移形换位 (技能)'
+    - Name [string] (lvl=10,col=0) = '移形换位 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cff6969ff移形换位 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000R|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+
+## R015  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 15
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'unnamed (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FFunnamed|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FF反射盾 2|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+
+## R016  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 8
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'unnamed (技能)'
+    - TooltipNormal [string] (lvl=1,col=0) = '学习 |c006633FF反射盾 2|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Levels [int] (lvl=0,col=0) = 10
+    - GoldCost(base) [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 5|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - Area [string] (lvl=5,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=5,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=5,col=0) = '学习 |c006633FF反射盾 6|r'
+    - TooltipExtended [string] (lvl=5,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - Area [string] (lvl=6,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=6,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=6,col=0) = '学习 |c006633FF反射盾 7|r'
+    - TooltipExtended [string] (lvl=6,col=0) = '快捷键:|c00ff0000 C|r|n弹射s projectiles, reflecting |c00ffff00任意 projectiles|r 和 |c00ffff00冲撞|r for a short 持续|n|c0000ff00驱散锁链|r|n(等级 1) 持续: |c00ffff003.00|r CD: |c00ffff0025.0|r|n(等级 2) 持续: |c00ffff003.50|r CD: |c00ffff0024.5|r|n(等级 3) 持续: |c00ffff004.00|r CD: |c00ffff0024.0|n|r(等级 4) 持续: |c00ffff004.50|r CD: |c00ffff0023.5|r|n(等级 5) 持续: |c00ffff005.00|r CD: |c00ffff0023.0|r|n(等级 6) 持续: |c00ffff005.50|r CD: |c00ffff0022.5|r|n(等级 7) 持续: |c00ffff006.00|r CD: |c00ffff0022.0|r|n'
+    - Area [string] (lvl=7,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=8,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=9,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Area [string] (lvl=10,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=7,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=8,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=9,col=0) = '反射盾 (技能)'
+    - Name [string] (lvl=10,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=7,col=0) = '学习 |cff6633ff反射盾 8|r'
+    - TooltipExtended [string] (lvl=7,col=0) = '快捷键: |cffff0000C|r|n(等级 8) |cffffff00受到了乔丹之石戒指的效果|r'
+    - TooltipNormal [string] (lvl=8,col=0) = '学习 |cff6633ff反射盾 9|r'
+    - TooltipExtended [string] (lvl=8,col=0) = '快捷键: |cffff0000C|r|n(等级 9) |cffffff00受到了乔丹之石戒指的效果|r'
+    - ArtX [int] (lvl=0,col=0) = 2
+
+## Q000  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMedivh.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '已致残'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffff0000该法术暂时被沉默了.|n通过|r|cff008000升级该技能|r|cffff0000或者购买|r|cff008000怀表|r可以降低沉默的效果'
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMedivh.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '已致残'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+
+## R017  (基础: Rhde)
+- 全部修改字段:
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'commoner'
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '1 任意精通'
+    - TooltipNormal [string] (lvl=1,col=0) = ''
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - Levels [int] (lvl=0,col=0) = 20
+    - Name [string] (lvl=2,col=0) = '2 任意精通'
+    - Name [string] (lvl=3,col=0) = '3 任意精通'
+    - Name [string] (lvl=4,col=0) = '4 任意精通'
+    - Name [string] (lvl=5,col=0) = '5 任意精通'
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=6,col=0) = '6 任意精通'
+    - Name [string] (lvl=7,col=0) = '7 任意精通'
+    - Name [string] (lvl=8,col=0) = '8 任意精通'
+    - Name [string] (lvl=9,col=0) = '9 任意精通'
+    - Name [string] (lvl=10,col=0) = '10 任意精通'
+    - Name [string] (lvl=11,col=0) = '11 任意精通'
+    - Name [string] (lvl=12,col=0) = '12 任意精通'
+    - Name [string] (lvl=13,col=0) = '13 任意精通'
+    - Name [string] (lvl=14,col=0) = '14 任意精通'
+    - Name [string] (lvl=15,col=0) = '15 任意精通'
+    - Name [string] (lvl=16,col=0) = '16 任意精通'
+    - Name [string] (lvl=17,col=0) = '17 任意精通'
+    - Name [string] (lvl=18,col=0) = '18 任意精通'
+    - Name [string] (lvl=19,col=0) = '19 任意精通'
+    - Name [string] (lvl=20,col=0) = '20 任意精通'
+
+## T000  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFireBolt.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'R'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520火球|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Race [string] (lvl=0,col=0) = 'orc'
+
+## T001  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNP_Lightning.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'D'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520D 法术|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - Race [string] (lvl=0,col=0) = 'orc'
+
+## T002  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNUnsummonBuilding.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'R'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520R 法术|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - Race [string] (lvl=0,col=0) = 'orc'
+    - ArtX [int] (lvl=0,col=0) = 1
+
+## T003  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNDeadcoll.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'T'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520T 法术|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - ArtY [int] (lvl=0,col=0) = 1
+    - Race [string] (lvl=0,col=0) = 'orc'
+
+## T004  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNHeatProjectile.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'E'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520E 法术|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - Race [string] (lvl=0,col=0) = 'orc'
+
+## T005  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 1
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMassTeleport.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'C'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520C 法术|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - Race [string] (lvl=0,col=0) = 'orc'
+
+## T006  (基础: Rhde)
+- 全部修改字段:
+    - ArtX [int] (lvl=0,col=0) = 2
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNAdvancedStrengthOfTheMoon.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = 'Y'
+    - TooltipNormal [string] (lvl=1,col=0) = '|cffadff2f使用乔丹之石戒指|r'
+    - TooltipExtended [string] (lvl=1,col=0) = '|cffdaa520Y 法术|r'
+    - Name [string] (lvl=2,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=2,col=0) = '学习 |c00CCFF99陨石 2|r'
+    - Name [string] (lvl=3,col=0) = '陨石 (技能)'
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c00CCFF99陨石 3|r'
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNFire.blp'
+    - TooltipExtended [string] (lvl=2,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '快捷键: |c00FF0000E|r\r\n召唤一颗陨石砸向目标. 伤害 depends on 距离 from 指向.\r\n(等级 1) 伤害: |c00FFFF006-12|r, CD: |c00FFFF0016|r\r\n(等级 2) 伤害: |c00FFFF007-14|r, CD: |c00FFFF0015|r\r\n(等级 3) 伤害: |c00FFFF008-16|r, CD: |c00FFFF0014|r'
+    - Race [string] (lvl=0,col=0) = 'orc'
+
+## Q001  (基础: Rhde)
+- 全部修改字段:
+    - Area [string] (lvl=1,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMedivh.blp'
+    - GoldCost(inc) [int] (lvl=0,col=0) = 0
+    - LumberCost(base) [int] (lvl=0,col=0) = 0
+    - Icon [int] (lvl=0,col=0) = 0
+    - Hotkey [string] (lvl=1,col=0) = ''
+    - Name [string] (lvl=1,col=0) = '需要乔丹之石戒指'
+    - TooltipNormal [string] (lvl=1,col=0) = '需要乔丹之石戒指'
+    - TooltipExtended [string] (lvl=1,col=0) = ''
+    - TooltipNormal [string] (lvl=3,col=0) = '学习 |c006633FF反射盾 3|r'
+    - TooltipExtended [string] (lvl=3,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+    - ArtY [int] (lvl=0,col=0) = 0
+    - Area [string] (lvl=2,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNMedivh.blp'
+    - Area [string] (lvl=3,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=2,col=0) = '已致残'
+    - Name [string] (lvl=3,col=0) = '反射盾 (技能)'
+    - Area [string] (lvl=4,col=0) = 'ReplaceableTextures\\CommandButtons\\BTNNeutralManaShield.blp'
+    - Name [string] (lvl=4,col=0) = '反射盾 (技能)'
+    - TooltipNormal [string] (lvl=4,col=0) = '学习 |c006633FF反射盾 4|r'
+    - TooltipExtended [string] (lvl=4,col=0) = '|c00FF0000Passive|r\r\n弹射s projectiles, reflecting |c00FFFF00任意 projectiles|r 和 |c00FFFF00冲撞|r\r\n(等级 1): chance: |c00FFFF0012%|r\r\n(等级 2): chance: |c00FFFF0018%|r\r\n(等级 3): chance: |c00FFFF0024%|r\r\n(等级 4): chance: |c00FFFF0030%|r'
+

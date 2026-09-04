@@ -1,0 +1,2102 @@
+==== SPELL HANDLER FUNCTIONS (from SC dispatcher S000..S031) ====
+
+==== handler Rb ====
+
+function Rb takes nothing returns nothing
+local integer Ib
+local integer i=0
+call kX()
+if not rV[$D+24*ai]then
+if Fn[ai*4]==0 then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\RedDragonBreath\\RedDragonMissile.mdl")
+elseif Fn[ai*4]==-1 then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"fb2.mdl")
+call SetUnitVertexColor(F[Ib],Fn[ai*4+1],Fn[ai*4+2],Fn[ai*4+3],$FF)
+endif
+set ev[Ib]=(1+.1*oi[ai])
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Xv[Ib]=wr[ai]
+set Rv[Ib]=25
+set hv[Ib]=Xi
+set Jv[Ib]=Ai
+set Gv[Ib]=Oi
+call IO(Ib,$3E8*.03,TX,TY)
+else
+if Fn[ai*4]==0 then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\RedDragonBreath\\RedDragonMissile.mdl")
+elseif Fn[ai*4]==-1 then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"fb2.mdl")
+call SetUnitVertexColor(F[Ib],Fn[ai*4+1],Fn[ai*4+2],Fn[ai*4+3],$FF)
+endif
+set ev[Ib]=(1+.1*oi[ai])
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Xv[Ib]=wr[ai]
+set Rv[Ib]=25
+if(0==JO(true,ni,true,7251,true,ne))then
+set hv[Ib]=Ri
+else
+set hv[Ib]=Ii
+endif
+set Jv[Ib]=Ni
+set Gv[Ib]=bi
+call IO(Ib,$3E8*.03,TX,TY)
+endif
+if not Tn then
+set EV[2*ai]=EV[2*ai]+1
+endif
+
+
+
+==== handler KC ====
+
+function KC takes nothing returns nothing
+local integer dX=Kv
+local integer HO=0
+local real NO
+local integer n=0
+local real DX
+local boolean lC=rV[$C+24*ai]
+if rV[$D+24*ai]then
+call kC(ai,ni)
+endif
+if ei[ai]==0 then
+set DX=$A
+else
+set DX=$B+ei[ai]
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Human\\Invisibility\\InvisibilityTarget.mdl",Xn[ai],"right hand"))
+endif
+if lC then
+set xi[ai]=2*xi[ai]
+endif
+if aV[ai]and GetTerrainType(K[ni],L[ni])==sa[ka]then
+call HC(ai,ni)
+else
+call CX(ni,DX)
+endif
+loop
+exitwhen dX==0
+set HO=rv[dX]
+if dn[Vv[dX]]!=dn[ai]then
+set NO=uX(dX,ni)
+if NO<=$FA then
+call KI(ni,dX,DX,1.-NO/ $3E8)
+set n=n+1
+endif
+if Fv[dX]==ni and(GetTerrainType(K[dX],L[dX])==sa[ka]or lr[Vv[dX]])then
+call oR(dX)
+if GetLocalPlayer()==Player(Vv[ni])or GetLocalPlayer()==Player(Vv[dX])then
+call StartSound(Wx)
+set rr=CreateTextTag()
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,$FF,50,50,$DC)
+call SetTextTagText(rr,"否决",.025)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+endif
+endif
+endif
+set dX=HO
+endloop
+if ei[ai]==2 then
+call SetUnitState(F[ni],UNIT_STATE_MANA,GetUnitState(F[ni],UNIT_STATE_MANA)-4*n)
+endif
+if lC then
+set xi[ai]=xi[ai]/ 2
+endif
+if n>=3 and not Tn then
+set rr=CreateTextTag()
+if lC then
+call SetTextTagText(rr,"吸血鬼",.025)
+call StartSound(Ro)
+else
+call SetTextTagText(rr,"帽子戏法",.025)
+call StartSound(Ux)
+endif
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,50,$FF,$FF,$DC)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+call DestroyEffect(AddSpecialEffect("ArcaneExplosion.mdx",K[ni],L[ni]))
+endif
+if rV[17+24*ai]and Ja[ai]then
+call gC(ai,ni,1)
+call GX(ai)
+return
+endif
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Demon\\DarkPortal\\DarkPortalTarget.mdl",K[ni],L[ni]))
+call DestroyEffect(AddSpecialEffect("Nova_yellow.mdl",K[ni],L[ni]))
+
+
+
+==== handler hb ====
+
+function hb takes nothing returns nothing
+local integer bb=ni
+local real dx=TX-K[bb]
+local real dy=TY-L[bb]
+local real px=K[bb]
+local real py=L[bb]
+local integer cb=0
+local boolean SI=true
+local real NO
+local lightning Cb
+local real Bb=(1+1.5*.1*oi[ai])*600
+local real DX=(6+1*Wr[ai])
+call kX()
+set NO=SquareRoot(dx*dx+dy*dy)
+set dx=dx/ NO
+set dy=dy/ NO
+call Nb(bb,px,py,dx,dy,Bb,DX)
+
+
+
+==== handler pb ====
+
+function pb takes nothing returns nothing
+local integer Ib
+local integer dX
+local integer WO=0
+local real NO
+local real dx
+local real dy
+local real Pb
+local real qb
+local real Mb=$5F5E0FF
+call kX()
+set dx=TX-K[ni]
+set dy=TY-L[ni]
+set NO=SquareRoot(dx*dx+dy*dy+.01)
+set dx=dx/ NO
+set dy=dy/ NO
+set Pb=(2+Rv[ni]+Dr)
+set Ib=VO(2,ai,'e000',K[ni]+dx*Pb,L[ni]+dy*Pb,90,"Abilities\\Spells\\NightElf\\SpiritOfVengeance\\SpiritOfVengeanceBirthMissile.mdl")
+set Nv[Ib]=true
+set bv[Ib]=true
+set Av[3*Ib+1]=true
+set Av[3*Ib+2]=true
+set Av[3*Ib+3]=true
+set hv[Ib]=Di
+set Jv[Ib]=fi
+set Rv[Ib]=Dr
+set ev[Ib]=4.5*(1+1.5*.1*oi[ai])
+set Ev[Ib]=3
+set Xv[Ib]=Wr[ai]
+call SetUnitScale(F[Ib],1.6,1.6,1.6)
+set qb=dx*Q[ni]+dy*S[ni]
+if qb<0 then
+set qb=0
+endif
+call IO(Ib,900*.03+qb,K[Ib]+dx,L[Ib]+dy)
+set dX=Kv
+loop
+exitwhen dX==0
+if dn[Vv[dX]]!=dn[ai]then
+set NO=QX(K[dX],L[dX],TX,TY)
+if NO<Mb then
+set WO=dX
+set Mb=NO
+endif
+endif
+set dX=rv[dX]
+endloop
+if WO!=0 then
+set Fv[Ib]=WO
+set jv[Ib]=gi
+else
+set jv[Ib]=Fi
+endif
+
+
+
+==== handler ub ====
+
+function ub takes nothing returns nothing
+local integer Ib
+local real dx
+local real dy
+local real NO
+local real Ub=$5DC*.03
+local real wb=300*.03
+local real Wb
+local real yb
+local real Yb=800*(1+1.5*.1*oi[ai])
+call kX()
+set dx=TX-K[ni]
+set dy=TY-L[ni]
+set Ib=VO(2,ai,'e000',K[ni],L[ni],270,"ArcaneGlaive.mdl")
+call SetUnitColor(F[Ib],GetPlayerColor(Player(ai)))
+set Ev[Ib]=2
+set Xv[Ib]=Wr[ai]
+set Av[Ib*3+1]=true
+set Av[Ib*3+3]=true
+set Rv[Ib]=40
+set hv[Ib]=Bi
+set xv[Ib]=1
+set Gv[Ib]=ci
+set NO=SquareRoot(dx*dx+dy*dy)
+if NO<300 then
+set NO=300
+endif
+set dy=dy/ NO
+set dx=dx/ NO
+if NO>Yb then
+set NO=Yb
+endif
+set Wb=-(Ub*Ub)/(2*NO)
+set yb=2*Wb*wb/ Ub
+if ja[ai]then
+set wb=-wb
+set yb=-yb
+set ja[ai]=false
+else
+set ja[ai]=true
+endif
+set Q[Ib]=Ub*dx+wb*(-dy)
+set S[Ib]=Ub*dy+wb*(dx)
+set U[Ib]=Wb*dx+yb*(-dy)
+set w[Ib]=Wb*dy+yb*(dx)
+set ev[Ib]=-Ub/ Wb*.03
+set gv[Ib]=ev[Ib]-5*.03
+set Y[Ib]=Wb*dx-yb*(-dy)
+set z[Ib]=Wb*dy-yb*dx
+
+
+
+==== handler DC ====
+
+function DC takes nothing returns nothing
+local integer dX
+local real timeout
+if Qr[ni]==0 then
+call iR(ni,false)
+set dX=eO(3)
+set K[dX]=K[ni]
+set L[dX]=L[ni]
+set Q[dX]=Q[ni]
+set S[dX]=S[ni]
+set Av[3*dX+2]=true
+set Av[3*dX+1]=true
+set cv[dX]=2
+set hv[dX]=va
+set jv[dX]=ea
+set Fv[dX]=ni
+set Vv[dX]=ai
+set Rv[dX]='x'
+call PlaySoundOnUnitBJ(qx,'d',F[ni])
+set Qr[ni]=dX
+set wv[(kO(function cC,(2.6+.2*vi[ai])*jn[ai],ni,ai,ne,0,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Human\\MagicSentry\\MagicSentryCaster.mdl",F[ni],"over head"))
+else
+call IssueImmediateOrderById(F[ni],$D0004)
+endif
+
+
+
+==== handler fC ====
+
+function fC takes nothing returns nothing
+local integer XR=ni+500
+if le[ni]!=0 then
+call DisplayTextToPlayer(GetOwningPlayer(F[ni]),0,0,"施放停止，旧的时间回溯已施放")
+call IssueImmediateOrderById(F[ni],$D0004)
+else
+if not Le[ai]then
+set F[XR]=CreateUnit(Player(ai),'thrd',K[ni],L[ni],GetUnitFacing(F[ni]))
+endif
+if En==3 and fV==ai then
+call SetUnitScale(Nr,1.4,1.4,1.4)
+endif
+call SetUnitVertexColor(F[XR],$AF,$AF,$FF,75)
+call UnitAddAbility(F[XR],'Atsi')
+set av[XR]=false
+set Vv[XR]=ai
+set Fv[XR]=ni
+set K[XR]=K[ni]
+set L[XR]=L[ni]
+set Q[XR]=Q[ni]
+set S[XR]=S[ni]
+set U[XR]=U[ni]
+set w[XR]=w[ni]
+set Y[XR]=Y[ni]
+set z[XR]=z[ni]
+set G[XR]=G[ni]
+set ev[XR]=ev[ni]
+set Jr[XR]=Jr[ni]
+set le[ni]=kO(function ER,3.6*jn[ai],ni,XR,ne,GetUnitState(F[ni],UNIT_STATE_LIFE),GetUnitState(F[ni],UNIT_STATE_MANA),GetUnitFacing(F[ni]))
+endif
+
+
+
+==== handler jR ====
+
+function jR takes nothing returns nothing
+if sr[ni]then
+return
+endif
+call iR(ni,false)
+set wv[(kO(function HR,(6.2+.8*vi[ai])*jn[ai],ni,0,ne,0,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Orc\\Voodoo\\VoodooAuraTarget.mdl",F[ni],"chest"))
+set sr[ni]=true
+set tr[ni]=3.+2.*vi[ai]
+call DR(ni,FR(ni)+35)
+set Sr[ni]=Sr[ni]+35
+
+
+
+==== handler XB ====
+
+function XB takes nothing returns nothing
+local integer Ib
+call kX()
+set Ib=VO(2,ai,'e001',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\BallsOfFireMissile\\BallsOfFireMissile.mdl")
+set ev[Ib]=2*(1+.1*oi[ai])
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Ev[Ib]=16
+set Xv[Ib]=yr[ai]
+call SetUnitScale(F[Ib],2.2,2.2,2.2)
+set Rv[Ib]=72
+set xv[Ib]=.75
+set hv[Ib]=Ba
+set Jv[Ib]=ca
+set Gv[Ib]=ca
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set TX=TX/ Ar
+set TY=TY/ Ar
+set Y[Ib]=TX
+set z[Ib]=TY
+set Q[Ib]=TX*400*.03
+set S[Ib]=TY*400*.03
+
+
+
+==== handler rB ====
+
+function rB takes nothing returns nothing
+local integer Ib
+local real iB=.8+.1*ri[ai]+.1*yr[ai]
+call kX()
+set Ib=VO(2,ai,'e001',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\BallsOfFireMissile\\BallsOfFireMissile.mdl")
+call UnitAddAbility(F[Ib],'Amrf')
+call UnitRemoveAbility(F[Ib],'Amrf')
+call SetUnitFlyHeight(F[Ib],$3E8,0)
+call SetUnitScale(F[Ib],iB,iB,iB)
+set Xv[Ib]=yr[ai]
+set Ev[Ib]=8
+set Gv[Ib]=ui
+set jv[Ib]=Ti
+set ev[Ib]=1.35
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set Ir=Ar/ 1.35*.03
+set Q[Ib]=Ir*TX/ Ar
+set S[Ib]=Ir*TY/ Ar
+
+
+
+==== handler gB ====
+
+function gB takes nothing returns nothing
+local integer Ib
+local real GB=700*(1+.1*oi[ai])
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\SpiritOfVengeanceMissile\\SpiritOfVengeanceMissile.mdl")
+set Av[3*Ib+3]=true
+set Xv[Ib]=yr[ai]
+if Fa[ai]then
+set ev[Ib]=GB/ 280
+set xv[Ib]=1
+set Rv[Ib]=50
+set jv[Ib]=Wi
+call SetUnitScale(F[Ib],ev[Ib]*2.5+1,ev[Ib]*2.5+1,ev[Ib]*2.5+1)
+if(TX-K[ni])*(TX-K[ni])+(TY-L[ni])*(TY-L[ni])<$80*$80 then
+set ev[Ib]=ev[Ib]*1.1
+else
+call IO(Ib,280*.03,TX,TY)
+endif
+else
+set ev[Ib]=(SquareRoot(AX(((TX)*1.),((TY)*1.),((K[ni])*1.),((L[ni])*1.))))
+if ev[Ib]>GB then
+set ev[Ib]=GB
+endif
+set ev[Ib]=ev[Ib]/ 700
+set Av[3*Ib+1]=true
+set Av[3*Ib+2]=true
+set Rv[Ib]=50
+set hv[Ib]=Yi
+set Gv[Ib]=zi
+set Jv[Ib]=Zi
+call SetUnitScale(F[Ib],2.5,2.5,2.5)
+call IO(Ib,700*.03,TX,TY)
+endif
+set gv[Ib]=Atan2(S[Ib],Q[Ib])
+
+
+
+==== handler RB ====
+
+function RB takes nothing returns nothing
+if Gr[ni]then
+return
+endif
+set hr[ni]=true
+set Gr[ni]=true
+call DR(ni,FR(ni)+Fr/ 2.)
+set hv[ni]=Ei
+set Rv[ni]=fo
+call UnitAddAbility(F[ni],'Agho')
+call kO((function OA),((4*jn[ai])*1.),(ni),($539),(ne),0,0,0)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\ReplenishMana\\SpiritTouchTarget.mdl",K[ni],L[ni]))
+
+
+
+==== handler OB ====
+
+function OB takes nothing returns nothing
+if gr[ni]then
+return
+endif
+set gr[ni]=true
+call DR(ni,FR(ni)+Fr)
+set hv[ni]=Ei
+set Rv[ni]=fo
+call UnitAddAbility(F[ni],'Agho')
+call kO((function BR),((3.1*jn[ai])*1.),(ni),($539),(ne),0,0,0)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\ReplenishMana\\SpiritTouchTarget.mdl",K[ni],L[ni]))
+
+
+
+==== handler hB ====
+
+function hB takes nothing returns nothing
+local real dx=TX-K[ni]
+local real dy=TY-L[ni]
+local real NO=SquareRoot(dx*dx+dy*dy)
+local real HB=700+70*Yr[ai]
+local integer jB=GetTerrainType(K[ni],L[ni])
+local integer JB
+call IssueImmediateOrderById(F[ni],$D0004)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\CarrionSwarm\\CarrionSwarmDamage.mdl",K[ni],L[ni]))
+if NO<=HB then
+set K[ni]=TX
+set L[ni]=TY
+call SetUnitX(F[ni],TX)
+call SetUnitY(F[ni],TY)
+else
+set K[ni]=K[ni]+HB*dx/ NO
+set L[ni]=L[ni]+HB*dy/ NO
+call SetUnitX(F[ni],K[ni])
+call SetUnitY(F[ni],L[ni])
+endif
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\DeathCoil\\DeathCoilSpecialArt.mdl",K[ni],L[ni]))
+if jB==sa[ka]then
+set JB=GetTerrainType(K[ni],L[ni])
+if GetUnitState(F[ni],UNIT_STATE_LIFE)<=(6*Uo[ai]+.5)and JB==Sa[ka]and dn[GetPlayerId(GetLocalPlayer())]==dn[ai]then
+call PlaySoundBJ(wx)
+set rr=CreateTextTag()
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,$FF,50,$FF,$DC)
+call SetTextTagText(rr,"死里逃生",.025)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+endif
+endif
+
+
+
+==== handler wB ====
+
+function wB takes nothing returns nothing
+if not lr[ai]then
+call IO(ni,20,TX,TY)
+set Nr=CreateUnit(Player(Vv[ni]),'thrd',K[ni],L[ni],GetUnitFacing(F[ni]))
+if En==3 and fV==Vv[ni]then
+call SetUnitScale(Nr,1.4,1.4,1.4)
+endif
+call SetUnitTimeScale(Nr,.5)
+call SetUnitVertexColor(Nr,'d','d','d',50)
+call KillUnit(Nr)
+call IssueImmediateOrderById(F[ni],$D0004)
+call SetUnitFacing(F[ni],Atan2(TY-L[ni],TX-K[ni])*bj_RADTODEG)
+call hO(true,ni,true,7331,false,0)
+set lr[ai]=true
+set Kr[ai]=CreateTrigger()
+call TriggerRegisterUnitEvent(Kr[ai],Xn[ai],EVENT_UNIT_ISSUED_POINT_ORDER)
+call TriggerAddAction(Kr[ai],function uB)
+set wv[(kO(function pB,3.1*jn[ai],ni,7331,ne,0,0,0))]=(AddSpecialEffectTarget("units\\human\\phoenix\\phoenix.mdl",F[ni],"origin"))
+endif
+
+
+
+==== handler IB ====
+
+function IB takes nothing returns nothing
+local real AB
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+if TX==K[ni]and TY==L[ni]then
+call DisplayTextToPlayer(Player(Vv[ni]),0,0,"错误: 不要选择你自身位置.")
+call IssueImmediateOrderById(F[ni],$D0004)
+else
+call IssueImmediateOrderById(F[ni],$D0004)
+set Ar=SquareRoot(TX*TX+TY*TY)
+call SetUnitFacing(F[ni],Atan2(TY,TX)*bj_RADTODEG)
+set Jr[ni]=true
+set TX=TX/ Ar
+set TY=TY/ Ar
+set Q[ni]=Hr*TX
+set S[ni]=Hr*TY
+set U[ni]=jr*TX
+set w[ni]=jr*TY
+set AB=(650+50*Yr[ai])*(1+.1*oi[ai])
+if Ar>AB then
+set Ar=AB
+endif
+set ev[ni]=Ar/ Hr*.03+3*.03
+set hv[ni]=Ei
+set Rv[ni]=fo
+endif
+
+
+
+==== handler MB ====
+
+function MB takes nothing returns nothing
+local integer Ib
+local real r
+local real Bb=600*(1+.1*oi[ai])
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\DragonHawkMissile\\DragonHawkMissile.mdl")
+call SetUnitVertexColor(F[Ib],$A,$FF,$A,'d')
+set Av[Ib*3+1]=false
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Nv[Ib]=false
+set cv[Ib]=1
+set Rv[Ib]=40
+set hv[Ib]=si
+set Jv[Ib]=Si
+set Gv[Ib]=ti
+set Fv[Ib]=ni
+call IO(Ib,800*.03,TX,TY)
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set r=SquareRoot(TX*TX+TY*TY)
+if r>=Bb then
+set ev[Ib]=Bb/ 800
+else
+set ev[Ib]=r/ 800+.03
+endif
+
+
+
+==== handler mB ====
+
+function mB takes nothing returns nothing
+local integer Ib
+local real r
+local real Bb=900*(1+.1*oi[ai])
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\SerpentWardMissile\\SerpentWardMissile.mdl")
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=false
+set Av[Ib*3+3]=true
+set Nv[Ib]=true
+set cv[Ib]=1
+set Rv[Ib]=40
+set hv[Ib]=si
+set Jv[Ib]=Si
+set Gv[Ib]=ti
+call IssueImmediateOrderById(F[ni],$D0004)
+set Fv[Ib]=ni
+call IO(Ib,$6A4*.03,TX,TY)
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set r=SquareRoot(TX*TX+TY*TY)
+if r>=Bb then
+set ev[Ib]=Bb/ $6A4
+else
+set ev[Ib]=r/ $6A4+.03
+endif
+
+
+
+==== handler ic ====
+
+function ic takes nothing returns nothing
+local integer Ib
+call kX()
+if not ga[Vv[ni]]then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Spells\\Undead\\DeathCoil\\DeathCoilMissile.mdl")
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set Ir=(1+.1*oi[ai])*700
+if Ar<Ir then
+set ev[Ib]=Ar/ 700
+else
+set ev[Ib]=Ir/ 700
+endif
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Nv[Ib]=true
+set Rv[Ib]=27
+set Xv[Ib]=zr[ai]
+set xv[Ib]=1
+set hv[Ib]=mi
+set Gv[Ib]=Pi
+set Jv[Ib]=pi
+set Q[Ib]=700*.03*TX/ Ar
+set S[Ib]=700*.03*TY/ Ar
+else
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Spells\\Undead\\DeathCoil\\DeathCoilMissile.mdl")
+call SetUnitVertexColor(F[Ib],$C8,'d',$FF,$C8)
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set ev[Ib]=(1+.1*oi[ai])*.12
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Nv[Ib]=false
+set Rv[Ib]=35
+set Xv[Ib]=zr[ai]
+set xv[Ib]=1
+set hv[Ib]=Mi
+set Gv[Ib]=qi
+set Jv[Ib]=pi
+set Q[Ib]=900*.03*TX/ Ar
+set S[Ib]=900*.03*TY/ Ar
+endif
+
+
+
+==== handler Ic ====
+
+function Ic takes nothing returns nothing
+local real Xc
+local real DB
+local real Oc
+local real Rc
+local integer Ib
+call kX()
+if not ga[Vv[ni]]then
+if ja[ai]then
+call kO(function Ec,.08,ni,5+zr[ai],5+zr[ai],TX,TY,.3)
+set ja[ai]=false
+else
+call kO(function Ec,.08,ni,5+zr[ai],5+zr[ai],TX,TY,-.3)
+set ja[ai]=true
+endif
+else
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set TX=TX/ Ar
+set TY=TY/ Ar
+set Xc=TY
+set DB=TX
+set Rr=-2
+loop
+exitwhen Rr>=3
+if Fn[ai*4]==0 then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\RedDragonBreath\\RedDragonMissile.mdl")
+elseif Fn[ai*4]==-1 then
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"fb2.mdl")
+call SetUnitVertexColor(F[Ib],Fn[ai*4+1],Fn[ai*4+2],Fn[ai*4+3],$FF)
+endif
+call SetUnitScale(F[Ib],.8,.8,.8)
+set ev[Ib]=800*(1+.1*oi[ai])/ 900
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Rv[Ib]=22
+set hv[Ib]=Li
+set Jv[Ib]=li
+set Xv[Ib]=zr[ai]
+set Ir=5.5*bj_DEGTORAD*Rr
+set Oc=Sin(Ir)
+set Rc=Cos(Ir)
+set TX=DB*Rc-Xc*Oc
+set TY=Xc*Rc+DB*Oc
+set Q[Ib]=800*.03*TX
+set S[Ib]=800*.03*TY
+set Rr=Rr+1
+endloop
+endif
+
+
+
+==== handler dc ====
+
+function dc takes nothing returns nothing
+local integer Ib
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Spells\\Items\\OrbCorruption\\OrbCorruptionMissile.mdl")
+set ev[Ib]=900*(1+.1*oi[ai])/ 900
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Rv[Ib]=35
+set gv[Ib]=1
+set Xv[Ib]=zr[ai]
+set xv[Ib]=1
+set hv[Ib]=Ji
+set Jv[Ib]=ki
+call IO(Ib,900*.03,TX,TY)
+
+
+
+==== handler gc ====
+
+function gc takes nothing returns nothing
+local integer Ib
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\IllidanMissile\\IllidanMissile.mdl")
+set ev[Ib]=(750+$96*zr[ai])*(1+.1*oi[ai])/ 900
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Rv[Ib]=38
+set gv[Ib]=1
+set Xv[Ib]=zr[ai]
+set xv[Ib]=1
+set hv[Ib]=Gi
+set Jv[Ib]=Hi
+call IO(Ib,900*.03,TX,TY)
+
+
+
+==== handler bC ====
+
+function bC takes nothing returns nothing
+local integer Ib
+local integer BC
+local real vx
+local real vy
+local real DB
+local real Xc
+local real VN=.3
+set TX=TX-K[ni]
+set TY=TY-L[ni]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set vx=TX/ Ar
+set vy=TY/ Ar
+set BC=VO(2,ai,'e000',K[ni]-vx*$D2,L[ni]-vy*$D2,GetUnitFacing(F[ni]),"Abilities\\Weapons\\FaerieDragonMissile\\FaerieDragonMissile.mdl")
+set Ib=VO(2,ai,'e000',K[ni]-vx*$D2,L[ni]-vy*$D2,GetUnitFacing(F[ni]),"Abilities\\Weapons\\FaerieDragonMissile\\FaerieDragonMissile.mdl")
+set Ir=(1+.1*oi[ai])*900
+if Ar<Ir then
+set ev[Ib]=((Ar+$D2)/ 900)*1.046751601
+set ev[BC]=((Ar+$D2)/ 900)*1.046751601
+else
+set ev[Ib]=((Ir+$D2)/ 900)*1.046751601
+set ev[BC]=((Ir+$D2)/ 900)*1.046751601
+endif
+set Fv[BC]=Ib
+set vx=900*.03*vx
+set vy=900*.03*vy
+call SetUnitScale(F[Ib],1.1,1.1,1.1)
+set Av[Ib*3+1]=false
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=false
+set Rv[Ib]=23
+set hv[Ib]=Va
+set Gv[Ib]=Va
+set Xc=Sin(VN)
+set DB=Cos(VN)
+set Q[Ib]=vx*DB-vy*Xc
+set S[Ib]=vx*Xc+vy*DB
+set Ev[Ib]=17
+set Fv[Ib]=BC
+set Ib=BC
+set Ir=(1+.1*oi[ai])*900
+call SetUnitScale(F[Ib],1.1,1.1,1.1)
+set Av[Ib*3+1]=false
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=false
+set Rv[Ib]=23
+set hv[Ib]=Va
+set Gv[Ib]=Va
+set Xc=Sin(-VN)
+set DB=Cos(-VN)
+set Q[Ib]=vx*DB-vy*Xc
+set S[Ib]=vx*Xc+vy*DB
+set Ev[Ib]=17
+
+
+
+==== handler eC ====
+
+function eC takes nothing returns nothing
+local integer Ib
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\MurgulMagicMissile\\MurgulMagicMissile.mdl")
+call SetUnitScale(F[Ib],1.1,1.1,1.1)
+set ev[Ib]=1.1*(1+.1*oi[ai])
+set Av[Ib*3+1]=true
+set Av[Ib*3+2]=true
+set Av[Ib*3+3]=true
+set Rv[Ib]=39
+set hv[Ib]=ia
+set Jv[Ib]=aa
+set Gv[Ib]=na
+call IO(Ib,$3E8*.03,TX,TY)
+
+
+
+==== handler mc ====
+
+function mc takes nothing returns nothing
+local integer Ib
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\BansheeMissile\\BansheeMissile.mdl")
+call SetUnitScale(F[Ib],2,2,2)
+set ev[Ib]=(SquareRoot(AX(((TX)*1.),((TY)*1.),((K[ni])*1.),((L[ni])*1.))))
+if ev[Ib]>850*(1+.1*oi[ai])then
+set ev[Ib]=850*(1+.1*oi[ai])
+endif
+set ev[Ib]=ev[Ib]/ 850
+set Av[Ib*3+3]=false
+set Gv[Ib]=da
+set xv[Ib]=1
+set Ev[Ib]=Ea
+call IO(Ib,850*.03,TX,TY)
+
+
+
+==== handler jc ====
+
+function jc takes nothing returns nothing
+local integer Ib
+call kX()
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Spells\\Undead\\DarkSummoning\\DarkSummonMissile.mdl")
+set ev[Ib]=900*(1+.1*oi[ai])/ 400
+set Av[Ib*3+3]=true
+set Gv[Ib]=Oa
+set jv[Ib]=Xa
+set xv[Ib]=1
+set Ev[Ib]=Ea
+call IO(Ib,400*.03,TX,TY)
+
+
+
+==== handler Tc ====
+
+function Tc takes nothing returns nothing
+local integer Ib
+local integer rR
+call kX()
+call SetPlayerAbilityAvailable(Player(Vv[ni]),'S019',false)
+call SetPlayerAbilityAvailable(Player(Vv[ni]),'S031',true)
+call SetUnitAbilityLevel(F[ni],'S031',1)
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\VengeanceMissile\\VengeanceMissile.mdl")
+call bO(Ib,900*.03,TX,TY)
+set Av[3*Ib+1]=true
+set Av[3*Ib+3]=true
+set Nv[Ib]=true
+set Rv[Ib]=35
+set gv[Ib]=900*(1+.1*oi[ai])
+set Ev[Ib]=Ra
+set jv[Ib]=Na
+set hv[Ib]=Aa
+set Fv[Ib]=ni
+set H[Ib]=AddLightningEx("DRAL",true,K[ni],L[ni],mr+65,K[ni],L[ni],mr+65)
+call oR(ni)
+set Fv[ni]=Ib
+
+
+
+==== handler tc ====
+
+function tc takes nothing returns nothing
+local integer Ib
+local integer rR
+call kX()
+call SetPlayerAbilityAvailable(Player(Vv[ni]),'S019',false)
+call SetPlayerAbilityAvailable(Player(Vv[ni]),'S031',true)
+call SetUnitAbilityLevel(F[ni],'S031',1)
+set Ib=VO(2,ai,'e000',K[ni],L[ni],GetUnitFacing(F[ni]),"Abilities\\Weapons\\FarseerMissile\\FarseerMissile.mdl")
+call bO(Ib,900*.03,TX,TY)
+set Av[3*Ib+1]=true
+set Av[3*Ib+3]=true
+set Nv[Ib]=true
+set Rv[Ib]=35
+set gv[Ib]=900*(1+.1*oi[ai])
+set Ev[Ib]=Ra
+set jv[Ib]=Na
+set hv[Ib]=Ia
+set Fv[Ib]=ni
+set H[Ib]=AddLightningEx("DRAM",true,K[ni],L[ni],mr+65,K[ni],L[ni],mr+65)
+call oR(ni)
+set Fv[ni]=Ib
+
+
+
+==== handler MC ====
+
+function MC takes nothing returns nothing
+local integer dX=Kv
+local integer HO=0
+local real NO
+local integer n=0
+local real DX
+local boolean lC=rV[$C+24*ai]
+if Ur==0 then
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Demon\\DarkPortal\\DarkPortalTarget.mdl",K[ni],L[ni]))
+set DX=$B
+elseif Ur==1 then
+call DestroyEffect(AddSpecialEffect("epicexplosion1.mdx",K[ni],L[ni]))
+set DX=$C
+else
+call DestroyEffect(AddSpecialEffect("epicexplosion2.mdx",K[ni],L[ni]))
+set DX=$E
+endif
+if rV[$D+24*ai]then
+call kC(ai,ni)
+endif
+if ei[ai]==0 then
+else
+set DX=DX+1+ei[ai]
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Human\\Invisibility\\InvisibilityTarget.mdl",Xn[ai],"right hand"))
+endif
+if aV[ai]and GetTerrainType(K[ni],L[ni])==sa[ka]then
+call HC(ai,ni)
+else
+call CX(ni,20)
+if not Tn then
+call SetUnitState(F[ni],UNIT_STATE_MANA,GetUnitState(F[ni],UNIT_STATE_MANA)+$A)
+endif
+endif
+loop
+exitwhen dX==0
+set HO=rv[dX]
+if dn[Vv[dX]]!=dn[ai]then
+set NO=uX(dX,ni)
+if Ur==0 then
+if NO<=300 then
+call KI(ni,dX,DX-NO/ 60,1)
+set n=n+1
+endif
+elseif Ur==1 then
+if NO<=300 then
+call KI(ni,dX,DX-NO/ 60,1)
+set n=n+1
+endif
+else
+if NO<=400 then
+call KI(ni,dX,DX-NO/ 40,1)
+set n=n+1
+endif
+endif
+if Fv[dX]==ni then
+call oR(dX)
+call StartSound(Wx)
+set rr=CreateTextTag()
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,$FF,50,50,$DC)
+call SetTextTagText(rr,"否决",.025)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+endif
+endif
+set dX=HO
+endloop
+if n>0 then
+if ei[ai]==2 then
+call SetUnitState(F[ni],UNIT_STATE_MANA,GetUnitState(F[ni],UNIT_STATE_MANA)-4*n)
+endif
+set Ur=Ur+1
+call DestroyTimer(Tr)
+set Tr=CreateTimer()
+call TimerStart(Tr,6*jn[ai],false,function LC)
+if Ur==1 then
+call DR(ni,FR(ni)+50)
+set ur[0]=AddSpecialEffectTarget("Abilities\\Weapons\\PhoenixMissile\\Phoenix_Missile.mdl",Xn[ai],"left foot")
+set ur[1]=AddSpecialEffectTarget("Abilities\\Weapons\\PhoenixMissile\\Phoenix_Missile.mdl",Xn[ai],"right foot")
+elseif Ur==2 then
+call DR(ni,FR(ni)+50)
+set ur[2]=AddSpecialEffectTarget("Abilities\\Weapons\\PhoenixMissile\\Phoenix_Missile.mdl",Xn[ai],"chest")
+endif
+endif
+if n>=5 and not Tn then
+set rr=CreateTextTag()
+if lC then
+call SetTextTagText(rr,"吸血鬼",.025)
+call StartSound(Ro)
+else
+call SetTextTagText(rr,"帽子戏法",.025)
+call StartSound(Ux)
+endif
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,50,$FF,$FF,$DC)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+call DestroyEffect(AddSpecialEffect("ArcaneExplosion.mdx",K[ni],L[ni]))
+endif
+
+
+
+==== handler pC ====
+
+function pC takes nothing returns nothing
+local integer dX=Kv
+local integer HO=0
+local real NO
+local integer n=0
+local real DX
+local boolean lC=rV[$C+24*ai]
+if rV[$D+24*ai]then
+call kC(ai,ni)
+endif
+if ei[ai]==0 then
+set DX=$A
+else
+set DX=$B+ei[ai]
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Human\\Invisibility\\InvisibilityTarget.mdl",Xn[ai],"right hand"))
+endif
+if aV[ai]and GetTerrainType(K[ni],L[ni])==sa[ka]then
+call HC(ai,ni)
+else
+call CX(ni,DX)
+endif
+if lC then
+set xi[ai]=2*xi[ai]
+endif
+loop
+exitwhen dX==0
+set HO=rv[dX]
+if dn[Vv[dX]]!=dn[ai]then
+set NO=uX(dX,ni)
+if NO<=$FA then
+call KI(ni,dX,DX,1-NO/ $3E8)
+set n=n+1
+endif
+if Fv[dX]==ni and(GetTerrainType(K[dX],L[dX])==sa[ka]or lr[Vv[dX]])then
+call oR(dX)
+if GetLocalPlayer()==Player(Vv[ni])or GetLocalPlayer()==Player(Vv[dX])then
+call StartSound(Wx)
+set rr=CreateTextTag()
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,$FF,50,50,$DC)
+call SetTextTagText(rr,"否决",.025)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+endif
+endif
+elseif dn[Vv[dX]]==dn[ai]and dX!=ni then
+set NO=uX(dX,ni)
+if NO<=500 then
+call DR(dX,FR(dX)+60)
+set wv[(kO(function yB,4*jn[Vv[dX]]*jn[ai],dX,0,ne,60,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Other\\Drain\\DrainCaster.mdl",F[dX],"origin"))
+call SetUnitState(F[dX],UNIT_STATE_LIFE,GetUnitState(F[dX],UNIT_STATE_LIFE)+DX*.5)
+call SetUnitState(F[dX],UNIT_STATE_MANA,GetUnitState(F[dX],UNIT_STATE_MANA)-DX*.5)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Human\\HolyBolt\\HolyBoltSpecialArt.mdl",K[dX],L[dX]))
+endif
+endif
+set dX=HO
+endloop
+if ei[ai]==2 then
+call SetUnitState(F[ni],UNIT_STATE_MANA,GetUnitState(F[ni],UNIT_STATE_MANA)-4*n)
+endif
+if lC then
+set xi[ai]=xi[ai]/ 2
+endif
+if n>=3 and not Tn then
+set rr=CreateTextTag()
+if lC then
+call SetTextTagText(rr,"吸血鬼",.025)
+call StartSound(Ro)
+else
+call SetTextTagText(rr,"帽子戏法",.025)
+call StartSound(Ux)
+endif
+call SetTextTagPos(rr,K[ni],L[ni],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,50,$FF,$FF,$DC)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+call DestroyEffect(AddSpecialEffect("ArcaneExplosion.mdx",K[ni],L[ni]))
+endif
+if rV[17+24*ai]and Ja[ai]then
+call gC(ai,ni,1)
+call GX(ai)
+return
+endif
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Demon\\DarkPortal\\DarkPortalTarget.mdl",K[ni],L[ni]))
+call DestroyEffect(AddSpecialEffect("Nova_yellow.mdl",K[ni],L[ni]))
+
+
+
+
+##### IMPACT / COLLISION CALLBACKS (boolean, nothing) #####
+
+==== impact bA ====
+
+function bA takes nothing returns boolean
+local integer BA
+local integer IR=0
+local real IX
+if nv[Xr]==1 and dn[Vv[Er]]!=dn[Vv[Xr]]then
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+set BA=Iv[Er]
+set Iv[Er]=Vr[Vv[Xr]]
+if gr[Er]then
+if Jr[Er]then
+call KI(Er,Xr,4.6+.8*yr[Vv[Er]]+5.+.4*Yr[Vv[Er]],.75)
+call CX(Er,5.+.4*Yr[Vv[Er]])
+call IA()
+set Iv[Er]=BA
+call AA()
+set br=false
+else
+call KI(Er,Xr,4.6+.8*yr[Vv[Er]],1)
+call IA()
+set br=false
+endif
+elseif Jr[Er]then
+call KI(Er,Xr,5.+.4*Yr[Vv[Er]],1)
+call CX(Er,5.+.4*Yr[Vv[Er]])
+call AA()
+set br=false
+if ri[Vv[Er]]>0 and not gr[Er]then
+call qI(Er,5.+.4*Yr[Vv[Er]],1)
+endif
+endif
+if Gr[Er]and(not Gr[Xr])and hr[Er]then
+set Ir=(mv[(JO(true,Er,true,$539,false,0))]-(pv+TimerGetElapsed(Mv)))+1.5*jn[Vv[Er]]
+call hO(true,Er,true,$539,false,0)
+if Ir>0 then
+if Ir>5 then
+set Ir=5
+endif
+set Gr[Er]=true
+call DR(Er,FR(Er)+Fr/ 2.)
+set hv[Er]=Ei
+set Rv[Er]=fo
+call UnitAddAbility(F[Er],'Agho')
+call kO((function OA),((Ir)*1.),(Er),($539),(ne),0,0,0)
+set hr[Er]=false
+call kO((function RA),((.5)*1.),(Er),(4312),(ne),0,0,0)
+set Nr=CreateUnit(Player(Vv[Er]),'thrd',K[Er],L[Er],GetUnitFacing(F[Er]))
+if En==3 and fV==Vv[Er]then
+call SetUnitScale(Nr,1.4,1.4,1.4)
+endif
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Human\\Defend\\DefendCaster.mdl",Xn[Vv[Er]],"origin"))
+call SetUnitVertexColor(Nr,$FF,$FF,$FF,$96)
+call KillUnit(Nr)
+call lI(Er,Xr,4.5,'d'/('d'+GetUnitState(F[Xr],UNIT_STATE_MANA)))
+call lI(Xr,Er,2.25,'d'/('d'+GetUnitState(F[Er],UNIT_STATE_MANA)))
+endif
+endif
+endif
+return false
+
+
+
+==== impact ob ====
+
+function ob takes nothing returns boolean
+if TR(Xr,45)then
+call KI(Er,Xr,6.3+.7*Xv[Er],1.1*eb(Vv[Er]))
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+if nv[Xr]==1 then
+if rV[17+24*Vv[Er]]then
+call fX(2,1,Vv[Er])
+set Ja[Vv[Er]]=true
+endif
+endif
+endif
+if nv[Xr]!=3 and not Tn then
+set EV[2*Vv[Er]+1]=EV[2*Vv[Er]+1]+1
+endif
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+call XA(Er)
+return false
+
+
+
+==== impact rb ====
+
+function rb takes nothing returns boolean
+local integer ib
+local real yO
+local integer bf
+local real ab
+if nv[Xr]==1 then
+if rV[17+24*Vv[Er]]then
+call fX(2,1,Vv[Er])
+set Ja[Vv[Er]]=true
+endif
+set ib=Rn[Vv[Er]]
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+set yO=2.5*(1.2+.2*Xv[Er])
+set bf=QO(nr,Xr,Vv[Er])
+set ab=jn[Vv[Er]]/ jn[Vv[Xr]]
+if bf==0 then
+set bf=UO(nr,ib,Xr,yO*ab,2.5*ab)
+call YO(bf,1,AddSpecialEffectTarget("Environment\\SmallBuildingFire\\SmallBuildingFire2.mdl",F[Xr],"origin"))
+else
+call uO(bf,2.5*ab)
+endif
+call KI(Er,Xr,5.+.5*Xv[Er],1.1*eb(Vv[Er]))
+elseif TR(Xr,45)then
+call KI(Er,Xr,5.+.5*Xv[Er],1.1*eb(Vv[Er]))
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+endif
+if nv[Xr]!=3 and not Tn then
+set EV[2*Vv[Er]+1]=EV[2*Vv[Er]+1]+1
+endif
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+call XA(Er)
+return false
+
+
+
+==== impact nb ====
+
+function nb takes nothing returns boolean
+local integer ib
+local real yO
+local integer bf
+local real ab
+if nv[Xr]==1 then
+if rV[17+24*Vv[Er]]then
+call fX(2,1,Vv[Er])
+set Ja[Vv[Er]]=true
+endif
+set ib=Rn[Vv[Er]]
+call KI(Er,Xr,5.+.5*Xv[Er],1.1*eb(Vv[Er]))
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+set yO=3.*(1.2+.2*Xv[Er])
+set bf=QO(nr,Xr,Vv[Er])
+set ab=jn[Vv[Er]]/ jn[Vv[Xr]]
+if bf==0 then
+set bf=UO(nr,ib,Xr,yO*2.*ab,5.*jn[Vv[Er]]*ab)
+call YO(bf,1,AddSpecialEffectTarget("Environment\\LargeBuildingFire\\LargeBuildingFire2.mdl",F[Xr],"origin"))
+else
+call uO(bf,5.*ab)
+endif
+elseif TR(Xr,45)then
+call KI(Er,Xr,5.+.5*Xv[Er],1.1*eb(Vv[Er]))
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+endif
+if nv[Xr]!=3 and not Tn then
+set EV[2*Vv[Er]+1]=EV[2*Vv[Er]+1]+1
+endif
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+call XA(Er)
+return false
+
+
+
+==== impact Kb ====
+
+function Kb takes nothing returns boolean
+local real dx=K[Xr]-K[Er]
+local real dy=L[Xr]-L[Er]
+if TR(Xr,45)then
+if Vv[Xr]==Vv[Er]then
+if Jr[Xr]then
+set Ir=.45*SquareRoot($E+ri[Vv[Er]])
+if sI(Er,jb(Er),1,$C8*Ir)then
+call StartSound(Xo)
+set rr=CreateTextTag()
+call SetTextTagPos(rr,K[Xr],L[Xr],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,$FF,$FF,50,$DC)
+call SetTextTagText(rr,"爆炸",.027)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+endif
+call DR(Xr,FR(Xr)+'d')
+call kO(function Hb,4*jn[Vv[Xr]],Xr,0,ne,'d',0,0)
+set Jr[Xr]=false
+set ev[Xr]=0
+if not gr[Xr]then
+set hv[Xr]=null
+set Rv[Xr]=Do
+endif
+set Q[Xr]=.2*Q[Xr]
+set S[Xr]=.2*S[Xr]
+set U[Xr]=0
+set w[Xr]=0
+else
+call DR(Xr,FR(Xr)+50)
+call kO(function Hb,4*jn[Vv[Xr]],Xr,0,ne,50,0,0)
+set Ir=.39*SquareRoot($E+ri[Vv[Er]])
+call QI(Er,jb(Er),1.3,$C8*Ir)
+endif
+call SetUnitScale(F[Er],Ir,Ir,Ir)
+call DestroyEffect(AddSpecialEffectTarget("Nova_yellow.mdl",F[Er],"origin"))
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Human\\StormBolt\\StormBoltMissile.mdl",K[Er],L[Er]))
+call KillUnit(F[Er])
+call xO(Er,false)
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+set Nv[Er]=false
+set bv[Er]=false
+call XA(Er)
+elseif dn[Vv[Er]]!=dn[Vv[Xr]]then
+call KI(Er,Xr,jb(Er),1.)
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+set Nv[Er]=false
+set bv[Er]=false
+call XA(Er)
+endif
+else
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+set Nv[Er]=false
+set bv[Er]=false
+call XA(Er)
+endif
+return false
+
+
+
+==== impact Lb ====
+
+function Lb takes nothing returns boolean
+local real dx
+local real dy
+local real d
+local real vx
+local real vy
+local real v=$3E8*.03
+set Xr=Fv[Er]
+if Xr==0 or(not Bn[Vv[Xr]])then
+set Fv[Er]=0
+set jv[Er]=Fi
+else
+set dx=K[Xr]-K[Er]
+set dy=L[Xr]-L[Er]
+set d=SquareRoot(dx*dx+dy*dy)
+set vx=v*dx/ d
+set vy=v*dy/ d
+set Q[Er]=Q[Er]*.98+.02*vx
+set S[Er]=S[Er]*.98+.02*vy
+endif
+return false
+
+
+
+==== impact sb ====
+
+function sb takes nothing returns boolean
+local real dx=K[Xr]-K[Er]
+local real dy=L[Xr]-L[Er]
+local real NO
+local real Sb
+local real mI=1
+call DestroyEffect(AddSpecialEffect("Abilities\\Weapons\\BallistaMissile\\BallistaImpact.mdl",K[Er],L[Er]))
+if nv[Xr]==1 then
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Other\\Stampede\\StampedeMissileDeath.mdl",K[Xr],L[Xr]))
+if ri[Vv[Er]]>0 then
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+call qI(Er,6.4+.8*Xv[Er],.5*mI)
+endif
+call KI(Er,Xr,6.4+.8*Xv[Er],mI)
+set NO=SquareRoot(dx*dx+dy*dy)
+set dx=dx/ NO
+set dy=dy/ NO
+set Sb=1.5*SquareRoot(K[Er]*K[Er]+L[Er]*L[Er])+500*.03
+set Q[Er]=-Sb*dx/ 'd'
+set S[Er]=-Sb*dy/ 'd'
+set NO=Rv[Er]+Rv[Xr]
+set K[Er]=K[Xr]-(NO+$A)*dx
+set L[Er]=L[Xr]-(NO+$A)*dy
+endif
+call Qb()
+return false
+
+
+
+==== impact xB ====
+
+function xB takes nothing returns boolean
+local integer dX=kv
+local real NO
+local integer VR=dn[Vv[Er]]
+local real MI=$D2*SquareRoot(1.+.25*ri[Vv[Er]])
+loop
+exitwhen dX==0
+set Xr=rv[dX]
+if(nv[dX]==1 or(Dv[dX]or fv[dX]))and dn[Vv[dX]]!=VR then
+set NO=uX(dX,Er)
+if NO<=MI then
+call KI(Er,dX,zb(Xv[Er],ri[Vv[Er]],NO),.75)
+endif
+endif
+set dX=Xr
+endloop
+call SetUnitScale(F[Er],.006*MI,.006*MI,.006*MI)
+call DestroyEffect(AddSpecialEffectTarget("ExplosionBIG.mdl",F[Er],"origin"))
+call SetUnitFlyHeight(F[Er],0,0)
+call KillUnit(F[Er])
+call xO(Er,false)
+return false
+
+
+
+==== impact nB ====
+
+function nB takes nothing returns boolean
+local integer bf
+if nv[Xr]==1 then
+if fr[Xr]and Pr[Xr]then
+set bf=QO(ar,Xr,Vv[Er])
+if bf==0 then
+set bf=UO(ar,Rn[Vv[Er]],Xr,.3+.3*Xv[Er],.2)
+call tO(bf,(.5*Hn[(Vv[Xr])]*Co),true)
+else
+call uO(bf,1.5)
+endif
+elseif Pr[Xr]then
+if not Tn then
+set fr[Xr]=true
+set Gn[Vv[Xr]]=Gn[Vv[Xr]]*(.1)
+if GetLocalPlayer()==Player(Vv[Xr])or GetLocalPlayer()==Player(Vv[Er])then
+call PlaySoundBJ(ao)
+set rr=CreateTextTag()
+call SetTextTagPos(rr,K[Xr],L[Xr],0)
+call SetTextTagPermanent(rr,false)
+call SetTextTagColor(rr,$FF,30,30,$DC)
+call SetTextTagText(rr,"烤肉饼",.025)
+call SetTextTagLifespan(rr,1.5)
+call SetTextTagFadepoint(rr,1.)
+call SetTextTagVelocity(rr,0,.055)
+endif
+call DestroyEffect(AddSpecialEffect("Objects\\Spawnmodels\\Orc\\OrcLargeDeathExplode\\OrcLargeDeathExplode.mdl",K[Xr],L[Xr]))
+set wv[(kO(function aB,4*jn[Vv[Er]]/ jn[Vv[Xr]],Xr,0,ae,Nn[Vv[Xr]],0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Human\\Thunderclap\\ThunderclapTarget.mdl",F[Xr],"overhead"))
+set Nn[Vv[Xr]]=0
+endif
+else
+set bf=QO(ar,Xr,Vv[Er])
+if bf==0 then
+set bf=UO(ar,Rn[Vv[Er]],Xr,.5+.3*Xv[Er],.2)
+call tO(bf,(.5*Hn[(Vv[Xr])]*Co),true)
+else
+call uO(bf,.25)
+endif
+set Ar=425*.03-(Y[Er]*Q[Xr]+z[Er]*S[Xr])
+if Ar>0 then
+set Q[Xr]=Q[Xr]+Ar*Y[Er]
+set S[Xr]=S[Xr]+Ar*z[Er]
+endif
+endif
+elseif nv[Xr]==2 then
+if Ev[Xr]==16 then
+call XA(Er)
+else
+set Rv[Er]=SquareRoot(Rv[Er]*Rv[Er]+$3E8)
+call SetUnitScale(F[Er],Rv[Er]/ 32.727,Rv[Er]/ 32.727,Rv[Er]/ 32.727)
+if fv[Xr]then
+call XA(Xr)
+endif
+endif
+elseif Dv[Xr]then
+call XA(Er)
+call KI(Er,Xr,$A+2*Xv[Er],.8)
+endif
+return false
+
+
+
+==== impact bB ====
+
+function bB takes nothing returns boolean
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+if nv[Xr]==1 then
+call KI(Er,Xr,2.5+.5*Xv[Er],.65)
+endif
+call XA(Er)
+return false
+
+
+
+==== impact fB ====
+
+function fB takes nothing returns boolean
+if TR(Xr,45)then
+call KI(Er,Xr,3,1.4)
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+endif
+set TX=K[Xr]-K[Er]
+set TY=L[Xr]-L[Er]
+set Ar=SquareRoot(TX*TX+TY*TY)
+if Ar==0 then
+set TX=0
+set TY=1
+call BJDebugMsg("错误 分裂弹")
+else
+set TX=TX/ Ar
+set TY=TY/ Ar
+endif
+if nv[Xr]==3 then
+set Y[Er]=-TX
+set z[Er]=-TY
+endif
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+call XA(Er)
+return false
+
+
+
+==== impact lB ====
+
+function lB takes nothing returns boolean
+local integer bb=Fv[Er]
+local real x=K[bb]
+local real y=L[bb]
+local texttag KB
+if dn[Vv[Xr]]!=dn[Vv[bb]]then
+set bn[Vv[Xr]]=Vv[bb]
+endif
+if GetTerrainType(K[bb],L[bb])==sa[ka]then
+if GetUnitState(F[bb],UNIT_STATE_LIFE)<=(6*Uo[Vv[bb]]+.5)and Bn[Vv[bb]]and dn[GetPlayerId(GetLocalPlayer())]==dn[Vv[bb]]and GetTerrainType(K[Xr],L[Xr])==Sa[ka]then
+call StartSound(wx)
+set KB=CreateTextTag()
+call SetTextTagPos(KB,K[Er],L[Er],0)
+call SetTextTagPermanent(KB,false)
+call SetTextTagColor(KB,$FF,50,$FF,$DC)
+call SetTextTagText(KB,"死里逃生",.025)
+call SetTextTagLifespan(KB,1.5)
+call SetTextTagFadepoint(KB,1.)
+call SetTextTagVelocity(KB,0,.055)
+endif
+endif
+if Y[bb]*Y[bb]+Y[bb]*Y[bb]>=.05 then
+call IssueImmediateOrderById(F[bb],$D0004)
+endif
+if Y[Xr]*Y[Xr]+Y[Xr]*Y[Xr]>=.05 then
+call IssueImmediateOrderById(F[Xr],$D0004)
+endif
+set K[bb]=K[Xr]
+set L[bb]=L[Xr]
+set K[Xr]=x
+set L[Xr]=y
+if nv[Xr]==3 then
+call SetUnitX(F[Xr],x)
+call SetUnitY(F[Xr],y)
+call SetTextTagPosUnit(J[Xr],F[Xr],64)
+endif
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Items\\AIil\\AIilTarget.mdl",x,y))
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Items\\AIil\\AIilTarget.mdl",K[bb],L[bb]))
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+set KB=null
+call XA(Er)
+return false
+
+
+
+==== impact QB ====
+
+function QB takes nothing returns boolean
+local real yO=4.+.5*Xv[Er]
+local integer id=Vv[Xr]
+if nv[Xr]==1 then
+if TR(Xr,45)then
+call KI(Er,Xr,yO,1.)
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+set Vi[id]=Vi[id]+yO
+set wv[(kO(function qB,6*jn[Vv[Er]]/ jn[id],Xr,id,ae,yO,0,0))]=(AddSpecialEffectTarget("Abilities\\Weapons\\PhoenixMissile\\Phoenix_Missile.mdl",F[Xr],"hand"))
+endif
+else
+if TR(Xr,45)then
+call KI(Er,Xr,yO,1.)
+set Iv[Er]=Iv[Er]+Vr[Vv[Xr]]
+endif
+endif
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+call XA(Er)
+return false
+
+
+
+==== impact zB ====
+
+function zB takes nothing returns boolean
+set Xr=Fv[Er]
+set TX=K[Xr]-K[Er]
+set TY=L[Xr]-L[Er]
+set Ar=SquareRoot(TX*TX+TY*TY)
+if Ar<64 then
+call mX(Xr,gv[Er])
+call xO(Er,true)
+else
+set K[Er]=K[Er]+20*TX/ Ar
+set L[Er]=L[Er]+20*TY/ Ar
+set Q[Er]=0
+set S[Er]=0
+endif
+return false
+
+
+
+==== impact ZB ====
+
+function ZB takes nothing returns boolean
+local real yO=5+Xv[Er]
+local real vc=(3+Xv[Er]+.5*xi[Vv[Er]])*jn[Vv[Er]]
+local real pX
+local integer ec=Xr
+set Fv[Er]=2
+if nv[Xr]==1 then
+if dn[Vv[Xr]]==dn[Vv[Er]]then
+call mX(Xr,yO)
+set Fv[Er]=1
+call DR(Xr,FR(Xr)+Lr)
+set wv[(kO(function yB,vc*jn[Vv[Xr]],Xr,0,ne,Lr,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Other\\Drain\\DrainCaster.mdl",F[Xr],"origin"))
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Items\\AIre\\AIreTarget.mdl",F[Er],"origin"))
+else
+set Ir=FR(Xr)
+if Ir-Lr<0 then
+call DR(Xr,0)
+set wv[(kO(function yB,vc/ jn[Vv[Xr]],Xr,0,ae,-Ir,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Other\\Drain\\DrainTarget.mdl",F[Xr],"origin"))
+else
+call DR(Xr,Ir-Lr)
+set wv[(kO(function yB,vc/ jn[Vv[Xr]],Xr,0,ae,-Lr,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Other\\Drain\\DrainTarget.mdl",F[Xr],"origin"))
+endif
+call KI(Er,Xr,yO,.2)
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Undead\\DeathCoil\\DeathCoilSpecialArt.mdl",F[Er],"origin"))
+set Xr=VO(2,Vv[Er],'e000',K[Xr],L[Xr],270,"Abilities\\Weapons\\FaerieDragonMissile\\FaerieDragonMissile.mdl")
+set jv[Xr]=Qi
+set gv[Xr]=yO*Gn[Vv[Er]]*hn[Vv[ec]]
+set Fv[Xr]=Rn[Vv[Er]]
+endif
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+call XA(Er)
+elseif nv[Xr]==2 then
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+call XA(Er)
+endif
+return false
+
+
+
+==== impact xc ====
+
+function xc takes nothing returns boolean
+local real yO=4+Xv[Er]
+local integer dX=Kv
+local integer WO=0
+local integer ec=Xr
+if nv[Xr]==1 then
+if(dn[Vv[Xr]]==dn[Vv[Er]])and bv[Er]then
+set bv[Er]=false
+set Nv[Er]=false
+set Gn[Vv[Xr]]=Gn[Vv[Xr]]*1.1
+set wv[(kO(function WB,(6+1.5*Xv[Er]+xi[Vv[Er]])*jn[Vv[Er]]*jn[Vv[Xr]],Xr,Vv[Xr],ne,1.1,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Other\\Drain\\ManaDrainCaster.mdl",F[Xr],"origin"))
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Items\\AIre\\AIreTarget.mdl",F[Er],"origin"))
+set ev[Er]=(1+.1*oi[Vv[Er]])
+set Rr=dn[Vv[Er]]
+set Ir=$5F5E0FF
+loop
+exitwhen dX==0
+if dn[Vv[dX]]!=Rr and dX!=Xr then
+set TX=K[dX]-K[Er]
+set TY=L[dX]-L[Er]
+set Ar=TX*TX+TY*TY
+if Ar<Ir then
+set Ir=Ar
+set WO=dX
+endif
+endif
+set dX=rv[dX]
+endloop
+if WO!=0 then
+set TX=K[WO]-K[Er]
+set TY=L[WO]-L[Er]
+set Ar=SquareRoot(TX*TX+TY*TY)
+set TX=TX/ Ar
+set TY=TY/ Ar
+set Q[Er]=TX*600*.03
+set S[Er]=TY*600*.03
+endif
+else
+set Gn[Vv[Xr]]=Gn[Vv[Xr]]*.5
+set wv[(kO(function WB,(6+1.5*Xv[Er]+xi[Vv[Er]])*jn[Vv[Er]]/ jn[Vv[Xr]],Xr,Vv[Xr],ae,.5,0,0))]=(AddSpecialEffectTarget("Abilities\\Spells\\Other\\Drain\\ManaDrainTarget.mdl",F[Xr],"origin"))
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Undead\\DeathCoil\\DeathCoilSpecialArt.mdl",F[Er],"origin"))
+call KI(Er,Xr,yO,.6)
+set Xr=VO(2,Vv[Er],'e000',K[Xr],L[Xr],270,"Abilities\\Weapons\\FaerieDragonMissile\\FaerieDragonMissile.mdl")
+set jv[Xr]=Qi
+set gv[Xr]=yO*Gn[Vv[Er]]*hn[Vv[ec]]
+set Fv[Xr]=Rn[Vv[Er]]
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+call xO(Er,false)
+call KillUnit(F[Er])
+endif
+elseif nv[Xr]==2 then
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+call DestroyEffect(AddSpecialEffectTarget("Abilities\\Spells\\Undead\\DeathCoil\\DeathCoilSpecialArt.mdl",F[Er],"origin"))
+call xO(Er,false)
+call KillUnit(F[Er])
+endif
+return false
+
+
+
+==== impact ac ====
+
+function ac takes nothing returns boolean
+if TR(Xr,45)then
+call jI(Er,Xr,2.4+.2*Xv[Er],.6)
+endif
+call XA(Er)
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+return false
+
+
+
+==== impact nc ====
+
+function nc takes nothing returns boolean
+if TR(Xr,45)then
+call jI(Er,Xr,2.6+.4*Xv[Er],.65)
+endif
+call XA(Er)
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+return false
+
+
+
+==== impact Bc ====
+
+function Bc takes nothing returns boolean
+set Xr=Fv[Er]
+set TX=K[Xr]-K[Er]
+set TY=L[Xr]-L[Er]
+set Ar=SquareRoot(TX*TX+TY*TY)
+if Ar<64 then
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\Possession\\PossessionMissile.mdl",K[Er],L[Er]))
+call Ac(Vv[Xr])
+call xO(Er,true)
+else
+set K[Er]=K[Er]+$C*TX/ Ar
+set L[Er]=L[Er]+$C*TY/ Ar
+set Q[Er]=0
+set S[Er]=0
+endif
+return false
+
+
+
+==== impact Cc ====
+
+function Cc takes nothing returns boolean
+if nv[Xr]==1 then
+if dn[Vv[Er]]!=dn[Vv[Xr]]then
+call KI(Er,Xr,gv[Er]*(5.1+.9*Xv[Er]),1.15)
+endif
+set Xr=VO(2,Vv[Er],'e000',K[Xr],L[Xr],270,"Abilities\\Spells\\Undead\\DevourMagic\\DevourMagicBirthMissile.mdl")
+set jv[Xr]=ji
+set Fv[Xr]=Rn[Vv[Er]]
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+call XA(Er)
+elseif nv[Xr]==2 then
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+call XA(Er)
+endif
+return false
+
+
+
+==== impact Fc ====
+
+function Fc takes nothing returns boolean
+if((nv[Xr]==1)and(Jv[Er]==Hi))then
+if Fv[Er]!=Xr then
+if dn[Vv[Er]]!=dn[Vv[Xr]]then
+if ev[Er]>.75 and gv[Er]<=.2 then
+call lI(Er,Xr,gv[Er]*(5+Xv[Er]),1.15)
+else
+call KI(Er,Xr,gv[Er]*(5+Xv[Er]),1.15)
+endif
+set Nv[Er]=true
+set bv[Er]=true
+endif
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\Possession\\PossessionMissile.mdl",K[Xr],L[Xr]))
+if gv[Er]>.2 then
+set gv[Er]=.75*gv[Er]
+if gv[Er]<.2 then
+set gv[Er]=.2
+endif
+endif
+set Fv[Er]=Xr
+call XA(Er)
+endif
+elseif(nv[Xr]==2 or Jv[Er]!=Hi)then
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\Possession\\PossessionMissile.mdl",K[Er],L[Er]))
+set Av[Er*3+1]=false
+set Av[Er*3+2]=false
+set Av[Er*3+3]=false
+set Jv[Er]=hi
+call XA(Er)
+endif
+return false
+
+
+
+==== impact Jc ====
+
+function Jc takes nothing returns boolean
+local integer bf
+if je then
+if dn[Vv[Xr]]==dn[Vv[Er]]then
+call mX(Xr,.13+.03*Zr[Vv[Er]])
+else
+set bf=QO(659,Xr,Vv[Er])
+if bf==0 then
+set bf=UO(659,Rn[Vv[Er]],Xr,.2+.25*Zr[Vv[Er]],.2)
+call tO(bf,(.5*Hn[(Vv[Xr])]*Co),true)
+else
+call uO(bf,.3)
+endif
+endif
+endif
+return false
+
+
+
+==== impact qc ====
+
+function qc takes nothing returns boolean
+set ni=Fv[Er]
+set H[ni]=H[Er]
+set H[Er]=null
+set Fv[ni]=Xr
+call DestroyEffect(AddSpecialEffect("Abilities\\Weapons\\VengeanceMissile\\VengeanceMissile.mdl",K[Xr],L[Xr]))
+if dn[Vv[ni]]==dn[Vv[Xr]]or nv[Xr]==3 then
+call DR(ni,FR(ni)+pr)
+call kO(function Mc,4,ni,0,ae,0,0,0)
+call DestroyLightning(H[ni])
+set H[ni]=AddLightningEx("AFOD",true,K[Xr],L[Xr],mr+65,K[ni],L[ni],mr+65)
+call SetUnitAbilityLevel(F[ni],'S031',2)
+call kO((function pc),((4.5*jn[Vv[ni]])*1.),(ni),($56A),(ne),0,0,0)
+endif
+call xO(Er,true)
+return false
+
+
+
+==== impact Qc ====
+
+function Qc takes nothing returns boolean
+set ni=Fv[Er]
+set H[ni]=H[Er]
+set H[Er]=null
+set Fv[ni]=Xr
+call DestroyEffect(AddSpecialEffect("Abilities\\Weapons\\FarseerMissile\\FarseerMissile.mdl",K[Xr],L[Xr]))
+call xO(Er,true)
+return false
+
+
+
+==== impact zc ====
+
+function zc takes nothing returns boolean
+local integer dX=Kv
+local real MI
+local real NO
+local integer VR
+local integer HO=0
+if nv[Xr]==1 then
+call wc(Xr,Er)
+if ri[Vv[Er]]>0 then
+set VR=dn[Vv[Er]]
+set MI=$AA*SquareRoot(1.+.3*ri[Vv[Er]])
+call DestroyEffect(AddSpecialEffect("Objects\\Spawnmodels\\NightElf\\NEDeathMedium\\NEDeath.mdl",K[Er],L[Er]))
+loop
+exitwhen dX==0
+set HO=rv[dX]
+if dn[Vv[dX]]!=VR and dX!=Xr then
+set NO=uX(dX,Er)
+if NO<=MI then
+call wc(dX,Er)
+endif
+endif
+set dX=HO
+endloop
+endif
+elseif Dv[Xr]then
+if ri[Vv[Er]]>0 then
+set VR=dn[Vv[Er]]
+set MI=$AA*SquareRoot(1.+.3*ri[Vv[Er]])
+call DestroyEffect(AddSpecialEffect("Objects\\Spawnmodels\\NightElf\\NEDeathMedium\\NEDeath.mdl",K[Er],L[Er]))
+loop
+exitwhen dX==0
+set HO=rv[dX]
+if dn[Vv[dX]]!=VR and not Dv[dX]then
+set NO=uX(dX,Er)
+if NO<=MI then
+call wc(dX,Er)
+endif
+endif
+set dX=HO
+endloop
+endif
+endif
+set Av[3*Er+1]=false
+set Av[3*Er+2]=false
+set Av[3*Er+3]=false
+call XA(Er)
+return false
+
+
+
+==== impact CC ====
+
+function CC takes nothing returns boolean
+local real dx=K[Er]-K[Xr]
+local real dy=L[Er]-L[Xr]
+local real NO=SquareRoot(dx*dx+dy*dy)
+local real r
+local boolean rC=true
+local real Db
+local real fb
+local real Fb
+local real gb
+local real px
+local real py
+local real D
+local real a
+local real bt
+local integer i
+local integer j
+set dx=dx/ NO
+set dy=dy/ NO
+if Ev[Xr]==9 or Ev[Xr]==Ea or(nv[Xr]==1 and(not Jr[Xr]))then
+return false
+endif
+set r=Rv[Er]+Rv[Xr]
+if NO<r then
+set K[Xr]=K[Er]-r*dx
+set L[Xr]=L[Er]-r*dy
+endif
+set NO=(Q[Xr]*dx+S[Xr]*dy)*2
+set Q[Xr]=Q[Xr]-NO*dx
+set S[Xr]=S[Xr]-NO*dy
+if nv[Xr]!=1 and Ev[Xr]!=2 and Ev[Xr]!=16 and Ev[Xr]!=Ra and Ev[Xr]!=17 then
+set Vv[Xr]=Vv[Er]
+call SetUnitOwner(F[Xr],Player(Vv[Er]),false)
+endif
+if Ev[Xr]==2 then
+set U[Xr]=0
+set w[Xr]=0
+set jv[Xr]=di
+set ev[Xr]=0
+set Gv[Xr]=null
+endif
+if Ev[Xr]==3 then
+set Fv[Xr]=0
+endif
+if Q[Xr]==0 then
+set a=$98967F
+else
+set a=S[Xr]/ Q[Xr]
+endif
+if not Jr[Xr]then
+set j=0
+loop
+exitwhen(j==$C or not rC)
+set rC=false
+set i=0
+loop
+exitwhen(i==$C or rC)
+if(Bn[i]and(Qr[Rn[i]]!=0)and(i!=Vv[Er]))then
+set px=(K[Xr]-K[Rn[i]])
+set py=(L[Xr]-L[Rn[i]])
+set r=Rv[Xr]+'x'
+set r=r*r
+if px*px+py*py<r then
+set rC=true
+set px=K[Rn[i]]
+set py=L[Rn[i]]
+set bt=-a*(K[Xr]-px)+L[Xr]-py
+set D=SquareRoot(a*a*r-bt*bt+r)
+set Db=(D-a*bt)/(a*a+1)
+set fb=-(D+a*bt)/(a*a+1)
+set Fb=a*Db+bt+py
+set gb=a*fb+bt+py
+set Db=Db+px
+set fb=fb+px
+set px=(Er-Db)
+set py=(Er-Fb)
+set NO=px*px+py*py
+set px=(Er-fb)
+set py=(Er-gb)
+set D=px*px+py*py
+if D>NO then
+set Db=fb
+set Fb=gb
+set NO=D
+endif
+set K[Xr]=Db
+set L[Xr]=Fb
+endif
+endif
+set i=i+1
+endloop
+set j=j+1
+endloop
+endif
+call KillUnit(CreateUnit(Player($C),'shld',K[Er]-Rv[Er]*dx,L[Er]-Rv[Er]*dy,bj_RADTODEG*Atan2(-dy,-dx)))
+return false
+
+

@@ -1,0 +1,500 @@
+{
+  "source": "Warlock098b_CN (v2 object data + deobfuscated JASS)",
+  "generated_by": "ce_old98b/build_port_spec.py",
+  "notes": [
+    "speed 单位 = 单位/秒。原版源码写作 speed*0.03（tick=0.03s）得到每 tick 位移；移植时应存 speed(单位/秒)，每步 pos += speed * TICK。",
+    "life / duration 单位 = 秒（已实证：life = 射程/速度），与 TICK 无关，逐步减 TICK 即可。",
+    "radius = 命中判定半径（圆-圆碰撞）。",
+    "cooldown_s.l1 / lmax = 该法术 1 级与最高等级的冷却。",
+    "aoe_radius_obj (aare) 只是编辑器字段，真正生效的 AoE 由 JASS 计算 —— 以 effect/projectile 为准。"
+  ],
+  "engine": {
+    "tick_seconds": 0.03,
+    "tick_hz": 33.33,
+    "dash_speed_ups": 1300,
+    "dash_vel_per_tick": 39,
+    "decay": "jr=Hr*(1-.96)=1.56",
+    "hero_movespeed": 210,
+    "hero_mana": 10000
+  },
+  "spells": {
+    "S000": {
+      "code": "S000",
+      "name": "火球",
+      "base": "AHbz",
+      "cooldown_s": {
+        "l1": 4.800000190734863,
+        "lmax": 4.800000190734863,
+        "levels": 24
+      },
+      "max_level": 24,
+      "cast_range": 99999.0,
+      "cast_time": 0.0,
+      "aoe_radius_obj": 75.0,
+      "projectile": {
+        "kind": "projectile",
+        "speed": 1000,
+        "radius": 25,
+        "life": "(1+.1*oi)",
+        "impact": "Xi"
+      },
+      "dot_seconds": "(6+1.5*等级+xi)*jn*jn  # 火球点燃 xc()"
+    },
+    "S001": {
+      "code": "S001",
+      "name": "天罚",
+      "base": "AHtc",
+      "cooldown_s": {
+        "l1": 3.0,
+        "lmax": 3.0,
+        "levels": 4
+      },
+      "cast_time": 0.699999988079071,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "aoe_self",
+        "radius": 250,
+        "dmg": "KI(base=$A|$B+ei, mult=1-NO/1000)",
+        "dur": null
+      }
+    },
+    "S002": {
+      "code": "S002",
+      "name": "闪电",
+      "base": "AOfs",
+      "cooldown_s": {
+        "l1": 16.5,
+        "lmax": 12.0,
+        "levels": 9
+      },
+      "max_level": 9,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "beam",
+        "radius": null,
+        "dmg": "KI(dmg=6+Wr)",
+        "range": "(1+.15*oi)*600"
+      }
+    },
+    "S004": {
+      "code": "S004",
+      "name": "回旋镖",
+      "base": "AOfs",
+      "cooldown_s": {
+        "l1": 16.0,
+        "lmax": 8.199999809265137,
+        "levels": 9
+      },
+      "max_level": 9,
+      "aoe_radius_obj": 0.0,
+      "projectile": {
+        "kind": "boomerang",
+        "speed": null,
+        "radius": 40,
+        "life": "-Ub/Wb*.03",
+        "impact": "Bi",
+        "note": "回旋镖：Q=Ub*dx+wb*(-dy) 带侧向分量使其回旋；life 为负表示返回，需特殊处理"
+      }
+    },
+    "S005": {
+      "code": "S005",
+      "name": "反射盾",
+      "base": "Arpl",
+      "cooldown_s": {
+        "l1": 25.0,
+        "lmax": 14.0,
+        "levels": 9
+      },
+      "max_level": 9,
+      "cast_range": 0.0,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "buff",
+        "dur": "(2.6+.2*vi)*jn",
+        "effect": "反弹来袭弹体"
+      },
+      "duration_s": "(2.6+0.2*vi)*jn"
+    },
+    "S006": {
+      "code": "S006",
+      "name": "时光回溯",
+      "base": "Arpl",
+      "cooldown_s": {
+        "l1": 22.0,
+        "lmax": 12.0,
+        "levels": 8
+      },
+      "max_level": 8,
+      "cast_range": 0.0,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "buff",
+        "dur": "3.6*jn",
+        "effect": "延时闪回记录点"
+      },
+      "duration_s": "3.6*jn"
+    },
+    "S007": {
+      "code": "S007",
+      "name": "急行",
+      "base": "Arpl",
+      "cooldown_s": {
+        "l1": 21.0,
+        "lmax": 13.0,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 0.0,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "buff",
+        "dur": "(6.2+.8*vi)*jn",
+        "effect": "+35移速 攻速tr=3+2vi"
+      },
+      "duration_s": "(6.2+0.8*vi)*jn"
+    },
+    "S008": {
+      "code": "S008",
+      "name": "陨石",
+      "base": "AUdd",
+      "cooldown_s": {
+        "l1": 20.0,
+        "lmax": 16.5,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 1200.0,
+      "aoe_radius_obj": 200.0,
+      "projectile": {
+        "kind": "projectile",
+        "speed": 400,
+        "radius": 72,
+        "life": "2*(1+.1*oi)",
+        "impact": "Ba(nB)"
+      },
+      "dot_seconds": "4*jn  # 陨石灼烧 nB()"
+    },
+    "S009": {
+      "code": "S009",
+      "name": "分裂弹",
+      "base": "Afla",
+      "cooldown_s": {
+        "l1": 30.0,
+        "lmax": 20.0,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 0.0
+    },
+    "S010": {
+      "code": "S010",
+      "name": "疾风步",
+      "base": "AOwk",
+      "cooldown_s": {
+        "l1": 30.0,
+        "lmax": 17.0,
+        "levels": 16
+      },
+      "max_level": 20,
+      "effect": {
+        "kind": "buff",
+        "dur": "4*jn(升级) / 3.1*jn(基础)",
+        "effect": "隐身 +200移速 破隐一击"
+      },
+      "duration_s": "4*jn / 3.1*jn"
+    },
+    "S011": {
+      "code": "S011",
+      "name": "瞬间移动",
+      "base": "AHta",
+      "cooldown_s": {
+        "l1": 16.0,
+        "lmax": 5.5,
+        "levels": 9
+      },
+      "max_level": 9,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "blink",
+        "range": "700+70*Yr"
+      }
+    },
+    "S012": {
+      "code": "S012",
+      "name": "冲撞",
+      "base": "AHta",
+      "cooldown_s": {
+        "l1": 16.5,
+        "lmax": 8.0,
+        "levels": 18
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "dash",
+        "range": "(650+50*Yr)*(1+.1*oi)",
+        "dur": "3.1*jn(相位)",
+        "dmg": "KI(4.6+.8*yr | 5+.4*Yr)",
+        "note": "速度 Hr=1300*0.03=39/tick"
+      },
+      "duration_s": "3.1*jn(相位); 命中0.5s定身"
+    },
+    "S013": {
+      "code": "S013",
+      "name": "移形换位",
+      "base": "AHta",
+      "cooldown_s": {
+        "l1": 16.0,
+        "lmax": 4.0,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 0.0,
+      "projectile": {
+        "kind": "projectile",
+        "speed": 800,
+        "radius": 40,
+        "life": "Bb/800  (Bb=600*(1+.1*oi))",
+        "impact": "si(lB)"
+      }
+    },
+    "S014": {
+      "code": "S014",
+      "name": "汲取",
+      "base": "Advm",
+      "cooldown_s": {
+        "l1": 22.0,
+        "lmax": 18.5,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 75.0,
+      "projectile": {
+        "kind": "projectile",
+        "speed": 700,
+        "radius": 27,
+        "life": "Ar/700",
+        "impact": "mi",
+        "note": "第二形态 speed=900 radius=35 life=(1+.1*oi)*.12"
+      }
+    },
+    "S015": {
+      "code": "S015",
+      "name": "火焰喷射",
+      "base": "ACcv",
+      "cooldown_s": {
+        "l1": 16.0,
+        "lmax": 7.0,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 0.0,
+      "projectile": {
+        "kind": "projectile",
+        "speed": 800,
+        "radius": 22,
+        "life": "800*(1+.1*oi)/900",
+        "impact": "Li(nc)"
+      },
+      "duration_s": "0.08s脉冲"
+    },
+    "S016": {
+      "code": "S016",
+      "name": "弹跳弹",
+      "base": "Advm",
+      "cooldown_s": {
+        "l1": 20.0,
+        "lmax": 20.0,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 75.0,
+      "projectile": {
+        "kind": "bounce",
+        "speed": 900,
+        "radius": 35,
+        "life": "900*(1+.1*oi)/900",
+        "impact": "Ji(Cc)",
+        "note": "每弹一次伤害 -20% 直到最小值"
+      }
+    },
+    "S017": {
+      "code": "S017",
+      "name": "致残",
+      "base": "ACmo",
+      "cooldown_s": {
+        "l1": 25.0,
+        "lmax": 12.5,
+        "levels": 16
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 75.0,
+      "projectile": {
+        "kind": "projectile",
+        "speed": 900,
+        "radius": 23,
+        "life": "((Ar+210)/900)*1.04675",
+        "impact": "Va(NC)",
+        "note": "升级版为双链弹（两枚互相 Fv 绑定）"
+      },
+      "duration_s": "(4+0.25*技能等级)*jn"
+    },
+    "S018": {
+      "code": "S018",
+      "name": "引力",
+      "base": "ACmo",
+      "cooldown_s": {
+        "l1": 26.0,
+        "lmax": 26.0,
+        "levels": 20
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 200.0,
+      "projectile": {
+        "kind": "vortex",
+        "speed": 850,
+        "radius": null,
+        "life": "min(dist,850*(1+.1*oi))/850",
+        "impact": "Gv=da(lc)",
+        "note": "升级版落地生成持续 5*jn 秒的吸附漩涡场"
+      },
+      "duration_s": "5*jn(漩涡)"
+    },
+    "S019": {
+      "code": "S019",
+      "name": "锁链",
+      "base": "ACmo",
+      "cooldown_s": {
+        "l1": 17.0,
+        "lmax": 16.0,
+        "levels": 19
+      },
+      "max_level": 20,
+      "cast_range": 99999.0,
+      "aoe_radius_obj": 60.0,
+      "projectile": {
+        "kind": "chain",
+        "speed": null,
+        "radius": 35,
+        "life": null,
+        "impact": "Aa(qc)",
+        "note": "gv=900*(1+.1*oi) 为链长上限；命中后拉目标向己"
+      },
+      "duration_s": "4.5*jn(勾取定身)"
+    },
+    "S020": {
+      "code": "S020",
+      "name": "灾变",
+      "base": "AHtc",
+      "cooldown_s": {
+        "l1": 2.0,
+        "lmax": 3.0,
+        "levels": 4
+      },
+      "max_level": 1,
+      "cast_time": 0.699999988079071,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "aoe_self",
+        "radius": "300/300/400 (按 Ur 阶段)",
+        "dmg": "DX=$B/$C/$E 递减 NO/60 或 NO/40",
+        "dur": "6*jn (阶段间隔)"
+      },
+      "duration_s": "6*jn(阶段间隔)"
+    },
+    "S024": {
+      "code": "S024",
+      "name": "物品",
+      "base": "Arav",
+      "cast_time": 0.0
+    },
+    "S025": {
+      "code": "S025",
+      "name": "法术 1",
+      "base": "Astn"
+    },
+    "S026": {
+      "code": "S026",
+      "name": "法术 2",
+      "base": "Abrf"
+    },
+    "S027": {
+      "code": "S027",
+      "name": "法术 3",
+      "base": "Absk",
+      "cooldown_s": {
+        "l1": 0.0,
+        "lmax": 0.0,
+        "levels": 1
+      }
+    },
+    "S003": {
+      "code": "S003",
+      "name": "追踪弹",
+      "base": "AOfs",
+      "cooldown_s": {
+        "l1": 15.0,
+        "lmax": 9.5,
+        "levels": 9
+      },
+      "max_level": 9,
+      "aoe_radius_obj": 0.0,
+      "projectile": {
+        "kind": "homing",
+        "speed": 900,
+        "radius": 29,
+        "life": "4.5*(1+1.5*.1*oi)",
+        "impact": "Di",
+        "note": "速度含施法者动量 qb=dx*Q[ni]+dy*S[ni]；半径=常量 Dr(29)"
+      }
+    },
+    "S030": {
+      "code": "S030",
+      "name": "怀表 item details",
+      "base": "ANcl",
+      "max_level": 1,
+      "cast_range": 0.0
+    },
+    "S021": {
+      "code": "S021",
+      "name": "虔诚",
+      "base": "AHtc",
+      "cooldown_s": {
+        "l1": 3.0,
+        "lmax": 3.0,
+        "levels": 4
+      },
+      "cast_time": 0.699999988079071,
+      "aoe_radius_obj": 0.0,
+      "effect": {
+        "kind": "aoe_dual",
+        "radius": "敌250 / 友500",
+        "dmg": "KI(DX, 1-NO/1000)",
+        "dur": "4*jn*jn(友方增益)"
+      },
+      "duration_s": "4*jn*jn"
+    },
+    "S031": {
+      "code": "S031",
+      "name": "锁链附加动作",
+      "base": "Arpm",
+      "cooldown_s": {
+        "l1": 1.0,
+        "lmax": 1.0,
+        "levels": 1
+      },
+      "max_level": 2,
+      "cast_range": 0.0,
+      "aoe_radius_obj": 0.0
+    }
+  }
+}
