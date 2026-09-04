@@ -1863,8 +1863,10 @@ fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64
     let rot = Fix64::from_num(std::f64::consts::TAU) * rng.next_fix();
     // 每根柱子相对等分角的小抖动（保持“基本均匀”）。
     let jitter = Fix64::from_num(0.15);
-    let min_r = Fix64::from_num(1.1);
-    let max_r = Fix64::from_num(1.6);
+    // 柱子半径：与玩家（碰撞 32）相近的小幅波动 24~40（旧相对比例 1.1~1.6 × 碰撞因子 16，
+    // 2026-09-05 用户确认「柱子大小应和玩家差不多、保留小幅随机波动」）。
+    let min_r = Fix64::from_num(24.0);
+    let max_r = Fix64::from_num(40.0);
     for i in 0..count {
         let base = rot
             + Fix64::from_num(std::f64::consts::TAU) * Fix64::from_num(i as f64 / count as f64);
