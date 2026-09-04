@@ -42,9 +42,9 @@ impl SkillTree {
     pub fn skills_in_tree(self) -> &'static [SkillId] {
         use SkillId::*;
         match self {
-            SkillTree::C => &[Boost, Shield, Shadow, Fake],
-            SkillTree::R => &[Blink, Blink2, DashStrike, DashSlash, TestSwap, BlinkToWall],
-            SkillTree::E => &[Rock, StoneShot, StealthPush, StealthPush2, LineBeam, LineExplode, S008, S009],
+            SkillTree::C => &[Boost, Shield, Shadow, Fake, S005, S006, S007],
+            SkillTree::R => &[Blink, Blink2, DashStrike, DashSlash, TestSwap, BlinkToWall, S011, S012, S013],
+            SkillTree::E => &[Rock, StoneShot, StealthPush, StealthPush2, LineBeam, LineExplode, S008, S009, S010],
             SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball, S002, S003, S004],
             SkillTree::T => &[TLeech, T2Shot, T2Volley, T3Fast, T3Fast2, TestLeech, S014, S015, S016],
             SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2],
@@ -188,6 +188,21 @@ pub enum SkillId {
     S015,
     /// S016 弹跳弹（热键 T）：命中后跳向最近下一个目标，伤害 ×0.8/跳（gc 形态 5+L）。
     S016,
+    // ---- M2 批次B：位移/增益系（PORT_098B_DECISIONS.md M2） ----
+    /// S005 反射盾（热键 C）：(2.6+0.2L)s 内反弹来袭弹体（098b DC）。
+    S005,
+    /// S006 时光回溯（热键 C）：3.6s 后闪回施法点并还原 HP（098b fC）。
+    S006,
+    /// S007 急行（热键 C）：(6.2+0.8L)s +35 移速（098b jR；攻速无对应系统，TODO）。
+    S007,
+    /// S010 疾风步（热键 E）：3.1s 隐身+200 移速（098b OB；破隐一击 TODO）。
+    S010,
+    /// S011 瞬间移动（热键 R）：闪现 700+70L（098b hB）。
+    S011,
+    /// S012 冲撞（热键 R）：1300/s 冲刺 (650+50L)×1.1，命中 KI+击退+0.5s 定身（098b IB）。
+    S012,
+    /// S013 移形换位（热键 R）：与 660 内目标互换位置（098b mB；弹体化 TODO）。
+    S013,
 }
 
 impl SkillId {
@@ -205,11 +220,13 @@ impl SkillId {
             Test01 => SkillTree::G,
             _Reserved | _SelfExplode => SkillTree::G,
             // 098b 热键（mechanics §6.1）：G=火球；D=闪电/追踪弹/回旋镖；E=陨石/分裂弹/疾风步/物品；
-            // T=汲取/火焰喷射/弹跳弹/法术2。
+            // T=汲取/火焰喷射/弹跳弹/法术2；R=瞬间移动/冲撞/移形换位/法术1；C=反射盾/时光回溯/急行。
             S000 => SkillTree::G,
             S002 | S003 | S004 => SkillTree::D,
-            S008 | S009 => SkillTree::E,
+            S008 | S009 | S010 => SkillTree::E,
             S014 | S015 | S016 => SkillTree::T,
+            S011 | S012 | S013 => SkillTree::R,
+            S005 | S006 | S007 => SkillTree::C,
         }
     }
 
@@ -262,6 +279,13 @@ impl SkillId {
             S014 => 42,
             S015 => 43,
             S016 => 44,
+            S005 => 45,
+            S006 => 46,
+            S007 => 47,
+            S010 => 48,
+            S011 => 49,
+            S012 => 50,
+            S013 => 51,
         }
     }
 
@@ -314,6 +338,13 @@ impl SkillId {
             42 => S014,
             43 => S015,
             44 => S016,
+            45 => S005,
+            46 => S006,
+            47 => S007,
+            48 => S010,
+            49 => S011,
+            50 => S012,
+            51 => S013,
             _ => _Reserved,
         }
     }
@@ -567,6 +598,35 @@ pub enum SkillEffect {
         /// KI 击退系数 JI。
         kb_ji: Fix64,
     },
+    /// 098b 位移/增益系（M2 批次B：S005/S006/S007/S010/S011/S012/S013）。
+    /// 数值口径：duration/damage/max_distance 全走 growth（stats 按施法等级求值）；
+    /// `speed` 为不随等级的常量（Dash 冲刺速度 / Haste·Windwalk 的移速乘数，war3 加法移速按
+    /// 基础 210 换算成乘数，如 +35 → 1+35/210）。
+    W098bUtility {
+        kind: W098bUtilKind,
+        speed: Fix64,
+        /// Blink/Swap/Dash 的最大距离 L1 基准（成长走 growth.max_distance）。
+        max_distance: Fix64,
+    },
+}
+
+/// 098b 位移/增益子类型。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum W098bUtilKind {
+    /// S005 反射盾：反弹来袭弹体（duration = 2.6+0.2L）。
+    Reflect,
+    /// S006 时光回溯：3.6s 后闪回施法点并还原 HP。
+    Rewind,
+    /// S007 急行：+35 移速（duration = 6.2+0.8L）；攻速无对应系统（TODO）。
+    Haste,
+    /// S010 疾风步：隐身 +200 移速（duration 3.1）；破隐一击 TODO。
+    Windwalk,
+    /// S011 闪现：瞬移至多 700+70L。
+    Blink,
+    /// S012 冲撞：1300/s 冲刺至多 (650+50L)×1.1，命中 KI+击退+0.5s 定身。
+    Dash,
+    /// S013 移形换位：与 660 内目标互换位置（弹体化 TODO）。
+    Swap,
 }
 
 /// 098b 投射物运动学形态。
@@ -1063,6 +1123,7 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
         // 098b 名册已是 war3 尺度，透传不缩放（PORT_098B_DECISIONS.md D4）。
         w @ Warlock098b { .. } => w,
         b @ W098bBolt { .. } => b,
+        u @ W098bUtility { .. } => u,
     };
     // growth：速度/击退力/距离/半径类基础与斜率同比放大；时长/伤害/冷却不动。
     let g = &mut d.growth;
@@ -1327,6 +1388,124 @@ impl DefTable {
                     cooldown_base: 20.0,
                     damage_base: 6.0,
                     damage_delta: 1.0,
+                    ..DEF_ZERO
+                },
+            },
+            // ===== M2 批次B：位移/增益系（数值来源 spec/control/durations，见各条目注释） =====
+            // S005 反射盾（C 键）——spec：CD 25→14（9 级，步长 -1.375）；dur=(2.6+.2*vi)*jn → L1 2.8。
+            SkillId::S005 => SkillDef {
+                id,
+                tree: SkillTree::C,
+                name: "反射盾",
+                needs_point: false,
+                effect: W098bUtility { kind: W098bUtilKind::Reflect, speed: Fix64::ZERO, max_distance: Fix64::ZERO },
+                growth: SkillGrowth {
+                    cooldown_base: 25.0,
+                    cooldown_delta: -1.375,
+                    duration_base: 2.8,
+                    duration_delta: 0.2,
+                    ..DEF_ZERO
+                },
+            },
+            // S006 时光回溯（C 键）——spec：CD 22→12（8 级，步长 -1.4286）；delay=3.6*jn 恒定。
+            SkillId::S006 => SkillDef {
+                id,
+                tree: SkillTree::C,
+                name: "时光回溯",
+                needs_point: false,
+                effect: W098bUtility { kind: W098bUtilKind::Rewind, speed: Fix64::ZERO, max_distance: Fix64::ZERO },
+                growth: SkillGrowth {
+                    cooldown_base: 22.0,
+                    cooldown_delta: -1.4286,
+                    duration_base: 3.6,
+                    ..DEF_ZERO
+                },
+            },
+            // S007 急行（C 键）——spec：CD 21→13（20 级，步长 -0.421）；dur=(6.2+.8*vi)*jn → L1 7.0；
+            // 移速 +35（war3 加法 → 乘数 1+35/210）；攻速 tr 无对应系统（TODO M2 后续）。
+            SkillId::S007 => SkillDef {
+                id,
+                tree: SkillTree::C,
+                name: "急行",
+                needs_point: false,
+                effect: W098bUtility {
+                    kind: W098bUtilKind::Haste,
+                    speed: Fix64::from_num(1.0 + 35.0 / 210.0),
+                    max_distance: Fix64::ZERO,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 21.0,
+                    cooldown_delta: -0.421,
+                    duration_base: 7.0,
+                    duration_delta: 0.8,
+                    ..DEF_ZERO
+                },
+            },
+            // S010 疾风步（E 键）——spec：CD 30→17（20 级，步长 -0.684）；dur=3.1*jn（基础形态）；
+            // 隐身 +200 移速（乘数 1+200/210）；破隐一击（bA 复合 KI）TODO M2 后续。
+            SkillId::S010 => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "疾风步",
+                needs_point: false,
+                effect: W098bUtility {
+                    kind: W098bUtilKind::Windwalk,
+                    speed: Fix64::from_num(1.0 + 200.0 / 210.0),
+                    max_distance: Fix64::ZERO,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 30.0,
+                    cooldown_delta: -0.684,
+                    duration_base: 3.1,
+                    ..DEF_ZERO
+                },
+            },
+            // S011 瞬间移动（R 键）——spec：CD 16→5.5（9 级，步长 -1.3125）；距离 700+70*Yr → L1 770。
+            SkillId::S011 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "瞬间移动",
+                needs_point: true,
+                effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(770.0) },
+                growth: SkillGrowth {
+                    cooldown_base: 16.0,
+                    cooldown_delta: -1.3125,
+                    max_distance_base: 770.0,
+                    max_distance_delta: 70.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S012 冲撞（R 键）——spec：CD 16.5→8.0（20 级，步长 -0.447）；速度 Hr=1300/s 恒定；
+            // 最大距离 (650+50*Yr)*(1+.1*oi) → L1 770、+55/级；命中 0.5s 定身。
+            // 伤害 bA 复合公式（4.6+.8yr / 5+.4Yr 三段）M1 简化为 5+0.4L → L1 5.4（TODO 对齐三段）。
+            SkillId::S012 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "冲撞",
+                needs_point: true,
+                effect: W098bUtility { kind: W098bUtilKind::Dash, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(770.0) },
+                growth: SkillGrowth {
+                    cooldown_base: 16.5,
+                    cooldown_delta: -0.447,
+                    max_distance_base: 770.0,
+                    max_distance_delta: 55.0,
+                    damage_base: 5.4,
+                    damage_delta: 0.4,
+                    ..DEF_ZERO
+                },
+            },
+            // S013 移形换位（R 键）——spec：CD 16→4.0（20 级，步长 -0.6316）；射程 600*(1+.1*oi)=660。
+            // 098b 为弹体命中换位（speed 800/radius 40），M1 简化为即时换位（弹体化 TODO）。
+            SkillId::S013 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "移形换位",
+                needs_point: true,
+                effect: W098bUtility { kind: W098bUtilKind::Swap, speed: Fix64::ZERO, max_distance: Fix64::from_num(660.0) },
+                growth: SkillGrowth {
+                    cooldown_base: 16.0,
+                    cooldown_delta: -0.6316,
+                    max_distance_base: 660.0,
                     ..DEF_ZERO
                 },
             },
@@ -2135,6 +2314,72 @@ mod tests {
             }
             ref e => panic!("S004 effect 应为 Warlock098b(Boomerang)，实际 {e:?}"),
         }
+    }
+
+    #[test]
+    fn s005_s006_s007_s010_match_spec() {
+        // S005 反射盾：CD 25→14（9 级）；dur 2.6+0.2L → L1 2.8。
+        let d = DefTable::def(SkillId::S005);
+        assert_eq!(d.name, "反射盾");
+        assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
+        assert!(near(d.stats_at(9).cooldown, 14.0, 1e-2), "L9 CD 应 14，实际 {:?}", d.stats_at(9).cooldown);
+        assert!(near(d.stats_at(1).duration, 2.8, 1e-3), "L1 盾时长应 2.6+0.2=2.8");
+        // S006 时光回溯：CD 22→12（8 级）；delay 3.6 恒定。
+        let d = DefTable::def(SkillId::S006);
+        assert_eq!(d.name, "时光回溯");
+        assert!(near(d.stats_at(1).cooldown, 22.0, 1e-3));
+        assert!(near(d.stats_at(8).cooldown, 12.0, 1e-2), "L8 CD 应 12，实际 {:?}", d.stats_at(8).cooldown);
+        assert!(near(d.stats_at(1).duration, 3.6, 1e-3) && near(d.stats_at(8).duration, 3.6, 1e-3));
+        // S007 急行：CD 21→13（20 级）；dur 6.2+0.8L → L1 7.0；移速乘数 1+35/210。
+        let d = DefTable::def(SkillId::S007);
+        assert_eq!(d.name, "急行");
+        assert!(near(d.stats_at(1).duration, 7.0, 1e-3));
+        match d.effect {
+            SkillEffect::W098bUtility { kind: W098bUtilKind::Haste, speed, .. } => {
+                assert!((speed.to_num::<f64>() - (1.0 + 35.0 / 210.0)).abs() < 1e-3, "+35 移速换算乘数");
+            }
+            ref e => panic!("S007 effect 错：{e:?}"),
+        }
+        // S010 疾风步：CD 30→17；dur 3.1；隐身+200 移速（乘数 1+200/210）。
+        let d = DefTable::def(SkillId::S010);
+        assert_eq!(d.name, "疾风步");
+        assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
+        assert!(near(d.stats_at(20).cooldown, 17.0, 1e-1), "L20 CD 应 ≈17，实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(1).duration, 3.1, 1e-3));
+        match d.effect {
+            SkillEffect::W098bUtility { kind: W098bUtilKind::Windwalk, speed, .. } => {
+                assert!((speed.to_num::<f64>() - (1.0 + 200.0 / 210.0)).abs() < 1e-3);
+            }
+            ref e => panic!("S010 effect 锂：{e:?}"),
+        }
+    }
+
+    #[test]
+    fn s011_s012_s013_match_spec() {
+        // S011 闪现：CD 16→5.5（9 级）；距离 700+70L → L1 770 / L9 1330。
+        let d = DefTable::def(SkillId::S011);
+        assert_eq!(d.name, "瞬间移动");
+        assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
+        assert!(near(d.stats_at(9).cooldown, 5.5, 1e-2), "L9 CD 应 5.5，实际 {:?}", d.stats_at(9).cooldown);
+        assert!(near(d.stats_at(1).max_distance, 770.0, 1e-3), "L1 距离应 700+70");
+        assert!(near(d.stats_at(9).max_distance, 700.0 + 70.0 * 9.0, 1e-3), "L9 距离应 700+70×9");
+        // S012 冲撞：速度 1300 恒定；最大距离 (650+50L)×1.1 → L1 770；伤害简化 5+0.4L。
+        let d = DefTable::def(SkillId::S012);
+        assert_eq!(d.name, "冲撞");
+        assert!(near(d.stats_at(1).max_distance, 770.0, 1e-3));
+        assert!(near(d.stats_at(1).damage, 5.4, 1e-3));
+        match d.effect {
+            SkillEffect::W098bUtility { kind: W098bUtilKind::Dash, speed, .. } => {
+                assert!(near(speed, 1300.0, 1e-3), "冲刺速度应 Hr=1300/s");
+            }
+            ref e => panic!("S012 effect 错：{e:?}"),
+        }
+        // S013 换位：CD 16→4（20 级）；射程 660。
+        let d = DefTable::def(SkillId::S013);
+        assert_eq!(d.name, "移形换位");
+        assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
+        assert!(near(d.stats_at(20).cooldown, 4.0, 1e-1), "L20 CD 应 ≈4，实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(1).max_distance, 660.0, 1e-3), "射程应 600×1.1");
     }
 
     #[test]
