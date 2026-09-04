@@ -2249,6 +2249,17 @@ impl Game {
                     draw_text(canvas, ctx, &line, 24.0, Color::WHITE, Point2 { x: cx, y }, true)?;
                     y += 40.0;
                 }
+                y += 10.0;
+                // En 模式最终排名（分数体系，D6/En 批）：分数降序 + 冠军高亮
+                draw_text(canvas, ctx, "最终得分排名", 22.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
+                y += 36.0;
+                for (rank, (pid, score)) in self.meta.final_ranking().iter().enumerate() {
+                    let color = if rank == 0 { Color::from_rgb(255, 220, 90) } else { Color::from_rgb(200, 210, 225) };
+                    let line = format!("#{}  玩家{}  {} 分", rank + 1, pid, score);
+                    draw_text(canvas, ctx, &line, 22.0, color, Point2 { x: cx, y }, true)?;
+                    y += 34.0;
+                }
+                y += 10.0;
                 y += 30.0;
                 // Steam：统计（后台配置后才有值）+ 榜单前几名 + 成就提示。
                 #[cfg(feature = "steam")]
