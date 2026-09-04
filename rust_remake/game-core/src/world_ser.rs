@@ -243,6 +243,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
             wu8(o, 1);
             wvec(o, c.vel);
             wfix(o, c.remaining);
+            wu8(o, c.decay as u8);
         }
         None => wu8(o, 0),
     }
@@ -359,7 +360,8 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let control = if u8at(b, p)? != 0 {
         let vel = vecat(b, p)?;
         let remaining = fixat(b, p)?;
-        Some(Control { vel, remaining })
+        let decay = u8at(b, p)? != 0;
+        Some(Control { vel, remaining, decay })
     } else {
         None
     };
