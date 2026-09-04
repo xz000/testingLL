@@ -2357,7 +2357,8 @@ impl DefTable {
                 name: "蓄力自爆",
                 needs_point: false,
                 effect: SelfExplode {
-                    radius: Fix64::from_num(2.0),
+                    // war3 尺度：碰撞分离 64 起，自爆半径须 ≥64 才能打到贴身敌人（72 = 4.5×16）
+                    radius: Fix64::from_num(4.5 * 16.0),
                     self_stay: Fix64::from_num(1.0),
                     damage: Fix64::from_num(10.0),
                     kick: Fix64::from_num(9.0),
@@ -2367,7 +2368,8 @@ impl DefTable {
                     windup_base: 1.0, // 吟唱 1s
                     recovery_base: 0.1,
                     cooldown_base: 3.0,
-                    radius_base: 2.0,
+                    // war3 尺度：碰撞分离 64 起，自爆半径须 ≥64（4.5×16=72）
+                    radius_base: 4.5,
                     damage_base: 10.0,
                     push_power_base: 9.0,
                     push_time_base: 1.0,
