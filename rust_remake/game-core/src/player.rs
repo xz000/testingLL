@@ -86,6 +86,9 @@ pub enum BuffKind {
     Tied,
     /// 疾跑/生命偷取（C1）：受击时返还一半伤害作回血，移速随累积回血量成长。
     Boost,
+    /// S008 陨石灼烧「烤肉饼」（098b nB，D7）：期间伤害输出 ×0.1（Gn 惩罚）、
+    /// 自然回血禁疗（Nn 清零）；持续伤害来自命中处的灼烧场（Star 复用），非本 buff。
+    Scorched,
 }
 
 impl Buff {
@@ -337,6 +340,16 @@ impl Player {
     /// 是否被束缚（不能施法）。
     pub fn tied(&self) -> bool {
         self.has_buff(BuffKind::Tied)
+    }
+
+    /// S008 灼烧期间禁疗（098b nB 的 `Nn=0`）——自然回血 tick 前查询。
+    pub fn healing_blocked(&self) -> bool {
+        self.buffs.iter().any(|b| b.remaining > Fix64::ZERO && b.kind == BuffKind::Scorched)
+    }
+
+    /// 攻击方伤害输出系数（KI 公式的 `Gn[攻]` 项，D7）：灼烧期间 ×0.1，否则 1。
+    pub fn gn_factor(&self) -> f64 {
+        if self.healing_blocked() { 0.1 } else { 1.0 }
     }
 
     /// 反弹护盾是否激活。

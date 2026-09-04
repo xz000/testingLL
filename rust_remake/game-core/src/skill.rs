@@ -701,6 +701,9 @@ pub enum W098bOnHit {
     Cripple,
     /// S019 锁链：把目标拉向施法者（朝施法者 600/s × 0.5s）+ Tied 0.5s。
     ChainPull,
+    /// S008 陨石灼烧「烤肉饼」（098b nB，D7）：命中附加 Scorched debuff（输出 ×0.1 + 禁疗 4s）；
+    /// 持续伤害来自命中处的灼烧场（ignite/Star），时长走 growth.duration（4s）。
+    Scorched,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。
@@ -1338,17 +1341,20 @@ impl DefTable {
                     radius: Fix64::from_num(72.0),
                     life: Fix64::from_num(2.0),
                     kb_ji: Fix64::from_num(0.8),
-                    ignite: None,
+                    // 灼烧场（半径/每跳数值未解码，暂 75/总量均摊 TODO）+ Scorched debuff（D7）。
+                    ignite: Some(Fix64::from_num(7.5)),
                     blast: Some(Fix64::from_num(200.0)),
                     count: 1,
                     spread_step: 0.0,
-                    on_hit: W098bOnHit::Ki,
+                    on_hit: W098bOnHit::Scorched,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
                     cooldown_delta: -0.183,
                     damage_base: 12.0,
                     damage_delta: 2.0,
+                    // 灼烧时长 4*jn（durations S008）→ debuff 与灼烧场共用。
+                    duration_base: 4.0,
                     ..DEF_ZERO
                 },
             },

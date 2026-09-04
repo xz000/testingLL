@@ -26,6 +26,9 @@ pub struct Balance {
     pub decel: f64,
     /// 玩家初始/最大生命。（098b h000 术士 HP=100，w3u 导出；与旧值相同 → 伤害数值不随尺度切换变）
     pub max_hp: f64,
+    /// 全局生命恢复（HP/秒）。098b `zd()` 每玩家 `Nn=0.05`（每 20s 回 1 血，-C#9 可调）；
+    /// 陨石灼烧「烤肉饼」期间清零禁疗（PORT_098B_DECISIONS.md D7）。
+    pub hp_regen: f64,
     /// 玩家默认半径（碰撞半径）。h000 未覆盖 Collision → 继承基础单位 hpea=16；TODO(M5) 真机核对。
     pub default_radius: f64,
 
@@ -52,6 +55,7 @@ impl Balance {
             accel: 1312.5,
             decel: 2625.0,
             max_hp: 100.0,
+            hp_regen: 0.05,
             default_radius: 16.0,
             start_radius: 1200.0,
             shrink_speed: 21.0,

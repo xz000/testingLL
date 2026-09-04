@@ -154,6 +154,7 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         BuffKind::Stealth => wu8(o, 2),
         BuffKind::Tied => wu8(o, 3),
         BuffKind::Boost => wu8(o, 4),
+        BuffKind::Scorched => wu8(o, 5),
     }
     wfix(o, b.remaining);
 }
@@ -164,6 +165,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         2 => BuffKind::Stealth,
         3 => BuffKind::Tied,
         4 => BuffKind::Boost,
+        5 => BuffKind::Scorched,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -523,7 +525,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             if let Some(v) = blast { wfix(o, *v); }
             wu32(o, target.unwrap_or(u32::MAX));
             wu8(o, *returning as u8);
-            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2 });
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3 });
             wfix(o, *debuff_dur);
         }
     }
@@ -575,6 +577,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 0 => crate::skill::W098bOnHit::Ki,
                 1 => crate::skill::W098bOnHit::Cripple,
                 2 => crate::skill::W098bOnHit::ChainPull,
+                3 => crate::skill::W098bOnHit::Scorched,
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;
