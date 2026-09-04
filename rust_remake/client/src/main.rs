@@ -1020,9 +1020,17 @@ impl Game {
                     .find(|pr| pr.player_id == me)
                 {
                     if let Some(skill) = profile.bound_skill(key) {
-                        let cost = upgrade_cost(profile.skill_level(skill));
-                        eprintln!("[learn] upgrade {} cost={}", game_core::skill::DefTable::def(skill).name, cost);
-                        profile.upgrade_skill(skill, cost);
+                        // 098b 升级上限 alev + 乔丹之石 +2（M3 2c）
+                        let jordan = profile.items.iter().map(|it| it.def().fx.jordan_levels).sum::<u8>() as u32;
+                        let cap = game_core::skill::DefTable::max_level(skill) + jordan;
+                        let lv = profile.skill_level(skill);
+                        if lv >= cap {
+                            eprintln!("[learn] {} 已达上限 {cap}（乔丹 +{jordan}）", game_core::skill::DefTable::def(skill).name);
+                        } else {
+                            let cost = upgrade_cost(lv);
+                            eprintln!("[learn] upgrade {} cost={}", game_core::skill::DefTable::def(skill).name, cost);
+                            profile.upgrade_skill(skill, cost);
+                        }
                     }
                 }
             }
@@ -1071,6 +1079,42 @@ impl Game {
         if just("l") { buy(game_core::attribute::GrowthAttr::SpellResist); }
         if just(";") { buy(game_core::attribute::GrowthAttr::KbResist); }
         // U/I（蓝上限/回蓝）已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
+    }
+
+    /// M3 商店（学习期）：数字键 1..9/0/- 购买 shop_catalog 条目；
+    /// 持有同家族低档时为「升级」（buy_item 内替换）；6 格上限。
+    fn poll_shop(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        let me = self.self_index();
+        let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+        let catalog = game_core::item::shop_catalog();
+        let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else {
+            return;
+        };
+        for (i, k) in keys.iter().enumerate() {
+            let pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character((*k).into()))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_uppercase().into()));
+            if !pressed || i >= catalog.len() {
+                continue;
+            }
+            let id = catalog[i].id;
+            if profile.items.len() >= game_core::item::ITEM_SLOTS
+                && !profile.items.iter().any(|&it| it.def().family == id.def().family)
+            {
+                eprintln!("[shop] 物品格已满（{}）", game_core::item::ITEM_SLOTS);
+                break;
+            }
+            if profile.buy_item(id) {
+                eprintln!("[shop] 购买 {}（-{} 金，余 {}）", id.def().name, id.def().cost, profile.gold);
+                // 同步到战斗世界
+                if let Some(p) = self.world.players.get_mut(me as usize) {
+                    p.set_items(&profile.items);
+                    p.apply_attributes(&profile.attributes);
+                }
+            } else {
+                eprintln!("[shop] {} 需要 {} 金（现有 {}）", id.def().name, id.def().cost, profile.gold);
+            }
+        }
     }
 
     /// 本局进行中：结算击杀、名次，进入学习阶段。
@@ -2446,6 +2490,7 @@ impl event::EventHandler for Game {
                 // 学习阶段：轮询购买升级输入 + 计时
                 self.poll_learning(ctx);
                 self.poll_growth_buy(ctx);
+            self.poll_shop(ctx);
                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
                 if self.meta.is_first_config() && self.net_host_ls.is_none() {
                     self.poll_host_join_phase();
@@ -4335,6 +4380,44 @@ impl Game {
             draw_text(&mut canvas, ctx, "H生命 J移速 K护甲", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
             gy += 26.0;
             draw_text(&mut canvas, ctx, "L法抗 ;击退", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
+            // M3 商店：物品栏 + 可购列表（数字键购买）
+            gy += 30.0;
+            let me = self.self_index();
+            let owned: Vec<(u8, String)> = self
+                .meta
+                .profiles
+                .iter()
+                .find(|pr| pr.player_id == me)
+                .map(|pr| {
+                    pr.items
+                        .iter()
+                        .map(|it| (it.def().tier, it.def().name.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let owned_str = if owned.is_empty() {
+                "无".to_string()
+            } else {
+                owned.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join("、")
+            };
+            draw_text(&mut canvas, ctx, &format!("物品栏：{owned_str}"), 18.0, Color::from_rgb(255, 220, 140), Point2 { x: rcx, y: gy }, true)?;
+            gy += 26.0;
+            let catalog = game_core::item::shop_catalog();
+            let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+            let gold = self.meta.profiles.iter().find(|pr| pr.player_id == me).map(|pr| pr.gold).unwrap_or(0);
+            // 两列排布
+            for (i, d) in catalog.iter().enumerate() {
+                if i >= keys.len() {
+                    break;
+                }
+                let col = i % 2;
+                let row = i / 2;
+                let x = rcx - 260.0 + col as f32 * 270.0;
+                let y = gy + row as f32 * 24.0;
+                let afford = gold >= d.cost;
+                let color = if afford { Color::from_rgb(200, 210, 225) } else { Color::from_rgb(120, 130, 145) };
+                draw_text(&mut canvas, ctx, &format!("[{}] {} {}金", keys[i], d.name, d.cost), 16.0, color, Point2 { x, y }, true)?;
+            }
         }
         // —— 左栏：技能树与键位绑定。
         let me = self.self_index();
