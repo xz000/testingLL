@@ -509,7 +509,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
-        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning } => {
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur } => {
             wu8(o, 17);
             wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3 });
             wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *kb_ji);
@@ -519,6 +519,8 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             if let Some(v) = blast { wfix(o, *v); }
             wu32(o, target.unwrap_or(u32::MAX));
             wu8(o, *returning as u8);
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2 });
+            wfix(o, *debuff_dur);
         }
     }
 }
@@ -565,7 +567,14 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             let tid = u32at(b, p)?;
             let target = if tid == u32::MAX { None } else { Some(tid) };
             let returning = u8at(b, p)? != 0;
-            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning }
+            let on_hit = match u8at(b, p)? {
+                0 => crate::skill::W098bOnHit::Ki,
+                1 => crate::skill::W098bOnHit::Cripple,
+                2 => crate::skill::W098bOnHit::ChainPull,
+                _ => return None,
+            };
+            let debuff_dur = fixat(b, p)?;
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur }
         }
         _ => return None,
     };
