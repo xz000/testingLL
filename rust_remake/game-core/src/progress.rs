@@ -15,7 +15,8 @@ use crate::skill::SkillId;
 /// v4：加入 growth_points。
 /// v5（098b 复刻 M0）：attributes 收缩为 5 个 u32（移除 mana_max / mana_regen，
 ///     无蓝量系统 PORT_098B_DECISIONS.md D3）。
-pub const CONFIG_VERSION: u8 = 5;
+/// v6（M3）：加入 items（u8 数量 + 每 item u32 id）。
+pub const CONFIG_VERSION: u8 = 6;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -48,6 +49,8 @@ pub struct PlayerConfig {
     pub attributes: crate::attribute::Attributes,
     /// 成长点（4.6b）：用于购买属性（可用金币兑换）。
     pub growth_points: u32,
+    /// 持有的物品（M3；升级链同家族替换）。
+    pub items: Vec<crate::item::ItemId>,
 }
 
 impl PlayerConfig {
@@ -64,6 +67,7 @@ impl PlayerConfig {
             gold_spent: p.gold_spent as i64,
             attributes: p.attributes,
             growth_points: p.growth_points,
+            items: p.items.clone(),
         }
     }
 
@@ -81,6 +85,7 @@ impl PlayerConfig {
         p.gold_spent = self.gold_spent as i32;
         p.attributes = self.attributes;
         p.growth_points = self.growth_points;
+        p.items = self.items.clone();
     }
 
     /// 编码为字节（带版本 + 长度前缀，可扩展）。
@@ -112,6 +117,11 @@ impl PlayerConfig {
         put_u32(&mut out, self.attributes.kb_resist);
         // growth_points（v4）。
         put_u32(&mut out, self.growth_points);
+        // items（v6）：u8 数量 + 每 item u32。
+        out.push(self.items.len() as u8);
+        for it in &self.items {
+            put_u32(&mut out, it.as_u32());
+        }
         out
     }
 
@@ -157,6 +167,15 @@ impl PlayerConfig {
             kb_resist: u32_at(buf, pos + 16)?,
         };
         let growth_points = u32_at(buf, pos + 20)?;
+        // items（v6）。
+        let n_items = *buf.get(pos + 24)? as usize;
+        pos += 25;
+        let mut items = Vec::with_capacity(n_items);
+        for _ in 0..n_items {
+            let id = u32_at(buf, pos)?;
+            pos += 4;
+            items.push(crate::item::ItemId::from_u32(id)?);
+        }
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -164,6 +183,7 @@ impl PlayerConfig {
             gold_spent,
             attributes,
             growth_points,
+            items,
         })
     }
 }

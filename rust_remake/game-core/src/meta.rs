@@ -57,6 +57,8 @@ pub struct PlayerProfile {
     pub skill_levels: Vec<u32>,
     /// 每个键位绑定的技能（索引 = CastKey::as_u32）
     pub key_slots: [Option<SkillId>; 8],
+    /// 持有的物品（098b 6 格；升级链同家族替换，M3）。
+    pub items: Vec<crate::item::ItemId>,
     /// 累计在技能升级上花费的金币（用于洗点退款）
     pub gold_spent: i32,
     /// 战斗属性（4.6b）：Hp/移速等成长值，跨局/跨端确定性同步。
@@ -77,6 +79,7 @@ impl PlayerProfile {
             best_placement: 0,
             skill_levels: vec![1; n],
             key_slots: [None; 8],
+            items: Vec::new(),
             gold_spent: 0,
             attributes: crate::attribute::Attributes::default(),
             growth_points: 0,
@@ -101,6 +104,19 @@ impl PlayerProfile {
     /// 解除某键的绑定。
     pub fn unbind_skill(&mut self, key: CastKey) {
         self.key_slots[key.as_u32() as usize] = None;
+    }
+
+    /// 购买/升级物品（M3）：金币不足失败；同家族持有低档则替换（098b 升级链语义）。
+    pub fn buy_item(&mut self, id: crate::item::ItemId) -> bool {
+        let cost = id.def().cost;
+        if self.gold < cost {
+            return false;
+        }
+        self.gold -= cost;
+        let family = id.def().family;
+        self.items.retain(|&it| it.def().family != family);
+        self.items.push(id);
+        true
     }
 
     /// 购买/升级某技能一级。返回是否成功（金币不足则失败）；成功计入洗点累计花费。
@@ -388,6 +404,26 @@ mod tests {
         assert_eq!(m.phase, MatchPhase::Fighting);
         // 第二局参与奖已发放
         assert_eq!(m.profiles[0].gold, 20 + 30 + 20);
+    }
+
+    #[test]
+    fn buy_item_spends_gold_and_upgrades_chain() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 20;
+        // 买头盔 1（10 金）
+        assert!(pr.buy_item(crate::item::ItemId::Helm1));
+        assert_eq!(pr.gold, 10);
+        assert_eq!(pr.items, vec![crate::item::ItemId::Helm1]);
+        // 升级头盔 2（20 金）——不足失败；同家族替换语义
+        assert!(!pr.buy_item(crate::item::ItemId::Helm2), "金币不足应失败");
+        pr.gold = 30;
+        assert!(pr.buy_item(crate::item::ItemId::Helm2));
+        assert_eq!(pr.gold, 10);
+        assert_eq!(pr.items, vec![crate::item::ItemId::Helm2], "同家族应替换为高档");
+        // 不同家族共存
+        assert!(pr.buy_item(crate::item::ItemId::Boots1));
+        assert_eq!(pr.items.len(), 2);
     }
 
     #[test]
