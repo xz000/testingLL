@@ -217,6 +217,18 @@ pub enum SkillId {
     S020,
     /// S021 虔诚（热键 F）：敌 250 伤 + 自奶 gx×0.5（098b pC；队伍奶友 TODO 无队伍系统）。
     S021,
+    // ---- 未实装名册（显式占位；见 warlock098b_def 注释） ----
+    S024,
+    S025,
+    S026,
+    S027,
+    S030,
+    S031,
+    S032,
+    S033,
+    S034,
+    S035,
+    S036,
 }
 
 impl SkillId {
@@ -243,6 +255,13 @@ impl SkillId {
             S005 | S006 | S007 => SkillTree::C,
             S017 | S018 | S019 => SkillTree::Y,
             S001 | S020 | S021 => SkillTree::F,
+            // 未实装名册：归各自热键树（不进 skills_in_tree，学习界面不可选）
+            S024 => SkillTree::E,
+            S025 => SkillTree::R,
+            S026 => SkillTree::T,
+            S027 => SkillTree::Y,
+            S030 | S032 | S033 | S034 | S035 | S036 => SkillTree::G,
+            S031 => SkillTree::Y,
         }
     }
 
@@ -308,6 +327,17 @@ impl SkillId {
             S001 => 55,
             S020 => 56,
             S021 => 57,
+            S024 => 58,
+            S025 => 59,
+            S026 => 60,
+            S027 => 61,
+            S030 => 62,
+            S031 => 63,
+            S032 => 64,
+            S033 => 65,
+            S034 => 66,
+            S035 => 67,
+            S036 => 68,
         }
     }
 
@@ -373,6 +403,17 @@ impl SkillId {
             55 => S001,
             56 => S020,
             57 => S021,
+            58 => S024,
+            59 => S025,
+            60 => S026,
+            61 => S027,
+            62 => S030,
+            63 => S031,
+            64 => S032,
+            65 => S033,
+            66 => S034,
+            67 => S035,
+            68 => S036,
             _ => _Reserved,
         }
     }
@@ -1749,6 +1790,42 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
+            // ===== 未实装名册（显式占位：UI 可见「未实装」标注，不误认为漏做） =====
+            // S022/S023/S028/S029：w3a 无任何字段（疑为废弃/预留位），不建条目。
+            // S024 物品 / S025-027 法术槽 / S030 怀表 / S031 锁链附加 / S032-036 切换键：
+            // 依赖物品栏战斗化与形态系统（决策文档 M3 剩余），占位 Unimplemented。
+            SkillId::S024 => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "物品（未实装）",
+                needs_point: false,
+                effect: Unimplemented,
+                growth: SkillGrowth { ..DEF_ZERO },
+            },
+            SkillId::S030 => SkillDef {
+                id,
+                tree: SkillTree::F,
+                name: "怀表（未实装：沉默缩短）",
+                needs_point: false,
+                effect: Unimplemented,
+                growth: SkillGrowth { ..DEF_ZERO },
+            },
+            SkillId::S031 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "锁链附加（未实装）",
+                needs_point: false,
+                effect: Unimplemented,
+                growth: SkillGrowth { ..DEF_ZERO },
+            },
+            SkillId::S032 | SkillId::S033 | SkillId::S034 | SkillId::S035 | SkillId::S036 => SkillDef {
+                id,
+                tree: SkillTree::G,
+                name: "切换键（未实装）",
+                needs_point: false,
+                effect: Unimplemented,
+                growth: SkillGrowth { ..DEF_ZERO },
+            },
             _ => return None,
         };
         Some(def)
@@ -2691,6 +2768,57 @@ mod tests {
                 assert!(near(radius, 250.0, 1e-3));
             }
             ref e => panic!("S021 effect 错：{e:?}"),
+        }
+    }
+
+    #[test]
+    fn roster_matches_098b_catalog_names() {
+        // 与 abilities_098b.md 官方名录逐一对账（2026-09-05 全量核对：无一错挂）。
+        let expected: &[(SkillId, &str)] = &[
+            (SkillId::S000, "火球"),
+            (SkillId::S001, "天罚"),
+            (SkillId::S002, "闪电"),
+            (SkillId::S003, "追踪弹"),
+            (SkillId::S004, "回旋镖"),
+            (SkillId::S005, "反射盾"),
+            (SkillId::S006, "时光回溯"),
+            (SkillId::S007, "急行"),
+            (SkillId::S008, "陨石"),
+            (SkillId::S009, "分裂弹"),
+            (SkillId::S010, "疾风步"),
+            (SkillId::S011, "瞬间移动"),
+            (SkillId::S012, "冲撞"),
+            (SkillId::S013, "移形换位"),
+            (SkillId::S014, "汲取"),
+            (SkillId::S015, "火焰喷射"),
+            (SkillId::S016, "弹跳弹"),
+            (SkillId::S017, "致残"),
+            (SkillId::S018, "引力"),
+            (SkillId::S019, "锁链"),
+            (SkillId::S020, "灾变"),
+            (SkillId::S021, "虔诚"),
+        ];
+        for (id, name) in expected {
+            let d = DefTable::def(*id);
+            assert_eq!(d.name, *name, "{id:?} 名称应与官方名录一致");
+            // 实装技能不得是 Unimplemented 占位
+            assert!(!matches!(d.effect, SkillEffect::Unimplemented), "{id:?} 应有真实效果");
+        }
+        // 未实装占位：名称带「未实装」标记，效果为 Unimplemented，学习界面不可选
+        for id in [SkillId::S024, SkillId::S030, SkillId::S031, SkillId::S032] {
+            let d = DefTable::def(id);
+            assert!(d.name.contains("未实装"), "{id:?} 占位应标注未实装");
+            assert!(matches!(d.effect, SkillEffect::Unimplemented));
+            let all_trees = [
+                SkillTree::C, SkillTree::R, SkillTree::E, SkillTree::D,
+                SkillTree::Y, SkillTree::T, SkillTree::F, SkillTree::G,
+            ];
+            for tree in all_trees {
+                assert!(
+                    !tree.skills_in_tree().contains(&id),
+                    "{id:?} 不应出现在学习可选列表"
+                );
+            }
         }
     }
 
