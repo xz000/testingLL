@@ -48,7 +48,7 @@ impl SkillTree {
             SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball, S002, S003, S004],
             SkillTree::T => &[TLeech, T2Shot, T2Volley, T3Fast, T3Fast2, TestLeech, S014, S015, S016],
             SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2, S017, S018, S019],
-            SkillTree::F => &[Test03],
+            SkillTree::F => &[Test03, S001, S020, S021],
             SkillTree::G => &[Test01, S000],
         }
     }
@@ -210,6 +210,13 @@ pub enum SkillId {
     S018,
     /// S019 锁链（热键 Y）：弹体命中把目标拉向施法者 + 定身 0.5s（098b tc；S031 附加 TODO）。
     S019,
+    // ---- M2 批次D：AoE 光环系 ----
+    /// S001 天罚（热键 F）：以自身为中心 250 AoE nova，KI($A=10) 距离衰减（098b KC）。
+    S001,
+    /// S020 灾变（热键 F）：三级递进终极 AoE（300/300/400，伤害递增；$B/$C/$E 未解码占位 TODO）。
+    S020,
+    /// S021 虔诚（热键 F）：敌 250 伤 + 自奶 gx×0.5（098b pC；队伍奶友 TODO 无队伍系统）。
+    S021,
 }
 
 impl SkillId {
@@ -235,6 +242,7 @@ impl SkillId {
             S011 | S012 | S013 => SkillTree::R,
             S005 | S006 | S007 => SkillTree::C,
             S017 | S018 | S019 => SkillTree::Y,
+            S001 | S020 | S021 => SkillTree::F,
         }
     }
 
@@ -297,6 +305,9 @@ impl SkillId {
             S017 => 52,
             S018 => 53,
             S019 => 54,
+            S001 => 55,
+            S020 => 56,
+            S021 => 57,
         }
     }
 
@@ -359,6 +370,9 @@ impl SkillId {
             52 => S017,
             53 => S018,
             54 => S019,
+            55 => S001,
+            56 => S020,
+            57 => S021,
             _ => _Reserved,
         }
     }
@@ -614,6 +628,15 @@ pub enum SkillEffect {
         /// KI 击退系数 JI。
         kb_ji: Fix64,
     },
+    /// 098b 以自身为中心的 AoE nova（M2 批次D：S001/S020/S021）：复用 explode_at
+    /// （中心伤害 + 线性距离衰减 + 连线击退）。伤害 gX 走 growth.damage（随等级）。
+    W098bNova {
+        kind: W098bNovaKind,
+        /// AoE 半径（S020 按玩家 stage 取 300/300/400，此处填基础值）。
+        radius: Fix64,
+        /// KI 击退系数 JI。
+        kb_ji: Fix64,
+    },
     /// 098b 位移/增益系（M2 批次B：S005/S006/S007/S010/S011/S012/S013）。
     /// 数值口径：duration/damage/max_distance 全走 growth（stats 按施法等级求值）；
     /// `speed` 为不随等级的常量（Dash 冲刺速度 / Haste·Windwalk 的移速乘数，war3 加法移速按
@@ -624,6 +647,17 @@ pub enum SkillEffect {
         /// Blink/Swap/Dash 的最大距离 L1 基准（成长走 growth.max_distance）。
         max_distance: Fix64,
     },
+}
+
+/// 098b AoE nova 子类型。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum W098bNovaKind {
+    /// S001 天罚：固定 250 半径，KI($A) 伤害。
+    Smiting,
+    /// S020 灾变：三级递进（玩家 catastrophe_stage 0→1→2 循环），半径 300/300/400、伤害递增。
+    Catastrophe,
+    /// S021 虔诚：敌 250 伤 + 自奶 gX×0.5（友方队伍奶 TODO，无队伍时只奶自己）。
+    Devotion,
 }
 
 /// 098b 位移/增益子类型。
@@ -1151,6 +1185,7 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
         w @ Warlock098b { .. } => w,
         b @ W098bBolt { .. } => b,
         u @ W098bUtility { .. } => u,
+        n @ W098bNova { .. } => n,
     };
     // growth：速度/击退力/距离/半径类基础与斜率同比放大；时长/伤害/冷却不动。
     let g = &mut d.growth;
@@ -1626,6 +1661,55 @@ impl DefTable {
                     cooldown_delta: -0.0526,
                     damage_base: 3.0,
                     duration_base: 0.5,
+                    ..DEF_ZERO
+                },
+            },
+            // ===== M2 批次D：AoE 光环系 =====
+            // S001 天罚（F 键）——spec：CD 3.0 恒定（4 级）、cast_time 0.7（→ windup）；
+            // control KC：半径 250 内 KI(DX, 1-NO/1000) 距离衰减；DX=$A=10（ei=0 手杖加成无）恒定。
+            SkillId::S001 => SkillDef {
+                id,
+                tree: SkillTree::F,
+                name: "天罚",
+                needs_point: false,
+                effect: W098bNova { kind: W098bNovaKind::Smiting, radius: Fix64::from_num(250.0), kb_ji: Fix64::ONE },
+                growth: SkillGrowth {
+                    windup_base: 0.7,
+                    cooldown_base: 3.0,
+                    damage_base: 10.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S020 灾变（F 键）——spec：CD 3.0/2.0（取 3.0 恒）、cast_time 0.7；control MC：三级递进
+            // Ur 0→1→2 循环，半径 300/300/400、伤害 $B/$C/$E（未解码 → 12/16/20 占位 TODO），
+            // 命中+50 移速（M2 简化为自加速 Speed buff）。
+            SkillId::S020 => SkillDef {
+                id,
+                tree: SkillTree::F,
+                name: "灾变",
+                needs_point: false,
+                effect: W098bNova { kind: W098bNovaKind::Catastrophe, radius: Fix64::from_num(300.0), kb_ji: Fix64::ONE },
+                growth: SkillGrowth {
+                    windup_base: 0.7,
+                    cooldown_base: 3.0,
+                    damage_base: 12.0,
+                    damage_delta: 4.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S021 虔诚（F 键）——spec：CD 3.0 恒定、cast_time 0.7；control pC：敌 250 内
+            // KI(DX, 1-NO/1000)；友方 500 内 +DX*0.5 血 +60 移速（无队伍系统 → 只奶自己，TODO）。
+            // DX 未解码 → 占位 8（TODO）。
+            SkillId::S021 => SkillDef {
+                id,
+                tree: SkillTree::F,
+                name: "虔诚",
+                needs_point: false,
+                effect: W098bNova { kind: W098bNovaKind::Devotion, radius: Fix64::from_num(250.0), kb_ji: Fix64::ONE },
+                growth: SkillGrowth {
+                    windup_base: 0.7,
+                    cooldown_base: 3.0,
+                    damage_base: 8.0,
                     ..DEF_ZERO
                 },
             },
@@ -2533,6 +2617,42 @@ mod tests {
                 assert!(near(radius, 35.0, 1e-3));
             }
             ref e => panic!("S019 effect 错：{e:?}"),
+        }
+    }
+
+    #[test]
+    fn s001_s020_s021_match_spec() {
+        // S001 天罚：CD 3.0 恒；windup 0.7（cast_time）；半径 250、伤害 $A=10 恒定。
+        let d = DefTable::def(SkillId::S001);
+        assert_eq!(d.name, "天罚");
+        let s1 = d.stats_at(1);
+        assert!(near(s1.cooldown, 3.0, 1e-3) && near(s1.windup, 0.7, 1e-3));
+        assert!(near(s1.damage, 10.0, 1e-3));
+        match d.effect {
+            SkillEffect::W098bNova { kind: W098bNovaKind::Smiting, radius, .. } => {
+                assert!(near(radius, 250.0, 1e-3));
+            }
+            ref e => panic!("S001 effect 错：{e:?}"),
+        }
+        // S020 灾变：CD 3.0；基础伤害 12（占位）、半径 300 基础。
+        let d = DefTable::def(SkillId::S020);
+        assert_eq!(d.name, "灾变");
+        assert!(near(d.stats_at(1).damage, 12.0, 1e-3));
+        match d.effect {
+            SkillEffect::W098bNova { kind: W098bNovaKind::Catastrophe, radius, .. } => {
+                assert!(near(radius, 300.0, 1e-3));
+            }
+            ref e => panic!("S020 effect 错：{e:?}"),
+        }
+        // S021 虔诚：CD 3.0；敌 250 伤（DX 占位 8）+ 自奶 4。
+        let d = DefTable::def(SkillId::S021);
+        assert_eq!(d.name, "虔诚");
+        assert!(near(d.stats_at(1).damage, 8.0, 1e-3));
+        match d.effect {
+            SkillEffect::W098bNova { kind: W098bNovaKind::Devotion, radius, .. } => {
+                assert!(near(radius, 250.0, 1e-3));
+            }
+            ref e => panic!("S021 effect 错：{e:?}"),
         }
     }
 
