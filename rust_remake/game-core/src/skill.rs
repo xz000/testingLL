@@ -537,8 +537,7 @@ pub struct SkillGrowth {
     /// 护盾吸收量/弹体宽度等附加值（用于 Shield / Bullet / LineBeam 的 width、shield 强度）。
     pub extra_base: f64,
     pub extra_delta: f64,
-    /// 法力消耗/ManaCost（MP 机制）。0=默认不耗蓝（保持旧测试不变）；后续按手感调各技能数值。
-    pub mana_cost: f64,
+    // mana_cost 已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
 }
 
 impl SkillGrowth {
@@ -580,11 +579,7 @@ impl SkillDef {
     pub fn stats_at(&self, level: u32) -> SkillStats {
         self.growth.stats(level)
     }
-
-    /// 该技能的法力消耗（MP）。0=不耗蓝。
-    pub fn mana_cost(&self) -> Fix64 {
-        Fix64::from_num(self.growth.mana_cost)
-    }
+    // mana_cost() 已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
 }
 
 /// 施法请求被拒绝的原因。
@@ -780,6 +775,214 @@ fn self_recovery(_id: SkillId) -> Fix64 {
     DefTable::def(_id).stats_at(1).recovery
 }
 
+// ===== 098b 尺度过渡缩放（PORT_098B_DECISIONS.md D4） =====
+//
+// 旧（Unity demo 微缩）数值 → war3 尺度的三类因子。世界尺度已切到 war3（balance.rs），
+// 但技能表条目仍是旧尺度字面量——过渡期在 `DefTable::def()` 出口单点放大，
+// **098b 名册替换完成时整体删除**（届时数值直接来自 port_spec_098b.json，无需换算）。
+//
+// 类别口径：速度类（speed/击退力/拉拽/加速度）×65.625（=210/3.2）；距离类（range/max_distance/length）×60（=1200/20）；
+// 半径类（radius/width）×16（=16/1）。时长（秒）与伤害**不缩放**（HP 尺度 100 不变）。
+const LEGACY_SPEED: f64 = 65.625;
+const LEGACY_DIST: f64 = 60.0;
+const LEGACY_RADIUS: f64 = 16.0;
+
+fn sc(x: Fix64, factor: f64) -> Fix64 {
+    Fix64::from_num(x.to_num::<f64>() * factor)
+}
+
+/// 对旧尺度技能定义做三类因子缩放（字段级，含 growth 成长参数）。
+fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
+    use SkillEffect::*;
+    let e = d.effect;
+    d.effect = match e {
+        Boost { duration } => Boost { duration },
+        ReflectShield { duration } => ReflectShield { duration },
+        Shadow => Shadow,
+        FakeSetup { max_time } => FakeSetup { max_time },
+        Blink { max_distance } => Blink { max_distance: sc(max_distance, LEGACY_DIST) },
+        Blink2 { max_distance } => Blink2 { max_distance: sc(max_distance, LEGACY_DIST) },
+        BlinkToWall { max_distance } => BlinkToWall { max_distance: sc(max_distance, LEGACY_DIST) },
+        DashSlash { speed } => DashSlash { speed: sc(speed, LEGACY_SPEED) },
+        DashStrike { speed, duration, push_power, push_time, push_damage } => DashStrike {
+            speed: sc(speed, LEGACY_SPEED),
+            duration,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            push_damage,
+        },
+        Rock { max_distance, fuse, radius, damage, bomb_force } => Rock {
+            max_distance: sc(max_distance, LEGACY_DIST),
+            fuse,
+            radius: sc(radius, LEGACY_RADIUS),
+            damage,
+            bomb_force: sc(bomb_force, LEGACY_SPEED),
+        },
+        Bullet { speed, damage, radius, range } => Bullet {
+            speed: sc(speed, LEGACY_SPEED),
+            damage,
+            radius: sc(radius, LEGACY_RADIUS),
+            range: sc(range, LEGACY_DIST),
+        },
+        Missile { speed, radius, damage, push_power, push_time, range } => Missile {
+            speed: sc(speed, LEGACY_SPEED),
+            radius: sc(radius, LEGACY_RADIUS),
+            damage,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            range: sc(range, LEGACY_DIST),
+        },
+        Boomerang { speed, accelerate, radius, damage, push_power, push_time, life } => Boomerang {
+            speed: sc(speed, LEGACY_SPEED),
+            accelerate: sc(accelerate, LEGACY_SPEED),
+            radius: sc(radius, LEGACY_RADIUS),
+            damage,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            life,
+        },
+        Banana { count, turn_rad, speed, radius, damage, push_power, push_time, life } => Banana {
+            count,
+            turn_rad,
+            speed: sc(speed, LEGACY_SPEED),
+            radius: sc(radius, LEGACY_RADIUS),
+            damage,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            life,
+        },
+        LineBeam { length, width, damage, duration } => LineBeam {
+            length: sc(length, LEGACY_DIST),
+            width: sc(width, LEGACY_RADIUS),
+            damage,
+            duration,
+        },
+        ChainLeech { speed, damage, heal, range } => ChainLeech {
+            speed: sc(speed, LEGACY_SPEED),
+            damage,
+            heal,
+            range: sc(range, LEGACY_DIST),
+        },
+        JumpDecay { speed, damage, range, ratio_decay } => JumpDecay {
+            speed: sc(speed, LEGACY_SPEED),
+            damage,
+            range: sc(range, LEGACY_DIST),
+            ratio_decay,
+        },
+        TurnLeech { speed, damage, heal, turn_delay, range } => TurnLeech {
+            speed: sc(speed, LEGACY_SPEED),
+            damage,
+            heal,
+            turn_delay,
+            range: sc(range, LEGACY_DIST),
+        },
+        Volley { bullet_speed, damage, count, spread_step } => Volley {
+            bullet_speed: sc(bullet_speed, LEGACY_SPEED),
+            damage,
+            count,
+            spread_step,
+        },
+        Sweep { bullet_speed, damage, count, cadence, turn_step } => Sweep {
+            bullet_speed: sc(bullet_speed, LEGACY_SPEED),
+            damage,
+            count,
+            cadence,
+            turn_step,
+        },
+        BonusChain { speed, damage, range } => BonusChain {
+            speed: sc(speed, LEGACY_SPEED),
+            damage,
+            range: sc(range, LEGACY_DIST),
+        },
+        Tether { damage, pull_speed, duration, beam } => Tether {
+            damage,
+            pull_speed: sc(pull_speed, LEGACY_SPEED),
+            duration,
+            beam,
+        },
+        PushShot { speed, damage, push_power, push_time, range } => PushShot {
+            speed: sc(speed, LEGACY_SPEED),
+            damage,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            range: sc(range, LEGACY_DIST),
+        },
+        Lightning => Lightning,
+        Swap { max_distance } => Swap { max_distance: sc(max_distance, LEGACY_DIST) },
+        BindLine { speed, count, bind_time } => BindLine {
+            speed: sc(speed, LEGACY_SPEED),
+            count,
+            bind_time,
+        },
+        GravityZone { speed, pull_speed, radius, life, range } => GravityZone {
+            speed: sc(speed, LEGACY_SPEED),
+            pull_speed: sc(pull_speed, LEGACY_SPEED),
+            radius: sc(radius, LEGACY_RADIUS),
+            life,
+            range: sc(range, LEGACY_DIST),
+        },
+        StarZone { damage_per_sec, heal_per_sec, radius, duration, range } => StarZone {
+            damage_per_sec,
+            heal_per_sec,
+            radius: sc(radius, LEGACY_RADIUS),
+            duration,
+            range: sc(range, LEGACY_DIST),
+        },
+        StealthPush { duration, push_power, push_time, push_damage } => StealthPush {
+            duration,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            push_damage,
+        },
+        StealthPush2 { duration, push_power, push_time, push_damage } => StealthPush2 {
+            duration,
+            push_power: sc(push_power, LEGACY_SPEED),
+            push_time,
+            push_damage,
+        },
+        RollProjectile { speed, damage_per_sec, radius, range } => RollProjectile {
+            speed: sc(speed, LEGACY_SPEED),
+            damage_per_sec,
+            radius: sc(radius, LEGACY_RADIUS),
+            range: sc(range, LEGACY_DIST),
+        },
+        ScatterBurst { speed, range, count, step_rad, bullet_speed } => ScatterBurst {
+            speed: sc(speed, LEGACY_SPEED),
+            range: sc(range, LEGACY_DIST),
+            count,
+            step_rad,
+            bullet_speed: sc(bullet_speed, LEGACY_SPEED),
+        },
+        ScatterPeriodic { speed, range, count, interval, bullet_speed, turn_rad } => ScatterPeriodic {
+            speed: sc(speed, LEGACY_SPEED),
+            range: sc(range, LEGACY_DIST),
+            count,
+            interval,
+            bullet_speed: sc(bullet_speed, LEGACY_SPEED),
+            turn_rad,
+        },
+        SelfExplode { radius, self_stay, damage, kick, kick_time } => SelfExplode {
+            radius: sc(radius, LEGACY_RADIUS),
+            self_stay,
+            damage,
+            kick: sc(kick, LEGACY_SPEED),
+            kick_time,
+        },
+        Unimplemented => Unimplemented,
+    };
+    // growth：速度/击退力/距离/半径类基础与斜率同比放大；时长/伤害/冷却不动。
+    let g = &mut d.growth;
+    g.speed_base *= LEGACY_SPEED;
+    g.push_power_base *= LEGACY_SPEED;
+    g.push_power_delta *= LEGACY_SPEED;
+    g.range_base *= LEGACY_DIST;
+    g.max_distance_base *= LEGACY_DIST;
+    g.max_distance_delta *= LEGACY_DIST;
+    g.radius_base *= LEGACY_RADIUS;
+    g.radius_delta *= LEGACY_RADIUS;
+    d
+}
+
 /// 技能定义表（初期实现：C / R / E 三棵树）。
 ///
 /// 数值参考原版（R1/R2/R3b/E1/E2/C1/C3/C4）；前摇/后摇为本重写新增的
@@ -788,6 +991,11 @@ pub struct DefTable;
 
 impl DefTable {
     pub fn def(id: SkillId) -> SkillDef {
+        legacy_scale_def(Self::raw_def(id))
+    }
+
+    /// 旧（Unity demo）尺度的原始定义表；仅被 [`Self::def`] 的过渡缩放消费。
+    fn raw_def(id: SkillId) -> SkillDef {
         use SkillEffect::*;
         // 已实现技能：给出真实数值（参考原版）。
         // 其余技能：暂以 Unimplemented 占位（契约存在，可绑定/学习，但暂不落地效果）。
@@ -902,7 +1110,6 @@ impl DefTable {
                     radius_base: 2.0,
                     duration_base: 0.7,
                     max_distance_base: 5.0,
-                    mana_cost: 30.0,
                     ..DEF_ZERO
                 },
             },
@@ -1507,7 +1714,6 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
     max_distance_delta: 0.0,
     extra_base: 0.0,
     extra_delta: 0.0,
-    mana_cost: 0.0,
 };
 
 // 由于 SkillDef 由 DefTable::def 直接构造（非 const，因需运行时 from_num），

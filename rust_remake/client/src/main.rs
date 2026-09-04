@@ -945,8 +945,8 @@ impl Game {
 
     fn update_camera(&mut self, ctx: &Context) -> GameResult {
         let (sw, sh) = ctx.gfx.drawable_size();
-        // 令初始场地（半径约 20）约占较短边的 45%
-        self.scale = sw.min(sh) * 0.45 / 20.0;
+        // 令初始场地约占较短边的 45%（场地半径取 game-core 的 START_RADIUS，随 war3 尺度走）
+        self.scale = sw.min(sh) * 0.45 / game_core::world::START_RADIUS as f32;
         self.offset.x = sw / 2.0;
         self.offset.y = sh / 2.0;
         Ok(())
@@ -1044,7 +1044,7 @@ impl Game {
 
     /// 4.6b 成长点/属性购买输入：
     /// - `Z`：用金币换 1 成长点。
-    /// - `H`=Hp、`J`=Speed、`K`=Armor、`L`=法抗、`;`=击退、`U`=法力上限、`I`=回蓝。
+    /// - `H`=Hp、`J`=Speed、`K`=Armor、`L`=法抗、`;`=击退。（U/I 蓝量键已随无蓝量系统移除）
     fn poll_growth_buy(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
         let me = self.self_index();
@@ -1070,8 +1070,7 @@ impl Game {
         if just("k") { buy(game_core::attribute::GrowthAttr::Armor); }
         if just("l") { buy(game_core::attribute::GrowthAttr::SpellResist); }
         if just(";") { buy(game_core::attribute::GrowthAttr::KbResist); }
-        if just("u") { buy(game_core::attribute::GrowthAttr::ManaMax); }
-        if just("i") { buy(game_core::attribute::GrowthAttr::ManaRegen); }
+        // U/I（蓝上限/回蓝）已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
     }
 
     /// 本局进行中：结算击杀、名次，进入学习阶段。
@@ -1307,7 +1306,7 @@ impl Game {
     /// 这是"精确版"实现：`player_target` 保持电平量（每帧重发，不会在帧同步输入缓存下丢失），
     /// 只在施法真正开始的这一帧（`is_busy` 的 false→true 边沿）清一次 →
     /// 施法结束（前摇结束进后摇后）不再自动走向旧目标（问题 1）；且施法失败
-    /// （冷却/蓝不足，`is_busy` 仍为 false）时角色不停下。用 `is_busy` 而非 `is_windup`，
+    /// （冷却中，`is_busy` 仍为 false）时角色不停下。用 `is_busy` 而非 `is_windup`，
     /// 能覆盖零前摇技能（Windup 一帧即转 Recovery，`is_windup` 永不成立）。
     fn note_self_cast(&mut self) {
         let me = self.self_index();
@@ -4316,13 +4315,13 @@ impl Game {
             gy += 28.0;
             draw_text(&mut canvas, ctx, &format!("护甲 -{}%  法抗 -{}%", a.armor * 6, a.spell_resist * 6), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
             gy += 28.0;
-            draw_text(&mut canvas, ctx, &format!("击退 -{}%  法力 +{}  回蓝 +{}/s", a.kb_resist * 12, a.mana_max * 25, a.mana_regen), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
+            draw_text(&mut canvas, ctx, &format!("击退 -{}%", a.kb_resist * 12), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
             gy += 34.0;
             draw_text(&mut canvas, ctx, "购买：Z 金币换点", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
             gy += 26.0;
             draw_text(&mut canvas, ctx, "H生命 J移速 K护甲", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
             gy += 26.0;
-            draw_text(&mut canvas, ctx, "L法抗 ;击退 U蓝上 I回蓝", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
+            draw_text(&mut canvas, ctx, "L法抗 ;击退", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
         }
         // —— 左栏：技能树与键位绑定。
         let me = self.self_index();
