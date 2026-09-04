@@ -32,6 +32,12 @@ pub const MAX_CMDS: usize = 8;
 pub const BASE_SPEED: f64 = Balance::default().base_speed;
 pub const DEFAULT_RADIUS: f64 = Balance::default().default_radius;
 pub const MAX_HP: f64 = Balance::default().max_hp;
+
+/// 098b 击退衰减（D8）：`jr=Hr×(1-.96)` 出处——击退速度每 0.03s ×0.96；
+/// 换算到 1/60 步长：0.96^((1/60)/0.03) = 0.96^(5/9) ≈ 0.97759。
+pub const W098B_KB_DECAY_PER_FRAME: f64 = 0.977_59; // = 0.96^(5/9)（const 不能调 powf，预计算）
+/// 衰减模型名义时长上限（秒）：初速 2000 衰减到阈值约需 2.6s，留余量防数值残留。
+pub const W098B_KB_MAX_TIME: f64 = 3.5;
 /// 自走起步的加速度（速度/秒²）。决定起步多快到达满速。
 pub const ACCEL: f64 = Balance::default().accel;
 /// 自走刹停的减速度（速度/秒²）。决定松手/到达后多快停下。
@@ -61,8 +67,11 @@ pub struct Kick {
 pub struct Control {
     /// 强制速度（单位 / 秒）
     pub vel: Vec2,
-    /// 剩余时长
+    /// 剩余时长（decay=true 时为名义上限，实际由速度衰减到阈值终止）
     pub remaining: Fix64,
+    /// 098b 击退衰减模型（jr=Hr×(1-.96) 出处，D8）：每帧速度 ×0.9776（0.96^(5/9)，
+    /// 098b 每 0.03s 步 ×0.96 换算到 1/60 步长），速度低于阈值自然停止。
+    pub decay: bool,
 }
 
 /// 一个带计时器/强度的自效果。
@@ -268,6 +277,20 @@ impl Player {
         self.control = Some(Control {
             vel,
             remaining: Fix64::from_num(time * self.kb_factor),
+            decay: false,
+        });
+    }
+
+    /// 098b 击退（D8 衰减模型）：初速按有效击退减免缩放，每帧 ×0.9776 衰减至自然停止。
+    /// 用于 098b 名册的 KI 击退；Unity 版旧技能仍走恒速 [`Self::push`]。
+    pub fn push_knockback(&mut self, vel: Vec2) {
+        // 初速按有效击退减免缩放（attr+物品取 max，D8）。
+        let v0 = vel.length() * Fix64::from_num(1.0 - self.effective_kb_reduction());
+        let dir = if vel.length_squared() > Fix64::ZERO { vel.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
+        self.control = Some(Control {
+            vel: dir * v0,
+            remaining: Fix64::from_num(W098B_KB_MAX_TIME),
+            decay: true,
         });
     }
 
@@ -419,9 +442,10 @@ impl Player {
             self.pos += self.pull * dt;
             return;
         }
-        // 1) 强制位移：定格速推进，重置自走惯性。
+        // 1) 强制位移：定格速推进，重置自走惯性。decay=true 走 098b 衰减模型。
         if let Some(c) = &self.control {
             self.cur_vel = Vec2::ZERO;
+            // decay=true：本帧速度衰减与终止判定在下方「强制位移计时」可变块统一处理。
             self.pos += c.vel * dt;
             self.pos += self.pull * dt;
             return;
@@ -469,11 +493,23 @@ impl Player {
             }
         }
         // 强制位移计时
+        let mut stop_control = false;
         if let Some(c) = &mut self.control {
             c.remaining = (c.remaining - dt).max(Fix64::ZERO);
-            if c.remaining < eps {
-                self.control = None;
+            if c.decay {
+                // 098b 衰减（D8）：每帧 ×0.9776（=0.96^(5/9)，jr=Hr×(1-.96) 的 0.96/0.03s
+                // 换算到 1/60 步长），低于 5 单位/秒视为停止。
+                c.vel = c.vel * Fix64::from_num(W098B_KB_DECAY_PER_FRAME);
+                if c.vel.length() < Fix64::from_num(5.0) {
+                    stop_control = true;
+                }
             }
+            if c.remaining < eps {
+                stop_control = true;
+            }
+        }
+        if stop_control {
+            self.control = None;
         }
         // 踢击窗口计时
         if let Some(k) = &mut self.kick {

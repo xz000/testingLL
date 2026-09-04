@@ -1141,7 +1141,7 @@ impl World {
         // 每个 (伤害, 来源) 事件在 4) 统一结算；被反弹护盾命中的直射弹只反射方向。
         let mut events: Vec<(u32, Fix64, Option<u32>)> = Vec::new();
         let mut explode: Vec<ProjExplosion> = Vec::new();
-        let mut pushes: Vec<(u32, Vec2, f64)> = Vec::new(); // (受害者 id, 击退方向, 时长)
+        let mut pushes: Vec<(u32, Vec2, f64, bool)> = Vec::new(); // (受害者 id, 击退方向, 时长, 098b 衰减模型?)
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
         // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
         let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
@@ -1235,7 +1235,7 @@ impl World {
                         if let Some((victim, dd)) = nearest_hit(&self.players, pr.pos, owner, radius) {
                             events.push((victim, damage, Some(owner)));
                             if dd.length_squared() > Fix64::ZERO {
-                                pushes.push((victim, dd.normalized() * push_power, push_time.to_num::<f64>()));
+                                pushes.push((victim, dd.normalized() * push_power, push_time.to_num::<f64>(), false));
                             }
                         }
                         (owner, radius)
@@ -1301,7 +1301,7 @@ impl World {
                         pr.alive = false;
                         events.push((victim, *damage, Some(pr.owner)));
                         if dd.length_squared() > Fix64::ZERO {
-                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>(), false));
                         }
                     }
                 }
@@ -1311,7 +1311,7 @@ impl World {
                         pr.alive = false;
                         events.push((victim, *damage, Some(pr.owner)));
                         if dd.length_squared() > Fix64::ZERO {
-                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>(), false));
                         }
                     }
                 }
@@ -1352,7 +1352,7 @@ impl World {
                         pr.alive = false;
                         events.push((victim, *damage, Some(*owner)));
                         if dd.length_squared() > Fix64::ZERO {
-                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>(), false));
                         }
                         if let Some(p) = self.players.get_mut(*owner as usize) {
                             p.damageplus += 0.3;
@@ -1424,7 +1424,7 @@ impl World {
                         pr.alive = false;
                         events.push((victim, *damage, Some(pr.owner)));
                         if dd.length_squared() > Fix64::ZERO {
-                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>()));
+                            pushes.push((victim, dd.normalized() * *push_power, push_time.to_num::<f64>(), false));
                         }
                     }
                 }
@@ -1446,7 +1446,7 @@ impl World {
                         let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull;
                         if !is_pull && dd.length_squared() > Fix64::ZERO {
                             let kb = warlock_ki_knockback(*gx, *kb_ji);
-                            pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME));
+                            pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
                         }
                         if let Some(total) = ignite {
                             ignites.push((pr.owner, pr.pos, *total, (*debuff_dur).max(Fix64::from_num(W098B_IGNITE_SECONDS))));
@@ -1565,10 +1565,15 @@ impl World {
             self.damage_player(victim, amount, from);
         }
         // 4a) 结算弹体直接命中的击退（回旋镖 / 香蕉）
-        for (victim, vel, time) in pushes {
+        for (victim, vel, time, decay) in pushes {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
-                    p.push(vel, time); // 击退抗性在 Player::push 内统一按 kb_factor 缩放
+                    if decay {
+                        // 098b 衰减模型（D8）：初速缩放（有效击退减免在 push_knockback 内）。
+                        p.push_knockback(vel);
+                    } else {
+                        p.push(vel, time); // Unity 版恒速：击退抗性按 kb_factor 缩放
+                    }
                 }
             }
         }
@@ -1743,7 +1748,8 @@ impl World {
                     let dist = d_sq.sqrt();
                     let falloff = (Fix64::ONE - dist / radius).max(Fix64::from_num(0.2));
                     let dir = d.normalized();
-                    p.push(dir * (bomb_force * falloff), 0.3);
+                    // nova/爆炸击退走 098b 衰减模型（D8）；falloff 保留为初速缩放。
+                    p.push_knockback(dir * (bomb_force * falloff));
                 }
             }
         }
@@ -2146,7 +2152,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         if let Some(p) = world.players.get_mut(pid as usize) {
                             if p.alive {
                                 let kb = warlock_ki_knockback(gx, kb_ji);
-                                p.push(dir * kb, W098B_KB_TIME);
+                                p.push_knockback(dir * kb);
                             }
                         }
                     }
@@ -4550,8 +4556,10 @@ mod tests {
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         let mut drops: Vec<f64> = Vec::new();
         for stage in 0..3 {
-            // 上一级的 KI 击退（~700 位移）会把敌人推出半径——每轮拉回原位再放。
+            // 上一级的衰减击退（D8，位移 ~1400 且 3.5s 内持续）会把敌人推出半径——
+            // 每轮拉回原位并清掉残留击退 control 再放。
             world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+            world.players[1].control = None;
             world.players[1].move_target = None;
             let hp = world.players[1].hp;
             // 清冷却以连放（灾变 CD 3s）
@@ -4817,12 +4825,15 @@ mod tests {
     fn s016_bounce_jumps_with_decay() {
         let mut world = World::new(3, 955);
         world.obstacles.clear();
+        world.sandbox = true; // 衰减击退位移 ~1335 会把人推出 1200 场地，排除出界掉血干扰
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
+        // 衰减击退（D8）位移 ~1335 沿弹向（+x）：敌2 放命中点垂直方向 -850（< 900 弹程，
+        // 且 1 被推 +x 远离第二跳路径 → 不会三跳往返）。
         world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
         world.players[1].move_target = None;
-        world.players[2].pos = Vec2::new(d60(-5.0), Fix64::ZERO);
+        world.players[2].pos = Vec2::new(d60(5.0), Fix64::from_num(-850.0));
         world.players[2].move_target = None;
         let hp1 = world.players[1].hp;
         let hp2 = world.players[2].hp;
@@ -4842,11 +4853,15 @@ mod tests {
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
         assert!((d1 - 6.0).abs() < 0.3, "第一跳应全额 6，实际 {d1}");
         assert!((d2 - 6.0 * 0.8).abs() < 0.3, "第二跳应 ×0.8≈4.8，实际 {d2}");
+        // 末跳命中时寿命重置（~0.94s），到 2.2s 时必已耗尽（3 跳上限由全场扫描+飞程自然保证）。
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
         let still = world
             .projectiles
             .iter()
             .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, .. }));
-        assert!(!still, "弹跳弹寿命（1s）耗尽后应消失，不得无限弹");
+        assert!(!still, "弹跳弹寿命逐跳耗尽后应消失，不得无限弹");
     }
 
     #[test]
