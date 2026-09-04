@@ -175,6 +175,8 @@ pub struct Player {
     pub dash_active: bool,
     /// 冲刺斩的位移速度（单位 / 秒），`dash_active` 时按此直线移动。
     pub dash_vel: Vec2,
+    /// S006 时光回溯（098b fC/ER）：到点闪回 `pos` 并还原 `hp`；元组 = (锚点, 锚点 HP, 剩余秒)。
+    pub rewind: Option<(Vec2, Fix64, Fix64)>,
     /// 潜行踢·连推（E2b）：撞障碍后需延迟重新踢击的时间；`None` = 无待重踢。
     pub ricochet_pending: Option<Fix64>,
     /// 潜行踢·连推：碰撞障碍时重放的踢击参数。
@@ -221,6 +223,7 @@ impl Player {
             blink2_window: None,
             dash_active: false,
             dash_vel: Vec2::ZERO,
+            rewind: None,
             ricochet_pending: None,
             ricochet_kick: None,
             ricochet_window: Fix64::ZERO,
@@ -513,6 +516,7 @@ impl Player {
     /// 注意：保留 `max_hp`（由属性派生，跨局保留）；这里只恢复满血。
     // 蓝量方法（regen_mana/spend_mana）已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
     pub fn reset_state(&mut self) {
+        self.rewind = None;
         self.hp = self.max_hp;
         self.alive = true;
         self.last_hit_by = None;

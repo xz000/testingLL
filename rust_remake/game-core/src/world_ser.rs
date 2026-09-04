@@ -207,6 +207,16 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wf64(o, p.armor_factor);
     wf64(o, p.spell_factor);
     wf64(o, p.kb_factor);
+    // rewind（S006 时光回溯）：开关 + (pos, hp, remaining)
+    match p.rewind {
+        Some((pos, hp, rem)) => {
+            wu8(o, 1);
+            wvec(o, pos);
+            wfix(o, hp);
+            wfix(o, rem);
+        }
+        None => wu8(o, 0),
+    }
     wopt_vec(o, p.move_target);
     encode_caster(o, &p.caster);
     for lv in &p.skill_levels {
@@ -318,6 +328,11 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let armor_factor = f64::from_bits(u64at(b, p)?);
     let spell_factor = f64::from_bits(u64at(b, p)?);
     let kb_factor = f64::from_bits(u64at(b, p)?);
+    let rewind = if u8at(b, p)? != 0 {
+        Some((vecat(b, p)?, fixat(b, p)?, fixat(b, p)?))
+    } else {
+        None
+    };
     let move_target = opt_vec(b, p)?;
     let mut caster = Caster::new();
     decode_caster(&mut caster, b, p)?;
@@ -406,6 +421,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.armor_factor = armor_factor;
     pl.spell_factor = spell_factor;
     pl.kb_factor = kb_factor;
+    pl.rewind = rewind;
     pl.move_target = move_target;
     pl.caster = caster;
     pl.skill_levels = skill_levels;

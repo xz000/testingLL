@@ -460,6 +460,17 @@ impl World {
         for p in self.players.iter_mut() {
             p.step_velocity(dt);
             p.tick_buffs(dt);
+            // S006 时光回溯（098b ER）：倒计时到点闪回锚点并还原 HP（不低于 1，避免回溯自杀）。
+            if let Some((pos, hp, rem)) = p.rewind {
+                let rem = rem - dt;
+                if rem <= Fix64::ZERO {
+                    p.pos = pos;
+                    p.hp = hp.max(Fix64::ONE);
+                    p.rewind = None;
+                } else {
+                    p.rewind = Some((pos, hp, rem));
+                }
+            }
         }
 
         // 4) 场地收缩（随时间）—— 试验场不缩圈
@@ -1843,6 +1854,97 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         pos: ppos,
                         alive: true,
                     });
+                }
+            }
+            SkillEffect::W098bUtility { kind, speed, max_distance } => {
+                // 098b 位移/增益系（M2 批次B）：duration/damage/max_distance 全走 stats（随等级），
+                // speed 为常量（冲刺速度或移速乘数）。各 kind 机制见 W098bUtilKind doc。
+                let dur = stats.duration.to_num::<f64>();
+                match kind {
+                    crate::skill::W098bUtilKind::Reflect => {
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            p.add_buff(BuffKind::Reflect, dur);
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Rewind => {
+                        // 标记当前位置+HP，3.6s 后闪回（098b fC/ER；已在回溯中则覆盖，M1 不拒绝）。
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            p.rewind = Some((p.pos, p.hp, stats.duration));
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Haste => {
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Windwalk => {
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            p.add_buff(BuffKind::Stealth, dur);
+                            p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Blink => {
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            if let Some(t) = target {
+                                let d = t - p.pos;
+                                let dist = d.length();
+                                let md = stats.max_distance.max(max_distance);
+                                if dist > md {
+                                    p.pos += d.normalized() * md;
+                                } else {
+                                    p.pos = t;
+                                }
+                            }
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Dash => {
+                        // 冲撞（098b IB）：1300/s 强制位移 + 冲刺期间踢击窗口（撞人 KI 伤+击退）。
+                        // 时长 = 最大距离/速度；0.5s 定身为命中后效果（TODO 随踢击命中路径接入）。
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            let dir = match target {
+                                Some(t) => { let d = t - p.pos; if d.length() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) } }
+                                None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                            };
+                            let dur_s = (stats.max_distance / speed).to_num::<f64>();
+                            p.push(dir * speed, dur_s);
+                            p.kick = Some(Kick {
+                                push_power: warlock_ki_knockback(stats.damage, Fix64::ONE),
+                                push_time: Fix64::from_num(W098B_KB_TIME),
+                                push_damage: stats.damage,
+                                remaining: Fix64::from_num(dur_s),
+                            });
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Swap => {
+                        // 移形换位（098b mB）：目标点附近有敌则互换位置，否则自身瞬移过去
+                        //（复用 TestSwap 的目标搜索语义；弹体化 TODO）。
+                        if let Some(t) = target {
+                            let ppos = world.players[idx as usize].pos;
+                            let d = t - ppos;
+                            let dist = d.length();
+                            let md = stats.max_distance.max(max_distance);
+                            let real_dist = if dist > md { md } else { dist };
+                            let near_r = Fix64::from_num(0.51 * 60.0);
+                            if real_dist > near_r {
+                                let dir = if dist > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
+                                let realplace = ppos + dir * real_dist;
+                                let enemy_pos = world.nearest_other_enemy(realplace, idx);
+                                let eid = enemy_pos.and_then(|epos| {
+                                    let d2 = epos - realplace;
+                                    if d2.length_squared() <= near_r * near_r {
+                                        world.players.iter().find(|q| q.alive && q.id != idx && (q.pos - epos).length_squared() < Fix64::from_num(1.0)).map(|q| q.id)
+                                    } else { None }
+                                });
+                                if let Some(eid) = eid {
+                                    let epos = world.players[eid as usize].pos;
+                                    world.players[eid as usize].pos = ppos;
+                                    world.players[idx as usize].pos = epos;
+                                } else {
+                                    world.players[idx as usize].pos = realplace;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             SkillEffect::W098bBolt { range, kb_ji } => {
@@ -4067,6 +4169,87 @@ mod tests {
             .iter()
             .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
         assert!(!still, "回旋镖回程到家应收回消失（3s 足够出+回）");
+    }
+
+    /// S006 时光回溯：施放记锚点 → 受伤+位移 → 3.6s 后闪回锚点并还原 HP。
+    #[test]
+    fn s006_rewind_restores_position_and_hp() {
+        let mut world = World::new(2, 956);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 施放回溯（锚点=(0,0), HP=100）
+        world.step(vec![PlayerInput { cast: Some((SkillId::S006, None)), ..Default::default() }, PlayerInput::default()], dt);
+        assert!(world.players[0].rewind.is_some(), "施放后应记录锚点");
+        // 走远 + 掉血
+        world.players[0].hp = Fix64::from_num(40.0);
+        world.players[0].pos = Vec2::new(d60(8.0), Fix64::ZERO);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..240 {
+            world.step(none.clone(), dt); // 4s > 3.6s
+        }
+        assert!(world.players[0].rewind.is_none(), "到点后应清锚点");
+        assert!(near(world.players[0].pos.x, 0.0, 1.0) && near(world.players[0].pos.y, 0.0, 1.0), "应闪回锚点，实际 {:?}", world.players[0].pos);
+        assert!(near(world.players[0].hp, 100.0, 0.01), "应还原 HP，实际 {:?}", world.players[0].hp);
+    }
+
+    /// S011 闪现：L1 瞬移至多 770。
+    #[test]
+    fn s011_blink_moves_within_range() {
+        let mut world = World::new(1, 957);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        // 近点：直接到点
+        world.step(vec![PlayerInput { cast: Some((SkillId::S011, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        assert!(near_d(world.players[0].pos.x, 5.0, 0.5), "300 应直接到点，实际 {:?}", world.players[0].pos);
+        // 远点（6000）：截断到 770
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].caster = crate::skill::Caster::new(); // 清冷却
+        world.step(vec![PlayerInput { cast: Some((SkillId::S011, Some(Vec2::new(d60(100.0), Fix64::ZERO)))), ..Default::default() }], dt);
+        assert!(near(world.players[0].pos.x, 770.0, 1.0), "超距应截断到 770，实际 {:?}", world.players[0].pos.x);
+    }
+
+    /// S012 冲撞：冲刺撞人造成 KI 伤害 + 冲刺位移生效。
+    #[test]
+    fn s012_dash_charges_and_kicks() {
+        let mut world = World::new(2, 958);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO); // 300 处的敌人
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt); // 300/1300 ≈ 0.23s 冲到
+        }
+        assert!(world.players[1].hp < hp1, "冲撞应撞到敌人造成伤害（L1 简化 5.4），hp {hp1} -> {}", world.players[1].hp);
+        assert!(world.players[0].pos.x > d60(3.0), "施法者应冲向目标，实际 x={:?}", world.players[0].pos.x);
+    }
+
+    /// S013 移形换位：与目标点附近的敌人互换位置。
+    #[test]
+    fn s013_swap_exchanges_with_enemy() {
+        let mut world = World::new(2, 959);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        assert!(near_d(world.players[0].pos.x, 5.0, 0.5), "施法者应换到敌人位置，实际 {:?}", world.players[0].pos);
+        assert!(near_d(world.players[1].pos.x, 0.0, 0.5), "敌人应被换到施法者原位置，实际 {:?}", world.players[1].pos);
     }
 
     /// S002 闪电：瞬发射线立即伤害（无前摇等待弹体），写 lightning_visual，KI 击退。
