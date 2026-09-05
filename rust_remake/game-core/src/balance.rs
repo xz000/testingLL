@@ -39,6 +39,10 @@ pub struct Balance {
     /// 交叉验证：火球弹程 1000 = 1.56 半径（横穿压制技）、闪现 770 = 1.2 半径（非全图）、
     /// 陨石 cast_range 1200 > 640（全图落点）、8 人混战密度合理。2026-09-05 定案（原占位 1200 偏大）。
     pub start_radius: f64,
+    /// 每环宽度（098c 地形格 128 码；缩圈按环步进）。
+    pub ring_width: f64,
+    /// 每环缩圈时长基数（098c wo=10s，-C 6；实际间隔 = wo×√存活数）。
+    pub shrink_ring_secs: f64,
     /// 缩圈速度（半径减少/秒）。比例口径与原占位一致（1.75%/s × 640）；
     /// 098b 受 war3 地形限制只能整块消失，连续缩圈为本重制版刻意设计（用户确认）。
     pub shrink_speed: f64,
@@ -54,6 +58,14 @@ pub struct Balance {
 
 impl Balance {
     /// 默认手感数值（war3 尺度；来源与占位标注见各字段 doc）。
+    /// 098c 场地初始半径：`(9 + 人数/2) 环 × 128 码`（ta=9+qn/2，EA 每 wo×√存活 烧一环）。
+    /// 2 人=1280、4 人=1408、10 人=1792；全场吞没 ≈ 环数×10×√人数 秒（2 人约 141 秒）。
+    pub fn start_radius_for(player_count: u32) -> f64 {
+        let b = Self::default();
+        // 098c ta 为整环数：9 + qn/2（整除）——1 人 9 环、2 人 10 环、4 人 11 环。
+        (9.0 + (player_count / 2) as f64) * b.ring_width
+    }
+
     pub const fn default() -> Self {
         Balance {
             base_speed: 210.0,
@@ -62,7 +74,10 @@ impl Balance {
             max_hp: 100.0,
             hp_regen: 0.0,
             default_radius: 30.0,
-            start_radius: 640.0,
+            // 098c 场地半径按人数：start_radius_for(n) = (9+n/2 环)×128 码；此值为缺省（1 人 9 环）。
+            start_radius: 1152.0,
+            ring_width: 128.0,
+            shrink_ring_secs: 10.0,
             shrink_speed: 11.2,
             out_hurt: 9.0,
             overlap_damage: 2.0,
@@ -88,7 +103,8 @@ mod tests {
         assert_eq!(a.base_speed, 210.0);
         assert_eq!(a.max_hp, 100.0);
         assert_eq!(a.default_radius, 30.0);
-        assert_eq!(a.start_radius, 640.0);
+        assert_eq!(a.start_radius, 1152.0, "缺省（1 人）应为 9 环×128");
+        assert_eq!((a.ring_width, a.shrink_ring_secs), (128.0, 10.0), "098c EA：128 码/环、wo=10s");
         assert_eq!(a.shrink_speed, 11.2);
         assert_eq!(a.out_hurt, 9.0);
     }
