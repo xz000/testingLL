@@ -1393,6 +1393,8 @@ impl World {
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量, 时长 s)
         let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
+        let mut slows: Vec<(u32, f64)> = Vec::new(); // 汲取·减速（B4-T）
+        let mut weakens: Vec<(u32, f64)> = Vec::new(); // 汲取·削弱（B4-T）
         let mut magma_absorb: Vec<(usize, u32, Fix64)> = Vec::new(); // (滚石索引, owner, 半径)
 
         for (pi, pr) in ps.iter_mut().enumerate() {
@@ -1757,6 +1759,30 @@ impl World {
                                     }
                                 }
                             }
+                            crate::skill::W098bOnHit::DrainSlow => {
+                                // 汲取·减速（098c vc，B4-T）：目标移速 ×0.5 + 施法者回血伤害×50%。
+                                slows.push((victim, debuff_dur.to_num::<f64>()));
+                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                    if o.alive {
+                                        let heal = gx.to_num::<f64>() * 0.5;
+                                        o.hp = (o.hp + Fix64::from_num(heal)).min(o.max_hp);
+                                    }
+                                }
+                            }
+                            crate::skill::W098bOnHit::Weaken => {
+                                // 汲取·削弱（098c oc，B4-T）：目标输出 ×0.5。
+                                #[cfg(test)]
+                                if std::env::var("WKDBG").is_ok() {
+                                    println!("DBG weaken hit victim={victim} dur={:?}", debuff_dur.to_num::<f64>());
+                                }
+                                weakens.push((victim, debuff_dur.to_num::<f64>()));
+                            }
+                            crate::skill::W098bOnHit::Recharge => {
+                                // 弹跳弹·充能（098c cc，B4-T）：命中立即刷新施法者该技能冷却。
+                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                    o.caster.reset_cooldown(SkillId::S016);
+                                }
+                            }
                         }
                         // 回旋镖命中：不消失——转回程飞向施法者（098c Sb）。共享借用内
                         // 不可写，经 boomerang_returns 在 2c2 段统一写回。
@@ -1918,6 +1944,21 @@ impl World {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
                     p.add_buff(BuffKind::Pancake, dur);
+                }
+            }
+        }
+        // 汲取·减速/削弱（B4-T）
+        for (victim, dur) in slows.drain(..) {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive {
+                    p.add_buff(BuffKind::Slow(0.5), dur);
+                }
+            }
+        }
+        for (victim, dur) in weakens.drain(..) {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive {
+                    p.add_buff(BuffKind::Weakened, dur);
                 }
             }
         }
@@ -6638,5 +6679,101 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[2].hp < world.players[2].max_hp, "滚石寿命尽爆炸应伤到尽头处的敌人");
+    }
+
+    // ===== B4-T 形态机制 =====
+
+    /// S014A 汲取·减速：目标移速 ×0.5、施法者回血伤害×50%。
+    #[test]
+    fn s014a_drain_slow_and_heal() {
+        let mut world = World::new(2, 1001);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[0].team = 1;
+        world.players[0].hp = Fix64::from_num(40.0);
+        world.players[1].pos = Vec2::ZERO;
+        world.players[1].move_target = None;
+        world.players[1].team = 0;
+        world.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::Slow(0.5)), "目标应被减速 ×0.5");
+        let healed = (world.players[1].hp - Fix64::from_num(40.0)).to_num::<f64>();
+        assert!(healed > 2.0, "施法者应回血 50%×伤害（≥3），实际 {healed}");
+    }
+
+    /// S014B 汲取·削弱：目标伤害输出 ×0.5。
+    #[test]
+    fn s014b_weaken_halves_output() {
+        let mut world = World::new(2, 1002);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 1;
+        world.players[0].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[1].team = 0;
+        world.players[1].forms[SkillId::S014.as_u32() as usize] = true; // B=削弱（施法者形态位）
+        world.players[1].pos = Vec2::ZERO;
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::Weakened), "目标应被削弱");
+        assert!((world.players[0].gn_factor() - world.players[0].growth * 0.5).abs() < 1e-9, "被削弱者输出应 ×0.5");
+    }
+
+    /// S016B 弹跳弹·充能：命中刷新该技能冷却。
+    #[test]
+    fn s016b_recharge_refreshes_cooldown() {
+        let mut world = World::new(2, 1003);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].forms[SkillId::S016.as_u32() as usize] = true;
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 刻意制造冷却：先施放一次进入 CD
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        let cd_after_cast = world.players[0].caster.cooldown_remaining(SkillId::S016).to_num::<f64>();
+        assert!(cd_after_cast > 0.0, "施放后应有冷却");
+        // 击中敌人（充能形态命中即刷新）
+        world.players[0].caster = crate::skill::Caster::new();
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(2.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].hp < world.players[1].max_hp, "充能弹应命中敌人");
+        // 刷新后冷却应小于初始 CD 20
+        let cd = world.players[0].caster.cooldown_remaining(SkillId::S016).to_num::<f64>();
+        assert!(cd < 19.5, "命中应刷新冷却（<19.5），实际 {cd}");
     }
 }

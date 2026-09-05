@@ -105,6 +105,10 @@ pub enum BuffKind {
     Aegis,
     /// 「肉饼」（098c 岩浆滚石 VB）：被滚石压过 → 移速 ×0.1。
     Pancake,
+    /// 汲取·减速（B4-T）：移速 ×0.5（值=倍率）。
+    Slow(f64),
+    /// 汲取·削弱（B4-T）：伤害输出 ×0.5。
+    Weakened,
 }
 
 impl Buff {
@@ -447,7 +451,8 @@ impl Player {
     /// 攻击方伤害输出系数（098c Gn，D9）：= 伤害成长 × 灼烧惩罚。
     /// 成长：命中敌人 ×1.1 连乘（`on_dealt_damage`）；灼烧「烤肉饼」期间临时 ×0.1。
     pub fn gn_factor(&self) -> f64 {
-        self.growth * if self.healing_blocked() { 0.1 } else { 1.0 }
+        let weakened = if self.has_buff(BuffKind::Weakened) { 0.5 } else { 1.0 };
+        self.growth * weakened * if self.healing_blocked() { 0.1 } else { 1.0 }
     }
 
     /// 命中敌人后的伤害成长（098c：Gn ×= 1.1，D9 批次1）。
@@ -478,6 +483,10 @@ impl Player {
         // 「肉饼」（B4 岩浆滚石）：移速 ×0.1
         if self.has_buff(BuffKind::Pancake) {
             mult *= 0.1;
+        }
+        // 汲取·减速（B4-T）：移速 ×0.5
+        if self.has_buff(BuffKind::Slow(0.5)) {
+            mult *= 0.5;
         }
         // 物品平加/惩罚（war3 口径，M3）：速度之靴 +20 等、头盔/斗篷 -5 等。
         let flat = self.item_fx.speed_add - self.item_fx.speed_penalty;

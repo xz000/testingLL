@@ -158,6 +158,11 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         BuffKind::LavaShield => wu8(o, 6),
         BuffKind::Aegis => wu8(o, 7),
         BuffKind::Pancake => wu8(o, 8),
+        BuffKind::Slow(v) => {
+            wu8(o, 9);
+            wu64(o, v.to_bits());
+        }
+        BuffKind::Weakened => wu8(o, 10),
     }
     wfix(o, b.remaining);
 }
@@ -172,6 +177,8 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         6 => BuffKind::LavaShield,
         7 => BuffKind::Aegis,
         8 => BuffKind::Pancake,
+        9 => BuffKind::Slow(f64::from_bits(u64at(b, p)?)),
+        10 => BuffKind::Weakened,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -582,7 +589,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *lateral);
             wvec(o, *forward_dir);
             wfix(o, *out_dist);
-            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3 });
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6 });
             wfix(o, *debuff_dur);
             wu8(o, *burst);
             wfix(o, *emit_cooldown);
@@ -642,6 +649,9 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 1 => crate::skill::W098bOnHit::Cripple,
                 2 => crate::skill::W098bOnHit::ChainPull,
                 3 => crate::skill::W098bOnHit::Scorched,
+                4 => crate::skill::W098bOnHit::DrainSlow,
+                5 => crate::skill::W098bOnHit::Weaken,
+                6 => crate::skill::W098bOnHit::Recharge,
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;
