@@ -51,7 +51,7 @@ impl SkillTree {
             SkillTree::T => &[S014, S015, S016],
             SkillTree::Y => &[S017, S018, S019],
             SkillTree::C => &[S005, S006, S007],
-            SkillTree::F => &[S020, S021],
+            SkillTree::F => &[S021],
         }
     }
 }
@@ -1780,9 +1780,8 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S021 虔诚（F 键）——spec：CD 3.0 恒定、cast_time 0.7；control pC：敌 250 内
-            // KI(DX, 1-NO/1000)；友方 500 内 +DX*0.5 血 +60 移速（无队伍系统 → 只奶自己，TODO）。
-            // DX 未解码 → 占位 8（TODO）。
+            // S021 虔诚（F 键）——098c kn 表实证：F 槽唯一技能，所有玩家开局自带。
+            // CD 3.0 恒定、windup 0.7；QC handler：敌 250 伤 + 自伤 10 + 自奶 gx×0.5 + 移速增益。
             SkillId::S021 => SkillDef {
                 id,
                 tree: SkillTree::F,
