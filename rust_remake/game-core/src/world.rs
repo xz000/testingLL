@@ -1477,7 +1477,10 @@ impl World {
                             continue;
                         }
                         let rr = *radius + p.radius;
-                        if (p.pos - pr.pos).length_squared() <= rr * rr && p.id != *owner {
+                        if (p.pos - pr.pos).length_squared() <= rr * rr
+                            && p.id != *owner
+                            && Some(p.team) != self.players.get(*owner as usize).map(|o| o.team)
+                        {
                             events.push((p.id, *damage_per_sec * dt, Some(*owner)));
                         }
                     }
@@ -1787,9 +1790,10 @@ impl World {
 
     /// 找到离某个位置最近、且不是 `owner` 的存活玩家。
     fn nearest_enemy(&self, pos: Vec2, owner: u32) -> Option<Vec2> {
+        let owner_team = self.players.get(owner as usize).map(|p| p.team);
         let mut best: Option<(Fix64, Vec2)> = None;
         for p in self.players.iter() {
-            if !p.alive || p.id == owner {
+            if !p.alive || p.id == owner || Some(p.team) == owner_team {
                 continue;
             }
             let d = (p.pos - pos).length_squared();
@@ -1802,9 +1806,10 @@ impl World {
 
     /// 距 `anchor` 最近的非 `owner` 存活玩家（用于 D3 导弹锁定点击处最近目标）。
     fn nearest_other_enemy(&self, anchor: Vec2, owner: u32) -> Option<Vec2> {
+        let owner_team = self.players.get(owner as usize).map(|p| p.team);
         let mut best: Option<(Fix64, Vec2)> = None;
         for p in self.players.iter() {
-            if !p.alive || p.id == owner {
+            if !p.alive || p.id == owner || Some(p.team) == owner_team {
                 continue;
             }
             let d = (p.pos - anchor).length_squared();
@@ -1817,9 +1822,10 @@ impl World {
 
     /// 距 `pos` 最近的非 `owner`、且 id != `skip` 的存活玩家（供链镖跳跃用）。
     fn nearest_enemy_excl(&self, pos: Vec2, owner: u32, skip: u32) -> Option<Vec2> {
+        let owner_team = self.players.get(owner as usize).map(|p| p.team);
         let mut best: Option<(Fix64, Vec2)> = None;
         for p in self.players.iter() {
-            if !p.alive || p.id == owner || p.id == skip {
+            if !p.alive || p.id == owner || p.id == skip || Some(p.team) == owner_team {
                 continue;
             }
             let d = (p.pos - pos).length_squared();
@@ -1870,11 +1876,13 @@ impl World {
             .get(owner as usize)
             .map(|a| a.gn_factor())
             .unwrap_or(1.0);
+        // 队伍过滤（098c cn[]，B2）：技能 nova 只伤异队（owner 同队天然排除）。
+        let owner_team = self.players.get(owner as usize).map(|p| p.team);
         let mut deaths: Vec<u32> = Vec::new();
         let mut hit_non_owner = false;
         let mut hit_enemies: u32 = 0;
         for p in self.players.iter_mut() {
-            if !p.alive || (exclude_owner && p.id == owner) {
+            if !p.alive || (exclude_owner && p.id == owner) || Some(p.team) == owner_team {
                 continue;
             }
             let d = p.pos - pos;
@@ -1977,12 +1985,22 @@ impl World {
         std::mem::take(&mut self.kills_this_round)
     }
 
-    /// 本局是否已结束（只剩 0 或 1 名存活）。试验场永不判结束。
+    /// 本局是否已结束：存活者全属同一队（098c iI）——FFA（各为一队）下等价于
+    /// 「只剩 0 或 1 名存活」。试验场永不判结束。
     pub fn round_over(&self) -> bool {
         if self.sandbox {
             return false;
         }
-        self.alive_count() <= 1
+        let mut alive = self.players.iter().filter(|p| p.alive);
+        match alive.next() {
+            None => true,
+            Some(first) => alive.all(|p| p.team == first.team),
+        }
+    }
+
+    /// 本轮获胜方成员（存活者全体；全员死光=平局返回空）。仅在 `round_over()` 后有意义。
+    pub fn round_winners(&self) -> Vec<u32> {
+        self.players.iter().filter(|p| p.alive).map(|p| p.id).collect()
     }
 
     /// 重置为可开始下一小局（清空本局状态、重设玩家满血与初始位置）。
@@ -2241,12 +2259,20 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
-                        // S021 虔诚：敌 250 伤 + 自奶 gx×0.5 + 移速（友方奶 TODO 无队伍）。
+                        // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚；500 内**队友**
+                        //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
                         world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
-                        let heal = gx * Fix64::from_num(0.5);
-                        if let Some(p) = world.players.get_mut(idx as usize) {
-                            if p.alive {
-                                p.hp = (p.hp + heal).min(p.max_hp);
+                        let caster_team = world.players[idx as usize].team;
+                        let allies: Vec<u32> = world
+                            .players
+                            .iter()
+                            .filter(|p| p.alive && p.id != idx && p.team == caster_team)
+                            .map(|p| p.id)
+                            .collect();
+                        for a in allies {
+                            let p = &mut world.players[a as usize];
+                            if (p.pos - ppos).length_squared() <= Fix64::from_num(500.0 * 500.0) {
+                                p.hp = (p.hp + gx * Fix64::from_num(0.5)).min(p.max_hp);
                                 p.add_buff(BuffKind::Speed(1.0 + 60.0 / 210.0), 4.0);
                             }
                         }
@@ -2394,8 +2420,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     let mut best_t = remaining;
                     let mut best_player: Option<u32> = None;
                     let mut best_pillar: Option<usize> = None;
+                    let caster_team = world.players.get(idx as usize).map(|p| p.team);
                     for q in world.players.iter() {
-                        if !q.alive || q.id == idx {
+                        if !q.alive || q.id == idx || Some(q.team) == caster_team {
                             continue;
                         }
                         if let Some((t, _)) = World::ray_circle_t(origin, dir, q.pos, q.radius) {
@@ -3181,9 +3208,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
 
 /// 返回 `pos` 处半径 `radius` 内最近的存活玩家（排除 `owner`），给出 `(玩家 id, 指向玩家的方向向量)`。
 fn nearest_hit(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Option<(u32, Vec2)> {
+    let owner_team = players.iter().find(|p| p.id == owner).map(|p| p.team);
     let mut best: Option<(Fix64, u32)> = None;
     for p in players.iter() {
-        if !p.alive || p.id == owner {
+        if !p.alive || p.id == owner || Some(p.team) == owner_team {
             continue;
         }
         let d = p.pos - pos;
@@ -3207,9 +3235,10 @@ fn nearest_hit_with_skip(
     radius: Fix64,
     skip: u32,
 ) -> Option<(u32, Vec2)> {
+    let owner_team = players.iter().find(|p| p.id == owner).map(|p| p.team);
     let mut best: Option<(Fix64, u32)> = None;
     for p in players.iter() {
-        if !p.alive || p.id == owner || p.id == skip {
+        if !p.alive || p.id == owner || p.id == skip || Some(p.team) == owner_team {
             continue;
         }
         let d = p.pos - pos;
@@ -3373,19 +3402,20 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
             } else {
                 delta.normalized()
             };
-            if let Some(kick) = players[i].kick {
-                players[j].hp = (players[j].hp - players[j].soak_boost(kick.push_damage)).max(Fix64::ZERO);
-                players[j].last_hit_by = Some(players[i].id);
-                players[j].push(dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
-                players[i].kick = None;
-                players[i].remove_buff(BuffKind::Stealth);
-            }
-            if let Some(kick) = players[j].kick {
-                players[i].hp = (players[i].hp - players[i].soak_boost(kick.push_damage)).max(Fix64::ZERO);
-                players[i].last_hit_by = Some(players[j].id);
-                players[i].push(-dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
-                players[j].kick = None;
-                players[j].remove_buff(BuffKind::Stealth);
+            // 踢击只对异队生效（098c 冲撞/潜行踢命中「敌人」；同队穿过不触发，B2）。
+            if players[i].team != players[j].team {
+                if let Some(kick) = players[i].kick.take() {
+                    players[j].hp = (players[j].hp - players[j].soak_boost(kick.push_damage)).max(Fix64::ZERO);
+                    players[j].last_hit_by = Some(players[i].id);
+                    players[j].push(dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
+                    players[i].remove_buff(BuffKind::Stealth);
+                }
+                if let Some(kick) = players[j].kick.take() {
+                    players[i].hp = (players[i].hp - players[i].soak_boost(kick.push_damage)).max(Fix64::ZERO);
+                    players[i].last_hit_by = Some(players[j].id);
+                    players[i].push(-dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
+                    players[j].remove_buff(BuffKind::Stealth);
+                }
             }
         }
     }
@@ -5077,8 +5107,46 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "虔诚应伤 250 内敌人");
-        // 098c QC：虔诚自伤 10（FX 自扣）后自奶 gx×0.5=5 → 净 50-10+5 = 45
-        assert!(near(world.players[0].hp, 45.0, 0.1), "应先自伤 10 再自奶 5（净 45），实际 {:?}", world.players[0].hp);
+        // 098c QC：虔诚自伤 10（FX 自扣）；**治疗只给队友**（JASS gX!=ii），FFA 下无队友 → 净 40
+        assert!(near(world.players[0].hp, 40.0, 0.1), "FFA 下应只有自伤 10（净 40），实际 {:?}", world.players[0].hp);
+    }
+
+    /// S021 虔诚（队伍模式，B2）：500 内队友回血 cX/2 + 60 移速 4s；自己不自奶。
+    #[test]
+    fn s021_devotion_heals_teammates_in_team_mode() {
+        let mut world = World::new(3, 986);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 0/1 同队 0，2 为敌人；施法者半血站桩，队友贴身
+        world.players[0].team = 0;
+        world.players[1].team = 0;
+        world.players[2].team = 1;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].hp = Fix64::from_num(50.0);
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 180 < 500 内
+        world.players[1].move_target = None;
+        world.players[1].hp = Fix64::from_num(40.0);
+        world.players[2].pos = Vec2::new(d60(-3.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let (hp1, hp2) = (world.players[1].hp, world.players[2].hp);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S021, None)), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        // 队友：+5（cX/2=10/2）回血 + 60 移速 buff
+        assert!(near(world.players[1].hp, 45.0, 0.1), "队友应回血 5（40→45），实际 {:?}", world.players[1].hp);
+        assert!(world.players[1].has_buff(BuffKind::Speed(1.0 + 60.0 / 210.0)) || world.players[1].buffs.iter().any(|b| b.remaining > Fix64::ZERO && matches!(b.kind, BuffKind::Speed(_))), "队友应有移速 buff");
+        // 自己：只有自伤 10（50→40），不自奶
+        assert!(near(world.players[0].hp, 40.0, 0.1), "自己不应被治疗（40），实际 {:?}", world.players[0].hp);
+        // 敌人受伤
+        assert!(world.players[2].hp < hp2, "敌人应被虔诚伤害");
+        let _ = hp1;
     }
 
     /// S017 致残：命中后目标被 Tied（禁施法），持续 (4+0.25L)。
@@ -5839,5 +5907,76 @@ mod tests {
         p.set_items(&[crate::item::ItemId::Helm3]);
         let got2 = p.effective_kb_reduction();
         assert!((got2 - 0.473).abs() < 1e-9, "物品×精通应乘法合成 47.3%，实际 {got2}");
+    }
+    // ===== B2 队伍系统（098c cn[]，D13 #18） =====
+
+    /// 同队技能免疫：弹体/nova 只命中异队（nearest_hit/explode_at 团队过滤）。
+    #[test]
+    fn team_projectile_and_nova_spare_teammates() {
+        let mut world = World::new(3, 987);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[1].team = 0; // 队友挡在弹道上
+        world.players[2].team = 1; // 敌人在队友身后
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(6.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let (hp1, hp2) = (world.players[1].hp, world.players[2].hp);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        assert_eq!(world.players[1].hp, hp1, "同队队友应被火球穿透（免疫）");
+        assert!(world.players[2].hp < hp2, "异队敌人应被火球命中");
+    }
+
+    /// 天罚 nova 同队免伤 + 队伍回合判定：全活人同队即 round_over。
+    #[test]
+    fn team_round_over_when_one_side_left() {
+        let mut world = World::new(4, 988);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[1].team = 0;
+        world.players[2].team = 1;
+        world.players[3].team = 1;
+        // 施法者归原点；队 1 两人站在其天罚范围内
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[2].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        world.players[3].pos = Vec2::new(d60(2.0), d60(1.0));
+        world.players[3].move_target = None;
+        let (hp0, hp1, hp2) = (world.players[0].hp, world.players[1].hp, world.players[2].hp);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(); 4];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        // 施法者吃 FX 自伤 10；同队队友免疫；异队受伤
+        assert!(near(world.players[0].hp, hp0.to_num::<f64>() - 10.0, 0.1), "施法者应自伤 10");
+        assert_eq!(world.players[1].hp, hp1, "同队队友不应被天罚伤");
+        assert!(world.players[2].hp < hp2, "异队应被天罚伤");
+        // 队 1 全灭（模拟淘汰）→ 存活全属队 0 → round_over 且胜者为队 0 成员
+        for p in world.players.iter_mut().skip(2) {
+            p.alive = false;
+        }
+        assert!(world.round_over(), "存活方仅剩一队应判回合结束");
+        let winners = world.round_winners();
+        assert_eq!(winners, vec![0, 1], "胜者应为存活队全员");
     }
 }

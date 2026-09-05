@@ -210,6 +210,9 @@ pub struct Player {
     pub aegis_charged: bool,
     /// 精通战斗快照（098c，D12.3/B1）：[生命vi, 远程xi, 时间ei]；profile 购买后 apply 进场。
     pub mastery: [u8; 3],
+    /// 队伍号（098c cn[]，B2）：默认 = 自己 id（FFA，各为一队）；分队模式由开局配置覆写。
+    /// 技能只命中异队；碰撞/岩浆等物理与队伍无关。
+    pub team: u8,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -236,6 +239,7 @@ impl Player {
         let max_hp = Fix64::from_num(MAX_HP);
         Player {
             id,
+            team: id as u8,
             pos,
             radius,
             hp: max_hp,
