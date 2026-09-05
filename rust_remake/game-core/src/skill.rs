@@ -38,18 +38,20 @@ impl SkillTree {
     }
 
     /// 该树下所有可选技能（学习阶段由此挑选）。
-    /// 目前返回已实现/已注册的技能；未实现的（占位）也会列出，绑定后执行时按占位处理。
+    /// **098c 名册**（2026-09-05 定案，D9 技能手感批后）：每槽=098c 原版可选法术，
+    /// Unity 版旧技能已从学习列表退役（枚举保留，测试/过渡仍可用，但不可在局内选择）。
+    /// G 槽 = 火球固定（098c 人手一把火球，不可选）。
     pub fn skills_in_tree(self) -> &'static [SkillId] {
         use SkillId::*;
         match self {
-            SkillTree::C => &[Boost, Shield, Shadow, Fake, S005, S006, S007],
-            SkillTree::R => &[Blink, Blink2, DashStrike, DashSlash, TestSwap, BlinkToWall, S011, S012, S013],
-            SkillTree::E => &[Rock, StoneShot, StealthPush, StealthPush2, LineBeam, LineExplode, S008, S009, S010],
-            SkillTree::D => &[TestLightning, D2Fireball, D3Missile, D4Fireball, S002, S003, S004],
-            SkillTree::T => &[TLeech, T2Shot, T2Volley, T3Fast, T3Fast2, TestLeech, S014, S015, S016],
-            SkillTree::Y => &[Y1BlueLine, Y1BlueLine2, Y2Delay, Y2Suite, Y3Zone, Y3Zone2, S017, S018, S019],
-            SkillTree::F => &[Test03, S001, S020, S021],
-            SkillTree::G => &[Test01, S000],
+            SkillTree::G => &[S000],
+            SkillTree::D => &[S002, S003, S004],
+            SkillTree::E => &[S008, S009, S010],
+            SkillTree::R => &[S011, S012, S013],
+            SkillTree::T => &[S014, S015, S016],
+            SkillTree::Y => &[S017, S018, S019],
+            SkillTree::C => &[S005, S006, S007],
+            SkillTree::F => &[S020, S021],
         }
     }
 }
