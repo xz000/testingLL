@@ -760,6 +760,13 @@ pub enum W098bOnHit {
     /// S008 陨石灼烧「烤肉饼」（098b nB，D7）：命中附加 Scorched debuff（输出 ×0.1 + 禁疗 4s）；
     /// 持续伤害来自命中处的灼烧场（ignite/Star），时长走 growth.duration（4s）。
     Scorched,
+    /// S014 汲取·减速（形态 A，098c vc）：命中吸走目标移速（×0.5 近似）debuff_dur 秒，
+    /// 施法者回血 = 伤害 ×50%（tooltip「吸血 50%」）。
+    DrainSlow,
+    /// S014 汲取·削弱（形态 B，098c oc）：命中使目标输出 ×0.5，持续 debuff_dur 秒。
+    Weaken,
+    /// S016 弹跳弹·充能（形态 B，098c Dc/cc）：命中立即刷新该技能冷却。
+    Recharge,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。
@@ -1493,13 +1500,12 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S014 汲取（T 键）——spec：CD 22→18.5（20 级，步长 -0.184）；speed 700 / radius 27 / life Ar/700（M1 取 3s）；
-            // detailed ic：双段 KI(yO,.2)/KI(yO,.6)（yO 未解码，M1 近似 6+0.5L，双段合并 JI=0.8）；
-            // 吸血/减速（S032 切换形态）TODO M2。
+            // S014 汲取·减速（A 形态）·减速（T 键形态 A，098c ac/vc）——speed 700 / radius 27；
+            // 命中：伤害 6.5+0.5L + 目标移速 ×0.5（debuff_dur=3s 近似 3+yr）+ 施法者回血伤害×50%。
             SkillId::S014 => SkillDef {
                 id,
                 tree: SkillTree::T,
-                name: "汲取",
+                name: "汲取·减速",
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
@@ -1511,41 +1517,37 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
-                    on_hit: W098bOnHit::Ki,
+                    on_hit: W098bOnHit::DrainSlow,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 22.0,
                     cooldown_delta: -0.184,
                     damage_base: 6.5,
                     damage_delta: 0.5,
+                    duration_base: 3.0,
                     ..DEF_ZERO
                 },
             },
-            // S015 火焰喷射（T 键）——spec：CD 16→7（20 级，步长 -0.474）；
-            // control Ic 非升级=0.08s 点脉冲 / 升级=锥形 5 道偏转 5.5°（M1 先做锥形近似）；
-            // detailed：speed 800 / radius 22 / life 800/900≈0.89s；nc=jI(2.6+0.4Xv, .65)。
+            // S015 火焰喷射·流射（T 键形态 A，098c Ac/Xc）——每 0.08s 一发共 8 发摆射；
+            // detailed：speed 700 / radius 22 / life 0.89s；单发 2.4+0.2L（口径 60% 击退近似 JI .6）。
             SkillId::S015 => SkillDef {
                 id,
                 tree: SkillTree::T,
-                name: "火焰喷射",
+                name: "火焰喷射·流射",
                 needs_point: true,
-                effect: Warlock098b {
-                    proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(800.0),
-                    radius: Fix64::from_num(22.0),
-                    life: Fix64::from_num(0.89),
-                    kb_ji: Fix64::from_num(0.65),
-                    ignite: None,
-                    blast: None,
-                    count: 5,
-                    spread_step: 5.5_f64.to_radians(),
-                    on_hit: W098bOnHit::Ki,
+                effect: Sweep {
+                    bullet_speed: Fix64::ZERO, // stats.speed 生效（growth.speed_base）
+                    damage: Fix64::ZERO,       // stats.damage 生效
+                    count: 8,
+                    cadence: 0.08,
+                    turn_step: 0.3,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
                     cooldown_delta: -0.474,
-                    damage_base: 3.0,
-                    damage_delta: 0.4,
+                    damage_base: 2.4,
+                    damage_delta: 0.2,
+                    speed_base: 700.0,
                     ..DEF_ZERO
                 },
             },
@@ -1879,7 +1881,7 @@ impl DefTable {
         Some(def)
     }
 
-    /// 形态 B 定义（E 槽三对先行；其余槽位随 B4 后续批次）。
+    /// 形态 B 定义（E 槽 + T 槽；其余槽位随 B4 后续批次）。
     fn warlock098b_def_alt(id: SkillId) -> Option<SkillDef> {
         use SkillEffect::*;
         let def = match id {
@@ -1954,6 +1956,85 @@ impl DefTable {
                     cooldown_base: 30.0,
                     cooldown_delta: -0.684,
                     duration_base: 4.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S014B 汲取·削弱（098c oc）：900/s 半径 35；命中目标输出 ×0.5 持续 6s。
+            SkillId::S014 => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "汲取·削弱",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(900.0),
+                    radius: Fix64::from_num(35.0),
+                    life: Fix64::from_num(3.0),
+                    kb_ji: Fix64::from_num(0.8),
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Weaken,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 22.0,
+                    cooldown_delta: -0.184,
+                    damage_base: 6.5,
+                    damage_delta: 0.5,
+                    duration_base: 6.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S015B 火焰喷射·簇射（098c Ac 簇射支）：一次 5 发 ±11° 扇形 800/s，单发 3+0.4L。
+            SkillId::S015 => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "火焰喷射·簇射",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(800.0),
+                    radius: Fix64::from_num(22.0),
+                    life: Fix64::from_num(0.89),
+                    kb_ji: Fix64::from_num(0.65),
+                    ignite: None,
+                    blast: None,
+                    count: 5,
+                    spread_step: 11.0_f64.to_radians(),
+                    on_hit: W098bOnHit::Ki,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 16.0,
+                    cooldown_delta: -0.474,
+                    damage_base: 3.0,
+                    damage_delta: 0.4,
+                    ..DEF_ZERO
+                },
+            },
+            // S016B 弹跳弹·充能（098c Dc/cc）：900/s 固定射程；命中刷新该技能冷却。
+            SkillId::S016 => SkillDef {
+                id,
+                tree: SkillTree::T,
+                name: "弹跳弹·充能",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(900.0),
+                    radius: Fix64::from_num(35.0),
+                    life: Fix64::from_num(1.0),
+                    kb_ji: Fix64::from_num(0.8),
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Recharge,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 20.0,
+                    cooldown_delta: 0.0,
+                    damage_base: 5.1,
+                    damage_delta: 0.9,
                     ..DEF_ZERO
                 },
             },
@@ -2926,8 +3007,8 @@ mod tests {
             (SkillId::S011, "瞬间移动"),
             (SkillId::S012, "冲撞"),
             (SkillId::S013, "移形换位"),
-            (SkillId::S014, "汲取"),
-            (SkillId::S015, "火焰喷射"),
+            (SkillId::S014, "汲取·减速"),
+            (SkillId::S015, "火焰喷射·流射"),
             (SkillId::S016, "弹跳弹"),
             (SkillId::S017, "致残"),
             (SkillId::S018, "引力"),
@@ -3027,9 +3108,12 @@ mod tests {
             }
             ref e => panic!("S009 effect 错：{e:?}"),
         }
-        // S014 汲取：CD 22→18.5；speed 700 / radius 27；M1 近似 gX=6+0.5L、合并 JI=0.8。
+        // S014 汲取·减速（A 形态）：CD 22→18.5；speed 700 / radius 27；M1 近似 gX=6+0.5L、合并 JI=0.8。
         let d = DefTable::def(SkillId::S014);
-        assert_eq!(d.name, "汲取");
+        assert_eq!(d.name, "汲取·减速");
+        assert!(matches!(d.effect, SkillEffect::Warlock098b { on_hit: W098bOnHit::DrainSlow, .. }));
+        let alt14 = DefTable::def_alt(SkillId::S014).expect("S014 应有 B 形态");
+        assert_eq!(alt14.name, "汲取·削弱");
         assert!(near(d.stats_at(1).cooldown, 22.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 18.5, 1e-1), "L20 CD 应 ≈18.5，实际 {:?}", d.stats_at(20).cooldown);
         match d.effect {
@@ -3038,16 +3122,28 @@ mod tests {
             }
             ref e => panic!("S014 effect 错：{e:?}"),
         }
-        // S015 火焰喷射：CD 16→7；锥形 5 道 5.5°；radius 22；jI(2.6+0.4L,.65) → L1 gX=3.0。
+        // S015 火焰喷射·流射（A 形态）：CD 16→7；每 0.08s 一发共 8 发摆射 0.3 rad；radius 22；2.4+0.2L。
         let d = DefTable::def(SkillId::S015);
-        assert_eq!(d.name, "火焰喷射");
+        assert_eq!(d.name, "火焰喷射·流射");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 7.0, 1e-1), "L20 CD 应 ≈7，实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).damage, 3.0, 1e-3));
+        assert!(near(d.stats_at(1).damage, 2.4, 1e-3));
         match d.effect {
+            SkillEffect::Sweep { count, cadence, turn_step, .. } => {
+                assert_eq!(count, 8, "流射应 8 发");
+                assert!((cadence - 0.08).abs() < 1e-6, "每发间隔 0.08s");
+                assert!((turn_step - 0.3).abs() < 1e-6, "每发摆 0.3 rad");
+            }
+            ref e => panic!("S015 effect 错：{e:?}"),
+        }
+        // B 形态：簇射 = 锥形 5 道 ±11°，3+0.4L
+        let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
+        assert_eq!(alt15.name, "火焰喷射·簇射");
+        assert!(near(alt15.stats_at(1).damage, 3.0, 1e-3));
+        match alt15.effect {
             SkillEffect::Warlock098b { count, spread_step, radius, .. } => {
-                assert_eq!(count, 5, "喷火应锥形 5 道");
-                assert!((spread_step - 5.5_f64.to_radians()).abs() < 1e-6, "每道偏转 5.5°");
+                assert_eq!(count, 5, "簇射应锥形 5 道");
+                assert!((spread_step - 11.0_f64.to_radians()).abs() < 1e-6, "每道偏转 11°");
                 assert!(near(radius, 22.0, 1e-3));
             }
             ref e => panic!("S015 effect 错：{e:?}"),
