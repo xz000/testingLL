@@ -196,6 +196,11 @@ pub struct Player {
     pub catastrophe_stage: u8,
     /// 熔岩靴激活 CD（098b 25s；熔岩上用天罚触发，D8/M5）。随快照同步。
     pub lava_boot_cd: Fix64,
+    /// 098c 魔法张力值（D9）：出生 0、挨打回魔（受多少伤加多少）、无上限；
+    /// 放大所受击退（公式 100+mana）。纯内部值，无 UI 蓝条。
+    pub mana: f64,
+    /// 098c 伤害成长（Gn，D9）：命中敌人 ×1.1 连乘、死亡/重轮重置 1.0；头顶显示点数。
+    pub growth: f64,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -249,6 +254,8 @@ impl Player {
             rewind: None,
             catastrophe_stage: 0,
             lava_boot_cd: Fix64::ZERO,
+            mana: 0.0,
+            growth: 1.0,
             items: Vec::new(),
             item_fx: crate::item::aggregate(&[]),
             ricochet_pending: None,
@@ -392,9 +399,15 @@ impl Player {
         (1.0 - self.kb_factor).max(self.item_fx.kb_resist_frac)
     }
 
-    /// 攻击方伤害输出系数（KI 公式的 `Gn[攻]` 项，D7）：灼烧期间 ×0.1，否则 1。
+    /// 攻击方伤害输出系数（098c Gn，D9）：= 伤害成长 × 灼烧惩罚。
+    /// 成长：命中敌人 ×1.1 连乘（`on_dealt_damage`）；灼烧「烤肉饼」期间临时 ×0.1。
     pub fn gn_factor(&self) -> f64 {
-        if self.healing_blocked() { 0.1 } else { 1.0 }
+        self.growth * if self.healing_blocked() { 0.1 } else { 1.0 }
+    }
+
+    /// 命中敌人后的伤害成长（098c：Gn ×= 1.1，D9 批次1）。
+    pub fn on_dealt_damage(&mut self) {
+        self.growth *= 1.1;
     }
 
     /// 反弹护盾是否激活。
@@ -618,6 +631,8 @@ impl Player {
     pub fn reset_state(&mut self) {
         self.rewind = None;
         self.catastrophe_stage = 0;
+        self.mana = 0.0; // 098c 出生魔法 0（D9）
+        self.growth = 1.0;
         self.hp = self.max_hp;
         self.alive = true;
         self.last_hit_by = None;

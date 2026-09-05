@@ -22,7 +22,7 @@ pub struct Attributes {
     /// 击退抗性（点数）：缩放 `push_power`/`push_time`。阶段 2 接入。
     pub kb_resist: u32,
     // 蓝量属性（mana_max / mana_regen）已移除（PORT_098B_DECISIONS.md D3，无蓝量系统）：
-    // 098b 施法不耗蓝、无回蓝，伤害公式的蓝量项折叠为 balance::DAMAGE_BASE。
+    // 098c：技能无原生耗蓝；魔法为挨打回魔的内部张力值（Player.mana，D9），放大所受击退。
 }
 
 /// 可购买的属性项（成长点购买索引）。

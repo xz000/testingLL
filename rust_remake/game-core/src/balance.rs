@@ -71,16 +71,8 @@ impl Balance {
     }
 }
 
-/// 098b 伤害公式的基值折叠（无蓝量系统的推导，`PORT_098B_DECISIONS.md` D3）。
-///
-/// 原式（`port_098b/03_JASS/jass_deobf.md` KI/jI）：
-/// `kI = ('d' + UnitState(F[hR], MANA)) * gX * ... * .03 * JI`，其中 `'d' = 100`，
-/// 蓝量项取的是**受击者**当前蓝。098b 中施法不耗蓝、无回蓝（蓝恒满 10000），
-/// 故该项恒为 `(100 + 10000) * 0.03 = 303`，折叠为常量。
-///
-/// 移植技能时的口径：`kI = DAMAGE_BASE * gX * JI`（其余 Gn/hn/Hn 缩放随技能带入）。
-/// 注意：`0.03` 是**几何换算常量**（速率×时间空间化），与逻辑步长 TICK 无关，按字面保留。
-pub const DAMAGE_BASE: f64 = (100.0 + 10000.0) * 0.03;
+// DAMAGE_BASE（098b 蓝恒满折叠=303）已随 D9 基准转向 098c 退役：
+// 击退初速 = (100 + 目标当前魔法) × gX × JI（动态，见 world::warlock_ki_knockback）。
 
 #[cfg(test)]
 mod tests {
@@ -100,9 +92,5 @@ mod tests {
         assert_eq!(a.out_hurt, 9.0);
     }
 
-    #[test]
-    fn damage_base_folds_full_mana_term() {
-        // D3：蓝恒满 10000 时 (100+10000)*0.03 的折叠值锁定，防止被误改回含蓝形式。
-        assert!((DAMAGE_BASE - 303.0).abs() < 1e-9);
-    }
+    // DAMAGE_BASE 折叠测试已随 D9（098c 动态击退）删除——击退基数现为 (100+目标魔法) 动态值。
 }
