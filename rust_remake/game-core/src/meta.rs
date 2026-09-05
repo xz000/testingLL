@@ -608,17 +608,16 @@ mod tests {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         let pr = &mut ms.profiles[0];
         pr.gold = 20;
-        // 买头盔 1（10 金）
+        // 买头盔 1（098c 训练价 9 金）
         assert!(pr.buy_item(crate::item::ItemId::Helm1));
-        assert_eq!(pr.gold, 10);
+        assert_eq!(pr.gold, 11);
         assert_eq!(pr.items, vec![crate::item::ItemId::Helm1]);
-        // 升级头盔 2（20 金）——不足失败；同家族替换语义
-        assert!(!pr.buy_item(crate::item::ItemId::Helm2), "金币不足应失败");
-        pr.gold = 30;
+        // 升级头盔 2（098c 同价 9 金）——每步同价（ID(id,9,…) 原额退款实证）
         assert!(pr.buy_item(crate::item::ItemId::Helm2));
-        assert_eq!(pr.gold, 10);
+        assert_eq!(pr.gold, 2);
         assert_eq!(pr.items, vec![crate::item::ItemId::Helm2], "同家族应替换为高档");
-        // 不同家族共存
+        // 不同家族共存（098c：每步同价 5 金）
+        pr.gold = 10;
         assert!(pr.buy_item(crate::item::ItemId::Boots1));
         assert_eq!(pr.items.len(), 2);
     }

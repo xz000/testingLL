@@ -852,8 +852,14 @@ impl World {
                 return;
             }
             // 4.6b：按目标护甲×法抗折算 × 098c 攻方 Gn。
+            // 守护之盾充能窗口（098c HC）：天罚后 5s 内受伤减免（25%/75%）。
             dealt = if from.is_some() {
-                amount * Fix64::from_num(p.armor_factor * p.spell_factor * gn)
+                let base = amount * Fix64::from_num(p.armor_factor * p.spell_factor * gn);
+                if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
+                    base * Fix64::from_num(1.0 - p.item_fx.smite_reduction)
+                } else {
+                    base
+                }
             } else {
                 amount
             };
@@ -1522,6 +1528,19 @@ impl World {
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
                         events.push((victim, *gx, Some(pr.owner)));
+                        // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（ GX 设充能灯 1）。
+                        // 火球指纹 = Straight + Ki + 有点燃 + 无落点爆炸（法杖变体 ab 同样充能）。
+                        if *proj == crate::skill::W098bProjKind::Straight
+                            && *on_hit == crate::skill::W098bOnHit::Ki
+                            && ignite.is_some()
+                            && blast.is_none()
+                        {
+                            if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                if o.item_fx.aegis {
+                                    o.aegis_charged = true;
+                                }
+                            }
+                        }
                         // 锁链（ChainPull）以拉拽为主：跳过 KI 击退（击退 700 位移会盖过 300 的拉拽）。
                         let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull;
                         if !is_pull && dd.length_squared() > Fix64::ZERO {
@@ -1835,7 +1854,8 @@ impl World {
     /// `is_smite`：天罚系 nova（S001/S020/S021）——受害者的守护之盾减免生效（M3 2c）。
     /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
     #[allow(clippy::too_many_arguments)]
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool) {
+    /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool) -> u32 {
         let r_sq = radius * radius;
         // 攻方 Gn 系数（灼烧 ×0.1，D7）：循环前取出，避免 iter_mut 借用冲突。
         let owner_gn = self
@@ -1845,6 +1865,7 @@ impl World {
             .unwrap_or(1.0);
         let mut deaths: Vec<u32> = Vec::new();
         let mut hit_non_owner = false;
+        let mut hit_enemies: u32 = 0;
         for p in self.players.iter_mut() {
             if !p.alive || (exclude_owner && p.id == owner) {
                 continue;
@@ -1857,8 +1878,8 @@ impl World {
                     p.last_hit_by = Some(owner);
                 }
                 let mut dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor * owner_gn);
-                // 守护之盾（M3 2c）：天罚伤害减免（I00H 25% / I00I 75%）。
-                if is_smite && p.item_fx.smite_reduction > 0.0 {
+                // 守护之盾充能窗口（098c HC 'aegs' buff 5*jn）：受伤减免（I00H 25% / I00I 75%）。
+                if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     dmg *= Fix64::from_num(1.0 - p.item_fx.smite_reduction);
                 }
                 let net = p.soak_boost(dmg);
@@ -1867,6 +1888,7 @@ impl World {
                 p.mana += dmg.to_num::<f64>();
                 if p.id != owner {
                     hit_non_owner = true;
+                    hit_enemies += 1;
                 }
                 if p.hp == Fix64::ZERO {
                     p.alive = false;
@@ -1880,7 +1902,11 @@ impl World {
                     let dir = d.normalized();
                     // nova/爆炸击退走 098c 衰减模型（D8/D9）；初速按受击者 mana 动态放大。
                     let vmana = p.mana;
-                    let dyn_force = bomb_force.to_num::<f64>() * (100.0 + vmana) / 100.0;
+                    let mut dyn_force = bomb_force.to_num::<f64>() * (100.0 + vmana) / 100.0;
+                    // 守护之盾充能窗口：击退减半（098c HC Hn/2）。
+                    if p.has_buff(BuffKind::Aegis) && p.item_fx.aegis_kb_reduction > 0.0 {
+                        dyn_force *= 1.0 - p.item_fx.aegis_kb_reduction;
+                    }
                     p.push_knockback(dir * Fix64::from_num(dyn_force * falloff.to_num::<f64>()));
                 }
             }
@@ -1897,6 +1923,7 @@ impl World {
         for victim in deaths {
             self.record_death(victim);
         }
+        hit_enemies
     }
 
     /// 死亡判定辅助：场上还存活多少玩家。
@@ -2153,12 +2180,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 098c mC→FX(ii,cX) 实证 + 用户文档「包括自己！」：**nova 对施法者自身也扣血**，
                 // 但 FX 有 0.5 HP 下限（不可自杀）；自伤无自击退。
                 let ppos = world.players[idx as usize].pos;
-                let mut gx = stats.damage;
-                // 鲜血之剑（M3 2c）：天罚伤害「增至」12/13（098c set 语义 → 取 max）。
-                let smite_bonus = world.players[idx as usize].item_fx.smite_bonus;
-                if smite_bonus > 0.0 {
-                    gx = gx.max(Fix64::from_num(smite_bonus));
-                }
+                // 鲜血之剑（098c I00F/I00G）：天罚伤害平加 +1/+2（mC 实证 cX = 10 + Zr）。
+                let gx = stats.damage + Fix64::from_num(world.players[idx as usize].item_fx.smite_bonus);
                 // 熔岩靴激活（098c I00J-L「熔岩上天罚后激活」，M5/D8）：站熔岩 + 持靴 + CD 到期
                 // → 挂 LavaShield（87.5% 抵抗 3/4/5s）；CD 25s 在 step tick 递减。
                 if matches!(
@@ -2175,10 +2198,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         p.lava_boot_cd = Fix64::from_num(25.0);
                     }
                 }
+                let mut smite_hits: u32 = 0;
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
-                        // S001 天罚：固定 250 半径、KI($A) 恒定伤害。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
+                        // S001 天罚（098c mC，普通局 F 键）：半径 250、衰减 1-d/1000、伤害 10+血剑。
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
@@ -2211,6 +2235,27 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let hp = p.hp.to_num::<f64>();
                         let dmg = gx.to_num::<f64>();
                         p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
+                    }
+                }
+                // 098c mC 顺序：FX 自伤在前、DX 回血在后（回血按命中敌数 n 结算）——
+                // 鲜血之剑回血 (Zr+1)×n；死亡面具翻倍（vi×2 → 吸血/回血 ×2）。
+                if kind == crate::skill::W098bNovaKind::Smiting && smite_hits > 0 {
+                    let p = &mut world.players[idx as usize];
+                    if p.alive {
+                        let mult = if p.item_fx.scourge_double { 2.0 } else { 1.0 };
+                        let heal = p.item_fx.on_damage_heal * mult * smite_hits as f64
+                            + gx.to_num::<f64>() * p.item_fx.lifesteal * mult * smite_hits as f64;
+                        if heal > 0.0 {
+                            p.hp = (p.hp + Fix64::from_num(heal)).min(p.max_hp);
+                        }
+                    }
+                }
+                // 守护之盾充能（098c HC/jX）：火球命中已充能 → 本次天罚获 5s 减伤/减击退窗口。
+                if kind == crate::skill::W098bNovaKind::Smiting && smite_hits > 0 {
+                    let p = &mut world.players[idx as usize];
+                    if p.aegis_charged {
+                        p.aegis_charged = false;
+                        p.add_buff(BuffKind::Aegis, 5.0);
                     }
                 }
             }
@@ -4669,36 +4714,59 @@ mod tests {
         assert!(world.players[0].hp < world.players[0].max_hp, "目标应受伤");
     }
 
-    /// M3 2c：天罚改件——鲜血之剑把天罚伤害增至 12；守护之盾减伤 75%。
+    /// 098c 天罚改件（mC 实证）：鲜血之剑 +1 伤/命中每敌回 2 血；
+    /// 守护之盾 = 火球充能 → 天罚后 5s 减伤窗口（不再是无条件常驻减免）。
     #[test]
     fn smite_items_sword_and_shield() {
         let mut world = World::new(3, 970);
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
-        // 施法者持剑（天罚伤害增至 12）
+        // 施法者持剑（天罚伤害 10+1=11）+ 持盾
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[0].set_items(&[crate::item::ItemId::BloodSword1]);
-        // 目标1 持盾（75% 减伤）、目标2 无盾，都在 250 半径内
-        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[0].set_items(&[crate::item::ItemId::BloodSword1, crate::item::ItemId::GuardianShield1]);
+        // p1 在 -120（火球不会碰它），p2 在 +120（充当充能靶；被击退飞出天罚半径）
+        world.players[1].pos = Vec2::new(d60(-2.0), Fix64::ZERO);
         world.players[1].move_target = None;
-        world.players[1].set_items(&[crate::item::ItemId::GuardianShield2]);
-        world.players[2].pos = Vec2::new(d60(-2.0), Fix64::ZERO);
+        world.players[2].pos = Vec2::new(d60(2.0), Fix64::ZERO);
         world.players[2].move_target = None;
-        let (hp1, hp2) = (world.players[1].hp, world.players[2].hp);
+        let (hp0, hp1) = (world.players[0].hp, world.players[1].hp);
+        // 先用火球命中 p2 充能（098c：ib 命中 → Ha=true；770 初速击退把 p2 推出 250 半径）
+        world.players[0].caster = crate::skill::Caster::new();
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(2.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(); 3];
+        for _ in 0..40 {
+            world.step(none.clone(), dt); // 火球飞抵目标 → 充能
+        }
+        assert!(world.players[0].aegis_charged, "火球命中后守护盾应充能");
+        // 天罚：p1（未被火球碰）吃 10+1=11；施法者自伤后按命中敌数回血 (Zr+1)×n。
+        // 火球直伤+灼烧 tick 已让 Gn 成长若干次（D9），重置以便断言裸伤害。
+        world.players[0].caster = crate::skill::Caster::new();
+        world.players[0].growth = 1.0;
         world.step(vec![
             PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
             PlayerInput::default(),
             PlayerInput::default(),
         ], dt);
-        let none = vec![PlayerInput::default(); 3];
-        for _ in 0..60 {
-            world.step(none.clone(), dt);
+        for f in 0..60 {
+            world.step(none.clone(), dt); // windup 0.7s
+            if f == 44 {
+                // 天罚刚落地即采集：击退会把 p1 推出场外进岩浆（098c 正确行为），不计入
+                let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
+                assert!((d1 - 11.0).abs() < 0.5, "目标应吃 10+1 血剑天罚 11，实际 {d1}");
+            }
         }
-        let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
-        let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
-        assert!((d2 - 12.0).abs() < 0.5, "无盾目标应吃满剑后天罚 12，实际 {d2}");
-        assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
+        assert!(!world.players[0].aegis_charged, "天罚释放应消耗充能");
+        // 施法者：满血 100 - 自伤 11 + 回血 2×n（n=1 或 2，取决于 p2 是否已飞出半径）
+        let hp0_now = world.players[0].hp.to_num::<f64>();
+        assert!((90.5..=93.5).contains(&hp0_now), "自伤 11 后应回血 2×n（91~93），实际 {hp0_now}");
+        // 天罚后获得 5s 减伤窗口（Aegis buff）
+        assert!(world.players[0].has_buff(BuffKind::Aegis), "天罚后应挂 5s 减伤窗口");
+        let _ = hp0;
     }
 
     /// 098c 柱子可摧毁（D9 批次3）：火球命中扣 HP（nx=40），归零移除；每轮重生成。
@@ -4847,18 +4915,18 @@ mod tests {
         let p = &mut world.players[0];
         p.set_items(&[
             crate::item::ItemId::Boots3,   // +40 移速
-            crate::item::ItemId::Cloak3,   // +0.5 回复 -5 移速
+            crate::item::ItemId::Cloak3,   // +0.4 回复（098c 无移速惩罚）
             crate::item::ItemId::Helm3,    // -32% kb +20 生命 -15 移速
             crate::item::ItemId::Amulet3,  // +30 生命 +0.1 回复
         ]);
-        // 移速平加：+40 +15(熔岩?否) - 5 - 15 = +20（靴 40 + 坠饰 0 - 斗篷 5 - 头盔 15）
-        let expected_flat = 40.0 + 0.0 - 5.0 - 15.0;
+        // 移速平加：+40（靴）-15（头盔）= +25（098c 斗篷无移速惩罚）
+        let expected_flat = 40.0 - 15.0;
         let expected_speed = crate::player::BASE_SPEED + expected_flat;
         let got = p.base_speed_for_test().to_num::<f64>();
         assert!((got - expected_speed).abs() < 0.01, "移速应 {expected_speed}，实际 {got}");
-        // 回复：098c 无基础 + 0.5 斗篷 + 0.1 坠饰 = 0.6
+        // 回复：098c 无基础 + 0.4 斗篷 + 0.1 坠饰 = 0.5
         let regen = crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty;
-        assert!((regen - 0.6).abs() < 1e-6, "回复应 0.6/s，实际 {regen}");
+        assert!((regen - 0.5).abs() < 1e-6, "回复应 0.5/s，实际 {regen}");
         // kb：属性 0 → 物品 0.32
         assert!((p.effective_kb_reduction() - 0.32).abs() < 1e-9);
         // 生命上限：100 属性派生 + 20 + 30 = 150（apply_attributes 落账）
@@ -4879,14 +4947,14 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(near(world.players[0].hp, 50.0, 0.001), "无基础回血（098c），实际 {:?}", world.players[0].hp);
-        // 斗篷 3（+0.5/s）：2s 回 1.0
+        // 斗篷 3（098c +0.4/s）：2s 回 0.8
         world.players[0].set_items(&[crate::item::ItemId::Cloak3]);
         world.players[0].hp = Fix64::from_num(50.0);
         for _ in 0..120 {
             world.step(none.clone(), dt);
         }
         let gained = world.players[0].hp.to_num::<f64>() - 50.0;
-        assert!((gained - 1.0).abs() < 0.05, "斗篷 2s 应回 1.0，实际 {gained}");
+        assert!((gained - 0.8).abs() < 0.05, "斗篷 2s 应回 0.8，实际 {gained}");
         // 灼烧 → 禁疗（含物品回复）
         world.players[0].hp = Fix64::from_num(50.0);
         world.players[0].add_buff(BuffKind::Scorched, 4.0);
@@ -4983,8 +5051,8 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[1].hp < hp1, "虔诚应伤 250 内敌人");
-        // 098c：虔诚自伤 8（FX 自扣）后自奶 gx×0.5=4 → 净 50-8+4 = 46
-        assert!(near(world.players[0].hp, 46.0, 0.1), "应先自伤 8 再自奶 4（净 46），实际 {:?}", world.players[0].hp);
+        // 098c QC：虔诚自伤 10（FX 自扣）后自奶 gx×0.5=5 → 净 50-10+5 = 45
+        assert!(near(world.players[0].hp, 45.0, 0.1), "应先自伤 10 再自奶 5（净 45），实际 {:?}", world.players[0].hp);
     }
 
     /// S017 致残：命中后目标被 Tied（禁施法），持续 (4+0.25L)。

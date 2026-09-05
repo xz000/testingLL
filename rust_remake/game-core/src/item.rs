@@ -102,14 +102,20 @@ pub struct ItemEffects {
     pub regen_penalty: f64,
     /// 受击退减免比例（头盔 0.16/0.24/0.32；与属性抗性取 max，不叠加）。
     pub kb_resist_frac: f64,
-    /// 生命偷取比例（死亡面具 0.24；战斗钩子 TODO 2c）。
+    /// 生命偷取比例（死亡面具 0.24 = 098c vi 8%×3，任何伤害生效）。
     pub lifesteal: f64,
-    /// 受伤点恢复（死亡面具 0.12；战斗钩子 TODO 2c）。
+    /// 受伤点恢复（死亡面具 0.12、鲜血之剑 2/3；每次结算回固定值）。
     pub on_damage_heal: f64,
-    /// 天罚（S001）伤害加成（鲜血之剑 12/13；TODO 2c）。
+    /// 天罚（S001）伤害平加（鲜血之剑 +1/+2；098c mC 实证 cX = 10 + Zr）。
     pub smite_bonus: f64,
-    /// 天罚受伤减免（守护之盾 0.25/0.75；TODO 2c）。
+    /// 守护之盾充能窗口受伤减免（0.25/0.75；火球命中充能 → 天罚后 5s，见 world）。
     pub smite_reduction: f64,
+    /// 持有守护之盾（098c 充能判定；充能状态存 Player::aegis_charged）。
+    pub aegis: bool,
+    /// 守护之盾充能窗口击退减免（098c HC：Hn/2 → 0.5）。
+    pub aegis_kb_reduction: f64,
+    /// 死亡面具：天罚下吸血/回血翻倍（098c mC 实证 vi×2）。
+    pub scourge_double: bool,
     /// 火球点燃改写（火球法杖；TODO 2c）。
     pub fireball_burn: bool,
     /// 技能可升超过上限的级数（乔丹之石 +2；接入 upgrade 上限 TODO 2c）。
@@ -153,6 +159,9 @@ const fn fx() -> ItemEffects {
         on_damage_heal: 0.0,
         smite_bonus: 0.0,
         smite_reduction: 0.0,
+        aegis: false,
+        aegis_kb_reduction: 0.0,
+        scourge_double: false,
         fireball_burn: false,
         jordan_levels: 0,
         buff_dur_mult: 1.0,
@@ -162,56 +171,58 @@ const fn fx() -> ItemEffects {
     }
 }
 
-/// 全目录（顺序 = ItemId::as_u32）。数值逐条注明 w3t 来源。
+/// 全目录（顺序 = ItemId::as_u32）。数值逐条注明 098c 一手来源：
+/// 效果/卖价 = 098c/out/w3t_strings.txt tooltip；买价 = war3map_pretty.j 商店训练价
+/// （ID(id,AD,…) 失败原额退款 → AD 即买价；每步同价，非阶梯）。
 pub const ITEMS: &[ItemDef] = &[
-    // I000 速度之靴 1：+20 移速（卖出 4；GoldCost 0 → 占位 8）
-    ItemDef { id: ItemId::Boots1, family: ItemFamily::Boots, tier: 1, cost: 8, sell: 4, name: "速度之靴 1", desc: "移速 +20；可再升级 2 次", fx: ItemEffects { speed_add: 20.0, ..fx() } },
-    // I002 坠饰 2：+20 生命（ReqUnit R000 升级链）
-    ItemDef { id: ItemId::Amulet2, family: ItemFamily::Amulet, tier: 2, cost: 0, sell: 8, name: "坠饰 2", desc: "生命 +20", fx: ItemEffects { hp_add: 20.0, ..fx() } },
-    // I004 死亡面具：+24% 吸血 +12% 受伤点回复、-0.3 回复惩罚；天罚加倍（TODO 2c）
-    ItemDef { id: ItemId::FireMask, family: ItemFamily::Standalone, tier: 1, cost: 6, sell: 10, name: "死亡面具", desc: "吸血 24%+受伤回12%；回复-0.3/s", fx: ItemEffects { lifesteal: 0.24, on_damage_heal: 0.12, regen_penalty: 0.3, ..fx() } },
-    // I005 斗篷 1：+0.3 回复 / -5 移速
-    ItemDef { id: ItemId::Cloak1, family: ItemFamily::Cloak, tier: 1, cost: 6, sell: 6, name: "斗篷 1", desc: "回复 +0.3/s；移速 -5；可升 2 次", fx: ItemEffects { regen_add: 0.3, speed_penalty: 5.0, ..fx() } },
-    // I001 头盔 1：-16% 受击退 +10 生命 -5 移速（不叠加）
-    ItemDef { id: ItemId::Helm1, family: ItemFamily::Helm, tier: 1, cost: 10, sell: 8, name: "头盔 1", desc: "击退-16% 生命+10 移速-5；不叠加；可升 2 次", fx: ItemEffects { kb_resist_frac: 0.16, hp_add: 10.0, speed_penalty: 5.0, ..fx() } },
+    // I000 速度之靴 1：+20 移速（卖 4；训练价 5）
+    ItemDef { id: ItemId::Boots1, family: ItemFamily::Boots, tier: 1, cost: 5, sell: 4, name: "速度之靴 1", desc: "移速 +20；可再升级 2 次", fx: ItemEffects { speed_add: 20.0, ..fx() } },
+    // I002 坠饰 2：+20 生命（训练价 5）
+    ItemDef { id: ItemId::Amulet2, family: ItemFamily::Amulet, tier: 2, cost: 5, sell: 8, name: "坠饰 2", desc: "生命 +20", fx: ItemEffects { hp_add: 20.0, ..fx() } },
+    // I004 死亡面具：vi+3（吸血 8%×3=24%）+ 受伤点回复 12%、-0.3 回复；天罚下翻倍（mC vi×2）
+    ItemDef { id: ItemId::FireMask, family: ItemFamily::Standalone, tier: 1, cost: 12, sell: 10, name: "死亡面具", desc: "吸血 24%+受伤回12%（天罚下翻倍）；回复-0.3/s", fx: ItemEffects { lifesteal: 0.24, on_damage_heal: 0.12, regen_penalty: 0.3, scourge_double: true, ..fx() } },
+    // I005 斗篷 1：+0.20/s 回复（无移速惩罚；训练价 4）
+    ItemDef { id: ItemId::Cloak1, family: ItemFamily::Cloak, tier: 1, cost: 4, sell: 3, name: "斗篷 1", desc: "回复 +0.2/s；可升 2 次", fx: ItemEffects { regen_add: 0.2, ..fx() } },
+    // I001 头盔 1：-16% 受击退 +10 生命 -5 移速（不叠加；训练价 9）
+    ItemDef { id: ItemId::Helm1, family: ItemFamily::Helm, tier: 1, cost: 9, sell: 8, name: "头盔 1", desc: "击退-16% 生命+10 移速-5；不叠加；可升 2 次", fx: ItemEffects { kb_resist_frac: 0.16, hp_add: 10.0, speed_penalty: 5.0, ..fx() } },
     // I006 头盔 2：-24% +15 生命 -10 移速
-    ItemDef { id: ItemId::Helm2, family: ItemFamily::Helm, tier: 2, cost: 20, sell: 16, name: "头盔 2", desc: "击退-24% 生命+15 移速-10；不叠加；可升 1 次", fx: ItemEffects { kb_resist_frac: 0.24, hp_add: 15.0, speed_penalty: 10.0, ..fx() } },
-    // I007 速度之靴 2：+30 移速（GoldCost 0 → 占位 16）
-    ItemDef { id: ItemId::Boots2, family: ItemFamily::Boots, tier: 2, cost: 16, sell: 8, name: "速度之靴 2", desc: "移速 +30；可升 1 次", fx: ItemEffects { speed_add: 30.0, ..fx() } },
-    // I008 速度之靴 3：+40 移速（GoldCost 0 → 占位 24）
-    ItemDef { id: ItemId::Boots3, family: ItemFamily::Boots, tier: 3, cost: 24, sell: 12, name: "速度之靴 3", desc: "移速 +40（满级）", fx: ItemEffects { speed_add: 40.0, ..fx() } },
-    // I003 斗篷 3：+0.5 回复 / -5 移速
-    ItemDef { id: ItemId::Cloak3, family: ItemFamily::Cloak, tier: 3, cost: 18, sell: 18, name: "斗篷 3", desc: "回复 +0.5/s；移速 -5（满级）", fx: ItemEffects { regen_add: 0.5, speed_penalty: 5.0, ..fx() } },
-    // I009 斗篷 2：+0.4 回复 / -5 移速
-    ItemDef { id: ItemId::Cloak2, family: ItemFamily::Cloak, tier: 2, cost: 12, sell: 12, name: "斗篷 2", desc: "回复 +0.4/s；移速 -5；可升 1 次", fx: ItemEffects { regen_add: 0.4, speed_penalty: 5.0, ..fx() } },
+    ItemDef { id: ItemId::Helm2, family: ItemFamily::Helm, tier: 2, cost: 9, sell: 16, name: "头盔 2", desc: "击退-24% 生命+15 移速-10；不叠加；可升 1 次", fx: ItemEffects { kb_resist_frac: 0.24, hp_add: 15.0, speed_penalty: 10.0, ..fx() } },
+    // I008 速度之靴 2：+30 移速（训练价 5；gR 实证 +10/级）
+    ItemDef { id: ItemId::Boots2, family: ItemFamily::Boots, tier: 2, cost: 5, sell: 8, name: "速度之靴 2", desc: "移速 +30；可升 1 次", fx: ItemEffects { speed_add: 30.0, ..fx() } },
+    // I007 速度之靴 3：+40 移速
+    ItemDef { id: ItemId::Boots3, family: ItemFamily::Boots, tier: 3, cost: 5, sell: 12, name: "速度之靴 3", desc: "移速 +40（满级）", fx: ItemEffects { speed_add: 40.0, ..fx() } },
+    // I003 斗篷 3：+0.40/s（卖 9）
+    ItemDef { id: ItemId::Cloak3, family: ItemFamily::Cloak, tier: 3, cost: 4, sell: 9, name: "斗篷 3", desc: "回复 +0.4/s（满级）", fx: ItemEffects { regen_add: 0.4, ..fx() } },
+    // I009 斗篷 2：+0.30/s（卖 6）
+    ItemDef { id: ItemId::Cloak2, family: ItemFamily::Cloak, tier: 2, cost: 4, sell: 6, name: "斗篷 2", desc: "回复 +0.3/s；可升 1 次", fx: ItemEffects { regen_add: 0.3, ..fx() } },
     // I00A 头盔 3：-32% +20 生命 -15 移速
-    ItemDef { id: ItemId::Helm3, family: ItemFamily::Helm, tier: 3, cost: 20, sell: 24, name: "头盔 3", desc: "击退-32% 生命+20 移速-15；不叠加（满级）", fx: ItemEffects { kb_resist_frac: 0.32, hp_add: 20.0, speed_penalty: 15.0, ..fx() } },
-    // I00B 坠饰 1：+10 生命（cost 6）
-    ItemDef { id: ItemId::Amulet1, family: ItemFamily::Amulet, tier: 1, cost: 6, sell: 4, name: "坠饰 1", desc: "生命 +10；可升 2 次", fx: ItemEffects { hp_add: 10.0, ..fx() } },
+    ItemDef { id: ItemId::Helm3, family: ItemFamily::Helm, tier: 3, cost: 9, sell: 24, name: "头盔 3", desc: "击退-32% 生命+20 移速-15；不叠加（满级）", fx: ItemEffects { kb_resist_frac: 0.32, hp_add: 20.0, speed_penalty: 15.0, ..fx() } },
+    // I00B 坠饰 1：+10 生命（训练价 5）
+    ItemDef { id: ItemId::Amulet1, family: ItemFamily::Amulet, tier: 1, cost: 5, sell: 4, name: "坠饰 1", desc: "生命 +10；可升 2 次", fx: ItemEffects { hp_add: 10.0, ..fx() } },
     // I00C 坠饰 3：+30 生命 +0.1 回复
-    ItemDef { id: ItemId::Amulet3, family: ItemFamily::Amulet, tier: 3, cost: 0, sell: 12, name: "坠饰 3", desc: "生命 +30 回复 +0.1/s（满级）", fx: ItemEffects { hp_add: 30.0, regen_add: 0.1, ..fx() } },
-    // I00D 火球法杖：火球附加点燃（火球伤 5.5+0.5L→持续 3+0.5L 2.5s；天罚加倍）TODO 2c
-    ItemDef { id: ItemId::FireStaff, family: ItemFamily::Standalone, tier: 1, cost: 6, sell: 7, name: "火球法杖", desc: "火球附加点燃(3+0.5Lv/2.5s) 直伤降 5.5+0.5Lv；天罚加倍", fx: ItemEffects { fireball_burn: true, ..fx() } },
-    // I00E 乔丹之石戒指：技能可超上限 +2 级（不可售）
-    ItemDef { id: ItemId::Jordan, family: ItemFamily::Standalone, tier: 1, cost: 6, sell: 0, name: "乔丹之石戒指", desc: "技能可超上限 +2 级；无法售出", fx: ItemEffects { jordan_levels: 2, ..fx() } },
-    // I00F 鲜血之剑 1：天罚伤害增至 12
-    ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 6, sell: 12, name: "鲜血之剑 1", desc: "天罚伤害增至 12；可升 1 次", fx: ItemEffects { smite_bonus: 12.0, ..fx() } },
-    // I00G 鲜血之剑 2：天罚 13 + 每命中回 4
-    ItemDef { id: ItemId::BloodSword2, family: ItemFamily::BloodSword, tier: 2, cost: 6, sell: 24, name: "鲜血之剑 2", desc: "天罚伤害 13；每命中一敌回 4 血", fx: ItemEffects { smite_bonus: 13.0, on_damage_heal: 4.0, ..fx() } },
-    // I00H 守护之盾：天罚 25% 减伤 50% 减击退，-10 最大生命
-    ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 6, sell: 12, name: "守护之盾", desc: "天罚受伤-25% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.25, hp_add: -10.0, ..fx() } },
-    // I00I 守护之盾 2：天罚 75% 减伤，-10 最大生命
-    ItemDef { id: ItemId::GuardianShield2, family: ItemFamily::GuardianShield, tier: 2, cost: 6, sell: 12, name: "守护之盾 2", desc: "天罚受伤-75%；生命-10", fx: ItemEffects { smite_reduction: 0.75, hp_add: -10.0, ..fx() } },
-    // I00J 熔岩靴 1：+15 移速 / 熔岩上用天罚激活抵抗 87.5%×3s / -0.1 回复惩罚（激活式，D8）
-    ItemDef { id: ItemId::LavaBoots1, family: ItemFamily::LavaBoots, tier: 1, cost: 5, sell: 5, name: "熔岩靴 1", desc: "移速+15；熔岩上天罚激活：熔岩伤-87.5%×3s CD25s；回复-0.1/s；可升 2 次", fx: ItemEffects { speed_add: 15.0, lava_resist_frac: 0.875, lava_resist_secs: 3.0, regen_penalty: 0.1, ..fx() } },
-    // I00K 熔岩靴 2：+30 移速 / 4s
-    ItemDef { id: ItemId::LavaBoots2, family: ItemFamily::LavaBoots, tier: 2, cost: 10, sell: 10, name: "熔岩靴 2", desc: "移速+30；熔岩抵抗窗口 4s；回复-0.1/s；可升 1 次", fx: ItemEffects { speed_add: 30.0, lava_resist_frac: 0.875, lava_resist_secs: 4.0, regen_penalty: 0.1, ..fx() } },
+    ItemDef { id: ItemId::Amulet3, family: ItemFamily::Amulet, tier: 3, cost: 5, sell: 12, name: "坠饰 3", desc: "生命 +30 回复 +0.1/s（满级）", fx: ItemEffects { hp_add: 30.0, regen_add: 0.1, ..fx() } },
+    // I00D 火球法杖：火球改 5.5+0.5L 直伤 + 3+0.5L 点燃 2.5s；天罚加倍时长/伤害（训练价 7）
+    ItemDef { id: ItemId::FireStaff, family: ItemFamily::Standalone, tier: 1, cost: 7, sell: 6, name: "火球法杖", desc: "火球附加点燃(3+0.5Lv/2.5s) 直伤降 5.5+0.5Lv；天罚加倍", fx: ItemEffects { fireball_burn: true, ..fx() } },
+    // I00E 乔丹之石戒指：技能可超上限 +2 级（不可售；训练价 5）
+    ItemDef { id: ItemId::Jordan, family: ItemFamily::Standalone, tier: 1, cost: 5, sell: 0, name: "乔丹之石戒指", desc: "技能可超上限 +2 级；无法售出", fx: ItemEffects { jordan_levels: 2, ..fx() } },
+    // I00F 鲜血之剑 1：S001 等级+1（mC cX=10+Zr → +1 伤）；命中每敌回 (Zr+1)=2 血（训练价 8）
+    ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 8, sell: 7, name: "鲜血之剑 1", desc: "天罚伤害 +1；命中每敌回 2 血；可升 1 次", fx: ItemEffects { smite_bonus: 1.0, on_damage_heal: 2.0, ..fx() } },
+    // I00G 鲜血之剑 2：Zr=2 → +2 伤；回 (Zr+1)=3 血/敌
+    ItemDef { id: ItemId::BloodSword2, family: ItemFamily::BloodSword, tier: 2, cost: 8, sell: 14, name: "鲜血之剑 2", desc: "天罚伤害 +2；命中每敌回 3 血", fx: ItemEffects { smite_bonus: 2.0, on_damage_heal: 3.0, ..fx() } },
+    // I00H 守护之盾：火球命中充能 → 天罚释放 5s 内受伤-25% 击退-50%（HC 实证）；HP 上限-10（训练价 13）
+    ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 13, sell: 12, name: "守护之盾", desc: "火球命中充能：天罚后5s 受伤-25% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.25, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
+    // I00I 守护之盾 2：同机制，窗口减伤 75%（098c 商店无购买分支，疑似残留，暂可升级获得）
+    ItemDef { id: ItemId::GuardianShield2, family: ItemFamily::GuardianShield, tier: 2, cost: 13, sell: 12, name: "守护之盾 2", desc: "火球命中充能：天罚后5s 受伤-75% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.75, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
+    // I00J 熔岩靴 1：+15 移速 / 熔岩上用天罚激活抵抗 87.5%×3s / -0.1 回复惩罚（激活式，D8；训练价 7）
+    ItemDef { id: ItemId::LavaBoots1, family: ItemFamily::LavaBoots, tier: 1, cost: 7, sell: 5, name: "熔岩靴 1", desc: "移速+15；熔岩上天罚激活：熔岩伤-87.5%×3s CD25s；回复-0.1/s；可升 2 次", fx: ItemEffects { speed_add: 15.0, lava_resist_frac: 0.875, lava_resist_secs: 3.0, regen_penalty: 0.1, ..fx() } },
+    // I00K 熔岩靴 2：+27 移速（gR 实证 -sell 回收 -27）/ 4s
+    ItemDef { id: ItemId::LavaBoots2, family: ItemFamily::LavaBoots, tier: 2, cost: 7, sell: 10, name: "熔岩靴 2", desc: "移速+27；熔岩抵抗窗口 4s；回复-0.1/s；可升 1 次", fx: ItemEffects { speed_add: 27.0, lava_resist_frac: 0.875, lava_resist_secs: 4.0, regen_penalty: 0.1, ..fx() } },
     // I00L 熔岩靴 3：+39 移速 / 5s
-    ItemDef { id: ItemId::LavaBoots3, family: ItemFamily::LavaBoots, tier: 3, cost: 15, sell: 15, name: "熔岩靴 3", desc: "移速+39；熔岩抵抗窗口 5s；回复-0.1/s（满级）", fx: ItemEffects { speed_add: 39.0, lava_resist_frac: 0.875, lava_resist_secs: 5.0, regen_penalty: 0.1, ..fx() } },
-    // I00M 怀表 1：增益时长 ×1.15 / 减益时长 ÷1.15（另降沉默，见 S030）
-    ItemDef { id: ItemId::PocketWatch1, family: ItemFamily::PocketWatch, tier: 1, cost: 6, sell: 6, name: "怀表 1", desc: "增益时长+15% 受沉默-15%；可升 1 次", fx: ItemEffects { buff_dur_mult: 1.15, debuff_dur_div: 1.15, ..fx() } },
+    ItemDef { id: ItemId::LavaBoots3, family: ItemFamily::LavaBoots, tier: 3, cost: 7, sell: 15, name: "熔岩靴 3", desc: "移速+39；熔岩抵抗窗口 5s；回复-0.1/s（满级）", fx: ItemEffects { speed_add: 39.0, lava_resist_frac: 0.875, lava_resist_secs: 5.0, regen_penalty: 0.1, ..fx() } },
+    // I00M 怀表 1：jn×1.15（增益/法术时长）；训练价 7
+    ItemDef { id: ItemId::PocketWatch1, family: ItemFamily::PocketWatch, tier: 1, cost: 7, sell: 6, name: "怀表 1", desc: "增益时长+15% 受沉默-15%；可升 1 次", fx: ItemEffects { buff_dur_mult: 1.15, debuff_dur_div: 1.15, ..fx() } },
     // I00N 怀表 2：×1.25
-    ItemDef { id: ItemId::PocketWatch2, family: ItemFamily::PocketWatch, tier: 2, cost: 6, sell: 12, name: "怀表 2", desc: "增益时长+25% 受沉默-25%", fx: ItemEffects { buff_dur_mult: 1.25, debuff_dur_div: 1.25, ..fx() } },
+    ItemDef { id: ItemId::PocketWatch2, family: ItemFamily::PocketWatch, tier: 2, cost: 7, sell: 12, name: "怀表 2", desc: "增益时长+25% 受沉默-25%", fx: ItemEffects { buff_dur_mult: 1.25, debuff_dur_div: 1.25, ..fx() } },
 ];
 
 /// 携带上限（098b 英雄 6 格）。
@@ -266,8 +277,11 @@ pub fn aggregate(items: &[ItemId]) -> ItemEffects {
         out.kb_resist_frac = out.kb_resist_frac.max(f.kb_resist_frac);
         out.lifesteal += f.lifesteal;
         out.on_damage_heal += f.on_damage_heal;
-        out.smite_bonus = out.smite_bonus.max(f.smite_bonus);
+        out.smite_bonus += f.smite_bonus;
         out.smite_reduction = out.smite_reduction.max(f.smite_reduction);
+        out.aegis |= f.aegis;
+        out.aegis_kb_reduction = out.aegis_kb_reduction.max(f.aegis_kb_reduction);
+        out.scourge_double |= f.scourge_double;
         out.fireball_burn |= f.fireball_burn;
         out.jordan_levels += f.jordan_levels;
         out.buff_dur_mult = out.buff_dur_mult.max(f.buff_dur_mult);
