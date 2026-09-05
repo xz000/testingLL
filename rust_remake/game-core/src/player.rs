@@ -426,18 +426,28 @@ impl Player {
 
     // ---- 每帧推进 ----
 
-    /// 本帧移动速度（自走速度 × 属性移速倍率 × 移速 buff 倍率）。
+    /// 本帧移动速度（自走速度 × 属性移速倍率 × 移速 buff 倍率 × 物品平加）。
     #[inline]
-    /// 测试用：当前基础移速（含物品平加）。
-    pub fn base_speed_for_test(&self) -> Fix64 {
-        self.base_speed()
-    }
-
     fn base_speed(&self) -> Fix64 {
         let mult = self.buff_value(BuffKind::Speed(1.0)).max(1.0);
         // 物品平加/惩罚（war3 口径，M3）：速度之靴 +20 等、头盔/斗篷 -5 等。
         let flat = self.item_fx.speed_add - self.item_fx.speed_penalty;
         (Fix64::from_num(BASE_SPEED * self.speed_mult) + Fix64::from_num(flat)) * Fix64::from_num(mult)
+    }
+
+    /// 测试用：当前基础移速（含物品平加）。
+    pub fn base_speed_for_test(&self) -> Fix64 {
+        self.base_speed()
+    }
+
+    /// 无目标刹停辅助：速度向 0 收敛，单帧最多削 `max_delta`。
+    fn brake(v: Vec2, max_delta: Fix64) -> Vec2 {
+        let len = v.length();
+        if len <= max_delta {
+            Vec2::ZERO
+        } else {
+            v - v.normalized() * max_delta
+        }
     }
 
     /// 依据"朝目标直线前进 + 加速度/减速度 + 附加速度"推进一帧的位移（整个速度合成模型）。
@@ -490,15 +500,11 @@ impl Player {
             }
             None => {
                 // 无目标：渐减速到 0。
-                // 098c 滑行（D9 批次2）：无目标时速度摩擦衰减 ×0.985/帧（非立刹），
-                // 形成动量滑行手感；低速直接停防无限漂移。
-                let friction = Fix64::from_num(DECEL);
-                let slid = self.cur_vel * friction;
-                self.cur_vel = if slid.length() < Fix64::from_num(10.0) {
-                    Vec2::ZERO
-                } else {
-                    slid
-                };
+                // 修正（D9 批次2 回退）：摩擦滑行参数（098c ov=0.96/0.985）属于冰面 -ice 模式
+                // 与 TimeShift 的特定状态，误用到了普通地面导致按 S 停不下来。
+                // 普通地面恢复受控立刹（用户实测确认自然）；098c 冲量模型（右键事件驱动
+                // 18×0.5^(v/20) + 全局 0.96 阻尼）需输入语义改事件驱动后单独立项。
+                self.cur_vel = Self::brake(self.cur_vel, Fix64::from_num(DECEL) * dt);
             }
         }
         self.pos += self.cur_vel * dt;
@@ -846,31 +852,6 @@ mod tests {
         assert!(near(p.pos.x, 3.0, 0.05), "应停在目标点附近");
     }
 
-    /// 098c 滑行（D9 批次2）：无目标时速度摩擦衰减 ×0.985/帧（非立刹），渐停。
-    #[test]
-    fn glide_friction_decays_velocity() {
-        let mut p = Player::new(0, Vec2::ZERO, Fix64::ONE);
-        let dt = Fix64::from_num(1.0 / 60.0);
-        // 模拟被击退后：无目标 + 初速 700/s → 滑行渐停
-        p.cur_vel = Vec2::new(Fix64::from_num(700.0), Fix64::ZERO);
-        let mut frames = 0;
-        let mut moved_mid = false;
-        loop {
-            p.step_velocity(dt);
-            frames += 1;
-            let speed = p.cur_vel.length().to_num::<f64>();
-            if frames == 30 {
-                // 0.5s 后应仍有明显速度（滑行中）：700×0.985^30≈446
-                assert!(speed > 300.0, "0.5s 应仍在滑行，实际 {speed}");
-                moved_mid = true;
-            }
-            if speed == 0.0 {
-                break;
-            }
-            assert!(frames < 600, "10s 内应停住");
-        }
-        assert!(moved_mid, "应有滑行过程");
-        // 滑行总位移：700/s × 平均寿命 ~1.6s ≈ 1000+（明显大于立刹模型）
-        assert!(p.pos.x > 500.0, "滑行位移应显著，实际 {}", p.pos.x.to_num::<f64>());
-    }
+    // 滑行测试已随 D9 批次2 回退删除：×0.985 摩擦属冰面 -ice/TimeShift 特定状态，
+    // 普通地面保持立刹（用户实测确认自然）；冰面系统（Ka/-ice）待做。
 }
