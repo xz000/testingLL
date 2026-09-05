@@ -22,15 +22,16 @@ pub struct Balance {
     pub base_speed: f64,
     /// 移动加速度（向目标逼近的速度增量/秒）。占位：保持旧加速时间 210/1312.5≈0.16s 到全速。
     pub accel: f64,
-    /// 移动减速度（无目标时刹停的速度削减/秒）。占位：保持旧刹停时间 210/2625≈0.08s。
+    /// 无目标时的滑行摩擦：每帧速度 ×0.985（098c `ov=0.97` 每 0.03s → 换算 1/60 步长，
+    /// 0.97^0.5≈0.985；D9 批次2——替代旧"立刹"模型，实现滑行动量手感）。
     pub decel: f64,
     /// 玩家初始/最大生命。（098b h000 术士 HP=100，w3u 导出；与旧值相同 → 伤害数值不随尺度切换变）
     pub max_hp: f64,
     /// 全局生命恢复（HP/秒）。098b `zd()` 每玩家 `Nn=0.05`（每 20s 回 1 血，-C#9 可调）；
     /// 陨石灼烧「烤肉饼」期间清零禁疗（PORT_098B_DECISIONS.md D7）。
     pub hp_regen: f64,
-    /// 玩家默认半径（碰撞半径）。h000 未覆盖 Collision → 继承 war3 原版 hpea=32
-    /// （2026-09-05 用户体感「地图直径 ≈ 20 个术士并排」交叉验证：碰撞直径 64 × 10 = 半径 640，两项自洽）。
+    /// 玩家默认半径（碰撞半径）。098c `do=30`（战争锁碰撞半径，JASS 常量原文；D9 批次2）。
+    /// 场地半径 640 保持（用户体感「20 术士并排」×直径 60 ÷ 2 = 600，与 640 同量级自洽）。
     pub default_radius: f64,
 
     // ---- 场地 / 世界 ----
@@ -57,10 +58,10 @@ impl Balance {
         Balance {
             base_speed: 210.0,
             accel: 1312.5,
-            decel: 2625.0,
+            decel: 0.985,
             max_hp: 100.0,
             hp_regen: 0.05,
-            default_radius: 32.0,
+            default_radius: 30.0,
             start_radius: 640.0,
             shrink_speed: 11.2,
             out_hurt: 9.0,
@@ -86,7 +87,7 @@ mod tests {
         // war3 尺度（PORT_098B_DECISIONS.md D2 来源表）
         assert_eq!(a.base_speed, 210.0);
         assert_eq!(a.max_hp, 100.0);
-        assert_eq!(a.default_radius, 32.0);
+        assert_eq!(a.default_radius, 30.0);
         assert_eq!(a.start_radius, 640.0);
         assert_eq!(a.shrink_speed, 11.2);
         assert_eq!(a.out_hurt, 9.0);
