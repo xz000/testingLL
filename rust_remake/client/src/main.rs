@@ -1871,6 +1871,60 @@ impl Game {
             self.draw_reconnect_overlay(&mut canvas, ctx)?;
         }
 
+        // 对局内 HUD（D9 UI 批次2）：物品栏 6 格 + 金币。仅对战/学习阶段显示。
+        if !self.world.sandbox || self.meta.phase == game_core::meta::MatchPhase::Fighting {
+            if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
+                let (sw, sh) = ctx.gfx.drawable_size();
+                // 金币（右上角）
+                draw_text(
+                    &mut canvas,
+                    ctx,
+                    &format!("金币 {}", pr.gold),
+                    20.0,
+                    Color::from_rgb(255, 220, 120),
+                    Point2 { x: sw - 90.0, y: 14.0 },
+                    true,
+                )?;
+                // 物品栏：底部中央 6 格
+                let slot_w = 52.0;
+                let total_w = slot_w * 6.0;
+                let x0 = sw / 2.0 - total_w / 2.0;
+                let y0 = sh - 64.0;
+                for i in 0..game_core::item::ITEM_SLOTS {
+                    let x = x0 + i as f32 * slot_w;
+                    // 槽位底框
+                    let slot_bg = Mesh::new_rectangle(
+                        &ctx.gfx,
+                        DrawMode::fill(),
+                        graphics::Rect::new(x, y0, slot_w - 4.0, slot_w - 4.0),
+                        Color::from_rgba(30, 34, 46, 200),
+                    )?;
+                    canvas.draw(&slot_bg, graphics::DrawParam::new());
+                    let slot_border = Mesh::new_rectangle(
+                        &ctx.gfx,
+                        DrawMode::stroke(2.0),
+                        graphics::Rect::new(x, y0, slot_w - 4.0, slot_w - 4.0),
+                        Color::from_rgba(90, 100, 120, 220),
+                    )?;
+                    canvas.draw(&slot_border, graphics::DrawParam::new());
+                    // 物品名（两行截断：取前 4 字）
+                    if let Some(it) = pr.items.get(i) {
+                        let d = it.def();
+                        let name: String = d.name.chars().take(4).collect();
+                        draw_text(
+                            &mut canvas,
+                            ctx,
+                            &name,
+                            13.0,
+                            Color::from_rgb(255, 230, 160),
+                            Point2 { x: x + (slot_w - 4.0) / 2.0, y: y0 + (slot_w - 4.0) / 2.0 - 2.0 },
+                            true,
+                        )?;
+                    }
+                }
+            }
+        }
+
         // Steam 提示条（成就上报等）：画在最上层，几秒后自动消失。
         #[cfg(feature = "steam")]
         {
@@ -4412,43 +4466,100 @@ impl Game {
             draw_text(&mut canvas, ctx, "H生命 J移速 K护甲", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
             gy += 26.0;
             draw_text(&mut canvas, ctx, "L法抗 ;击退", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
-            // M3 商店：物品栏 + 可购列表（数字键购买）
+            // M3 商店（UI 升级）：标题栏 + 金币、持有物品（带升级链进度）、
+            // 可购列表（名字/价格/一句话详情，三态着色：可买/买不起/已持有该链顶级）、
+            // 满员提示。数字键购买，逻辑在 poll_shop。
             gy += 30.0;
             let me = self.self_index();
-            let owned: Vec<(u8, String)> = self
-                .meta
-                .profiles
-                .iter()
-                .find(|pr| pr.player_id == me)
+            let profile = self.meta.profiles.iter().find(|pr| pr.player_id == me);
+            let (gold, owned, items_full) = profile
                 .map(|pr| {
-                    pr.items
-                        .iter()
-                        .map(|it| (it.def().tier, it.def().name.to_string()))
-                        .collect()
+                    (
+                        pr.gold,
+                        pr.items.clone(),
+                        pr.items.len() >= game_core::item::ITEM_SLOTS,
+                    )
                 })
-                .unwrap_or_default();
+                .unwrap_or((0, Vec::new(), false));
+            // 持有物品：名字 + 档位，金色
             let owned_str = if owned.is_empty() {
                 "无".to_string()
             } else {
-                owned.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join("、")
+                owned
+                    .iter()
+                    .map(|it| it.def().name.to_string())
+                    .collect::<Vec<_>>()
+                    .join("、")
             };
-            draw_text(&mut canvas, ctx, &format!("物品栏：{owned_str}"), 18.0, Color::from_rgb(255, 220, 140), Point2 { x: rcx, y: gy }, true)?;
+            draw_text(
+                &mut canvas,
+                ctx,
+                &format!("物品栏 ({}/{}）：{}", owned.len(), game_core::item::ITEM_SLOTS, owned_str),
+                18.0,
+                Color::from_rgb(255, 220, 140),
+                Point2 { x: rcx, y: gy },
+                true,
+            )?;
+            gy += 26.0;
+            draw_text(
+                &mut canvas,
+                ctx,
+                &format!("== 商店 ==  金币 {gold}   （数字键购买）"),
+                19.0,
+                Color::from_rgb(140, 255, 170),
+                Point2 { x: rcx, y: gy },
+                true,
+            )?;
             gy += 26.0;
             let catalog = game_core::item::shop_catalog();
             let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
-            let gold = self.meta.profiles.iter().find(|pr| pr.player_id == me).map(|pr| pr.gold).unwrap_or(0);
-            // 两列排布
+            // 三态着色：可买=亮白 / 买不起=暗灰 / 已持有该链顶级=绿色勾
+            let owned_ids: Vec<game_core::item::ItemId> = owned.to_vec();
             for (i, d) in catalog.iter().enumerate() {
                 if i >= keys.len() {
                     break;
                 }
                 let col = i % 2;
                 let row = i / 2;
-                let x = rcx - 260.0 + col as f32 * 270.0;
-                let y = gy + row as f32 * 24.0;
-                let afford = gold >= d.cost;
-                let color = if afford { Color::from_rgb(200, 210, 225) } else { Color::from_rgb(120, 130, 145) };
-                draw_text(&mut canvas, ctx, &format!("[{}] {} {}金", keys[i], d.name, d.cost), 16.0, color, Point2 { x, y }, true)?;
+                let x = rcx - 280.0 + col as f32 * 290.0;
+                let y = gy + row as f32 * 40.0;
+                // 已持有该链最高档？
+                let owns_this = owned_ids
+                    .iter()
+                    .any(|&it| it.def().family == d.family && it.def().tier >= d.tier);
+                let next_of_owned = owned_ids.iter().any(|&it| {
+                    it.def().family == d.family && d.tier == it.def().tier + 1
+                });
+                let (color, tag) = if owns_this {
+                    (Color::from_rgb(110, 200, 120), " [已持有]")
+                } else if next_of_owned {
+                    (Color::from_rgb(140, 220, 255), " [可升级]")
+                } else if gold < d.cost {
+                    (Color::from_rgb(120, 130, 145), " [金币不足]")
+                } else if items_full && !next_of_owned {
+                    (Color::from_rgb(150, 140, 120), " [物品栏已满]")
+                } else {
+                    (Color::from_rgb(220, 228, 240), "")
+                };
+                draw_text(
+                    &mut canvas,
+                    ctx,
+                    &format!("[{}] {}  {}金{}", keys[i], d.name, d.cost, tag),
+                    16.0,
+                    color,
+                    Point2 { x, y },
+                    true,
+                )?;
+                // 详情行（缩进小字）
+                draw_text(
+                    &mut canvas,
+                    ctx,
+                    d.desc,
+                    14.0,
+                    Color::from_rgb(140, 148, 162),
+                    Point2 { x: x + 18.0, y: y + 17.0 },
+                    true,
+                )?;
             }
         }
         // —— 左栏：技能树与键位绑定。
