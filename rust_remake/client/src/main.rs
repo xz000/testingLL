@@ -1057,6 +1057,31 @@ impl Game {
             }
         }
 
+        // 形态切换（098c sC，B4/D13 #7）：B 键 = 把选中树已绑技能切到另一形态（免费、配置期）。
+        if Self::char_just(ctx, "b") {
+            if let Some(key) = learn_key {
+                if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                    if let Some(skill) = profile.bound_skill(key) {
+                        if game_core::skill::DefTable::has_alt(skill) {
+                            let idx = skill.as_u32() as usize;
+                            if let Some(f) = profile.forms.get_mut(idx) {
+                                *f = !*f;
+                            }
+                            let new_name = game_core::skill::DefTable::def_for(skill, profile.forms[idx]).name;
+                            eprintln!("[learn] 形态切换 -> {new_name}");
+                            if let Some(wp) = self.world.players.get_mut(me as usize) {
+                                if let Some(f) = wp.forms.get_mut(idx) {
+                                    *f = profile.forms[idx];
+                                }
+                            }
+                        } else {
+                            eprintln!("[learn] {} 无第二形态", game_core::skill::DefTable::def(skill).name);
+                        }
+                    }
+                }
+            }
+        }
+
         // 精通研究（098c kf，D12.3/B1）：U 生命 / I 远程 / O 时间 / P 背包。价格占位（w3q 未解析）。
         const MASTERY: [(&str, &str, usize); 4] =
             [("生命精通", "u", 0), ("远程精通", "i", 1), ("时间精通", "o", 2), ("背包研究", "p", 3)];
@@ -1901,6 +1926,7 @@ impl Game {
                         game_core::skill::W098bProjKind::Homing => Color::from_rgb(200, 110, 255),
                         game_core::skill::W098bProjKind::Boomerang => Color::from_rgb(90, 220, 230),
                         game_core::skill::W098bProjKind::Bounce => Color::from_rgb(255, 220, 80),
+                        game_core::skill::W098bProjKind::Magma => Color::from_rgb(255, 120, 40),
                     };
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
                     canvas.draw(&dot, graphics::DrawParam::new());
@@ -2352,7 +2378,13 @@ impl Game {
                         let bound = me.bound_skill(key);
                         let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
                         let bound_txt = match bound {
-                            Some(s) => format!("{} @Lv{lv}", game_core::skill::DefTable::def(s).name),
+                            Some(s) => {
+                                let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                                let form = if alt { "B" } else { "A" };
+                                let name = game_core::skill::DefTable::def_for(s, alt).name;
+                                let toggle = if game_core::skill::DefTable::has_alt(s) { "（B 换形态）" } else { "" };
+                                format!("{name}［{form}］ @Lv{lv}{toggle}")
+                            }
                             None => "未绑定".to_string(),
                         };
                         let color = if self.learn_tree_key == Some(key) {

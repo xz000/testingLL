@@ -251,6 +251,12 @@ pub enum ProjectileKind {
         lateral: Fix64,
         /// 回旋镖出程方向（弧线物理的前向轴）。
         forward_dir: Vec2,
+        /// 到点碎裂弹片数（S009·目标形态=6；0=不碎裂，B4）。
+        burst: u8,
+        /// 区域形态侧弹发射间隔（S009·区域；ZERO=不发射，B4）。
+        emit_cooldown: Fix64,
+        /// 区域形态侧弹当前发射角（螺旋推进，B4）。
+        emit_angle: f64,
         /// 回旋镖出程距离（098c cO：前向匀减速到 0 的位置）。
         out_dist: Fix64,
     },
@@ -1054,6 +1060,9 @@ impl World {
         let mut returners: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         // 098b AoE 爆炸（陨石命中/到期）：中心 KI 全额、线性距离衰减到 20%（近似 qI 衰减）。
         let mut expiry_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64)> = Vec::new(); // (owner, 中心, 半径, gx, ji)
+        // 碎裂/侧弹生成队列（B4：S009 目标形态到点碎裂、区域形态螺旋侧弹）
+        // (owner, 位置, 速度, gx, 弹半径, 寿命, kb_ji)
+        let mut spawn_bullets: Vec<(u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
@@ -1217,7 +1226,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 出程恒速、过半程后朝施法者当前位置回拉。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -1227,9 +1236,29 @@ impl World {
                         if let Some(br) = blast {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
                         }
+                        // S009·目标形态（B4）：到点碎裂成 6 枚环形弹片（098c dB：600/s 旋转喷出）
+                        if *burst > 0 {
+                            let n = *burst as i64;
+                            let base = std::f64::consts::TAU / n as f64;
+                            for k in 0..n {
+                                let ang = base * k as f64 + *emit_angle;
+                                let d = Vec2::new(Fix64::from_num(ang.cos()), Fix64::from_num(ang.sin()));
+                                spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.8), *kb_ji));
+                            }
+                        }
+                    }
+                    // S009·区域形态（B4）：飞行中每 0.12s 沿旋转角撒一枚侧弹（098c cB 螺旋）
+                    if *emit_cooldown > Fix64::ZERO {
+                        *emit_cooldown -= dt;
+                        if *emit_cooldown <= Fix64::ZERO {
+                            *emit_cooldown = Fix64::from_num(0.12);
+                            *emit_angle += 0.52; // ≈30° 螺旋步进
+                            let d = Vec2::new(Fix64::from_num((*emit_angle).cos()), Fix64::from_num((*emit_angle).sin()));
+                            spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.7), *kb_ji));
+                        }
                     }
                     match proj {
-                        crate::skill::W098bProjKind::Straight | crate::skill::W098bProjKind::Bounce => {
+                        crate::skill::W098bProjKind::Straight | crate::skill::W098bProjKind::Bounce | crate::skill::W098bProjKind::Magma => {
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Homing => {
@@ -1363,6 +1392,8 @@ impl World {
         let mut debuffs_scorched: Vec<(u32, f64)> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量, 时长 s)
+        let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
+        let mut magma_absorb: Vec<(usize, u32, Fix64)> = Vec::new(); // (滚石索引, owner, 半径)
 
         for (pi, pr) in ps.iter_mut().enumerate() {
             if !pr.alive {
@@ -1591,6 +1622,24 @@ impl World {
                             }
                         }
                     }
+                }
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Magma, radius, .. } => {
+                    // 岩浆滚石接触（098c OB/VB，B4）：推离 + 「肉饼」减速 ×0.1（1.5s）+ 吸收敌方弹体。
+                    let owner = pr.owner;
+                    let oteam: Option<u8> = self.players.get(owner as usize).map(|p| p.team);
+                    for (j, q) in self.players.iter().enumerate() {
+                        if !q.alive || Some(q.team) == oteam {
+                            continue;
+                        }
+                        let d = q.pos - pr.pos;
+                        let rr = *radius + q.radius;
+                        if d.length_squared() <= rr * rr {
+                            let dir = if d.length_squared() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
+                            pushes.push((j as u32, dir * Fix64::from_num(300.0), 0.3, false));
+                            pancakes.push((j as u32, 1.5));
+                        }
+                    }
+                    magma_absorb.push((pi, owner, *radius));
                 }
                 ProjectileKind::Star { owner, radius, damage_per_sec, heal_per_sec, .. } => {
                     // 星域：范围内敌掉血、对施法者回血
@@ -1864,6 +1913,69 @@ impl World {
         }
         // 4d-0) 098b AoE 爆炸（陨石命中/到期）：复用 explode_at（中心伤害+距离衰减+连线击退），
         // 伤害=gx（explode_at 内部做护甲折算），击退力=KI 公式 warlock_ki_knockback。
+        // 「肉饼」减速（B4 岩浆滚石）：Speed ×0.1 buff
+        for (victim, dur) in pancakes.drain(..) {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive {
+                    p.add_buff(BuffKind::Pancake, dur);
+                }
+            }
+        }
+        // 滚石吸收敌方弹体（B4）
+        for (mi, owner, mradius) in magma_absorb.drain(..) {
+            let (Some(mp), Some(oteam)) = (ps.get(mi), self.players.get(owner as usize).map(|p| p.team)) else {
+                continue;
+            };
+            let (mpos, mr) = (mp.pos, mradius);
+            for other in ps.iter_mut() {
+                if !other.alive || other.owner == owner {
+                    continue;
+                }
+                let o_other = self.players.get(other.owner as usize).map(|p| p.team);
+                if o_other == Some(oteam) {
+                    continue;
+                }
+                let orad = match &other.kind {
+                    ProjectileKind::W098b { radius, .. } => *radius,
+                    ProjectileKind::Bullet { radius, .. } => *radius,
+                    _ => Fix64::from_num(15.0),
+                };
+                let lim = (mr + orad + Fix64::from_num(10.0)) * (mr + orad + Fix64::from_num(10.0));
+                if (other.pos - mpos).length_squared() <= lim {
+                    other.alive = false;
+                }
+            }
+        }
+        // 碎裂/侧弹生成（B4 S009 双形态）
+        for (owner, pos, vel, gx, radius, life, kb_ji) in spawn_bullets.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::W098b {
+                    proj: crate::skill::W098bProjKind::Straight,
+                    vel,
+                    speed: Fix64::from_num(600.0),
+                    radius,
+                    remaining: life,
+                    life,
+                    gx,
+                    kb_ji,
+                    ignite: None,
+                    blast: None,
+                    target: None,
+                    returning: false,
+                    on_hit: crate::skill::W098bOnHit::Ki,
+                    debuff_dur: Fix64::ZERO,
+                    lateral: Fix64::ZERO,
+                    forward_dir: vel.normalized(),
+                    out_dist: life * Fix64::from_num(600.0),
+                    burst: 0,
+                    emit_cooldown: Fix64::ZERO,
+                    emit_angle: 0.0,
+                },
+                pos,
+                alive: true,
+            });
+        }
         for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
             self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false);
         }
@@ -2312,7 +2424,9 @@ fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64
 /// 效果可能是：瞬移 / 加速 / 生成 Projectile 等。
 fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
     for &(idx, id, target) in queue {
-        let def = DefTable::def(id);
+        // B4 形态切换：按施法者的形态位取 A/B 定义
+        let alt = world.players.get(idx as usize).map(|p| p.form_of(id)).unwrap_or(false);
+        let def = DefTable::def_for(id, alt);
         let caster_level = {
             let p = &world.players[idx as usize];
             p.skill_level(id)
@@ -2369,12 +2483,19 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 命中结算统一走 KI/FI（FI 伤害=gx×Gn×hn，KI 击退=DAMAGE_BASE×gx×JI）。
                 let ppos = world.players[idx as usize].pos;
                 // 时间精通：弹体寿命（=射程）缩放，火球三系权重 1.5（JASS ev=(1+.15ei) 等）。
-                let life = life * Fix64::from_num(ei_mult(matches!(
+                let mut life = life * Fix64::from_num(ei_mult(matches!(
                     id,
                     crate::skill::SkillId::S000
                         | crate::skill::SkillId::S003
                         | crate::skill::SkillId::S004
                 )));
+                // S009·目标形态（B4）：寿命截断到点击距离 → 在目标点碎裂（JASS GB 飞抵目标点分裂）。
+                if id == crate::skill::SkillId::S009 && !alt {
+                    if let Some(t) = target {
+                        let dist = (t - ppos).length();
+                        life = life.min(dist / speed);
+                    }
+                }
                 // 远程精通（R00I xi，B1）：xi>0 火球获得落点爆炸——仅到点/撞柱触发，
                 // 直中目标不重复爆炸（JASS Bb L5283 → sI）。半径 45×√(14+xi)（0.45×√ 尺度 ×100 换算 TODO w3q 校准）。
                 let blast = if id == crate::skill::SkillId::S000 && world.players[idx as usize].mastery[1] > 0 {
@@ -2449,6 +2570,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             },
                             forward_dir: dir,
                             out_dist: life * speed,
+                            // B4 形态：S009·目标=到点碎裂 6 片；S009·区域=0.12s 螺旋侧弹
+                            burst: if id == crate::skill::SkillId::S009 && !alt { 6 } else { 0 },
+                            emit_cooldown: if id == crate::skill::SkillId::S009 && alt {
+                                Fix64::from_num(0.12)
+                            } else {
+                                Fix64::ZERO
+                            },
+                            emit_angle: 0.0,
                         },
                         pos: ppos,
                         alive: true,
@@ -2572,6 +2701,18 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Charge => {
+                        // 疾风步·冲锋（098c RB，B4）：移速 buff + 接触踢击窗口（撞敌伤害 4.6+0.8L）。
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                            p.kick = Some(Kick {
+                                push_power: Fix64::from_num(150.0),
+                                push_time: Fix64::from_num(0.3),
+                                push_damage: stats.damage,
+                                remaining: Fix64::from_num(dur),
+                            });
                         }
                     }
                     crate::skill::W098bUtilKind::Blink => {
@@ -6388,5 +6529,114 @@ mod tests {
         assert!((world.players[1].dmg_taken_mult - 1.0).abs() < 1e-9);
         assert_eq!(world.f_override[1], Some(SkillId::S020), "化身 F 应替换为灾变");
         assert_eq!(world.f_override[0], None, "非化身不应有 F 替换");
+    }
+
+    // ===== B4 形态切换（098c sC，D13 #7） =====
+
+    /// S010 双形态：冲锋（A）=移速 buff+接触踢击；隐身（B）=隐身+较慢移速。
+    #[test]
+    fn s010_form_a_charge_vs_b_invisibility() {
+        let mut world = World::new(1, 996);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // B 形态（隐身）：Stealth buff + 100 速
+        world.players[0].forms[SkillId::S010.as_u32() as usize] = true;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
+        ], dt);
+        assert!(world.players[0].has_buff(BuffKind::Stealth), "B 形态应有隐身");
+        // A 形态（冲锋）：无隐身，有踢击窗口
+        let mut world2 = World::new(1, 996);
+        world2.obstacles.clear();
+        world2.sandbox = true;
+        world2.step(vec![
+            PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
+        ], dt);
+        assert!(!world2.players[0].has_buff(BuffKind::Stealth), "A 形态不应隐身");
+        assert!(world2.players[0].kick.is_some(), "A 形态应有接触踢击窗口");
+        let kick_dmg = world2.players[0].kick.as_ref().unwrap().push_damage.to_num::<f64>();
+        assert!((kick_dmg - 4.6).abs() < 0.1, "冲锋踢击伤害应 4.6+0.8L ≈ 4.6，实际 {kick_dmg}");
+    }
+
+    /// S009 双形态：目标（A）到点碎裂出弹片；区域（B）飞行中持续撒侧弹。
+    #[test]
+    fn s009_form_splitter_target_burst_and_area_emit() {
+        // A 形态：朝远处射 → 到点碎裂出 6 枚弹片
+        let mut world = World::new(1, 997);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S009, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default()];
+        let mut max_bullets = 0usize;
+        for _ in 0..135 {
+            world.step(none.clone(), dt);
+            let alive_now = world.projectiles.iter().filter(|p| p.alive && matches!(p.kind, ProjectileKind::W098b { .. })).count();
+            max_bullets = max_bullets.max(alive_now);
+        }
+        assert!(max_bullets >= 4, "目标形态到点应碎裂出多枚弹片（主弹+弹片），窗口内峰值 {max_bullets}");
+        // B 形态：区域慢速大弹 + 螺旋侧弹
+        let mut world2 = World::new(1, 997);
+        world2.obstacles.clear();
+        world2.sandbox = true;
+        world2.players[0].forms[SkillId::S009.as_u32() as usize] = true;
+        world2.players[0].pos = Vec2::ZERO;
+        world2.players[0].move_target = None;
+        world2.step(vec![
+            PlayerInput { cast: Some((SkillId::S009, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default()];
+        let mut max_bullets2 = 0usize;
+        for _ in 0..40 {
+            world2.step(none.clone(), dt);
+            let alive_now = world2.projectiles.iter().filter(|p| p.alive && matches!(p.kind, ProjectileKind::W098b { .. })).count();
+            max_bullets2 = max_bullets2.max(alive_now);
+        }
+        assert!(max_bullets2 >= 3, "区域形态应持续撒出侧弹（主弹+侧弹），窗口内峰值 {max_bullets2}");
+    }
+
+    /// S008 岩浆滚石（B 形态）：接触敌人施加「肉饼」减速，寿命尽爆炸。
+    #[test]
+    fn s008_magma_boulder_pancakes_enemy() {
+        let mut world = World::new(2, 998);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S008.as_u32() as usize] = true; // B=岩浆
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[1].team = 1;
+        // 远处第三个敌人站在滚石寿命尽头（400/s×4s=1600 码）附近，验证寿命尽爆炸
+        world.players.push(crate::player::Player::new(2, Vec2::new(d60(25.0), d60(1.0)), Fix64::from_num(30.0)));
+        let n = world.players.len();
+        world.players[2].team = 1;
+        world.players[2].move_target = None;
+        world.players[2].radius = Fix64::from_num(30.0);
+        let _ = n;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].has_buff(BuffKind::Pancake), "被滚石压过应「肉饼」减速");
+        // 滚石 4s 寿命尽爆炸（300 帧 = 5s，覆盖 4s 寿命 + 爆炸帧）
+        for _ in 0..300 {
+            if world.players[2].hp < world.players[2].max_hp {
+                break;
+            }
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[2].hp < world.players[2].max_hp, "滚石寿命尽爆炸应伤到尽头处的敌人");
     }
 }

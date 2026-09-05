@@ -103,6 +103,8 @@ pub enum BuffKind {
     /// 守护之盾充能窗口（098c I00H HC）：火球命中充能 → 天罚后 5s 受伤/击退减免
     /// （减免比例读佩戴者的 item_fx.smite_reduction / aegis_kb_reduction）。
     Aegis,
+    /// 「肉饼」（098c 岩浆滚石 VB）：被滚石压过 → 移速 ×0.1。
+    Pancake,
 }
 
 impl Buff {
@@ -210,6 +212,8 @@ pub struct Player {
     pub aegis_charged: bool,
     /// 精通战斗快照（098c，D12.3/B1）：[生命vi, 远程xi, 时间ei]；profile 购买后 apply 进场。
     pub mastery: [u8; 3],
+    /// 形态位（B4，按 SkillId 索引）：true=B 形态；配置期切换，对局内不换。
+    pub forms: [bool; crate::MAX_SKILL_SLOTS],
     /// 队伍号（098c cn[]，B2）：默认 = 自己 id（FFA，各为一队）；分队模式由开局配置覆写。
     /// 技能只命中异队；碰撞/岩浆等物理与队伍无关。
     pub team: u8,
@@ -249,6 +253,7 @@ impl Player {
         let max_hp = Fix64::from_num(MAX_HP);
         Player {
             id,
+            forms: [false; crate::MAX_SKILL_SLOTS],
             team: id as u8,
             respawn_at: None,
             doom: 0.0,
@@ -425,6 +430,12 @@ impl Player {
         self.buffs.iter().any(|b| b.remaining > Fix64::ZERO && b.kind == BuffKind::Scorched)
     }
 
+    /// 该技能是否使用 B 形态（B4）。
+    #[inline]
+    pub fn form_of(&self, id: crate::skill::SkillId) -> bool {
+        self.forms.get(id.as_u32() as usize).copied().unwrap_or(false)
+    }
+
     /// 有效受击退减免：属性与物品（头盔不叠加）取最大后，与精通级数乘法合成
     /// （098c kf L12917：每级精通 Hn ×(1-0.025×lf)，lf=三精通总级数）。
     pub fn effective_kb_reduction(&self) -> f64 {
@@ -463,7 +474,11 @@ impl Player {
     /// 本帧移动速度（自走速度 × 属性移速倍率 × 移速 buff 倍率 × 物品平加）。
     #[inline]
     fn base_speed(&self) -> Fix64 {
-        let mult = self.buff_value(BuffKind::Speed(1.0)).max(1.0);
+        let mut mult = self.buff_value(BuffKind::Speed(1.0)).max(1.0);
+        // 「肉饼」（B4 岩浆滚石）：移速 ×0.1
+        if self.has_buff(BuffKind::Pancake) {
+            mult *= 0.1;
+        }
         // 物品平加/惩罚（war3 口径，M3）：速度之靴 +20 等、头盔/斗篷 -5 等。
         let flat = self.item_fx.speed_add - self.item_fx.speed_penalty;
         (Fix64::from_num(BASE_SPEED * self.speed_mult) + Fix64::from_num(flat)) * Fix64::from_num(mult)

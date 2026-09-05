@@ -18,7 +18,8 @@ use crate::skill::SkillId;
 /// v6（M3）：加入 items（u8 数量 + 每 item u32 id）。
 /// v7（B1 精通）：加入 mastery 4 字节（生命/远程/时间/背包）。
 /// v8（B2 队伍）：加入 team 1 字节。
-pub const CONFIG_VERSION: u8 = 8;
+/// v9（B4 形态）：加入 forms（u16 数量 + 每项 1 字节，按 SkillId 索引）。
+pub const CONFIG_VERSION: u8 = 9;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -57,6 +58,8 @@ pub struct PlayerConfig {
     pub mastery: [u8; 4],
     /// 队伍号（v8，098c cn[]，B2）。
     pub team: u8,
+    /// 形态位（v9，B4）：按 SkillId 索引。
+    pub forms: Vec<bool>,
 }
 
 impl PlayerConfig {
@@ -76,6 +79,7 @@ impl PlayerConfig {
             items: p.items.clone(),
             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
             team: p.team,
+            forms: p.forms.clone(),
         }
     }
 
@@ -101,6 +105,10 @@ impl PlayerConfig {
             backpack: self.mastery[3],
         };
         p.team = self.team;
+        let n = p.forms.len();
+        for (i, f) in self.forms.iter().enumerate().take(n) {
+            p.forms[i] = *f;
+        }
     }
 
     /// 编码为字节（带版本 + 长度前缀，可扩展）。
@@ -141,6 +149,11 @@ impl PlayerConfig {
         out.extend_from_slice(&self.mastery);
         // team（v8）。
         out.push(self.team);
+        // forms（v9）：u16 数量 + 每项 1 字节。
+        out.extend_from_slice(&(self.forms.len() as u16).to_be_bytes());
+        for f in &self.forms {
+            out.push(*f as u8);
+        }
         out
     }
 
@@ -198,6 +211,13 @@ impl PlayerConfig {
         // mastery（v7）。
         let mastery = [*buf.get(pos)?, *buf.get(pos + 1)?, *buf.get(pos + 2)?, *buf.get(pos + 3)?];
         let team = *buf.get(pos + 4)?;
+        let n_forms = u16_at(buf, pos + 5)? as usize;
+        pos += 7;
+        let mut forms = Vec::with_capacity(n_forms);
+        for _ in 0..n_forms {
+            forms.push(*buf.get(pos)? != 0);
+            pos += 1;
+        }
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -208,6 +228,7 @@ impl PlayerConfig {
             items,
             mastery,
             team,
+            forms,
         })
     }
 }
