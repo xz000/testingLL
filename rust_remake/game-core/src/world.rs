@@ -471,6 +471,10 @@ impl World {
         for p in self.players.iter_mut() {
             p.step_velocity(dt);
             p.tick_buffs(dt);
+            // 熔岩靴激活 CD 递减（098b 25s，D8/M5）。
+            if p.lava_boot_cd > Fix64::ZERO {
+                p.lava_boot_cd = (p.lava_boot_cd - dt).max(Fix64::ZERO);
+            }
             // 098b 全局生命恢复 Nn=0.05/s（D7）+ 物品回复（斗篷/坠饰，M3）；灼烧期间禁疗。
             if p.alive && !p.healing_blocked() {
                 let regen = (crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty).max(0.0);
@@ -514,7 +518,9 @@ impl World {
                 // 圈外 = 熔岩（098b 语义统一，D8）：踩上即受 Uo×10=9/s；
                 // 熔岩靴抵抗 87.5%（M5 简化为常驻被动；098b 原版为「熔岩上天罚激活 3-5s
                 // 窗口 + CD25s」，激活式 TODO）、-0.1 hp/s 惩罚照常生效。
-                let lava_mult = 1.0 - p.item_fx.lava_resist_frac;
+                // 熔岩靴激活窗口内 ×12.5%；窗口外吃全额（激活条件见 Nova 臂，D8/M5）。
+                let shielded = p.has_buff(BuffKind::LavaShield);
+                let lava_mult = if shielded { 1.0 - p.item_fx.lava_resist_frac } else { 1.0 };
                 let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult) * dt);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
             }
@@ -2008,6 +2014,22 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 098b AoE nova（M2 批次D）：以自身为中心，复用 explode_at（中心伤害+
                 // 距离衰减+连线击退，护甲折算/击杀记账在 explode_at 内）。
                 let ppos = world.players[idx as usize].pos;
+                // 熔岩靴激活（098b I00J-L「熔岩上天罚后激活」，M5/D8）：站熔岩 + 持靴 +
+                // CD 到期 → 挂 LavaShield（87.5% 抵抗 3/4/5s）；CD 25s 在 step tick 递减。
+                if matches!(
+                    kind,
+                    crate::skill::W098bNovaKind::Smiting | crate::skill::W098bNovaKind::Devotion
+                ) && ppos.length_squared() > world.arena_radius * world.arena_radius
+                {
+                    let p = &mut world.players[idx as usize];
+                    if p.lava_boot_cd <= Fix64::ZERO
+                        && p.item_fx.lava_resist_secs > 0.0
+                        && !p.has_buff(BuffKind::LavaShield)
+                    {
+                        p.add_buff(BuffKind::LavaShield, p.item_fx.lava_resist_secs);
+                        p.lava_boot_cd = Fix64::from_num(25.0);
+                    }
+                }
                 let mut gx = stats.damage;
                 // 鲜血之剑（M3 2c）：天罚伤害「增至」12/13（098b set 语义 → 取 max）。
                 let smite_bonus = world.players[idx as usize].item_fx.smite_bonus;
@@ -4478,8 +4500,8 @@ mod tests {
         assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
     }
 
-    /// M5 熔岩（圈外=熔岩统一，D8）：熔岩靴抵抗 87.5% → 净伤 9×0.125=1.125/s；
-    /// -0.1 hp/s 惩罚使自然回血为 0（0.05-0.1<0 clamp）。
+    /// M5 熔岩（圈外=熔岩统一，D8）：熔岩靴激活式——熔岩上用天罚 → 87.5% 窗口（1 档 3s）
+    /// + CD 25s；窗口外吃全额 9/s + 惩罚。
     #[test]
     fn lava_boots_resist_out_of_bounds_damage() {
         let mut world = World::new(1, 971);
@@ -4487,21 +4509,53 @@ mod tests {
         world.players[0].set_items(&[crate::item::ItemId::LavaBoots1]);
         world.players[0].hp = Fix64::from_num(50.0);
         let dt = Fix64::from_num(1.0 / 60.0);
+        // 站熔岩上放天罚（S001，windup 0.7s）→ 吟唱完激活 LavaShield 3s（1 档）
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+        ], dt);
         let none = vec![PlayerInput::default()];
         for _ in 0..60 {
-            world.step(none.clone(), dt); // 1s
+            if world.players[0].has_buff(BuffKind::LavaShield) {
+                break;
+            }
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::LavaShield), "熔岩上天罚应激活抵抗窗口");
+        assert!(world.players[0].lava_boot_cd > Fix64::from_num(24.0), "激活后进入 ~25s CD");
+        let none = vec![PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt); // 窗口内 1s
         }
         let lost = 50.0 - world.players[0].hp.to_num::<f64>();
-        assert!((lost - 1.125).abs() < 0.05, "穿熔岩靴 1s 应净伤 1.125（9×12.5%），实际 {lost}");
-        // 无靴对照：1s 掉 9
+        // 1s 口径：激活等待 ~0.72s 全额（6.5）+ 激活后窗口 ~0.28s（0.32）≈ 6.8
+        assert!((lost - 6.8).abs() < 1.2, "1s 复合口径（等待全额+窗口减免）≈6.8，实际 {lost}");
+        // 再走 2.5s：窗口剩 ~1.7s 减免（1.9）+ 0.8s 全额（7.2）
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+        }
+        let lost3 = 50.0 - world.players[0].hp.to_num::<f64>();
+        // 3.5s 累计推演：等待 ~0.72s 全额(6.45) + 窗口 1s(1.125) + 窗口剩余 2s(1.875)
+        //   + 窗口外 0.5s(4.5) ≈ 13.95；用区间断言防帧序漂移。
+        assert!(lost3 > 13.0 && lost3 < 15.5, "3.5s 累计 ≈14（等待+窗口+窗口外），实际 {lost3}");
+        // 无靴对照：1s 掉 9（且无 LavaShield 可激活）
         let mut world2 = World::new(1, 971);
         world2.players[0].pos = Vec2::new(d60(20.5), d60(20.5));
         world2.players[0].hp = Fix64::from_num(50.0);
+        world2.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+        ], dt);
+        let none2 = vec![PlayerInput::default()];
         for _ in 0..60 {
-            world2.step(none.clone(), dt);
+            world2.step(none2.clone(), dt); // 等吟唱完（无靴不激活）
         }
-        let lost2 = 50.0 - world2.players[0].hp.to_num::<f64>();
-        assert!((lost2 - 9.0).abs() < 0.1, "无靴 1s 应掉 9，实际 {lost2}");
+        assert!(!world2.players[0].has_buff(BuffKind::LavaShield), "无靴不应激活");
+        // 测量窗：单独 1s（等待期消耗的掉血不计入）
+        let hp2_before = world2.players[0].hp.to_num::<f64>();
+        for _ in 0..60 {
+            world2.step(none2.clone(), dt);
+        }
+        let lost3 = hp2_before - world2.players[0].hp.to_num::<f64>();
+        assert!((lost3 - 9.0).abs() < 0.1, "无靴 1s 应掉 9，实际 {lost3}");
     }
 
     /// M3 物品派生数值：靴加速度、斗篷回血、头盔 kb 取 max、坠饰加生命上限。
