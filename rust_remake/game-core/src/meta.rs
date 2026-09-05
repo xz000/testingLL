@@ -416,11 +416,12 @@ impl MatchState {
         self.phase = MatchPhase::Fighting;
     }
 
-    /// 首局进入配置学习（联机用倒计时自动开始）：进入 Learning，倒计时 = learn_time_secs。
+    /// 首局进入配置学习（联机用倒计时自动开始）：进入 Learning，倒计时 =
+    /// `shopping_time_secs`（098b Wo=40 开局购物，D6/M4；区别于每轮 wo=30 的 learn_time_secs）。
     /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发参与奖）。
     pub fn begin_first_round_config(&mut self) {
         self.phase = MatchPhase::Learning;
-        self.learn_remaining = self.config.learn_time_secs;
+        self.learn_remaining = self.config.shopping_time_secs;
         self.pending_first_round = true;
     }
 
@@ -567,6 +568,10 @@ mod tests {
         assert_eq!(config.gold_per_kill, 0);
         assert!(config.place_rewards.is_empty());
         assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 1));
+        // 开局购物 Wo=40 / 每轮 wo=30（D6/M4 En 批）
+        assert_eq!(config.shopping_time_secs, 40.0);
+        assert_eq!(config.learn_time_secs, 30.0);
+        assert_eq!(config.game_mode, 1);
         let mut m = MatchState::new(config, &[0, 1], 8);
         assert_eq!(m.profiles[0].gold, 20 + 10, "开局 20 + 首轮 10");
         // 击杀只给分
@@ -687,7 +692,8 @@ mod tests {
         m.begin_first_round_config();
         assert_eq!(m.phase, MatchPhase::Learning);
         assert_eq!(m.round, 1);
-        assert!(m.learn_remaining > 0.0, "首局配置应有倒计时");
+        // 首局购物时长用 Wo=40（shopping_time_secs），不是每轮 wo=30
+        assert_eq!(m.learn_remaining, 40.0, "首局购物应为 Wo=40");
         // 时间到：应走 enter_first_round（round 不变、金币不加）而非 advance_round（+round、发参与奖）。
         let advanced = m.tick_learning(m.learn_remaining + 0.1);
         assert!(advanced);
