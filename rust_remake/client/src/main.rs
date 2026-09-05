@@ -1036,6 +1036,29 @@ impl Game {
             }
         }
 
+        // 精通研究（098c kf，D12.3/B1）：U 生命 / I 远程 / O 时间 / P 背包。价格占位（w3q 未解析）。
+        const MASTERY: [(&str, &str, usize); 4] =
+            [("生命精通", "u", 0), ("远程精通", "i", 1), ("时间精通", "o", 2), ("背包研究", "p", 3)];
+        for (name, ch, kind) in MASTERY {
+            if Self::char_just(ctx, ch) {
+                if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                    if profile.buy_mastery(kind) {
+                        eprintln!("[learn] 精通 {name} -> Lv{}", match kind { 0 => profile.mastery.life, 1 => profile.mastery.range, 2 => profile.mastery.time, _ => profile.mastery.backpack });
+                        // 同步到战斗世界（vi/xi/ei 三系；背包只影响容量）
+                        if let Some(wp) = self.world.players.get_mut(me as usize) {
+                            wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
+                        }
+                    } else {
+                        eprintln!(
+                            "[learn] 精通 {name} 需要 {} 金或已达上限 {}",
+                            game_core::meta::Mastery::COSTS[kind],
+                            game_core::meta::Mastery::CAPS[kind]
+                        );
+                    }
+                }
+            }
+        }
+
         // `X`：洗点（全额退款）
         if Self::char_just(ctx, "x") {
             if let Some(profile) = self
@@ -1098,10 +1121,11 @@ impl Game {
                 continue;
             }
             let id = catalog[i].id;
-            if profile.items.len() >= game_core::item::ITEM_SLOTS
+            let slots = profile.inventory_slots();
+            if profile.items.len() >= slots
                 && !profile.items.iter().any(|&it| it.def().family == id.def().family)
             {
-                eprintln!("[shop] 物品格已满（{}）", game_core::item::ITEM_SLOTS);
+                eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
                 break;
             }
             if profile.buy_item(id) {
@@ -1885,12 +1909,26 @@ impl Game {
                     Point2 { x: sw - 90.0, y: 14.0 },
                     true,
                 )?;
-                // 物品栏：底部中央 6 格
+                // 精通（B1）：金 ${}$
+                let m = pr.mastery;
+                if m.life + m.range + m.time + m.backpack > 0 {
+                    draw_text(
+                        &mut canvas,
+                        ctx,
+                        &format!("精通 命{} 远{} 时{} 包{}", m.life, m.range, m.time, m.backpack),
+                        16.0,
+                        Color::from_rgb(170, 200, 255),
+                        Point2 { x: sw - 90.0, y: 36.0 },
+                        true,
+                    )?;
+                }
+                // 物品栏：底部中央 N 格（6 + 背包研究）
+                let item_slots = pr.inventory_slots() as f32;
                 let slot_w = 52.0;
-                let total_w = slot_w * 6.0;
+                let total_w = slot_w * item_slots;
                 let x0 = sw / 2.0 - total_w / 2.0;
                 let y0 = sh - 64.0;
-                for i in 0..game_core::item::ITEM_SLOTS {
+                for i in 0..pr.inventory_slots() {
                     let x = x0 + i as f32 * slot_w;
                     // 槽位底框
                     let slot_bg = Mesh::new_rectangle(
@@ -2251,6 +2289,19 @@ impl Game {
                         "选键改技能：按 字母(C/R/E/D/Y/T/F/G) 选中该树 -> 数字键选技能 -> 按 = 升级，X 洗点",
                         20.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
                     y += 44.0;
+
+                    // 精通研究（098c kf，B1）：U/I/O/P 购买，不涨价、跨回合保留（价格占位）
+                    let m = me.mastery;
+                    draw_text(canvas, ctx,
+                        &format!(
+                            "精通：[U]生命 Lv{}/{}（{}G）  [I]远程 Lv{}/{}（{}G）  [O]时间 Lv{}/{}（{}G）  [P]背包 Lv{}/{}（{}G）",
+                            m.life, game_core::meta::Mastery::CAPS[0], game_core::meta::Mastery::COSTS[0],
+                            m.range, game_core::meta::Mastery::CAPS[1], game_core::meta::Mastery::COSTS[1],
+                            m.time, game_core::meta::Mastery::CAPS[2], game_core::meta::Mastery::COSTS[2],
+                            m.backpack, game_core::meta::Mastery::CAPS[3], game_core::meta::Mastery::COSTS[3],
+                        ),
+                        18.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y }, true)?;
+                    y += 36.0;
 
                     // 每个键：树名 + 已绑定技能
                     for key in game_core::skill::CastKey::ALL {
@@ -4477,7 +4528,7 @@ impl Game {
                     (
                         pr.gold,
                         pr.items.clone(),
-                        pr.items.len() >= game_core::item::ITEM_SLOTS,
+                        pr.items.len() >= pr.inventory_slots(),
                     )
                 })
                 .unwrap_or((0, Vec::new(), false));
@@ -4494,7 +4545,7 @@ impl Game {
             draw_text(
                 &mut canvas,
                 ctx,
-                &format!("物品栏 ({}/{}）：{}", owned.len(), game_core::item::ITEM_SLOTS, owned_str),
+                &format!("物品栏 ({}/{}）：{}", owned.len(), pr.inventory_slots(), owned_str),
                 18.0,
                 Color::from_rgb(255, 220, 140),
                 Point2 { x: rcx, y: gy },

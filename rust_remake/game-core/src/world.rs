@@ -896,16 +896,18 @@ impl World {
                 self.damage_matrix[f as usize][id as usize] += dealt;
             }
         }
-        // 死亡面具/鲜血之剑（M3 2c）：攻方生命偷取（lifesteal×原始伤害）与受伤点恢复。
+        // 死亡面具/鲜血之剑（M3 2c）+ 生命精通 vi（098c kf，B1）：攻方生命偷取与受伤点恢复。
+        // vi 每级 +8%（098c L3299 HX×0.08×vi；死亡面具白送的 +3 吸血走 item lifesteal，不加精通级数）。
         if let Some(f) = from.and_then(|f| self.players.get(f as usize).map(|a| a.id)) {
-            let (lifesteal, odh) = {
+            let (lifesteal, odh, vi) = {
                 let a = &self.players[f as usize];
-                (a.item_fx.lifesteal, a.item_fx.on_damage_heal)
+                (a.item_fx.lifesteal, a.item_fx.on_damage_heal, a.mastery[0])
             };
-            if lifesteal > 0.0 || odh > 0.0 {
+            let vi_steal = amount.to_num::<f64>() * 0.08 * vi as f64;
+            if lifesteal > 0.0 || odh > 0.0 || vi_steal > 0.0 {
                 if let Some(a) = self.players.get_mut(f as usize) {
                     if a.alive {
-                        let heal = amount.to_num::<f64>() * lifesteal + odh;
+                        let heal = amount.to_num::<f64>() * lifesteal + odh + vi_steal;
                         a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
                     }
                 }
@@ -1528,12 +1530,11 @@ impl World {
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
                         events.push((victim, *gx, Some(pr.owner)));
-                        // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（ GX 设充能灯 1）。
-                        // 火球指纹 = Straight + Ki + 有点燃 + 无落点爆炸（法杖变体 ab 同样充能）。
+                        // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（GX 设充能灯 1）。
+                        // 火球指纹 = Straight + Ki + 有点燃（法杖/精通爆炸变体同样充能）。
                         if *proj == crate::skill::W098bProjKind::Straight
                             && *on_hit == crate::skill::W098bOnHit::Ki
                             && ignite.is_some()
-                            && blast.is_none()
                         {
                             if let Some(o) = self.players.get_mut(pr.owner as usize) {
                                 if o.item_fx.aegis {
@@ -1552,7 +1553,13 @@ impl World {
                             ignites.push((pr.owner, pr.pos, *total, (*debuff_dur).max(Fix64::from_num(W098B_IGNITE_SECONDS))));
                         }
                         if let Some(br) = blast {
-                            expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
+                            // 远程精通火球的落点爆炸只在到点/撞柱触发（JASS Bb），直中不重复炸。
+                            let is_fireball = *proj == crate::skill::W098bProjKind::Straight
+                                && *on_hit == crate::skill::W098bOnHit::Ki
+                                && ignite.is_some();
+                            if !is_fireball {
+                                expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
+                            }
                         }
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
                         match on_hit {
@@ -2056,6 +2063,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
             p.skill_level(id)
         };
         let stats = def.stats_at(caster_level);
+        // 098c 时间精通（R00Y ei，B1）：法术持续/射程 +10%/级，火球系（S000/S003/S004）+15%/级。
+        let ei = world.players[idx as usize].mastery[2] as f64;
+        let ei_mult = |heavy: bool| 1.0 + if heavy { 0.15 } else { 0.1 } * ei;
 
         match def.effect {
             SkillEffect::Boost { duration } => {
@@ -2103,6 +2113,21 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // gx/点燃总量走 stats（growth.damage/extra 已按等级求值）；
                 // 命中结算统一走 KI/FI（FI 伤害=gx×Gn×hn，KI 击退=DAMAGE_BASE×gx×JI）。
                 let ppos = world.players[idx as usize].pos;
+                // 时间精通：弹体寿命（=射程）缩放，火球三系权重 1.5（JASS ev=(1+.15ei) 等）。
+                let life = life * Fix64::from_num(ei_mult(matches!(
+                    id,
+                    crate::skill::SkillId::S000
+                        | crate::skill::SkillId::S003
+                        | crate::skill::SkillId::S004
+                )));
+                // 远程精通（R00I xi，B1）：xi>0 火球获得落点爆炸——仅到点/撞柱触发，
+                // 直中目标不重复爆炸（JASS Bb L5283 → sI）。半径 45×√(14+xi)（0.45×√ 尺度 ×100 换算 TODO w3q 校准）。
+                let blast = if id == crate::skill::SkillId::S000 && world.players[idx as usize].mastery[1] > 0 {
+                    let xi = world.players[idx as usize].mastery[1] as f64;
+                    Some(Fix64::from_num(45.0 * (14.0 + xi).sqrt()))
+                } else {
+                    blast
+                };
                 // Homing：锁定「点击处最近敌人」（098b S003 语义，复用 Missile 原型的锚点搜索）。
                 let homing_target = if proj == crate::skill::W098bProjKind::Homing {
                     let anchor = target.unwrap_or(ppos);
@@ -2291,7 +2316,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             if let Some(t) = target {
                                 let d = t - p.pos;
                                 let dist = d.length();
-                                let md = stats.max_distance.max(max_distance);
+                                let md = (stats.max_distance.max(max_distance)) * Fix64::from_num(ei_mult(false));
                                 if dist > md {
                                     p.pos += d.normalized() * md;
                                 } else {
@@ -2308,7 +2333,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Some(t) => { let d = t - p.pos; if d.length() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) } }
                                 None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                             };
-                            let dur_s = (stats.max_distance / speed).to_num::<f64>();
+                            let dur_s = (stats.max_distance * Fix64::from_num(ei_mult(false)) / speed).to_num::<f64>();
                             p.push(dir * speed, dur_s);
                             p.kick = Some(Kick {
                                 push_power: Fix64::from_num(100.0) * stats.damage, // 基数 100（目标 mana 放大 TODO）
@@ -2361,7 +2386,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     p.pos + towards(p.pos, target) * p.radius
                 };
                 let mut dir = towards(origin, target);
-                let mut remaining = range;
+                // 时间精通：闪电射程 +15%/级（JASS jb 600×(1+.15ei)）。
+                let mut remaining = range * Fix64::from_num(ei_mult(true));
                 let mut hit_any = false;
                 for _bounce in 0..4 {
                     // 扫描本段最近命中：玩家 vs 柱子
@@ -5701,5 +5727,117 @@ mod tests {
         }
         assert!(!sw.round_over(), "sandbox 永不判结束");
         assert_eq!(sw.arena_radius, start_r, "sandbox 不缩圈");
+    }
+
+    // ===== B1 精通系统（098c kf，D12.3） =====
+
+    /// 生命精通 vi：伤害吸血 +8%/级（098c L3299 HX×0.08×vi），任何伤害生效。
+    #[test]
+    fn mastery_vi_lifesteal_per_level() {
+        let mut world = World::new(2, 981);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::ZERO;
+        world.players[1].move_target = None;
+        world.players[1].hp = Fix64::from_num(50.0);
+        world.players[1].mastery[0] = 2; // 生命精通 2 级 → 吸血 16%
+        world.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::TestLightning, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..20 {
+            if world.players[1].hp > Fix64::from_num(50.0) { break; }
+            world.step(none.clone(), dt);
+        }
+        let healed = (world.players[1].hp - Fix64::from_num(50.0)).to_num::<f64>();
+        // 闪电 10 伤 × 16% = 1.6
+        assert!((healed - 1.6).abs() < 0.25, "2 级生命精通应吸血 16%×10=1.6，实际 {healed}");
+    }
+
+    /// 时间精通 ei：弹体寿命缩放（火球系 +15%/级）——射程随之变长。
+    #[test]
+    fn mastery_ei_extends_projectile_life() {
+        let mut world = World::new(1, 982);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        world.players[0].mastery[2] = 2; // 时间精通 2 级 → 火球寿命 ×1.3
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(20.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let life = world
+            .projectiles
+            .iter()
+            .find_map(|pr| match pr.kind {
+                ProjectileKind::W098b { life, .. } => Some(life.to_num::<f64>()),
+                _ => None,
+            })
+            .expect("应有火球弹体");
+        assert!((life - 1.3).abs() < 1e-3, "2 级时间精通火球寿命应 1.0×1.3=1.3s，实际 {life}");
+    }
+
+    /// 远程精通 xi：xi>0 火球获得落点爆炸（到点无目标也炸），xi=0 无爆炸。
+    #[test]
+    fn mastery_xi_gives_fireball_ground_blast() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 场景：施法者站场边 (-600,0) 朝场内射，弹体飞行 1000 码在 (400,0) 到点消失——
+        // xi>0 时在落点爆炸；观察者在弹道侧面 (400,120)（爆炸半径 45×√15≈173 内），全程在场内。
+        let mut world = World::new(2, 983);
+        world.obstacles.clear();
+        world.players[0].pos = Vec2::new(-d60(10.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[0].mastery[1] = 1; // 远程精通 1 级
+        world.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..90 {
+            world.step(none.clone(), dt);
+        }
+        let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
+        assert!(d1 > 1.0, "xi 爆炸应波及弹道侧 120 码的观察者（半径 ≈173），实际 {d1}");
+        // 对照：xi=0 → 无落点爆炸，观察者不应受伤
+        let mut world2 = World::new(2, 983);
+        world2.obstacles.clear();
+        world2.players[0].pos = Vec2::new(-d60(10.0), Fix64::ZERO);
+        world2.players[0].move_target = None;
+        world2.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
+        world2.players[1].move_target = None;
+        let hp1b = world2.players[1].hp;
+        world2.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..90 {
+            world2.step(none.clone(), dt);
+        }
+        assert_eq!(world2.players[1].hp, hp1b, "xi=0 无爆炸，观察者不应受伤");
+    }
+
+    /// 击退合成：精通每级 -2.5% 与属性/物品乘法合成（098c kf Hn 公式）。
+    #[test]
+    fn mastery_kb_reduction_composes_multiplicatively() {
+        let mut world = World::new(1, 984);
+        let p = &mut world.players[0];
+        assert!((p.effective_kb_reduction() - 0.0).abs() < 1e-9, "无属性无精通应为 0");
+        p.mastery = [2, 0, 0]; // lf=2 → -5%
+        assert!((p.effective_kb_reduction() - 0.05).abs() < 1e-9);
+        p.mastery = [3, 3, 3]; // lf=9 → 1-(0.775)=22.5%？(1-0.225)=0.775
+        let got = p.effective_kb_reduction();
+        assert!((got - 0.225).abs() < 1e-9, "9 级精通应 -22.5%，实际 {got}");
+        // 与物品合成：头盔 32% + 精通 22.5% → 1-(0.68×0.775)=47.3%
+        p.set_items(&[crate::item::ItemId::Helm3]);
+        let got2 = p.effective_kb_reduction();
+        assert!((got2 - 0.473).abs() < 1e-9, "物品×精通应乘法合成 47.3%，实际 {got2}");
     }
 }

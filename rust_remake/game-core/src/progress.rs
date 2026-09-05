@@ -16,7 +16,8 @@ use crate::skill::SkillId;
 /// v5（098b 复刻 M0）：attributes 收缩为 5 个 u32（移除 mana_max / mana_regen，
 ///     无蓝量系统 PORT_098B_DECISIONS.md D3）。
 /// v6（M3）：加入 items（u8 数量 + 每 item u32 id）。
-pub const CONFIG_VERSION: u8 = 6;
+/// v7（B1 精通）：加入 mastery 4 字节（生命/远程/时间/背包）。
+pub const CONFIG_VERSION: u8 = 7;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -51,6 +52,8 @@ pub struct PlayerConfig {
     pub growth_points: u32,
     /// 持有的物品（M3；升级链同家族替换）。
     pub items: Vec<crate::item::ItemId>,
+    /// 精通研究等级（v7，098c D12.3）：[生命, 远程, 时间, 背包]。
+    pub mastery: [u8; 4],
 }
 
 impl PlayerConfig {
@@ -68,6 +71,7 @@ impl PlayerConfig {
             attributes: p.attributes,
             growth_points: p.growth_points,
             items: p.items.clone(),
+            mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
         }
     }
 
@@ -86,6 +90,12 @@ impl PlayerConfig {
         p.attributes = self.attributes;
         p.growth_points = self.growth_points;
         p.items = self.items.clone();
+        p.mastery = crate::meta::Mastery {
+            life: self.mastery[0],
+            range: self.mastery[1],
+            time: self.mastery[2],
+            backpack: self.mastery[3],
+        };
     }
 
     /// 编码为字节（带版本 + 长度前缀，可扩展）。
@@ -122,6 +132,8 @@ impl PlayerConfig {
         for it in &self.items {
             put_u32(&mut out, it.as_u32());
         }
+        // mastery（v7）：生命/远程/时间/背包各 1 字节。
+        out.extend_from_slice(&self.mastery);
         out
     }
 
@@ -176,6 +188,8 @@ impl PlayerConfig {
             pos += 4;
             items.push(crate::item::ItemId::from_u32(id)?);
         }
+        // mastery（v7）。
+        let mastery = [*buf.get(pos)?, *buf.get(pos + 1)?, *buf.get(pos + 2)?, *buf.get(pos + 3)?];
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -184,6 +198,7 @@ impl PlayerConfig {
             attributes,
             growth_points,
             items,
+            mastery,
         })
     }
 }
@@ -207,12 +222,14 @@ mod tests {
         p.gold = 12345;
         p.gold_spent = 500;
         p.attributes = crate::attribute::Attributes { hp_bonus: 3, speed_bonus: 2, ..Default::default() };
+        p.mastery = crate::meta::Mastery { life: 2, range: 1, time: 3, backpack: 2 };
         let cfg = PlayerConfig::from_profile(&p);
         let bytes = cfg.encode();
         let dec = PlayerConfig::decode(&bytes).expect("应能解码");
         assert_eq!(dec, cfg, "快照往返应一致");
         assert_eq!(dec.attributes.hp_bonus, 3, "属性应随快照同步");
         assert_eq!(dec.attributes.speed_bonus, 2);
+        assert_eq!(dec.mastery, [2, 1, 3, 2], "精通应随快照同步（v7）");
     }
 
     #[test]

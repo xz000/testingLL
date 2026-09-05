@@ -232,6 +232,10 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wf64(o, p.growth);
     // 守护之盾充能（098c Ha）
     wu8(o, p.aegis_charged as u8);
+    // 精通战斗快照（B1）：生命/远程/时间各 1 字节
+    for m in &p.mastery {
+        wu8(o, *m);
+    }
     // items（M3）：u8 数量 + u32 id（解码后重算 item_fx）
     wu8(o, p.items.len() as u8);
     for it in &p.items {
@@ -359,6 +363,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let mana = f64::from_bits(u64at(b, p)?);
     let growth = f64::from_bits(u64at(b, p)?);
     let aegis_charged = u8at(b, p)? != 0;
+    let mastery = [u8at(b, p)?, u8at(b, p)?, u8at(b, p)?];
     let n_items = u8at(b, p)? as usize;
     let mut items = Vec::with_capacity(n_items);
     for _ in 0..n_items {
@@ -459,6 +464,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.mana = mana;
     pl.growth = growth;
     pl.aegis_charged = aegis_charged;
+    pl.mastery = mastery;
     pl.items = items;
     pl.recompute_item_fx();
     pl.move_target = move_target;
