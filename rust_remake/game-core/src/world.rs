@@ -247,6 +247,12 @@ pub enum ProjectileKind {
         on_hit: crate::skill::W098bOnHit,
         /// 副作用时长（growth.duration 求值：残废 (4+0.25L)s / 锁链 0.5s）。
         debuff_dur: Fix64,
+        /// 回旋镖横向侧偏速度（098c Wb=300/s，每次施放左右交替；D9 技能手感批）。
+        lateral: Fix64,
+        /// 回旋镖出程方向（弧线物理的前向轴）。
+        forward_dir: Vec2,
+        /// 回旋镖出程距离（098c cO：前向匀减速到 0 的位置）。
+        out_dist: Fix64,
     },
 }
 
@@ -366,7 +372,8 @@ pub struct World {
     pub(crate) time: Fix64,
     /// 瞬态渲染痕迹（仅客户端读取，不参与确定性逻辑/序列化）：闪电射线 (起点, 终点, 剩余显示秒)。
     /// 每帧 `step` 开头递减剩余时间、归零清空；由 `execute_effects` 的 Lightning 效果设置（Unity 原版约 0.1s），供 client 画线。
-    pub lightning_visual: Option<(Vec2, Vec2, Fix64)>,
+    /// 闪电视觉段列表（098c 闪电可经柱子反射产生多段；每段独立倒计时）。
+    pub lightning_visual: Vec<(Vec2, Vec2, Fix64)>,
 }
 
 impl World {
@@ -399,7 +406,7 @@ impl World {
             round_number: 1,
             damage_matrix: vec![vec![Fix64::ZERO; player_count as usize]; player_count as usize],
             time: Fix64::ZERO,
-            lightning_visual: None,
+            lightning_visual: Vec::new(),
         }
     }
 
@@ -412,14 +419,15 @@ impl World {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
         // 瞬态渲染痕迹：每帧递减剩余显示时间，归零后清空（由本帧施放的闪电效果重新设置并计时）。
-        let expire = if let Some((_, _, rem)) = self.lightning_visual.as_mut() {
+        let mut expire = false;
+        for (_, _, rem) in self.lightning_visual.iter_mut() {
             *rem -= dt;
-            *rem <= Fix64::ZERO
-        } else {
-            false
-        };
+            if *rem <= Fix64::ZERO {
+                expire = true;
+            }
+        }
         if expire {
-            self.lightning_visual = None;
+            self.lightning_visual.retain(|(_, _, rem)| *rem > Fix64::ZERO);
         }
 
         // 0) 先按 clear_queue 清空各玩家队列、按 stop_move 清移动目标，再入队新 shift 指令
@@ -1078,7 +1086,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, life, blast, target, returning, gx, kb_ji, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 出程恒速、过半程后朝施法者当前位置回拉。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -1108,16 +1116,31 @@ impl World {
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Boomerang => {
+                            // 098c 弧线物理（Ub，D9 技能手感批）：前向匀减速（到出程距离处速度归零）+
+                            // 横向侧偏恒定（左右交替）→ 自然弧线；前向归零后向施法者加速回飞。
                             let owner_pos = self
                                 .players
                                 .get(pr.owner as usize)
                                 .map(|o| o.pos)
                                 .unwrap_or(pr.pos);
-                            if !*returning && *remaining <= *life / Fix64::from_num(2.0) {
-                                *returning = true;
+                            if !*returning {
+                                // 前向分量匀减速：decel = v0²/(2×out_dist)，v0=speed
+                                let dec = (*speed * *speed) / (Fix64::from_num(2.0) * *out_dist);
+                                let fwd_now = vel.dot(*forward_dir);
+                                let new_fwd = (fwd_now - dec * dt).max(Fix64::ZERO);
+                                let lat_dir = Vec2::new(-forward_dir.y, forward_dir.x);
+                                let lat_speed = vel.dot(lat_dir); // 带符号横向速度
+                                let lat_vec = if lat_speed.abs() > Fix64::ZERO {
+                                    lat_dir * lat_speed
+                                } else {
+                                    Vec2::ZERO
+                                };
+                                *vel = *forward_dir * new_fwd + lat_vec;
+                                if new_fwd <= Fix64::ZERO {
+                                    *returning = true; // 前向归零 → 开始回程
+                                }
                             }
                             if *returning {
-                                // 回程：持续朝施法者当前位置加速回飞；回到附近即收回（销毁）。
                                 let d = owner_pos - pr.pos;
                                 let dist = d.length();
                                 if dist < Fix64::from_num(60.0) {
@@ -1200,6 +1223,8 @@ impl World {
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
         // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
         let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
+        // 098c 回旋镖命中转回程：(proj 下标, 返回速度)。
+        let mut boomerang_returns: Vec<(usize, Fix64)> = Vec::new();
         // 098b on_hit 控制效果：(受害者, Tied 时长) 与 (受害者, 拉向施法者速度, 时长)。
         let mut debuffs: Vec<(u32, f64)> = Vec::new();
         let mut pulls_toward: Vec<(u32, Vec2, f64)> = Vec::new();
@@ -1483,7 +1508,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, vel, returning, on_hit, debuff_dur, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -1532,6 +1557,11 @@ impl World {
                                 }
                             }
                         }
+                        // 回旋镖命中：不消失——转回程飞向施法者（098c Sb）。共享借用内
+                        // 不可写，经 boomerang_returns 在 2c2 段统一写回。
+                        if *proj == crate::skill::W098bProjKind::Boomerang && !*returning {
+                            boomerang_returns.push((pi, vel.length().max(*speed)));
+                        }
                         // Bounce（S016 弹跳弹）：命中不消失——伤害 ×0.8（下限 0.2），
                         // 重定向到**全场**最近的「非 owner、非上一跳目标」敌人（不限判定半径——
                         // 半径内扫描会因 or_else 兜底重新选中贴脸的旧目标，弹永远到不了下一家）；
@@ -1561,7 +1591,7 @@ impl World {
                                 }
                                 None => pr.alive = false, // 无下一目标：消失
                             }
-                        } else {
+                        } else if *proj != crate::skill::W098bProjKind::Boomerang {
                             pr.alive = false;
                         }
                     }
@@ -1608,6 +1638,20 @@ impl World {
                 *vel = new_vel;
                 *target = Some(last_victim); // 下一跳跳过本次受害者
                 *remaining = *life; // 单跳寿命重置（ev 语义）
+            }
+        }
+        // 2c2) 应用回旋镖命中转回程：置 returning、速度指向施法者当前位置（098c Sb）。
+        for (pi, ret_speed) in boomerang_returns {
+            let owner_id = ps[pi].owner;
+            let proj_pos = ps[pi].pos;
+            if let ProjectileKind::W098b { vel, returning, .. } = &mut ps[pi].kind {
+                *returning = true;
+                if let Some(o) = self.players.get(owner_id as usize) {
+                    let d = o.pos - proj_pos;
+                    if d.length_squared() > Fix64::ZERO {
+                        *vel = d.normalized() * ret_speed;
+                    }
+                }
             }
         }
 
@@ -1691,6 +1735,28 @@ impl World {
         // 5) 写回并清除已死亡/失效的弹体
         ps.retain(|p| p.alive);
         self.projectiles = ps;
+    }
+
+    /// 射线-圆求交：返回 (沿射线距离 t, 交点)。无交返回 None。圆需在射线前方。
+    fn ray_circle_t(origin: Vec2, dir: Vec2, center: Vec2, radius: Fix64) -> Option<(Fix64, Vec2)> {
+        let oc = center - origin;
+        let proj = oc.dot(dir);
+        if proj < Fix64::ZERO {
+            return None; // 圆心在射线后方
+        }
+        let perp_sq = oc.length_squared() - proj * proj;
+        let r_sq = radius * radius;
+        if perp_sq > r_sq {
+            return None;
+        }
+        let back = (r_sq - perp_sq).sqrt();
+        let t = proj - back; // 进入点
+        if t < Fix64::ZERO {
+            // 原点已在圆内：t=0
+            Some((Fix64::ZERO, origin))
+        } else {
+            Some((t, origin + dir * t))
+        }
     }
 
     /// 找到离某个位置最近、且不是 `owner` 的存活玩家。
@@ -2064,6 +2130,17 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             returning: false,
                             on_hit,
                             debuff_dur: stats.duration,
+                            // 回旋镖弧线（098c Ub，D9 技能手感批）：横向侧偏 ±300/s 左右交替，
+                            // 出程距离 = 速度×名义寿命（前向匀减速到 0 的位置）。
+                            lateral: if proj == crate::skill::W098bProjKind::Boomerang {
+                                let side = if world.players[idx as usize].boomerang_side { 1.0 } else { -1.0 };
+                                world.players[idx as usize].boomerang_side = !world.players[idx as usize].boomerang_side;
+                                Fix64::from_num(side * 300.0)
+                            } else {
+                                Fix64::ZERO
+                            },
+                            forward_dir: dir,
+                            out_dist: life * speed,
                         },
                         pos: ppos,
                         alive: true,
@@ -2217,28 +2294,48 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::W098bBolt { range, kb_ji } => {
-                // 098b 即时射线（S002 闪电）：沿方向 raycast 首个命中（玩家或障碍截断）；
-                // FI 伤害 = gx×Gn×hn（growth.damage 随等级；走 damage_player 现有管线，含击杀记账）；
-                // KI 击退 = DAMAGE_BASE×gx×JI（098b 口径）；lightning_visual 复用 D1 原型视觉通道。
+                // 098c 闪电（jb/Bb，D9 技能手感批）：光束**在柱子上反射**——
+                // 每段沿方向找最近命中（玩家=结算 KI 伤害+击退后终止该段；柱子=镜向反射
+                // 并以剩余射程递归），每段写入 lightning_visual（客户端逐段画线）。
+                // 伤害 = 6+1×L 走 damage_player（KI 口径）；击退 = (100+目标魔法)×gx×JI。
                 let gx = stats.damage;
-                let (ppos, pradius) = {
+                let mut origin = {
                     let p = &world.players[idx as usize];
-                    (p.pos, p.radius)
+                    p.pos + towards(p.pos, target) * p.radius
                 };
-                let dir = towards(ppos, target);
-                let origin = ppos + dir * pradius;
-                let end = if let Some(hit) = world.raycast_first(origin, dir, range, idx) {
-                    let mut hit_player: Option<u32> = None;
-                    for p in world.players.iter() {
-                        if !p.alive || p.id == idx {
+                let mut dir = towards(origin, target);
+                let mut remaining = range;
+                let mut hit_any = false;
+                for _bounce in 0..4 {
+                    // 扫描本段最近命中：玩家 vs 柱子
+                    let mut best_t = remaining;
+                    let mut best_player: Option<u32> = None;
+                    let mut best_pillar: Option<usize> = None;
+                    for q in world.players.iter() {
+                        if !q.alive || q.id == idx {
                             continue;
                         }
-                        if (p.pos - hit).length_squared() <= p.radius * p.radius {
-                            hit_player = Some(p.id);
-                            break;
+                        if let Some((t, _)) = World::ray_circle_t(origin, dir, q.pos, q.radius) {
+                            if t < best_t {
+                                best_t = t;
+                                best_player = Some(q.id);
+                                best_pillar = None;
+                            }
                         }
                     }
-                    if let Some(pid) = hit_player {
+                    for (oi, o) in world.obstacles.iter().enumerate() {
+                        if let Some((t, _)) = World::ray_circle_t(origin, dir, o.pos, o.radius) {
+                            if t < best_t {
+                                best_t = t;
+                                best_player = None;
+                                best_pillar = Some(oi);
+                            }
+                        }
+                    }
+                    let seg_end = origin + dir * best_t;
+                    world.lightning_visual.push((origin, seg_end, Fix64::from_num(0.1)));
+                    if let Some(pid) = best_player {
+                        // 玩家命中：KI 伤害 + 击退，光束终止（098c：单段只结算一名玩家）
                         let vmana = world.players[pid as usize].mana;
                         world.damage_player(pid, gx, Some(idx));
                         if let Some(p) = world.players.get_mut(pid as usize) {
@@ -2247,12 +2344,21 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 p.push_knockback(dir * kb);
                             }
                         }
+                        hit_any = true;
+                        break;
                     }
-                    hit
-                } else {
-                    origin + dir * range
-                };
-                world.lightning_visual = Some((origin, end, Fix64::from_num(0.1)));
+                    if let Some(oi) = best_pillar {
+                        // 柱子反射（098c Bb 反射段，D9 技能手感批）：镜向方向继续，剩余射程递减
+                        let normal = (origin + dir * best_t - world.obstacles[oi].pos).normalized();
+                        origin = seg_end + normal;
+                        dir = crate::fix::mirror_by(dir, normal);
+                        remaining -= best_t;
+                        hit_any = true;
+                        continue;
+                    }
+                    break; // 无命中：光束到射程终点
+                }
+                let _ = hit_any;
             }
             SkillEffect::Missile { .. } => {
                 // 追踪导弹：锁定点击处最近的敌人全速直追；命中爆炸伤+击退。（数值走 stats，随等级成长）
@@ -2837,7 +2943,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 } else {
                     origin + dir * maxd
                 };
-                world.lightning_visual = Some((origin, end, Fix64::from_num(0.1)));
+                world.lightning_visual.push((origin, end, Fix64::from_num(0.1)));
             }
             SkillEffect::Swap { .. } => {
                 // 换位（R3a）：点目标，若目标位置附近有敌人则与之互换位置，否则自身瞬移过去。
@@ -3332,7 +3438,7 @@ mod tests {
         let mut saw_bolt = false;
         for _ in 0..20 {
             world.step(input.clone(), dt);
-            if world.lightning_visual.is_some() {
+            if !world.lightning_visual.is_empty() {
                 saw_bolt = true; // 闪电射线可视化痕迹至少出现过一次（客户端据此画线）
             }
         }
@@ -4428,36 +4534,47 @@ mod tests {
 
     /// S004 回旋镖：出程后回程拉回施法者，回到附近即收回消失。
     #[test]
-    fn s004_boomerang_returns_and_despawns() {
+    /// 098c 弧线回旋镖（Ub，D9 技能手感批）：命中后不消失——反向飞回施法者再消失。
+    #[test]
+    fn s004_boomerang_hits_then_returns_to_caster() {
         let mut world = World::new(2, 952);
         world.obstacles.clear();
+        world.sandbox = true;
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO); // 反方向，保证不误伤/不干扰
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 180 处的敌人（< 800 出程）
         world.players[1].move_target = None;
-        let input = vec![
-            PlayerInput { cast: Some((SkillId::S004, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S004, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
-        ];
-        world.step(input.clone(), dt);
+        ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
-        // 出程阶段（前 ~0.5s）弹应在场且为 098b 回旋镖
-        world.step(none.clone(), dt);
-        let spawned = world
-            .projectiles
-            .iter()
-            .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
-        assert!(spawned, "施法后场上应有 098b 回旋镖弹体");
-        // life 1.6s + 回程余量：3s 内应回到施法者附近（<60）并收回
-        for _ in 0..180 {
+        // 全程每帧检查：命中 → 弹不消失 → 回到施法者附近（<120）→ 收回消失
+        let mut hit = false;
+        let mut returned_near_caster = false;
+        let mut despawned_after_return = false;
+        for _ in 0..120 {
             world.step(none.clone(), dt);
+            let boom_now = world
+                .projectiles
+                .iter()
+                .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
+            if world.players[1].hp < hp1 {
+                hit = true;
+            }
+            if hit && boom_now {
+                returned_near_caster = true;
+            }
+            if hit && returned_near_caster && !boom_now {
+                despawned_after_return = true;
+                break;
+            }
         }
-        let still = world
-            .projectiles
-            .iter()
-            .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
-        assert!(!still, "回旋镖回程到家应收回消失（3s 足够出+回）");
+        assert!(hit, "回旋镖出程应命中敌人（7.2）");
+        assert!(returned_near_caster, "命中后回旋镖应飞回施法者附近（窗口期内）");
+        assert!(despawned_after_return, "回到施法者后收回消失");
     }
 
     /// S008 陨石灼烧「烤肉饼」（D7）：命中 → Scorched（禁疗+输出 ×0.1）4s + 灼烧 DoT 场。
@@ -5050,7 +5167,7 @@ mod tests {
         // 施法帧即结算（execute_effects 在 step 内同步跑）。
         assert!(world.players[1].hp < hp1, "闪电应瞬发命中（L1 伤 7），hp {hp1} -> {}", world.players[1].hp);
         assert!(hp1 - world.players[1].hp >= Fix64::from_num(6.9), "直伤≈7（容差含全局回血漂移）");
-        assert!(world.lightning_visual.is_some(), "应写 lightning_visual 供 client 画线");
+        assert!(!world.lightning_visual.is_empty(), "应写 lightning_visual 供 client 画线");
         assert!(world.players[1].pos.x > d60(5.0), "闪电应击退敌人");
     }
 

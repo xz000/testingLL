@@ -201,6 +201,8 @@ pub struct Player {
     pub mana: f64,
     /// 098c 伤害成长（Gn，D9）：命中敌人 ×1.1 连乘、死亡/重轮重置 1.0；头顶显示点数。
     pub growth: f64,
+    /// 回旋镖横向侧偏方向（098c ha 标志：每次施放翻转，左右弧线交替，D9 技能手感批）。
+    pub boomerang_side: bool,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -256,6 +258,7 @@ impl Player {
             lava_boot_cd: Fix64::ZERO,
             mana: 0.0,
             growth: 1.0,
+            boomerang_side: false,
             items: Vec::new(),
             item_fx: crate::item::aggregate(&[]),
             ricochet_pending: None,
@@ -647,6 +650,7 @@ impl Player {
         self.catastrophe_stage = 0;
         self.mana = 0.0; // 098c 出生魔法 0（D9）
         self.growth = 1.0;
+        self.boomerang_side = false;
         self.hp = self.max_hp;
         self.alive = true;
         self.last_hit_by = None;
