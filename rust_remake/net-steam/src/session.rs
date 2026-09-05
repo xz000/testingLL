@@ -26,6 +26,9 @@ pub const MATCH_VALUE: &str = "remake_arena_v1";
 pub const ROOM_NAME_KEY: &str = "room_name";
 /// 大厅元数据：房间备注（键）。
 pub const ROOM_NOTE_KEY: &str = "room_note";
+
+/// 房间模式（098c nn：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还）——房间列表可见（D13 #1）。
+pub const ROOM_MODE_KEY: &str = "room_mode";
 /// 大厅元数据：房间总轮数（host 建房时写入；加入者据此对齐 MatchConfig.total_rounds）。
 pub const ROOM_ROUNDS_KEY: &str = "room_rounds";
 /// 大厅元数据：局与局之间的准备时间（秒，host 建房时写入；加入者据此对齐 MatchConfig.learn_time_secs）。
@@ -441,6 +444,8 @@ pub struct LobbyInfo {
     pub name: String,
     /// 房间备注（元数据 `room_note`，可空）。
     pub note: String,
+    /// 游戏模式（元数据 `room_mode`；缺省 1=轮次）。
+    pub mode: u8,
 }
 
 impl SteamSession {
@@ -614,6 +619,26 @@ impl SteamSession {
     }
 
     /// 读取每轮固定金币（参与奖；host 未设置时回退 None，由调用方给默认值）。
+    /// 设置游戏模式（写进大厅元数据，供加入者与房间列表读取；B3/D13 #1）。
+    pub fn host_set_mode(&self, mode: u8) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_mode: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_MODE_KEY, &mode.to_string());
+        Ok(())
+    }
+
+    /// 读取房间模式（加入者对齐 host 设置用）。
+    pub fn lobby_mode(&self) -> Option<u8> {
+        let l = self.lobby?;
+        self.transport
+            .matchmaking()
+            .lobby_data(l, ROOM_MODE_KEY)
+            .and_then(|s| s.parse().ok())
+    }
+
     pub fn lobby_gold_per_round(&self) -> Option<i32> {
         let l = self.lobby?;
         self.transport
@@ -796,6 +821,7 @@ impl SteamSession {
             let owner = mm.lobby_owner(l).raw();
             let name = mm.lobby_data(l, ROOM_NAME_KEY).unwrap_or_else(|| "未命名房间".to_string());
             let note = mm.lobby_data(l, ROOM_NOTE_KEY).unwrap_or_default();
+            let mode = mm.lobby_data(l, ROOM_MODE_KEY).and_then(|s| s.parse().ok()).unwrap_or(1);
             out.push(LobbyInfo {
                 id: l.raw(),
                 owner,
@@ -803,6 +829,7 @@ impl SteamSession {
                 limit,
                 name,
                 note,
+                mode,
             });
         }
         LobbyListProgress::Done(Ok(out))

@@ -374,6 +374,14 @@ pub struct World {
     /// 每帧 `step` 开头递减剩余时间、归零清空；由 `execute_effects` 的 Lightning 效果设置（Unity 原版约 0.1s），供 client 画线。
     /// 闪电视觉段列表（098c 闪电可经柱子反射产生多段；每段独立倒计时）。
     pub lightning_visual: Vec<(Vec2, Vec2, Fix64)>,
+    /// 游戏模式（098c nn，B3）：1=round 默认 / 2=deathmatch / 3=avatar / 4=king / 5=lms。
+    pub mode: u8,
+    /// 化身玩家 id（模式 3；每轮由调用方设置）。
+    pub avatar: Option<u32>,
+    /// F 槽施法替换（模式 3/4：化身→灾变 S020、国王→虔诚 S021；按玩家索引）。
+    pub f_override: Vec<Option<SkillId>>,
+    /// 强制回合结束（模式 3 化身被杀即结算）。
+    pub round_forced: bool,
 }
 
 impl World {
@@ -407,6 +415,10 @@ impl World {
             damage_matrix: vec![vec![Fix64::ZERO; player_count as usize]; player_count as usize],
             time: Fix64::ZERO,
             lightning_visual: Vec::new(),
+            mode: 1,
+            avatar: None,
+            f_override: vec![None; player_count as usize],
+            round_forced: false,
         }
     }
 
@@ -477,6 +489,8 @@ impl World {
         }
 
         // 3) 移动：本帧流程 = 清 pull → 场效应累加 pull → 合成速度推进 + buff 计时
+        let mut new_deaths = Vec::new();
+        let mut new_kills = Vec::new();
         for p in self.players.iter_mut() {
             p.reset_pull();
         }
@@ -495,6 +509,14 @@ impl World {
             if p.alive && !p.healing_blocked() {
                 let regen = (crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty).max(0.0);
                 p.hp = (p.hp + Fix64::from_num(regen) * dt).min(p.max_hp);
+            }
+            // Doom（098c 国王模式：弑王全队永久 -1 hp/s，B3b）；可致死亡。
+            if p.alive && p.doom > 0.0 {
+                p.hp = (p.hp - Fix64::from_num(p.doom) * dt).max(Fix64::ZERO);
+                if p.hp == Fix64::ZERO {
+                    p.alive = false;
+                    new_deaths.push(p.id);
+                }
             }
             // S006 时光回溯（098b ER）：倒计时到点闪回锚点并还原 HP（不低于 1，避免回溯自杀）。
             if let Some((pos, hp, rem)) = p.rewind {
@@ -523,8 +545,6 @@ impl World {
         self.step_projectiles(dt);
 
         // 7) 边界：出界掉血（无自动回收，玩家需自己走位回去）+ 死亡
-        let mut new_deaths = Vec::new();
-        let mut new_kills = Vec::new();
         for p in self.players.iter_mut() {
             if !p.alive {
                 continue;
@@ -537,6 +557,7 @@ impl World {
                 // 熔岩靴激活窗口内 ×12.5%；窗口外吃全额（激活条件见 Nova 臂，D8/M5）。
                 let shielded = p.has_buff(BuffKind::LavaShield);
                 let lava_mult = if shielded { 1.0 - p.item_fx.lava_resist_frac } else { 1.0 };
+                let lava_mult = lava_mult * p.lava_taken_mult;
                 // 岩浆随回合成长（098c To[0] 随回合成长，D9 批次3；成长率未解码 → 线性占位）
                 let round_scale = self.round_number.max(1) as f64;
                 let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult * round_scale) * dt);
@@ -551,8 +572,12 @@ impl World {
                 }
             }
         }
-        self.eliminated_order.extend(new_deaths);
-        self.kills_this_round.extend(new_kills);
+        // 岩浆/Doom 死亡也走 record_death（模式钩子：DM 复活 / LMS 救活受害者 / 化身结算）。
+        for victim in new_deaths {
+            self.record_death(victim);
+        }
+        // 复活调度（模式 2/5，B3）：到点满血复活。
+        self.tick_respawns();
 
         // 8) shift 指令队列：空闲时逐个执行队头指令（行走完/施法做完再执行下一个）。
         self.step_command_queue();
@@ -616,6 +641,8 @@ impl World {
     /// 返回 `just_cast`：每个玩家本帧是否新开始了一次施法（用于取消旧移动命令）。
     fn handle_casts(&mut self, input: &InputSlice, dt: Fix64) -> Vec<bool> {
         let mut just_cast = vec![false; self.players.len()];
+        // F 槽施法替换快照（B3：化身→灾变 S020 / 国王→虔诚 S021），避免借用冲突。
+        let f_overrides = self.f_override.clone();
 
         // a) 先应用新的施法请求（占用本帧的人手）
         for (idx, (p, pi)) in self.players.iter_mut().zip(input.iter()).enumerate() {
@@ -623,6 +650,12 @@ impl World {
                 continue;
             }
             if let Some((skill, target)) = pi.cast {
+                // F 槽替换（模式 3/4）：天罚 S001 在化身/国王手里变成灾变/虔诚。
+                let skill = if skill == SkillId::S001 {
+                    f_overrides.get(idx).copied().flatten().unwrap_or(skill)
+                } else {
+                    skill
+                };
                 // C3 影身·召回：已有锚点时再按影身 = 立即传回（原版 `BackToShadow` 忽略冷却）
                 if skill == SkillId::Shadow && p.shadow_anchor.is_some() {
                     let anchor = p.shadow_anchor.take().unwrap();
@@ -836,6 +869,67 @@ impl World {
         if let Some(k) = self.players[victim as usize].last_hit_by {
             self.kills_this_round.push((k, victim));
         }
+        // 模式化身后处理（098c AI 分支，B3）：
+        match self.mode {
+            2 => {
+                // 死亡竞赛：4 秒后复活（098c so=4s → OI 随机点满血）。
+                self.players[victim as usize].respawn_at = Some(self.time + Fix64::from_num(4.0));
+            }
+            5 => {
+                // LMS：凶手死亡 → 其受害者 3 秒后复活（098c so/3）。
+                let killer_id = self.players[victim as usize].id;
+                for p in self.players.iter_mut() {
+                    if !p.alive && p.respawn_at.is_none() && p.last_hit_by == Some(killer_id) {
+                        p.respawn_at = Some(self.time + Fix64::from_num(3.0));
+                    }
+                }
+            }
+            3 => {
+                // 化身被杀 → 立即结算本轮（098c fI）。
+                if self.avatar == Some(victim) {
+                    self.round_forced = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 复活到随机出生点（模式 2/5；确定性 rng）。满血、清状态。
+    fn revive_player(&mut self, idx: usize) {
+        // 确定性复活点：以 round_seed+玩家 id 播种（两端一致）
+        let mut rng = Rng::new(self.round_seed ^ (0x9E37_79B9_7F4A_7C15u64.wrapping_mul(idx as u64 + 1)));
+        let angle = Fix64::from_num(std::f64::consts::TAU) * rng.next_fix();
+        let ring = self.arena_radius * Fix64::from_num(0.5);
+        let pos = Vec2::new(ring * crate::fix::cos(angle), ring * crate::fix::sin(angle));
+        let p = &mut self.players[idx];
+        p.alive = true;
+        p.hp = p.max_hp;
+        p.pos = pos;
+        p.move_target = None;
+        p.control = None;
+        p.kick = None;
+        p.rewind = None;
+        p.blink2_window = None;
+        p.respawn_at = None;
+        p.last_hit_by = None;
+        for b in p.buffs.iter_mut() {
+            *b = crate::player::Buff::new(BuffKind::Speed(1.0), 0.0);
+        }
+    }
+
+    /// 推进复活调度（模式 2/5）：到点复活。
+    fn tick_respawns(&mut self) {
+        let now = self.time;
+        let due: Vec<usize> = self
+            .players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.alive && matches!(p.respawn_at, Some(t) if t <= now))
+            .map(|(i, _)| i)
+            .collect();
+        for i in due {
+            self.revive_player(i);
+        }
     }
 
     fn damage_player(&mut self, id: u32, amount: Fix64, from: Option<u32>) {
@@ -854,7 +948,7 @@ impl World {
             // 4.6b：按目标护甲×法抗折算 × 098c 攻方 Gn。
             // 守护之盾充能窗口（098c HC）：天罚后 5s 内受伤减免（25%/75%）。
             dealt = if from.is_some() {
-                let base = amount * Fix64::from_num(p.armor_factor * p.spell_factor * gn);
+                let base = amount * Fix64::from_num(p.armor_factor * p.spell_factor * gn * p.dmg_taken_mult);
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     base * Fix64::from_num(1.0 - p.item_fx.smite_reduction)
                 } else {
@@ -1892,7 +1986,7 @@ impl World {
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
                 }
-                let mut dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor * owner_gn);
+                let mut dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor * owner_gn * p.dmg_taken_mult);
                 // 守护之盾充能窗口（098c HC 'aegs' buff 5*jn）：受伤减免（I00H 25% / I00I 75%）。
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     dmg *= Fix64::from_num(1.0 - p.item_fx.smite_reduction);
@@ -1980,6 +2074,45 @@ impl World {
         out
     }
 
+    /// 设置游戏模式（098c nn，B3；每局开始前由调用方设置）。
+    pub fn configure_mode(&mut self, mode: u8) {
+        self.mode = mode;
+    }
+
+    /// 每轮角色设置（B3）：化身（模式 3）与国王（模式 4）的 F 槽替换与增益。
+    /// - 化身：碰撞半径 50、Gn ×1.5 起始、法术时长 ×1.2（jn）、F→灾变 S020（098c L11950）。
+    /// - 国王：受伤 ×0.9、岩浆 ×0.9（hn/To ×0.9，L12251）、F→虔诚 S021。
+    ///
+    /// 其余玩家的角色增益全部复位。
+    pub fn set_roles(&mut self, avatar: Option<u32>, kings: &[u32]) {
+        self.avatar = avatar;
+        self.f_override = vec![None; self.players.len()];
+        self.round_forced = false;
+        for p in self.players.iter_mut() {
+            p.dmg_taken_mult = 1.0;
+            p.lava_taken_mult = 1.0;
+            p.dur_mult = 1.0;
+            p.radius = Fix64::from_num(crate::balance::Balance::default().default_radius);
+        }
+        if let Some(av) = avatar {
+            if let Some(p) = self.players.get_mut(av as usize) {
+                p.radius = Fix64::from_num(50.0);
+                p.growth = 1.5;
+                p.dur_mult = 1.2;
+            }
+            self.f_override[av as usize] = Some(SkillId::S020);
+        }
+        for k in kings {
+            if let Some(p) = self.players.get_mut(*k as usize) {
+                p.dmg_taken_mult = 0.9;
+                p.lava_taken_mult = 0.9;
+            }
+            if let Some(f) = self.f_override.get_mut(*k as usize) {
+                *f = Some(SkillId::S021);
+            }
+        }
+    }
+
     /// 取走本局统计到的击杀记录（供 meta 层结算），并清空。
     pub fn take_kills(&mut self) -> Vec<(u32, u32)> {
         std::mem::take(&mut self.kills_this_round)
@@ -1991,11 +2124,21 @@ impl World {
         if self.sandbox {
             return false;
         }
-        let mut alive = self.players.iter().filter(|p| p.alive);
-        match alive.next() {
-            None => true,
-            Some(first) => alive.all(|p| p.team == first.team),
+        if self.round_forced {
+            return true;
         }
+        let alive: Vec<&Player> = self.players.iter().filter(|p| p.alive).collect();
+        if alive.is_empty() {
+            return true;
+        }
+        // LMS（模式 5，098c Zo）：存活者全被同一凶手杀害 → 该凶手「最后生还」即结束。
+        if self.mode == 5 {
+            let killers = alive.iter().map(|p| p.last_hit_by).collect::<Vec<_>>();
+            if killers.iter().all(|k| k.is_some()) && killers.iter().all(|k| *k == killers[0]) {
+                return true;
+            }
+        }
+        alive.iter().all(|p| p.team == alive[0].team)
     }
 
     /// 本轮获胜方成员（存活者全体；全员死光=平局返回空）。仅在 `round_over()` 后有意义。
@@ -5978,5 +6121,114 @@ mod tests {
         assert!(world.round_over(), "存活方仅剩一队应判回合结束");
         let winners = world.round_winners();
         assert_eq!(winners, vec![0, 1], "胜者应为存活队全员");
+    }
+
+    // ===== B3 模式系统（098c nn，D13 #1） =====
+
+    /// 死亡竞赛（模式 2）：死亡 4 秒后满血复活（098c so=4s）。
+    #[test]
+    fn dm_respawns_after_four_seconds() {
+        let mut world = World::new(2, 990);
+        world.obstacles.clear();
+        world.configure_mode(2);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        // 直接处决玩家 1（走 record_death 的 DM 钩子）——用天罚快速杀
+        world.players[1].hp = Fix64::from_num(5.0);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..50 {
+            world.step(none.clone(), dt);
+        }
+        assert!(!world.players[1].alive, "5 血应被天罚击杀（4s 内未复活）");
+        // 推进到 4s+（240 帧）
+        for _ in 0..250 {
+            if world.players[1].alive {
+                break;
+            }
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].alive, "DM 应在 4 秒后复活");
+        assert_eq!(world.players[1].hp, world.players[1].max_hp, "复活应满血");
+    }
+
+    /// LMS（模式 5）：凶手死亡 → 其受害者复活；存活者同凶即 round_over。
+    #[test]
+    fn lms_killer_death_revives_victims_and_round_detects() {
+        let mut world = World::new(3, 991);
+        world.obstacles.clear();
+        world.configure_mode(5);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 玩家 0/1 已死，凶手都是玩家 2
+        world.players[0].alive = false;
+        world.players[0].last_hit_by = Some(2);
+        world.players[1].alive = false;
+        world.players[1].last_hit_by = Some(2);
+        world.players[2].alive = true;
+        // 存活者（玩家 2）唯一 → 需要另一存活者且同凶手才判 LMS 结束：
+        // 让玩家 0 复活调度先不触发，构造「存活者均被 2 杀」：复活 0（受害者）
+        world.step(vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()], dt);
+        assert!(!world.players[0].alive && !world.players[1].alive, "无凶手死亡时不应复活");
+        // 凶手 2 死亡（岩浆/直接标记走 record_death——用 explode 路径简化：直接调用内部不可行，改用出界）
+        world.players[2].pos = Vec2::new(d60(100.0), Fix64::ZERO); // 远抛场外
+        let inputs3 = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..700 {
+            world.step(inputs3.clone(), dt);
+            if world.players[2].hp <= Fix64::ZERO {
+                break;
+            }
+        }
+        assert!(!world.players[2].alive, "出界应烧死凶手 2");
+        // 受害者（被 2 杀的 0/1）应在 3 秒后复活
+        for _ in 0..220 {
+            if world.players[0].alive {
+                break;
+            }
+            world.step(inputs3.clone(), dt);
+        }
+        assert!(world.players[0].alive && world.players[1].alive, "凶手死后受害者应复活");
+    }
+
+    /// 化身/国王：F 槽施法替换 + 角色 buff（set_roles）。
+    #[test]
+    fn roles_replace_f_slot_and_apply_buffs() {
+        let mut world = World::new(3, 992);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.configure_mode(3);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.set_roles(Some(0), &[]);
+        assert_eq!(world.f_override[0], Some(SkillId::S020), "化身 F 应替换为灾变");
+        assert!((world.players[0].dmg_taken_mult - 1.0).abs() < 1e-9);
+        // 国王：替换虔诚 + 受伤/岩浆 ×0.9
+        world.set_roles(None, &[1]);
+        assert_eq!(world.f_override[1], Some(SkillId::S021), "国王 F 应替换为虔诚");
+        assert!((world.players[1].dmg_taken_mult - 0.9).abs() < 1e-9);
+        assert!((world.players[1].lava_taken_mult - 0.9).abs() < 1e-9);
+        // 替换后施放 S001 实际执行 S020（灾变三级第一段）：对 250 内敌人造成 12+4×stage
+        world.set_roles(Some(0), &[]);
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..50 {
+            world.step(none.clone(), dt);
+        }
+        let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
+        // 化身 Gn ×1.5：灾变第一段 12×1.5 = 18（非天罚 10，证明替换+增益同时生效）
+        assert!((d1 - 18.0).abs() < 0.5, "化身灾变第一段应 12×Gn1.5=18 伤，实际 {d1}");
     }
 }

@@ -747,7 +747,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual })
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode: 1, avatar: None, f_override: vec![None; np], round_forced: false })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
