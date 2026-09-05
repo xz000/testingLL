@@ -3116,6 +3116,17 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
             let push_b = dir * (overlap * (Fix64::ONE - frac_a));
             players[i].pos -= push_a;
             players[j].pos += push_b;
+            // 098c 动量交换（D9 批次2）：等质量（dv=0.5 → 系数 (0.5+0.5+2)/4=1）——
+            // 沿碰撞法线交换速度分量（完全弹性）。各自保留切向分量。
+            let va_n = players[i].cur_vel.dot(dir);
+            let vb_n = players[j].cur_vel.dot(dir);
+            if va_n > Fix64::ZERO || vb_n < Fix64::ZERO {
+                // 相向或追赶：法向分量交换（a 的法向速度给 b，b 的给 a）
+                let va_t = players[i].cur_vel - dir * va_n;
+                let vb_t = players[j].cur_vel - dir * vb_n;
+                players[i].cur_vel = va_t + dir * vb_n;
+                players[j].cur_vel = vb_t + dir * va_n;
+            }
 
             // C2 护盾·反弹：若哪一方带反弹护盾，把撞进来的对方的强制位移/推击镜向反射。
             // 法向量 = (b 指向 a 的方向 / 或 a 指向 b 的方向)。
@@ -4535,6 +4546,32 @@ mod tests {
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
         assert!((d2 - 12.0).abs() < 0.5, "无盾目标应吃满剑后天罚 12，实际 {d2}");
         assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
+    }
+
+    /// 098c 动量交换（D9 批次2）：高速玩家撞低速玩家 → 速度法向分量交换。
+    #[test]
+    fn collision_exchanges_momentum() {
+        let mut world = World::new(2, 974);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::from_num(80.0), Fix64::ZERO); // 接触距离 60 附近
+        world.players[1].move_target = None;
+        // 玩家1 冲向玩家0（高法向速度），玩家0 静止
+        world.players[1].cur_vel = Vec2::new(Fix64::from_num(-400.0), Fix64::ZERO);
+        for _ in 0..30 {
+            let v0 = world.players[0].cur_vel.length().to_num::<f64>();
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+            if v0 == 0.0 && world.players[0].cur_vel.length() > Fix64::ZERO {
+                break; // 动量已交换
+            }
+        }
+        // 交换后玩家0 应获得 -x 方向速度（被撞飞），玩家1 减速
+        let v0 = world.players[0].cur_vel.length().to_num::<f64>();
+        assert!(v0 > 100.0, "动量交换后玩家0 应获得速度，实际 {v0}");
+        assert!(world.players[0].pos.x < d60(5.0), "玩家0 应被撞向 -x");
     }
 
     /// 098c 魔法张力（D9 批次1）：挨打回魔（受多少伤加多少魔）+ 击退随魔法放大。
