@@ -55,9 +55,10 @@ impl Default for MatchConfig {
             gold_per_kill: 0,
             place_rewards: Vec::new(),
             starting_gold: 20,
-            score_per_kill: 1,
+            // 098c 计分（D9 批次3）：胜利 2 分、击杀 2 分、助攻 1 分
+            score_per_kill: 2,
             score_per_assist: 1,
-            score_per_round_win: 1,
+            score_per_round_win: 2,
             game_mode: 1,
             win_score: 10,
             shopping_time_secs: 40.0,
@@ -77,6 +78,8 @@ pub struct PlayerProfile {
     pub score: u32,
     /// 当前连杀数（死亡清零；>=3 触发连杀播报，098b Mn[3..10]）。
     pub current_streak: u32,
+    /// 本场已出 First Blood（098c：全场第一杀播报）。
+    pub first_blood_taken: bool,
     /// 本场最佳名次（1 = 冠军；0 = 未结束任何局）
     pub best_placement: u32,
     /// 各技能当前等级（索引 = SkillId::as_u32）
@@ -103,6 +106,7 @@ impl PlayerProfile {
             total_kills: 0,
             score: 0,
             current_streak: 0,
+            first_blood_taken: false,
             rounds_survived: 0,
             best_placement: 0,
             skill_levels: vec![1; n],
@@ -233,6 +237,8 @@ pub struct MatchState {
     /// 首局配置学习标志：仅 `begin_first_round_config()` 置 true；学习倒计时归零时据此走
     /// `enter_first_round`（round 保持 1、不重复发参与奖），区别于局间的 `advance_round`（round+1）。
     pending_first_round: bool,
+    /// 本场是否已出 First Blood（098c：全场第一杀播报，D9 批次3）。
+    pub first_blood_taken: bool,
 }
 
 impl MatchState {
@@ -248,6 +254,7 @@ impl MatchState {
             round_placements: Vec::new(),
             config,
             pending_first_round: false,
+            first_blood_taken: false,
         };
         m.give_starting_gold();
         m.give_round_gold();
@@ -317,7 +324,10 @@ impl MatchState {
     }
 
     /// 记录击杀（由 World 报告或由外部按规则上报），给击杀者发金币。
-    pub fn register_kill(&mut self, killer_id: u32) {
+    /// 返回：是否本场 First Blood（供播报；D9 批次3）。
+    pub fn register_kill(&mut self, killer_id: u32) -> bool {
+        let first = !self.first_blood_taken;
+        self.first_blood_taken = true;
         if let Some(p) = self
             .profiles
             .iter_mut()
@@ -328,6 +338,7 @@ impl MatchState {
             p.score += self.config.score_per_kill;
             p.current_streak += 1; // 连杀计数（死亡清零在 register_death）
         }
+        first
     }
 
     /// 死亡结算（D6）：受害者连杀清零（连杀播报由调用方在清零前读取）。
@@ -529,10 +540,10 @@ mod tests {
             m.register_round_win(0);
             m.finish_round(vec![0, 1]);
         }
-        // score = 2 轮胜 2 + 2 击杀 2 = 4 ≥ 3 → 已提前终局
+        // score = 2 轮 × (杀 2 + 胜 2) = 8 ≥ 3 → 已提前终局
         assert_eq!(m.phase, MatchPhase::Finished, "En2 达到胜利分应提前终局");
         let ranking = m.final_ranking();
-        assert_eq!(ranking[0], (0, 4), "按分数降序，实际 {ranking:?}");
+        assert_eq!(ranking[0], (0, 8), "按分数降序，实际 {ranking:?}");
         // En1 同分数时按 best_placement 升序
         let mut m1 = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         m1.finish_round(vec![0, 1]);
@@ -567,7 +578,8 @@ mod tests {
         assert_eq!(config.gold_per_round, 10);
         assert_eq!(config.gold_per_kill, 0);
         assert!(config.place_rewards.is_empty());
-        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 1));
+        // 098c 计分（D9 批次3）：胜 2 / 杀 2 / 助 1
+        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (2, 1, 2));
         // 开局购物 Wo=40 / 每轮 wo=30（D6/M4 En 批）
         assert_eq!(config.shopping_time_secs, 40.0);
         assert_eq!(config.learn_time_secs, 30.0);
@@ -577,14 +589,14 @@ mod tests {
         // 击杀只给分
         m.register_kill(0);
         assert_eq!(m.profiles[0].gold, 30, "击杀金默认 0");
-        assert_eq!(m.profiles[0].score, 1);
+        assert_eq!(m.profiles[0].score, 2, "098c 击杀 2 分");
         assert_eq!(m.profiles[0].current_streak, 1);
         // 助攻
         m.register_assists(1, 0, &[0, 1]);
-        assert_eq!(m.profiles[0].score, 1, "击杀者不算助攻");
+        assert_eq!(m.profiles[0].score, 2, "击杀者不算助攻");
         // 轮胜分
         m.register_round_win(0);
-        assert_eq!(m.profiles[0].score, 2);
+        assert_eq!(m.profiles[0].score, 4, "098c 轮胜 2 分");
         // 连杀标签
         assert_eq!(MatchState::streak_label(2), None);
         assert_eq!(MatchState::streak_label(3), Some("大杀特杀"));
