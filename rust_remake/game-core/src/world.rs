@@ -327,6 +327,8 @@ impl ProjectileKind {
 pub struct Obstacle {
     pub pos: Vec2,
     pub radius: Fix64,
+    /// 柱子 HP（098c nx=40；被弹体伤害摧毁，每轮重生成时恢复）。
+    pub hp: u32,
 }
 
 impl Obstacle {
@@ -334,6 +336,7 @@ impl Obstacle {
         Obstacle {
             pos,
             radius: Fix64::from_num(radius),
+            hp: 40, // 098c nx=40
         }
     }
 }
@@ -351,6 +354,8 @@ pub struct World {
     pub obstacles: Vec<Obstacle>,
     /// 场上飞行物 / 延时区域
     pub projectiles: Vec<Projectile>,
+    /// 当前轮数（098c 岩浆成长用；调用方每轮开始时设置，快照同步）。
+    pub round_number: u32,
     /// 本局伤害矩阵：`damage_matrix[攻][受]` = 累计伤害（助攻/最高伤害统计用，D6）；
     /// 随 `reset_round` 清空、随快照同步。
     pub damage_matrix: Vec<Vec<Fix64>>,
@@ -391,6 +396,7 @@ impl World {
             projectiles: Vec::new(),
             eliminated_order: Vec::new(),
             kills_this_round: Vec::new(),
+            round_number: 1,
             damage_matrix: vec![vec![Fix64::ZERO; player_count as usize]; player_count as usize],
             time: Fix64::ZERO,
             lightning_visual: None,
@@ -523,7 +529,9 @@ impl World {
                 // 熔岩靴激活窗口内 ×12.5%；窗口外吃全额（激活条件见 Nova 臂，D8/M5）。
                 let shielded = p.has_buff(BuffKind::LavaShield);
                 let lava_mult = if shielded { 1.0 - p.item_fx.lava_resist_frac } else { 1.0 };
-                let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult) * dt);
+                // 岩浆随回合成长（098c To[0] 随回合成长，D9 批次3；成长率未解码 → 线性占位）
+                let round_scale = self.round_number.max(1) as f64;
+                let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult * round_scale) * dt);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
             }
             if p.hp <= Fix64::ZERO && p.alive {
@@ -1145,7 +1153,8 @@ impl World {
             let Some(radius) = pr.kind.obstacle_radius() else {
                 continue;
             };
-            for o in self.obstacles.iter() {
+            for oi in 0..self.obstacles.len() {
+                let o = self.obstacles[oi];
                 let delta = pr.pos - o.pos;
                 let dist = delta.length();
                 let min = radius + o.radius;
@@ -1161,6 +1170,21 @@ impl World {
                         *vel = crate::fix::mirror_by(*vel, normal);
                         pr.pos = o.pos + normal * min;
                     } else {
+                        // 098c 柱子可摧毁（nx=40，D9 批次3）：火球类直伤弹命中扣 HP，归零移除
+                        //（每轮 re-layout 即重生成）。其余弹体被挡下消失。
+                        let dmg = match &pr.kind {
+                            ProjectileKind::W098b { gx, .. } => gx.to_num::<f64>(),
+                            ProjectileKind::Bullet { damage, .. } => damage.to_num::<f64>(),
+                            _ => 0.0,
+                        };
+                        if dmg > 0.0 {
+                            let o = &mut self.obstacles[oi];
+                            o.hp = o.hp.saturating_sub(dmg.ceil() as u32);
+                        }
+                        if self.obstacles[oi].hp == 0 {
+                            // 098c：柱子被摧毁移除（每轮 re-layout 即重生成）；掉落 Shard 待拾取系统
+                            self.obstacles.remove(oi);
+                        }
                         pr.alive = false; // 被柱子挡下：直接消失
                     }
                     break;
@@ -4548,6 +4572,35 @@ mod tests {
         assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
     }
 
+    /// 098c 柱子可摧毁（D9 批次3）：火球命中扣 HP（nx=40），归零移除；每轮重生成。
+    #[test]
+    fn pillar_takes_damage_and_breaks() {
+        let mut world = World::new(2, 975);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0));
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        // 对柱子连发火球（每发直伤 gx≈7 → 6 发摧毁 40HP）
+        for _ in 0..10 {
+            if world.obstacles.is_empty() {
+                break;
+            }
+            world.players[0].caster = crate::skill::Caster::new(); // 清 CD
+            world.step(vec![
+                PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ], dt);
+            let none = vec![PlayerInput::default(), PlayerInput::default()];
+            for _ in 0..40 {
+                world.step(none.clone(), dt);
+            }
+        }
+        assert!(world.obstacles.is_empty(), "柱子 HP 40 应被火球连发摧毁");
+    }
+
     /// 098c 动量交换（D9 批次2）：高速玩家撞低速玩家 → 速度法向分量交换。
     #[test]
     fn collision_exchanges_momentum() {
@@ -4689,9 +4742,9 @@ mod tests {
         let expected_speed = crate::player::BASE_SPEED + expected_flat;
         let got = p.base_speed_for_test().to_num::<f64>();
         assert!((got - expected_speed).abs() < 0.01, "移速应 {expected_speed}，实际 {got}");
-        // 回复：0.05 基础 + 0.5 + 0.1 = 0.65
+        // 回复：098c 无基础 + 0.5 斗篷 + 0.1 坠饰 = 0.6
         let regen = crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty;
-        assert!((regen - 0.65).abs() < 1e-6, "回复应 0.65/s，实际 {regen}");
+        assert!((regen - 0.6).abs() < 1e-6, "回复应 0.6/s，实际 {regen}");
         // kb：属性 0 → 物品 0.32
         assert!((p.effective_kb_reduction() - 0.32).abs() < 1e-9);
         // 生命上限：100 属性派生 + 20 + 30 = 150（apply_attributes 落账）
@@ -4699,20 +4752,28 @@ mod tests {
         assert!(near(p.max_hp, 150.0, 0.01), "生命上限应 150，实际 {:?}", p.max_hp);
     }
 
-    /// 全局回血 Nn=0.05/s（D7）：无伤 2 秒回 0.1 血；灼烧期间禁疗。
+    /// 098c 无基础回血（uhpr=0，D9 批次3）——物品回复（斗篷）生效；灼烧禁疗。
     #[test]
-    fn hp_regen_tick_and_blocked_by_scorch() {
+    fn hp_regen_item_only_and_blocked_by_scorch() {
         let mut world = World::new(1, 967);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].hp = Fix64::from_num(50.0);
         world.step(vec![PlayerInput::default()], dt);
         let none = vec![PlayerInput::default()];
+        // 无物品：2s 不回血（098c 无基础回血）
         for _ in 0..120 {
-            world.step(none.clone(), dt); // 2s
+            world.step(none.clone(), dt);
+        }
+        assert!(near(world.players[0].hp, 50.0, 0.001), "无基础回血（098c），实际 {:?}", world.players[0].hp);
+        // 斗篷 3（+0.5/s）：2s 回 1.0
+        world.players[0].set_items(&[crate::item::ItemId::Cloak3]);
+        world.players[0].hp = Fix64::from_num(50.0);
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
         }
         let gained = world.players[0].hp.to_num::<f64>() - 50.0;
-        assert!((gained - 0.1).abs() < 0.02, "2s 应回 0.1 血（Nn=0.05/s），实际 {gained}");
-        // 灼烧 → 禁疗
+        assert!((gained - 1.0).abs() < 0.05, "斗篷 2s 应回 1.0，实际 {gained}");
+        // 灼烧 → 禁疗（含物品回复）
         world.players[0].hp = Fix64::from_num(50.0);
         world.players[0].add_buff(BuffKind::Scorched, 4.0);
         for _ in 0..120 {

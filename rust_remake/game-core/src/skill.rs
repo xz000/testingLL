@@ -218,6 +218,8 @@ pub enum SkillId {
     /// S021 虔诚（热键 F）：敌 250 伤 + 自奶 gx×0.5（098b pC；队伍奶友 TODO 无队伍系统）。
     S021,
     // ---- 未实装名册（显式占位；见 warlock098b_def 注释） ----
+    /// S022 Mirror（098c 解码：镜像技能；非 098b 推测的废弃位）。
+    S022,
     S024,
     S025,
     S026,
@@ -260,7 +262,7 @@ impl SkillId {
             S025 => SkillTree::R,
             S026 => SkillTree::T,
             S027 => SkillTree::Y,
-            S030 | S032 | S033 | S034 | S035 | S036 => SkillTree::G,
+            S022 | S030 | S032 | S033 | S034 | S035 | S036 => SkillTree::G,
             S031 => SkillTree::Y,
         }
     }
@@ -327,6 +329,7 @@ impl SkillId {
             S001 => 55,
             S020 => 56,
             S021 => 57,
+            S022 => 69,
             S024 => 58,
             S025 => 59,
             S026 => 60,
@@ -403,6 +406,7 @@ impl SkillId {
             55 => S001,
             56 => S020,
             57 => S021,
+            69 => S022,
             58 => S024,
             59 => S025,
             60 => S026,
@@ -1794,6 +1798,14 @@ impl DefTable {
             // S022/S023/S028/S029：w3a 无任何字段（疑为废弃/预留位），不建条目。
             // S024 物品 / S025-027 法术槽 / S030 怀表 / S031 锁链附加 / S032-036 切换键：
             // 依赖物品栏战斗化与形态系统（决策文档 M3 剩余），占位 Unimplemented。
+            SkillId::S022 => SkillDef {
+                id,
+                tree: SkillTree::G,
+                name: "Mirror（未实装，098c 解码）",
+                needs_point: false,
+                effect: Unimplemented,
+                growth: SkillGrowth { ..DEF_ZERO },
+            },
             SkillId::S024 => SkillDef {
                 id,
                 tree: SkillTree::E,

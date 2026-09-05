@@ -1121,7 +1121,10 @@ impl Game {
     fn settle_round(&mut self) {
         // 击杀结算（D6）：击杀分/金 + 连杀播报 + 死者连杀清零 + 助攻（伤害矩阵）。
         for (killer, victim) in self.world.take_kills() {
-            self.meta.register_kill(killer);
+            let is_first = self.meta.register_kill(killer);
+            if is_first {
+                eprintln!("[blood] 玩家{killer} 发出 First Blood!");
+            }
             let victim_streak = self.meta.register_death(victim);
             if let Some(label) = game_core::meta::MatchState::streak_label(victim_streak.max(3)) {
                 eprintln!("[streak] {} 结束了 {} 的{}!", killer, victim, if victim_streak >= 3 { label } else { "" });
@@ -1162,6 +1165,7 @@ impl Game {
         }
         // 诊断：同步后 world 各玩家技能等级。
         eprintln!("[teardown] world post: {:?}", self.world.players.iter().enumerate().map(|(i, p)| (i as u32, p.skill_levels.to_vec())).collect::<Vec<_>>());
+        self.world.round_number = self.meta.round; // 岩浆随回合成长（098c，D9）
         self.world.reset_round();
         self.player_target = None;
         self.pending_cast = None;

@@ -27,8 +27,8 @@ pub struct Balance {
     pub decel: f64,
     /// 玩家初始/最大生命。（098b h000 术士 HP=100，w3u 导出；与旧值相同 → 伤害数值不随尺度切换变）
     pub max_hp: f64,
-    /// 全局生命恢复（HP/秒）。098b `zd()` 每玩家 `Nn=0.05`（每 20s 回 1 血，-C#9 可调）；
-    /// 陨石灼烧「烤肉饼」期间清零禁疗（PORT_098B_DECISIONS.md D7）。
+    /// 全局生命恢复（HP/秒）。098c `uhpr=0`——回复全靠物品/技能（D9 批次3 改 0；
+    /// 098b 曾有 Nn=0.05，两版本口径不同，基准转 098c）。
     pub hp_regen: f64,
     /// 玩家默认半径（碰撞半径）。098c `do=30`（战争锁碰撞半径，JASS 常量原文；D9 批次2）。
     /// 场地半径 640 保持（用户体感「20 术士并排」×直径 60 ÷ 2 = 600，与 640 同量级自洽）。
@@ -60,7 +60,7 @@ impl Balance {
             accel: 1312.5,
             decel: 0.985,
             max_hp: 100.0,
-            hp_regen: 0.05,
+            hp_regen: 0.0,
             default_radius: 30.0,
             start_radius: 640.0,
             shrink_speed: 11.2,
