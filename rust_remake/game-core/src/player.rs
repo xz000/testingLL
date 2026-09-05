@@ -100,6 +100,9 @@ pub enum BuffKind {
     Scorched,
     /// 熔岩靴激活（098b I00J-L，D8/M5）：熔岩上用天罚触发，窗口内熔岩伤 ×12.5%。
     LavaShield,
+    /// 守护之盾充能窗口（098c I00H HC）：火球命中充能 → 天罚后 5s 受伤/击退减免
+    /// （减免比例读佩戴者的 item_fx.smite_reduction / aegis_kb_reduction）。
+    Aegis,
 }
 
 impl Buff {
@@ -203,6 +206,8 @@ pub struct Player {
     pub growth: f64,
     /// 回旋镖横向侧偏方向（098c ha 标志：每次施放翻转，左右弧线交替，D9 技能手感批）。
     pub boomerang_side: bool,
+    /// 守护之盾充能（098c Ha 标志）：火球命中敌人后点亮；下次天罚消耗并获 5s 减伤窗口。
+    pub aegis_charged: bool,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -259,6 +264,7 @@ impl Player {
             mana: 0.0,
             growth: 1.0,
             boomerang_side: false,
+            aegis_charged: false,
             items: Vec::new(),
             item_fx: crate::item::aggregate(&[]),
             ricochet_pending: None,

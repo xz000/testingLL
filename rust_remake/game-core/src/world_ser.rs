@@ -156,6 +156,7 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         BuffKind::Boost => wu8(o, 4),
         BuffKind::Scorched => wu8(o, 5),
         BuffKind::LavaShield => wu8(o, 6),
+        BuffKind::Aegis => wu8(o, 7),
     }
     wfix(o, b.remaining);
 }
@@ -168,6 +169,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         4 => BuffKind::Boost,
         5 => BuffKind::Scorched,
         6 => BuffKind::LavaShield,
+        7 => BuffKind::Aegis,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -228,6 +230,8 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     // 魔法张力 + 伤害成长（098c，D9 批次1）
     wf64(o, p.mana);
     wf64(o, p.growth);
+    // 守护之盾充能（098c Ha）
+    wu8(o, p.aegis_charged as u8);
     // items（M3）：u8 数量 + u32 id（解码后重算 item_fx）
     wu8(o, p.items.len() as u8);
     for it in &p.items {
@@ -354,6 +358,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let lava_boot_cd = fixat(b, p)?;
     let mana = f64::from_bits(u64at(b, p)?);
     let growth = f64::from_bits(u64at(b, p)?);
+    let aegis_charged = u8at(b, p)? != 0;
     let n_items = u8at(b, p)? as usize;
     let mut items = Vec::with_capacity(n_items);
     for _ in 0..n_items {
@@ -453,6 +458,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.lava_boot_cd = lava_boot_cd;
     pl.mana = mana;
     pl.growth = growth;
+    pl.aegis_charged = aegis_charged;
     pl.items = items;
     pl.recompute_item_fx();
     pl.move_target = move_target;

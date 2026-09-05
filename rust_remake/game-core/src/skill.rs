@@ -51,7 +51,10 @@ impl SkillTree {
             SkillTree::T => &[S014, S015, S016],
             SkillTree::Y => &[S017, S018, S019],
             SkillTree::C => &[S005, S006, S007],
-            SkillTree::F => &[S021],
+            // F 槽（2026-09-05 二次考证修正）：普通局 = S001 天罚——098c 施法分派
+            // S001→mC（战锁单位原生，化身/国王模式才替换）；S020=化身（En4）、S021=国王模式技能。
+            // 早前依据 kn[7*i+7]='S021' 判 F=S021 系学习表默认值误读，特此修正。
+            SkillTree::F => &[S001],
         }
     }
 }
@@ -213,11 +216,12 @@ pub enum SkillId {
     /// S019 锁链（热键 Y）：弹体命中把目标拉向施法者 + 定身 0.5s（098b tc；S031 附加 TODO）。
     S019,
     // ---- M2 批次D：AoE 光环系 ----
-    /// S001 天罚（热键 F）：以自身为中心 250 AoE nova，KI($A=10) 距离衰减（098b KC）。
+    /// S001 天罚（热键 F，普通局唯一 F 技能）：250 AoE 自伤 nova，衰减 1-d/1000，
+    /// 伤害 10+血剑数；血剑/面具/守护盾/熔岩靴钩子全挂本技能（098c mC）。
     S001,
-    /// S020 灾变（热键 F）：三级递进终极 AoE（300/300/400，伤害递增；$B/$C/$E 未解码占位 TODO）。
+    /// S020 灾变（化身模式 En4 专属）：化身者替换 S001，三级递进 AoE（$B/$C/$E 占位 TODO）。
     S020,
-    /// S021 虔诚（热键 F）：敌 250 伤 + 自奶 gx×0.5（098b pC；队伍奶友 TODO 无队伍系统）。
+    /// S021 虔诚（国王山丘模式专属）：替换 S001，伤敌 + 队友回血/加速（需队伍系统 TODO）。
     S021,
     // ---- 未实装名册（显式占位；见 warlock098b_def 注释） ----
     /// S022 Mirror（098c 解码：镜像技能；非 098b 推测的废弃位）。
@@ -1748,8 +1752,9 @@ impl DefTable {
                 },
             },
             // ===== M2 批次D：AoE 光环系 =====
-            // S001 天罚（F 键）——spec：CD 3.0 恒定（4 级）、cast_time 0.7（→ windup）；
-            // control KC：半径 250 内 KI(DX, 1-NO/1000) 距离衰减；DX=$A=10（ei=0 手杖加成无）恒定。
+            // S001 天罚（F 键，普通局唯一 F 技能；战锁单位原生，非学习所得）——
+            // 098c mC handler：CD 3.0、windup 0.7、半径 250 内衰减 1-d/1000；
+            // 伤害 cX = 10 + Zr（Zr=鲜血之剑数，+1/+2）；命中 n 敌 → 回血 (Zr+1)×n（DX）。
             SkillId::S001 => SkillDef {
                 id,
                 tree: SkillTree::F,
@@ -1763,9 +1768,8 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S020 灾变（F 键）——spec：CD 3.0/2.0（取 3.0 恒）、cast_time 0.7；control MC：三级递进
-            // Ur 0→1→2 循环，半径 300/300/400、伤害 $B/$C/$E（未解码 → 12/16/20 占位 TODO），
-            // 命中+50 移速（M2 简化为自加速 Speed buff）。
+            // S020 灾变（化身模式 En4 专属 F 技能：化身者 S001 ↔ S020 替换，体型 1.4、半径 50、
+            // Gn×1.5、jn×1.2）——098c qC handler：三级递进 300/300/400、伤害 $B/$C/$E 占位 TODO。
             SkillId::S020 => SkillDef {
                 id,
                 tree: SkillTree::F,
@@ -1780,8 +1784,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S021 虔诚（F 键）——098c kn 表实证：F 槽唯一技能，所有玩家开局自带。
-            // CD 3.0 恒定、windup 0.7；QC handler：敌 250 伤 + 自伤 10 + 自奶 gx×0.5 + 移速增益。
+            // S021 虔诚（098c 国王山丘模式专属 F 技能：国王 S001 ↔ S021 替换，另获皇冠/光环/
+            // 攻速与岩浆 ×0.9 减免）——QC handler：伤敌同天罚（10+血剑，250 衰减）+ 500 内**队友**
+            // 回血 cX/2、+60 移速 4s；自伤照旧。队友判定需队伍系统（TODO En/队伍批次）。
             SkillId::S021 => SkillDef {
                 id,
                 tree: SkillTree::F,
@@ -1791,7 +1796,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     windup_base: 0.7,
                     cooldown_base: 3.0,
-                    damage_base: 8.0,
+                    damage_base: 10.0,
                     ..DEF_ZERO
                 },
             },
@@ -2772,10 +2777,10 @@ mod tests {
             }
             ref e => panic!("S020 effect 错：{e:?}"),
         }
-        // S021 虔诚：CD 3.0；敌 250 伤（DX 占位 8）+ 自奶 4。
+        // S021 虔诚：CD 3.0；伤敌 = 10+血剑（QC 与 mC 同式）。
         let d = DefTable::def(SkillId::S021);
         assert_eq!(d.name, "虔诚");
-        assert!(near(d.stats_at(1).damage, 8.0, 1e-3));
+        assert!(near(d.stats_at(1).damage, 10.0, 1e-3));
         match d.effect {
             SkillEffect::W098bNova { kind: W098bNovaKind::Devotion, radius, .. } => {
                 assert!(near(radius, 250.0, 1e-3));
