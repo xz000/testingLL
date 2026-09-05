@@ -273,15 +273,17 @@ const PROJ_HIT_RADIUS_FALLBACK: f64 = 0.5;
 /// 098b 击退近似时长（秒）：098b 本体是逐帧衰减（每帧 ×~0.96）的速度累积，
 /// M1 以恒速 push 近似；此值与速度封顶共同标定总位移，TODO M2 对齐衰减模型。
 const W098B_KB_TIME: f64 = 0.35;
-/// 098b 击退初速封顶（war3 单位/s）：`DAMAGE_BASE×gx×JI` 在高等级可达 ~2300+，
+/// 098c 击退初速封顶（war3 单位/s）：`(100+魔法)×gx×JI` 在高张力下可达数千，
 /// 与移速 210 相比已是 10 倍级——封顶防极端等级把人推出半张图。
 const W098B_KB_MAX_SPEED: f64 = 2000.0;
 /// 098b 火球点燃时长（秒）：consolidated S000「点燃 2.5×jn」。
 const W098B_IGNITE_SECONDS: f64 = 2.5;
 
-/// 098b KI 击退初速：`(100+满蓝)×0.03 = DAMAGE_BASE` 折叠（D3）× `gX` × `JI`，封顶防超远。
-fn warlock_ki_knockback(gx: Fix64, ji: Fix64) -> Fix64 {
-    let raw = Fix64::from_num(crate::balance::DAMAGE_BASE) * gx * ji;
+/// 098c KI 击退初速（D9 批次1）：`(100 + 目标当前魔法) × gX × JI` 单位/秒。
+/// 魔法为挨打回魔的张力值（出生 0 → 基数 100；挨打越多被推越远，满张力约 100 倍）。
+/// 封顶防极端：初速上限 [`W098B_KB_MAX_SPEED`]。
+fn warlock_ki_knockback(victim_mana: f64, gx: Fix64, ji: Fix64) -> Fix64 {
+    let raw = Fix64::from_num(100.0 + victim_mana) * gx * ji;
     raw.min(Fix64::from_num(W098B_KB_MAX_SPEED))
 }
 
@@ -821,18 +823,20 @@ impl World {
     }
 
     fn damage_player(&mut self, id: u32, amount: Fix64, from: Option<u32>) {
-        // KI 公式的 Gn[攻方] 项（D7）：灼烧中的攻击者输出 ×0.1。先取出系数再进可变借用。
+        // 098c Gn[施法者]（D9 批次1）：伤害成长 × 灼烧惩罚。先取系数再进可变借用。
         let gn = from
             .and_then(|f| self.players.get(f as usize))
             .map(|a| a.gn_factor())
             .unwrap_or(1.0);
+        // 折算后伤害提出外层：矩阵记账（D6）/回魔（D9）统一用最终值。
+        let dealt;
         let died = {
             let p = &mut self.players[id as usize];
             if !p.alive {
                 return;
             }
-            // 4.6b：玩家造成伤害按目标护甲×法抗折算 × 098b 攻方 Gn 系数。
-            let amount = if from.is_some() {
+            // 4.6b：按目标护甲×法抗折算 × 098c 攻方 Gn。
+            dealt = if from.is_some() {
                 amount * Fix64::from_num(p.armor_factor * p.spell_factor * gn)
             } else {
                 amount
@@ -841,7 +845,7 @@ impl World {
                 p.last_hit_by = Some(hitter);
             }
             // C1 疾跑：boost 期间返还一半伤害回血（soak_boost 返回净扣血）
-            let net = p.soak_boost(amount);
+            let net = p.soak_boost(dealt);
             p.hp = (p.hp - net).max(Fix64::ZERO);
             if p.hp == Fix64::ZERO {
                 p.alive = false;
@@ -850,10 +854,24 @@ impl World {
                 false
             }
         };
-        // 伤害矩阵记账（D6）：助攻/最高伤害统计的数据源。
+        // 098c 挨打回魔（D9 批次1）：目标魔法 += 受到的伤害（击退张力核心）。
+        if let Some(p) = self.players.get_mut(id as usize) {
+            if p.alive {
+                p.mana += dealt.to_num::<f64>();
+            }
+        }
+        // 098c 伤害成长（D9 批次1）：命中敌人 Gn ×= 1.1。
+        if let Some(f) = from {
+            if let Some(a) = self.players.get_mut(f as usize) {
+                if a.alive {
+                    a.on_dealt_damage();
+                }
+            }
+        }
+        // 伤害矩阵记账（D6）：助攻/最高伤害统计的数据源（折算后值）。
         if let Some(f) = from {
             if f < self.players.len() as u32 && id < self.players.len() as u32 {
-                self.damage_matrix[f as usize][id as usize] += amount;
+                self.damage_matrix[f as usize][id as usize] += dealt;
             }
         }
         // 死亡面具/鲜血之剑（M3 2c）：攻方生命偷取（lifesteal×原始伤害）与受伤点恢复。
@@ -1444,7 +1462,7 @@ impl World {
                 ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
-                    // KI 击退初速 = DAMAGE_BASE × gx × kb_ji（JI 系数），方向沿弹-目标连线。
+                    // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
                     // Bounce 命中判定排除上一跳受害者（target）——重定向瞬间还贴着旧目标，
                     // 不排除会每帧重复结算同一目标刷伤害。
                     let hit = if *proj == crate::skill::W098bProjKind::Bounce {
@@ -1458,7 +1476,8 @@ impl World {
                         // 锁链（ChainPull）以拉拽为主：跳过 KI 击退（击退 700 位移会盖过 300 的拉拽）。
                         let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull;
                         if !is_pull && dd.length_squared() > Fix64::ZERO {
-                            let kb = warlock_ki_knockback(*gx, *kb_ji);
+                            let vmana = self.players[victim as usize].mana;
+                            let kb = warlock_ki_knockback(vmana, *gx, *kb_ji);
                             pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
                         }
                         if let Some(total) = ignite {
@@ -1626,7 +1645,7 @@ impl World {
         // 4d-0) 098b AoE 爆炸（陨石命中/到期）：复用 explode_at（中心伤害+距离衰减+连线击退），
         // 伤害=gx（explode_at 内部做护甲折算），击退力=KI 公式 warlock_ki_knockback。
         for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, gx, warlock_ki_knockback(gx, ji), false, false);
+            self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false);
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -1724,6 +1743,7 @@ impl World {
     /// 在 (pos) 处半径 `radius` 的爆炸：对范围内玩家造成伤害并按中心连线击退。
     /// `exclude_owner`：以自身为中心的 nova（098b S001/S020/S021）不伤施法者。
     /// `is_smite`：天罚系 nova（S001/S020/S021）——受害者的守护之盾减免生效（M3 2c）。
+    /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
     #[allow(clippy::too_many_arguments)]
     fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool) {
         let r_sq = radius * radius;
@@ -1734,6 +1754,7 @@ impl World {
             .map(|a| a.gn_factor())
             .unwrap_or(1.0);
         let mut deaths: Vec<u32> = Vec::new();
+        let mut hit_non_owner = false;
         for p in self.players.iter_mut() {
             if !p.alive || (exclude_owner && p.id == owner) {
                 continue;
@@ -1741,7 +1762,7 @@ impl World {
             let d = p.pos - pos;
             let d_sq = d.length_squared();
             if d_sq <= r_sq {
-                // 受伤（记录击杀者）；boost 期间返还一半回血；护甲/法抗折算 + 098b 攻方 Gn（D7）。
+                // 受伤（记录击杀者）；boost 期间返还一半回血；护甲/法抗折算 + 098c 攻方 Gn（D9）。
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
                 }
@@ -1752,6 +1773,11 @@ impl World {
                 }
                 let net = p.soak_boost(dmg);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
+                // 098c 挨打回魔（D9 批次1）。
+                p.mana += dmg.to_num::<f64>();
+                if p.id != owner {
+                    hit_non_owner = true;
+                }
                 if p.hp == Fix64::ZERO {
                     p.alive = false;
                     deaths.push(p.id);
@@ -1761,8 +1787,18 @@ impl World {
                     let dist = d_sq.sqrt();
                     let falloff = (Fix64::ONE - dist / radius).max(Fix64::from_num(0.2));
                     let dir = d.normalized();
-                    // nova/爆炸击退走 098b 衰减模型（D8）；falloff 保留为初速缩放。
-                    p.push_knockback(dir * (bomb_force * falloff));
+                    // nova/爆炸击退走 098c 衰减模型（D8/D9）；初速按受击者 mana 动态放大。
+                    let vmana = p.mana;
+                    let dyn_force = bomb_force.to_num::<f64>() * (100.0 + vmana) / 100.0;
+                    p.push_knockback(dir * Fix64::from_num(dyn_force * falloff.to_num::<f64>()));
+                }
+            }
+        }
+        // 098c 伤害成长（D9 批次1）：本次爆炸命中了非 owner 目标 → 施法者 Gn ×1.1。
+        if hit_non_owner {
+            if let Some(o) = self.players.get_mut(owner as usize) {
+                if o.alive {
+                    o.on_dealt_damage();
                 }
             }
         }
@@ -2039,7 +2075,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚：固定 250 半径、KI($A) 恒定伤害。
-                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true, true);
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
@@ -2047,14 +2083,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let stage = world.players[idx as usize].catastrophe_stage % 3;
                         let r = if stage == 2 { Fix64::from_num(400.0) } else { radius };
                         let stage_gx = gx + Fix64::from_num(stage as i64 * 4);
-                        world.explode_at(ppos, idx, r, stage_gx, warlock_ki_knockback(stage_gx, kb_ji), true, true);
+                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
                         // S021 虔诚：敌 250 伤（KI 距离衰减）+ 自奶 gx×0.5 + 移速（友方奶 TODO 无队伍）。
-                        world.explode_at(ppos, idx, radius, gx, warlock_ki_knockback(gx, kb_ji), true, true);
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
                         let heal = gx * Fix64::from_num(0.5);
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             if p.alive {
@@ -2117,7 +2153,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             let dur_s = (stats.max_distance / speed).to_num::<f64>();
                             p.push(dir * speed, dur_s);
                             p.kick = Some(Kick {
-                                push_power: warlock_ki_knockback(stats.damage, Fix64::ONE),
+                                push_power: Fix64::from_num(100.0) * stats.damage, // 基数 100（目标 mana 放大 TODO）
                                 push_time: Fix64::from_num(W098B_KB_TIME),
                                 push_damage: stats.damage,
                                 remaining: Fix64::from_num(dur_s),
@@ -2179,10 +2215,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     if let Some(pid) = hit_player {
+                        let vmana = world.players[pid as usize].mana;
                         world.damage_player(pid, gx, Some(idx));
                         if let Some(p) = world.players.get_mut(pid as usize) {
                             if p.alive {
-                                let kb = warlock_ki_knockback(gx, kb_ji);
+                                let kb = warlock_ki_knockback(vmana, gx, kb_ji);
                                 p.push_knockback(dir * kb);
                             }
                         }
@@ -4500,6 +4537,47 @@ mod tests {
         assert!(d1 < d2 * 0.4, "持盾目标应减伤 75%（≈3），实际 {d1} vs {d2}");
     }
 
+    /// 098c 魔法张力（D9 批次1）：挨打回魔（受多少伤加多少魔）+ 击退随魔法放大。
+    #[test]
+    fn mana_tension_gain_and_knockback_scaling() {
+        let mut world = World::new(2, 973);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        assert_eq!(world.players[1].mana, 0.0, "出生魔法 0");
+        // 火球命中玩家1：直伤 7 → mana += 7；击退初速 = (100+7)×7×1.1 ≈ 824/s
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[1].mana >= 7.0, "挨打应回魔（直伤 7），实际 {}", world.players[1].mana);
+        assert!(world.players[0].growth > 1.0, "命中敌人应成长 Gn×1.1，实际 {}", world.players[0].growth);
+        // 施法者成长后同技能伤害放大：第二发直伤 = 7×1.1
+        let hp1 = world.players[1].hp;
+        world.players[0].caster = crate::skill::Caster::new(); // 清 CD
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO); // 击退后拉回
+        world.players[1].control = None;
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let total = hp1 - world.players[1].hp;
+        // 两段伤害：7（Gn1.0）+ 7.7（Gn1.1）= 14.7（±点燃/漂移）
+        assert!(total > 13.0, "成长后第二发应 7×1.1=7.7，合计 >13，实际 {total}");
+    }
+
     /// M5 熔岩（圈外=熔岩统一，D8）：熔岩靴激活式——熔岩上用天罚 → 87.5% 窗口（1 档 3s）
     /// + CD 25s；窗口外吃全额 9/s + 惩罚。
     #[test]
@@ -4942,7 +5020,8 @@ mod tests {
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
         assert!((d1 - 6.0).abs() < 0.3, "第一跳应全额 6，实际 {d1}");
-        assert!((d2 - 6.0 * 0.8).abs() < 0.3, "第二跳应 ×0.8≈4.8，实际 {d2}");
+        // 098c 成长（D9）：第一跳命中后施法者 Gn=1.1 → 第二跳 = 6×0.8×1.1≈5.28
+        assert!((d2 - 6.0 * 0.8 * 1.1).abs() < 0.3, "第二跳应 ×0.8×Gn1.1≈5.28，实际 {d2}");
         // 末跳命中时寿命重置（~0.94s），到 2.2s 时必已耗尽（3 跳上限由全场扫描+飞程自然保证）。
         for _ in 0..40 {
             world.step(none.clone(), dt);

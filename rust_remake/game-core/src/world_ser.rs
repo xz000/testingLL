@@ -225,6 +225,9 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wu8(o, p.catastrophe_stage);
     // 熔岩靴激活 CD（M5）
     wfix(o, p.lava_boot_cd);
+    // 魔法张力 + 伤害成长（098c，D9 批次1）
+    wf64(o, p.mana);
+    wf64(o, p.growth);
     // items（M3）：u8 数量 + u32 id（解码后重算 item_fx）
     wu8(o, p.items.len() as u8);
     for it in &p.items {
@@ -349,6 +352,8 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     };
     let catastrophe_stage = u8at(b, p)?;
     let lava_boot_cd = fixat(b, p)?;
+    let mana = f64::from_bits(u64at(b, p)?);
+    let growth = f64::from_bits(u64at(b, p)?);
     let n_items = u8at(b, p)? as usize;
     let mut items = Vec::with_capacity(n_items);
     for _ in 0..n_items {
@@ -446,6 +451,8 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.rewind = rewind;
     pl.catastrophe_stage = catastrophe_stage;
     pl.lava_boot_cd = lava_boot_cd;
+    pl.mana = mana;
+    pl.growth = growth;
     pl.items = items;
     pl.recompute_item_fx();
     pl.move_target = move_target;

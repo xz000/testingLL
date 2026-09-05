@@ -637,7 +637,7 @@ pub enum SkillEffect {
     ///
     /// 伤害/击退在命中时按 KI/FI 公式结算（`world::warlock_ki_impact`）：
     /// - 伤害（FI）= `gX × Gn[攻] × hn[守]`；gX = growth.damage_base/damage_delta 随等级。
-    /// - 击退初速（KI）= `balance::DAMAGE_BASE × gX × kb_ji`（JI 系数，如火球 1.1×eb）。
+    /// - 击退初速（KI）= `(100+目标魔法) × gX × kb_ji`（动态，见 world::warlock_ki_knockback，D9）。
     Warlock098b {
         /// 运动学形态（直线/追踪/回旋/弹跳）。
         proj: W098bProjKind,
