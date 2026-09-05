@@ -492,11 +492,9 @@ struct Game {
     #[cfg(feature = "steam")]
     match_rounds: u32,
     /// 游戏模式（098c nn，B3）：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还。
-    /// Steam host 房间界面 1-5 并写大厅元数据；加入者从大厅元数据读取。
-    #[cfg(feature = "steam")]
+    /// Steam host 房间界面 1-5 并写大厅元数据；solo/LAN 用 --mode 参数。
     match_mode: u8,
     /// 队伍数（B2）：1=FFA；国王模式强制 2。
-    #[cfg(feature = "steam")]
     match_teams: u8,
     /// Steam：房间界面是否展开「邀请好友」面板（I 开关；不是模态，房间网络逻辑照常每帧跑）。
     #[cfg(feature = "steam")]
@@ -640,6 +638,12 @@ impl Game {
         // 主菜单/单机试验场：仅 1 个玩家且无 AI；Solo 也是 1 玩家无 AI。
         #[cfg(feature = "steam")]
         let init_rounds: u32 = STEAM_DEFAULT_ROUNDS;
+        // 游戏模式（--mode N 命令行可覆盖；Steam 进房后由大厅元数据覆盖）
+        let init_mode: u8 = std::env::args()
+            .position(|a| a == "--mode")
+            .and_then(|i| std::env::args().nth(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
         #[cfg(feature = "steam")]
         let init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
         #[cfg(feature = "steam")]
@@ -707,7 +711,11 @@ impl Game {
                 eprintln!("[solo] world players={} sandbox={}", w.players.len(), w.sandbox);
                 w
             }
-            _ => World::new(player_count.max(1), seed),
+            _ => {
+                let mut w = World::new(player_count.max(1), seed);
+                w.configure_mode(init_mode); // 非Steam 路径：--mode N（B3）
+                w
+            }
         };
         let meta_ids: Vec<u32> = match app {
             AppState::Solo | AppState::MainMenu => vec![0],
@@ -725,7 +733,11 @@ impl Game {
                 ..Default::default()
             };
             #[cfg(not(feature = "steam"))]
-            let cfg = MatchConfig::default();
+            let cfg = MatchConfig {
+                game_mode: init_mode,
+                team_count: if init_mode == 4 { 2 } else { 1 },
+                ..Default::default()
+            };
             MatchState::new(cfg, &meta_ids, 8)
         };
         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
@@ -937,9 +949,7 @@ impl Game {
             steam_create_place_buf: STEAM_DEFAULT_PLACE_REWARD.to_string(),
             #[cfg(feature = "steam")]
             steam_create_place: auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST),
-            #[cfg(feature = "steam")]
-            match_mode: 1,
-            #[cfg(feature = "steam")]
+            match_mode: init_mode,
             match_teams: 1,
             #[cfg(feature = "steam")]
             match_rounds: init_rounds,
@@ -1168,6 +1178,13 @@ impl Game {
             self.meta.register_assists(victim, killer, &assists);
             if victim_streak >= 3 {
                 eprintln!("[streak] 玩家{killer} 终结了 {victim_streak} 连杀");
+            }
+        }
+        // 化身模式计分（098c L12055，B3）：每人本轮伤害/20 计入分数。
+        if self.world.mode == 3 {
+            for p in 0..self.world.players.len() {
+                let dmg = self.world.round_damage_of(p as u32);
+                self.meta.register_damage_score(p as u32, dmg);
             }
         }
         let placement = self.world.placement();
@@ -1920,6 +1937,20 @@ impl Game {
                     20.0,
                     Color::from_rgb(255, 220, 120),
                     Point2 { x: sw - 90.0, y: 14.0 },
+                    true,
+                )?;
+                // 模式显示（B3；房间属性/hud 对齐 D13 #1）
+                draw_text(
+                    &mut canvas,
+                    ctx,
+                    &format!(
+                        "模式：{}（{}）",
+                        game_core::meta::MatchState::mode_name(self.match_mode),
+                        if self.match_teams >= 2 { "两队" } else { "FFA" }
+                    ),
+                    18.0,
+                    Color::from_rgb(170, 200, 255),
+                    Point2 { x: sw - 90.0, y: 36.0 },
                     true,
                 )?;
                 // 精通（B1）：金 ${}$

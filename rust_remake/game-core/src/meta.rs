@@ -418,6 +418,13 @@ impl MatchState {
         first
     }
 
+    /// 化身模式计分（098c L12055：Ln += 本轮伤害/20，B3）。
+    pub fn register_damage_score(&mut self, player_id: u32, damage: f64) {
+        if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
+            p.score += (damage / 20.0) as u32;
+        }
+    }
+
     /// 死亡结算（D6）：受害者连杀清零（连杀播报由调用方在清零前读取）。
     /// 死亡竞赛（模式 2，098c L2998）：死者分数 -1。
     pub fn register_death(&mut self, victim_id: u32) -> u32 {

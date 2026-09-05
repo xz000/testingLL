@@ -657,6 +657,29 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
         wvec(&mut o, *b);
         wfix(&mut o, *rem);
     }
+    // 模式/角色（B3）：mode + avatar + kings + f_override + round_forced
+    wu8(&mut o, w.mode);
+    match w.avatar {
+        Some(id) => {
+            wu8(&mut o, 1);
+            wu32(&mut o, id);
+        }
+        None => wu8(&mut o, 0),
+    }
+    wu8(&mut o, w.kings.len() as u8);
+    for k in &w.kings {
+        wu32(&mut o, *k);
+    }
+    for f in &w.f_override {
+        match f {
+            Some(id) => {
+                wu8(&mut o, 1);
+                wu32(&mut o, id.as_u32());
+            }
+            None => wu8(&mut o, 0),
+        }
+    }
+    wu8(&mut o, w.round_forced as u8);
     // 伤害矩阵（D6）：n×n Fix64（行主序）
     let n = w.players.len();
     for row in &w.damage_matrix {
@@ -708,6 +731,23 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         let rem = fixat(b, &mut p)?;
         lightning_visual.push((a, b2, rem));
     }
+    let mode = u8at(b, &mut p)?;
+    let avatar = if u8at(b, &mut p)? == 1 { Some(u32at(b, &mut p)?) } else { None };
+    let n_kings = u8at(b, &mut p)? as usize;
+    let mut kings = Vec::with_capacity(n_kings);
+    for _ in 0..n_kings {
+        kings.push(u32at(b, &mut p)?);
+    }
+    let mut f_override = Vec::with_capacity(np);
+    for _ in 0..np {
+        let f = if u8at(b, &mut p)? == 1 {
+            Some(SkillId::from_u32(u32at(b, &mut p)?))
+        } else {
+            None
+        };
+        f_override.push(f);
+    }
+    let round_forced = u8at(b, &mut p)? != 0;
     // 伤害矩阵（D6）：n×n Fix64，紧跟玩家（与编码顺序一致）
     let mut damage_matrix = vec![vec![Fix64::ZERO; np]; np];
     for row in damage_matrix.iter_mut() {
@@ -747,7 +787,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode: 1, avatar: None, f_override: vec![None; np], round_forced: false })
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar: None, pending_kings: Vec::new() })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
