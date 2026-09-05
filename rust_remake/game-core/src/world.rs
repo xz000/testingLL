@@ -387,13 +387,15 @@ pub struct World {
     /// 下一轮角色（reset_round 开头从上轮矩阵/rng 掷出，结尾应用）。
     pub(crate) pending_avatar: Option<u32>,
     pub(crate) pending_kings: Vec<u32>,
+    /// 缩圈倒计时（098c EA：每 wo×√存活 秒烧掉一环，B5）。
+    pub(crate) shrink_timer: f64,
 }
 
 impl World {
     /// 创建一场对局。`player_count` 为玩家人数；`seed` 用于 AI / 初始布局等确定性随机。
     pub fn new(player_count: u32, seed: u64) -> Self {
         let mut rng = Rng::new(seed);
-        let arena_radius = Fix64::from_num(START_RADIUS);
+        let arena_radius = Fix64::from_num(Balance::start_radius_for(player_count));
         let mut players = Vec::with_capacity(player_count as usize);
         // 把玩家在 arena*0.6 的环上**均匀等分**分布（并整体随机旋转一帧视角），
         // 保证彼此初始不重叠且出界伤害不至于一开始就触发。
@@ -427,6 +429,7 @@ impl World {
             round_forced: false,
             pending_avatar: None,
             pending_kings: Vec::new(),
+            shrink_timer: 10.0,
         }
     }
 
@@ -721,11 +724,15 @@ impl World {
         just_cast
     }
 
+    /// 场地收缩（098c EA/iA，B5）：按环步进——每 `wo×√存活数` 秒（wo=10s）烧掉
+    /// 一环 128 码，存活数越少烧得越快；缩到 0（全场岩浆）为止。
     fn shrink_arena(&mut self, dt: Fix64) {
-        self.arena_radius -= Fix64::from_num(SHRINK_SPEED) * dt;
-        // 复刻原版 AreaScript：缩到 0 才停（不留最小半径阈值），但用极小值避免归负。
-        if self.arena_radius < Fix64::ZERO {
-            self.arena_radius = Fix64::ZERO;
+        self.shrink_timer -= dt.to_num::<f64>();
+        if self.shrink_timer <= 0.0 {
+            let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
+            self.shrink_timer += Balance::default().shrink_ring_secs * alive.sqrt();
+            let ring = Balance::default().ring_width;
+            self.arena_radius = (self.arena_radius - Fix64::from_num(ring)).max(Fix64::ZERO);
         }
     }
 
@@ -2182,8 +2189,11 @@ impl World {
             }
         }
         self.projectiles.clear(); // 清掉上轮遗留的飞行物/延时区域
-        self.arena_radius = Fix64::from_num(crate::world::START_RADIUS);
+        self.arena_radius = Fix64::from_num(Balance::start_radius_for(self.players.len() as u32));
         self.time = Fix64::ZERO;
+        // 缩圈计时重启（098c XA：回合开始即启动 EA 定时器）
+        let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
+        self.shrink_timer = Balance::default().shrink_ring_secs * alive.sqrt();
         // 每轮推进布局种子 → 下一小局的柱子配置与上一轮不同（联机下两端 world 同步此字段，确定性一致）。
         // 用简单递增而非 LCG：LCG 在 2^64 上存在短周期点（如 20260812 经两次递推回到自身），
         // 递增保证每次严格不同（无回绕时）。Rng::new 为单射，不同 seed ⇒ 不同布局。
@@ -5796,12 +5806,33 @@ mod tests {
     fn arena_shrinks_to_zero() {
         let mut world = World::new(1, 92);
         let dt = Fix64::from_num(1.0 / 60.0);
-        // 缩到 0 需要 20/0.35 ≈ 57s ≈ 3429 帧；跑够久确认能缩到 0（而非停在旧阈值 3.0）。
+        // 098c EA（B5）：1 人局 9 环、每环 10×√1=10s → 全场吞没 ≈ 90s ≈ 5400 帧。
+        assert!((world.arena_radius.to_num::<f64>() - 1152.0).abs() < 1.0, "1 人局初始半径应 1152（9 环）");
         let none = vec![PlayerInput::default()];
-        for _ in 0..3600 {
+        for _ in 0..6000 {
             world.step(none.clone(), dt);
         }
         assert!(world.arena_radius <= Fix64::from_num(0.01), "场地应缩到 0，实际 {:?}", world.arena_radius);
+    }
+
+    /// 缩圈按环步进（098c EA）：开局 10s 内半径不变，到点一次烧一环 128 码。
+    #[test]
+    fn shrink_steps_by_ring_not_continuous() {
+        let mut world = World::new(2, 92);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let r0 = world.arena_radius.to_num::<f64>();
+        // 5 秒：应仍为初始半径（首个环窗口未到）
+        for _ in 0..300 {
+            world.step(none.clone(), dt);
+        }
+        assert_eq!(world.arena_radius.to_num::<f64>(), r0, "5s 内不应缩圈");
+        // 推进到第一个窗口（10×√2≈14.1s = 849 帧）之后：应恰好少一环
+        for _ in 0..600 {
+            world.step(none.clone(), dt);
+        }
+        let r1 = world.arena_radius.to_num::<f64>();
+        assert!((r1 - (r0 - 128.0)).abs() < 0.01, "到点应烧掉一环 128 码，实际 {r0}→{r1}");
     }
 
     #[test]
