@@ -66,6 +66,36 @@ impl Default for MatchConfig {
     }
 }
 
+/// 098c 精通研究（D12.3，kf handler 实证）：学习期购买、不涨价、跨回合永久保留。
+/// 价格为占位（w3q 解析失败，取参照版价格 TODO）；上限 3/3/3/2 亦为占位。
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Mastery {
+    /// R00D 生命精通：伤害吸血 +8%/级。
+    pub life: u8,
+    /// R00I 远程精通：火球爆炸范围/力度 +12%/级（xi>0 火球才有落点爆炸）。
+    pub range: u8,
+    /// R00Y 时间精通：法术持续/射程 +10%/级（火球系 +15%/级）。
+    pub time: u8,
+    /// R000 背包研究：物品栏 +1 格/级（S128，6→8）。
+    pub backpack: u8,
+}
+
+impl Mastery {
+    /// 购买价（占位：参照版 生命4/远程5/时间6/背包2）。
+    pub const COSTS: [i32; 4] = [4, 5, 6, 2];
+    /// 级数上限（占位：三精通 3 级、背包 2 级）。
+    pub const CAPS: [u8; 4] = [3, 3, 3, 2];
+
+    /// 三精通总级数（击退减免用；背包不计——098c lf=vi+ei+xi）。
+    pub fn levels(&self) -> u8 {
+        self.life + self.range + self.time
+    }
+
+    fn at(&self, kind: usize) -> u8 {
+        [self.life, self.range, self.time, self.backpack][kind]
+    }
+}
+
 /// 一位玩家在整场对抗中的累计档案。
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerProfile {
@@ -94,6 +124,8 @@ pub struct PlayerProfile {
     pub attributes: crate::attribute::Attributes,
     /// 成长点（4.6b）：用于购买属性。每局/阶段固定发放，也可用金币兑换。
     pub growth_points: u32,
+    /// 精通研究等级（098c，D12.3）：学习期购买、跨回合永久保留。
+    pub mastery: Mastery,
 }
 
 impl PlayerProfile {
@@ -115,6 +147,7 @@ impl PlayerProfile {
             gold_spent: 0,
             attributes: crate::attribute::Attributes::default(),
             growth_points: 0,
+            mastery: Mastery::default(),
         }
     }
 
@@ -144,11 +177,37 @@ impl PlayerProfile {
         if self.gold < cost {
             return false;
         }
-        self.gold -= cost;
         let family = id.def().family;
+        let is_upgrade = self.items.iter().any(|&it| it.def().family == family);
+        // 背包容量（098c S128 背包研究 6→8）；同家族升级是替换，不受容量限制。
+        if !is_upgrade && self.items.len() >= self.inventory_slots() {
+            return false;
+        }
+        self.gold -= cost;
         self.items.retain(|&it| it.def().family != family);
         self.items.push(id);
         true
+    }
+
+    /// 购买 1 级精通（kind：0=生命 1=远程 2=时间 3=背包）。098c kf：不涨价、永久保留。
+    pub fn buy_mastery(&mut self, kind: usize) -> bool {
+        let cost = Mastery::COSTS[kind];
+        if self.gold < cost || self.mastery.at(kind) >= Mastery::CAPS[kind] {
+            return false;
+        }
+        self.gold -= cost;
+        match kind {
+            0 => self.mastery.life += 1,
+            1 => self.mastery.range += 1,
+            2 => self.mastery.time += 1,
+            _ => self.mastery.backpack += 1,
+        }
+        true
+    }
+
+    /// 物品栏格数（098c S128：基础 6 格 + 背包研究每级 +1）。
+    pub fn inventory_slots(&self) -> usize {
+        6 + self.mastery.backpack as usize
     }
 
     /// 购买/升级某技能一级。返回是否成功（金币不足则失败）；成功计入洗点累计花费。
@@ -739,3 +798,47 @@ mod tests {
         assert!(!p.buy_attribute(crate::attribute::GrowthAttr::Hp, 99), "成长点不足应失败");
     }
 }
+
+    #[test]
+    fn mastery_buy_costs_caps_and_backpack() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 20;
+        // 四系各买一级（4/5/6/2 = 17 金）
+        assert!(pr.buy_mastery(0) && pr.buy_mastery(1) && pr.buy_mastery(2) && pr.buy_mastery(3));
+        assert_eq!(pr.gold, 3, "精通应扣费 17 金");
+        assert_eq!((pr.mastery.life, pr.mastery.range, pr.mastery.time, pr.mastery.backpack), (1, 1, 1, 1));
+        // 金币不足失败
+        assert!(!pr.buy_mastery(0), "余 3 金买不起 4 金生命精通");
+        // 上限（占位 3/3/3/2）
+        pr.gold = 100;
+        assert!(pr.buy_mastery(3), "背包第 2 级");
+        assert!(!pr.buy_mastery(3), "背包达上限 2 应失败");
+        assert!(pr.buy_mastery(0) && pr.buy_mastery(0), "生命第 2/3 级");
+        assert!(!pr.buy_mastery(0), "生命达上限 3 应失败");
+        assert_eq!(pr.mastery.life, 3, "生命精通应达占位上限 3");
+        assert_eq!(pr.mastery.backpack, 2, "背包上限 2");
+        // 背包扩容：6→8
+        assert_eq!(pr.inventory_slots(), 8);
+        // 8 个不同家族可共存；第 9 个（standalone 第二件）被拒
+        let eight = [
+            crate::item::ItemId::Boots1,
+            crate::item::ItemId::Amulet1,
+            crate::item::ItemId::Cloak1,
+            crate::item::ItemId::Helm1,
+            crate::item::ItemId::BloodSword1,
+            crate::item::ItemId::GuardianShield1,
+            crate::item::ItemId::LavaBoots1,
+            crate::item::ItemId::PocketWatch1,
+        ];
+        pr.items.clear();
+        for it in eight {
+            assert!(pr.buy_item(it), "第 {} 件应能买（8 格）", pr.items.len() + 1);
+        }
+        assert!(!pr.buy_item(crate::item::ItemId::FireMask), "9 件应被容量拒绝");
+        // 同家族升级不受容量限制（替换语义）
+        assert!(pr.buy_item(crate::item::ItemId::Boots2));
+        assert_eq!(pr.items.len(), 8);
+        // levels() 只计三精通（life3 + range1 + time1）
+        assert_eq!(pr.mastery.levels(), 5);
+    }

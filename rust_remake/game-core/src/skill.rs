@@ -1273,7 +1273,8 @@ impl DefTable {
     /// 未列入的（Unity 版遗留技能）沿用统一上限 20。
     pub fn max_level(id: SkillId) -> u32 {
         match id {
-            SkillId::S000 => 24,
+            // 098c：火球等级 = R002 研究（ur 起点 1，上限 9 级研究，L9953）→ 等级上限 10。
+            SkillId::S000 => 10,
             SkillId::S002 => 9,
             SkillId::S003 => 9,
             SkillId::S004 => 9,
@@ -2591,17 +2592,19 @@ mod tests {
 
     #[test]
     fn s000_fireball_matches_spec() {
-        // spec S000：CD 4.8 恒定 24 级；speed 1000 / radius 25 / life (1+.1*oi)=1.0；
+        // spec S000：CD 4.8 恒定（等级上限 10 = 098c R002 研究 cap 9 + 起点 1，L9953）；
+        // speed 1000 / radius 25 / life (1+.1*oi)=1.0；
         // consolidated：gX = 6.3+.7*Xv，JI = 1.1*eb（M1 eb=1）；点燃 = (6+1.5L)*jn²，2.5s。
         let def = DefTable::def(SkillId::S000);
         assert_eq!(def.name, "火球");
+        assert_eq!(DefTable::max_level(SkillId::S000), 10, "火球等级上限应 10（098c R002 cap 9）");
         let s1 = def.stats_at(1);
         assert!(near(s1.cooldown, 4.8, 1e-3), "L1 CD 应 4.8，实际 {:?}", s1.cooldown);
         assert!(near(s1.damage, 7.0, 1e-3), "L1 gX 应 6.3+0.7×1=7.0，实际 {:?}", s1.damage);
-        let s24 = def.stats_at(24);
-        assert!(near(s24.cooldown, 4.8, 1e-3), "L24 CD 应仍 4.8（恒定），实际 {:?}", s24.cooldown);
-        assert!(near(s24.damage, 6.3 + 0.7 * 24.0, 1e-3), "L24 gX 应 6.3+0.7×24，实际 {:?}", s24.damage);
-        assert!(near(s24.extra, 6.0 + 1.5 * 24.0, 1e-3), "L24 点燃总量应 6+1.5×24，实际 {:?}", s24.extra);
+        let s10 = def.stats_at(10);
+        assert!(near(s10.cooldown, 4.8, 1e-3), "L10 CD 应仍 4.8（恒定），实际 {:?}", s10.cooldown);
+        assert!(near(s10.damage, 6.3 + 0.7 * 10.0, 1e-3), "L10 gX 应 6.3+0.7×10，实际 {:?}", s10.damage);
+        assert!(near(s10.extra, 6.0 + 1.5 * 10.0, 1e-3), "L10 点燃总量应 6+1.5×10，实际 {:?}", s10.extra);
         match def.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Straight, speed, radius, life, kb_ji, ignite, .. } => {
                 assert!(near(speed, 1000.0, 1e-3), "speed 应 1000（spec），实际 {speed:?}");

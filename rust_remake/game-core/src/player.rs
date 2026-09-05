@@ -208,6 +208,8 @@ pub struct Player {
     pub boomerang_side: bool,
     /// 守护之盾充能（098c Ha 标志）：火球命中敌人后点亮；下次天罚消耗并获 5s 减伤窗口。
     pub aegis_charged: bool,
+    /// 精通战斗快照（098c，D12.3/B1）：[生命vi, 远程xi, 时间ei]；profile 购买后 apply 进场。
+    pub mastery: [u8; 3],
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -265,6 +267,7 @@ impl Player {
             growth: 1.0,
             boomerang_side: false,
             aegis_charged: false,
+            mastery: [0, 0, 0],
             items: Vec::new(),
             item_fx: crate::item::aggregate(&[]),
             ricochet_pending: None,
@@ -403,9 +406,12 @@ impl Player {
         self.buffs.iter().any(|b| b.remaining > Fix64::ZERO && b.kind == BuffKind::Scorched)
     }
 
-    /// 有效受击退减免（M3）：属性与物品（头盔不叠加）取最大。
+    /// 有效受击退减免：属性与物品（头盔不叠加）取最大后，与精通级数乘法合成
+    /// （098c kf L12917：每级精通 Hn ×(1-0.025×lf)，lf=三精通总级数）。
     pub fn effective_kb_reduction(&self) -> f64 {
-        (1.0 - self.kb_factor).max(self.item_fx.kb_resist_frac)
+        let base = (1.0 - self.kb_factor).max(self.item_fx.kb_resist_frac);
+        let mastery = 0.025 * (self.mastery[0] + self.mastery[1] + self.mastery[2]) as f64;
+        1.0 - (1.0 - base) * (1.0 - mastery)
     }
 
     /// 攻击方伤害输出系数（098c Gn，D9）：= 伤害成长 × 灼烧惩罚。
