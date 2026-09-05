@@ -213,6 +213,16 @@ pub struct Player {
     /// 队伍号（098c cn[]，B2）：默认 = 自己 id（FFA，各为一队）；分队模式由开局配置覆写。
     /// 技能只命中异队；碰撞/岩浆等物理与队伍无关。
     pub team: u8,
+    /// 复活调度（模式 2 DM 4s / 模式 5 LMS 受害者 3s，B3）。
+    pub respawn_at: Option<Fix64>,
+    /// Doom（098c 国王模式：弑王者全队永久回血 -1/s，B3b）。
+    pub doom: f64,
+    /// 时长标量（098c jn：化身 ×1.2；B3）。
+    pub dur_mult: f64,
+    /// 受伤倍率（098c hn：国王 ×0.9，B3b）。
+    pub dmg_taken_mult: f64,
+    /// 岩浆受伤倍率（098c To：国王 ×0.9，B3b）。
+    pub lava_taken_mult: f64,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -240,6 +250,11 @@ impl Player {
         Player {
             id,
             team: id as u8,
+            respawn_at: None,
+            doom: 0.0,
+            dur_mult: 1.0,
+            dmg_taken_mult: 1.0,
+            lava_taken_mult: 1.0,
             pos,
             radius,
             hp: max_hp,
@@ -334,7 +349,7 @@ impl Player {
         // 怀表（M3）：增益时长 ×mult、减益时长 ÷div（098b I00M/I00N）。
         let adjusted = match kind {
             BuffKind::Tied | BuffKind::Scorched => remaining / self.item_fx.debuff_dur_div.max(1.0),
-            _ => remaining * self.item_fx.buff_dur_mult,
+            _ => remaining * self.item_fx.buff_dur_mult * self.dur_mult,
         };
         self.add_buff_fix(kind, Fix64::from_num(adjusted));
     }

@@ -491,6 +491,13 @@ struct Game {
     /// 当前场次的总轮数（host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_rounds: u32,
+    /// 游戏模式（098c nn，B3）：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还。
+    /// Steam host 房间界面 1-5 并写大厅元数据；加入者从大厅元数据读取。
+    #[cfg(feature = "steam")]
+    match_mode: u8,
+    /// 队伍数（B2）：1=FFA；国王模式强制 2。
+    #[cfg(feature = "steam")]
+    match_teams: u8,
     /// Steam：房间界面是否展开「邀请好友」面板（I 开关；不是模态，房间网络逻辑照常每帧跑）。
     #[cfg(feature = "steam")]
     steam_friend_list: bool,
@@ -931,6 +938,10 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_create_place: auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST),
             #[cfg(feature = "steam")]
+            match_mode: 1,
+            #[cfg(feature = "steam")]
+            match_teams: 1,
+            #[cfg(feature = "steam")]
             match_rounds: init_rounds,
             #[cfg(feature = "steam")]
             match_learn_secs: init_learn_secs,
@@ -1225,6 +1236,9 @@ impl Game {
             gold_per_round: self.match_gold_per_round,
             starting_gold: self.match_starting_gold,
             place_rewards: self.match_place_rewards.clone(),
+            game_mode: self.match_mode,
+            // 国王模式按 098c kX 自动两队（其余按房间设置，默认 FFA）
+            team_count: if self.match_mode == 4 { 2 } else { self.match_teams },
             ..Default::default()
         }
     }
@@ -1234,6 +1248,7 @@ impl Game {
     #[cfg(feature = "steam")]
     fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
         self.world = game_core::world::World::new(p.max(1) as u32, seed);
+        self.world.configure_mode(self.match_mode);
         self.meta = game_core::meta::MatchState::new(
             self.match_config(),
             &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -3180,6 +3195,25 @@ impl event::EventHandler for Game {
                 } // end 非 Steam 分支
                 // 注：施法命令 `pending_cast` 已在 `local_player_input()` 里随编码消费（take），
                 // 不需要这里按 `is_windup()` 反推清除（那段逻辑对零前摇技能永不成立，且查的是硬编码 PLAYER_ID）。
+                // 死亡竞赛（模式 2，B3）：无回合——击杀/死亡即时记分，先到胜利分终局。
+                if self.world.mode == 2 {
+                    for (killer, victim) in self.world.take_kills() {
+                        let is_first = self.meta.register_kill(killer);
+                        if is_first {
+                            eprintln!("[blood] 玩家{killer} 发出 First Blood!");
+                        }
+                        let victim_streak = self.meta.register_death(victim);
+                        if victim_streak >= 3 {
+                            eprintln!("[streak] 玩家{killer} 终结了 {victim_streak} 连杀");
+                        }
+                        let assists = self.world.damage_dealers_of(victim);
+                        self.meta.register_assists(victim, killer, &assists);
+                    }
+                    if self.meta.profiles.iter().any(|pr| pr.score >= self.meta.config.win_score) {
+                        let placement = self.meta.final_ranking().into_iter().map(|(id, _)| id).collect();
+                        self.meta.finish_round(placement);
+                    }
+                }
                 // 本局结束 → 结算并进入学习阶段
                 if self.world.round_over() {
                     self.settle_round();
@@ -3472,6 +3506,21 @@ impl Game {
                 }
             }
         }
+        // 模式（host 数字键 1-5，写大厅元数据；D13 #1 房间属性）
+        if self.steam_host_ls.is_some() {
+            for m in 1u8..=5 {
+                let ch = std::char::from_digit(m as u32, 10).unwrap();
+                if just(ch) {
+                    self.match_mode = m;
+                    if let (Some(ls), Some(lid)) = (self.steam_host_ls.as_ref(), self.steam_lobby_id) {
+                        let mm = ls.transport_ref().matchmaking();
+                        let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+                        mm.set_lobby_data(lobby, net_steam::session::ROOM_MODE_KEY, &m.to_string());
+                    }
+                    eprintln!("[steam-room] 模式 -> {}", game_core::meta::MatchState::mode_name(m));
+                }
+            }
+        }
         // 字段切换 0=房间名 1=备注（↑/↓ 或 Tab）。
         if just_named(NamedKey::ArrowUp) || just_named(NamedKey::ArrowDown) || just_named(NamedKey::Tab) {
             self.steam_room_edit_focus = (self.steam_room_edit_focus + 1) % 2;
@@ -3526,6 +3575,18 @@ impl Game {
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "编辑房间信息", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.26 }, true)?;
+        // 模式（host 数字键 1-5 切换并同步大厅元数据；B3/D13 #1）
+        draw_text(
+            canvas, ctx,
+            &format!(
+                "模式（host 按 1-5 切换）：{}",
+                game_core::meta::MatchState::mode_name(self.match_mode)
+            ),
+            22.0,
+            Color::from_rgb(150, 200, 255),
+            Point2 { x: cx, y: sh * 0.26 + 40.0 },
+            true,
+        )?;
         let labels = ["房间名", "备注"];
         let vals = [self.steam_edit_name.clone(), self.steam_edit_note.clone()];
         let mut y = sh * 0.42;
@@ -4282,6 +4343,7 @@ impl Game {
                     sess.host_set_starting_gold(self.steam_create_starting_gold)?;
                     sess.host_set_gold_per_round(self.steam_create_gold_per_round)?;
                     sess.host_set_place_reward(&self.steam_create_place)?;
+                    sess.host_set_mode(self.match_mode)?;
                     self.match_rounds = self.steam_create_rounds;
                     self.match_learn_secs = self.steam_create_learn;
                     self.match_starting_gold = self.steam_create_starting_gold;
@@ -4315,6 +4377,7 @@ impl Game {
                     self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
                     self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
                     self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
+                    self.match_mode = sess.lobby_mode().unwrap_or(1);
                     self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
                     let host_id = sess.host_steam_id().unwrap_or(0);
                     let my_slot = sess.my_slot();
@@ -4338,6 +4401,7 @@ impl Game {
                 }
             }
             self.world = game_core::world::World::new(n.max(1) as u32, seed);
+            self.world.configure_mode(self.match_mode);
             self.meta = game_core::meta::MatchState::new(
                 self.match_config(),
                 &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -4887,7 +4951,13 @@ impl Game {
                     })
                     .unwrap_or_else(|| "房主".to_string());
                 let full = format!("{}   {}", owner_name, l.name);
-                let meta = format!("人数 {}/{}    {}", l.members, l.limit, l.note);
+                let meta = format!(
+                    "人数 {}/{}    [{}]    {}",
+                    l.members,
+                    l.limit,
+                    game_core::meta::MatchState::mode_name(l.mode),
+                    l.note
+                );
                 let selected = i == self.steam_list_selection;
                 let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(28, 31, 38) };
                 let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(head_x, y, head_w, 64.0), bg_col)?;

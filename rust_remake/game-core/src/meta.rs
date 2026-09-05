@@ -34,8 +34,8 @@ pub struct MatchConfig {
     pub score_per_assist: u32,
     /// 轮胜利得分（098b po，默认 1；胜利 = 每轮最后存活者）。
     pub score_per_round_win: u32,
-    /// 对局模式（098b En：1=回合制打满 N 轮按总分排名，2=死亡竞赛先到胜利分；
-    /// En3-5 化身/弑君/生存 TODO）。默认 1。
+    /// 对局模式（098c nn，B3）：1=轮次（默认）/2=死亡竞赛/3=化身/4=国王/5=最后生还。
+    /// 选择走房间属性（D13 #1），不再用聊天命令。
     pub game_mode: u8,
     /// 队伍数（098c -mgl/-teams，B2）：1=FFA（各为一队，默认）；2=按序号对半分两队。
     pub team_count: u8,
@@ -419,6 +419,7 @@ impl MatchState {
     }
 
     /// 死亡结算（D6）：受害者连杀清零（连杀播报由调用方在清零前读取）。
+    /// 死亡竞赛（模式 2，098c L2998）：死者分数 -1。
     pub fn register_death(&mut self, victim_id: u32) -> u32 {
         let mut streak = 0;
         if let Some(p) = self
@@ -428,6 +429,9 @@ impl MatchState {
         {
             streak = p.current_streak;
             p.current_streak = 0;
+            if self.config.game_mode == 2 {
+                p.score = p.score.saturating_sub(1);
+            }
         }
         streak
     }
@@ -446,6 +450,17 @@ impl MatchState {
     }
 
     /// 轮胜利结算（D6）：每轮最后存活者 +分（组队模式待 M4 队伍系统）。
+    /// 模式名（房间列表/HUD 显示，D13 #1）。
+    pub fn mode_name(mode: u8) -> &'static str {
+        match mode {
+            2 => "死亡竞赛",
+            3 => "化身",
+            4 => "国王",
+            5 => "最后生还",
+            _ => "轮次",
+        }
+    }
+
     pub fn register_round_win(&mut self, winner_id: u32) {
         if let Some(p) = self
             .profiles
