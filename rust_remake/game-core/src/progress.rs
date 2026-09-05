@@ -17,7 +17,8 @@ use crate::skill::SkillId;
 ///     无蓝量系统 PORT_098B_DECISIONS.md D3）。
 /// v6（M3）：加入 items（u8 数量 + 每 item u32 id）。
 /// v7（B1 精通）：加入 mastery 4 字节（生命/远程/时间/背包）。
-pub const CONFIG_VERSION: u8 = 7;
+/// v8（B2 队伍）：加入 team 1 字节。
+pub const CONFIG_VERSION: u8 = 8;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -54,6 +55,8 @@ pub struct PlayerConfig {
     pub items: Vec<crate::item::ItemId>,
     /// 精通研究等级（v7，098c D12.3）：[生命, 远程, 时间, 背包]。
     pub mastery: [u8; 4],
+    /// 队伍号（v8，098c cn[]，B2）。
+    pub team: u8,
 }
 
 impl PlayerConfig {
@@ -72,6 +75,7 @@ impl PlayerConfig {
             growth_points: p.growth_points,
             items: p.items.clone(),
             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
+            team: p.team,
         }
     }
 
@@ -96,6 +100,7 @@ impl PlayerConfig {
             time: self.mastery[2],
             backpack: self.mastery[3],
         };
+        p.team = self.team;
     }
 
     /// 编码为字节（带版本 + 长度前缀，可扩展）。
@@ -134,6 +139,8 @@ impl PlayerConfig {
         }
         // mastery（v7）：生命/远程/时间/背包各 1 字节。
         out.extend_from_slice(&self.mastery);
+        // team（v8）。
+        out.push(self.team);
         out
     }
 
@@ -190,6 +197,7 @@ impl PlayerConfig {
         }
         // mastery（v7）。
         let mastery = [*buf.get(pos)?, *buf.get(pos + 1)?, *buf.get(pos + 2)?, *buf.get(pos + 3)?];
+        let team = *buf.get(pos + 4)?;
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -199,6 +207,7 @@ impl PlayerConfig {
             growth_points,
             items,
             mastery,
+            team,
         })
     }
 }

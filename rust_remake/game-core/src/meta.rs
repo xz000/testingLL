@@ -37,6 +37,8 @@ pub struct MatchConfig {
     /// 对局模式（098b En：1=回合制打满 N 轮按总分排名，2=死亡竞赛先到胜利分；
     /// En3-5 化身/弑君/生存 TODO）。默认 1。
     pub game_mode: u8,
+    /// 队伍数（098c -mgl/-teams，B2）：1=FFA（各为一队，默认）；2=按序号对半分两队。
+    pub team_count: u8,
     /// 死亡竞赛（En2）的胜利得分（098b `-+胜利得分` 开局设置）。
     pub win_score: u32,
     /// 开局购物时长（098b Wo=40；独立于每轮 wo=30 的 `learn_time_secs`）。
@@ -60,6 +62,7 @@ impl Default for MatchConfig {
             score_per_assist: 1,
             score_per_round_win: 2,
             game_mode: 1,
+            team_count: 1,
             win_score: 10,
             shopping_time_secs: 40.0,
         }
@@ -126,6 +129,8 @@ pub struct PlayerProfile {
     pub growth_points: u32,
     /// 精通研究等级（098c，D12.3）：学习期购买、跨回合永久保留。
     pub mastery: Mastery,
+    /// 队伍号（098c cn[]，B2）：默认 = 玩家 id（FFA）；分队由开局配置覆写。
+    pub team: u8,
 }
 
 impl PlayerProfile {
@@ -148,6 +153,7 @@ impl PlayerProfile {
             attributes: crate::attribute::Attributes::default(),
             growth_points: 0,
             mastery: Mastery::default(),
+            team: player_id as u8,
         }
     }
 
@@ -302,6 +308,7 @@ pub struct MatchState {
 
 impl MatchState {
     pub fn new(config: MatchConfig, player_ids: &[u32], skill_count: usize) -> Self {
+        let team_count = config.team_count.max(1);
         let mut m = MatchState {
             round: 1,
             phase: MatchPhase::Fighting,
@@ -315,6 +322,17 @@ impl MatchState {
             pending_first_round: false,
             first_blood_taken: false,
         };
+        // 分队（098c kX -mgl 语义，B2）：2 队 = 按 id 序对半分；FFA = 各自一队（cn[i]=i）。
+        if team_count >= 2 {
+            let mut ids = m.profiles.iter().map(|p| p.player_id).collect::<Vec<_>>();
+            ids.sort();
+            let half = ids.len().div_ceil(2);
+            for (i, &id) in ids.iter().enumerate() {
+                if let Some(pr) = m.profiles.iter_mut().find(|p| p.player_id == id) {
+                    pr.team = if i < half { 0 } else { 1 };
+                }
+            }
+        }
         m.give_starting_gold();
         m.give_round_gold();
         m
@@ -841,4 +859,16 @@ mod tests {
         assert_eq!(pr.items.len(), 8);
         // levels() 只计三精通（life3 + range1 + time1）
         assert_eq!(pr.mastery.levels(), 5);
+    }
+
+    #[test]
+    fn team_assignment_from_config() {
+        // FFA：各为一队（cn[i]=i）
+        let ms = MatchState::new(MatchConfig::default(), &[0, 1, 2, 3], 34);
+        assert_eq!(ms.profiles.iter().map(|p| p.team).collect::<Vec<_>>(), vec![0, 1, 2, 3]);
+        // 2 队：按 id 序对半分（098c kX）
+        let cfg = MatchConfig { team_count: 2, ..Default::default() };
+        let ms = MatchState::new(cfg, &[3, 0, 2, 1], 34);
+        let team_of = |id: u32| ms.profiles.iter().find(|p| p.player_id == id).unwrap().team;
+        assert_eq!((team_of(0), team_of(1), team_of(2), team_of(3)), (0, 0, 1, 1), "乱序传入也应按 id 排序对半分");
     }

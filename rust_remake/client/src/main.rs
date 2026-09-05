@@ -1160,11 +1160,9 @@ impl Game {
             }
         }
         let placement = self.world.placement();
-        // 轮胜利分（D6）：最后存活者 +1（全员死光则不发）。
-        if let Some(&winner) = placement.first() {
-            if winner != u32::MAX {
-                self.meta.register_round_win(winner);
-            }
+        // 轮胜利分（D6，B2 队伍化）：存活方全员各 +2（098c mo；全员死光=平局不发）。
+        for winner in self.world.round_winners() {
+            self.meta.register_round_win(winner);
         }
         self.meta.finish_round(placement);
         // 4.6b：每局给所有玩家发成长点（用于买属性）。
