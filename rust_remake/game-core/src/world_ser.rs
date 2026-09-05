@@ -155,6 +155,7 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         BuffKind::Tied => wu8(o, 3),
         BuffKind::Boost => wu8(o, 4),
         BuffKind::Scorched => wu8(o, 5),
+        BuffKind::LavaShield => wu8(o, 6),
     }
     wfix(o, b.remaining);
 }
@@ -166,6 +167,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         3 => BuffKind::Tied,
         4 => BuffKind::Boost,
         5 => BuffKind::Scorched,
+        6 => BuffKind::LavaShield,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -221,6 +223,8 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     }
     // catastrophe_stage（S020 灾变三级递进）
     wu8(o, p.catastrophe_stage);
+    // 熔岩靴激活 CD（M5）
+    wfix(o, p.lava_boot_cd);
     // items（M3）：u8 数量 + u32 id（解码后重算 item_fx）
     wu8(o, p.items.len() as u8);
     for it in &p.items {
@@ -344,6 +348,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
         None
     };
     let catastrophe_stage = u8at(b, p)?;
+    let lava_boot_cd = fixat(b, p)?;
     let n_items = u8at(b, p)? as usize;
     let mut items = Vec::with_capacity(n_items);
     for _ in 0..n_items {
@@ -440,6 +445,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.kb_factor = kb_factor;
     pl.rewind = rewind;
     pl.catastrophe_stage = catastrophe_stage;
+    pl.lava_boot_cd = lava_boot_cd;
     pl.items = items;
     pl.recompute_item_fx();
     pl.move_target = move_target;

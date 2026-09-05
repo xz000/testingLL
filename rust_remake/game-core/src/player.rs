@@ -98,6 +98,8 @@ pub enum BuffKind {
     /// S008 陨石灼烧「烤肉饼」（098b nB，D7）：期间伤害输出 ×0.1（Gn 惩罚）、
     /// 自然回血禁疗（Nn 清零）；持续伤害来自命中处的灼烧场（Star 复用），非本 buff。
     Scorched,
+    /// 熔岩靴激活（098b I00J-L，D8/M5）：熔岩上用天罚触发，窗口内熔岩伤 ×12.5%。
+    LavaShield,
 }
 
 impl Buff {
@@ -192,6 +194,8 @@ pub struct Player {
     pub rewind: Option<(Vec2, Fix64, Fix64)>,
     /// S020 灾变（098b MC）三级递进阶段：0→1→2 循环（每放一次 +1）；半径 300/300/400。
     pub catastrophe_stage: u8,
+    /// 熔岩靴激活 CD（098b 25s；熔岩上用天罚触发，D8/M5）。随快照同步。
+    pub lava_boot_cd: Fix64,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -244,6 +248,7 @@ impl Player {
             dash_vel: Vec2::ZERO,
             rewind: None,
             catastrophe_stage: 0,
+            lava_boot_cd: Fix64::ZERO,
             items: Vec::new(),
             item_fx: crate::item::aggregate(&[]),
             ricochet_pending: None,
