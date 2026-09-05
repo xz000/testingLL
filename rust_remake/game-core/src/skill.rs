@@ -724,6 +724,8 @@ pub enum W098bUtilKind {
     Windwalk,
     /// S011 闪现：瞬移至多 700+70L。
     Blink,
+    /// S010 疾风步·冲锋（形态 A，098c RB）：移速 buff + 接触踢击伤害（kick 窗口=持续时长）。
+    Charge,
     /// S012 冲撞：1300/s 冲刺至多 (650+50L)×1.1，命中 KI+击退+0.5s 定身。
     Dash,
     /// S013 移形换位：与 660 内目标互换位置（弹体化 TODO）。
@@ -741,6 +743,9 @@ pub enum W098bProjKind {
     Boomerang,
     /// 弹跳弹（S016）：命中后跳向最近下一个目标（跳过上一目标），伤害 ×0.8/跳。
     Bounce,
+    /// 岩浆滚石（S008 形态 B，098c OB）：慢速巨石滚动，持续推撞+「肉饼」减速、
+    /// 吸收敌方弹体，到点/寿命尽爆炸（B4 形态切换批）。
+    Magma,
 }
 
 /// 098b 弹体命中副作用（附加在 KI 伤害+击退之上的控制效果；时长走 growth.duration）。
@@ -1261,6 +1266,27 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
 pub struct DefTable;
 
 impl DefTable {
+    
+    /// 形态 B 定义（098c sC 20 级数据下半段，B4 形态切换批/D13 #7）：
+    /// 配置期 A/B 免费切换（用户定则），对局中不切换。无形态技能返回 None。
+    pub fn def_alt(id: SkillId) -> Option<SkillDef> {
+        Self::warlock098b_def_alt(id)
+    }
+
+    /// 该技能是否有 B 形态（学习界面显示「B 切换形态」用）。
+    pub fn has_alt(id: SkillId) -> bool {
+        Self::def_alt(id).is_some()
+    }
+
+    /// 按形态取定义（alt=false 形态 A / true 形态 B）。
+    pub fn def_for(id: SkillId, alt: bool) -> SkillDef {
+        if alt {
+            Self::def_alt(id).unwrap_or_else(|| Self::def(id))
+        } else {
+            Self::def(id)
+        }
+    }
+
     pub fn def(id: SkillId) -> SkillDef {
         // 098b 名册：数值已是 war3 尺度（port_spec_098b.json），直通返回，不经 legacy 缩放。
         if let Some(d) = Self::warlock098b_def(id) {
@@ -1415,7 +1441,7 @@ impl DefTable {
             SkillId::S008 => SkillDef {
                 id,
                 tree: SkillTree::E,
-                name: "陨石",
+                name: "陨石", // 形态 A（B=岩浆）
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
@@ -1445,7 +1471,7 @@ impl DefTable {
             SkillId::S009 => SkillDef {
                 id,
                 tree: SkillTree::E,
-                name: "分裂弹",
+                name: "分裂弹·目标", // 形态 A（B=区域）
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
@@ -1604,10 +1630,10 @@ impl DefTable {
             SkillId::S010 => SkillDef {
                 id,
                 tree: SkillTree::E,
-                name: "疾风步",
+                name: "疾风步·冲锋", // 形态 A（B=隐身）
                 needs_point: false,
                 effect: W098bUtility {
-                    kind: W098bUtilKind::Windwalk,
+                    kind: W098bUtilKind::Charge,
                     speed: Fix64::from_num(1.0 + 200.0 / 210.0),
                     max_distance: Fix64::ZERO,
                 },
@@ -1615,6 +1641,9 @@ impl DefTable {
                     cooldown_base: 30.0,
                     cooldown_delta: -0.684,
                     duration_base: 3.1,
+                    // 接触踢击伤害 4.6+0.8L（098c CA 冲撞伤害）
+                    damage_base: 4.6,
+                    damage_delta: 0.8,
                     ..DEF_ZERO
                 },
             },
@@ -1844,6 +1873,89 @@ impl DefTable {
                 needs_point: false,
                 effect: Unimplemented,
                 growth: SkillGrowth { ..DEF_ZERO },
+            },
+            _ => return None,
+        };
+        Some(def)
+    }
+
+    /// 形态 B 定义（E 槽三对先行；其余槽位随 B4 后续批次）。
+    fn warlock098b_def_alt(id: SkillId) -> Option<SkillDef> {
+        use SkillEffect::*;
+        let def = match id {
+            // S008B 岩浆（098c OB）：400/s 滚石 4*jn 秒，持续推撞+肉饼减速、吸收弹体，
+            // 寿命尽爆炸 3+1.5L（EB L5744）；CD 与陨石共用。
+            SkillId::S008 => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "岩浆",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Magma,
+                    speed: Fix64::from_num(400.0),
+                    radius: Fix64::from_num(72.0),
+                    life: Fix64::from_num(4.0),
+                    kb_ji: Fix64::from_num(0.8),
+                    ignite: None,
+                    blast: Some(Fix64::from_num(200.0)),
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 20.0,
+                    cooldown_delta: -0.183,
+                    damage_base: 3.0,
+                    damage_delta: 1.5,
+                    duration_base: 4.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S009B 分裂弹·区域（098c GB Da=true）：280/s 半径 50 大弹，飞行中持续螺旋撒侧弹。
+            SkillId::S009 => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "分裂弹·区域",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(280.0),
+                    radius: Fix64::from_num(50.0),
+                    life: Fix64::from_num(2.2),
+                    kb_ji: Fix64::from_num(1.4),
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 30.0,
+                    cooldown_delta: -0.526,
+                    damage_base: 3.0,
+                    damage_delta: 0.0,
+                    extra_base: 2.5,
+                    extra_delta: 0.5,
+                    ..DEF_ZERO
+                },
+            },
+            // S010B 疾风步·隐身（098c IB）：+100 速 4s 隐身。
+            SkillId::S010 => SkillDef {
+                id,
+                tree: SkillTree::E,
+                name: "疾风步·隐身",
+                needs_point: false,
+                effect: W098bUtility {
+                    kind: W098bUtilKind::Windwalk,
+                    speed: Fix64::from_num(1.0 + 100.0 / 210.0),
+                    max_distance: Fix64::ZERO,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 30.0,
+                    cooldown_delta: -0.684,
+                    duration_base: 4.0,
+                    ..DEF_ZERO
+                },
             },
             _ => return None,
         };
@@ -2680,18 +2792,22 @@ mod tests {
             }
             ref e => panic!("S007 effect 错：{e:?}"),
         }
-        // S010 疾风步：CD 30→17；dur 3.1；隐身+200 移速（乘数 1+200/210）。
+        // S010 疾风步·冲锋（A 形态）：CD 30→17；dur 3.1；+200 移速。
         let d = DefTable::def(SkillId::S010);
-        assert_eq!(d.name, "疾风步");
+        assert_eq!(d.name, "疾风步·冲锋");
         assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 17.0, 1e-1), "L20 CD 应 ≈17，实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).duration, 3.1, 1e-3));
         match d.effect {
-            SkillEffect::W098bUtility { kind: W098bUtilKind::Windwalk, speed, .. } => {
+            SkillEffect::W098bUtility { kind: W098bUtilKind::Charge, speed, .. } => {
                 assert!((speed.to_num::<f64>() - (1.0 + 200.0 / 210.0)).abs() < 1e-3);
             }
-            ref e => panic!("S010 effect 锂：{e:?}"),
+            ref e => panic!("S010 effect err: {e:?}"),
         }
+        // B 形态（def_alt）：隐身 +100 速 4s
+        let alt = DefTable::def_alt(SkillId::S010).expect("S010 should have alt form");
+        assert_eq!(alt.name, "疾风步·隐身");
+        assert!(matches!(alt.effect, SkillEffect::W098bUtility { kind: W098bUtilKind::Windwalk, .. }));
     }
 
     #[test]
@@ -2805,8 +2921,8 @@ mod tests {
             (SkillId::S006, "时光回溯"),
             (SkillId::S007, "急行"),
             (SkillId::S008, "陨石"),
-            (SkillId::S009, "分裂弹"),
-            (SkillId::S010, "疾风步"),
+            (SkillId::S009, "分裂弹·目标"),
+            (SkillId::S010, "疾风步·冲锋"),
             (SkillId::S011, "瞬间移动"),
             (SkillId::S012, "冲撞"),
             (SkillId::S013, "移形换位"),
@@ -2898,9 +3014,9 @@ mod tests {
 
     #[test]
     fn s009_s014_s015_s016_match_spec() {
-        // S009 分裂弹：CD 30→20（20 级）；radius 50；KI(3, 1.4) 伤害恒定。
+        // S009 分裂弹·目标（A 形态）：CD 30→20（20 级）；radius 50；KI(3, 1.4) 伤害恒定。
         let d = DefTable::def(SkillId::S009);
-        assert_eq!(d.name, "分裂弹");
+        assert_eq!(d.name, "分裂弹·目标");
         assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 20.0, 1e-1), "L20 CD 应 ≈20，实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).damage, 3.0, 1e-3) && near(d.stats_at(20).damage, 3.0, 1e-3), "分裂弹伤害恒 3");

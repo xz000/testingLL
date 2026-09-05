@@ -131,6 +131,8 @@ pub struct PlayerProfile {
     pub mastery: Mastery,
     /// 队伍号（098c cn[]，B2）：默认 = 玩家 id（FFA）；分队由开局配置覆写。
     pub team: u8,
+    /// 形态位（B4，按 SkillId 索引）：true=B 形态；学习界面 B 键切换。
+    pub forms: Vec<bool>,
 }
 
 impl PlayerProfile {
@@ -154,6 +156,7 @@ impl PlayerProfile {
             growth_points: 0,
             mastery: Mastery::default(),
             team: player_id as u8,
+            forms: vec![false; skill_count.max(crate::MAX_SKILL_SLOTS)],
         }
     }
 

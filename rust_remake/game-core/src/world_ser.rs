@@ -157,6 +157,7 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         BuffKind::Scorched => wu8(o, 5),
         BuffKind::LavaShield => wu8(o, 6),
         BuffKind::Aegis => wu8(o, 7),
+        BuffKind::Pancake => wu8(o, 8),
     }
     wfix(o, b.remaining);
 }
@@ -170,6 +171,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         5 => BuffKind::Scorched,
         6 => BuffKind::LavaShield,
         7 => BuffKind::Aegis,
+        8 => BuffKind::Pancake,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -235,6 +237,10 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     // 精通战斗快照（B1）：生命/远程/时间各 1 字节
     for m in &p.mastery {
         wu8(o, *m);
+    }
+    // 形态位（B4）：MAX_SKILL_SLOTS 字节（按 SkillId 索引）
+    for f in &p.forms {
+        wu8(o, *f as u8);
     }
     // 队伍号（B2，098c cn[]）
     wu8(o, p.team);
@@ -366,6 +372,10 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let growth = f64::from_bits(u64at(b, p)?);
     let aegis_charged = u8at(b, p)? != 0;
     let mastery = [u8at(b, p)?, u8at(b, p)?, u8at(b, p)?];
+    let mut forms = [false; crate::MAX_SKILL_SLOTS];
+    for f in forms.iter_mut() {
+        *f = u8at(b, p)? != 0;
+    }
     let team = u8at(b, p)?;
     let n_items = u8at(b, p)? as usize;
     let mut items = Vec::with_capacity(n_items);
@@ -468,6 +478,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.growth = growth;
     pl.aegis_charged = aegis_charged;
     pl.mastery = mastery;
+    pl.forms = forms;
     pl.team = team;
     pl.items = items;
     pl.recompute_item_fx();
@@ -558,9 +569,9 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
-        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist } => {
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle } => {
             wu8(o, 17);
-            wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3 });
+            wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3, crate::skill::W098bProjKind::Magma => 4 });
             wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *kb_ji);
             wu8(o, ignite.is_some() as u8);
             if let Some(v) = ignite { wfix(o, *v); }
@@ -573,6 +584,9 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *out_dist);
             wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3 });
             wfix(o, *debuff_dur);
+            wu8(o, *burst);
+            wfix(o, *emit_cooldown);
+            wu64(o, emit_angle.to_bits());
         }
     }
 }
@@ -605,6 +619,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 1 => crate::skill::W098bProjKind::Homing,
                 2 => crate::skill::W098bProjKind::Boomerang,
                 3 => crate::skill::W098bProjKind::Bounce,
+                4 => crate::skill::W098bProjKind::Magma,
                 _ => return None,
             };
             let vel = vecat(b, p)?;
@@ -630,7 +645,10 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;
-            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist }
+            let burst = u8at(b, p)?;
+            let emit_cooldown = fixat(b, p)?;
+            let emit_angle = f64::from_bits(u64at(b, p)?);
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle }
         }
         _ => return None,
     };
