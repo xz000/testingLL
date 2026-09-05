@@ -2149,12 +2149,18 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::W098bNova { kind, radius, kb_ji } => {
-                // 098c AoE nova（M2 批次D）：以自身为中心，复用 explode_at。
-                // 098c mC→FX(ii,cX) 实证：**nova 对施法者自身也扣血**（用户文档「包括自己！」），
-                // exclude_owner=false。击退仍不作用于自身（原版无自击退）。
+                // 098c AoE nova（M2 批次D）：以自身为中心，复用 explode_at（敌 250 伤）。
+                // 098c mC→FX(ii,cX) 实证 + 用户文档「包括自己！」：**nova 对施法者自身也扣血**，
+                // 但 FX 有 0.5 HP 下限（不可自杀）；自伤无自击退。
                 let ppos = world.players[idx as usize].pos;
-                // 熔岩靴激活（098b I00J-L「熔岩上天罚后激活」，M5/D8）：站熔岩 + 持靴 +
-                // CD 到期 → 挂 LavaShield（87.5% 抵抗 3/4/5s）；CD 25s 在 step tick 递减。
+                let mut gx = stats.damage;
+                // 鲜血之剑（M3 2c）：天罚伤害「增至」12/13（098c set 语义 → 取 max）。
+                let smite_bonus = world.players[idx as usize].item_fx.smite_bonus;
+                if smite_bonus > 0.0 {
+                    gx = gx.max(Fix64::from_num(smite_bonus));
+                }
+                // 熔岩靴激活（098c I00J-L「熔岩上天罚后激活」，M5/D8）：站熔岩 + 持靴 + CD 到期
+                // → 挂 LavaShield（87.5% 抵抗 3/4/5s）；CD 25s 在 step tick 递减。
                 if matches!(
                     kind,
                     crate::skill::W098bNovaKind::Smiting | crate::skill::W098bNovaKind::Devotion
@@ -2169,16 +2175,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         p.lava_boot_cd = Fix64::from_num(25.0);
                     }
                 }
-                let mut gx = stats.damage;
-                // 鲜血之剑（M3 2c）：天罚伤害「增至」12/13（098b set 语义 → 取 max）。
-                let smite_bonus = world.players[idx as usize].item_fx.smite_bonus;
-                if smite_bonus > 0.0 {
-                    gx = gx.max(Fix64::from_num(smite_bonus));
-                }
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚：固定 250 半径、KI($A) 恒定伤害。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, false, true);
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
@@ -2186,14 +2186,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let stage = world.players[idx as usize].catastrophe_stage % 3;
                         let r = if stage == 2 { Fix64::from_num(400.0) } else { radius };
                         let stage_gx = gx + Fix64::from_num(stage as i64 * 4);
-                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, false, true);
+                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
-                        // S021 虔诚：敌 250 伤（KI 距离衰减）+ 自奶 gx×0.5 + 移速（友方奶 TODO 无队伍）。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, false, true);
+                        // S021 虔诚：敌 250 伤 + 自奶 gx×0.5 + 移速（友方奶 TODO 无队伍）。
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
                         let heal = gx * Fix64::from_num(0.5);
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             if p.alive {
@@ -2201,6 +2201,16 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 p.add_buff(BuffKind::Speed(1.0 + 60.0 / 210.0), 4.0);
                             }
                         }
+                    }
+                }
+                // 098c FX 自伤（D9 技能手感批）：nova 对施法者扣 gx 血，但 HP 不足以承受时
+                // **保留 0.5**（显示为 1 滴血，不可自杀）——JASS 原文 `if Fn <= (cX+.5) then Fn = .5`。
+                // 天罚/灾变/虔诚三系共用（mC handler 统一走 FX）。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    if p.alive {
+                        let hp = p.hp.to_num::<f64>();
+                        let dmg = gx.to_num::<f64>();
+                        p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
                     }
                 }
             }
