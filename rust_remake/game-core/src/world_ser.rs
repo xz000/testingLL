@@ -542,7 +542,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
-        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur } => {
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist } => {
             wu8(o, 17);
             wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3 });
             wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *kb_ji);
@@ -552,6 +552,9 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             if let Some(v) = blast { wfix(o, *v); }
             wu32(o, target.unwrap_or(u32::MAX));
             wu8(o, *returning as u8);
+            wfix(o, *lateral);
+            wvec(o, *forward_dir);
+            wfix(o, *out_dist);
             wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3 });
             wfix(o, *debuff_dur);
         }
@@ -600,6 +603,9 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             let tid = u32at(b, p)?;
             let target = if tid == u32::MAX { None } else { Some(tid) };
             let returning = u8at(b, p)? != 0;
+            let lateral = fixat(b, p)?;
+            let forward_dir = vecat(b, p)?;
+            let out_dist = fixat(b, p)?;
             let on_hit = match u8at(b, p)? {
                 0 => crate::skill::W098bOnHit::Ki,
                 1 => crate::skill::W098bOnHit::Cripple,
@@ -608,7 +614,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;
-            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur }
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist }
         }
         _ => return None,
     };
@@ -628,6 +634,13 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
     }
     // 轮数（岩浆成长，D9）
     wu32(&mut o, w.round_number);
+    // 闪电视觉段（098c 反射多段）
+    wu32(&mut o, w.lightning_visual.len() as u32);
+    for (a, b, rem) in &w.lightning_visual {
+        wvec(&mut o, *a);
+        wvec(&mut o, *b);
+        wfix(&mut o, *rem);
+    }
     // 伤害矩阵（D6）：n×n Fix64（行主序）
     let n = w.players.len();
     for row in &w.damage_matrix {
@@ -670,6 +683,15 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     }
     // 轮数（岩浆成长，D9）
     let round_number = u32at(b, &mut p)?;
+    // 闪电视觉段
+    let n_lv = u32at(b, &mut p)? as usize;
+    let mut lightning_visual = Vec::with_capacity(n_lv.min(64));
+    for _ in 0..n_lv.min(64) {
+        let a = vecat(b, &mut p)?;
+        let b2 = vecat(b, &mut p)?;
+        let rem = fixat(b, &mut p)?;
+        lightning_visual.push((a, b2, rem));
+    }
     // 伤害矩阵（D6）：n×n Fix64，紧跟玩家（与编码顺序一致）
     let mut damage_matrix = vec![vec![Fix64::ZERO; np]; np];
     for row in damage_matrix.iter_mut() {
@@ -709,7 +731,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual: None })
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
