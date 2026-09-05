@@ -378,10 +378,15 @@ pub struct World {
     pub mode: u8,
     /// 化身玩家 id（模式 3；每轮由调用方设置）。
     pub avatar: Option<u32>,
+    /// 国王玩家 id 列表（模式 4；弑王 Doom 用）。
+    pub kings: Vec<u32>,
     /// F 槽施法替换（模式 3/4：化身→灾变 S020、国王→虔诚 S021；按玩家索引）。
     pub f_override: Vec<Option<SkillId>>,
     /// 强制回合结束（模式 3 化身被杀即结算）。
     pub round_forced: bool,
+    /// 下一轮角色（reset_round 开头从上轮矩阵/rng 掷出，结尾应用）。
+    pub(crate) pending_avatar: Option<u32>,
+    pub(crate) pending_kings: Vec<u32>,
 }
 
 impl World {
@@ -417,8 +422,11 @@ impl World {
             lightning_visual: Vec::new(),
             mode: 1,
             avatar: None,
+            kings: Vec::new(),
             f_override: vec![None; player_count as usize],
             round_forced: false,
+            pending_avatar: None,
+            pending_kings: Vec::new(),
         }
     }
 
@@ -888,6 +896,20 @@ impl World {
                 // 化身被杀 → 立即结算本轮（098c fI）。
                 if self.avatar == Some(victim) {
                     self.round_forced = true;
+                }
+            }
+            4 => {
+                // 弑王 Doom（098c L3114）：凶手所在队伍全员永久回血 -1 hp/s。
+                if self.kings.contains(&victim) {
+                    let killer = self.players[victim as usize].last_hit_by;
+                    if let Some(k) = killer {
+                        let kteam = self.players.get(k as usize).map(|p| p.team);
+                        for p in self.players.iter_mut() {
+                            if Some(p.team) == kteam {
+                                p.doom += 1.0;
+                            }
+                        }
+                    }
                 }
             }
             _ => {}
@@ -2086,6 +2108,7 @@ impl World {
     /// 其余玩家的角色增益全部复位。
     pub fn set_roles(&mut self, avatar: Option<u32>, kings: &[u32]) {
         self.avatar = avatar;
+        self.kings = kings.to_vec();
         self.f_override = vec![None; self.players.len()];
         self.round_forced = false;
         for p in self.players.iter_mut() {
@@ -2149,6 +2172,8 @@ impl World {
     /// 重置为可开始下一小局（清空本局状态、重设玩家满血与初始位置）。
     /// 调用方需在结算完成后调用。
     pub fn reset_round(&mut self) {
+        // 掷下一轮角色（化身=上轮伤害最高者；国王=每队随机）——必须在清矩阵前。
+        self.roll_roles();
         self.eliminated_order.clear();
         self.kills_this_round.clear();
         for row in self.damage_matrix.iter_mut() {
@@ -2176,6 +2201,65 @@ impl World {
         }
         self.obstacles.clear();
         _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius);
+        // 应用本轮角色（化身/国王 buff 与 F 槽替换）
+        let (av, kings) = (self.pending_avatar, self.pending_kings.clone());
+        self.set_roles(av, &kings);
+    }
+
+    /// 掷下一轮角色（reset_round 开头、清伤害矩阵前调用）：
+    /// - 模式 3 化身 = 上一轮伤害最高者（无伤害数据时随机）。
+    /// - 模式 4 国王 = 每队随机一人（确定性 rng：round_seed^round_number）。
+    fn roll_roles(&mut self) {
+        match self.mode {
+            3 => {
+                let mut best: Option<(u32, Fix64)> = None;
+                for (i, row) in self.damage_matrix.iter().enumerate() {
+                    let total: Fix64 = row.iter().copied().sum();
+                    if let Some(p) = self.players.get(i) {
+                        if total > Fix64::ZERO && best.map(|(bd, _)| total > bd).unwrap_or(true) {
+                            best = Some((p.id, total));
+                        }
+                    }
+                }
+                self.pending_avatar = match best {
+                    Some((id, _)) => Some(id),
+                    None => {
+                        let mut rng = Rng::new(self.round_seed ^ 0xA9_8C_11_22);
+                        let n = self.players.len() as u64;
+                        self.players.get(rng.next_u64_below(n) as usize).map(|p| p.id)
+                    }
+                };
+            }
+            4 => {
+                let mut rng = Rng::new(self.round_seed ^ (self.round_number as u64).wrapping_mul(0x9E37));
+                let mut teams: Vec<u8> = self.players.iter().map(|p| p.team).collect();
+                teams.sort_unstable();
+                teams.dedup();
+                self.pending_kings.clear();
+                for t in teams {
+                    let cands: Vec<u32> = self.players.iter().filter(|p| p.team == t).map(|p| p.id).collect();
+                    if !cands.is_empty() {
+                        let pick = rng.next_u64_below(cands.len() as u64) as usize;
+                        self.pending_kings.push(cands[pick]);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// 测试钩子：手动掷角色（正常流程由 reset_round 内部调用）。
+    #[cfg(test)]
+    pub(crate) fn roll_roles_for_test(&mut self) {
+        self.roll_roles();
+    }
+
+    /// 某玩家本轮造成的总伤害（伤害矩阵行和；化身计分用）。
+    pub fn round_damage_of(&self, id: u32) -> f64 {
+        self.damage_matrix
+            .get(id as usize)
+            .map(|row| row.iter().map(|v| v.to_num::<f64>()).sum())
+            .unwrap_or(0.0)
     }
 }
 
@@ -6230,5 +6314,48 @@ mod tests {
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
         // 化身 Gn ×1.5：灾变第一段 12×1.5 = 18（非天罚 10，证明替换+增益同时生效）
         assert!((d1 - 18.0).abs() < 0.5, "化身灾变第一段应 12×Gn1.5=18 伤，实际 {d1}");
+    }
+
+    /// 国王模式：每队随机选王（同种子确定性）；弑王 → 凶手全队 Doom。
+    #[test]
+    fn king_mode_roll_and_doom() {
+        let mut world = World::new(4, 993);
+        for (i, p) in world.players.iter_mut().enumerate() {
+            p.team = if i < 2 { 0 } else { 1 };
+        }
+        world.configure_mode(4);
+        world.round_number = 2;
+        world.roll_roles_for_test();
+        // 同 seed 掷两次结果一致
+        let kings = world.pending_kings.clone();
+        assert_eq!(kings.len(), 2, "两队各一王");
+        assert_ne!(kings[0] % 2, kings[1] % 2, "两王应分属两队");
+        world.reset_round();
+        assert_eq!(world.kings, kings, "reset_round 应应用掷出的王");
+        assert_eq!(world.f_override[kings[0] as usize], Some(SkillId::S021));
+        // 弑王：队 1 王被队 0 击杀 → 队 0 全员 doom+1
+        let victim = kings.iter().find(|&&k| world.players[k as usize].team == 1).copied().unwrap();
+        world.players[victim as usize].last_hit_by = Some(0);
+        world.record_death(victim);
+        assert!((world.players[0].doom - 1.0).abs() < 1e-9, "弑王者（队0）应得 Doom");
+        assert!((world.players[1].doom - 1.0).abs() < 1e-9, "弑王者队友应得 Doom");
+        assert_eq!(world.players[victim as usize].doom, 0.0, "死者本身（王）不应有 Doom");
+    }
+
+    /// 化身模式：下一轮化身 = 上一轮伤害最高者。
+    #[test]
+    fn avatar_rolls_to_top_damager() {
+        let mut world = World::new(3, 994);
+        world.configure_mode(3);
+        // 玩家 1 本轮伤害最高（记录进矩阵）
+        world.damage_matrix[1][0] = Fix64::from_num(30.0);
+        world.damage_matrix[1][2] = Fix64::from_num(12.0);
+        world.damage_matrix[0][1] = Fix64::from_num(5.0);
+        assert!((world.round_damage_of(1) - 42.0).abs() < 0.01, "计分读取应可用");
+        world.reset_round();
+        assert_eq!(world.avatar, Some(1), "化身应为上轮伤害最高者（玩家1）");
+        assert!((world.players[1].dmg_taken_mult - 1.0).abs() < 1e-9);
+        assert_eq!(world.f_override[1], Some(SkillId::S020), "化身 F 应替换为灾变");
+        assert_eq!(world.f_override[0], None, "非化身不应有 F 替换");
     }
 }
