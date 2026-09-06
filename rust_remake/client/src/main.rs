@@ -228,6 +228,10 @@ struct Game {
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 学习界面分页（U0）：0=技能页 1=商店页 2=属性页；数字键只在当前页生效。
     learn_page: u8,
+    /// 商店页当前选中大类（§3）：0=机动 1=防御续航 2=攻击特殊（B/N/M 切换）。
+    shop_category: u8,
+    /// 商店页右栏滚动偏移（§3）：防御续航类 13 项会超屏，用滚轮/↑↓ 滚动。
+    shop_scroll: usize,
     /// 学习界面鼠标命中盒（U2）：绘制时写入，update 里左键命中派发（1 帧延迟可忽略）。
     learn_hitboxes: Vec<(graphics::Rect, LearnAction)>,
     /// 机器人的当前目标点
@@ -771,6 +775,8 @@ impl Game {
             // 默认首选一棵技能树（第一个键 C），让“按数字键绑技能”立即可用，不必先想到去按字母键选树。
             learn_tree_key: game_core::skill::CastKey::ALL.first().copied(),
             learn_page: 0,
+            shop_category: 0,
+            shop_scroll: 0,
             learn_hitboxes: Vec::new(),
             bot_targets,
             bot_rngs,
@@ -1067,6 +1073,17 @@ impl Game {
         use ggez::input::keyboard::Key;
         let me = self.self_index();
 
+        // F1/F2/F3：直接跳到 技能/商店/属性 三页（§3，保留 Tab 循环 + 鼠标点击）。
+        for (lp, named) in [
+            (0u8, winit::keyboard::NamedKey::F1),
+            (1u8, winit::keyboard::NamedKey::F2),
+            (2u8, winit::keyboard::NamedKey::F3),
+        ] {
+            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(named)) {
+                self.learn_page = lp;
+            }
+        }
+
         // Tab：切换 技能页/商店页/属性页（数字键只在当前页生效，U0）
         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Tab)) {
             self.learn_page = (self.learn_page + 1) % 3;
@@ -1235,42 +1252,92 @@ impl Game {
         // U/I（蓝上限/回蓝）已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
     }
 
-    /// M3 商店（学习期）：数字键 1..9/0/- 购买 shop_catalog 条目；
-    /// 持有同家族低档时为「升级」（buy_item 内替换）；6 格上限。
+    /// M3 商店（学习期，§3 改造）：左栏三大类，B/N/M 切换；右栏当前类明细，
+    /// 数字键 1..9/0/- 购买可见窗口条目；持有同家族低档时为「升级」（buy_item 内替换）。
     fn poll_shop(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
         if self.learn_page != 1 {
             return;
         }
         let me = self.self_index();
+
+        // B/N/M：切换三大类（§3），切换时重置滚动。
+        if Self::char_just(ctx, "b") {
+            self.shop_category = 0;
+            self.shop_scroll = 0;
+        } else if Self::char_just(ctx, "n") {
+            self.shop_category = 1;
+            self.shop_scroll = 0;
+        } else if Self::char_just(ctx, "m") {
+            self.shop_category = 2;
+            self.shop_scroll = 0;
+        }
+
+        // 滚动：↑↓ / PageUp-PageDown（防御续航类 13 项会超屏）。
+        // 注：本 ggez 版本 MouseContext 无 wheel()，故只支持键盘滚动。
+        let items = game_core::item::shop_category_items(self.shop_category);
+        let max_rows = 14usize;
+        let max_scroll = items.len().saturating_sub(max_rows);
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::PageDown)) {
+            self.shop_scroll = self.shop_scroll.saturating_add(max_rows).min(max_scroll);
+        }
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::PageUp)) {
+            self.shop_scroll = self.shop_scroll.saturating_sub(max_rows);
+        }
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowDown)) {
+            self.shop_scroll = self.shop_scroll.saturating_add(1).min(max_scroll);
+        }
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowUp)) {
+            self.shop_scroll = self.shop_scroll.saturating_sub(1);
+        }
+
         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
-        let catalog = game_core::item::shop_catalog();
         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else {
             return;
         };
+        // 数字键映射到当前大类的可见（已滚动）窗口。
+        let visible: Vec<game_core::item::ItemId> =
+            items.iter().skip(self.shop_scroll).take(max_rows).map(|d| d.id).collect();
         for (i, k) in keys.iter().enumerate() {
             let pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character((*k).into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_uppercase().into()));
-            if !pressed || i >= catalog.len() {
+            if !pressed {
                 continue;
             }
-            let id = catalog[i].id;
+            let Some(&buy_id) = visible.get(i) else {
+                continue;
+            };
+            // 独立物品已持有则跳过；同家族持有低档 → 升级到下一档；满级则跳过（避免重复扣钱）。
+            let effective = if buy_id.def().family == game_core::item::ItemFamily::Standalone {
+                if profile.items.contains(&buy_id) {
+                    continue;
+                }
+                buy_id
+            } else {
+                match profile.items.iter().find(|it| it.def().family == buy_id.def().family) {
+                    Some(existing) => match existing.next_tier() {
+                        Some(nt) => nt,
+                        None => continue, // 已满级
+                    },
+                    None => buy_id,
+                }
+            };
             let slots = profile.inventory_slots();
             if profile.items.len() >= slots
-                && !profile.items.iter().any(|&it| it.def().family == id.def().family)
+                && !profile.items.iter().any(|&it| it.def().family == effective.def().family)
             {
                 eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
                 break;
             }
-            if profile.buy_item(id) {
-                eprintln!("[shop] 购买 {}（-{} 金，余 {}）", id.def().name, id.def().cost, profile.gold);
+            if profile.buy_item(effective) {
+                eprintln!("[shop] 购买 {}（-{} 金，余 {}）", effective.def().name, effective.def().cost, profile.gold);
                 // 同步到战斗世界
                 if let Some(p) = self.world.players.get_mut(me as usize) {
                     p.set_items(&profile.items);
                     p.apply_attributes(&profile.attributes);
                 }
             } else {
-                eprintln!("[shop] {} 需要 {} 金（现有 {}）", id.def().name, id.def().cost, profile.gold);
+                eprintln!("[shop] {} 需要 {} 金（现有 {}）", effective.def().name, effective.def().cost, profile.gold);
             }
         }
     }
@@ -2612,27 +2679,59 @@ impl Game {
                     }
                     }
                     1 => {
-                        // 商店页：条目列表（数字 1-0/- 购买，与 pre-game 同目录）
-                        draw_text(canvas, ctx, "数字键购买（可重复购买升级链）：", 19.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
-                        y += 38.0;
-                        let catalog = game_core::item::shop_catalog();
+                        // 商店页（§3 改造）：左栏三大类（B/N/M 切换），右栏当前大类明细。
+                        // 两列各自维护 y，避免单列超屏；tooltip 移到屏幕底部固定说明条，不再撑高右栏。
+                        draw_text(canvas, ctx, "B/N/M 切换大类 · 数字键购买 · ↑↓/PgUp-PgDn 滚动明细", 18.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
+                        y += 36.0;
+
+                        // 左栏：三大类
+                        let lx = cx - 380.0;
+                        let mut ly = y;
+                        for (ci, name) in game_core::item::SHOP_CATEGORIES.iter().enumerate() {
+                            let sel = ci as u8 == self.shop_category;
+                            let tag = format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], name);
+                            draw_text(canvas, ctx, &tag, 20.0,
+                                if sel { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(185, 192, 208) },
+                                Point2 { x: lx, y: ly }, true)?;
+                            ly += 34.0;
+                        }
+
+                        // 右栏：当前大类明细（按家族分组、族内按档位升序）
+                        let items = game_core::item::shop_category_items(self.shop_category);
+                        let max_rows = 14usize;
+                        let start = self.shop_scroll.min(items.len().saturating_sub(max_rows));
                         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
-                        for (i, d) in catalog.iter().enumerate() {
-                            if i >= keys.len() { break; }
+                        let rx = cx + 80.0;
+                        let mut ry = y;
+                        let mut hover_desc: Option<&'static str> = None;
+                        for (vis_i, d) in items.iter().enumerate().skip(start).take(max_rows) {
+                            let num = vis_i - start;
+                            let key_lbl = keys.get(num).copied().unwrap_or("");
                             let owned = me.items.contains(&d.id);
-                            let it_rect = graphics::Rect::new(cx - 260.0, y - 13.0, 520.0, 26.0);
+                            let it_rect = graphics::Rect::new(rx - 240.0, ry - 13.0, 480.0, 26.0);
                             let it_hover = it_rect.contains(Point2 { x: mouse.x, y: mouse.y });
                             let col = if owned { Color::from_rgb(120, 220, 140) } else if it_hover { Color::from_rgb(255, 235, 180) } else { Color::from_rgb(220, 220, 230) };
-                            let line = format!("  [{}] {}  （{}G）{}", keys[i], d.name, d.cost, if owned { " ·已持有" } else { "" });
-                            draw_text(canvas, ctx, &line, 17.0, col, Point2 { x: cx, y }, true)?;
+                            let line = format!("[{}] {}  （{}G）{}", key_lbl, d.name, d.cost, if owned { " ·已持有" } else { "" });
+                            draw_text(canvas, ctx, &line, 17.0, col, Point2 { x: rx, y: ry }, true)?;
                             self.learn_hitboxes.push((it_rect, LearnAction::Item(d.id)));
                             if it_hover {
-                                // tooltip：物品详情（desc）跟随行下方
-                                draw_text(canvas, ctx, &format!("      {}", d.desc), 15.0, Color::from_rgb(160, 170, 190), Point2 { x: cx, y: y + 22.0 }, true)?;
-                                y += 22.0;
+                                hover_desc = Some(d.desc);
                             }
-                            y += 26.0;
+                            ry += 26.0;
                         }
+
+                        // 底部固定说明条：hover 物品详情 + 滚动指示（不与右栏争高度）
+                        if let Some(desc) = hover_desc {
+                            draw_text(canvas, ctx, desc, 15.0, Color::from_rgb(160, 170, 190), Point2 { x: cx, y: sh - 64.0 }, true)?;
+                        }
+                        if items.len() > max_rows {
+                            draw_text(canvas, ctx, &format!("共 {} 件，↑↓/PgUp-PgDn 滚动（当前 {}-{}）",
+                                items.len(), start + 1, (start + max_rows).min(items.len())),
+                                14.0, Color::from_rgb(150, 160, 180), Point2 { x: cx, y: sh - 38.0 }, true)?;
+                        }
+
+                        // 让后续的「剩余学习时间」落在两栏之下，避免重叠。
+                        y = ry.max(ly) + 10.0;
                     }
                     _ => {
                         // 属性页：精通 1-4 + 成长属性 Z/H/J/K/L/;
