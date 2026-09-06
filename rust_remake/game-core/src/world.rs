@@ -439,7 +439,7 @@ impl World {
             round_forced: false,
             pending_avatar: None,
             pending_kings: Vec::new(),
-            shrink_timer: 10.0,
+            shrink_timer: Balance::default().shrink_ring_secs * (player_count.max(1) as f64).sqrt(),
             ice: None,
         }
     }
@@ -800,16 +800,18 @@ impl World {
                 just_cast
     }
 
-    /// 场地收缩（098c EA/iA，B5）：按环步进——每 `wo×√存活数` 秒（wo=10s）烧掉
-    /// 一环 128 码，存活数越少烧得越快；缩到 0（全场岩浆）为止。
+    /// 场地收缩（U3 连续化）：保留 098c 的时间节奏——首个间隔 `wo×√存活` 秒后开始，
+    /// 之后以 `环宽/(wo×√存活)` 每秒的**连续速率**收缩（人越少越快）。
+    /// 总吞没时长与按环步进的 098c 完全一致，只是抹平了 war3 地形格的阶梯感（D13）。
     fn shrink_arena(&mut self, dt: Fix64) {
-        self.shrink_timer -= dt.to_num::<f64>();
-        if self.shrink_timer <= 0.0 {
-            let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
-            self.shrink_timer += Balance::default().shrink_ring_secs * alive.sqrt();
-            let ring = Balance::default().ring_width;
-            self.arena_radius = (self.arena_radius - Fix64::from_num(ring)).max(Fix64::ZERO);
+        let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
+        if self.shrink_timer > 0.0 {
+            self.shrink_timer -= dt.to_num::<f64>();
+            return;
         }
+        let b = Balance::default();
+        let rate = b.ring_width / (b.shrink_ring_secs * alive.sqrt());
+        self.arena_radius = (self.arena_radius - Fix64::from_num(rate * dt.to_num::<f64>())).max(Fix64::ZERO);
     }
 
     /// C4 幻象·第二阶段：本体沿 `target` 方向瞬移 2，原位留 2 个假身（约 120° 间隔），
@@ -6151,34 +6153,37 @@ mod tests {
     fn arena_shrinks_to_zero() {
         let mut world = World::new(1, 92);
         let dt = Fix64::from_num(1.0 / 60.0);
-        // 098c EA（B5）：1 人局 9 环、每环 10×√1=10s → 全场吞没 ≈ 90s ≈ 5400 帧。
-        assert!((world.arena_radius.to_num::<f64>() - 1152.0).abs() < 1.0, "1 人局初始半径应 1152（9 环）");
+        // 1 人局：9 环×64=576 初始半径；首延迟 10s + 连续收缩 90s → ≈100s = 6000 帧。
+        assert!((world.arena_radius.to_num::<f64>() - 576.0).abs() < 1.0, "1 人局初始半径应 576（9 环×64）");
+        assert_eq!(Balance::start_radius_for(2) as i64, 640, "2 人场应 640（用户验证：直径 20 术士）");
         let none = vec![PlayerInput::default()];
-        for _ in 0..6000 {
+        for _ in 0..7000 {
             world.step(none.clone(), dt);
         }
         assert!(world.arena_radius <= Fix64::from_num(0.01), "场地应缩到 0，实际 {:?}", world.arena_radius);
     }
 
-    /// 缩圈按环步进（098c EA）：开局 10s 内半径不变，到点一次烧一环 128 码。
+    /// 缩圈连续化（U3）：首延迟后连续收缩（任意 1s 窗口内都有缩小），总时长不变。
     #[test]
-    fn shrink_steps_by_ring_not_continuous() {
+    fn shrink_is_continuous_after_delay() {
         let mut world = World::new(2, 92);
         let dt = Fix64::from_num(1.0 / 60.0);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         let r0 = world.arena_radius.to_num::<f64>();
-        // 5 秒：应仍为初始半径（首个环窗口未到）
-        for _ in 0..300 {
+        // 首个间隔（10×√2≈14.1s）：不收缩
+        for _ in 0..840 {
             world.step(none.clone(), dt);
         }
-        assert_eq!(world.arena_radius.to_num::<f64>(), r0, "5s 内不应缩圈");
-        // 推进到第一个窗口（10×√2≈14.1s = 849 帧）之后：应恰好少一环
-        for _ in 0..600 {
+        assert_eq!(world.arena_radius.to_num::<f64>(), r0, "首延迟内不收缩");
+        // 之后连续收缩：任意 1s 窗口半径减少 ≈ 64/(10√2) ≈ 4.5 码
+        for _ in 0..60 {
             world.step(none.clone(), dt);
         }
-        let r1 = world.arena_radius.to_num::<f64>();
-        assert!((r1 - (r0 - 128.0)).abs() < 0.01, "到点应烧掉一环 128 码，实际 {r0}→{r1}");
+        let dropped = r0 - world.arena_radius.to_num::<f64>();
+        assert!(dropped > 2.0 && dropped < 8.0, "连续收缩每秒 ≈4.5 码，实际 {dropped}");
     }
+
+
 
     #[test]
     fn f_self_explode_hurts_enemies_and_self() {
