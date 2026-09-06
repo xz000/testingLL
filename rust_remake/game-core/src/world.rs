@@ -7169,6 +7169,67 @@ mod tests {
         assert!(icy > normal * 1.5, "冰面滑行距离应显著大于正常地面（{} vs {}）", icy, normal);
     }
 
+    /// 冰面到达不吸附（D14）：到达目标点后保留动量滑过——位置继续前进一段而非停在目标。
+    #[test]
+    fn ice_arrival_keeps_momentum() {
+        let mut world = World::new(1, 80);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.ice = Some((Vec2::new(d60(6.0), Fix64::ZERO), Fix64::from_num(3000.0), Fix64::from_num(3000.0)));
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = Some(Vec2::new(d60(3.0), Fix64::ZERO));
+        let none = vec![PlayerInput::default()];
+        // 走到目标附近（180 码 @ 满速 210 需约 1s，但冰面加速慢 ×0.25）
+        let mut reached = false;
+        for _ in 0..300 {
+            world.step(none.clone(), dt);
+            if world.players[0].move_target.is_none() {
+                reached = true;
+                break;
+            }
+        }
+        assert!(reached, "应到达目标（move_target 被清除）");
+        // 到达后应继续滑行（动量保留）：再走 10 帧，位置应继续前进
+        let p_at_arrival = world.players[0].pos;
+        for _ in 0..10 {
+            world.step(none.clone(), dt);
+        }
+        let slide = (world.players[0].pos - p_at_arrival).length().to_num::<f64>();
+        assert!(slide > 5.0, "冰面到达后应带动量滑过（10 帧滑距 >5），实际 {slide}");
+        // 最终应自然停住（摩擦兜底）
+        for _ in 0..600 {
+            world.step(none.clone(), dt);
+        }
+        let v_final = world.players[0].cur_vel.length().to_num::<f64>();
+        assert!(v_final < 1.0, "冰面摩擦应使角色最终停住，残余速度 {v_final}");
+    }
+
+    /// 击退地形阻尼（D14）：冰面被击退滑更远（×0.985 vs ×0.9776）。
+    #[test]
+    fn knockback_slides_further_on_ice() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let run = |ice: bool| {
+            let mut w = World::new(1, 81);
+            w.obstacles.clear();
+            w.sandbox = true;
+            if ice {
+                w.ice = Some((Vec2::ZERO, Fix64::from_num(5000.0), Fix64::from_num(5000.0)));
+            }
+            w.players[0].pos = Vec2::ZERO;
+            w.players[0].move_target = None;
+            w.players[0].push_knockback(Vec2::new(Fix64::from_num(600.0), Fix64::ZERO));
+            let none = vec![PlayerInput::default()];
+            for _ in 0..300 {
+                w.step(none.clone(), dt);
+            }
+            w.players[0].pos.x.to_num::<f64>()
+        };
+        let normal = run(false);
+        let icy = run(true);
+        assert!(icy > normal * 1.3, "冰面击退滑距应显著更远（{} vs {}）", icy, normal);
+    }
+
     /// 冰面不被岩浆侵蚀：冰面上的点即使出圈也不掉血。
     #[test]
     fn ice_immune_to_lava() {
