@@ -295,6 +295,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
             wfix(o, k.push_time);
             wfix(o, k.push_damage);
             wfix(o, k.remaining);
+            wu8(o, k.stop_on_hit as u8);
         }
         None => wu8(o, 0),
     }
@@ -329,6 +330,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
             wfix(o, k.push_time);
             wfix(o, k.push_damage);
             wfix(o, k.remaining);
+            wu8(o, k.stop_on_hit as u8);
         }
         None => wu8(o, 0),
     }
@@ -424,6 +426,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
             push_time: fixat(b, p)?,
             push_damage: fixat(b, p)?,
             remaining: fixat(b, p)?,
+            stop_on_hit: u8at(b, p)? != 0,
         })
     } else {
         None
@@ -440,6 +443,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
             push_time: fixat(b, p)?,
             push_damage: fixat(b, p)?,
             remaining: fixat(b, p)?,
+            stop_on_hit: u8at(b, p)? != 0,
         })
     } else {
         None

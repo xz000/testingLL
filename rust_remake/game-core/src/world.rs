@@ -2903,6 +2903,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 push_time: Fix64::from_num(0.3),
                                 push_damage: stats.damage * Fix64::from_num(0.8),
                                 remaining: Fix64::from_num(dur_s),
+                                stop_on_hit: false,
                             });
                             p.phoenix_remaining = Fix64::from_num(dur);
                         }
@@ -2918,6 +2919,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 push_time: Fix64::from_num(0.3),
                                 push_damage: stats.damage,
                                 remaining: Fix64::from_num(dur),
+                                stop_on_hit: false,
                             });
                         }
                     }
@@ -2950,6 +2952,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 push_time: Fix64::from_num(W098B_KB_TIME),
                                 push_damage: stats.damage,
                                 remaining: Fix64::from_num(dur_s),
+                                stop_on_hit: true, // 098c BA：命中即停（Q=S=U=w=0）
                             });
                         }
                     }
@@ -3363,6 +3366,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         push_time: stats.push_time,
                         push_damage: stats.push_damage,
                         remaining: stats.duration,
+                        stop_on_hit: false,
                     });
                 }
             }
@@ -3375,6 +3379,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         push_time: stats.push_time,
                         push_damage: stats.push_damage,
                         remaining: duration,
+                        stop_on_hit: false,
                     });
                 }
             }
@@ -3386,6 +3391,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         push_time: stats.push_time,
                         push_damage: stats.push_damage,
                         remaining: duration,
+                        stop_on_hit: false,
                     };
                     p.add_buff(BuffKind::Stealth, duration.to_num::<f64>());
                     p.kick = Some(k);
@@ -3995,12 +4001,23 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     players[j].last_hit_by = Some(players[i].id);
                     players[j].push(dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
                     players[i].remove_buff(BuffKind::Stealth);
+                    // 098c BA（war3map_pretty.j:3771/3724-3735）：冲撞命中后施法者急停（Q=S=U=w=0），
+                    // 不再带着冲刺继续穿过目标。仅清强制位移（control）；受击者自身的击退在其后施加。
+                    // 仅 Dash（stop_on_hit）命中即停；凤凰/疾风步·冲锋/潜行踢为持续位移，命中后不停。
+                    if kick.stop_on_hit {
+                        players[i].control = None;
+                        players[i].cur_vel = Vec2::ZERO;
+                    }
                 }
                 if let Some(kick) = players[j].kick.take() {
                     players[i].hp = (players[i].hp - players[i].soak_boost(kick.push_damage)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
                     players[i].push(-dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
                     players[j].remove_buff(BuffKind::Stealth);
+                    if kick.stop_on_hit {
+                        players[j].control = None;
+                        players[j].cur_vel = Vec2::ZERO;
+                    }
                 }
             }
         }
@@ -5876,6 +5893,29 @@ mod tests {
         assert!(world.players[0].pos.x > d60(3.0), "施法者应冲向目标，实际 x={:?}", world.players[0].pos.x);
     }
 
+    /// S012 冲撞：命中后施法者急停（098c BA，war3map_pretty.j:3771），不再继续冲过目标。
+    #[test]
+    fn s012_dash_stops_caster_on_hit() {
+        let mut world = World::new(2, 9581);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO); // 300 处的敌人
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 20 帧 ≈ 0.33s；1300/s 约 0.23s（14 帧）撞上，命中后应立刻停住。
+        for _ in 0..20 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].control.is_none(), "命中后应清除强制位移（098c BA 急停）");
+        assert!(world.players[0].pos.x < d60(5.0), "应停在敌人前方而非冲过目标，x={:?}", world.players[0].pos.x);
+    }
+
     /// S013 移形换位：与目标点附近的敌人互换位置。
     #[test]
     fn s013_swap_exchanges_with_enemy() {
@@ -6914,7 +6954,6 @@ mod tests {
         let mut world = World::new(2, 1003);
         world.obstacles.clear();
         world.sandbox = true;
-        let dt = Fix64::from_num(1.0 / 60.0);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].forms[SkillId::S016.as_u32() as usize] = true;
         world.players[0].team = 0;
