@@ -478,6 +478,7 @@ impl World {
         let just_cast = self.handle_casts(&input, dt);
 
         // 2) 应用移动输入（跳过本帧刚进入施法的玩家：施法取消旧移动命令）
+        let mut phoenix_shots: Vec<(u32, Vec2, Vec2)> = Vec::new(); // (owner, 位置, 方向) 凤凰弹（B4-R）
         let mut fake_locs: Vec<(u32, Vec2)> = Vec::new();
         for (i, (p, pi)) in self.players.iter_mut().zip(input.iter()).enumerate() {
             if !p.alive || just_cast[i] {
@@ -492,6 +493,22 @@ impl World {
                 continue;
             }
             // R2b 冲刺斩：给新的移动目标 → 解除冲刺并现身（原版 `IdoDSWL`）。
+            // B4-R 凤凰态：移动指令 → 转向冲刺并发射凤凰弹（4+0.5×(Wr+wr) 近似 stats.damage）。
+            if pi.set_target.is_some() && p.phoenix_remaining > Fix64::ZERO && p.control.is_some() {
+                let t = pi.set_target.unwrap();
+                let d = t - p.pos;
+                if d.length() > Fix64::ZERO {
+                    let nd = d.normalized();
+                    let cur = p.control.as_ref().unwrap().vel;
+                    let changed = cur.length_squared() == Fix64::ZERO || cur.normalized().dot(nd) < Fix64::from_num(0.99);
+                    if changed {
+                        let spd = cur.length();
+                        p.control.as_mut().unwrap().vel = nd * spd;
+                        phoenix_shots.push((i as u32, p.pos, nd));
+                    }
+                }
+                continue;
+            }
             if pi.set_target.is_some() && p.dash_active {
                 p.dash_active = false;
                 p.dash_vel = Vec2::ZERO;
@@ -523,6 +540,15 @@ impl World {
             // 熔岩靴激活 CD 递减（098b 25s，D8/M5）。
             if p.lava_boot_cd > Fix64::ZERO {
                 p.lava_boot_cd = (p.lava_boot_cd - dt).max(Fix64::ZERO);
+            }
+            // 凤凰态倒计时（B4-R）：到期解除冲刺。
+            if p.phoenix_remaining > Fix64::ZERO {
+                p.phoenix_remaining = (p.phoenix_remaining - dt).max(Fix64::ZERO);
+                if p.phoenix_remaining == Fix64::ZERO && p.dash_active {
+                    p.dash_active = false;
+                    p.dash_vel = Vec2::ZERO;
+                    p.control = None;
+                }
             }
             // 098b 全局生命恢复 Nn=0.05/s（D7）+ 物品回复（斗篷/坠饰，M3）；灼烧期间禁疗。
             if p.alive && !p.healing_blocked() {
@@ -590,6 +616,37 @@ impl World {
                     new_kills.push((k, p.id));
                 }
             }
+        }
+        // 凤凰弹生成（B4-R）：转向处发射（直射弹，伤害=stats.damage）
+        for (owner, pos, dir) in phoenix_shots.drain(..) {
+            let (speed, life, dmg) = (Fix64::from_num(800.0), Fix64::from_num(1.2), Fix64::from_num(4.5));
+            self.projectiles.push(Projectile {
+                owner,
+                kind: ProjectileKind::W098b {
+                    proj: crate::skill::W098bProjKind::Straight,
+                    vel: dir * speed,
+                    speed,
+                    radius: Fix64::from_num(20.0),
+                    remaining: life,
+                    life,
+                    gx: dmg,
+                    kb_ji: Fix64::from_num(0.8),
+                    ignite: None,
+                    blast: None,
+                    target: None,
+                    returning: false,
+                    on_hit: crate::skill::W098bOnHit::Ki,
+                    debuff_dur: Fix64::ZERO,
+                    lateral: Fix64::ZERO,
+                    forward_dir: dir,
+                    out_dist: life * speed,
+                    burst: 0,
+                    emit_cooldown: Fix64::ZERO,
+                    emit_angle: 0.0,
+                },
+                pos,
+                alive: true,
+            });
         }
         // 岩浆/Doom 死亡也走 record_death（模式钩子：DM 复活 / LMS 救活受害者 / 化身结算）。
         for victim in new_deaths {
@@ -733,7 +790,8 @@ impl World {
 
         // 执行本帧完成前摇的技能效果
         execute_effects(self, &fire_queue);
-        just_cast
+
+                just_cast
     }
 
     /// 场地收缩（098c EA/iA，B5）：按环步进——每 `wo×√存活数` 秒（wo=10s）烧掉
@@ -2790,6 +2848,25 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                        }
+                    }
+                    crate::skill::W098bUtilKind::Phoenix => {
+                        // 冲撞·凤凰（098c WB，B4-R）：冲刺 + 凤凰态（移动指令转向+发弹）。
+                        if let Some(p) = world.players.get_mut(idx as usize) {
+                            let dir = match target {
+                                Some(t) => { let d = t - p.pos; if d.length() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) } }
+                                None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                            };
+                            let dist = stats.max_distance * Fix64::from_num(ei_mult(false));
+                            let dur_s = (dist / speed).to_num::<f64>().max(dur);
+                            p.push(dir * speed, dur_s);
+                            p.kick = Some(Kick {
+                                push_power: Fix64::from_num(150.0),
+                                push_time: Fix64::from_num(0.3),
+                                push_damage: stats.damage * Fix64::from_num(0.8),
+                                remaining: Fix64::from_num(dur_s),
+                            });
+                            p.phoenix_remaining = Fix64::from_num(dur);
                         }
                     }
                     crate::skill::W098bUtilKind::Charge => {
@@ -6950,5 +7027,62 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[0].has_buff(BuffKind::Speed(1.0 + 75.0 / 210.0)) || world.players[0].buffs.iter().any(|b| b.remaining > Fix64::ZERO && matches!(b.kind, BuffKind::Speed(_))), "感应命中后施法者应有移速 buff");
+    }
+
+    // ===== B4-R 形态机制 =====
+
+    /// S013B 搬运：施法者被搬到目标点（不与敌人换位）。
+    #[test]
+    fn s013b_relocate_carries_caster() {
+        let mut world = World::new(2, 1008);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S013.as_u32() as usize] = true; // B=搬运
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        // 搬运：瞬移到目标点附近（600 码射程内 → 480 落点；命不命中都会被搬到远处）
+        let d = world.players[0].pos.length().to_num::<f64>();
+        assert!(d > 300.0, "搬运应把施法者搬到远处（>300），实际 {d}");
+        // 对照 A 形态（置换）：点空地时也是自己瞬移，但点敌人时换位——本测试验证 B 后不互换
+    }
+
+    /// S012B 凤凰：冲刺中转向 → 转向处发射凤凰弹。
+    #[test]
+    fn s012b_phoenix_redirect_spawns_missile() {
+        let mut world = World::new(2, 1009);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S012.as_u32() as usize] = true; // B=凤凰
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(6.0), d60(3.0));
+        world.players[1].move_target = None;
+        // 朝右冲刺，随后转向敌人方向 → 转向处应发凤凰弹
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        world.step(vec![
+            PlayerInput { set_target: Some(Vec2::new(d60(6.0), d60(3.0))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..40 {
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let missiles = world.projectiles.iter().filter(|p| p.alive && matches!(p.kind, ProjectileKind::W098b { .. })).count();
+        assert!(missiles >= 1, "凤凰转向应发射凤凰弹，实际 {missiles}");
+        assert!(world.players[1].hp < world.players[1].max_hp, "凤凰弹/接触应伤害敌人");
     }
 }

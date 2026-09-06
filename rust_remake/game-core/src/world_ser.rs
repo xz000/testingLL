@@ -251,6 +251,8 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     for f in &p.forms {
         wu8(o, *f as u8);
     }
+    // 凤凰冲刺剩余（B4-R）
+    wfix(o, p.phoenix_remaining);
     // 队伍号（B2，098c cn[]）
     wu8(o, p.team);
     // items（M3）：u8 数量 + u32 id（解码后重算 item_fx）
@@ -385,6 +387,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     for f in forms.iter_mut() {
         *f = u8at(b, p)? != 0;
     }
+    let phoenix_remaining = fixat(b, p)?;
     let team = u8at(b, p)?;
     let n_items = u8at(b, p)? as usize;
     let mut items = Vec::with_capacity(n_items);
@@ -488,6 +491,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.aegis_charged = aegis_charged;
     pl.mastery = mastery;
     pl.forms = forms;
+    pl.phoenix_remaining = phoenix_remaining;
     pl.team = team;
     pl.items = items;
     pl.recompute_item_fx();
