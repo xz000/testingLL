@@ -945,6 +945,11 @@ impl World {
                     hit_wall = true;
                 }
             }
+            // 098c：强制位移（冲撞/击退）撞墙即截断（不再沿墙滑行到 dur 结束）。
+            // 仅清 control；kick 窗口按自身计时自然结束（冲撞撞墙后若身旁有敌仍可触发接触踢击）。
+            if hit_wall && p.control.is_some() {
+                p.control = None;
+            }
             // E2b 潜行踢·连推：携带 kick 又撞到障碍 → 排一个 0.3s 后的重新踢击（若总窗口还有）。
             if hit_wall && p.ricochet_window > Fix64::ZERO && p.ricochet_kick.is_some() {
                 p.ricochet_pending = Some(Fix64::from_num(0.3));
@@ -2938,8 +2943,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Dash => {
-                        // 冲撞（098b IB）：1300/s 强制位移 + 冲刺期间踢击窗口（撞人 KI 伤+击退）。
-                        // 时长 = 最大距离/速度；0.5s 定身为命中后效果（TODO 随踢击命中路径接入）。
+                        // 冲撞（098b IB / 098c 对齐）：1300/s 强制位移 + 冲刺期间踢击窗口（撞人 KI 伤+击退）。
+                        // 时长 = 最大距离/速度（距离截断到 max_distance）；撞敌即停见碰撞结算 stop_on_hit，
+                        // 撞墙截断见 resolve_obstacles（清 control）。098c 碰撞（CA/BA）本身不对目标施加定身，
+                        // 仅 伤害(mI)+魔法吸取(FX)+击退冲量，故此处不引入独立的「定身」状态。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             let dir = match target {
                                 Some(t) => { let d = t - p.pos; if d.length() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) } }
@@ -5953,6 +5960,35 @@ mod tests {
         assert!(d05 < d1, "魔法系数 0.5 的击退应弱于 1.0，d05={:?} d1={:?}", d05, d1);
         assert!((d05 * Fix64::from_num(2.0) - d1).abs() < d1 * Fix64::from_num(0.2),
             "击退位移应≈与魔法系数成正比（0.5≈半），d05={:?} d1={:?}", d05, d1);
+    }
+
+    /// S012 冲撞：撞墙截断（098c：强制位移撞障碍即停，不沿墙滑行到 dur 结束）。
+    #[test]
+    fn s012_dash_truncates_at_obstacle() {
+        let mut world = World::new(2, 9584);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 远处放敌人，避免途中撞到而误触发急停分支。
+        world.players[1].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        // x=5m 处放半径 0.5m 的障碍，挡住 +x 冲撞路径。
+        let obs_r = 30.0;
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(5.0), Fix64::ZERO), obs_r));
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        // 应停在障碍前（pos.x ≈ 障碍中心 - 障碍半径 - 玩家半径），且强制位移已截断。
+        let max_x = d60(5.0) - Fix64::from_num(obs_r) - world.players[0].radius;
+        assert!(world.players[0].pos.x <= max_x + Fix64::from_num(3.0),
+            "应撞墙截断停在障碍前，x={:?} 上限={:?}", world.players[0].pos.x, max_x);
+        assert!(world.players[0].control.is_none(), "撞墙后强制位移应截断（control 清空）");
     }
 
     /// S013 移形换位：与目标点附近的敌人互换位置。
