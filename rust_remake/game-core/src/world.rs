@@ -196,6 +196,8 @@ pub enum ProjectileKind {
         damage_per_sec: Fix64,
         heal_per_sec: Fix64,
         remaining: Fix64,
+        /// 力场形态（B4-Y）：治疗范围内全部队友（否则只奶 owner）。
+        heal_team: bool,
     },
     /// 束缚线（Y2b）：两点反向收拢；交汇成线时线上的敌人被束缚。
     BindLine {
@@ -664,6 +666,10 @@ impl World {
         // a) 先应用新的施法请求（占用本帧的人手）
         for (idx, (p, pi)) in self.players.iter_mut().zip(input.iter()).enumerate() {
             if !p.alive {
+                continue;
+            }
+            // 禁锢（Tied：定身+禁施法）与沉默（B4-Y：禁施法可移动）
+            if p.tied() || p.silenced() {
                 continue;
             }
             if let Some((skill, target)) = pi.cast {
@@ -1378,6 +1384,7 @@ impl World {
         // 2) 判定与收集对玩家的影响：命中伤害 / AOE / 持续伤害 / 爆炸。
         // 每个 (伤害, 来源) 事件在 4) 统一结算；被反弹护盾命中的直射弹只反射方向。
         let mut events: Vec<(u32, Fix64, Option<u32>)> = Vec::new();
+        let mut heals: Vec<(u32, Fix64)> = Vec::new(); // 力场治疗（B4-Y）
         let mut explode: Vec<ProjExplosion> = Vec::new();
         let mut pushes: Vec<(u32, Vec2, f64, bool)> = Vec::new(); // (受害者 id, 击退方向, 时长, 098b 衰减模型?)
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
@@ -1395,6 +1402,7 @@ impl World {
         let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
         let mut slows: Vec<(u32, f64)> = Vec::new(); // 汲取·减速（B4-T）
         let mut weakens: Vec<(u32, f64)> = Vec::new(); // 汲取·削弱（B4-T）
+        let mut silences: Vec<(u32, f64)> = Vec::new(); // 禁锢·沉默（B4-Y）
         let mut magma_absorb: Vec<(usize, u32, Fix64)> = Vec::new(); // (滚石索引, owner, 半径)
 
         for (pi, pr) in ps.iter_mut().enumerate() {
@@ -1643,7 +1651,7 @@ impl World {
                     }
                     magma_absorb.push((pi, owner, *radius));
                 }
-                ProjectileKind::Star { owner, radius, damage_per_sec, heal_per_sec, .. } => {
+                ProjectileKind::Star { owner, radius, damage_per_sec, heal_per_sec, remaining: _, heal_team } => {
                     // 星域：范围内敌掉血、对施法者回血
                     for j in 0..n {
                         let p = &self.players[j];
@@ -1658,7 +1666,19 @@ impl World {
                             events.push((p.id, *damage_per_sec * dt, Some(*owner)));
                         }
                     }
-                    if let Some(o) = self.players.get_mut(*owner as usize) {
+                    // 力场（B4-Y）：heal_team 时治疗范围内全部队友（否则只奶 owner）
+                    if *heal_team {
+                        let oteam = self.players.get(*owner as usize).map(|p| p.team);
+                        for (j, q) in self.players.iter().enumerate() {
+                            if !q.alive || Some(q.team) != oteam {
+                                continue;
+                            }
+                            let rr = *radius + q.radius;
+                            if (q.pos - pr.pos).length_squared() <= rr * rr {
+                                heals.push((j as u32, *heal_per_sec * dt));
+                            }
+                        }
+                    } else if let Some(o) = self.players.get_mut(*owner as usize) {
                         if o.alive {
                             o.hp = (o.hp + *heal_per_sec * dt).min(o.max_hp);
                         }
@@ -1783,6 +1803,18 @@ impl World {
                                     o.caster.reset_cooldown(SkillId::S016);
                                 }
                             }
+                            crate::skill::W098bOnHit::Induction => {
+                                // 锁链·感应（098c sc，B4-Y）：命中敌人 → 施法者获 4.5s 移速 buff。
+                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                    if o.alive {
+                                        o.add_buff(BuffKind::Speed(1.0 + 75.0 / 210.0), debuff_dur.to_num::<f64>());
+                                    }
+                                }
+                            }
+                            crate::skill::W098bOnHit::Silence => {
+                                // 禁锢·沉默（098c CC，B4-Y）：禁施法（可移动）。
+                                silences.push((victim, debuff_dur.to_num::<f64>()));
+                            }
                         }
                         // 回旋镖命中：不消失——转回程飞向施法者（098c Sb）。共享借用内
                         // 不可写，经 boomerang_returns 在 2c2 段统一写回。
@@ -1892,6 +1924,13 @@ impl World {
             self.damage_player(victim, amount, from);
         }
         // 4a) 结算弹体直接命中的击退（回旋镖 / 香蕉）
+        for (victim, heal_amt) in heals.drain(..) {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive {
+                    p.hp = (p.hp + heal_amt).min(p.max_hp);
+                }
+            }
+        }
         for (victim, vel, time, decay) in pushes {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
@@ -1959,6 +1998,14 @@ impl World {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
                     p.add_buff(BuffKind::Weakened, dur);
+                }
+            }
+        }
+        // 禁锢·沉默（B4-Y）：禁施法（可移动）
+        for (victim, dur) in silences.drain(..) {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive {
+                    p.add_buff(BuffKind::Silenced, dur);
                 }
             }
         }
@@ -2031,7 +2078,8 @@ impl World {
                     damage_per_sec: total / secs,
                     heal_per_sec: Fix64::ZERO,
                     remaining: secs,
-                },
+                            heal_team: false,
+                        },
                 pos,
                 alive: true,
             });
@@ -3558,22 +3606,24 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::StarZone { heal_per_sec, .. } => {
-                // 星域（Y3b）：在点击处放一颗持续伤/回血的星。（数值走 stats）
-                if let Some(p) = world.players.get_mut(idx as usize) {
-                    let place = target.unwrap_or(p.pos);
-                    world.projectiles.push(Projectile {
+                // 星域/力场（Y3b/B4-Y）：点击处放持续伤敌的星。
+                // 力场（S018B 形态）heal 走 stats.extra，且 heal_team=治疗范围内全部队友。
+                let alt = world.players.get(idx as usize).map(|q| q.form_of(id)).unwrap_or(false);
+                let place = target.unwrap_or(world.players[idx as usize].pos);
+                let heal = if heal_per_sec > Fix64::ZERO { heal_per_sec } else { stats.extra };
+                world.projectiles.push(Projectile {
+                    owner: idx,
+                    kind: ProjectileKind::Star {
                         owner: idx,
-                        kind: ProjectileKind::Star {
-                            owner: idx,
-                            radius: stats.radius,
-                            damage_per_sec: stats.damage,
-                            heal_per_sec,
-                            remaining: stats.duration,
-                        },
-                        pos: place,
-                        alive: true,
-                    });
-                }
+                        radius: stats.radius,
+                        damage_per_sec: stats.damage,
+                        heal_per_sec: heal,
+                        remaining: stats.duration,
+                        heal_team: id == crate::skill::SkillId::S018 && alt,
+                    },
+                    pos: place,
+                    alive: true,
+                });
             }
             SkillEffect::SelfExplode { self_stay, .. } => {
                 // 蓄力自爆（F）：以施法者为中心 AOE；自己扣到残血、范围内敌人受伤并踢开。（数值走 stats）
@@ -4680,6 +4730,7 @@ mod tests {
                 damage_per_sec: Fix64::ONE,
                 heal_per_sec: Fix64::ZERO,
                 remaining: Fix64::from_num(3.0),
+                heal_team: false,
             },
         });
         w.reset_round();
@@ -6775,5 +6826,129 @@ mod tests {
         // 刷新后冷却应小于初始 CD 20
         let cd = world.players[0].caster.cooldown_remaining(SkillId::S016).to_num::<f64>();
         assert!(cd < 19.5, "命中应刷新冷却（<19.5），实际 {cd}");
+    }
+
+    // ===== B4-Y 形态机制 =====
+
+    /// S017B 沉默：目标禁施法但可移动；S017A 缠绕：目标定身（move_target 被清）。
+    #[test]
+    fn s017_silence_blocks_cast_tied_blocks_move() {
+        let mut world = World::new(2, 1005);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 1;
+        world.players[0].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[1].team = 0;
+        world.players[1].pos = Vec2::ZERO;
+        world.players[1].move_target = None;
+        // B 形态沉默
+        world.players[1].forms[SkillId::S017.as_u32() as usize] = true;
+        world.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::Silenced), "B 形态应施加沉默");
+        // 沉默中无法施法
+        world.players[0].caster = crate::skill::Caster::new();
+        let m0 = world.players[0].move_target;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..5 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].caster.is_busy() == false, "沉默者施法应被拒（不进入施法状态）");
+        let _ = m0;
+        // A 形态缠绕：定身（move_target 被清除）
+        let mut world2 = World::new(2, 1005);
+        world2.obstacles.clear();
+        world2.sandbox = true;
+        world2.players[0].team = 1;
+        world2.players[0].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world2.players[1].team = 0;
+        world2.players[1].pos = Vec2::ZERO;
+        world2.players[1].move_target = None;
+        world2.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world2.step(none.clone(), dt);
+        }
+        assert!(world2.players[0].has_buff(BuffKind::Tied), "A 形态应缠绕（Tied）");
+        // 被缠绕者试图移动 → move_target 立即被清（定身）
+        world2.players[0].move_target = Some(Vec2::new(d60(20.0), Fix64::ZERO));
+        world2.step(vec![
+            PlayerInput { set_target: Some(Vec2::new(d60(20.0), Fix64::ZERO)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        assert!(world2.players[0].move_target.is_none(), "被缠绕者移动目标应被定身清除");
+    }
+
+    /// S018B 力场：范围内队友被治疗（heal_team）。
+    #[test]
+    fn s018b_force_field_heals_allies() {
+        let mut world = World::new(3, 1006);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S018.as_u32() as usize] = true; // B=力场
+        world.players[1].team = 0; // 队友在落点
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[1].hp = Fix64::from_num(40.0);
+        world.players[2].team = 1; // 敌人也在落点
+        world.players[2].pos = Vec2::new(d60(3.5), Fix64::ZERO);
+        world.players[2].move_target = None;
+        world.players[2].hp = Fix64::from_num(50.0);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let h1 = world.players[1].hp.to_num::<f64>();
+        let h2 = world.players[2].hp.to_num::<f64>();
+        assert!(h1 > 40.0, "力场应治疗队友（40→↑），实际 {h1}");
+        assert!(h2 < 50.0, "力场应伤害敌人（50→↓），实际 {h2}");
+    }
+
+    /// S019B 感应：命中敌人 → 施法者获移速 buff。
+    #[test]
+    fn s019b_induction_speeds_caster() {
+        let mut world = World::new(2, 1007);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S019.as_u32() as usize] = true; // B=感应
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(2.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::Speed(1.0 + 75.0 / 210.0)) || world.players[0].buffs.iter().any(|b| b.remaining > Fix64::ZERO && matches!(b.kind, BuffKind::Speed(_))), "感应命中后施法者应有移速 buff");
     }
 }

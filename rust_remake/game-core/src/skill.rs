@@ -767,6 +767,10 @@ pub enum W098bOnHit {
     Weaken,
     /// S016 弹跳弹·充能（形态 B，098c Dc/cc）：命中立即刷新该技能冷却。
     Recharge,
+    /// S019 锁链·感应（形态 B，098c Uc/sc）：命中敌人 → 施法者获移速 buff（链接近似）。
+    Induction,
+    /// S017 禁锢·沉默（形态 B，098c CC）：禁施法（可移动）。
+    Silence,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。
@@ -1705,7 +1709,7 @@ impl DefTable {
             SkillId::S017 => SkillDef {
                 id,
                 tree: SkillTree::Y,
-                name: "致残",
+                name: "禁锢·缠绕",
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
@@ -1735,7 +1739,7 @@ impl DefTable {
             SkillId::S018 => SkillDef {
                 id,
                 tree: SkillTree::Y,
-                name: "引力",
+                name: "引力·暗物质",
                 needs_point: true,
                 effect: GravityZone {
                     speed: Fix64::ZERO,
@@ -1761,7 +1765,7 @@ impl DefTable {
             SkillId::S019 => SkillDef {
                 id,
                 tree: SkillTree::Y,
-                name: "锁链",
+                name: "锁链·钩引",
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
@@ -2009,6 +2013,85 @@ impl DefTable {
                     cooldown_delta: -0.474,
                     damage_base: 3.0,
                     damage_delta: 0.4,
+                    ..DEF_ZERO
+                },
+            },
+            // S017B 禁锢·沉默（098c CC）：禁施法（可移动）5s；伤害/CD 同 A。
+            SkillId::S017 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "禁锢·沉默",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(900.0),
+                    radius: Fix64::from_num(23.0),
+                    life: Fix64::from_num(2.0),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Silence,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 25.0,
+                    cooldown_delta: -0.658,
+                    damage_base: 3.0,
+                    duration_base: 5.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S018B 引力·力场（098c Mc/Lc）：850/s 飞到落点生成静立场：伤敌/奶队友（StarZone）。
+            SkillId::S018 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "引力·力场",
+                needs_point: true,
+                effect: StarZone {
+                    damage_per_sec: Fix64::ZERO, // stats（0.2+0.25L → 2+0.25L? 取 growth）
+                    heal_per_sec: Fix64::ZERO,
+                    radius: Fix64::from_num(200.0),
+                    duration: 5.0,
+                    range: Fix64::from_num(1200.0),
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 26.0,
+                    damage_base: 2.0,
+                    damage_delta: 0.25,
+                    // 奶量（队友/每秒）走 extra：1.3+0.03L
+                    extra_base: 1.3,
+                    extra_delta: 0.03,
+                    radius_base: 200.0,
+                    duration_base: 5.0,
+                    range_base: 1200.0,
+                    speed_base: 850.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S019B 锁链·感应（098c Uc/sc）：命中敌人 → 施法者获 4.5s 移速 buff。
+            SkillId::S019 => SkillDef {
+                id,
+                tree: SkillTree::Y,
+                name: "锁链·感应",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(800.0),
+                    radius: Fix64::from_num(35.0),
+                    life: Fix64::from_num(2.0),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Induction,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 17.0,
+                    cooldown_delta: -0.0526,
+                    damage_base: 3.0,
+                    duration_base: 4.5,
                     ..DEF_ZERO
                 },
             },
@@ -2921,9 +3004,9 @@ mod tests {
 
     #[test]
     fn s017_s018_s019_match_spec() {
-        // S017 致残：CD 25→12.5（20 级）；残废 (4+0.25L) → L1 4.25。
+        // S017 禁锢·缠绕（A 形态）：CD 25→12.5（20 级）；缠绕 (4+0.25L) → L1 4.25（定身+输出÷3）。
         let d = DefTable::def(SkillId::S017);
-        assert_eq!(d.name, "致残");
+        assert_eq!(d.name, "禁锢·缠绕");
         assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 12.5, 1e-1), "L20 CD 应 ≈12.5，实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).duration, 4.25, 1e-3), "L1 残废应 4+0.25");
@@ -2933,16 +3016,16 @@ mod tests {
             }
             ref e => panic!("S017 effect 错：{e:?}"),
         }
-        // S018 引力：CD 26 恒定；漩涡半径 200 / 5s。
+        // S018 引力·暗物质（A 形态）：CD 26 恒定；漩涡半径 200 / 5s。
         let d = DefTable::def(SkillId::S018);
-        assert_eq!(d.name, "引力");
+        assert_eq!(d.name, "引力·暗物质");
         assert!(near(d.stats_at(1).cooldown, 26.0, 1e-3) && near(d.stats_at(20).cooldown, 26.0, 1e-3));
         let s20 = d.stats_at(20);
         assert!(near(s20.speed, 0.0, 1e-3) && near(s20.radius, 200.0, 1e-3), "原地漩涡（speed=0）半径 200 走 growth");
         assert!(near(s20.duration, 5.0, 1e-3), "漩涡应持续 5*jn 秒");
-        // S019 锁链：CD 17→16（20 级）；radius 35；拉拽+0.5s 定身。
+        // S019 锁链·钩引（A 形态）：CD 17→16（20 级）；radius 35；拉拽+0.5s 定身。
         let d = DefTable::def(SkillId::S019);
-        assert_eq!(d.name, "锁链");
+        assert_eq!(d.name, "锁链·钩引");
         assert!(near(d.stats_at(1).cooldown, 17.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 16.0, 1e-1), "L20 CD 应 ≈16，实际 {:?}", d.stats_at(20).cooldown);
         match d.effect {
@@ -3010,9 +3093,9 @@ mod tests {
             (SkillId::S014, "汲取·减速"),
             (SkillId::S015, "火焰喷射·流射"),
             (SkillId::S016, "弹跳弹"),
-            (SkillId::S017, "致残"),
-            (SkillId::S018, "引力"),
-            (SkillId::S019, "锁链"),
+            (SkillId::S017, "禁锢·缠绕"),
+            (SkillId::S018, "引力·暗物质"),
+            (SkillId::S019, "锁链·钩引"),
             (SkillId::S020, "灾变"),
             (SkillId::S021, "虔诚"),
         ];

@@ -109,6 +109,8 @@ pub enum BuffKind {
     Slow(f64),
     /// 汲取·削弱（B4-T）：伤害输出 ×0.5。
     Weakened,
+    /// 禁锢·沉默（B4-Y）：禁施法（可移动）。
+    Silenced,
 }
 
 impl Buff {
@@ -451,8 +453,15 @@ impl Player {
     /// 攻击方伤害输出系数（098c Gn，D9）：= 伤害成长 × 灼烧惩罚。
     /// 成长：命中敌人 ×1.1 连乘（`on_dealt_damage`）；灼烧「烤肉饼」期间临时 ×0.1。
     pub fn gn_factor(&self) -> f64 {
+        // 缠绕（B4-Y）：被禁锢期间输出 ÷3（098c wc Hn/3）
+        let tied = if self.has_buff(BuffKind::Tied) { 1.0 / 3.0 } else { 1.0 };
         let weakened = if self.has_buff(BuffKind::Weakened) { 0.5 } else { 1.0 };
-        self.growth * weakened * if self.healing_blocked() { 0.1 } else { 1.0 }
+        self.growth * tied * weakened * if self.healing_blocked() { 0.1 } else { 1.0 }
+    }
+
+    /// 沉默（B4-Y）：禁施法但可移动。
+    pub fn silenced(&self) -> bool {
+        self.has_buff(BuffKind::Silenced)
     }
 
     /// 命中敌人后的伤害成长（098c：Gn ×= 1.1，D9 批次1）。
@@ -520,6 +529,10 @@ impl Player {
     pub fn step_velocity(&mut self, dt: Fix64) {
         if !self.alive {
             return;
+        }
+        // 禁锢·缠绕（B4-Y）：定身——清除自走目标（击退/强制位移仍生效）。
+        if self.tied() {
+            self.move_target = None;
         }
         // 0) 冲刺斩：无限时长直线冲刺，优先级最高（直到新移动命令解除）。
         if self.dash_active {
