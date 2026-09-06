@@ -397,6 +397,8 @@ pub struct World {
     pub(crate) pending_kings: Vec<u32>,
     /// 缩圈倒计时（098c EA：每 wo×√存活 秒烧掉一环，B5）。
     pub(crate) shrink_timer: f64,
+    /// 冰面区域（冰面批：中心 + 半宽/半高；None=本轮无冰面）。冰面不被岩浆侵蚀。
+    pub ice: Option<(Vec2, Fix64, Fix64)>,
 }
 
 impl World {
@@ -438,6 +440,7 @@ impl World {
             pending_avatar: None,
             pending_kings: Vec::new(),
             shrink_timer: 10.0,
+            ice: None,
         }
     }
 
@@ -534,7 +537,9 @@ impl World {
         self.step_area_forces(dt);
         // 3c) T2 扇扫连射：按心率依次发射
         self.step_sweep(dt);
-        for p in self.players.iter_mut() {
+        let ice_flags: Vec<bool> = self.players.iter().map(|p| self.on_ice(p.pos)).collect();
+        for (p, flag) in self.players.iter_mut().zip(ice_flags) {
+            p.on_ice = flag;
             p.step_velocity(dt);
             p.tick_buffs(dt);
             // 熔岩靴激活 CD 递减（098b 25s，D8/M5）。
@@ -590,11 +595,12 @@ impl World {
         self.step_projectiles(dt);
 
         // 7) 边界：出界掉血（无自动回收，玩家需自己走位回去）+ 死亡
-        for p in self.players.iter_mut() {
+        let ice_flags: Vec<bool> = self.players.iter().map(|p| self.on_ice(p.pos)).collect();
+        for (p, on_ice_now) in self.players.iter_mut().zip(ice_flags) {
             if !p.alive {
                 continue;
             }
-            if !self.sandbox && p.pos.length() > self.arena_radius {
+            if !self.sandbox && p.pos.length() > self.arena_radius && !on_ice_now {
                 // 球心已出圈：持续掉血。回去靠自己走位。（boost 期间返一半回血）
                 // 圈外 = 熔岩（098b 语义统一，D8）：踩上即受 Uo×10=9/s；
                 // 熔岩靴抵抗 87.5%（M5 简化为常驻被动；098b 原版为「熔岩上天罚激活 3-5s
@@ -2362,6 +2368,33 @@ impl World {
         out
     }
 
+    /// 掷冰面（098c YC/iA，冰面批）：50% 概率在场地内生成一块随机矩形冰面。
+    /// 冰面不被岩浆侵蚀（固定位置），站上滑行（抓地 ×0.25）。
+    pub fn roll_ice(&mut self) {
+        let mut rng = Rng::new(self.round_seed ^ 0x1CE_1CE);
+        if rng.next_u64_below(2) == 0 {
+            self.ice = None;
+            return;
+        }
+        let arena = self.arena_radius.to_num::<f64>();
+        let cx = (rng.next_fix().to_num::<f64>() - 0.5) * arena;
+        let cy = (rng.next_fix().to_num::<f64>() - 0.5) * arena;
+        let hw = arena * (0.15 + 0.15 * rng.next_fix().to_num::<f64>());
+        let hh = arena * (0.15 + 0.15 * rng.next_fix().to_num::<f64>());
+        self.ice = Some((Vec2::new(Fix64::from_num(cx), Fix64::from_num(cy)), Fix64::from_num(hw), Fix64::from_num(hh)));
+    }
+
+    /// 点位是否在冰面上。
+    pub fn on_ice(&self, pos: Vec2) -> bool {
+        match self.ice {
+            Some((c, hw, hh)) => {
+                let d = pos - c;
+                d.x.abs() <= hw && d.y.abs() <= hh
+            }
+            None => false,
+        }
+    }
+
     /// 设置游戏模式（098c nn，B3；每局开始前由调用方设置）。
     pub fn configure_mode(&mut self, mode: u8) {
         self.mode = mode;
@@ -2453,6 +2486,8 @@ impl World {
         // 缩圈计时重启（098c XA：回合开始即启动 EA 定时器）
         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
         self.shrink_timer = Balance::default().shrink_ring_secs * alive.sqrt();
+        // 冰面（冰面批）
+        self.roll_ice();
         // 每轮推进布局种子 → 下一小局的柱子配置与上一轮不同（联机下两端 world 同步此字段，确定性一致）。
         // 用简单递增而非 LCG：LCG 在 2^64 上存在短周期点（如 20260812 经两次递推回到自身），
         // 递增保证每次严格不同（无回绕时）。Rng::new 为单射，不同 seed ⇒ 不同布局。
@@ -7084,5 +7119,72 @@ mod tests {
         let missiles = world.projectiles.iter().filter(|p| p.alive && matches!(p.kind, ProjectileKind::W098b { .. })).count();
         assert!(missiles >= 1, "凤凰转向应发射凤凰弹，实际 {missiles}");
         assert!(world.players[1].hp < world.players[1].max_hp, "凤凰弹/接触应伤害敌人");
+    }
+
+    // ===== 冰面系统（098c Idki/YC，冰面批） =====
+
+    /// 冰面确定性生成：同 seed 同布局；50% 概率无冰面。
+    #[test]
+    fn ice_generation_deterministic() {
+        let a = World::new(2, 77);
+        let b = World::new(2, 77);
+        assert_eq!(a.ice.is_some(), b.ice.is_some());
+        if let (Some((ca, wa, ha)), Some((cb, wb, hb))) = (a.ice, b.ice) {
+            assert_eq!(ca, cb);
+            assert_eq!((wa, ha), (wb, hb));
+        }
+    }
+
+    /// 冰面滑行：冰面上刹车距离显著更长（抓地 ×0.25）。
+    #[test]
+    fn ice_slows_braking() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mk = |ice: bool, seed: u64| {
+            let mut w = World::new(1, seed);
+            w.obstacles.clear();
+            w.sandbox = true;
+            if ice {
+                // 冰面覆盖全场原点附近
+                w.ice = Some((Vec2::ZERO, Fix64::from_num(3000.0), Fix64::from_num(3000.0)));
+            }
+            w.players[0].pos = Vec2::ZERO;
+            w.players[0].move_target = Some(Vec2::new(d60(3.0), Fix64::ZERO));
+            w
+        };
+        // 各走 60 帧后下达"停"（无目标），再走 60 帧比较残余位移
+        let run = |mut w: World| {
+            let none = vec![PlayerInput::default()];
+            for _ in 0..60 {
+                w.step(none.clone(), dt);
+            }
+            let p0 = w.players[0].pos;
+            w.players[0].move_target = None;
+            for _ in 0..60 {
+                w.step(none.clone(), dt);
+            }
+            (w.players[0].pos - p0).length().to_num::<f64>()
+        };
+        let normal = run(mk(false, 78));
+        let icy = run(mk(true, 78));
+        assert!(icy > normal * 1.5, "冰面滑行距离应显著大于正常地面（{} vs {}）", icy, normal);
+    }
+
+    /// 冰面不被岩浆侵蚀：冰面上的点即使出圈也不掉血。
+    #[test]
+    fn ice_immune_to_lava() {
+        let mut world = World::new(1, 79);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // 冰面中心放在远处（出圈处），玩家站上面
+        world.ice = Some((Vec2::new(d60(20.0), Fix64::ZERO), Fix64::from_num(200.0), Fix64::from_num(200.0)));
+        world.players[0].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        let hp = world.players[0].hp;
+        let none = vec![PlayerInput::default()];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.on_ice(world.players[0].pos), "玩家应站在冰面上");
+        assert_eq!(world.players[0].hp, hp, "冰面应免疫岩浆（不掉血）");
     }
 }
