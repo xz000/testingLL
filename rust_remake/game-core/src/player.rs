@@ -883,6 +883,22 @@ mod tests {
     }
 
     #[test]
+    fn charge_grants_stealth_like_windwalk() {
+        // 疾风步·冲锋（S010 A 形态，W098bUtilKind::Charge）：098c RB 两形态都挂隐身，
+        // 对齐 world.rs Charge 分支加的 BuffKind::Stealth。
+        let mut p = Player::new(0, Vec2::ZERO, Fix64::ONE);
+        p.add_buff(BuffKind::Stealth, 3.1);
+        p.add_buff(BuffKind::Speed(200.0), 3.1);
+        assert!(p.stealth());
+        let dt = Fix64::from_num(0.1);
+        for _ in 0..10 {
+            p.tick_buffs(dt);
+        }
+        // 1.0s 后隐身仍在
+        assert!(p.stealth());
+    }
+
+    #[test]
     fn pull_adds_to_movement() {
         let mut p = Player::new(0, Vec2::ZERO, Fix64::ONE);
         let dt = Fix64::from_num(0.1);
