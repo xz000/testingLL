@@ -1269,6 +1269,11 @@ impl Game {
         }
     }
 
+    /// 分队/国王模式（B6 队伍色判定）：两队或国王模式 → 玩家按队伍着色。
+    fn world_king_or_teams(&self) -> bool {
+        self.world.mode == 4 || self.world.players.iter().any(|p| p.team as u32 != p.id)
+    }
+
     /// 当前场次的完整 `MatchConfig`（host 建房设定 / client 从大厅元数据读取后两端一致）。
     #[cfg(feature = "steam")]
     fn match_config(&self) -> game_core::meta::MatchConfig {
@@ -1587,6 +1592,16 @@ impl Game {
 
         // 场地绳圈（逐渐收缩）
         let ar = self.world.arena_radius.to_num::<f32>();
+        // B6 缩圈进度（D13 #10）：剩余环数 / 初始环数 文本显示在圈上方
+        {
+            let total_rings = game_core::balance::Balance::start_radius_for(self.world.players.len() as u32)
+                / game_core::balance::Balance::default().ring_width;
+            let left_rings = ar as f64 / game_core::balance::Balance::default().ring_width;
+            if self.world.mode != 2 && !self.world.sandbox && ar > 0.5 {
+                let txt = format!("岩浆吞噬 {:.0}%", (1.0 - left_rings / total_rings).max(0.0) * 100.0);
+                draw_text(&mut canvas, ctx, &txt, 16.0, Color::from_rgba(255, 140, 90, 220), Point2 { x: self.offset.x, y: self.offset.y - ar * self.scale - 16.0 }, true)?;
+            }
+        }
         let fence = Mesh::new_circle(
             &ctx.gfx,
             DrawMode::stroke(3.0),
@@ -1647,6 +1662,13 @@ impl Game {
             let fy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
             let r = p.radius.to_num::<f32>() * self.scale;
             let mut color = player_color(p.id, me_idx);
+            // B6 队伍色（D13 #17）：分队模式下同队玩家共享队色（蓝/红），FFA 保持玩家色。
+            if self.world_king_or_teams() {
+                color = if p.team == 0 { Color::from_rgb(100, 160, 255) } else { Color::from_rgb(255, 110, 95) };
+                if p.id == me_idx {
+                    color = Color::from_rgb(90, 230, 170); // 自己始终绿松石以便辨识
+                }
+            }
             // 潜行：半透明（潜行踢 / 隐蔽效果）
             if p.stealth() {
                 color.a = 0.4;
@@ -1660,6 +1682,57 @@ impl Game {
                 color,
             )?;
             canvas.draw(&ball, graphics::DrawParam::new());
+
+            // B6 多圆环状态（用户设计：外圈环带表达 buff；内圈头像）
+            let mut ring = r + 5.0;
+            macro_rules! draw_ring {
+                ($radius:expr, $col:expr) => {{
+                    let m = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.5), Point2 { x: fx, y: fy }, $radius, 0.5, $col)?;
+                    canvas.draw(&m, graphics::DrawParam::new());
+                }};
+            }
+            // 熔岩靴激活（LavaShield）→ 橙红环
+            if p.has_buff(game_core::player::BuffKind::LavaShield) {
+                draw_ring!(ring, Color::from_rgba(255, 130, 40, 220));
+                ring += 4.0;
+            }
+            // 反射盾 → 青色环
+            if p.shield() {
+                draw_ring!(ring, Color::from_rgba(120, 210, 255, 200));
+                ring += 4.0;
+            }
+            // 守护之盾充能窗口（Aegis）→ 金色环
+            if p.has_buff(game_core::player::BuffKind::Aegis) {
+                draw_ring!(ring, Color::from_rgba(255, 210, 90, 210));
+                ring += 4.0;
+            }
+            // 肉饼/减速 → 白霜环
+            if p.has_buff(game_core::player::BuffKind::Pancake) || p.has_buff(game_core::player::BuffKind::Slow(0.5)) {
+                draw_ring!(ring, Color::from_rgba(220, 240, 255, 180));
+                ring += 4.0;
+            }
+            // 禁锢（Tied）/沉默 → 紫灰环
+            if p.tied() || p.silenced() {
+                draw_ring!(ring, Color::from_rgba(170, 130, 200, 200));
+                ring += 4.0;
+            }
+            // 国王（模式 4）→ 金皇冠环（最外层）
+            if self.world.kings.contains(&p.id) {
+                draw_ring!(ring + 2.0, Color::from_rgba(255, 200, 60, 230));
+            }
+            // 化身（模式 3）→ 描边加粗视觉（画一个大外环）
+            if self.world.avatar == Some(p.id) {
+                let av = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(4.0), Point2 { x: fx, y: fy }, r + 10.0, 0.5, Color::from_rgba(255, 90, 90, 200))?;
+                canvas.draw(&av, graphics::DrawParam::new());
+            }
+            // 内圈 Steam 头像（B6，D13 #12）：32px 头像缩放进角色圆内；LAN/无 Steam 无头像（角色色即身份）。
+            #[cfg(feature = "steam")]
+            {
+                let steam_id_of = self.steam_roster.iter().find(|(slot, _, _)| *slot as u32 == p.id).map(|(_, _, id)| *id);
+                if let Some(sid) = steam_id_of {
+                    let _ = self.steam_draw_avatar(&mut canvas, sid, fx - r * 0.62, fy - r * 0.62, r * 1.24);
+                }
+            }
 
             // 护盾：外圈浅色圆环（护盾激活时）
             if p.shield() {
