@@ -228,6 +228,8 @@ struct Game {
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 学习界面分页（U0）：0=技能页 1=商店页 2=属性页；数字键只在当前页生效。
     learn_page: u8,
+    /// 学习界面鼠标命中盒（U2）：绘制时写入，update 里左键命中派发（1 帧延迟可忽略）。
+    learn_hitboxes: Vec<(graphics::Rect, LearnAction)>,
     /// 机器人的当前目标点
     bot_targets: Vec<Option<Vec2>>,
     /// 机器人的确定性随机源
@@ -769,6 +771,7 @@ impl Game {
             // 默认首选一棵技能树（第一个键 C），让“按数字键绑技能”立即可用，不必先想到去按字母键选树。
             learn_tree_key: game_core::skill::CastKey::ALL.first().copied(),
             learn_page: 0,
+            learn_hitboxes: Vec::new(),
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
@@ -994,6 +997,70 @@ impl Game {
         use ggez::input::keyboard::Key;
         ctx.keyboard.is_logical_key_just_pressed(&Key::Character(s.to_lowercase().into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(s.to_uppercase().into()))
+    }
+
+    /// 学习界面左键命中派发（U2）：按 LearnAction 执行与键盘等价的操作。
+    fn learn_dispatch_click(&mut self, ctx: &Context) {
+        let m = ctx.mouse.position();
+        let hits: Vec<LearnAction> = self
+            .learn_hitboxes
+            .iter()
+            .filter(|(r, _)| r.contains(Point2 { x: m.x, y: m.y }))
+            .map(|(_, a)| *a)
+            .collect();
+        let me = self.self_index();
+        for action in hits {
+            match action {
+                LearnAction::Page(i) => {
+                    self.learn_page = i;
+                }
+                LearnAction::Tree(k) => {
+                    self.learn_tree_key = Some(k);
+                    self.learn_page = 0;
+                }
+                LearnAction::Skill(i) => {
+                    if let Some(key) = self.learn_tree_key {
+                        if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                            if let Some(&skill) = key.tree().skills_in_tree().get(i) {
+                                profile.bind_skill(key, skill);
+                            }
+                        }
+                    }
+                }
+                LearnAction::Form(skill) => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        let idx = skill.as_u32() as usize;
+                        if let Some(f) = profile.forms.get_mut(idx) {
+                            *f = !*f;
+                            if let Some(wp) = self.world.players.get_mut(me as usize) {
+                                if let Some(wf) = wp.forms.get_mut(idx) {
+                                    *wf = *f;
+                                }
+                            }
+                        }
+                    }
+                }
+                LearnAction::Item(id) => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        if profile.buy_item(id) {
+                            if let Some(p) = self.world.players.get_mut(me as usize) {
+                                p.set_items(&profile.items);
+                                p.apply_attributes(&profile.attributes);
+                            }
+                        }
+                    }
+                }
+                LearnAction::Mastery(kind) => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        if profile.buy_mastery(kind) {
+                            if let Some(wp) = self.world.players.get_mut(me as usize) {
+                                wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn poll_learning(&mut self, ctx: &Context) {
@@ -2451,14 +2518,22 @@ impl Game {
                 draw_text(canvas, ctx, &title, 34.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
                 y += 52.0;
 
-                // 分页标签（U0）：Tab 切换，当前页高亮
+                // 分页标签（U0）：Tab 切换，当前页高亮；页签本身可点击（U2）
+                let mouse = ctx.mouse.position();
                 let pages = ["[1]技能", "[2]商店", "[3]属性"];
                 let mut px = cx - 150.0;
+                self.learn_hitboxes.clear();
                 for (i, tag) in pages.iter().enumerate() {
                     let active = self.learn_page == i as u8;
+                    let tag_rect = graphics::Rect::new(px - 60.0, y - 16.0, 120.0, 30.0);
+                    let hovered = tag_rect.contains(Point2 { x: mouse.x, y: mouse.y });
                     draw_text(canvas, ctx, tag, 22.0,
-                        if active { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(120, 128, 145) },
+                        if active { Color::from_rgb(255, 210, 120) } else if hovered { Color::from_rgb(200, 205, 220) } else { Color::from_rgb(120, 128, 145) },
                         Point2 { x: px, y }, true)?;
+                    if !active {
+                        self.learn_hitboxes.push((tag_rect, LearnAction::Page(i as u8)));
+                        // 页签动作复用 Tree 通道之前先记页号——见下方 hitpage 通道
+                    }
                     px += 150.0;
                 }
                 y += 46.0;
@@ -2481,7 +2556,7 @@ impl Game {
                         19.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
                     y += 40.0;
 
-                    // 每个键：树名 + 已绑定技能
+                    // 每个键：树名 + 已绑定技能（行可点击选中树；已绑技能名可点击切形态，U2）
                     for key in game_core::skill::CastKey::ALL {
                         let bound = me.bound_skill(key);
                         let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
@@ -2490,18 +2565,31 @@ impl Game {
                                 let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
                                 let form = if alt { "B" } else { "A" };
                                 let name = game_core::skill::DefTable::def_for(s, alt).name;
-                                let toggle = if game_core::skill::DefTable::has_alt(s) { "（B 换形态）" } else { "" };
+                                let toggle = if game_core::skill::DefTable::has_alt(s) { "（点此切形态）" } else { "" };
                                 format!("{name}［{form}］ @Lv{lv}{toggle}")
                             }
                             None => "未绑定".to_string(),
                         };
+                        let row_rect = graphics::Rect::new(cx - 260.0, y - 15.0, 520.0, 30.0);
+                        let row_hover = row_rect.contains(Point2 { x: mouse.x, y: mouse.y });
                         let color = if self.learn_tree_key == Some(key) {
                             Color::from_rgb(255, 210, 120)
+                        } else if row_hover {
+                            Color::from_rgb(235, 238, 245)
                         } else {
                             Color::from_rgb(210, 215, 225)
                         };
                         let line = format!("[{}] {}树   {}", key.letter(), key.tree().name_zh(), bound_txt);
                         draw_text(canvas, ctx, &line, 21.0, color, Point2 { x: cx, y }, true)?;
+                        if self.learn_tree_key != Some(key) {
+                            self.learn_hitboxes.push((row_rect, LearnAction::Tree(key)));
+                        } else if let Some(sk) = bound {
+                            if game_core::skill::DefTable::has_alt(sk) {
+                                // 形态点击区：行内技能名起（右侧半行）
+                                let form_rect = graphics::Rect::new(cx - 20.0, y - 15.0, 280.0, 30.0);
+                                self.learn_hitboxes.push((form_rect, LearnAction::Form(sk)));
+                            }
+                        }
                         y += 32.0;
                     }
 
@@ -2511,8 +2599,13 @@ impl Game {
                         draw_text(canvas, ctx, &format!("{} 树的技能（按数字 1-3 选）：", key.letter()), 20.0, Color::from_rgb(255,210,120), Point2 { x: cx, y }, true)?;
                         y += 32.0;
                         for (i, skill) in key.tree().skills_in_tree().iter().enumerate() {
+                            let opt_rect = graphics::Rect::new(cx - 260.0, y - 13.0, 520.0, 26.0);
+                            let opt_hover = opt_rect.contains(Point2 { x: mouse.x, y: mouse.y });
                             let line = format!("  {}  {}", i + 1, game_core::skill::DefTable::def(*skill).name);
-                            draw_text(canvas, ctx, &line, 18.0, Color::from_rgb(220,220,230), Point2 { x: cx, y }, true)?;
+                            draw_text(canvas, ctx, &line, 18.0,
+                                if opt_hover { Color::from_rgb(255, 235, 180) } else { Color::from_rgb(220,220,230) },
+                                Point2 { x: cx, y }, true)?;
+                            self.learn_hitboxes.push((opt_rect, LearnAction::Skill(i)));
                             y += 26.0;
                         }
                     }
@@ -2526,9 +2619,17 @@ impl Game {
                         for (i, d) in catalog.iter().enumerate() {
                             if i >= keys.len() { break; }
                             let owned = me.items.contains(&d.id);
-                            let col = if owned { Color::from_rgb(120, 220, 140) } else { Color::from_rgb(220, 220, 230) };
+                            let it_rect = graphics::Rect::new(cx - 260.0, y - 13.0, 520.0, 26.0);
+                            let it_hover = it_rect.contains(Point2 { x: mouse.x, y: mouse.y });
+                            let col = if owned { Color::from_rgb(120, 220, 140) } else if it_hover { Color::from_rgb(255, 235, 180) } else { Color::from_rgb(220, 220, 230) };
                             let line = format!("  [{}] {}  （{}G）{}", keys[i], d.name, d.cost, if owned { " ·已持有" } else { "" });
                             draw_text(canvas, ctx, &line, 17.0, col, Point2 { x: cx, y }, true)?;
+                            self.learn_hitboxes.push((it_rect, LearnAction::Item(d.id)));
+                            if it_hover {
+                                // tooltip：物品详情（desc）跟随行下方
+                                draw_text(canvas, ctx, &format!("      {}", d.desc), 15.0, Color::from_rgb(160, 170, 190), Point2 { x: cx, y: y + 22.0 }, true)?;
+                                y += 22.0;
+                            }
                             y += 26.0;
                         }
                     }
@@ -2543,8 +2644,13 @@ impl Game {
                             format!("  [3] 时间精通  Lv{}/{}（{}G）法术持续/射程+10%/级", m.time, game_core::meta::Mastery::CAPS[2], game_core::meta::Mastery::COSTS[2]),
                             format!("  [4] 背包研究  Lv{}/{}（{}G）物品栏 +1 格", m.backpack, game_core::meta::Mastery::CAPS[3], game_core::meta::Mastery::COSTS[3]),
                         ];
-                        for line in mlines {
-                            draw_text(canvas, ctx, &line, 17.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y }, true)?;
+                        for (i, line) in mlines.into_iter().enumerate() {
+                            let mm_rect = graphics::Rect::new(cx - 260.0, y - 13.0, 520.0, 26.0);
+                            let mm_hover = mm_rect.contains(Point2 { x: mouse.x, y: mouse.y });
+                            draw_text(canvas, ctx, &line, 17.0,
+                                if mm_hover { Color::from_rgb(200, 225, 255) } else { Color::from_rgb(150, 200, 255) },
+                                Point2 { x: cx, y }, true)?;
+                            self.learn_hitboxes.push((mm_rect, LearnAction::Mastery(i)));
                             y += 26.0;
                         }
                         y += 16.0;
@@ -2848,6 +2954,10 @@ impl event::EventHandler for Game {
                 self.poll_learning(ctx);
                 self.poll_growth_buy(ctx);
             self.poll_shop(ctx);
+                // 鼠标点击派发（U2）：命中上一帧绘制时记录的元素
+                if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
+                    self.learn_dispatch_click(ctx);
+                }
                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
                 if self.meta.is_first_config() && self.net_host_ls.is_none() {
                     self.poll_host_join_phase();
@@ -5211,6 +5321,23 @@ fn hp_color(ratio: f32) -> Color {
     } else {
         Color::from_rgb(235, 80, 70)
     }
+}
+
+/// 学习界面可点击元素的动作（U2）。
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum LearnAction {
+    /// 选中技能树
+    Tree(game_core::skill::CastKey),
+    /// 绑定选中树内第 i 个技能
+    Skill(usize),
+    /// 切换技能 A/B 形态
+    Form(game_core::skill::SkillId),
+    /// 购买物品
+    Item(game_core::item::ItemId),
+    /// 购买精通（0=生命 1=远程 2=时间 3=背包）
+    Mastery(usize),
+    /// 切换到第 i 页
+    Page(u8),
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
