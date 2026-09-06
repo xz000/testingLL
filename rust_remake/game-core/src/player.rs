@@ -220,6 +220,8 @@ pub struct Player {
     pub mastery: [u8; 3],
     /// 形态位（B4，按 SkillId 索引）：true=B 形态；配置期切换，对局内不换。
     pub forms: [bool; crate::MAX_SKILL_SLOTS],
+    /// 冲撞·凤凰（B4-R）：凤凰冲刺剩余时长（>0 = 凤凰态，移动指令可转向）。
+    pub phoenix_remaining: Fix64,
     /// 队伍号（098c cn[]，B2）：默认 = 自己 id（FFA，各为一队）；分队模式由开局配置覆写。
     /// 技能只命中异队；碰撞/岩浆等物理与队伍无关。
     pub team: u8,
@@ -260,6 +262,7 @@ impl Player {
         Player {
             id,
             forms: [false; crate::MAX_SKILL_SLOTS],
+            phoenix_remaining: Fix64::ZERO,
             team: id as u8,
             respawn_at: None,
             doom: 0.0,

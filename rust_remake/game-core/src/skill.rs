@@ -726,6 +726,8 @@ pub enum W098bUtilKind {
     Blink,
     /// S010 疾风步·冲锋（形态 A，098c RB）：移速 buff + 接触踢击伤害（kick 窗口=持续时长）。
     Charge,
+    /// S012 冲撞·凤凰（形态 B，098c WB）：可操向冲刺——移动指令转向并发射凤凰弹。
+    Phoenix,
     /// S012 冲撞：1300/s 冲刺至多 (650+50L)×1.1，命中 KI+击退+0.5s 定身。
     Dash,
     /// S013 移形换位：与 660 内目标互换位置（弹体化 TODO）。
@@ -1674,7 +1676,7 @@ impl DefTable {
             SkillId::S012 => SkillDef {
                 id,
                 tree: SkillTree::R,
-                name: "冲撞",
+                name: "冲撞·突击",
                 needs_point: true,
                 effect: W098bUtility { kind: W098bUtilKind::Dash, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(770.0) },
                 growth: SkillGrowth {
@@ -1692,7 +1694,7 @@ impl DefTable {
             SkillId::S013 => SkillDef {
                 id,
                 tree: SkillTree::R,
-                name: "移形换位",
+                name: "移形换位·置换",
                 needs_point: true,
                 effect: W098bUtility { kind: W098bUtilKind::Swap, speed: Fix64::ZERO, max_distance: Fix64::from_num(660.0) },
                 growth: SkillGrowth {
@@ -2013,6 +2015,38 @@ impl DefTable {
                     cooldown_delta: -0.474,
                     damage_base: 3.0,
                     damage_delta: 0.4,
+                    ..DEF_ZERO
+                },
+            },
+            // S012B 冲撞·凤凰（098c WB）：3.1s 可操向冲刺——移动指令转向并发射凤凰弹（4+0.5L）。
+            SkillId::S012 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "冲撞·凤凰",
+                needs_point: true,
+                effect: W098bUtility { kind: W098bUtilKind::Phoenix, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(770.0) },
+                growth: SkillGrowth {
+                    cooldown_base: 16.5,
+                    cooldown_delta: -0.447,
+                    max_distance_base: 770.0,
+                    max_distance_delta: 55.0,
+                    damage_base: 4.0,
+                    damage_delta: 0.5,
+                    duration_base: 3.1,
+                    ..DEF_ZERO
+                },
+            },
+            // S013B 移形换位·搬运（098c pB）：800/s 弹到哪人被带到哪（600×(1+.1ei)）→ 搬运瞬移 600。
+            SkillId::S013 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "移形换位·搬运",
+                needs_point: true,
+                effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(600.0) },
+                growth: SkillGrowth {
+                    cooldown_base: 16.0,
+                    cooldown_delta: -0.6316,
+                    max_distance_base: 600.0,
                     ..DEF_ZERO
                 },
             },
@@ -2985,7 +3019,7 @@ mod tests {
         assert!(near(d.stats_at(9).max_distance, 700.0 + 70.0 * 9.0, 1e-3), "L9 距离应 700+70×9");
         // S012 冲撞：速度 1300 恒定；最大距离 (650+50L)×1.1 → L1 770；伤害简化 5+0.4L。
         let d = DefTable::def(SkillId::S012);
-        assert_eq!(d.name, "冲撞");
+        assert_eq!(d.name, "冲撞·突击");
         assert!(near(d.stats_at(1).max_distance, 770.0, 1e-3));
         assert!(near(d.stats_at(1).damage, 5.4, 1e-3));
         match d.effect {
@@ -2996,7 +3030,7 @@ mod tests {
         }
         // S013 换位：CD 16→4（20 级）；射程 660。
         let d = DefTable::def(SkillId::S013);
-        assert_eq!(d.name, "移形换位");
+        assert_eq!(d.name, "移形换位·置换");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 4.0, 1e-1), "L20 CD 应 ≈4，实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).max_distance, 660.0, 1e-3), "射程应 600×1.1");
@@ -3088,8 +3122,8 @@ mod tests {
             (SkillId::S009, "分裂弹·目标"),
             (SkillId::S010, "疾风步·冲锋"),
             (SkillId::S011, "瞬间移动"),
-            (SkillId::S012, "冲撞"),
-            (SkillId::S013, "移形换位"),
+            (SkillId::S012, "冲撞·突击"),
+            (SkillId::S013, "移形换位·置换"),
             (SkillId::S014, "汲取·减速"),
             (SkillId::S015, "火焰喷射·流射"),
             (SkillId::S016, "弹跳弹"),
