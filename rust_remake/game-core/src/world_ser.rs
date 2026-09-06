@@ -163,6 +163,7 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
             wu64(o, v.to_bits());
         }
         BuffKind::Weakened => wu8(o, 10),
+        BuffKind::Silenced => wu8(o, 11),
     }
     wfix(o, b.remaining);
 }
@@ -179,6 +180,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         8 => BuffKind::Pancake,
         9 => BuffKind::Slow(f64::from_bits(u64at(b, p)?)),
         10 => BuffKind::Weakened,
+        11 => BuffKind::Silenced,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -573,7 +575,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Returner { dir, speed, damage, radius, push_power, push_time, owner } => { wu8(o, 11); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wu32(o, *owner); }
         PK::Tether { owner, target, damage_per_sec, pull_speed, remaining, beam } => { wu8(o, 12); wu32(o, *owner); wu32(o, *target); wfix(o, *damage_per_sec); wfix(o, *pull_speed); wfix(o, *remaining); wu8(o, *beam as u8); }
         PK::Gravity { dir, speed, radius, pull_speed, remaining } => { wu8(o, 13); wvec(o, *dir); wfix(o, *speed); wfix(o, *radius); wfix(o, *pull_speed); wfix(o, *remaining); }
-        PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); }
+        PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining, heal_team } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); wu8(o, *heal_team as u8); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
         PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle } => {
@@ -589,7 +591,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *lateral);
             wvec(o, *forward_dir);
             wfix(o, *out_dist);
-            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6 });
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::Induction => 7, crate::skill::W098bOnHit::Silence => 8 });
             wfix(o, *debuff_dur);
             wu8(o, *burst);
             wfix(o, *emit_cooldown);
@@ -617,7 +619,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
         11 => PK::Returner { dir: vecat(b, p)?, speed: fixat(b, p)?, damage: fixat(b, p)?, radius: fixat(b, p)?, push_power: fixat(b, p)?, push_time: fixat(b, p)?, owner: u32at(b, p)? },
         12 => PK::Tether { owner: u32at(b, p)?, target: u32at(b, p)?, damage_per_sec: fixat(b, p)?, pull_speed: fixat(b, p)?, remaining: fixat(b, p)?, beam: u8at(b, p)? != 0 },
         13 => PK::Gravity { dir: vecat(b, p)?, speed: fixat(b, p)?, radius: fixat(b, p)?, pull_speed: fixat(b, p)?, remaining: fixat(b, p)? },
-        14 => PK::Star { owner: u32at(b, p)?, radius: fixat(b, p)?, damage_per_sec: fixat(b, p)?, heal_per_sec: fixat(b, p)?, remaining: fixat(b, p)? },
+        14 => PK::Star { owner: u32at(b, p)?, radius: fixat(b, p)?, damage_per_sec: fixat(b, p)?, heal_per_sec: fixat(b, p)?, remaining: fixat(b, p)?, heal_team: u8at(b, p)? != 0 },
         15 => PK::BindLine { dir: vecat(b, p)?, speed: fixat(b, p)?, count: u32at(b, p)?, fired: u32at(b, p)?, bind_time: fixat(b, p)?, from: vecat(b, p)?, end: vecat(b, p)? },
         16 => PK::PushBullet { dir: vecat(b, p)?, speed: fixat(b, p)?, damage: fixat(b, p)?, radius: fixat(b, p)?, push_power: fixat(b, p)?, push_time: fixat(b, p)?, remaining: fixat(b, p)? },
         17 => {
@@ -652,6 +654,8 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 4 => crate::skill::W098bOnHit::DrainSlow,
                 5 => crate::skill::W098bOnHit::Weaken,
                 6 => crate::skill::W098bOnHit::Recharge,
+                7 => crate::skill::W098bOnHit::Induction,
+                8 => crate::skill::W098bOnHit::Silence,
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;
