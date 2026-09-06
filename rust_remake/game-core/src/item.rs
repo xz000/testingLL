@@ -292,6 +292,34 @@ pub fn aggregate(items: &[ItemId]) -> ItemEffects {
     out
 }
 
+/// 商店三大类（§3 改造：左栏大类，B/N/M 切换）。顺序与 `SHOP_CATEGORY_KEYS` 对应。
+pub const SHOP_CATEGORIES: [&str; 3] = ["机动", "防御续航", "攻击特殊"];
+/// 三大类的切换键标签（B/N/M，避开属性页的 J/K/L 属性购买，无冲突）。
+pub const SHOP_CATEGORY_KEYS: [&str; 3] = ["B", "N", "M"];
+
+/// 指定大类下的物品（按家族展示顺序、族内按档位升序）。用于商店页右栏。
+/// cat：0=机动(靴/熔岩靴) 1=防御续航(头盔/斗篷/坠饰/怀表/守护盾) 2=攻击特殊(独立物品/鲜血剑)。
+pub fn shop_category_items(cat: u8) -> Vec<&'static ItemDef> {
+    let fams: &[&[ItemFamily]] = &[
+        &[ItemFamily::Boots, ItemFamily::LavaBoots],
+        &[
+            ItemFamily::Helm,
+            ItemFamily::Cloak,
+            ItemFamily::Amulet,
+            ItemFamily::PocketWatch,
+            ItemFamily::GuardianShield,
+        ],
+        &[ItemFamily::Standalone, ItemFamily::BloodSword],
+    ];
+    let mut v: Vec<&'static ItemDef> = Vec::new();
+    if let Some(fams) = fams.get(cat as usize) {
+        for f in *fams {
+            v.extend(ItemDef::chain(*f));
+        }
+    }
+    v
+}
+
 /// 商店可见的购买入口：各家族最低档 + 无链单体（升级在持有低档时指向下一档）。
 pub fn shop_catalog() -> Vec<&'static ItemDef> {
     let mut out: Vec<&'static ItemDef> = Vec::new();
@@ -369,5 +397,18 @@ mod tests {
         let cat = shop_catalog();
         assert_eq!(cat.len(), 11, "商店入口 = 家族 t1 + 单体，实际 {}", cat.len());
         assert!(cat.iter().all(|d| d.tier == 1));
+    }
+
+    #[test]
+    fn next_tier_follows_chain_and_max_is_none() {
+        // 升级链：购买逻辑据此把 tier1 升级到下一档。
+        assert_eq!(ItemId::Boots1.next_tier(), Some(ItemId::Boots2));
+        assert_eq!(ItemId::Boots2.next_tier(), Some(ItemId::Boots3));
+        assert_eq!(ItemId::Boots3.next_tier(), None, "满级应无下一档");
+        assert_eq!(ItemId::Helm1.next_tier(), Some(ItemId::Helm2));
+        assert_eq!(ItemId::Helm3.next_tier(), None);
+        // 独立物品无链
+        assert_eq!(ItemId::FireMask.next_tier(), None);
+        assert_eq!(ItemId::Jordan.next_tier(), None);
     }
 }

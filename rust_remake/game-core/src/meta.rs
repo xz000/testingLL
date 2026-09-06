@@ -181,10 +181,23 @@ impl PlayerProfile {
     }
 
     /// 购买/升级物品（M3）：金币不足失败；同家族持有低档则替换（098b 升级链语义）。
+    /// 独立物品（Standalone：死亡面具/火球法杖/乔丹）各自独立，可共存、不可重复持有。
     pub fn buy_item(&mut self, id: crate::item::ItemId) -> bool {
         let cost = id.def().cost;
         if self.gold < cost {
             return false;
+        }
+        // 独立物品：与其它独立物品共存，但不可重复持有同一 id（098c 中 I004/I00D/I00E 互异）。
+        if id.def().family == crate::item::ItemFamily::Standalone {
+            if self.items.contains(&id) {
+                return false;
+            }
+            if self.items.len() >= self.inventory_slots() {
+                return false;
+            }
+            self.gold -= cost;
+            self.items.push(id);
+            return true;
         }
         let family = id.def().family;
         let is_upgrade = self.items.iter().any(|&it| it.def().family == family);
@@ -722,6 +735,22 @@ mod tests {
         pr.gold = 10;
         assert!(pr.buy_item(crate::item::ItemId::Boots1));
         assert_eq!(pr.items.len(), 2);
+    }
+
+    #[test]
+    fn buy_item_allows_distinct_standalone_and_no_dup() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 100;
+        // 三个独立物品（死亡面具/火球法杖/乔丹）应可共存，互不替换
+        assert!(pr.buy_item(crate::item::ItemId::FireMask));
+        assert!(pr.buy_item(crate::item::ItemId::FireStaff));
+        assert!(pr.buy_item(crate::item::ItemId::Jordan));
+        assert_eq!(pr.items.len(), 3, "独立物品应共存而非互相删除");
+        // 重复购买同一独立物品应失败（不再扣钱）
+        let g = pr.gold;
+        assert!(!pr.buy_item(crate::item::ItemId::FireMask), "重复持有应被拒绝");
+        assert_eq!(pr.gold, g, "重复购买不应扣钱");
     }
 
     #[test]
