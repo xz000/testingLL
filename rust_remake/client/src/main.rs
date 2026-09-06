@@ -752,7 +752,15 @@ impl Game {
         if std::env::var("FASTROUND").is_ok() {
             world.arena_radius = game_core::fix::Fix64::from_num(3.0);
             meta.config.learn_time_secs = 3.0; // 给局间配置留 3s，方便手测时从容绑定/升级
+            meta.config.shopping_time_secs = 3.0; // 首局购物同样缩短（否则开局要等满 40s）
             meta.config.total_rounds = 4;
+        }
+        // 局域网（--host/--join）首局也要进配置/学习阶段：商店（购买）界面只在 Learning 出现。
+        // 世界与 meta 启动时已按 player_count 建好（host=total，client=link.player_count），无需再重建。
+        // Learning 分支会在首局配置期间继续 poll_host_join_phase 收 client 加入。
+        if matches!(app, AppState::LanHost { .. } | AppState::LanJoin { .. }) {
+            meta.begin_first_round_config();
+            eprintln!("[lan] 首局进入配置/学习阶段（shopping {}s）", meta.config.shopping_time_secs);
         }
         // 开局不带任何默认技能：完全由玩家在配置/学习界面按字母选树 + 数字绑技能（4.6b/从零选择）。
 
@@ -3087,6 +3095,17 @@ impl event::EventHandler for Game {
                         self.teardown_round_end();
                         self.pre_game_config = false;
                     }
+                    self.accumulator = 0.0;
+                    return Ok(());
+                }
+
+                // 局域网 host：client 尚未全部加入（握手未完、net_host_ls 未建）时先暂停倒计时。
+                // 否则倒计时归零会因 host_side/client_side 都为 false 而走「单机开局」分支
+                // （下面的 teardown_round_end），导致 client 后续加入时两端不同步。
+                if matches!(self.app, AppState::LanHost { .. })
+                    && self.net_host.is_some()
+                    && self.net_host_ls.is_none()
+                {
                     self.accumulator = 0.0;
                     return Ok(());
                 }
