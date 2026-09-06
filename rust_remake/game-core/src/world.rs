@@ -397,8 +397,9 @@ pub struct World {
     pub(crate) pending_kings: Vec<u32>,
     /// 缩圈倒计时（098c EA：每 wo×√存活 秒烧掉一环，B5）。
     pub(crate) shrink_timer: f64,
-    /// 冰面区域（冰面批：中心 + 半宽/半高；None=本轮无冰面）。冰面不被岩浆侵蚀。
-    pub ice: Option<(Vec2, Fix64, Fix64)>,
+    /// 冰面区域（U4 圆圈化：中心+半径的圆列表，可重叠拼形；空=本轮无冰面）。
+    /// 冰面不被岩浆侵蚀。
+    pub ice: Vec<(Vec2, Fix64)>,
 }
 
 impl World {
@@ -440,7 +441,7 @@ impl World {
             pending_avatar: None,
             pending_kings: Vec::new(),
             shrink_timer: Balance::default().shrink_ring_secs * (player_count.max(1) as f64).sqrt(),
-            ice: None,
+            ice: Vec::new(),
         }
     }
 
@@ -2375,26 +2376,26 @@ impl World {
     pub fn roll_ice(&mut self) {
         let mut rng = Rng::new(self.round_seed ^ 0x1CE_1CE);
         if rng.next_u64_below(2) == 0 {
-            self.ice = None;
+            self.ice.clear();
             return;
         }
+        // 1-3 个圆冰面（U4：circle brawl 主题；可重叠拼出冰湖）
         let arena = self.arena_radius.to_num::<f64>();
-        let cx = (rng.next_fix().to_num::<f64>() - 0.5) * arena;
-        let cy = (rng.next_fix().to_num::<f64>() - 0.5) * arena;
-        let hw = arena * (0.15 + 0.15 * rng.next_fix().to_num::<f64>());
-        let hh = arena * (0.15 + 0.15 * rng.next_fix().to_num::<f64>());
-        self.ice = Some((Vec2::new(Fix64::from_num(cx), Fix64::from_num(cy)), Fix64::from_num(hw), Fix64::from_num(hh)));
+        let n = 1 + rng.next_u64_below(3) as usize;
+        self.ice.clear();
+        for _ in 0..n {
+            let cx = (rng.next_fix().to_num::<f64>() - 0.5) * arena;
+            let cy = (rng.next_fix().to_num::<f64>() - 0.5) * arena;
+            let r = arena * (0.15 + 0.15 * rng.next_fix().to_num::<f64>());
+            self.ice.push((Vec2::new(Fix64::from_num(cx), Fix64::from_num(cy)), Fix64::from_num(r)));
+        }
     }
 
-    /// 点位是否在冰面上。
+    /// 点位是否在任一冰面圆内。
     pub fn on_ice(&self, pos: Vec2) -> bool {
-        match self.ice {
-            Some((c, hw, hh)) => {
-                let d = pos - c;
-                d.x.abs() <= hw && d.y.abs() <= hh
-            }
-            None => false,
-        }
+        self.ice
+            .iter()
+            .any(|(c, r)| (pos - *c).length_squared() <= *r * *r)
     }
 
     /// 设置游戏模式（098c nn，B3；每局开始前由调用方设置）。
@@ -7133,11 +7134,8 @@ mod tests {
     fn ice_generation_deterministic() {
         let a = World::new(2, 77);
         let b = World::new(2, 77);
-        assert_eq!(a.ice.is_some(), b.ice.is_some());
-        if let (Some((ca, wa, ha)), Some((cb, wb, hb))) = (a.ice, b.ice) {
-            assert_eq!(ca, cb);
-            assert_eq!((wa, ha), (wb, hb));
-        }
+        assert_eq!(a.ice.is_empty(), b.ice.is_empty());
+        assert_eq!(a.ice, b.ice, "同 seed 冰面布局应一致");
     }
 
     /// 冰面滑行：冰面上刹车距离显著更长（抓地 ×0.25）。
@@ -7150,7 +7148,7 @@ mod tests {
             w.sandbox = true;
             if ice {
                 // 冰面覆盖全场原点附近
-                w.ice = Some((Vec2::ZERO, Fix64::from_num(3000.0), Fix64::from_num(3000.0)));
+                w.ice = vec![(Vec2::ZERO, Fix64::from_num(3000.0))];
             }
             w.players[0].pos = Vec2::ZERO;
             w.players[0].move_target = Some(Vec2::new(d60(3.0), Fix64::ZERO));
@@ -7181,7 +7179,7 @@ mod tests {
         world.obstacles.clear();
         world.sandbox = true;
         let dt = Fix64::from_num(1.0 / 60.0);
-        world.ice = Some((Vec2::new(d60(6.0), Fix64::ZERO), Fix64::from_num(3000.0), Fix64::from_num(3000.0)));
+        world.ice = vec![(Vec2::new(d60(6.0), Fix64::ZERO), Fix64::from_num(3000.0))];
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = Some(Vec2::new(d60(3.0), Fix64::ZERO));
         let none = vec![PlayerInput::default()];
@@ -7219,7 +7217,7 @@ mod tests {
             w.obstacles.clear();
             w.sandbox = true;
             if ice {
-                w.ice = Some((Vec2::ZERO, Fix64::from_num(5000.0), Fix64::from_num(5000.0)));
+                w.ice = vec![(Vec2::ZERO, Fix64::from_num(5000.0))];
             }
             w.players[0].pos = Vec2::ZERO;
             w.players[0].move_target = None;
@@ -7242,7 +7240,7 @@ mod tests {
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         // 冰面中心放在远处（出圈处），玩家站上面
-        world.ice = Some((Vec2::new(d60(20.0), Fix64::ZERO), Fix64::from_num(200.0), Fix64::from_num(200.0)));
+        world.ice = vec![(Vec2::new(d60(20.0), Fix64::ZERO), Fix64::from_num(200.0))];
         world.players[0].pos = Vec2::new(d60(20.0), Fix64::ZERO);
         world.players[0].move_target = None;
         let hp = world.players[0].hp;
