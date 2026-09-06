@@ -2909,7 +2909,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     crate::skill::W098bUtilKind::Charge => {
                         // 疾风步·冲锋（098c RB，B4）：移速 buff + 接触踢击窗口（撞敌伤害 4.6+0.8L）。
+                        // 098c RB 两形态都挂 'Agho' 隐身（war3map_pretty.j:5781-5804），A 形态（冲锋）同样隐身。
                         if let Some(p) = world.players.get_mut(idx as usize) {
+                            p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
                             p.kick = Some(Kick {
                                 push_power: Fix64::from_num(150.0),
@@ -6756,14 +6758,15 @@ mod tests {
             PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
         ], dt);
         assert!(world.players[0].has_buff(BuffKind::Stealth), "B 形态应有隐身");
-        // A 形态（冲锋）：无隐身，有踢击窗口
+        // A 形态（冲锋）：098c RB 两形态都挂 'Agho' 隐身（w3a_strings.txt:1265
+        // 「Wind Walk: Charge - Invisibility」；war3map_pretty.j:5781-5804），故冲锋也隐身，同时有踢击窗口。
         let mut world2 = World::new(1, 996);
         world2.obstacles.clear();
         world2.sandbox = true;
         world2.step(vec![
             PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
         ], dt);
-        assert!(!world2.players[0].has_buff(BuffKind::Stealth), "A 形态不应隐身");
+        assert!(world2.players[0].has_buff(BuffKind::Stealth), "A 形态（冲锋）也应有隐身（098c RB）");
         assert!(world2.players[0].kick.is_some(), "A 形态应有接触踢击窗口");
         let kick_dmg = world2.players[0].kick.as_ref().unwrap().push_damage.to_num::<f64>();
         assert!((kick_dmg - 4.6).abs() < 0.1, "冲锋踢击伤害应 4.6+0.8L ≈ 4.6，实际 {kick_dmg}");
