@@ -1700,19 +1700,20 @@ impl Game {
         )?;
         canvas.draw(&fence, graphics::DrawParam::new());
 
-        // 冰面（冰面批）：半透明浅蓝矩形，站上滑行且不被岩浆侵蚀
-        if let Some((c, hw, hh)) = self.world.ice {
+        // 冰面（U4 圆圈化）：半透明浅蓝圆（多个可重叠拼形），站上滑行且不被岩浆侵蚀
+        for (c, r) in self.world.ice.iter() {
             let cx = c.x.to_num::<f32>() * self.scale + self.offset.x;
             let cy = c.y.to_num::<f32>() * self.scale + self.offset.y;
-            let hwf = hw.to_num::<f32>() * self.scale;
-            let hhf = hh.to_num::<f32>() * self.scale;
-            let ice_rect = Mesh::new_rectangle(
+            let rr = r.to_num::<f32>() * self.scale;
+            let ice_circle = Mesh::new_circle(
                 &ctx.gfx,
                 DrawMode::fill(),
-                graphics::Rect::new(cx - hwf, cy - hhf, hwf * 2.0, hhf * 2.0),
+                Point2 { x: cx, y: cy },
+                rr,
+                0.5,
                 Color::from_rgba(150, 200, 255, 70),
             )?;
-            canvas.draw(&ice_rect, graphics::DrawParam::new());
+            canvas.draw(&ice_circle, graphics::DrawParam::new());
         }
 
         // 障碍（圆形柱子：实心浅色圆 + 描边）

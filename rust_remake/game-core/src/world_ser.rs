@@ -693,15 +693,11 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
         wvec(&mut o, *b);
         wfix(&mut o, *rem);
     }
-    // 冰面（冰面批）：present + 中心 + 半宽/半高
-    match &w.ice {
-        Some((c, hw, hh)) => {
-            wu8(&mut o, 1);
-            wvec(&mut o, *c);
-            wfix(&mut o, *hw);
-            wfix(&mut o, *hh);
-        }
-        None => wu8(&mut o, 0),
+    // 冰面（U4 圆圈化）：u8 数量 + 每个（圆心+半径）
+    wu8(&mut o, w.ice.len() as u8);
+    for (c, r) in &w.ice {
+        wvec(&mut o, *c);
+        wfix(&mut o, *r);
     }
     // 模式/角色（B3）：mode + avatar + kings + f_override + round_forced
     wu8(&mut o, w.mode);
@@ -777,14 +773,13 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         let rem = fixat(b, &mut p)?;
         lightning_visual.push((a, b2, rem));
     }
-    let ice = if u8at(b, &mut p)? == 1 {
+    let n_ice = u8at(b, &mut p)? as usize;
+    let mut ice = Vec::with_capacity(n_ice);
+    for _ in 0..n_ice {
         let c = vecat(b, &mut p)?;
-        let hw = fixat(b, &mut p)?;
-        let hh = fixat(b, &mut p)?;
-        Some((c, hw, hh))
-    } else {
-        None
-    };
+        let r = fixat(b, &mut p)?;
+        ice.push((c, r));
+    }
     let mode = u8at(b, &mut p)?;
     let avatar = if u8at(b, &mut p)? == 1 { Some(u32at(b, &mut p)?) } else { None };
     let n_kings = u8at(b, &mut p)? as usize;
