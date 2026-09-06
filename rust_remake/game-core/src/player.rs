@@ -564,11 +564,17 @@ impl Player {
             Some(target) => {
                 let to_target = target - self.pos;
                 // 若一帧的当前速度足够到达目标 → 落点并刹停（自然结束）。
+                // 冰面（D14）：不吸附——清 move_target、保留当前速度，动量自然滑过目标点，
+                // 由冰面摩擦（×0.98/帧）滑停（098c 移动命令完成后的语义）。
                 let step = self.cur_vel.length() * dt;
                 if to_target.length_squared() <= step * step {
-                    self.pos = target;
-                    self.move_target = None;
-                    self.cur_vel = Vec2::ZERO;
+                    if self.on_ice {
+                        self.move_target = None;
+                    } else {
+                        self.pos = target;
+                        self.move_target = None;
+                        self.cur_vel = Vec2::ZERO;
+                    }
                 } else {
                     let dir = to_target.normalized();
                     let desired = dir * target_vel;
@@ -582,9 +588,13 @@ impl Player {
                 // 修正（D9 批次2 回退）：摩擦滑行参数（098c ov=0.96/0.985）属于冰面 -ice 模式
                 // 与 TimeShift 的特定状态，误用到了普通地面导致按 S 停不下来。
                 // 普通地面恢复受控立刹（用户实测确认自然）。
-                // 冰面（冰面批）：刹车 ×0.25 → 惯性滑行。
-                let decel = if self.on_ice { DECEL * 0.25 } else { DECEL };
-                self.cur_vel = Self::brake(self.cur_vel, Fix64::from_num(decel) * dt);
+                // 冰面（D14）：乘法摩擦 ×0.98/帧（098c 原参数）——到达清除目标后带着
+                // 动量自然滑过、滑停（约 0.3 秒衰减到 12%，滑距 ≈ 速度×50 帧）。
+                if self.on_ice {
+                    self.cur_vel = self.cur_vel * Fix64::from_num(0.98);
+                } else {
+                    self.cur_vel = Self::brake(self.cur_vel, Fix64::from_num(DECEL) * dt);
+                }
             }
         }
         self.pos += self.cur_vel * dt;
@@ -611,7 +621,9 @@ impl Player {
             if c.decay {
                 // 098b 衰减（D8）：每帧 ×0.9776（=0.96^(5/9)，jr=Hr×(1-.96) 的 0.96/0.03s
                 // 换算到 1/60 步长），低于 5 单位/秒视为停止。
-                c.vel = c.vel * Fix64::from_num(W098B_KB_DECAY_PER_FRAME);
+                // 冰面（D14）：阻尼更弱 ×0.985——被击退在冰上滑更远。
+                let f = if self.on_ice { 0.985 } else { W098B_KB_DECAY_PER_FRAME };
+                c.vel = c.vel * Fix64::from_num(f);
                 if c.vel.length() < Fix64::from_num(5.0) {
                     stop_control = true;
                 }
