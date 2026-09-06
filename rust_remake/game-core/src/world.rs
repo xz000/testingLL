@@ -3999,7 +3999,10 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                 if let Some(kick) = players[i].kick.take() {
                     players[j].hp = (players[j].hp - players[j].soak_boost(kick.push_damage)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
-                    players[j].push(dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
+                    // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
+                    // 魔法系数 = 目标 spell_factor（在此缩放冲量大小）；碰撞系数 = 目标 kb_factor（push() 内按时长缩短）。
+                    let imp = kick.push_power * Fix64::from_num(players[j].spell_factor);
+                    players[j].push(dir_b_from_a * imp, kick.push_time.to_num::<f64>());
                     players[i].remove_buff(BuffKind::Stealth);
                     // 098c BA（war3map_pretty.j:3771/3724-3735）：冲撞命中后施法者急停（Q=S=U=w=0），
                     // 不再带着冲刺继续穿过目标。仅清强制位移（control）；受击者自身的击退在其后施加。
@@ -4012,7 +4015,8 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                 if let Some(kick) = players[j].kick.take() {
                     players[i].hp = (players[i].hp - players[i].soak_boost(kick.push_damage)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
-                    players[i].push(-dir_b_from_a * kick.push_power, kick.push_time.to_num::<f64>());
+                    let imp = kick.push_power * Fix64::from_num(players[i].spell_factor);
+                    players[i].push(-dir_b_from_a * imp, kick.push_time.to_num::<f64>());
                     players[j].remove_buff(BuffKind::Stealth);
                     if kick.stop_on_hit {
                         players[j].control = None;
@@ -5914,6 +5918,41 @@ mod tests {
         }
         assert!(world.players[0].control.is_none(), "命中后应清除强制位移（098c BA 急停）");
         assert!(world.players[0].pos.x < d60(5.0), "应停在敌人前方而非冲过目标，x={:?}", world.players[0].pos.x);
+    }
+
+    /// S012 冲撞：击退冲量随目标魔法系数（098c mI 的 Hn）缩放。
+    /// 两世界同招同距，仅目标 spell_factor 不同 → 击退位移成同比例。
+    #[test]
+    fn s012_dash_knockback_scales_with_magic_coeff() {
+        let setup = |spell: f64| -> Fix64 {
+            let mut world = World::new(2, 9582);
+            world.obstacles.clear();
+            world.sandbox = true;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+            world.players[1].move_target = None;
+            world.players[1].spell_factor = spell; // 魔法系数（Hn）
+            world.step(vec![
+                PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ], dt);
+            let none = vec![PlayerInput::default(), PlayerInput::default()];
+            for _ in 0..25 {
+                world.step(none.clone(), dt);
+            }
+            world.players[1].pos.x // 被击退后的 x
+        };
+        let x1 = setup(1.0);
+        let x05 = setup(0.5);
+        // 起始 x=300(=d60(5.0))；spell_factor 越小击退越弱，位移越小。
+        let d1 = x1 - d60(5.0);
+        let d05 = x05 - d60(5.0);
+        assert!(d1 > Fix64::ZERO, "满魔法系数目标应被击退，d1={:?}", d1);
+        assert!(d05 < d1, "魔法系数 0.5 的击退应弱于 1.0，d05={:?} d1={:?}", d05, d1);
+        assert!((d05 * Fix64::from_num(2.0) - d1).abs() < d1 * Fix64::from_num(0.2),
+            "击退位移应≈与魔法系数成正比（0.5≈半），d05={:?} d1={:?}", d05, d1);
     }
 
     /// S013 移形换位：与目标点附近的敌人互换位置。
