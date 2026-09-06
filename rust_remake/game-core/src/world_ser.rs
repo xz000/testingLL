@@ -693,6 +693,16 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
         wvec(&mut o, *b);
         wfix(&mut o, *rem);
     }
+    // 冰面（冰面批）：present + 中心 + 半宽/半高
+    match &w.ice {
+        Some((c, hw, hh)) => {
+            wu8(&mut o, 1);
+            wvec(&mut o, *c);
+            wfix(&mut o, *hw);
+            wfix(&mut o, *hh);
+        }
+        None => wu8(&mut o, 0),
+    }
     // 模式/角色（B3）：mode + avatar + kings + f_override + round_forced
     wu8(&mut o, w.mode);
     match w.avatar {
@@ -767,6 +777,14 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         let rem = fixat(b, &mut p)?;
         lightning_visual.push((a, b2, rem));
     }
+    let ice = if u8at(b, &mut p)? == 1 {
+        let c = vecat(b, &mut p)?;
+        let hw = fixat(b, &mut p)?;
+        let hh = fixat(b, &mut p)?;
+        Some((c, hw, hh))
+    } else {
+        None
+    };
     let mode = u8at(b, &mut p)?;
     let avatar = if u8at(b, &mut p)? == 1 { Some(u32at(b, &mut p)?) } else { None };
     let n_kings = u8at(b, &mut p)? as usize;
@@ -823,7 +841,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar: None, pending_kings: Vec::new(), shrink_timer: 10.0 })
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar: None, pending_kings: Vec::new(), shrink_timer: 10.0, ice })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?

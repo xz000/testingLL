@@ -222,6 +222,8 @@ pub struct Player {
     pub forms: [bool; crate::MAX_SKILL_SLOTS],
     /// 冲撞·凤凰（B4-R）：凤凰冲刺剩余时长（>0 = 凤凰态，移动指令可转向）。
     pub phoenix_remaining: Fix64,
+    /// 是否站在冰面上（冰面批：世界每帧写入；滑行 + 免岩浆）。
+    pub on_ice: bool,
     /// 队伍号（098c cn[]，B2）：默认 = 自己 id（FFA，各为一队）；分队模式由开局配置覆写。
     /// 技能只命中异队；碰撞/岩浆等物理与队伍无关。
     pub team: u8,
@@ -262,6 +264,7 @@ impl Player {
         Player {
             id,
             forms: [false; crate::MAX_SKILL_SLOTS],
+            on_ice: false,
             phoenix_remaining: Fix64::ZERO,
             team: id as u8,
             respawn_at: None,
@@ -569,16 +572,19 @@ impl Player {
                 } else {
                     let dir = to_target.normalized();
                     let desired = dir * target_vel;
-                    self.cur_vel = move_toward(self.cur_vel, desired, Fix64::from_num(ACCEL) * dt);
+                    // 冰面（B5/冰面批）：抓地力 ×0.25 → 转向/加速迟钝（098c 冰面 0.98 阻尼语义）
+                    let accel = if self.on_ice { ACCEL * 0.25 } else { ACCEL };
+                    self.cur_vel = move_toward(self.cur_vel, desired, Fix64::from_num(accel) * dt);
                 }
             }
             None => {
                 // 无目标：渐减速到 0。
                 // 修正（D9 批次2 回退）：摩擦滑行参数（098c ov=0.96/0.985）属于冰面 -ice 模式
                 // 与 TimeShift 的特定状态，误用到了普通地面导致按 S 停不下来。
-                // 普通地面恢复受控立刹（用户实测确认自然）；098c 冲量模型（右键事件驱动
-                // 18×0.5^(v/20) + 全局 0.96 阻尼）需输入语义改事件驱动后单独立项。
-                self.cur_vel = Self::brake(self.cur_vel, Fix64::from_num(DECEL) * dt);
+                // 普通地面恢复受控立刹（用户实测确认自然）。
+                // 冰面（冰面批）：刹车 ×0.25 → 惯性滑行。
+                let decel = if self.on_ice { DECEL * 0.25 } else { DECEL };
+                self.cur_vel = Self::brake(self.cur_vel, Fix64::from_num(decel) * dt);
             }
         }
         self.pos += self.cur_vel * dt;

@@ -1597,6 +1597,21 @@ impl Game {
         )?;
         canvas.draw(&fence, graphics::DrawParam::new());
 
+        // 冰面（冰面批）：半透明浅蓝矩形，站上滑行且不被岩浆侵蚀
+        if let Some((c, hw, hh)) = self.world.ice {
+            let cx = c.x.to_num::<f32>() * self.scale + self.offset.x;
+            let cy = c.y.to_num::<f32>() * self.scale + self.offset.y;
+            let hwf = hw.to_num::<f32>() * self.scale;
+            let hhf = hh.to_num::<f32>() * self.scale;
+            let ice_rect = Mesh::new_rectangle(
+                &ctx.gfx,
+                DrawMode::fill(),
+                graphics::Rect::new(cx - hwf, cy - hhf, hwf * 2.0, hhf * 2.0),
+                Color::from_rgba(150, 200, 255, 70),
+            )?;
+            canvas.draw(&ice_rect, graphics::DrawParam::new());
+        }
+
         // 障碍（圆形柱子：实心浅色圆 + 描边）
         for o in self.world.obstacles.iter() {
             let ox = o.pos.x.to_num::<f32>() * self.scale + self.offset.x;
