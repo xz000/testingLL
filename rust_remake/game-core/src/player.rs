@@ -57,6 +57,10 @@ pub struct Kick {
     pub push_damage: Fix64,
     /// 剩余生效时间
     pub remaining: Fix64,
+    /// 命中后施法者是否急停（098c `BA`：Q=S=U=w=0）。
+    /// 仅「冲撞」Dash 为 true（`war3map_pretty.j:3771`）；潜行踢/疾风步·冲锋/凤凰/
+    /// 冲刺斩都是持续型位移，命中后不停，故为 false。
+    pub stop_on_hit: bool,
 }
 
 /// 强制位移状态（原版 `MoveScript.controllable=false + Givenvelocity`）。
