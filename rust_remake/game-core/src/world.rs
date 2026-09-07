@@ -557,6 +557,9 @@ impl World {
                 }
             }
             // 098b 全局生命恢复 Nn=0.05/s（D7）+ 物品回复（斗篷/坠饰，M3）；灼烧期间禁疗。
+            // 注：098b 说明「每级精通增加 5% 生命回复」**不实现**——098c 全局回复 uhpr=0
+            // （`Balance::hp_regen=0.0`，回复全靠物品/技能），5%×0=0 为空操作；且 098c 的精通
+            // 只经 `Hn` 影响击退（kf L12917），无精通→回血链路。故按 098c 不引入该加成。
             if p.alive && !p.healing_blocked() {
                 let regen = (crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty).max(0.0);
                 p.hp = (p.hp + Fix64::from_num(regen) * dt).min(p.max_hp);
@@ -4016,8 +4019,11 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
                     // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
-                    // 魔法系数 = 目标 spell_factor（在此缩放冲量大小）；碰撞系数 = 目标 kb_factor（push() 内按时长缩短）。
-                    let imp = kick.push_power * Fix64::from_num(players[j].spell_factor);
+                    // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917 / 原版说明），
+                    //   在此缩放冲量大小；碰撞系数 hn = kb_factor，由 push() 按时长缩短。
+                    //   注：Hn 与法抗(spell_factor)无关——此前误用 spell_factor，已在本次修正。
+                    let imp = kick.push_power
+                        * Fix64::from_num(1.0 - players[j].mastery_kb_reduction());
                     players[j].push(dir_b_from_a * imp, kick.push_time.to_num::<f64>());
                     players[i].remove_buff(BuffKind::Stealth);
                     // 098c BA（war3map_pretty.j:3771/3724-3735）：冲撞命中后施法者急停（Q=S=U=w=0），
@@ -4037,7 +4043,8 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     };
                     players[i].hp = (players[i].hp - players[i].soak_boost(dmg)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
-                    let imp = kick.push_power * Fix64::from_num(players[i].spell_factor);
+                    let imp = kick.push_power
+                        * Fix64::from_num(1.0 - players[i].mastery_kb_reduction());
                     players[i].push(-dir_b_from_a * imp, kick.push_time.to_num::<f64>());
                     players[j].remove_buff(BuffKind::Stealth);
                     if kick.stop_on_hit {
@@ -5942,11 +5949,12 @@ mod tests {
         assert!(world.players[0].pos.x < d60(5.0), "应停在敌人前方而非冲过目标，x={:?}", world.players[0].pos.x);
     }
 
-    /// S012 冲撞：击退冲量随目标魔法系数（098c mI 的 Hn）缩放。
-    /// 两世界同招同距，仅目标 spell_factor 不同 → 击退位移成同比例。
+    /// S012 冲撞：接触击退随**受击者精通**缩放（098c mI 的 Hn = 每级 -2.5%）。
+    /// 两世界同招同距，仅受击者精通级数不同 → 击退位移按比例递减。
+    /// 注：Hn 是精通减免，与法抗 spell_factor 无关（曾误用 spell_factor，已修正）。
     #[test]
-    fn s012_dash_knockback_scales_with_magic_coeff() {
-        let setup = |spell: f64| -> Fix64 {
+    fn s012_dash_knockback_scales_with_mastery() {
+        let setup = |mastery: [u8; 3]| -> Fix64 {
             let mut world = World::new(2, 9582);
             world.obstacles.clear();
             world.sandbox = true;
@@ -5955,7 +5963,7 @@ mod tests {
             world.players[0].move_target = None;
             world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
             world.players[1].move_target = None;
-            world.players[1].spell_factor = spell; // 魔法系数（Hn）
+            world.players[1].mastery = mastery; // 受击者精通（lf=和）
             world.step(vec![
                 PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
                 PlayerInput::default(),
@@ -5966,15 +5974,16 @@ mod tests {
             }
             world.players[1].pos.x // 被击退后的 x
         };
-        let x1 = setup(1.0);
-        let x05 = setup(0.5);
-        // 起始 x=300(=d60(5.0))；spell_factor 越小击退越弱，位移越小。
-        let d1 = x1 - d60(5.0);
-        let d05 = x05 - d60(5.0);
-        assert!(d1 > Fix64::ZERO, "满魔法系数目标应被击退，d1={:?}", d1);
-        assert!(d05 < d1, "魔法系数 0.5 的击退应弱于 1.0，d05={:?} d1={:?}", d05, d1);
-        assert!((d05 * Fix64::from_num(2.0) - d1).abs() < d1 * Fix64::from_num(0.2),
-            "击退位移应≈与魔法系数成正比（0.5≈半），d05={:?} d1={:?}", d05, d1);
+        let x0 = setup([0, 0, 0]); // lf=0 → 无减免
+        let x4 = setup([2, 2, 0]); // lf=4 → -10%
+        // 起始 x=300(=d60(5.0))；精通越高击退越弱，位移越小。
+        let d0 = x0 - d60(5.0);
+        let d4 = x4 - d60(5.0);
+        assert!(d0 > Fix64::ZERO, "无精通目标应被击退，d0={:?}", d0);
+        assert!(d4 < d0, "4 级精通的击退应弱于 0 级，d4={:?} d0={:?}", d4, d0);
+        // 4 级 → ×0.9（容差 10%）
+        assert!((d4 - d0 * Fix64::from_num(0.9)).abs() < d0 * Fix64::from_num(0.1),
+            "4 级精通击退应≈×0.9，d4={:?} d0={:?}", d4, d0);
     }
 
     /// S012 冲撞：撞墙截断（098c：强制位移撞障碍即停，不沿墙滑行到 dur 结束）。
