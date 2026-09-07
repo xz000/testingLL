@@ -42,7 +42,8 @@ pub struct MatchConfig {
     /// 死亡竞赛（En2）的胜利得分（098b `-+胜利得分` 开局设置）。
     pub win_score: u32,
     /// 开局购物时长（098b Wo=40；独立于每轮 wo=30 的 `learn_time_secs`）。
-    /// 开局购物阶段与单机/Steam 进局流程的耦合见 M4 TODO。
+    /// 进局耦合已通过 `begin_first_round_config` / `enter_first_round` 实现（倒计时归零进入第一局，
+    /// 不重复发参与奖、round 保持 1）。
     pub shopping_time_secs: f64,
 }
 
@@ -70,7 +71,8 @@ impl Default for MatchConfig {
 }
 
 /// 098c 精通研究（D12.3，kf handler 实证）：学习期购买、不涨价、跨回合永久保留。
-/// 价格为占位（w3q 解析失败，取参照版价格 TODO）；上限 3/3/3/2 亦为占位。
+/// 价格/上限来自《术士之战技能说明整理.md》（精通节）：生命6/远程5/时间4/背包2；
+/// 三精通上限 3（文档「每级 -2.5% 击退，最多 7.5%」），背包 2（098c 6→8）。
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Mastery {
     /// R00D 生命精通：伤害吸血 +8%/级。
@@ -84,9 +86,9 @@ pub struct Mastery {
 }
 
 impl Mastery {
-    /// 购买价（占位：参照版 生命4/远程5/时间6/背包2）。
-    pub const COSTS: [i32; 4] = [4, 5, 6, 2];
-    /// 级数上限（占位：三精通 3 级、背包 2 级）。
+    /// 购买价（文档：生命6/远程5/时间4/背包2）。注意旧占位曾把生命/时间写反（4/6）。
+    pub const COSTS: [i32; 4] = [6, 5, 4, 2];
+    /// 级数上限（文档「最多 7.5%」=3 级；背包 2 级 → 6→8 格）。
     pub const CAPS: [u8; 4] = [3, 3, 3, 2];
 
     /// 三精通总级数（击退减免用；背包不计——098c lf=vi+ei+xi）。
@@ -723,13 +725,13 @@ mod tests {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         let pr = &mut ms.profiles[0];
         pr.gold = 20;
-        // 买头盔 1（098c 训练价 9 金）
+        // 买头盔 1（文档「价格 6」）
         assert!(pr.buy_item(crate::item::ItemId::Helm1));
-        assert_eq!(pr.gold, 11);
+        assert_eq!(pr.gold, 14);
         assert_eq!(pr.items, vec![crate::item::ItemId::Helm1]);
-        // 升级头盔 2（098c 同价 9 金）——每步同价（ID(id,9,…) 原额退款实证）
+        // 升级头盔 2（文档同价 6 金）——每步同价
         assert!(pr.buy_item(crate::item::ItemId::Helm2));
-        assert_eq!(pr.gold, 2);
+        assert_eq!(pr.gold, 8);
         assert_eq!(pr.items, vec![crate::item::ItemId::Helm2], "同家族应替换为高档");
         // 不同家族共存（098c：每步同价 5 金）
         pr.gold = 10;

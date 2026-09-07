@@ -187,6 +187,8 @@ pub enum ProjectileKind {
         speed: Fix64,
         radius: Fix64,
         pull_speed: Fix64,
+        /// 每秒伤害（098c 黑洞 mc：伤敌 0.3+0.2×L；A 形态持有，B 形态用力场 Star）。
+        damage_per_sec: Fix64,
         remaining: Fix64,
     },
     /// 星域持续伤（Y3b）：静态区域，范围内敌掉血、对施法者回血。
@@ -1739,6 +1741,11 @@ impl World {
                             && Some(p.team) != self.players.get(*owner as usize).map(|o| o.team)
                         {
                             events.push((p.id, *damage_per_sec * dt, Some(*owner)));
+                            // 力场（B4-Y）：范围内敌人减速 45%（098c Lc：降低移速 45%）。
+                            // 仅 heal_team（力场形态）施加；每帧刷新短窗避免离开后残留。
+                            if *heal_team {
+                                self.players[j].add_buff(BuffKind::Slow(0.55), 0.3);
+                            }
                         }
                     }
                     // 力场（B4-Y）：heal_team 时治疗范围内全部队友（否则只奶 owner）
@@ -1930,7 +1937,22 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } | ProjectileKind::Gravity { .. } => {}
+                ProjectileKind::Gravity { radius, damage_per_sec, .. } => {
+                    // 黑洞（A 形态 mc）：范围内敌人每秒扣血（098c 伤敌 0.3+0.2×L，随 cast 写入 damage_per_sec）。
+                    let owner = pr.owner;
+                    let oteam = self.players.get(owner as usize).map(|p| p.team);
+                    for j in 0..n {
+                        let p = &self.players[j];
+                        if !p.alive || Some(p.team) == oteam {
+                            continue;
+                        }
+                        let rr = *radius + p.radius;
+                        if (p.pos - pr.pos).length_squared() <= rr * rr {
+                            events.push((p.id, *damage_per_sec * dt, Some(owner)));
+                        }
+                    }
+                }
+                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } => {}
             }
         }
 
@@ -3737,6 +3759,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             speed: stats.speed,
                             radius: stats.radius,
                             pull_speed,
+                            damage_per_sec: stats.damage,
                             remaining: stats.duration,
                         },
                         pos: place,
@@ -5891,6 +5914,82 @@ mod tests {
         assert!(dist_after < dist_before, "引力场应把附近敌人吸向场心，{} -> {}", dist_before, dist_after);
     }
 
+    /// S018 引力·黑洞（A 形态）：范围内敌人**每秒扣血**（098c mc `0.3 + 0.2×升级次数`）。
+    #[test]
+    fn s018_black_hole_damages_enemies_in_field() {
+        let mut world = World::new(2, 1010);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        // 敌人原地不动，位于落点场心（360,0）半径 200 内
+        world.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
+        world.players[1].move_target = None;
+        let hp_before = world.players[1].hp.to_num::<f64>();
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let hp_after = world.players[1].hp.to_num::<f64>();
+        assert!(hp_after < hp_before, "黑洞应每秒扣血（0.3+0.2×L），{} -> {}", hp_before, hp_after);
+    }
+
+    /// 文档数值回归：S019 锁链 / S018 引力 A·B 的伤害与回复公式。
+    /// 来源「术士之战技能说明整理.md」：锁链伤害 `0.2+0.1×L`；引力·黑洞伤害 `0.3+0.2×L`；
+    /// 引力·力场 每秒伤害 `2+1.25×L`、每秒生命恢复 `1%+0.2%×L`（MAX_HP=100 → 1.0+0.2×L）。
+    /// 其中 L = 升级次数 = level-1（见 `SkillGrowth::stats`）。
+    #[test]
+    fn doc_s019_s018_growth_matches_doc() {
+        let lvl = 3u32;
+        let l = (lvl - 1) as f64;
+        // S019 锁链（A 蓝链）
+        let d = DefTable::def(SkillId::S019).growth.stats(lvl).damage.to_num::<f64>();
+        assert!((d - (0.2 + 0.1 * l)).abs() < 1e-6, "锁链伤害 {d} != {}", 0.2 + 0.1 * l);
+        // S018 引力·黑洞（A）
+        let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
+        assert!((d - (0.3 + 0.2 * l)).abs() < 1e-6, "黑洞伤害 {d} != {}", 0.3 + 0.2 * l);
+        // S018 引力·力场（B）
+        let st = DefTable::def_alt(SkillId::S018).expect("S018 应有 B 形态").growth.stats(lvl);
+        let d = st.damage.to_num::<f64>();
+        let e = st.extra.to_num::<f64>();
+        assert!((d - (2.0 + 1.25 * l)).abs() < 1e-6, "力场每秒伤害 {d} != {}", 2.0 + 1.25 * l);
+        assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "力场每秒回复 {e} != {}", 1.0 + 0.2 * l);
+    }
+
+    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.2×L` 每秒）。
+    #[test]
+    fn s018_black_hole_damages_enemy_in_field() {
+        let mut world = World::new(2, 1008);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        // 敌人在落点（场心）附近且不自行移动，保证整段都在半径内
+        world.players[1].pos = Vec2::new(d60(6.0), d60(1.0));
+        world.players[1].move_target = None;
+        let hp_before = world.players[1].hp.to_num::<f64>();
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+        }
+        let hp_after = world.players[1].hp.to_num::<f64>();
+        assert!(hp_after < hp_before, "黑洞应持续扣血（0.3+0.2×L 每秒），{hp_before} -> {hp_after}");
+    }
+
     /// S006 时光回溯：施放记锚点 → 受伤+位移 → 3.6s 后闪回锚点并还原 HP。
     #[test]
     fn s006_rewind_restores_position_and_hp() {
@@ -7290,6 +7389,34 @@ mod tests {
         let h2 = world.players[2].hp.to_num::<f64>();
         assert!(h1 > 40.0, "力场应治疗队友（40→↑），实际 {h1}");
         assert!(h2 < 50.0, "力场应伤害敌人（50→↓），实际 {h2}");
+    }
+
+    /// S018 引力·力场（B 形态）：范围内敌人被减速 45%（文档「降低移动速度 45%」→ ×0.55）。
+    #[test]
+    fn s018b_force_field_slows_enemy() {
+        let mut world = World::new(2, 1009);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S018.as_u32() as usize] = true; // B=力场
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.players[1].has_buff(BuffKind::Slow(0.55)),
+            "力场应给范围内敌人减速（×0.55 = -45%）"
+        );
     }
 
     /// S019B 感应：命中敌人 → 施法者获移速 buff。
