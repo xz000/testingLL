@@ -4007,11 +4007,12 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
             // 踢击只对异队生效（098c 冲撞/潜行踢命中「敌人」；同队穿过不触发，B2）。
             if players[i].team != players[j].team {
                 if let Some(kick) = players[i].kick.take() {
-                    // 破隐一击（098c bA，war3map_pretty.j:3697/3758/3764）：隐身状态下命中，
-                    // 在基础伤害（4.6+0.8L）之外**再叠一笔同级伤害**，随后才解除隐身。
-                    // 原版由 mana(xi) 门控并按 sqrt(mana) 缩放；本移植已按 D3 移除蓝量系统，
-                    // 故取固定成长值、不做 mana 门控/缩放（偏差已记录）。
-                    let dmg = if players[i].has_buff(BuffKind::Stealth) {
+                    // 破隐一击（098c `bA`，war3map_pretty.j:3697/3758/3764）：
+                    // 门控 `xi[id]>0` —— `xi` 是**远程精通**（非蓝量），即**只有点了远程精通**，
+                    // 隐身下接触命中才在基础伤害之外追加一笔同级伤害（`SI(... 4.6+.8*wr ...)`）。
+                    // 这同时解释了两份资料：技能说明的「单笔伤害」是未点精通时的基础值，
+                    // 098c 的额外一笔是精通带来的加成（决策记录见 SKILL_AUDIT §7.6）。
+                    let dmg = if players[i].has_buff(BuffKind::Stealth) && players[i].mastery[1] > 0 {
                         kick.push_damage * Fix64::from_num(2.0)
                     } else {
                         kick.push_damage
@@ -4035,8 +4036,8 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     }
                 }
                 if let Some(kick) = players[j].kick.take() {
-                    // 同上：破隐一击（098c bA）隐身命中额外一笔同级伤害。
-                    let dmg = if players[j].has_buff(BuffKind::Stealth) {
+                    // 同上：破隐一击（098c bA）—— 需施法者具备远程精通（xi>0）才追加。
+                    let dmg = if players[j].has_buff(BuffKind::Stealth) && players[j].mastery[1] > 0 {
                         kick.push_damage * Fix64::from_num(2.0)
                     } else {
                         kick.push_damage
@@ -6911,10 +6912,12 @@ mod tests {
         assert!((kick_dmg - 4.6).abs() < 0.1, "冲锋踢击伤害应 4.6+0.8L ≈ 4.6，实际 {kick_dmg}");
     }
 
-    /// S010 破隐一击（098c bA）：隐身状态下接触命中，伤害为基础的两倍（额外再叠一笔同级伤害）。
+    /// S010 破隐一击（098c `bA`）**由远程精通门控**：`xi[id]>0` 才追加一笔同级伤害。
+    /// 未点远程精通时只有基础单笔伤害（与技能说明「撞向敌人产生伤害」一致）；
+    /// 点了远程精通后隐身命中≈双倍。
     #[test]
-    fn s010_stealth_break_strike_deals_bonus_damage() {
-        let run = |drop_stealth: bool| -> Fix64 {
+    fn s010_break_strike_requires_range_mastery() {
+        let run = |range_mastery: u8| -> Fix64 {
             let mut world = World::new(2, 9591);
             world.obstacles.clear();
             world.sandbox = true;
@@ -6923,14 +6926,12 @@ mod tests {
             world.players[0].move_target = None;
             world.players[1].pos = Vec2::new(d60(1.0), Fix64::ZERO); // 初始未接触
             world.players[1].move_target = None;
+            world.players[0].mastery = [0, range_mastery, 0]; // mastery[1] = 远程精通(xi)
             world.step(vec![
                 PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
                 PlayerInput::default(),
             ], dt);
-            if drop_stealth {
-                world.players[0].remove_buff(BuffKind::Stealth);
-            }
-            // 走进敌人（kick 窗口 3.1s 内必然接触）；命中后 kick 被消耗即退出。
+            // 走进敌人（kick 窗口内必然接触）；命中后 kick 被消耗即退出。
             world.players[0].move_target = Some(world.players[1].pos);
             let none = vec![PlayerInput::default(), PlayerInput::default()];
             for _ in 0..40 {
@@ -6941,15 +6942,16 @@ mod tests {
             }
             world.players[1].hp
         };
-        let hp_stealthed = run(false);
-        let hp_unstealthed = run(true);
-        assert!(hp_stealthed < hp_unstealthed,
-            "破隐一击应造成更多伤害：带隐身剩余 {:?}，无隐身剩余 {:?}", hp_stealthed, hp_unstealthed);
-        // 且应约为两倍（4.6+0.8L 的基础伤害再叠一笔）。
-        let d_stealthed = Fix64::from_num(100.0) - hp_stealthed;
-        let d_plain = Fix64::from_num(100.0) - hp_unstealthed;
-        assert!((d_stealthed - d_plain * Fix64::from_num(2.0)).abs() < d_plain * Fix64::from_num(0.15),
-            "破隐一击伤害应≈基础两倍：{:?} vs {:?}", d_stealthed, d_plain);
+        let hp_no_mastery = run(0);
+        let hp_with_mastery = run(1);
+        let d_plain = Fix64::from_num(100.0) - hp_no_mastery;
+        let d_bonus = Fix64::from_num(100.0) - hp_with_mastery;
+        assert!(d_plain > Fix64::ZERO, "无精通也应有基础接触伤害，实际 {:?}", d_plain);
+        assert!(d_bonus > d_plain,
+            "有远程精通应追加破隐一击：{:?} 应 > {:?}", d_bonus, d_plain);
+        // 追加一笔同级伤害 → 约为两倍
+        assert!((d_bonus - d_plain * Fix64::from_num(2.0)).abs() < d_plain * Fix64::from_num(0.15),
+            "有远程精通的伤害应≈基础两倍：{:?} vs {:?}", d_bonus, d_plain);
     }
 
     /// S009 双形态：目标（A）到点碎裂出弹片；区域（B）飞行中持续撒侧弹。
