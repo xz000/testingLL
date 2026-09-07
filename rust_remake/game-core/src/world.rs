@@ -4004,7 +4004,16 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
             // 踢击只对异队生效（098c 冲撞/潜行踢命中「敌人」；同队穿过不触发，B2）。
             if players[i].team != players[j].team {
                 if let Some(kick) = players[i].kick.take() {
-                    players[j].hp = (players[j].hp - players[j].soak_boost(kick.push_damage)).max(Fix64::ZERO);
+                    // 破隐一击（098c bA，war3map_pretty.j:3697/3758/3764）：隐身状态下命中，
+                    // 在基础伤害（4.6+0.8L）之外**再叠一笔同级伤害**，随后才解除隐身。
+                    // 原版由 mana(xi) 门控并按 sqrt(mana) 缩放；本移植已按 D3 移除蓝量系统，
+                    // 故取固定成长值、不做 mana 门控/缩放（偏差已记录）。
+                    let dmg = if players[i].has_buff(BuffKind::Stealth) {
+                        kick.push_damage * Fix64::from_num(2.0)
+                    } else {
+                        kick.push_damage
+                    };
+                    players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
                     // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
                     // 魔法系数 = 目标 spell_factor（在此缩放冲量大小）；碰撞系数 = 目标 kb_factor（push() 内按时长缩短）。
@@ -4020,7 +4029,13 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     }
                 }
                 if let Some(kick) = players[j].kick.take() {
-                    players[i].hp = (players[i].hp - players[i].soak_boost(kick.push_damage)).max(Fix64::ZERO);
+                    // 同上：破隐一击（098c bA）隐身命中额外一笔同级伤害。
+                    let dmg = if players[j].has_buff(BuffKind::Stealth) {
+                        kick.push_damage * Fix64::from_num(2.0)
+                    } else {
+                        kick.push_damage
+                    };
+                    players[i].hp = (players[i].hp - players[i].soak_boost(dmg)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
                     let imp = kick.push_power * Fix64::from_num(players[i].spell_factor);
                     players[i].push(-dir_b_from_a * imp, kick.push_time.to_num::<f64>());
@@ -6885,6 +6900,47 @@ mod tests {
         assert!(world2.players[0].kick.is_some(), "A 形态应有接触踢击窗口");
         let kick_dmg = world2.players[0].kick.as_ref().unwrap().push_damage.to_num::<f64>();
         assert!((kick_dmg - 4.6).abs() < 0.1, "冲锋踢击伤害应 4.6+0.8L ≈ 4.6，实际 {kick_dmg}");
+    }
+
+    /// S010 破隐一击（098c bA）：隐身状态下接触命中，伤害为基础的两倍（额外再叠一笔同级伤害）。
+    #[test]
+    fn s010_stealth_break_strike_deals_bonus_damage() {
+        let run = |drop_stealth: bool| -> Fix64 {
+            let mut world = World::new(2, 9591);
+            world.obstacles.clear();
+            world.sandbox = true;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[1].pos = Vec2::new(d60(1.0), Fix64::ZERO); // 初始未接触
+            world.players[1].move_target = None;
+            world.step(vec![
+                PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
+                PlayerInput::default(),
+            ], dt);
+            if drop_stealth {
+                world.players[0].remove_buff(BuffKind::Stealth);
+            }
+            // 走进敌人（kick 窗口 3.1s 内必然接触）；命中后 kick 被消耗即退出。
+            world.players[0].move_target = Some(world.players[1].pos);
+            let none = vec![PlayerInput::default(), PlayerInput::default()];
+            for _ in 0..40 {
+                if world.players[0].kick.is_none() {
+                    break;
+                }
+                world.step(none.clone(), dt);
+            }
+            world.players[1].hp
+        };
+        let hp_stealthed = run(false);
+        let hp_unstealthed = run(true);
+        assert!(hp_stealthed < hp_unstealthed,
+            "破隐一击应造成更多伤害：带隐身剩余 {:?}，无隐身剩余 {:?}", hp_stealthed, hp_unstealthed);
+        // 且应约为两倍（4.6+0.8L 的基础伤害再叠一笔）。
+        let d_stealthed = Fix64::from_num(100.0) - hp_stealthed;
+        let d_plain = Fix64::from_num(100.0) - hp_unstealthed;
+        assert!((d_stealthed - d_plain * Fix64::from_num(2.0)).abs() < d_plain * Fix64::from_num(0.15),
+            "破隐一击伤害应≈基础两倍：{:?} vs {:?}", d_stealthed, d_plain);
     }
 
     /// S009 双形态：目标（A）到点碎裂出弹片；区域（B）飞行中持续撒侧弹。
