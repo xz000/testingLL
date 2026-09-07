@@ -1954,7 +1954,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S010B 疾风步·隐身（098c IB）：+100 速 4s 隐身。
+            // S010B 疾风步·隐身（098c IB / 文档「潜行」）：+100 速 4s 隐身；
+            // 接触敌人偷取生命 `0.6+0.1×L` 且**不打断隐身**（world.rs Windwalk 分支加 Windwalk buff，
+            // 碰撞结算里独立处理，仅 A 形态冲锋才破隐）。
             SkillId::S010 => SkillDef {
                 id,
                 tree: SkillTree::E,

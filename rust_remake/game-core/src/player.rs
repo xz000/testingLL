@@ -95,6 +95,9 @@ pub enum BuffKind {
     Reflect,
     /// 隐身（视觉隐藏；不影响碰撞判定）。
     Stealth,
+    /// 疾风步·隐身（B 形态，098c IB / 文档「潜行」）：接触敌人时偷取生命（携带值 = 每次接触偷取量），
+    /// 且不打断隐身。与 `Stealth` 并存——视觉隐身由 `Stealth` 提供，本 buff 仅标记「潜行接触吸血」窗口。
+    Windwalk(f64),
     /// 束缚：期间不能施法（原版 `DoSkill::GetTied`）。
     Tied,
     /// 疾跑/生命偷取（C1）：受击时返还一半伤害作回血，移速随累积回血量成长。
@@ -191,6 +194,9 @@ pub struct Player {
     pub shadow_anchor: Option<Vec2>,
     /// 影身记号的有效倒计时（C3 `maxshadowtime`）：到期自动传回锚点并清记号。
     pub shadow_window: Fix64,
+    /// 疾风步·隐身接触吸血冷却（秒）：>0 时跳过吸血，每帧由 `tick_buffs` 递减。
+    /// 避免与敌人重叠的每一帧都触发一次偷取（098c IB 接触为离散事件）。
+    pub windwalk_cd: Fix64,
     /// 正在生效的踢击/撞击窗口（冲锋 / 潜行踢 / 冲刺斩……）。
     pub kick: Option<Kick>,
     /// 疾跑/生命偷取累积量（C1）。boost 期间受击返还一半回血并把待返还量暂存于此，
@@ -294,6 +300,7 @@ impl Player {
             buffs: [Buff::new(BuffKind::Speed(1.0), 0.0); MAX_BUFFS],
             shadow_anchor: None,
             shadow_window: Fix64::ZERO,
+            windwalk_cd: Fix64::ZERO,
             kick: None,
             boost_soaked: Fix64::ZERO,
             fake_active: None,
@@ -434,6 +441,17 @@ impl Player {
     /// 是否隐身。
     pub fn stealth(&self) -> bool {
         self.has_buff(BuffKind::Stealth)
+    }
+
+    /// 疾风步·隐身（B 形态）接触吸血量（每次接触偷取的生命），未处于该形态则 `None`。
+    pub fn windwalk_lifesteal(&self) -> Option<f64> {
+        self.buffs
+            .iter()
+            .find(|b| b.remaining > Fix64::ZERO && b.kind.same_variant(&BuffKind::Windwalk(0.0)))
+            .and_then(|b| match b.kind {
+                BuffKind::Windwalk(v) => Some(v),
+                _ => None,
+            })
     }
 
     /// 是否被束缚（不能施法）。
@@ -623,6 +641,10 @@ impl Player {
                     b.remaining = Fix64::ZERO;
                 }
             }
+        }
+        // 疾风步·隐身接触吸血冷却（每帧递减，归零后允许下一次接触偷取生命）
+        if self.windwalk_cd > Fix64::ZERO {
+            self.windwalk_cd = (self.windwalk_cd - dt).max(Fix64::ZERO);
         }
         // 强制位移计时
         let mut stop_control = false;
