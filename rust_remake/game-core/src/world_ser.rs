@@ -164,6 +164,10 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         }
         BuffKind::Weakened => wu8(o, 10),
         BuffKind::Silenced => wu8(o, 11),
+        BuffKind::Windwalk(v) => {
+            wu8(o, 12);
+            wu64(o, v.to_bits());
+        }
     }
     wfix(o, b.remaining);
 }
@@ -181,6 +185,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         9 => BuffKind::Slow(f64::from_bits(u64at(b, p)?)),
         10 => BuffKind::Weakened,
         11 => BuffKind::Silenced,
+        12 => BuffKind::Windwalk(f64::from_bits(u64at(b, p)?)),
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -288,6 +293,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     }
     wopt_vec(o, p.shadow_anchor);
     wfix(o, p.shadow_window);
+    wfix(o, p.windwalk_cd);
     match p.kick {
         Some(k) => {
             wu8(o, 1);
@@ -420,6 +426,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     }
     let shadow_anchor = opt_vec(b, p)?;
     let shadow_window = fixat(b, p)?;
+    let windwalk_cd = fixat(b, p)?;
     let kick = if u8at(b, p)? != 0 {
         Some(Kick {
             push_power: fixat(b, p)?,
@@ -509,6 +516,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.buffs = buffs;
     pl.shadow_anchor = shadow_anchor;
     pl.shadow_window = shadow_window;
+    pl.windwalk_cd = windwalk_cd;
     pl.kick = kick;
     pl.boost_soaked = boost_soaked;
     pl.fake_active = fake_active;
