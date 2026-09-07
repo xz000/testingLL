@@ -452,12 +452,18 @@ impl Player {
         self.forms.get(id.as_u32() as usize).copied().unwrap_or(false)
     }
 
+    /// 精通带来的击退减免（098c `Hn`，kf L12917 / 原版说明「每级精通减少 2.5% 击退」）：
+    /// `0.025 × lf`，`lf` = 三精通（生命/远程/时间）总级数；背包不计。
+    /// 098c 公式 `Hn = Hn_base × (1-0.025×lf)` 无显式上限（lf 上限 9 → 最多 -22.5%）。
+    pub fn mastery_kb_reduction(&self) -> f64 {
+        0.025 * (self.mastery[0] + self.mastery[1] + self.mastery[2]) as f64
+    }
+
     /// 有效受击退减免：属性与物品（头盔不叠加）取最大后，与精通级数乘法合成
     /// （098c kf L12917：每级精通 Hn ×(1-0.025×lf)，lf=三精通总级数）。
     pub fn effective_kb_reduction(&self) -> f64 {
         let base = (1.0 - self.kb_factor).max(self.item_fx.kb_resist_frac);
-        let mastery = 0.025 * (self.mastery[0] + self.mastery[1] + self.mastery[2]) as f64;
-        1.0 - (1.0 - base) * (1.0 - mastery)
+        1.0 - (1.0 - base) * (1.0 - self.mastery_kb_reduction())
     }
 
     /// 攻击方伤害输出系数（098c Gn，D9）：= 伤害成长 × 灼烧惩罚。
