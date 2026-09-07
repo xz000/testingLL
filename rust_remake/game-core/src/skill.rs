@@ -278,6 +278,35 @@ impl SkillId {
         }
     }
 
+    /// 技能学习/升级价格（每级统一价，来源：术士之战技能说明整理.md 各技能「价格」）。
+    /// 098c 训练菜单每买一级收取该金额；缺失/测试技能取默认 12。
+    pub fn learn_cost(&self) -> i32 {
+        use SkillId::*;
+        match self {
+            S002 => 11, // 闪电
+            S003 => 11, // 追踪弹
+            S004 => 11, // 回旋镖
+            S005 => 12, // 反射盾
+            S006 => 12, // 时光回溯
+            S007 => 12, // 急行
+            S008 => 14, // 陨石
+            S009 => 15, // 分裂弹
+            S010 => 15, // 疾风步
+            S011 => 11, // 瞬间移动
+            S012 => 11, // 冲撞（急速移动）
+            S013 => 11, // 移形换位
+            S014 => 14, // 汲取
+            S015 => 14, // 火焰喷射
+            S016 => 14, // 弹跳球
+            S017 => 11, // 禁锢
+            S018 => 12, // 引力
+            S019 => 11, // 锁链
+            // 缺失技能（待实现，价格取自文档）：镜像分身 11 / 电弧 11 / 冲击 14 / 爆炎 14 / 操纵 11
+            S022 => 11, // 镜像分身
+            _ => 12,
+        }
+    }
+
     pub fn as_u32(self) -> u32 {
         // 密集索引：与 DefTable 一致即可（用于 skill_levels / cooldowns 数组下标）
         use SkillId::*;
@@ -1752,13 +1781,17 @@ impl DefTable {
                 needs_point: true,
                 effect: GravityZone {
                     speed: Fix64::ZERO,
-                    pull_speed: Fix64::from_num(300.0),
+                    // 吸引力（098c mc）：13+升级次数；占位取基础 13（逐级缩放 TODO）。
+                    pull_speed: Fix64::from_num(13.0),
                     radius: Fix64::ZERO,
                     life: 0.0,
                     range: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 26.0,
+                    // 黑洞每秒伤害（098c mc）：0.3+0.2×升级次数
+                    damage_base: 0.3,
+                    damage_delta: 0.2,
                     // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
                     // ——语义不同。贴 098b 升级版（落点原地漩涡 5s）取 0（场不漂移）；飞行段弹体化 TODO。
                     speed_base: 0.0,
@@ -1791,7 +1824,9 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 17.0,
                     cooldown_delta: -0.0526,
-                    damage_base: 3.0,
+                    // 伤害对齐文档（锁链）：`0.2 + 0.1×升级次数`（L=升级次数=level-1）。
+                    damage_base: 0.2,
+                    damage_delta: 0.1,
                     duration_base: 0.5,
                     ..DEF_ZERO
                 },
@@ -2100,11 +2135,13 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 26.0,
+                    // 力场每秒伤害（098c Lc）：2+1.25×升级次数
                     damage_base: 2.0,
-                    damage_delta: 0.25,
-                    // 奶量（队友/每秒）走 extra：1.3+0.03L
-                    extra_base: 1.3,
-                    extra_delta: 0.03,
+                    damage_delta: 1.25,
+                    // 每秒生命恢复（098c Lc）：1%+0.2%×升级次数；MAX_HP=100 → 1.0+0.2×L（绝对值），
+                    // 由 cast 写入 heal_per_sec（stats.extra）按 *dt 回血。
+                    extra_base: 1.0,
+                    extra_delta: 0.2,
                     radius_base: 200.0,
                     duration_base: 5.0,
                     range_base: 1200.0,

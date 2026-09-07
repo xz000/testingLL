@@ -198,11 +198,6 @@ enum SteamLobbyPending {
     Join { lobby_id: Option<u64> },
 }
 
-/// 升级到某个等级的价格（简单坡度，后期可调）
-fn upgrade_cost(current_level: u32) -> i32 {
-    (current_level * 5 + 5) as i32
-}
-
 struct Game {
     /// 当前小局的战斗世界
     world: World,
@@ -1152,7 +1147,7 @@ impl Game {
                         if lv >= cap {
                             eprintln!("[learn] {} 已达上限 {cap}（乔丹 +{jordan}）", game_core::skill::DefTable::def(skill).name);
                         } else {
-                            let cost = upgrade_cost(lv);
+                            let cost = skill.learn_cost();
                             eprintln!("[learn] upgrade {} cost={}", game_core::skill::DefTable::def(skill).name, cost);
                             profile.upgrade_skill(skill, cost);
                         }
