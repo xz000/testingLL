@@ -3709,13 +3709,20 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
             }
             SkillEffect::Sweep { count, cadence, turn_step, .. } => {
                 // T2 扇扫连射：设发射器状态，由世界逐帧依次发射。（bullet_speed/damage 走 stats）
+                // 连发数：098c 为**随等级成长**（S015 流射 6→12），由 growth.extra_* 经 `stats.extra` 传入；
+                // 未配置（=0）时回退到效果里的静态 `count`，保持既有技能行为不变。
+                let n = if stats.extra > Fix64::ZERO {
+                    (stats.extra.to_num::<f64>().round() as u32).max(1)
+                } else {
+                    count
+                };
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let base = towards(p.pos, target);
                     p.sweep = Some(crate::player::SweepState {
                         dir: base,
                         bullet_speed: stats.speed,
                         damage: stats.damage,
-                        remaining: count,
+                        remaining: n,
                         cadence,
                         turn_step,
                         elapsed: 0.0,
