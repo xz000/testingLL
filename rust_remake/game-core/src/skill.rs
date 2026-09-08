@@ -1598,8 +1598,12 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S015 火焰喷射·流射（T 键形态 A，098c Ac/Xc）——每 0.08s 一发共 8 发摆射；
+            // S015 火焰喷射·流射（T 键形态 A，098c Ac/Xc）——每 0.08s 一发摆射；
             // detailed：speed 700 / radius 22 / life 0.89s；单发 2.4+0.2L（口径 60% 击退近似 JI .6）。
+            // **098c 校准（098c/data/spells.json S015）**：`damage 2.6`、`missiles [6,12]`、`cooldown [16,10]`、`knockback 60%`。
+            // → 单发伤害 2.6+0.3L（原 2.4+0.2L）；**连发数改随等级成长 6→12（原硬编码 8）**；
+            //   冷却 16→10（20 级，步长 -0.3158，原 -0.474 会压到 L20=7.0，低于 098c 下限 10）。
+            // 连发数走 `extra_base/extra_delta`（SkillGrowth 通用槽，Sweep 原不使用）→ `stats.extra`。
             SkillId::S015 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -1608,16 +1612,19 @@ impl DefTable {
                 effect: Sweep {
                     bullet_speed: Fix64::ZERO, // stats.speed 生效（growth.speed_base）
                     damage: Fix64::ZERO,       // stats.damage 生效
-                    count: 8,
+                    count: 6,                  // L1 值；随等级成长见 growth.extra_*
                     cadence: 0.08,
                     turn_step: 0.3,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
-                    cooldown_delta: -0.474,
-                    damage_base: 2.4,
-                    damage_delta: 0.2,
+                    cooldown_delta: -0.3158, // 098c：16 → 10（20 级）
+                    damage_base: 2.6,
+                    damage_delta: 0.3,
                     speed_base: 700.0,
+                    // 098c：missiles 6 → 12（L1→L20）；Sweep 执行处读 stats.extra 作为连发数。
+                    extra_base: 6.0,
+                    extra_delta: 0.3158,
                     ..DEF_ZERO
                 },
             },
@@ -2169,7 +2176,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S017B 禁锢·沉默（098c CC）：禁施法（可移动）5s；伤害/CD 同 A。
+            // S017B 禁锢·沉默（098c CC）：禁施法（可移动）5s。
+            // **098c 校准（098c/data/spells.json S017）**：`silence_cd 16.0`、`silence 5s`。
+            // → B 形态冷却**独立于 A 形态**，为恒定 16.0；原误用 A 的 25.0/-0.658（与文档 17 差 8 秒，审计列高优先级）。
             SkillId::S017 => SkillDef {
                 id,
                 tree: SkillTree::Y,
@@ -2188,8 +2197,8 @@ impl DefTable {
                     on_hit: W098bOnHit::Silence,
                 },
                 growth: SkillGrowth {
-                    cooldown_base: 25.0,
-                    cooldown_delta: -0.658,
+                    cooldown_base: 16.0,
+                    cooldown_delta: 0.0, // 098c：silence_cd 为标量 16.0 → 恒定
                     damage_base: 3.0,
                     duration_base: 5.0,
                     ..DEF_ZERO
@@ -3367,20 +3376,27 @@ mod tests {
             }
             ref e => panic!("S014 effect 错：{e:?}"),
         }
-        // S015 火焰喷射·流射（A 形态）：CD 16→7；每 0.08s 一发共 8 发摆射 0.3 rad；radius 22；2.4+0.2L。
+        // S015 火焰喷射·流射（A 形态）——**098c 校准**（`098c/data/spells.json` S015）：
+        // `damage 2.6`、`missiles [6,12]`、`cooldown [16,10]`、`knockback 60%`。
+        // → CD 16→10（旧断言 16→7 系 098b 文档值，098c 下限为 10）；
+        //   每 0.08s 一发、摆射 0.3 rad；连发数**随等级 6→12**（原硬编码 8，改走 growth.extra_* → stats.extra）；
+        //   单发 2.6+0.3L（原 2.4+0.2L）。
         let d = DefTable::def(SkillId::S015);
         assert_eq!(d.name, "火焰喷射·流射");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 7.0, 1e-1), "L20 CD 应 ≈7，实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).damage, 2.4, 1e-3));
+        assert!(near(d.stats_at(20).cooldown, 10.0, 1e-1), "L20 CD 应 ≈10（098c 下限），实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(1).damage, 2.6, 1e-3), "L1 单发伤害应 2.6（098c）");
         match d.effect {
             SkillEffect::Sweep { count, cadence, turn_step, .. } => {
-                assert_eq!(count, 8, "流射应 8 发");
+                assert_eq!(count, 6, "流射 L1 应 6 发（098c missiles[0]）");
                 assert!((cadence - 0.08).abs() < 1e-6, "每发间隔 0.08s");
                 assert!((turn_step - 0.3).abs() < 1e-6, "每发摆 0.3 rad");
             }
             ref e => panic!("S015 effect 错：{e:?}"),
         }
+        // 连发数随等级成长：098c missiles [6,12] → L20 应为 12（走 stats.extra，由 Sweep 执行处读取）
+        let n20 = d.stats_at(20).extra.to_num::<f64>().round() as u32;
+        assert_eq!(n20, 12, "L20 连发数应 12（098c missiles[1]），实际 {}", n20);
         // B 形态：簇射 = 锥形 5 道 ±11°，3+0.4L
         let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
         assert_eq!(alt15.name, "火焰喷射·簇射");
