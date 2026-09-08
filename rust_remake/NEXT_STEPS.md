@@ -120,6 +120,17 @@
 - **序列化**：`world_ser.rs` 补 `BuffKind::Mirror`(tag 13) 与 `ProjectileKind::Clone`(tag 18) 的编解码。
 - **测试**：新增 `s022_mirror_spawns_clones_casts_fireball_and_expires`（生成 2 分身 / +25 移速 / 周期火球造成伤害 / 镜像否决束缚 / 4s 后消失）；`cargo test -p game-core` 201 全绿，clippy 默认+steam 全绿。
 
+## █ S023 电弧（D 栏）—— 已实装（2026-09-08，待真机复验；行为形态为保守建模）
+- **补齐审计缺口**：`SKILL_AUDIT_098b_vs_rust.md` §2.2.4 原标「缺失」的电弧现已落地。
+- **落地形态**：新增 `SkillId::S023`（沿用 S022→S024 之间的空位），`tree: SkillTree::D`、`needs_point: true`、
+  `as_u32/from_u32` 索引 **70**、`max_level = 7`、`learn_cost = 11`，并加入 `skills_in_tree(D)`。
+  效果**复用** `SkillEffect::Warlock098b { proj: Straight }` 直行弹（speed 900 / radius 25 / life 1.0s / `on_hit: Ki`），
+  故**不新增**枚举变体、弹体型、`execute_effects` 分支、`world_ser` 编解码与 client 渲染。
+- **⚠ 数值取舍（待校准）**：文档伤害每级为**区间**（L1 `6.375–8.5`），区间机制未解码。
+  本作为**锁步确定性模拟，不可按区间随机**，故取每级下界 `damage_base 6.375 / delta 0.75`（L1 6.375、L7 10.875）；
+  冷却 `16.0 / -1.0`（L1 16 → L7 10，与文档一致）。**上界倍率（≈×1.33）与真实形态（即时射线/飞行弹/是否连锁）待 098c 校准。**
+- **测试**：新增 `s023_arc_fires_bolt_that_damages_enemy`（施放后射出 1 发电弹 + 命中敌人造成伤害）；`cargo test -p game-core` 202 全绿，clippy 默认+steam 全绿。
+
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 

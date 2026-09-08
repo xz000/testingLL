@@ -45,7 +45,7 @@ impl SkillTree {
         use SkillId::*;
         match self {
             SkillTree::G => &[S000],
-            SkillTree::D => &[S002, S003, S004],
+            SkillTree::D => &[S002, S003, S004, S023],
             SkillTree::E => &[S008, S009, S010],
             SkillTree::R => &[S011, S012, S013],
             SkillTree::T => &[S014, S015, S016],
@@ -232,6 +232,9 @@ pub enum SkillId {
     // ---- 未实装名册（显式占位；见 warlock098b_def 注释） ----
     /// S022 Mirror（098c 解码：镜像技能；非 098b 推测的废弃位）。
     S022,
+    /// S023 电弧（热键 D，098b 名册 D 栏）：用奥术魔法召唤一道电弧；伤害 6.375–8.5/级，CD 16→10，7 级。
+    /// 行为细节（是否即时射线 / 锁链）098c 未解码，M1 保守建模为 `Warlock098b` 直行电弹（`TODO` 待 098c 校准）。
+    S023,
     S024,
     S025,
     S026,
@@ -262,7 +265,7 @@ impl SkillId {
             // 098b 热键（mechanics §6.1）：G=火球；D=闪电/追踪弹/回旋镖；E=陨石/分裂弹/疾风步/物品；
             // T=汲取/火焰喷射/弹跳弹/法术2；R=瞬间移动/冲撞/移形换位/法术1；C=反射盾/时光回溯/急行。
             S000 => SkillTree::G,
-            S002 | S003 | S004 => SkillTree::D,
+            S002 | S003 | S004 | S023 => SkillTree::D,
             S008 | S009 | S010 => SkillTree::E,
             S014 | S015 | S016 => SkillTree::T,
             S011 | S012 | S013 => SkillTree::R,
@@ -304,6 +307,7 @@ impl SkillId {
             S019 => 11, // 锁链
             // 缺失技能（待实现，价格取自文档）：镜像分身 11 / 电弧 11 / 冲击 14 / 爆炎 14 / 操纵 11
             S022 => 11, // 镜像分身
+            S023 => 11, // 电弧
             _ => 12,
         }
     }
@@ -371,6 +375,7 @@ impl SkillId {
             S020 => 56,
             S021 => 57,
             S022 => 69,
+            S023 => 70,
             S024 => 58,
             S025 => 59,
             S026 => 60,
@@ -448,6 +453,7 @@ impl SkillId {
             56 => S020,
             57 => S021,
             69 => S022,
+            70 => S023,
             58 => S024,
             59 => S025,
             60 => S026,
@@ -1372,6 +1378,7 @@ impl DefTable {
             // 098c：火球等级 = R002 研究（ur 起点 1，上限 9 级研究，L9953）→ 等级上限 10。
             SkillId::S000 => 10,
             SkillId::S002 => 9,
+            SkillId::S023 => 7,
             SkillId::S003 => 9,
             SkillId::S004 => 9,
             SkillId::S005 => 9,
@@ -1901,6 +1908,36 @@ impl DefTable {
                     windup_base: 0.7,
                     cooldown_base: 3.0,
                     damage_base: 10.0,
+                    ..DEF_ZERO
+                },
+            },
+            // S023 电弧（D 栏，文档 D 树）：「用奥术魔法召唤一道电弧」。
+            // 伤害表格每级为**区间**（L1 6.375–8.5 … L7 10.875–14.5）；区间机制未解码（疑似距离/随机），
+            // 本作为锁步确定性模拟**不可按区间随机**，故 M1 取每级下界：6.375 + 0.75/级 → L1 6.375、L7 10.875。
+            // 行为细节（是即时射线还是飞行弹、是否连锁）098c 未解码，M1 保守建模为 Warlock098b 直行弹
+            // （复用既有弹体/命中/渲染/序列化链路）；上界倍率与真实形态 TODO 待 098c 校准。
+            SkillId::S023 => SkillDef {
+                id,
+                tree: SkillTree::D,
+                name: "电弧",
+                needs_point: true,
+                effect: Warlock098b {
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(900.0),
+                    radius: Fix64::from_num(25.0),
+                    life: Fix64::from_num(1.0),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::Ki,
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 16.0,
+                    cooldown_delta: -1.0,
+                    damage_base: 6.375,
+                    damage_delta: 0.75,
                     ..DEF_ZERO
                 },
             },
@@ -3222,6 +3259,7 @@ mod tests {
             (SkillId::S019, "锁链·钩引"),
             (SkillId::S020, "灾变"),
             (SkillId::S021, "虔诚"),
+            (SkillId::S023, "电弧"),
         ];
         for (id, name) in expected {
             let d = DefTable::def(*id);
