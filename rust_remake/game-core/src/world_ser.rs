@@ -607,7 +607,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *lateral);
             wvec(o, *forward_dir);
             wfix(o, *out_dist);
-            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::Induction => 7, crate::skill::W098bOnHit::Silence => 8 });
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::RedChain => 7, crate::skill::W098bOnHit::Silence => 8 });
             wfix(o, *debuff_dur);
             wu8(o, *burst);
             wfix(o, *emit_cooldown);
@@ -670,7 +670,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 4 => crate::skill::W098bOnHit::DrainSlow,
                 5 => crate::skill::W098bOnHit::Weaken,
                 6 => crate::skill::W098bOnHit::Recharge,
-                7 => crate::skill::W098bOnHit::Induction,
+                7 => crate::skill::W098bOnHit::RedChain,
                 8 => crate::skill::W098bOnHit::Silence,
                 _ => return None,
             };

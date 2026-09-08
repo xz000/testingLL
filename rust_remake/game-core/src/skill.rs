@@ -803,8 +803,12 @@ pub enum W098bOnHit {
     Weaken,
     /// S016 弹跳弹·充能（形态 B，098c Dc/cc）：命中立即刷新该技能冷却。
     Recharge,
-    /// S019 锁链·感应（形态 B，098c Uc/sc）：命中敌人 → 施法者获移速 buff（链接近似）。
-    Induction,
+    /// S019 锁链·红链（形态 B，文档「红链」）：把**施法者**拉向命中目标
+    /// （与蓝链 `ChainPull` 相反——蓝链是拉目标向施法者）。
+    /// 注：文档「目标为队友/柱子时，锁链上附加可切割敌人的红色闪电（1.0+0.1×L）」
+    /// 需要「链锚定到柱子/队友」的支持：当前 `nearest_hit` 只返回敌人，且撞柱只是弹体消失、
+    /// 无锚定回调，故闪电暂未实现（见审计 §2.6.1）。
+    RedChain,
     /// S017 禁锢·沉默（形态 B，098c CC）：禁施法（可移动）。
     Silence,
 }
@@ -2149,11 +2153,12 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S019B 锁链·感应（098c Uc/sc）：命中敌人 → 施法者获 4.5s 移速 buff。
+            // S019B 锁链·红链（文档「红链」）：**把你拉向敌人**（与 A 蓝链拉目标向施法者相反）。
+            // 闪电（目标为队友/柱子时附加 1.0+0.1×L 切割伤害）暂未实现，见 `W098bOnHit::RedChain` 注释。
             SkillId::S019 => SkillDef {
                 id,
                 tree: SkillTree::Y,
-                name: "锁链·感应",
+                name: "锁链·红链",
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
@@ -2165,13 +2170,18 @@ impl DefTable {
                     blast: None,
                     count: 1,
                     spread_step: 0.0,
-                    on_hit: W098bOnHit::Induction,
+                    on_hit: W098bOnHit::RedChain,
                 },
                 growth: SkillGrowth {
-                    cooldown_base: 17.0,
-                    cooldown_delta: -0.0526,
-                    damage_base: 3.0,
-                    duration_base: 4.5,
+                    // 文档红链冷却 16/15/14/13/12/11（6 级）；Rust max_level 20，
+                    // 按「L1=16 → L20=11」摊平（与蓝链同样处理方式）。
+                    cooldown_base: 16.0,
+                    cooldown_delta: -0.263,
+                    // 伤害与蓝链同式（文档红链/蓝链均为 `0.2 + 0.1×升级次数`）。
+                    damage_base: 0.2,
+                    damage_delta: 0.1,
+                    // 拉拽时长（与蓝链一致）
+                    duration_base: 0.5,
                     ..DEF_ZERO
                 },
             },

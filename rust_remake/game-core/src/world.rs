@@ -1822,7 +1822,10 @@ impl World {
                             }
                         }
                         // 锁链（ChainPull）以拉拽为主：跳过 KI 击退（击退 700 位移会盖过 300 的拉拽）。
-                        let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull;
+                        // 锁链（蓝链拉目标 / 红链拉施法者）以拉拽为主：跳过 KI 击退
+                        //（击退 700 位移会盖过 300 的拉拽）。
+                        let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull
+                            || *on_hit == crate::skill::W098bOnHit::RedChain;
                         if !is_pull && dd.length_squared() > Fix64::ZERO {
                             let vmana = self.players[victim as usize].mana;
                             let kb = warlock_ki_knockback(vmana, *gx, *kb_ji);
@@ -1885,11 +1888,21 @@ impl World {
                                     o.caster.reset_cooldown(SkillId::S016);
                                 }
                             }
-                            crate::skill::W098bOnHit::Induction => {
-                                // 锁链·感应（098c sc，B4-Y）：命中敌人 → 施法者获 4.5s 移速 buff。
-                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                            crate::skill::W098bOnHit::RedChain => {
+                                // 锁链·红链（文档「红链」）：把**施法者**拉向命中目标
+                                // （蓝链 ChainPull 是拉目标向施法者，此处方向相反）。
+                                if let Some(o) = self.players.get(pr.owner as usize) {
+                                    let caster_pos = o.pos;
+                                    let victim_pos = self.players[victim as usize].pos;
                                     if o.alive {
-                                        o.add_buff(BuffKind::Speed(1.0 + 75.0 / 210.0), debuff_dur.to_num::<f64>());
+                                        let to_victim = victim_pos - caster_pos;
+                                        if to_victim.length_squared() > Fix64::ZERO {
+                                            pulls_toward.push((
+                                                pr.owner,
+                                                to_victim.normalized() * Fix64::from_num(600.0),
+                                                debuff_dur.to_num::<f64>(),
+                                            ));
+                                        }
                                     }
                                 }
                             }
@@ -7419,9 +7432,10 @@ mod tests {
         );
     }
 
-    /// S019B 感应：命中敌人 → 施法者获移速 buff。
+    /// S019B 红链（文档「红链」）：命中敌人 → 把**施法者**拉向敌人
+    /// （与 A 蓝链「拉目标向施法者」方向相反，见 `s019_chain_pulls_target_toward_caster`）。
     #[test]
-    fn s019b_induction_speeds_caster() {
+    fn s019b_red_chain_pulls_caster_to_enemy() {
         let mut world = World::new(2, 1007);
         world.obstacles.clear();
         world.sandbox = true;
@@ -7429,19 +7443,25 @@ mod tests {
         world.players[0].team = 0;
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[0].forms[SkillId::S019.as_u32() as usize] = true; // B=感应
+        world.players[0].forms[SkillId::S019.as_u32() as usize] = true; // B=红链
         world.players[1].team = 1;
-        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO); // 敌人在 +x
         world.players[1].move_target = None;
+        let x_before = world.players[0].pos.x;
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(2.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..30 {
+        for _ in 0..60 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[0].has_buff(BuffKind::Speed(1.0 + 75.0 / 210.0)) || world.players[0].buffs.iter().any(|b| b.remaining > Fix64::ZERO && matches!(b.kind, BuffKind::Speed(_))), "感应命中后施法者应有移速 buff");
+        assert!(
+            world.players[0].pos.x > x_before,
+            "红链应把施法者拉向敌人（+x），{} -> {}",
+            x_before,
+            world.players[0].pos.x
+        );
     }
 
     // ===== B4-R 形态机制 =====
