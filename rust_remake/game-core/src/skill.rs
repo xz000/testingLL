@@ -50,7 +50,7 @@ impl SkillTree {
             SkillTree::R => &[S011, S012, S013],
             SkillTree::T => &[S014, S015, S016],
             SkillTree::Y => &[S017, S018, S019],
-            SkillTree::C => &[S005, S006, S007],
+            SkillTree::C => &[S005, S006, S007, S022],
             // F 槽（2026-09-05 二次考证修正）：普通局 = S001 天罚——098c 施法分派
             // S001→mC（术士单位原生，化身/国王模式才替换）；S020=化身（En4）、S021=国王模式技能。
             // 早前依据 kn[7*i+7]='S021' 判 F=S021 系学习表默认值误读，特此修正。
@@ -266,7 +266,7 @@ impl SkillId {
             S008 | S009 | S010 => SkillTree::E,
             S014 | S015 | S016 => SkillTree::T,
             S011 | S012 | S013 => SkillTree::R,
-            S005 | S006 | S007 => SkillTree::C,
+            S005 | S006 | S007 | S022 => SkillTree::C,
             S017 | S018 | S019 => SkillTree::Y,
             S001 | S020 | S021 => SkillTree::F,
             // 未实装名册：归各自热键树（不进 skills_in_tree，学习界面不可选）
@@ -274,7 +274,7 @@ impl SkillId {
             S025 => SkillTree::R,
             S026 => SkillTree::T,
             S027 => SkillTree::Y,
-            S022 | S030 | S032 | S033 | S034 | S035 | S036 => SkillTree::G,
+            S030 | S032 | S033 | S034 | S035 | S036 => SkillTree::G,
             S031 => SkillTree::Y,
         }
     }
@@ -677,6 +677,16 @@ pub enum SkillEffect {
     },
     /// 尚未实现/占位：契约上存在但暂不落地效果（绑定后施法会被消耗，但不产生作用）。
     Unimplemented,
+    /// 镜像分身（文档 C 栏）：生成 `count` 个跟随施法者、模仿移动并周期施放火球的分身；
+    /// 施法者获得 `speed_bonus` 移速倍率、持续 `duration`，期间免疫锁链与减益。
+    /// 分身火球伤害走 growth.damage（文档 1/1.5/2/2.5/3/3.5）。
+    Mirror {
+        count: u32,
+        duration: Fix64,
+        speed_bonus: Fix64,
+        fire_interval: Fix64,
+        clone_offset: Fix64,
+    },
     /// 098b 名册投射物（PORT_098B_DECISIONS.md M1/M2；数值来自 `port_098b/data/port_spec_098b.json`，
     /// 已是 war3 尺度——**直通 DefTable::def，不经 legacy_scale_def 缩放**）。
     ///
@@ -1291,6 +1301,14 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
             kick: sc(kick, LEGACY_SPEED),
             kick_time,
         },
+        // 镜像分身：分身偏移/火球间隔为长度/时长类（不缩放），其余字段为计数/倍率/时长（不缩放）。
+        Mirror { count, duration, speed_bonus, fire_interval, clone_offset } => Mirror {
+            count,
+            duration,
+            speed_bonus,
+            fire_interval,
+            clone_offset,
+        },
         Unimplemented => Unimplemented,
         // 098b 名册已是 war3 尺度，透传不缩放（PORT_098B_DECISIONS.md D4）。
         w @ Warlock098b { .. } => w,
@@ -1887,16 +1905,30 @@ impl DefTable {
                 },
             },
             // ===== 未实装名册（显式占位：UI 可见「未实装」标注，不误认为漏做） =====
-            // S022/S023/S028/S029：w3a 无任何字段（疑为废弃/预留位），不建条目。
-            // S024 物品 / S025-027 法术槽 / S030 怀表 / S031 锁链附加 / S032-036 切换键：
-            // 依赖物品栏战斗化与形态系统（决策文档 M3 剩余），占位 Unimplemented。
+            // S022 镜像分身（C 栏，文档 C 树；CE 1.10B S048 同名技能，098c 不含）：
+            // 制造 2 个非实体镜像，跟随施法者、周期施放火球；施法者 +25 移速、期间免疫锁链与减益。
+            // 火球伤害 1/1.5/2/2.5/3/3.5 → growth.damage_base 1.0、delta 0.5；CD 19/17/15/13/11/9
+            // → cooldown_base 19、delta -2；duration 4 恒定。
             SkillId::S022 => SkillDef {
                 id,
-                tree: SkillTree::G,
-                name: "Mirror（未实装，098c 解码）",
+                tree: SkillTree::C,
+                name: "镜像分身",
                 needs_point: false,
-                effect: Unimplemented,
-                growth: SkillGrowth { ..DEF_ZERO },
+                effect: Mirror {
+                    count: 2,
+                    duration: Fix64::from_num(4.0),
+                    speed_bonus: Fix64::from_num(25.0 / 210.0), // +25 移速（倍率约定：1 + 25/210）
+                    fire_interval: Fix64::from_num(1.0),         // 分身每 1s 射一发火球
+                    clone_offset: Fix64::from_num(60.0),         // 分身相对施法者的左右偏移
+                },
+                growth: SkillGrowth {
+                    cooldown_base: 19.0,
+                    cooldown_delta: -2.0,
+                    duration_base: 4.0,
+                    damage_base: 1.0,
+                    damage_delta: 0.5,
+                    ..DEF_ZERO
+                },
             },
             SkillId::S024 => SkillDef {
                 id,

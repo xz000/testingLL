@@ -111,6 +111,15 @@
    配置好后台后统计应累加、成就应解锁、排行榜应有分数与 TOP5。
 4. 回归：建房→就绪→配置→统一开战→结束回主菜单主线不受影响。
 
+## █ S022 镜像分身（C 栏）—— 已实装（2026-09-08，待真机复验）
+- **补齐审计缺口**：`SKILL_AUDIT_098b_vs_rust.md` §2.1.4 原标「缺失」的镜像分身现已落地。
+- **落地形态**：新增 `ProjectileKind::Clone`（非实体分身，不参与撞柱/玩家碰撞）；施法者获 `BuffKind::Mirror`（4s）+ `+25` 移速。
+  - 分身每帧贴施法者+偏移（模仿移动），寿命=持续 4s；`fire_timer` 到点朝最近敌人射一发 `W098b` 火弹（`gx`=分身火球伤害，随技能等级 1→3.5），重置按 `fire_cd`（1s）。
+  - **免疫**：`Player::add_buff` 中央拦截 `Tied/Scorched/Pancake/Slow/Weakened/Silenced`（「否决锁链和负面效果」）；链体对处于 Mirror 的绑定目标不结算伤害/拉拽。
+- **学习界面可选**：`SkillId::tree()` 与 `SkillDef.tree` 统一为 `SkillTree::C`，并加入 `skills_in_tree(C)`（`skill.rs`）。
+- **序列化**：`world_ser.rs` 补 `BuffKind::Mirror`(tag 13) 与 `ProjectileKind::Clone`(tag 18) 的编解码。
+- **测试**：新增 `s022_mirror_spawns_clones_casts_fireball_and_expires`（生成 2 分身 / +25 移速 / 周期火球造成伤害 / 镜像否决束缚 / 4s 后消失）；`cargo test -p game-core` 201 全绿，clippy 默认+steam 全绿。
+
 ## █ 当前最新状态（2026-08-17 会话末，新会话务必先读这里）
 > 这是此刻唯一需要接手的 Steam 联机进度。之前的旧进度见下方各节。
 
