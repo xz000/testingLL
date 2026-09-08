@@ -870,14 +870,34 @@ impl World {
                     }
                 }
                 ProjectileKind::Tether { owner, target, pull_speed, .. } => {
-                    // 回拉线：把绑定目标拉向施法者（owner/target 为 u32 值绑定）
-                    let from = self.players.get(owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
-                    if let Some(t) = self.players.get_mut(target as usize) {
-                        if t.alive {
-                            let d = from - t.pos;
-                            let dsq = d.length_squared();
-                            if dsq > Fix64::from_num(1.1) {
-                                t.pull += d.normalized() * pull_speed;
+                    // 回拉线（锁链）：`pull_speed` 的**符号**编码拉拽方向——
+                    //   > 0：把绑定目标拉向施法者（**蓝链** ChainPull，原 Y1 回拉线语义）
+                    //   < 0：把施法者拉向绑定目标（**红链** RedChain，文档「把你拉向敌人」）
+                    // 用符号而非新增字段，避免改动 Tether 结构与序列化。
+                    let sp = pull_speed;
+                    if sp >= Fix64::ZERO {
+                        let from = self.players.get(owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
+                        if let Some(t) = self.players.get_mut(target as usize) {
+                            if t.alive {
+                                let d = from - t.pos;
+                                let dsq = d.length_squared();
+                                if dsq > Fix64::from_num(1.1) {
+                                    t.pull += d.normalized() * sp;
+                                }
+                            }
+                        }
+                    } else {
+                        // 红链：反向——把施法者拉向目标。
+                        let to = self.players.get(target as usize).map(|p| p.pos);
+                        if let Some(to) = to {
+                            if let Some(o) = self.players.get_mut(owner as usize) {
+                                if o.alive {
+                                    let d = to - o.pos;
+                                    let dsq = d.length_squared();
+                                    if dsq > Fix64::from_num(1.1) {
+                                        o.pull += d.normalized() * (-sp);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1469,9 +1489,10 @@ impl World {
         let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
         // 098c 回旋镖命中转回程：(proj 下标, 返回速度)。
         let mut boomerang_returns: Vec<(usize, Fix64)> = Vec::new();
-        // 098b on_hit 控制效果：(受害者, Tied 时长) 与 (受害者, 拉向施法者速度, 时长)。
+        // 098b on_hit 控制效果：(受害者, Tied 时长)。
         let mut debuffs: Vec<(u32, f64)> = Vec::new();
-        let mut pulls_toward: Vec<(u32, Vec2, f64)> = Vec::new();
+        // 链体（锁链）生成：命中落地为持久 Tether，逐帧对绑定目标施加每秒伤害并按 pull_speed 符号拉拽。
+        let mut tether_spawns: Vec<Projectile> = Vec::new();
         // 陨石灼烧 Scorched debuff：(受害者, 时长)。
         let mut debuffs_scorched: Vec<(u32, f64)> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
@@ -1808,7 +1829,13 @@ impl World {
                     };
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
-                        events.push((victim, *gx, Some(pr.owner)));
+                        // 锁链的伤害走 Tether 的 `damage_per_sec`（文档 `0.2+0.1×L` 是**每秒**，
+                        // 与引力「每秒 0.3+0.2×L」同量级），不再按单发直伤结算（0.2 单发等于没有）。
+                        let is_chain = *on_hit == crate::skill::W098bOnHit::ChainPull
+                            || *on_hit == crate::skill::W098bOnHit::RedChain;
+                        if !is_chain {
+                            events.push((victim, *gx, Some(pr.owner)));
+                        }
                         // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（GX 设充能灯 1）。
                         // 火球指纹 = Straight + Ki + 有点燃（法杖/精通爆炸变体同样充能）。
                         if *proj == crate::skill::W098bProjKind::Straight
@@ -1821,12 +1848,9 @@ impl World {
                                 }
                             }
                         }
-                        // 锁链（ChainPull）以拉拽为主：跳过 KI 击退（击退 700 位移会盖过 300 的拉拽）。
                         // 锁链（蓝链拉目标 / 红链拉施法者）以拉拽为主：跳过 KI 击退
                         //（击退 700 位移会盖过 300 的拉拽）。
-                        let is_pull = *on_hit == crate::skill::W098bOnHit::ChainPull
-                            || *on_hit == crate::skill::W098bOnHit::RedChain;
-                        if !is_pull && dd.length_squared() > Fix64::ZERO {
+                        if !is_chain && dd.length_squared() > Fix64::ZERO {
                             let vmana = self.players[victim as usize].mana;
                             let kb = warlock_ki_knockback(vmana, *gx, *kb_ji);
                             pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
@@ -1855,14 +1879,22 @@ impl World {
                                 debuffs.push((victim, debuff_dur.to_num::<f64>()));
                             }
                             crate::skill::W098bOnHit::ChainPull => {
-                                // 锁链：把目标拉向施法者（朝施法者 600/s × 0.5s）+ Tied。
+                                // 锁链（蓝链）：落地为持久 Tether——逐帧对绑定目标施加每秒伤害
+                                //（damage_per_sec=gx=0.2+0.1×L），并把目标拉向施法者（pull_speed 取正）。
                                 debuffs.push((victim, debuff_dur.to_num::<f64>()));
-                                if let Some(o) = self.players.get(pr.owner as usize) {
-                                    let to_owner = o.pos - self.players[victim as usize].pos;
-                                    if to_owner.length_squared() > Fix64::ZERO {
-                                        pulls_toward.push((victim, to_owner.normalized() * Fix64::from_num(600.0), debuff_dur.to_num::<f64>()));
-                                    }
-                                }
+                                tether_spawns.push(Projectile {
+                                    owner: pr.owner,
+                                    kind: ProjectileKind::Tether {
+                                        owner: pr.owner,
+                                        target: victim,
+                                        damage_per_sec: *gx,
+                                        pull_speed: Fix64::from_num(600.0), // >0：目标→施法者
+                                        remaining: *debuff_dur,
+                                        beam: true, // 沿连线切割经过的敌人
+                                    },
+                                    pos: pr.pos,
+                                    alive: true,
+                                });
                             }
                             crate::skill::W098bOnHit::DrainSlow => {
                                 // 汲取·减速（098c vc，B4-T）：目标移速 ×0.5 + 施法者回血伤害×50%。
@@ -1889,22 +1921,22 @@ impl World {
                                 }
                             }
                             crate::skill::W098bOnHit::RedChain => {
-                                // 锁链·红链（文档「红链」）：把**施法者**拉向命中目标
-                                // （蓝链 ChainPull 是拉目标向施法者，此处方向相反）。
-                                if let Some(o) = self.players.get(pr.owner as usize) {
-                                    let caster_pos = o.pos;
-                                    let victim_pos = self.players[victim as usize].pos;
-                                    if o.alive {
-                                        let to_victim = victim_pos - caster_pos;
-                                        if to_victim.length_squared() > Fix64::ZERO {
-                                            pulls_toward.push((
-                                                pr.owner,
-                                                to_victim.normalized() * Fix64::from_num(600.0),
-                                                debuff_dur.to_num::<f64>(),
-                                            ));
-                                        }
-                                    }
-                                }
+                                // 锁链·红链（文档「红链」）：落地为持久 Tether，把**施法者**拉向
+                                // 命中目标（pull_speed 取负，见 step_area_forces 符号约定）。
+                                // 绑定目标仍逐帧承受每秒伤害（damage_per_sec=gx=0.2+0.1×L）。
+                                tether_spawns.push(Projectile {
+                                    owner: pr.owner,
+                                    kind: ProjectileKind::Tether {
+                                        owner: pr.owner,
+                                        target: victim,
+                                        damage_per_sec: *gx,
+                                        pull_speed: Fix64::from_num(-600.0), // <0：施法者→目标
+                                        remaining: *debuff_dur,
+                                        beam: true, // 沿连线切割经过的敌人
+                                    },
+                                    pos: pr.pos,
+                                    alive: true,
+                                });
                             }
                             crate::skill::W098bOnHit::Silence => {
                                 // 禁锢·沉默（098c CC，B4-Y）：禁施法（可移动）。
@@ -1989,13 +2021,6 @@ impl World {
             if let Some(p) = self.players.get_mut(vid as usize) {
                 if p.alive {
                     p.add_buff(BuffKind::Tied, dur);
-                }
-            }
-        }
-        for (vid, vel, dur) in pulls_toward {
-            if let Some(p) = self.players.get_mut(vid as usize) {
-                if p.alive {
-                    p.push(vel, dur);
                 }
             }
         }
@@ -2195,6 +2220,10 @@ impl World {
             });
         }
 
+        // 4e) 链体（锁链）落地：作为持久 Tether 加入，逐帧对绑定目标施加每秒伤害 + 符号拉拽。
+        for t in tether_spawns.drain(..) {
+            ps.push(t);
+        }
         // 5) 写回并清除已死亡/失效的弹体
         ps.retain(|p| p.alive);
         self.projectiles = ps;
@@ -5896,6 +5925,37 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[1].pos.x < x_before, "锁链应把目标拉向施法者（-x），实际 {:?}", world.players[1].pos.x);
+    }
+
+    /// S019 锁链：命中后落地为持久 Tether，逐帧对绑定目标施加**每秒**伤害（文档 `0.2+0.1×L` 每秒）。
+    /// 验证「链子必须对链住的对象施加伤害」且为持续型（非单发直伤）。
+    #[test]
+    fn s019_chain_damages_bound_target_per_second() {
+        let mut world = World::new(2, 963);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO); // +x 480 处敌人
+        world.players[1].move_target = None;
+        let hp_before = world.players[1].hp.to_num::<f64>();
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 早期几帧：Tether 刚生成，伤害尚未累积
+        for _ in 0..4 {
+            world.step(none.clone(), dt);
+        }
+        let hp_early = world.players[1].hp.to_num::<f64>();
+        // 持续整段（Tether 寿命 0.5s ≈ 30 帧）
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        let hp_after = world.players[1].hp.to_num::<f64>();
+        assert!(hp_after < hp_before, "锁链应对绑定目标持续掉血，{} -> {}", hp_before, hp_after);
+        assert!(hp_after < hp_early, "锁链伤害应逐帧累积（非单发），{} -> {}", hp_early, hp_after);
     }
 
     /// S018 引力：施放后场上出现吸拉场，附近敌人被拉近。

@@ -432,7 +432,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | 等级 | 6 级 | `max_level = 20`（`skill.rs:1339`） | 差异(待确认) |
 | 伤害 | `0.2 + 0.1 × 升级次数` → L1=0.2 | `damage_base 0.2 / delta 0.1`（`skill.rs:1828`） | **一致**（占位 3.0 已按文档修正，见 §7.6） |
 | 冷却 | 17 / 15 / 13 / 11 / 9 / 7（−2/级） | `cooldown_base 17.0 / delta −0.0526`（L20=16.0） | L1 **一致**；斜率差异(待确认) |
-| 把术士拉向你 / 把自己拉向柱子 | 有 | `W098bOnHit::ChainPull`（拉向施法者 + Tied 0.5s）；拉向柱子未建模 | 部分缺失 |
+| 把术士拉向你 / 把自己拉向柱子 | 有 | 命中落地为持久 `Tether`（`pull_speed=+600` 拉目标→施法者，`beam` 沿连线切割敌人）+ `Tied 0.5s`；拉向柱子未建模 | 部分缺失 |
 
 **形态 B（`def_alt`，name="锁链·红链"）—— 已按文档重做**
 
@@ -441,7 +441,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | 伤害 | `0.2 + 0.1 × 升级次数` | `damage_base 0.2 / delta 0.1`（与蓝链同式） | **一致**（占位 3.0 已替换） |
 | 闪电伤害 | `1.0 + 0.1 × 升级次数`（目标为队友/柱子时附加可切割敌人的红色闪电） | 未建模 | 缺失（见下「闪电未实现的原因」） |
 | 冷却 | 16 / 15 / 14 / 13 / 12 / 11 | `cooldown_base 16.0 / delta −0.263`（L1=16 → L20=11） | L1/L20 **一致**；中间档按 Rust 20 级摊平 |
-| 把你拉向敌人 | 有 | `W098bOnHit::RedChain`：把**施法者**拉向命中目标 | **一致**（已重做，原为「感应」加速） |
+| 把你拉向敌人 | 有 | 命中落地为持久 `Tether`（`pull_speed=-600` 把**施法者**拉向目标，`beam` 沿连线切割敌人），绑定目标逐帧承受 `0.2+0.1×L` 每秒伤害 | **一致**（已重做，原为「感应」加速） |
 
 > 闪电未实现的原因（架构限制，非遗漏）：文档要求链**锚定到队友或柱子**时才附加闪电。
 > 但 `nearest_hit`（`world.rs:3841`）显式排除同队（`Some(p.team) == owner_team` → continue），
@@ -450,13 +450,14 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 > （当前 W098b 弹体只带 `gx`，不带 `stats.extra`）。属新机制，暂未做。
 > 另：现已无技能使用原 `Induction`（感应）变体，该变体已由 `RedChain` 取代（序列化 tag 7 复用）。
 
-依据：`skill.rs:219`（`/// S019 锁链（热键 Y）：弹体命中把目标拉向施法者 + 定身 0.5s（098b tc；S031 附加 TODO）。`）、`skill.rs:1768-1770`（`// S019 锁链（Y 键）——spec：CD 17→16（20 级，步长 -0.0526）；radius 35；` `// speed 未给（VengeanceMissile 类）→ M1 占位 800；命中拉向施法者 + Tied 0.5s` `//（098b 拉拽+链光+S031 附加动作 TODO）；伤害 KI 公式未解码 → 恒 3 占位（TODO）。`）、`skill.rs:2110`（`// S019B 锁链·感应（098c Uc/sc）：命中敌人 → 施法者获 4.5s 移速 buff。`）。
-→ A 形态伤害已按文档修正为 `0.2 / +0.1`（占位 3.0 已替换）。
-   **B 形态已按文档重做为「红链」**：`W098bOnHit::RedChain` 把**施法者**拉向命中目标（原「感应」
-   加速已移除；`Induction` 变体随之删除，序列化 tag 7 复用），伤害同蓝链 `0.2+0.1×L`，
-   冷却按文档 16→11 摊平到 Rust 的 20 级。
-   回归测试 `s019b_red_chain_pulls_caster_to_enemy`，与 A 形态
-   `s019_chain_pulls_target_toward_caster` 构成**反向对照**（蓝链拉目标 / 红链拉自己）。
+依据：`skill.rs:219`（`/// S019 锁链（热键 Y）：弹体命中把目标拉向施法者 + 定身 0.5s（098b tc；S031 附加 TODO）。`）、`skill.rs:1808-1810`（`// S019 锁链（Y 键）——spec：CD 17→16（20 级，步长 -0.0526）；radius 35；` `// speed 未给（VengeanceMissile 类）→ M1 占位 800；命中落地为持久 Tether，逐帧对绑定目标` `// 施加每秒伤害（0.2+0.1×L）+ 按 pull_speed 符号拉拽（见 world.rs step_area_forces）。`）、`skill.rs:2157-2173`（`// S019B 锁链·红链：命中落地为持久 Tether，pull_speed 取负把施法者拉向目标。`）。
+→ A/B 两形态统一为**持久 `Tether` 链体**模型（`world.rs` 命中处理 + `step_area_forces` 符号拉拽）：
+   伤害 `0.2+0.1×L` 为**每秒**（非单发直伤），`pull_speed` 符号编码方向（>0 蓝链拉目标→施法者；<0 红链拉施法者→目标），
+   `beam=true` 沿施法者→目标连线切割经过的敌人。`is_chain` 命中分支跳过单发 `gx` 直伤，改由 Tether 逐帧结算。
+   **B 形态已按文档重做为「红链」**：`W098bOnHit::RedChain`（原 `Induction` 感应加速已移除，序列化 tag 7 复用），
+   伤害同蓝链 `0.2+0.1×L`，冷却按文档 16→11 摊平到 Rust 的 20 级。
+   回归测试：`s019_chain_pulls_target_toward_caster`（蓝链拉目标）、`s019b_red_chain_pulls_caster_to_enemy`（红链拉自己）、
+   `s019_chain_damages_bound_target_per_second`（链体逐帧对绑定目标持续掉血，**非单发**）。
    闪电伤害（`1.0+0.1×L`）受架构限制未实现，原因见形态 B 表下注。
 
 #### 2.6.2 禁锢 —— `S017`（形态 A=缠绕，形态 B=沉默）
