@@ -1543,8 +1543,11 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S009 分裂弹（E 键）——spec：CD 30→20（20 级，步长 -0.526）；
-            // detailed gB：ev=GB/280（GB 未解码，M1 speed 近似 900）、radius 50、impact fB=KI(3, 1.4)（伤害固定）。
+            // S009 分裂弹（E 键）——spec：CD 30→20（20 级，步长 -0.526，已校准 098c）；
+            // 伤害：098c 工具提示（w3a_strings.txt）明确随等级成长 **3.0→6.5（8 级，+0.5/级）**，
+            // detailed 的「KI(3,1.4) 伤害恒定」与权威工具提示冲突 → 以工具提示为准，camp2 端点对齐
+            // （Rust L20 = 098c L8 = 6.5）：damage_base 3.0、delta (6.5-3.0)/19 ≈ 0.1842。
+            // radius 50、kb_ji 1.4、speed 900 不变。
             SkillId::S009 => SkillDef {
                 id,
                 tree: SkillTree::E,
@@ -1566,7 +1569,7 @@ impl DefTable {
                     cooldown_base: 30.0,
                     cooldown_delta: -0.526,
                     damage_base: 3.0,
-                    damage_delta: 0.0,
+                    damage_delta: 0.1842,
                     ..DEF_ZERO
                 },
             },
@@ -1600,9 +1603,11 @@ impl DefTable {
             },
             // S015 火焰喷射·流射（T 键形态 A，098c Ac/Xc）——每 0.08s 一发摆射；
             // detailed：speed 700 / radius 22 / life 0.89s；单发 2.4+0.2L（口径 60% 击退近似 JI .6）。
-            // **098c 校准（098c/data/spells.json S015）**：`damage 2.6`、`missiles [6,12]`、`cooldown [16,10]`、`knockback 60%`。
-            // → 单发伤害 2.6+0.3L（原 2.4+0.2L）；**连发数改随等级成长 6→12（原硬编码 8）**；
-            //   冷却 16→10（20 级，步长 -0.3158，原 -0.474 会压到 L20=7.0，低于 098c 下限 10）。
+            // **098c 校准（w3a_strings.txt Fire Spray）**：L1 单发 2.6、L7 3.8（+0.2/级，共 7 级）；
+            //   `missiles 6→12`、`cooldown 16→10`、`knockback 60%`。
+            // → 单发伤害 2.6+ΔL（Δ 取 camp2 端点对齐：Rust L20 = 098c L7 = 3.8 → delta=(3.8-2.6)/19≈0.0632；
+            //   注：上一版误用 0.3 使 L20≈8.3，远超 098c 上限 3.8）；
+            //   **连发数改随等级成长 6→12（原硬编码 8）**；冷却 16→10（20 级，步长 -0.3158）。
             // 连发数走 `extra_base/extra_delta`（SkillGrowth 通用槽，Sweep 原不使用）→ `stats.extra`。
             SkillId::S015 => SkillDef {
                 id,
@@ -1620,7 +1625,7 @@ impl DefTable {
                     cooldown_base: 16.0,
                     cooldown_delta: -0.3158, // 098c：16 → 10（20 级）
                     damage_base: 2.6,
-                    damage_delta: 0.3,
+                    damage_delta: 0.0632,    // 098c：2.6 → 3.8（7 级），camp2 对齐至 L20=3.8
                     speed_base: 700.0,
                     // 098c：missiles 6 → 12（L1→L20）；Sweep 执行处读 stats.extra 作为连发数。
                     extra_base: 6.0,
@@ -1628,8 +1633,11 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S016 弹跳弹（T 键）——spec：CD 20 恒定（l1=lmax=20）；speed 900 / radius 35 / life 1s；
-            // detailed gc（基础形态）：KI(gv×(5+Xv))（gv 未解码取 1 → gX=5+L，L1=6）；每跳 ×0.8。
+            // S016 弹跳弹（T 键）——spec 曾记 CD 20 恒定，但 **098c 工具提示（w3a_strings.txt Bouncer）确证
+            // CD 随等级 20→13（-1/级，8 级）**，故改为 camp2 端点对齐（Rust L20 = 098c L8 = 13）：
+            // cooldown_delta (13-20)/19 ≈ -0.3684。speed 900 / radius 35 / life 1s；
+            // detailed gc（基础形态）：KI(gv×(5+Xv))（gv 未解码取 1 → gX=5+L，L1=6，与 098c 每级 +1 完全吻合）
+            // → 伤害 delta 维持 1.0（Rust L20=25 系 20 级外推，098c 仅 8 级，沿用 detailed 斜率）。每跳 ×0.8。
             SkillId::S016 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -1649,6 +1657,7 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
+                    cooldown_delta: -0.3684, // 098c：20 → 13（8 级），camp2 对齐至 L20=13
                     damage_base: 6.0,
                     damage_delta: 1.0,
                     ..DEF_ZERO
@@ -1704,10 +1713,13 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S010 疾风步（E 键）——spec：CD 30→17（20 级，步长 -0.684）；dur=3.1*jn（基础形态）；
+            // S010 疾风步（E 键）——spec：CD 30→17（20 级，步长 -0.684，已校准 098c）；dur=3.1*jn（基础形态）；
             // 隐身 +200 移速（乘数 1+200/210）；破隐一击（bA 复合 KI）已在碰撞结算实现：
             // 门控 `xi[id]>0`（xi=远程精通，非蓝量）——有点远程精通时，隐身下接触命中
             // 才追加一笔同级伤害后解除隐身；未点则只有基础单笔伤害。
+            // **098c 校准（w3a_strings.txt WindWalk Charge）**：背刺伤害 **5.4→11（8 级，+0.8/级）**，
+            // detailed 的「4.6+0.8L」基准偏低（L1 应为 5.4）→ 以工具提示为准，camp2 端点对齐
+            // （Rust L20 = 098c L8 = 11）：damage_base 5.4、delta (11-5.4)/19 ≈ 0.2947。
             SkillId::S010 => SkillDef {
                 id,
                 tree: SkillTree::E,
@@ -1722,9 +1734,9 @@ impl DefTable {
                     cooldown_base: 30.0,
                     cooldown_delta: -0.684,
                     duration_base: 3.1,
-                    // 接触踢击伤害 4.6+0.8L（098c CA 冲撞伤害）
-                    damage_base: 4.6,
-                    damage_delta: 0.8,
+                    // 接触踢击/背刺伤害 5.4+0.2947L（098c 背刺，camp2 对齐至 L20=11）
+                    damage_base: 5.4,
+                    damage_delta: 0.2947,
                     ..DEF_ZERO
                 },
             },
@@ -3349,12 +3361,13 @@ mod tests {
 
     #[test]
     fn s009_s014_s015_s016_match_spec() {
-        // S009 分裂弹·目标（A 形态）：CD 30→20（20 级）；radius 50；KI(3, 1.4) 伤害恒定。
+        // S009 分裂弹·目标（A 形态）：CD 30→20（20 级）；radius 50；伤害随等级 3.0→6.5（098c 工具提示）。
         let d = DefTable::def(SkillId::S009);
         assert_eq!(d.name, "分裂弹·目标");
         assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 20.0, 1e-1), "L20 CD 应 ≈20，实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).damage, 3.0, 1e-3) && near(d.stats_at(20).damage, 3.0, 1e-3), "分裂弹伤害恒 3");
+        assert!(near(d.stats_at(1).damage, 3.0, 1e-3), "L1 伤害应 3.0");
+        assert!(near(d.stats_at(20).damage, 6.5, 1e-1), "L20 伤害应 ≈6.5（098c 上限），实际 {:?}", d.stats_at(20).damage);
         match d.effect {
             SkillEffect::Warlock098b { radius, kb_ji, .. } => {
                 assert!(near(radius, 50.0, 1e-3));
@@ -3386,6 +3399,7 @@ mod tests {
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
         assert!(near(d.stats_at(20).cooldown, 10.0, 1e-1), "L20 CD 应 ≈10（098c 下限），实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).damage, 2.6, 1e-3), "L1 单发伤害应 2.6（098c）");
+        assert!(near(d.stats_at(20).damage, 3.8, 1e-1), "L20 单发伤害应 ≈3.8（098c L7 上限），实际 {:?}", d.stats_at(20).damage);
         match d.effect {
             SkillEffect::Sweep { count, cadence, turn_step, .. } => {
                 assert_eq!(count, 6, "流射 L1 应 6 发（098c missiles[0]）");
@@ -3409,11 +3423,11 @@ mod tests {
             }
             ref e => panic!("S015 effect 错：{e:?}"),
         }
-        // S016 弹跳弹：CD 20 恒定；speed 900 / radius 35；gc 形态 gX=5+L → L1=6。
+        // S016 弹跳弹：CD 20→13（098c 工具提示，camp2 对齐至 L20≈13）；speed 900 / radius 35；gX=5+L → L1=6。
         let d = DefTable::def(SkillId::S016);
         assert_eq!(d.name, "弹跳弹");
         assert!(near(d.stats_at(1).cooldown, 20.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 20.0, 1e-3), "弹跳弹 CD 恒定 20");
+        assert!(near(d.stats_at(20).cooldown, 13.0, 1e-1), "L20 CD 应 ≈13（098c 上限），实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).damage, 6.0, 1e-3));
         match d.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Bounce, speed, radius, .. } => {

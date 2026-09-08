@@ -3093,7 +3093,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Charge => {
-                        // 疾风步·冲锋（098c RB，B4）：移速 buff + 接触踢击窗口（撞敌伤害 4.6+0.8L）。
+                        // 疾风步·冲锋（098c RB，B4）：移速 buff + 接触踢击窗口（撞敌背刺伤害 5.4+0.2947L，098c）。
                         // 098c RB 两形态都挂 'Agho' 隐身（war3map_pretty.j:5781-5804），A 形态（冲锋）同样隐身。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
@@ -7373,7 +7373,7 @@ mod tests {
         assert!(world2.players[0].has_buff(BuffKind::Stealth), "A 形态（冲锋）也应有隐身（098c RB）");
         assert!(world2.players[0].kick.is_some(), "A 形态应有接触踢击窗口");
         let kick_dmg = world2.players[0].kick.as_ref().unwrap().push_damage.to_num::<f64>();
-        assert!((kick_dmg - 4.6).abs() < 0.1, "冲锋踢击伤害应 4.6+0.8L ≈ 4.6，实际 {kick_dmg}");
+        assert!((kick_dmg - 5.4).abs() < 0.1, "冲锋踢击伤害应 5.4+0.2947L（L1=5.4，098c 背刺），实际 {kick_dmg}");
     }
 
     /// S010 破隐一击（098c `bA`）**由远程精通门控**：`xi[id]>0` 才追加一笔同级伤害。
