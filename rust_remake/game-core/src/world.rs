@@ -6168,6 +6168,54 @@ mod tests {
         assert_eq!(clones_left, 0, "持续时间结束后分身应消失，实际 {}", clones_left);
     }
 
+    /// S023 电弧（D 栏）：施放后沿瞄准方向射出一道直行电弹，命中敌人造成伤害。
+    #[test]
+    fn s023_arc_fires_bolt_that_damages_enemy() {
+        let mut world = World::new(2, 963);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO); // +x 480 处敌人
+        world.players[1].move_target = None;
+        let hp_before = world.players[1].hp.to_num::<f64>();
+
+        world.step(
+            vec![
+                PlayerInput {
+                    cast: Some((SkillId::S023, Some(Vec2::new(d60(8.0), Fix64::ZERO)))),
+                    ..Default::default()
+                },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+
+        // 1) 生成一发直行电弹（Warlock098b / Straight）
+        let bolts = world
+            .projectiles
+            .iter()
+            .filter(|pr| {
+                matches!(
+                    pr.kind,
+                    ProjectileKind::W098b {
+                        proj: crate::skill::W098bProjKind::Straight,
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(bolts, 1, "电弧应射出一道电弹，实际 {}", bolts);
+
+        // 2) 电弹命中敌人造成伤害
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let hp_after = world.players[1].hp.to_num::<f64>();
+        assert!(hp_after < hp_before, "电弧电弹应对敌人造成伤害，{} -> {}", hp_before, hp_after);
+    }
+
     /// S018 引力：施放后场上出现吸拉场，附近敌人被拉近。
     #[test]
     fn s018_gravity_zone_pulls_enemy() {

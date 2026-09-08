@@ -88,6 +88,10 @@
   `world.rs::execute_effects` 全部改用 `SkillGrowth` 派生的 `stats`（等级1数值不变，升级后伤害/射程/推击成长），并补全各自 growth base（防“参数脱节→为0”）。
   仅疾跑/护盾的 buff 时长仍走 effect（时长成长意义小，留数值调参）。提交 `1e08c0c`/`a9dbc8d`/`944b369`。
 - **补齐镜像分身（S022，C 栏）**：原 `SKILL_AUDIT_098b_vs_rust.md` §2.1.4 标「缺失」，现已实装（`world.rs` 新增 `ProjectileKind::Clone` 分身 + `BuffKind::Mirror` 免疫；`skill.rs` 数值按文档：`cooldown 19→9`、`damage 1→3.5`、持续 4、+25 移速、周期火球；`world_ser.rs` 补编解码；`client` 补渲染）。统一 `SkillId::tree()` 与 `SkillDef.tree` 为 `SkillTree::C` 并加入 `skills_in_tree(C)`（学习界面可选）。新增回归测试 `s022_mirror_spawns_clones_casts_fireball_and_expires`，`cargo test -p game-core` 201 全绿，clippy 默认+steam 全绿（2026-09-08）。
+- **补齐电弧（S023，D 栏）**：原 `SKILL_AUDIT_098b_vs_rust.md` §2.2.4 标「缺失」，现已实装。新增 `SkillId::S023`（索引 70，7 级，CD 16→10），
+  **复用** `SkillEffect::Warlock098b { proj: Straight }` 直行弹（speed 900/radius 25/life 1.0s）——不新增枚举变体/弹体型/序列化/渲染；
+  加入 `skills_in_tree(D)`（学习界面可选）。⚠ **伤害每级为区间（L1 6.375–8.5）且机制未解码，锁步确定性要求不可随机，故取每级下界 6.375+0.75L；
+  上界倍率与真实形态（即时射线/飞行弹/连锁）待 098c 校准**。新增回归测试 `s023_arc_fires_bolt_that_damages_enemy`，202 全绿，clippy 默认+steam 全绿（2026-09-08）。
 
 ---
 
