@@ -102,12 +102,26 @@
 
 依据（`skill.rs:1605`）：`// S006 时光回溯（C 键）——spec：CD 22→12（8 级，步长 -1.4286）；delay=3.6*jn 恒定。`
 
-#### 2.1.4 镜像分身 —— **无实装**（推测 `S022 Mirror`）
+#### 2.1.4 镜像分身 —— **已实装**（`S022`）
 
 - 文档：价格 11，6 级，持续 4，火球伤害 1/1.5/2/2.5/3/3.5，冷却 19/17/15/13/11/9，+25 移速，否决锁链与负面效果。
-- Rust：`S022` 仅有占位定义 `SkillDef { name: "Mirror（未实装，098c 解码）", effect: Unimplemented, growth: SkillGrowth { ..DEF_ZERO } }`（`skill.rs:1849-1856`；`DEF_ZERO` 定义于 `skill.rs:2866`）。`S022` 归属 `SkillTree::G` 且**不在** `skills_in_tree` 任一栏位（`skill.rs:44-59`、`:274`），学习界面不可选。
-- 枚举注释（`skill.rs:230`）：`/// S022 Mirror（098c 解码：镜像技能；非 098b 推测的废弃位）。`
-- **标记：缺失**（全部数值均未实现）。
+- 098c：名册 `uC` 分发仅覆盖 S000–S015，**不含**镜像分身；CE 1.10B（`war3map.j.dec`）为同名技能的另一版本，可作结构参考：
+  `MirrorIter`（`:5667`）每帧把两个分身（unit 512/513）摆到 `Obj_PosX[TObj] + Obj_VelX[TObj] + Obj_PosX[id+512/513]`
+  ——即「施法者位置 + 施法者速度 + 固定偏移」，确认分身**跟随并模仿移动**；另有 `gg_trg_Fireball_Mirror`
+  触发器（`:505`）确认分身会**施放火球**（其 body 未在反编译片段中，发射节奏无源码可据）。
+- Rust：`S022` 现为真实定义（`tree: SkillTree::C`、`name: "镜像分身"`、`effect: SkillEffect::Mirror`），
+  数值按文档：`cooldown_base 19 / delta -2`（19→9）、`duration 4`、`damage_base 1.0 / delta 0.5`（火球 1→3.5）、
+  `count 2`、`speed_bonus = 25/210`（+25 移速，倍率口径同既有 `Speed(1+50/210)` 写法）、
+  `fire_interval 1.0s`、`clone_offset 60`。
+- 落地形态（新增 `ProjectileKind::Clone`）：分身为**非实体**弹体——不参与撞柱（`obstacle_radius` 返回 `None`）、
+  不与玩家碰撞（归入碰撞段 no-op 分支）；每帧贴到施法者 + 偏移（模仿移动），寿命=持续 4s；
+  `fire_timer` 到点朝最近敌人射一发 `W098b` 火弹（gx = 分身火球伤害），重置按 `fire_cd`。
+  开火计时器递减在 1) 段（`&mut` 借用），发射与重置在 2c3) 段统一写回（避免借用冲突）。
+- 免疫：施法者获得 `BuffKind::Mirror`（持续 4s），`Player::add_buff` 中央拦截 `Tied/Scorched/Pancake/Slow/Weakened/Silenced`
+  （「否决负面效果」）；锁链 `Tether` 在被链目标免疫时不生成、也不结算持续伤害（「否决锁链」）。
+- 回归测试：`world::tests::s022_mirror_spawns_clones_casts_fireball_and_expires`
+  （2 个分身 / 加速+免疫 buff / 分身火球造成伤害 / 免疫否决 Tied / 到期消失）。
+- **标记：已实装**（数值取自文档；分身跟随与开火节奏为建模近似，原版节奏无源码可据）。
 
 ---
 
@@ -760,7 +774,8 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | 精通 | 4 | 0 | 3 | 1 |
 | **合计** | **42** | **1** | **31 + 4（技能/物品细项合并后）= 35** | **6 — 见下注** |
 
-> 注：缺失 6 项 = 镜像分身、电弧、冲击、爆炎、操纵（技能 5，其中守护臂章/诅咒徽章/火球卷轴 3 项物品与「博而不专」按分类计入物品/精通行）。
+> 注：缺失 6 项 = ~~镜像分身、~~ 电弧、冲击、爆炎、操纵（技能 ~~5~~ **4**；镜像分身已于 `S022` 实装，见 §2.1.4。
+> 其中守护臂章/诅咒徽章/火球卷轴 3 项物品与「博而不专」按分类计入物品/精通行）。
 > 逐项分布在 §5.3 明细表中可核。
 
 ### 5.2「Rust 有但文档未列」反向清单
@@ -793,7 +808,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | 11 | 技能 | 电弧（D） | Rust 无对应条目 | D 槽仅 `S002/S003/S004`（`skill.rs:48`） | 缺失 | 中 |
 | 12 | 技能 | 冲击（D） | Rust 无对应条目；蓄力/过载机制在 `SkillEffect` 中无变体 | 同上 | 缺失 | 中 |
 | 13 | 技能 | 爆炎（E） | Rust 无对应条目 | E 槽仅 `S008/S009/S010`（`skill.rs:49`） | 缺失 | 中 |
-| 14 | 技能 | 镜像分身（C） | Rust `S022 Mirror` 为 `Unimplemented` 占位，`DEF_ZERO`，学习界面不可选 | `skill.rs:1849-1856`；`skill.rs:230`「`S022 Mirror（098c 解码：镜像技能；非 098b 推测的废弃位）`」 | 缺失 | 中 |
+| 14 | 技能 | ~~镜像分身（C）~~ | ~~Rust `S022 Mirror` 为 `Unimplemented` 占位，`DEF_ZERO`，学习界面不可选~~ **已解决**：`S022` 转正 `SkillTree::C` + `SkillEffect::Mirror`（2 分身跟随施法、周期火球 1→3.5、CD 19→9、持续 4、+25 移速、`BuffKind::Mirror` 否决锁链与减益） | `skill.rs` S022 定义；`world.rs` `SkillEffect::Mirror` 施法分支与 `ProjectileKind::Clone`；`player.rs::add_buff` 免疫拦截；CE `MirrorIter`(`:5667`)/`gg_trg_Fireball_Mirror`(`:505`) | **一致** | 已闭环 |
 | 15 | 技能 | 操纵（Y） | Rust 无对应条目 | Y 槽仅 `S017/S018/S019`（`skill.rs:52`） | 缺失 | 中 |
 | 16 | 技能 | 全部 23 个技能**学习价格** | 文档每节均有「价格 11~15」，Rust 无技能价格表 | `meta.rs:236-238`「`cost(当前等级) -> 升级到 当前等级+1 的价格`。调用方负责提供价格表。」 | 缺失 | **高** |
 | 17 | 技能 | 等级上限（全局） | 文档 5~7 级 vs Rust `max_level` 9/20 级 ⇒ 逐档冷却必然不吻合 | `skill.rs:1316-1343` 明确列出 098c 依据（如 S002=9、S000=10） | 差异(待确认) | **高**（根因） |

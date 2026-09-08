@@ -2178,6 +2178,28 @@ impl Game {
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
+                game_core::world::ProjectileKind::Clone { owner, .. } => {
+                    // 镜像分身（C 栏）：半透明圆，沿用所有者的队伍色以便辨识。
+                    let base = self
+                        .world
+                        .players
+                        .get(owner as usize)
+                        .map(|o| o.radius)
+                        .unwrap_or(Fix64::from_num(28.0));
+                    let r = (base.to_num::<f32>() * self.scale).max(6.0);
+                    let mut color = Color::from_rgba(180, 220, 255, 150);
+                    if let Some(o) = self.world.players.get(owner as usize) {
+                        if self.world_king_or_teams() {
+                            color = if o.team == 0 {
+                                Color::from_rgba(100, 160, 255, 150)
+                            } else {
+                                Color::from_rgba(255, 110, 95, 150)
+                            };
+                        }
+                    }
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
             }
         }
 

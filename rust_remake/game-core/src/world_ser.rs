@@ -168,6 +168,7 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
             wu8(o, 12);
             wu64(o, v.to_bits());
         }
+        BuffKind::Mirror => wu8(o, 13),
     }
     wfix(o, b.remaining);
 }
@@ -186,6 +187,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         10 => BuffKind::Weakened,
         11 => BuffKind::Silenced,
         12 => BuffKind::Windwalk(f64::from_bits(u64at(b, p)?)),
+        13 => BuffKind::Mirror,
         _ => return None,
     };
     let remaining = fixat(b, p)?;
@@ -613,6 +615,15 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *emit_cooldown);
             wu64(o, emit_angle.to_bits());
         }
+        PK::Clone { owner, offset, fire_timer, fire_cd, fire_dmg, remaining } => {
+            wu8(o, 18);
+            wu32(o, *owner);
+            wvec(o, *offset);
+            wfix(o, *fire_timer);
+            wfix(o, *fire_cd);
+            wfix(o, *fire_dmg);
+            wfix(o, *remaining);
+        }
     }
 }
 
@@ -680,6 +691,14 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             let emit_angle = f64::from_bits(u64at(b, p)?);
             PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle }
         }
+        18 => PK::Clone {
+            owner: u32at(b, p)?,
+            offset: vecat(b, p)?,
+            fire_timer: fixat(b, p)?,
+            fire_cd: fixat(b, p)?,
+            fire_dmg: fixat(b, p)?,
+            remaining: fixat(b, p)?,
+        },
         _ => return None,
     };
     Some(Projectile { owner, kind, pos, alive })

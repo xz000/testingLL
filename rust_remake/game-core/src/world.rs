@@ -181,6 +181,16 @@ pub enum ProjectileKind {
         remaining: Fix64,
         beam: bool,
     },
+    /// 镜像分身（C 栏）：跟随施法者、模仿移动并周期施放火球的分身。
+    /// `offset` 为相对施法者的固定偏移；`fire_timer` 倒计时到 0 则向最近敌人发射火球（伤害 = `fire_dmg`）。
+    Clone {
+        owner: u32,
+        offset: Vec2,
+        fire_timer: Fix64,
+        fire_cd: Fix64,
+        fire_dmg: Fix64,
+        remaining: Fix64,
+    },
     /// 引力场（Y3）：飞行场持续把附近敌人吸向场中心。
     Gravity {
         dir: Vec2,
@@ -332,7 +342,8 @@ impl ProjectileKind {
             | ProjectileKind::Beam { .. }
             | ProjectileKind::Tether { .. }
             | ProjectileKind::Star { .. }
-            | ProjectileKind::BindLine { .. } => return None,
+            | ProjectileKind::BindLine { .. }
+            | ProjectileKind::Clone { .. } => return None,
         })
     }
 }
@@ -1183,6 +1194,20 @@ impl World {
                         pr.alive = false;
                     }
                 }
+                ProjectileKind::Clone { owner, offset, fire_timer, remaining, .. } => {
+                    // 镜像分身：每帧贴到施法者 + 固定偏移（模仿移动）；倒计时归零消失。
+                    // 开火倒计时在此递减（本段是 &mut 借用）；到点后的发射在 2) 段碰撞循环里做。
+                    if let Some(o) = self.players.get(*owner as usize) {
+                        if o.alive {
+                            pr.pos = o.pos + *offset;
+                        }
+                    }
+                    *remaining -= dt;
+                    *fire_timer -= dt;
+                    if *remaining <= Fix64::ZERO {
+                        pr.alive = false;
+                    }
+                }
                 ProjectileKind::Bullet { dir, speed, remaining, .. } => {
                     pr.pos += *dir * (*speed * dt);
                     *remaining -= *speed * dt;
@@ -1493,6 +1518,10 @@ impl World {
         let mut debuffs: Vec<(u32, f64)> = Vec::new();
         // 链体（锁链）生成：命中落地为持久 Tether，逐帧对绑定目标施加每秒伤害并按 pull_speed 符号拉拽。
         let mut tether_spawns: Vec<Projectile> = Vec::new();
+        // 镜像分身（C 栏）火球生成：Clone 倒计时到点时朝最近敌人发射的火弹。
+        let mut mirror_fires: Vec<Projectile> = Vec::new();
+        // 镜像分身开火待写回队列：(分身下标, 方向, 伤害) —— 计时器重置需 &mut，延后到 2c3 段。
+        let mut mirror_fire_queue: Vec<(usize, Vec2, Fix64)> = Vec::new();
         // 陨石灼烧 Scorched debuff：(受害者, 时长)。
         let mut debuffs_scorched: Vec<(u32, f64)> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
@@ -1715,7 +1744,10 @@ impl World {
                 }
                 ProjectileKind::Tether { owner, target, damage_per_sec, beam, .. } => {
                     // 回拉线：绑定目标持续掉血（伤害已含进 pull）；beam=Y1b 沿路径扫射
-                    events.push((*target, *damage_per_sec * dt, Some(*owner)));
+                    // 镜像分身免疫：被链目标若处于 Mirror 期间，不结算链伤害/拉拽。
+                    if !self.players.get(*target as usize).is_some_and(|p| p.has_buff(BuffKind::Mirror)) {
+                        events.push((*target, *damage_per_sec * dt, Some(*owner)));
+                    }
                     if *beam {
                         // 沿施法者→目标线段扫射经过的所有敌人
                         let from = self.players.get(*owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
@@ -1728,6 +1760,28 @@ impl World {
                             if point_near_segment(p.pos, from, to, p.radius) {
                                 events.push((p.id, *damage_per_sec * dt, Some(*owner)));
                             }
+                        }
+                    }
+                }
+                ProjectileKind::Clone { owner, fire_timer, fire_dmg, .. } => {
+                    // 镜像分身：开火倒计时到点 → 朝最近敌人发射一发火球。
+                    // 本段是 `&pr.kind` 不可变借用，发射与计时器重置都延后到 2c3 段统一写回。
+                    if *fire_timer <= Fix64::ZERO {
+                        let oteam = self.players.get(*owner as usize).map(|p| p.team);
+                        let mut best: Option<(Fix64, Vec2)> = None;
+                        for q in self.players.iter() {
+                            if !q.alive || Some(q.team) == oteam {
+                                continue;
+                            }
+                            let ds = (q.pos - pr.pos).length_squared();
+                            if best.map(|(b, _)| ds < b).unwrap_or(true) {
+                                best = Some((ds, q.pos));
+                            }
+                        }
+                        if let Some((_, tpos)) = best {
+                            let dir = (tpos - pr.pos).normalized();
+                            // (分身下标, 方向, 伤害) —— 火球与计时器重置在 2c3 段处理。
+                            mirror_fire_queue.push((pi, dir, *fire_dmg));
                         }
                     }
                 }
@@ -1882,19 +1936,22 @@ impl World {
                                 // 锁链（蓝链）：落地为持久 Tether——逐帧对绑定目标施加每秒伤害
                                 //（damage_per_sec=gx=0.2+0.1×L），并把目标拉向施法者（pull_speed 取正）。
                                 debuffs.push((victim, debuff_dur.to_num::<f64>()));
-                                tether_spawns.push(Projectile {
-                                    owner: pr.owner,
-                                    kind: ProjectileKind::Tether {
+                                // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
+                                if !self.players[victim as usize].mirror_immune() {
+                                    tether_spawns.push(Projectile {
                                         owner: pr.owner,
-                                        target: victim,
-                                        damage_per_sec: *gx,
-                                        pull_speed: Fix64::from_num(600.0), // >0：目标→施法者
-                                        remaining: *debuff_dur,
-                                        beam: true, // 沿连线切割经过的敌人
-                                    },
-                                    pos: pr.pos,
-                                    alive: true,
-                                });
+                                        kind: ProjectileKind::Tether {
+                                            owner: pr.owner,
+                                            target: victim,
+                                            damage_per_sec: *gx,
+                                            pull_speed: Fix64::from_num(600.0), // >0：目标→施法者
+                                            remaining: *debuff_dur,
+                                            beam: true, // 沿连线切割经过的敌人
+                                        },
+                                        pos: pr.pos,
+                                        alive: true,
+                                    });
+                                }
                             }
                             crate::skill::W098bOnHit::DrainSlow => {
                                 // 汲取·减速（098c vc，B4-T）：目标移速 ×0.5 + 施法者回血伤害×50%。
@@ -1924,19 +1981,22 @@ impl World {
                                 // 锁链·红链（文档「红链」）：落地为持久 Tether，把**施法者**拉向
                                 // 命中目标（pull_speed 取负，见 step_area_forces 符号约定）。
                                 // 绑定目标仍逐帧承受每秒伤害（damage_per_sec=gx=0.2+0.1×L）。
-                                tether_spawns.push(Projectile {
-                                    owner: pr.owner,
-                                    kind: ProjectileKind::Tether {
+                                // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
+                                if !self.players[victim as usize].mirror_immune() {
+                                    tether_spawns.push(Projectile {
                                         owner: pr.owner,
-                                        target: victim,
-                                        damage_per_sec: *gx,
-                                        pull_speed: Fix64::from_num(-600.0), // <0：施法者→目标
-                                        remaining: *debuff_dur,
-                                        beam: true, // 沿连线切割经过的敌人
-                                    },
-                                    pos: pr.pos,
-                                    alive: true,
-                                });
+                                        kind: ProjectileKind::Tether {
+                                            owner: pr.owner,
+                                            target: victim,
+                                            damage_per_sec: *gx,
+                                            pull_speed: Fix64::from_num(-600.0), // <0：施法者→目标
+                                            remaining: *debuff_dur,
+                                            beam: true, // 沿连线切割经过的敌人
+                                        },
+                                        pos: pr.pos,
+                                        alive: true,
+                                    });
+                                }
                             }
                             crate::skill::W098bOnHit::Silence => {
                                 // 禁锢·沉默（098c CC，B4-Y）：禁施法（可移动）。
@@ -2012,14 +2072,14 @@ impl World {
         // 2b2) 应用 098b on_hit 控制效果（Tied debuff / 拉向施法者 / 灼烧 Scorched）。
         for (vid, dur) in debuffs_scorched {
             if let Some(p) = self.players.get_mut(vid as usize) {
-                if p.alive {
+                if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Scorched, dur);
                 }
             }
         }
         for (vid, dur) in debuffs {
             if let Some(p) = self.players.get_mut(vid as usize) {
-                if p.alive {
+                if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Tied, dur);
                 }
             }
@@ -2046,6 +2106,48 @@ impl World {
                         *vel = d.normalized() * ret_speed;
                     }
                 }
+            }
+        }
+
+        // 2c3) 镜像分身开火：重置开火倒计时，并从分身位置射出火球。
+        for (pi, dir, dmg) in mirror_fire_queue {
+            let (Some(clone_owner), Some(clone_pos)) = (ps.get(pi).map(|c| c.owner), ps.get(pi).map(|c| c.pos)) else {
+                continue;
+            };
+            let mut fire_cd = Fix64::ZERO;
+            if let ProjectileKind::Clone { fire_timer, fire_cd: cd, .. } = &mut ps[pi].kind {
+                *fire_timer = *cd;
+                fire_cd = *cd;
+            }
+            // 计时器已重置但尚未推进（避免同帧再次触发）
+            if fire_cd > Fix64::ZERO {
+                mirror_fires.push(Projectile {
+                    owner: clone_owner,
+                    kind: ProjectileKind::W098b {
+                        proj: crate::skill::W098bProjKind::Straight,
+                        vel: dir * Fix64::from_num(600.0),
+                        speed: Fix64::from_num(600.0),
+                        radius: Fix64::from_num(35.0),
+                        remaining: Fix64::from_num(2.0),
+                        life: Fix64::from_num(2.0),
+                        gx: dmg,
+                        kb_ji: Fix64::ONE,
+                        ignite: None,
+                        blast: None,
+                        target: None,
+                        returning: false,
+                        on_hit: crate::skill::W098bOnHit::Ki,
+                        debuff_dur: Fix64::ZERO,
+                        lateral: Fix64::ZERO,
+                        forward_dir: dir,
+                        out_dist: Fix64::from_num(1200.0),
+                        burst: 0,
+                        emit_cooldown: Fix64::ZERO,
+                        emit_angle: 0.0,
+                    },
+                    pos: clone_pos,
+                    alive: true,
+                });
             }
         }
 
@@ -2124,14 +2226,14 @@ impl World {
         // 汲取·减速/削弱（B4-T）
         for (victim, dur) in slows.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
-                if p.alive {
+                if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Slow(0.5), dur);
                 }
             }
         }
         for (victim, dur) in weakens.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
-                if p.alive {
+                if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Weakened, dur);
                 }
             }
@@ -2139,7 +2241,7 @@ impl World {
         // 禁锢·沉默（B4-Y）：禁施法（可移动）
         for (victim, dur) in silences.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
-                if p.alive {
+                if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Silenced, dur);
                 }
             }
@@ -2223,6 +2325,10 @@ impl World {
         // 4e) 链体（锁链）落地：作为持久 Tether 加入，逐帧对绑定目标施加每秒伤害 + 符号拉拽。
         for t in tether_spawns.drain(..) {
             ps.push(t);
+        }
+        // 4f) 镜像分身火球：作为普通 W098b 火弹加入。
+        for f in mirror_fires.drain(..) {
+            ps.push(f);
         }
         // 5) 写回并清除已死亡/失效的弹体
         ps.retain(|p| p.alive);
@@ -3871,6 +3977,44 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
             }
             SkillEffect::LineBeam { .. } => {
                 // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
+            }
+            SkillEffect::Mirror { count, duration, speed_bonus, fire_interval, clone_offset } => {
+                // 镜像分身（C 栏）：施法者获得 +speed_bonus 移速倍率、持续 duration，
+                // 期间免疫锁链与减益（「否决锁链和负面效果」）；并生成 count 个跟随施法者、
+                // 周期施放火球的分身。火球伤害走 growth.damage（文档 1/1.5/2/2.5/3/3.5）。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    let dur = duration.to_num::<f64>().max(0.01);
+                    p.add_buff(BuffKind::Speed(1.0 + speed_bonus.to_num::<f64>()), dur);
+                    p.add_buff(BuffKind::Mirror, dur);
+                }
+                let ppos = world.players[idx as usize].pos;
+                let base = clone_offset;
+                let fb_dmg = stats.damage;
+                let n = count.max(1);
+                for k in 0..n {
+                    // 沿 X 轴左右交错分布（偶数时对称、奇数时居中也占一个）。
+                    let sign = if n == 1 {
+                        Fix64::ZERO
+                    } else if k % 2 == 0 {
+                        Fix64::ONE
+                    } else {
+                        -Fix64::ONE
+                    };
+                    let off = Vec2::new(base * sign, Fix64::ZERO);
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Clone {
+                            owner: idx,
+                            offset: off,
+                            fire_timer: fire_interval, // 首发延后一个间隔
+                            fire_cd: fire_interval,
+                            fire_dmg: fb_dmg,
+                            remaining: duration,
+                        },
+                        pos: ppos + off,
+                        alive: true,
+                    });
+                }
             }
             SkillEffect::Unimplemented => {
                 // 未实现技能的占位：不落地效果（仅消耗施法与冷却）
@@ -5956,6 +6100,72 @@ mod tests {
         let hp_after = world.players[1].hp.to_num::<f64>();
         assert!(hp_after < hp_before, "锁链应对绑定目标持续掉血，{} -> {}", hp_before, hp_after);
         assert!(hp_after < hp_early, "锁链伤害应逐帧累积（非单发），{} -> {}", hp_early, hp_after);
+    }
+
+    /// S022 镜像分身（C 栏）：施放后生成 2 个跟随施法者的分身，施法者获得 +25 移速与
+    /// 「否决锁链和负面效果」免疫；分身周期射出火球造成伤害；持续时间（4s）结束后分身消失。
+    #[test]
+    fn s022_mirror_spawns_clones_casts_fireball_and_expires() {
+        let mut world = World::new(2, 964);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO); // +x 480 处敌人
+        world.players[1].move_target = None;
+        let hp_before = world.players[1].hp.to_num::<f64>();
+
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S022, None)), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+
+        // 1) 生成 2 个非实体分身
+        let clones = world
+            .projectiles
+            .iter()
+            .filter(|pr| matches!(pr.kind, ProjectileKind::Clone { .. }))
+            .count();
+        assert_eq!(clones, 2, "应生成 2 个镜像分身，实际 {}", clones);
+
+        // 2) 施法者获得 +25 移速与镜像免疫
+        assert!(world.players[0].has_buff(BuffKind::Mirror), "施法者应获得镜像免疫 buff");
+        assert!(
+            world.players[0].buff_value(BuffKind::Speed(1.0)) > 1.0,
+            "施法者应获得 +25 移速，实际倍率 {}",
+            world.players[0].buff_value(BuffKind::Speed(1.0))
+        );
+
+        // 3) 分身周期射出火球并造成伤害
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut fireball_seen = false;
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            if world.projectiles.iter().any(|pr| matches!(pr.kind, ProjectileKind::W098b { .. })) {
+                fireball_seen = true;
+            }
+        }
+        assert!(fireball_seen, "分身应周期射出火球");
+        let hp_after = world.players[1].hp.to_num::<f64>();
+        assert!(hp_after < hp_before, "分身火球应对敌人造成伤害，{} -> {}", hp_before, hp_after);
+
+        // 4) 镜像免疫：期间施加束缚应被否决
+        world.players[0].add_buff(BuffKind::Tied, 2.0);
+        assert!(!world.players[0].has_buff(BuffKind::Tied), "镜像期间应否决束缚（Tied）");
+
+        // 5) 持续时间结束后分身消失
+        for _ in 0..200 {
+            world.step(none.clone(), dt);
+        }
+        let clones_left = world
+            .projectiles
+            .iter()
+            .filter(|pr| matches!(pr.kind, ProjectileKind::Clone { .. }))
+            .count();
+        assert_eq!(clones_left, 0, "持续时间结束后分身应消失，实际 {}", clones_left);
     }
 
     /// S018 引力：施放后场上出现吸拉场，附近敌人被拉近。

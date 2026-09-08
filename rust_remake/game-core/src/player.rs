@@ -118,6 +118,8 @@ pub enum BuffKind {
     Weakened,
     /// 禁锢·沉默（B4-Y）：禁施法（可移动）。
     Silenced,
+    /// 镜像分身（文档 C 栏）：生效期间施法者免疫锁链与减益（「否决锁链和负面效果」）。
+    Mirror,
 }
 
 impl Buff {
@@ -374,6 +376,21 @@ impl Player {
 
     /// 加一个 buff（同种刷新 / 取更久者，覆盖到一个空闲槽；无空槽则忽略）。
     pub fn add_buff(&mut self, kind: BuffKind, remaining: f64) {
+        // 镜像分身（C 栏）：期间「否决锁链和负面效果」——束缚与各类减益一律不生效。
+        // （Speed/Boost 等增益照常，故只拦截减益类。）
+        if self.has_buff(BuffKind::Mirror)
+            && matches!(
+                kind,
+                BuffKind::Tied
+                    | BuffKind::Scorched
+                    | BuffKind::Pancake
+                    | BuffKind::Slow(_)
+                    | BuffKind::Weakened
+                    | BuffKind::Silenced
+            )
+        {
+            return;
+        }
         // 怀表（M3）：增益时长 ×mult、减益时长 ÷div（098b I00M/I00N）。
         let adjusted = match kind {
             BuffKind::Tied | BuffKind::Scorched => remaining / self.item_fx.debuff_dur_div.max(1.0),
@@ -424,6 +441,11 @@ impl Player {
         self.buffs
             .iter()
             .any(|b| b.remaining > Fix64::ZERO && b.kind.same_variant(&kind))
+    }
+
+    /// 是否处于「镜像分身」无敌窗口：期间免疫锁链与一切减益（文档「否决锁链和负面效果」）。
+    pub fn mirror_immune(&self) -> bool {
+        self.has_buff(BuffKind::Mirror)
     }
 
     /// 取某种 buff 的第一个（用于读强度，如护盾剩余量）。
