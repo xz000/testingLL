@@ -218,7 +218,8 @@ pub enum SkillId {
     S017,
     /// S018 引力（热键 Y）：飞出引力场吸拉敌人（098b mc 升级版语义；拉速占位 TODO）。
     S018,
-    /// S019 锁链（热键 Y）：弹体命中把目标拉向施法者 + 定身 0.5s（098b tc；S031 附加 TODO）。
+    /// S019 锁链（热键 Y）：弹体命中落地为持久 Tether——逐帧对绑定目标施加每秒伤害（0.2+0.1×L）
+    /// + 按 pull_speed 符号拉拽（蓝链拉目标→施法者；红链 RedChain 改拉施法者→目标，文档「红链」）。
     S019,
     // ---- M2 批次D：AoE 光环系 ----
     /// S001 天罚（热键 F，普通局唯一 F 技能）：250 AoE 自伤 nova，衰减 1-d/1000，
@@ -1806,8 +1807,9 @@ impl DefTable {
                 },
             },
             // S019 锁链（Y 键）——spec：CD 17→16（20 级，步长 -0.0526）；radius 35；
-            // speed 未给（VengeanceMissile 类）→ M1 占位 800；命中拉向施法者 + Tied 0.5s
-            //（098b 拉拽+链光+S031 附加动作 TODO）；伤害 KI 公式未解码 → 恒 3 占位（TODO）。
+            // speed 未给（VengeanceMissile 类）→ M1 占位 800；命中落地为持久 Tether，逐帧对
+            // 绑定目标施加每秒伤害（0.2+0.1×L）+ 按 pull_speed 符号拉拽（见 world.rs step_area_forces）。
+            // 蓝链 ChainPull（拉目标→施法者）；红链 RedChain 改拉施法者→目标（文档「红链」）。
             SkillId::S019 => SkillDef {
                 id,
                 tree: SkillTree::Y,
