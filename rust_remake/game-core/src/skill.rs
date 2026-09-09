@@ -1627,14 +1627,17 @@ impl DefTable {
                     turn_step: 0.3,
                 },
                 growth: SkillGrowth {
+                    // 098c 校准（w3a_strings.txt Fire Spray **完整 8 档**，非 spells.json 采样的 7 档）：
+                    // 单发 2.6→4.0、missiles 6→13、CD 16→9。Rust max_level=20 → camp2 端点对齐：
+                    // 伤害 delta=(4.0-2.6)/19≈0.0737；连发 delta=(13-6)/19≈0.3684；CD delta=(9-16)/19≈-0.3684。
                     cooldown_base: 16.0,
-                    cooldown_delta: -0.3158, // 098c：16 → 10（20 级）
+                    cooldown_delta: -0.3684, // 098c：16 → 9（8 档）
                     damage_base: 2.6,
-                    damage_delta: 0.0632,    // 098c：2.6 → 3.8（7 级），camp2 对齐至 L20=3.8
+                    damage_delta: 0.0737,    // 098c：2.6 → 4.0（8 档），camp2 对齐至 L20=4.0
                     speed_base: 700.0,
-                    // 098c：missiles 6 → 12（L1→L20）；Sweep 执行处读 stats.extra 作为连发数。
+                    // 098c：missiles 6 → 13（L1→L8），camp2 至 L20=13；Sweep 执行处读 stats.extra 作为连发数。
                     extra_base: 6.0,
-                    extra_delta: 0.3158,
+                    extra_delta: 0.3684,
                     ..DEF_ZERO
                 },
             },
@@ -1669,7 +1672,8 @@ impl DefTable {
                 },
             },
             // ===== M2 批次B：位移/增益系（数值来源 spec/control/durations，见各条目注释） =====
-            // S005 反射盾（C 键）——spec：CD 25→14（9 级，步长 -1.375）；dur=(2.6+.2*vi)*jn → L1 2.8。
+            // S005 反射盾（C 键）——098c 校准（w3a_strings.txt Reflect，9 档）：CD 25→14（步长 -1.375）；
+            // 持续 2.8→4.2（9 档）→ duration_delta=(4.2-2.8)/8=0.175（原 0.2 使 L9=4.4，略超 098c 的 4.2）。
             SkillId::S005 => SkillDef {
                 id,
                 tree: SkillTree::C,
@@ -1680,7 +1684,7 @@ impl DefTable {
                     cooldown_base: 25.0,
                     cooldown_delta: -1.375,
                     duration_base: 2.8,
-                    duration_delta: 0.2,
+                    duration_delta: 0.175, // 098c：2.8 → 4.2（9 档）
                     ..DEF_ZERO
                 },
             },
@@ -1698,7 +1702,8 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S007 急行（C 键）——spec：CD 21→13（20 级，步长 -0.421）；dur=(6.2+.8*vi)*jn → L1 7.0；
+            // S007 急行（C 键）——098c 校准（w3a_strings.txt absorb，8 档）：**CD 21 恒定**（原按 098b spec
+            // 记「21→13」与 w3a 全档不符，已按 098c 改为恒定）；dur 7.0→12.6（+0.8/级，8 档）→ camp2 至 L20=12.6；
             // 移速 +35（war3 加法 → 乘数 1+35/210）；攻速 tr 无对应系统（TODO M2 后续）。
             SkillId::S007 => SkillDef {
                 id,
@@ -1711,10 +1716,11 @@ impl DefTable {
                     max_distance: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
+                    // 098c：CD 21 恒定（全 8 档均显示 21）。
                     cooldown_base: 21.0,
-                    cooldown_delta: -0.421,
+                    cooldown_delta: 0.0,
                     duration_base: 7.0,
-                    duration_delta: 0.8,
+                    duration_delta: 0.2947, // 098c：7.0 → 12.6（8 档），camp2 对齐至 L20=12.6
                     ..DEF_ZERO
                 },
             },
@@ -3434,17 +3440,15 @@ mod tests {
             }
             ref e => panic!("S014 effect 错：{e:?}"),
         }
-        // S015 火焰喷射·流射（A 形态）——**098c 校准**（`098c/data/spells.json` S015）：
-        // `damage 2.6`、`missiles [6,12]`、`cooldown [16,10]`、`knockback 60%`。
-        // → CD 16→10（旧断言 16→7 系 098b 文档值，098c 下限为 10）；
-        //   每 0.08s 一发、摆射 0.3 rad；连发数**随等级 6→12**（原硬编码 8，改走 growth.extra_* → stats.extra）；
-        //   单发 2.6+0.3L（原 2.4+0.2L）。
+        // S015 火焰喷射·流射（A 形态）——**098c 校准（w3a 完整 8 档）**：单发 2.6→4.0、
+        // missiles 6→13、CD 16→9。（旧值取自 spells.json 采样的 7 档 2.6→3.8 / [6,12] / [16,10]，已按 w3a 更正）
+        // 每 0.08s 一发、摆射 0.3 rad；连发数随等级 6→13（走 growth.extra_* → stats.extra）。
         let d = DefTable::def(SkillId::S015);
         assert_eq!(d.name, "火焰喷射·流射");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 10.0, 1e-1), "L20 CD 应 ≈10（098c 下限），实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(20).cooldown, 9.0, 1e-1), "L20 CD 应 ≈9（098c L8），实际 {:?}", d.stats_at(20).cooldown);
         assert!(near(d.stats_at(1).damage, 2.6, 1e-3), "L1 单发伤害应 2.6（098c）");
-        assert!(near(d.stats_at(20).damage, 3.8, 1e-1), "L20 单发伤害应 ≈3.8（098c L7 上限），实际 {:?}", d.stats_at(20).damage);
+        assert!(near(d.stats_at(20).damage, 4.0, 1e-1), "L20 单发伤害应 ≈4.0（098c L8），实际 {:?}", d.stats_at(20).damage);
         match d.effect {
             SkillEffect::Sweep { count, cadence, turn_step, .. } => {
                 assert_eq!(count, 6, "流射 L1 应 6 发（098c missiles[0]）");
@@ -3453,9 +3457,9 @@ mod tests {
             }
             ref e => panic!("S015 effect 错：{e:?}"),
         }
-        // 连发数随等级成长：098c missiles [6,12] → L20 应为 12（走 stats.extra，由 Sweep 执行处读取）
+        // 连发数随等级成长：098c missiles 6→13（8 档）→ L20 应为 13（走 stats.extra，由 Sweep 执行处读取）
         let n20 = d.stats_at(20).extra.to_num::<f64>().round() as u32;
-        assert_eq!(n20, 12, "L20 连发数应 12（098c missiles[1]），实际 {}", n20);
+        assert_eq!(n20, 13, "L20 连发数应 13（098c L8），实际 {}", n20);
         // B 形态：簇射 = 锥形 5 道 ±11°，伤害 3.0+0.1474L（camp2 对齐 098c "Fires 5 missiles at once" 3.0→5.8）
         let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
         assert_eq!(alt15.name, "火焰喷射·簇射");
