@@ -1442,7 +1442,9 @@ impl DefTable {
                 },
             },
             // S003 追踪弹（D 键）——spec: CD 15→9.5（9 级，步长 -0.6875）；speed 900 / radius 29；
-            // life 4.5*(1+1.5*.1*oi)=4.5s；伤害 gX = jb(Er)（M1 用 6+0.5*Xv 近似，consolidated 标注公式 jb 未解码）。
+            // life 4.5*(1+1.5*.1*oi)=4.5s。w3a「Damage: N + range」中的 range = 098c `Ur`
+            // （D 槽法术等级计数）：因 R009/R005/R00Z 互斥，玩家只持有一个 D 槽技能，Ur≡本技能等级，
+            // 已等价于 per-level `7+1×(L-1)`，无需共享计数或距离项（详见审计文档 §2.2.3 / 已知冲突台账）。
             SkillId::S003 => SkillDef {
                 id,
                 tree: SkillTree::D,
@@ -1463,10 +1465,11 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 15.0,
                     cooldown_delta: -0.6875,
-                    // 基础伤害系数（098c w3a Homing）：7→15（+1/级，9 档），即 base 7.0 / delta 1.0。
-                    // w3a「Damage: N + range」中的「+ range」为**距离加成**机制，未解码（jb(Er) 公式不明），
-                    // 此处仅建模可解码的等级系数；+range 项待后续立项（见审计文档 §5.5 待裁决台账）。
-                    damage_base: 7.0,
+                    // 伤害（098c JASS function Lb: `7 + 1*Ur`）：Ur 为 D 槽法术等级计数，解锁科技（R005）即 +1、
+                    // 每次升级再 +1 → Ur = 等级 L（L1 时 Ur=1）。因三 D 槽技能互斥，Ur≡本技能等级，
+                    // per-level 即 `7 + 1×L` → L1=8 / L9=16（base 8.0 / delta 1.0）。
+                    // 原以为「+ range」是飞行距离加成，实为 Ur 等级计数（已通过 JASS 反编译确认，非距离机制）。
+                    damage_base: 8.0,
                     damage_delta: 1.0,
                     ..DEF_ZERO
                 },
@@ -3145,9 +3148,10 @@ mod tests {
         let s9 = def.stats_at(9);
         assert!(near(s1.cooldown, 15.0, 1e-3), "L1 CD 应 15（spec l1），实际 {:?}", s1.cooldown);
         assert!(near(s9.cooldown, 9.5, 1e-2), "L9 CD 应 9.5（spec lmax），实际 {:?}", s9.cooldown);
-        // 基础伤害系数（098c w3a Homing）：7→15（+1/级）；「+ range」距离加成未建模（TODO）。
-        assert!(near(s1.damage, 7.0, 1e-3), "L1 基础伤害应 7（w3a），实际 {:?}", s1.damage);
-        assert!(near(s9.damage, 15.0, 1e-2), "L9 基础伤害应 15（w3a L9），实际 {:?}", s9.damage);
+        // 基础伤害系数（098c JASS `7 + 1*Ur`，Ur=等级 L 含解锁+1）：L1=8 / L9=16；w3a「+ range」= Ur 等级计数
+        // （非距离加成），因 D 槽技能互斥 Ur≡等级，per-level 模型已覆盖，无需距离项。
+        assert!(near(s1.damage, 8.0, 1e-3), "L1 基础伤害应 8（7+1*Ur, Ur=1），实际 {:?}", s1.damage);
+        assert!(near(s9.damage, 16.0, 1e-2), "L9 基础伤害应 16（7+1*Ur, Ur=9），实际 {:?}", s9.damage);
         match def.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Homing, speed, radius, life, ignite, .. } => {
                 assert!(near(speed, 900.0, 1e-3), "speed 应 900（spec），实际 {speed:?}");
