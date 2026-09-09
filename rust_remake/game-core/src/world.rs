@@ -629,8 +629,12 @@ impl World {
                 let shielded = p.has_buff(BuffKind::LavaShield);
                 let lava_mult = if shielded { 1.0 - p.item_fx.lava_resist_frac } else { 1.0 };
                 let lava_mult = lava_mult * p.lava_taken_mult;
-                // 岩浆随回合成长（098c To[0] 随回合成长，D9 批次3；成长率未解码 → 线性占位）
-                let round_scale = self.round_number.max(1) as f64;
+                // 岩浆伤害（098c 解码实证，war3map_pretty.j `nA` 每 0.1s 扣 `To[id]`）：
+                // 每跳恒定 `To[id]≈0.9`，显示 `To[0]*$A`（$A=10 跳/秒）→ **约 9/s 恒定**。
+                // 全 JASS 无「随回合数成长」的缩放（仅国王模式对君主 ±10% 抗岩浆、物品减速等），
+                // MECHANICS.md「To[0] 随回合数成长」是文档误差；「拖延越久越痛」实际来自**缩圈导致暴露更多**，
+                // 已由 shrink_arena 实现。故此处不用 round_scale，固定 1.0。
+                let round_scale = 1.0;
                 let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult * round_scale) * dt);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
             }
