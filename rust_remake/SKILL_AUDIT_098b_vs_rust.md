@@ -518,7 +518,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | --- | --- | --- | --- |
 | 价格 | 12 | `learn_cost() = 12` | **一致**（已补齐） |
 | 等级 | 5 级 | `max_level = 20`（`skill.rs:1338`） | 差异(待确认) |
-| 吸引力 | `13 + 升级次数` | `pull_speed: 13.0`（基础值；逐级 +1 未接 growth，TODO） | L1 **一致**；斜率缺失(TODO) |
+| 吸引力 | 098b 中文说明 `13 + 升级次数`（低优先级）；098c `Force 12→19`（8 档 +1/级，优先） | `growth.extra_base 12.0 / extra_delta 0.3684`，`world.rs` 施法分支（`stats.extra > 0` 优先）读入 `pull_speed`；effect.pull_speed=12 仅作 L1 兜底；Rust L20 = 098c L8 = 19（camp2 端点对齐） | **一致**（详见下「引力物理机制」） |
 | 伤害 | `0.3 + 0.2 × 升级次数` | `damage_base 0.3 / delta 0.2`（新增 `Gravity.damage_per_sec`） | **一致**（已补齐） |
 | 冷却 | 21 / 20.5 / 20 / 19.5 / 19 | `cooldown_base 26.0`（恒定） | 差异(待确认) |
 | 范围/持续 | 未给 | `radius 200 / duration 5.0 / range 1200 / speed_base 0.0` | — |
@@ -537,7 +537,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 → **已解决**：A 形态伤害已补齐（`damage_base 0.3 / delta 0.2`，新增 `Gravity.damage_per_sec`
   并接入伤害结算段），吸引力占位 300 已改为文档值 13；B 形态每秒伤害斜率 0.25→1.25、
   生命恢复改为 `1.0 / 0.2`（MAX_HP=100 绝对值口径）、并新增 45% 减速（`Slow(0.55)`）。
-  回归测试见 §7.4。**遗留**：吸引力 `13 + 升级次数` 的逐级 +1 未接 growth（`pull_speed` 走 effect 字段）。
+  回归测试见 §7.4。吸引力 `12→19` 已随 level 走 `growth.extra_*`，由 `world.rs` 施法分支读入 `pull_speed`（详见下「引力物理机制」）。
 
 #### 2.6.4 操纵 —— **缺失**
 
@@ -808,7 +808,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | # | 类别 | 条目 | 关键差异 | 代码依据摘录 | 标记 | 优先级 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 技能 | **禁锢 `S017` B 形态（沉默）** | ~~冷却 L1 25.0 vs 文档 17.0（差 8 秒）~~ **已解决**：098c `spells.json` S017 明列 `silence_cd 16.0`（与 A 形态 `cooldown 25` 并列，说明 B 有**独立**CD）→ B 形态改为恒定 **16.0**（原误用 A 的 25.0/-0.658）。沉默时长 5s 与 098c `silence 5s` 一致 | `098c/data/spells.json` S017：`"silence_cd": 16.0`、`"silence": "5s..."`；`skill.rs` S017B `cooldown_base 16.0 / delta 0.0` | **一致** | 已闭环 |
-| 2 | 技能 | **引力 `S018` A 形态（黑洞）** | ~~CD 26 vs 文档 21→19~~ **已解决（本轮 camp2）**：098c `w3a_strings.txt` Gravity 明列 CD **25 恒定**、伤害 `0.3→1.7`（8 档 +0.2/级）→ Rust 改 **`cooldown_base 25` 恒定、`damage_base 0.3 / delta 0.0737`**（L20=1.7，camp2 端点对齐）；吸引力 `pull_speed` 仍为占位（effect 字段，TODO） | `098c/out/w3a_strings.txt` Gravity；`skill.rs` S018 `cooldown_base 25 / damage_base 0.3 / delta 0.0737` | **一致** | 已闭环 |
+| 2 | 技能 | **引力 `S018` A 形态（黑洞）** | ~~CD 26 vs 文档 21→19~~ **已解决（本轮 camp2）**：098c `w3a_strings.txt` Gravity 明列 CD **25 恒定**、伤害 `0.3→1.7`（8 档 +0.2/级）→ Rust 改 **`cooldown_base 25` 恒定、`damage_base 0.3 / delta 0.0737`**（L20=1.7，camp2 端点对齐）；吸引力 **`Force 12→19`** 已接 `growth.extra_*`（L20=19，effect.pull_speed=12 仅 L1 兜底），`world.rs:3907` 读 `stats.extra`，已由「引力物理机制」立项闭环 | `098c/out/w3a_strings.txt` Gravity；`skill.rs` S018 `cooldown_base 25 / damage_base 0.3 / delta 0.0737`、`extra_base 12.0 / extra_delta 0.3684`；`world.rs:3907` | **一致** | 已闭环 |
 | 3 | 技能 | **锁链 `S019`（A/B）** | ~~伤害占位常量 3.0~~ **已解决（本轮 camp2）**：098c Link 伤害 `0.2→1.8`、CD `17→8`（9 档）；Induction 伤害 `0.2→1.8`、CD 16 恒定 → Rust A 改 **`damage_base 0.2 / delta 0.0842`、`cooldown_base 17 / delta -0.4737`**；B(红链) **CD 16 恒定、`damage 0.2 / delta 0.0842`**。闪电附加未实现（TODO） | `098c/out/w3a_strings.txt` Link / Induction；`skill.rs` S019 / S019B | **一致** | 已闭环 |
 | 4 | 技能 | **火焰喷射 `S015`** | **已解决（按 098c 完整工具提示修正）**：`w3a_strings.txt` Fire Spray 明列 伤害 2.6→3.8（7 档 +0.2/级）、`missiles [6,12]`、`cooldown [16,10]`、`knockback 60%` → 单发 **2.6+0.0632L**（camp2 对齐至 L20=3.8；上一版误用 0.3 使 L20≈8.3 远超上限 3.8，已修正）；连发数改**随等级 6→12**（原硬编码 8，走 `growth.extra_*`→`stats.extra`，由 `Sweep` 执行处读取）；冷却改 16→**10**。B 形态（簇射）098c 无对应槽，维持现状 | `098c/out/w3a_strings.txt` Fire Spray；`skill.rs` S015 `damage_base 2.6 / delta 0.0632`、`count 6`、`extra_base 6.0 / extra_delta 0.3158`、`cooldown_delta -0.3158`；`world.rs` `SkillEffect::Sweep` 执行处 | **一致** | 已闭环 |
 | 5 | 技能 | **弹跳球 `S016`** | ~~冷却：文档递减 vs Rust 恒定 20；伤害 A 5.4 vs 6.0~~ **已解决（修正）**：`w3a_strings.txt` Bouncer 明列 冷却 20→13（**8 档 -1/级**）、伤害 6→13、射程 900→1950。**原据 `spells.json` 标量 `cooldown 20` 误判为恒定、结论"Rust 正确"有误**——完整工具提示确证 CD 随等级递减，Rust 原恒定 20 系错误，已加 **`cooldown_delta -0.3684`（L20=13）** 修正；伤害 `6+1.0L` 与 detailed `gX=5+L` 及 098c 每级 +1 吻合，维持不变；射程增长 Rust 未建模（无 `range_delta` 字段） | `098c/out/w3a_strings.txt` Bouncer；`skill.rs` S016 `cooldown_base 20 / delta -0.3684`、`damage_base 6 / delta 1.0` | **一致** | 已闭环（修正 CD 恒定误判） |
@@ -930,7 +930,6 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | S019B | 红链 | CD / 伤害 | 16 恒定 / 0.2→1.8 (9) | 16 / 0；0.2 / 0.0842 | 20 |
 
 **语义遗留（非数值，待 M2 决策）**：
-- S018 `pull_speed`（吸引力）仍走 effect 占位字段，未随 098c Force 12→19 缩放（TODO，见下「引力物理机制」）。
 - S012B 凤凰**伤害** `4+0.5L`：098c 调试/JASS 中凤凰弹为 `6*jn`（疑似**恒定 6**，不随等级成长），与 Rust 的 4+0.5L 不符，待确认后校准。
 - S020 灾变为化身模式专属 F 技能，优先级低；数值已按 098c 11/12/13 精确对齐。
 
@@ -991,7 +990,10 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
   的原则应改为 `damage_delta 0.0737 / extra_delta 0.3684 / cooldown_delta -0.3684`，但会改动已闭环的 #4
   及 `s009_s014_s015_s016_match_spec` 中「L20 连发数 12」的断言 → **待确认后单独立项**。
 
-**引力物理机制（待对比）**：098c 引力·暗物质工具提示给出 `Force 12→19`、`Damage 0.3→1.7`、`CD 25`（`spells.json` S018 `force: 12`）。Rust 侧 `GravityZone.pull_speed` 现为**占位 13.0**（effect 字段，不随等级成长），而 098c 的 Force 是**逐档 12→19**。要做物理机制对比需先定位 098c 施加该力的每 tick 逻辑（判断 Force 是加速度还是速度增量、与 33Hz 帧的关系），再决定 Rust 侧应建模为「每帧速度增量」还是「直接位移」。**建议单独立项**（涉及 JASS 施力点定位 + 与 Rust `step_area_forces` 的口径对齐），本轮未改。
+**引力物理机制（已闭环）**：098c `Force 12→19`（`spells.json` S018 `force: 12`，逐档 +1/级）现已接入 Rust。定位结论：
+- 098c 的真实施力函数是混淆名 JASS，tooltip 里的 `Force` 是技能数据字段（非 WC3 玩家组类型 `Force`）；Rust 侧通过 `world.rs:3907` 读 `stats.extra`（随等级成长的标量）作为每帧速度增量 `p.pull += d.normalized() * pull_speed`，随后 `pos += self.pull * dt`（`player.rs`），即 **Force = 内部速度（units/s），再经 `LEGACY_SPEED` 缩放**——与 098c Force 同单位，口径一致。
+- 实现：S018 `growth.extra_base 12.0 / extra_delta 0.3684`，`world.rs` 施法分支 `let pull = if stats.extra > 0 { stats.extra } else { pull_speed };`，effect.pull_speed=12 仅作 L1 兜底。`s017_s018_s019_match_spec` 新增断言 `L1 extra=12`、`L20 extra≈19`（camp2 端点对齐）。
+- 物理语义判定：Rust 把 `pull_speed` 当作**速度增量**（非加速度），逐帧累加到位置；098c 同口径（按 33Hz 帧的每 tick 位移推论）。**无需改为加速度模型**。
 
 ---
 
