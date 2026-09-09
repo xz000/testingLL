@@ -2095,13 +2095,14 @@ impl DefTable {
                     on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Splitter）：每弹伤害 3.0→5.5、CD 30→22（均 6 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L6）：
-                    // 伤害 delta=(5.5-3.0)/19≈0.1316；CD delta=(22-30)/19≈-0.4211。
+                    // 098c 校准（w3a_strings.txt 分裂弹·区域 orb，8 档）：每弹伤害 3.0→6.5、CD 30→20。
+                    // 与 A 形态（splitter "splits into minor missiles"）端点完全相同。
+                    // Rust max_level=20 → camp2 端点对齐：
+                    // 伤害 delta=(6.5-3.0)/19≈0.1842；CD delta=(20-30)/19≈-0.5263。
                     cooldown_base: 30.0,
-                    cooldown_delta: -0.4211,
+                    cooldown_delta: -0.5263,
                     damage_base: 3.0,
-                    damage_delta: 0.1316,
+                    damage_delta: 0.1842,
                     extra_base: 2.5,
                     extra_delta: 0.5,
                     ..DEF_ZERO
@@ -2180,13 +2181,15 @@ impl DefTable {
                     on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Fire Spray）：单发 2.6→3.8、CD 16→10（均 7 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L7）：
-                    // 伤害 delta=(3.8-2.6)/19≈0.0632；CD delta=(10-16)/19≈-0.3158。
-                    cooldown_base: 16.0,
-                    cooldown_delta: -0.3158,
-                    damage_base: 2.6,
-                    damage_delta: 0.0632,
+                    // 098c 校准（w3a_strings.txt 簇射 "Fires 5 missiles at once"，8 档）：
+                    // 单发 3.0→5.8（+0.4/级）、CD 14→7。
+                    // ⚠ 勿用 A 形态 Fire Spray（流射）的 2.6→4.0 / 16→9，那是另一技能。
+                    // Rust max_level=20 → camp2 端点对齐：
+                    // 伤害 delta=(5.8-3.0)/19≈0.1474；CD delta=(7-14)/19≈-0.3684。
+                    cooldown_base: 14.0,
+                    cooldown_delta: -0.3684,
+                    damage_base: 3.0,
+                    damage_delta: 0.1474,
                     ..DEF_ZERO
                 },
             },
@@ -2215,13 +2218,15 @@ impl DefTable {
                 tree: SkillTree::R,
                 name: "移形换位·搬运",
                 needs_point: true,
-                effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(900.0) },
+                effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(600.0) },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Relocate）：射程恒定 900、CD 17.5→8.5（10 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L10 = 8.5）：CD delta=(8.5-17.5)/19≈-0.4737。
-                    cooldown_base: 17.5,
-                    cooldown_delta: -0.4737,
-                    max_distance_base: 900.0,
+                    // 098c 校准（w3a_strings.txt 搬运 "Cast a bolt that will transfer you to its location"，8 档）：
+                    // CD 14→4。Rust max_level=20 → camp2 端点对齐：CD delta=(4-14)/19≈-0.5263。
+                    // 射程：该 tooltip **无射程字段** → 维持 098b 文档口径 600（600×(1+.1ei)）。
+                    // （"Teleports ... Range: 900 / cd 17.5→8.5" 是 R 槽**另一个**技能，非搬运。）
+                    cooldown_base: 14.0,
+                    cooldown_delta: -0.5263,
+                    max_distance_base: 600.0,
                     ..DEF_ZERO
                 },
             },
@@ -2331,13 +2336,15 @@ impl DefTable {
                     on_hit: W098bOnHit::Recharge,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Bouncer）：伤害 6→13、CD 20→13（均 8 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
-                    // 伤害 delta=(13-6)/19≈0.3684；CD delta=(13-20)/19≈-0.3684。
-                    cooldown_base: 20.0,
-                    cooldown_delta: -0.3684,
+                    // 098c 校准（w3a_strings.txt 充能 "Cast a missile that will return to you if you hit"，8 档）：
+                    // 伤害 6→12.3（+0.9/级）、CD 23.5→18.5、射程恒定 900。
+                    // ⚠ 勿用 A 形态 Bouncer（弹跳弹）的 6→13 / 20→13，那是另一技能。
+                    // Rust max_level=20 → camp2 端点对齐：
+                    // 伤害 delta=(12.3-6)/19≈0.3316；CD delta=(18.5-23.5)/19≈-0.2632。
+                    cooldown_base: 23.5,
+                    cooldown_delta: -0.2632,
                     damage_base: 6.0,
-                    damage_delta: 0.3684,
+                    damage_delta: 0.3316,
                     ..DEF_ZERO
                 },
             },
@@ -3449,10 +3456,10 @@ mod tests {
         // 连发数随等级成长：098c missiles [6,12] → L20 应为 12（走 stats.extra，由 Sweep 执行处读取）
         let n20 = d.stats_at(20).extra.to_num::<f64>().round() as u32;
         assert_eq!(n20, 12, "L20 连发数应 12（098c missiles[1]），实际 {}", n20);
-        // B 形态：簇射 = 锥形 5 道 ±11°，伤害 2.6+0.0632L（camp2 对齐 098c Fire Spray）
+        // B 形态：簇射 = 锥形 5 道 ±11°，伤害 3.0+0.1474L（camp2 对齐 098c "Fires 5 missiles at once" 3.0→5.8）
         let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
         assert_eq!(alt15.name, "火焰喷射·簇射");
-        assert!(near(alt15.stats_at(1).damage, 2.6, 1e-3));
+        assert!(near(alt15.stats_at(1).damage, 3.0, 1e-3));
         match alt15.effect {
             SkillEffect::Warlock098b { count, spread_step, radius, .. } => {
                 assert_eq!(count, 5, "簇射应锥形 5 道");
