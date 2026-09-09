@@ -420,13 +420,17 @@ impl Game {
             if self.steam_avatars.iter().any(|(k, _)| *k == id) {
                 continue;
             }
-            if let Some((rgba, side)) = net_steam::session::avatar_rgba(t, id, net_steam::session::AvatarSize::Small) {
+            // Medium(64) 而非 Small(32)：裁成内切圆后要缩放到角色身上显示，
+            // 64px 源图的圆边明显比 32px 平滑（羽化后不糊）。
+            if let Some((rgba, side)) = net_steam::session::avatar_rgba(t, id, net_steam::session::AvatarSize::Medium) {
                 fetched.push((id, rgba, side));
             }
         }
         // t 到此不再使用 → 可以改 self 了。
         self.steam_pings = pings;
-        for (id, rgba, side) in fetched {
+        for (id, mut rgba, side) in fetched {
+            // 裁成内切圆：角色/化身上的头像是叠在圆形角色体里的，方形图会在四角露方角。
+            net_steam::session::circular_crop_rgba(&mut rgba, side);
             let img = graphics::Image::from_pixels(
                 &ctx.gfx,
                 &rgba,
@@ -444,7 +448,7 @@ impl Game {
         let Some((_, img)) = self.steam_avatars.iter().find(|(k, _)| *k == id) else {
             return false;
         };
-        let s = size / 32.0; // 缓存的是 32x32 小头像
+        let s = size / 64.0; // 缓存的是 64x64 头像（已裁成内切圆）
         canvas.draw(img, graphics::DrawParam::new().dest(Point2 { x, y }).scale([s, s]));
         true
     }
