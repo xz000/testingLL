@@ -725,13 +725,13 @@ mod tests {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         let pr = &mut ms.profiles[0];
         pr.gold = 20;
-        // 买头盔 1（文档「价格 6」）
+        // 买头盔 1（098c 买价 9）
         assert!(pr.buy_item(crate::item::ItemId::Helm1));
-        assert_eq!(pr.gold, 14);
+        assert_eq!(pr.gold, 11);
         assert_eq!(pr.items, vec![crate::item::ItemId::Helm1]);
-        // 升级头盔 2（文档同价 6 金）——每步同价
+        // 升级头盔 2（098c 同价 9 金）——每步同价
         assert!(pr.buy_item(crate::item::ItemId::Helm2));
-        assert_eq!(pr.gold, 8);
+        assert_eq!(pr.gold, 2);
         assert_eq!(pr.items, vec![crate::item::ItemId::Helm2], "同家族应替换为高档");
         // 不同家族共存（098c：每步同价 5 金）
         pr.gold = 10;
