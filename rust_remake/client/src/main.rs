@@ -523,7 +523,7 @@ struct Game {
     /// Steam：各成员的 ping（毫秒），键 = SteamID；每 ~0.5s 刷新一次（帧同步对延迟敏感，值得显性展示）。
     #[cfg(feature = "steam")]
     steam_pings: Vec<(u64, i32)>,
-    /// Steam：头像缓存（SteamID → 32x32 贴图）。拉过一次就缓存，Steam 首次常拉不到，下次自动重试。
+    /// Steam：头像缓存（SteamID → 64x64 贴图，已裁成内切圆）。拉过一次就缓存，Steam 首次常拉不到，下次自动重试。
     #[cfg(feature = "steam")]
     steam_avatars: Vec<(u64, graphics::Image)>,
     /// Steam：ping/头像刷新的节流计数（每 30 帧一次）。
@@ -1884,7 +1884,7 @@ impl Game {
                 let av = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(4.0), Point2 { x: fx, y: fy }, r + 10.0, 0.5, Color::from_rgba(255, 90, 90, 200))?;
                 canvas.draw(&av, graphics::DrawParam::new());
             }
-            // 内圈 Steam 头像（B6，D13 #12）：32px 头像缩放进角色圆内；LAN/无 Steam 无头像（角色色即身份）。
+            // 内圈 Steam 头像（B6，D13 #12）：64px 头像裁成内切圆后缩放进角色圆内；LAN/无 Steam 无头像（角色色即身份）。
             #[cfg(feature = "steam")]
             {
                 let steam_id_of = self.steam_roster.iter().find(|(slot, _, _)| *slot as u32 == p.id).map(|(_, _, id)| *id);

@@ -166,6 +166,34 @@ pub fn avatar_rgba(transport: &SteamTransport, steam_id: u64, size: AvatarSize) 
     bytes.map(|b| (b, size.side()))
 }
 
+/// 把正方形 RGBA 头像裁成**内切圆**：内切圆以外的像素 alpha 置 0。
+///
+/// 用途：角色/化身身上的头像是叠在圆形角色体里的，直接用方形图会在四个角露出方角；
+/// 裁成内切圆后与角色圆（以及外圈 buff 环）视觉一致。
+///
+/// 边缘做 1px 羽化（alpha 随到边界的距离线性衰减），避免小尺寸头像出现硬锯齿。
+/// `rgba` 按 `side² × 4` 的 RGBA 行主序解释；字节数不足时只处理已有部分（不 panic）。
+pub fn circular_crop_rgba(rgba: &mut [u8], side: u32) {
+    if side == 0 {
+        return;
+    }
+    let n = side as f32;
+    let c = (n - 1.0) / 2.0; // 以像素中心为原点
+    let r = n / 2.0;
+    for y in 0..side {
+        for x in 0..side {
+            let dx = x as f32 - c;
+            let dy = y as f32 - c;
+            let d = (dx * dx + dy * dy).sqrt();
+            // d >= r 全透明；r-1..r 之间线性过渡（羽化一圈 1px，抗锯齿）
+            let keep = (r - d).clamp(0.0, 1.0);
+            if let Some(a) = rgba.get_mut(((y * side + x) * 4 + 3) as usize) {
+                *a = (*a as f32 * keep) as u8;
+            }
+        }
+    }
+}
+
 /// 到某 peer 的当前 ping（毫秒）。`None` = 还没建立会话 / Steam 暂无测量值
 /// （帧同步对延迟敏感，没测出来时界面应显示“--”而不是 0）。
 pub fn ping_to(transport: &SteamTransport, peer: u64) -> Option<i32> {
@@ -958,3 +986,49 @@ impl SteamSession {
     pub fn into_transport(self) -> SteamTransport {
         self.transport
     }}
+
+#[cfg(test)]
+mod tests {
+    use super::circular_crop_rgba;
+
+    /// 造一张全不透明的正方形 RGBA 图。
+    fn opaque(side: u32) -> Vec<u8> {
+        vec![255u8; (side * side * 4) as usize]
+    }
+
+    #[test]
+    fn circular_crop_keeps_center_and_clears_corners() {
+        let side = 8u32;
+        let rgba = &mut opaque(side);
+        circular_crop_rgba(rgba, side);
+        let alpha = |x: u32, y: u32| rgba[((y * side + x) * 4 + 3) as usize];
+        // 圆心附近必须完整保留
+        assert_eq!(alpha(4, 4), 255, "圆心应完全不透明");
+        assert_eq!(alpha(3, 4), 255, "圆心邻像素应保留");
+        // 四角落在内切圆外 → alpha 归零
+        for (x, y) in [(0u32, 0u32), (7, 0), (0, 7), (7, 7)] {
+            assert_eq!(alpha(x, y), 0, "四角({x},{y})应在内切圆外");
+        }
+    }
+
+    #[test]
+    fn circular_crop_is_symmetric() {
+        let side = 16u32;
+        let rgba = &mut opaque(side);
+        circular_crop_rgba(rgba, side);
+        let alpha = |x: u32, y: u32| rgba[((y * side + x) * 4 + 3) as usize];
+        for y in 0..side {
+            for x in 0..side {
+                assert_eq!(alpha(x, y), alpha(side - 1 - x, y), "左右应对称");
+                assert_eq!(alpha(x, y), alpha(x, side - 1 - y), "上下应对称");
+            }
+        }
+    }
+
+    #[test]
+    fn circular_crop_handles_zero_side_without_panic() {
+        let mut rgba = vec![255u8; 16];
+        circular_crop_rgba(&mut rgba, 0);
+        assert_eq!(rgba, vec![255u8; 16], "side=0 应原样返回");
+    }
+}
