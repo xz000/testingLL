@@ -1798,8 +1798,10 @@ impl DefTable {
                 },
             },
             // ===== M2 批次C：场/线控制系 =====
-            // S017 禁锢·缠绕（Y 键）——098c Disable（实为沉默）CD 16→12.5（camp2 对齐，见 growth）。
-            // speed 900 / radius 23；缠绕 4.25+0.25L（M1 近似）；伤害公式未解码 → 恒 3 占位（TODO）。
+            // S017 禁锢·缠绕（Y 键）——098c 缠绕分支（"bind its target to its current position"）：
+            // CD 25→10（8 档）、持续 4.5→6.25（8 档，+0.25/级）。speed 900 / radius 23；
+            // 伤害公式未解码 → 恒 3 占位（TODO）。数值见 growth（camp2 端点对齐）。
+            // ⚠ 098c 的「沉默」是**另一分支**（CD 16→12.5、5s 恒定），对应 **S017B**，勿与缠绕混淆。
             SkillId::S017 => SkillDef {
                 id,
                 tree: SkillTree::Y,
@@ -1818,14 +1820,14 @@ impl DefTable {
                     on_hit: W098bOnHit::Cripple,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Disable=silence）：CD 16→12.5（8 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8 = 12.5）：cooldown_delta=(12.5-16)/19≈-0.1842。
-                    // 注：098c Disable 实为沉默（5s 恒定）；Rust S017A 建模为缠绕（残废 4.25+0.25L），持续/伤害为 M1 近似。
-                    cooldown_base: 16.0,
-                    cooldown_delta: -0.1842,
+                    // 098c 校准（w3a_strings.txt 缠绕 bind）：CD 25→10（8 档）、持续 4.5→6.25（8 档）。
+                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
+                    // CD delta=(10-25)/19≈-0.7895；持续 delta=(6.25-4.5)/19≈0.0921。
+                    cooldown_base: 25.0,
+                    cooldown_delta: -0.7895,
                     damage_base: 3.0,
-                    duration_base: 4.25,
-                    duration_delta: 0.25,
+                    duration_base: 4.5,
+                    duration_delta: 0.0921,
                     ..DEF_ZERO
                 },
             },
@@ -2119,11 +2121,12 @@ impl DefTable {
                     max_distance: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Wind Walk）：CD 30→20（5 级）、持续 3.1s 恒定。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L5 = 20）：CD delta=(20-30)/19≈-0.5263。
+                    // 形态 B（潜行/隐身）**冷却与 A 共用**（098c IB，见审计文档 §2.3.2）→ base 30 / delta -0.684。
+                    // 持续：098c 调试输出 S010 两模式分别为「Wind Walk (charge) 3.1*jn」与
+                    // 「Wind Walk (invisibility) 4*jn」→ **B 形态取 4.0**（勿套用 A 形态的 3.1）。
                     cooldown_base: 30.0,
-                    cooldown_delta: -0.5263,
-                    duration_base: 3.1,
+                    cooldown_delta: -0.684,
+                    duration_base: 4.0,
                     ..DEF_ZERO
                 },
             },
@@ -3221,12 +3224,12 @@ mod tests {
 
     #[test]
     fn s017_s018_s019_match_spec() {
-        // S017 禁锢·缠绕（A 形态）：CD 16→12.5（camp2 对齐 098c L8=12.5）；缠绕 (4+0.25L) → L1 4.25。
+        // S017 禁锢·缠绕（A 形态）：098c 缠绕分支 CD 25→10、持续 4.5→6.25（camp2 对齐）。
         let d = DefTable::def(SkillId::S017);
         assert_eq!(d.name, "禁锢·缠绕");
-        assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 12.5, 1e-1), "L20 CD 应 ≈12.5（098c L8），实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).duration, 4.25, 1e-3), "L1 残废应 4+0.25");
+        assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
+        assert!(near(d.stats_at(20).cooldown, 10.0, 1e-1), "L20 CD 应 ≈10（098c L8），实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(1).duration, 4.5, 1e-3), "L1 缠绕持续应 4.5");
         match d.effect {
             SkillEffect::Warlock098b { speed, radius, on_hit: W098bOnHit::Cripple, .. } => {
                 assert!(near(speed, 900.0, 1e-3) && near(radius, 23.0, 1e-3));
