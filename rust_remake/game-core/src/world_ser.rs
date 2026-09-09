@@ -779,6 +779,21 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
         wu32(&mut o, *k);
         wu32(&mut o, *v);
     }
+    // 缩圈倒计时 + 下轮角色（U5 同步修复）：这三个字段此前**从未编码**，解码端只能填
+    // 硬编码默认值（10.0 / None / 空），于是每次快照 round-trip 后本端的缩圈节奏与
+    // 化身/国王分配都被重置 → 与另一端永久分叉（Steam 双机不同步的根因）。
+    wfix(&mut o, w.shrink_timer);
+    match w.pending_avatar {
+        Some(id) => {
+            wu8(&mut o, 1);
+            wu32(&mut o, id);
+        }
+        None => wu8(&mut o, 0),
+    }
+    wu8(&mut o, w.pending_kings.len() as u8);
+    for k in &w.pending_kings {
+        wu32(&mut o, *k);
+    }
     o
 }
 
@@ -867,7 +882,28 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         kills_this_round.push((k, v));
     }
-    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar: None, pending_kings: Vec::new(), shrink_timer: 10.0, ice })
+    // 缩圈倒计时 + 下轮角色（U5 同步修复；顺序必须与 `world_to_bytes` 一致）。
+    // 化身/国王 id 与 eliminated/kills 同样作为玩家下标使用，越界一律拒绝（D2 下界防护）。
+    let shrink_timer = fixat(b, &mut p)?;
+    let pending_avatar = if u8at(b, &mut p)? == 1 {
+        let id = u32at(b, &mut p)?;
+        if (id as usize) >= np {
+            return None;
+        }
+        Some(id)
+    } else {
+        None
+    };
+    let n_pk = u8at(b, &mut p)? as usize;
+    let mut pending_kings = Vec::with_capacity(n_pk);
+    for _ in 0..n_pk {
+        let k = u32at(b, &mut p)?;
+        if (k as usize) >= np {
+            return None;
+        }
+        pending_kings.push(k);
+    }
+    Some(World { players, arena_radius, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
@@ -898,17 +934,70 @@ mod tests {
         }
         w.players[0].dash_active = true;
         w.players[0].shadow_anchor = Some(Vec2::new(Fix64::ONE, Fix64::from_num(2.0)));
+        // U5：把此前「漏编码」或「已编码但漏断言」的字段全部置为非默认值，
+        // 确保 round-trip 真的保真（填默认值会让断言失去意义）。
+        w.mode = 3;
+        w.avatar = Some(1);
+        w.kings = vec![0, 2];
+        w.f_override = vec![None, Some(crate::skill::SkillId::S020), None];
+        w.round_forced = true;
+        w.round_number = 4;
+        w.pending_avatar = Some(2);
+        w.pending_kings = vec![1];
+        w.shrink_timer = Fix64::from_num(7.5);
         let bytes = world_to_bytes(&w);
         let back = world_from_bytes(&bytes).expect("decode");
 
         assert_eq!(w.arena_radius, back.arena_radius);
         assert_eq!(w.sandbox, back.sandbox);
+        assert_eq!(w.round_seed, back.round_seed, "round_seed equal");
         assert_eq!(w.time, back.time);
+        assert_eq!(w.round_number, back.round_number, "轮数（岩浆成长）equal");
         assert_eq!(w.players, back.players, "players equal");
         assert_eq!(w.obstacles, back.obstacles, "obstacles equal");
         assert_eq!(w.projectiles, back.projectiles, "projectiles equal");
         assert_eq!(w.eliminated_order, back.eliminated_order);
         assert_eq!(w.kills_this_round, back.kills_this_round);
+        assert_eq!(w.damage_matrix, back.damage_matrix, "伤害矩阵 equal");
+        assert_eq!(w.lightning_visual, back.lightning_visual, "闪电视觉段 equal");
+        assert_eq!(w.ice, back.ice, "冰面 equal");
+        // 模式/角色（B3）
+        assert_eq!(w.mode, back.mode);
+        assert_eq!(w.avatar, back.avatar);
+        assert_eq!(w.kings, back.kings);
+        assert_eq!(w.f_override, back.f_override, "F 槽替换 equal");
+        assert_eq!(w.round_forced, back.round_forced);
+        // U5 同步修复：这三个此前从未进入字节流，解码端只能填硬编码默认值。
+        assert_eq!(w.shrink_timer, back.shrink_timer, "缩圈倒计时必须随快照同步");
+        assert_eq!(w.pending_avatar, back.pending_avatar, "下轮化身必须随快照同步");
+        assert_eq!(w.pending_kings, back.pending_kings, "下轮国王必须随快照同步");
+    }
+
+    /// 回归 U5：快照 round-trip 后，本端与「对端」继续跑相同帧，**缩圈进度必须仍一致**。
+    ///
+    /// 修复前 `shrink_timer` 解码时被硬编码成 10.0，导致对端缩圈倒计时被续命、永远不缩
+    /// （而本端正常缩）→ 双机「一方没缩圈」。本测试直接复现该分叉。
+    #[test]
+    fn roundtrip_preserves_shrink_progress_across_peers() {
+        let mut a = World::new(3, 7);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let none = vec![crate::world::PlayerInput::default(); 3];
+        for _ in 0..10 {
+            a.step(none.clone(), dt);
+        }
+        // 让缩圈在 0.5 秒后开始（否则默认约 17 秒，测试要跑上千帧）。
+        a.shrink_timer = Fix64::from_num(0.5);
+        let radius_before = a.arena_radius;
+        // 模拟对端：仅通过快照重建世界（重连 / host 迁移 / 接管走的就是这条路）。
+        let mut b = world_from_bytes(&world_to_bytes(&a)).expect("decode");
+        // 两端各跑 2 秒（120 帧），期间缩圈应已启动。
+        for _ in 0..120 {
+            a.step(none.clone(), dt);
+            b.step(none.clone(), dt);
+        }
+        assert!(a.arena_radius < radius_before, "前置：本端 2 秒内应已开始缩圈");
+        assert_eq!(a.arena_radius, b.arena_radius, "快照重建端缩圈进度必须与本端一致");
+        assert_eq!(a.shrink_timer, b.shrink_timer, "两端缩圈倒计时必须一致");
     }
 
     #[test]

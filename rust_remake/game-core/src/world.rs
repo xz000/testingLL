@@ -409,7 +409,8 @@ pub struct World {
     pub(crate) pending_avatar: Option<u32>,
     pub(crate) pending_kings: Vec<u32>,
     /// 缩圈倒计时（098c EA：每 wo×√存活 秒烧掉一环，B5）。
-    pub(crate) shrink_timer: f64,
+    /// 用 `Fix64`（非 f64）保证跨端确定性；**随快照同步**——曾因漏序列化导致双机缩圈分叉。
+    pub(crate) shrink_timer: Fix64,
     /// 冰面区域（U4 圆圈化：中心+半径的圆列表，可重叠拼形；空=本轮无冰面）。
     /// 冰面不被岩浆侵蚀。
     pub ice: Vec<(Vec2, Fix64)>,
@@ -453,7 +454,9 @@ impl World {
             round_forced: false,
             pending_avatar: None,
             pending_kings: Vec::new(),
-            shrink_timer: Balance::default().shrink_ring_secs * (player_count.max(1) as f64).sqrt(),
+            shrink_timer: Fix64::from_num(
+                Balance::default().shrink_ring_secs * (player_count.max(1) as f64).sqrt(),
+            ),
             ice: Vec::new(),
         }
     }
@@ -822,8 +825,8 @@ impl World {
     /// 总吞没时长与按环步进的 098c 完全一致，只是抹平了 war3 地形格的阶梯感（D13）。
     fn shrink_arena(&mut self, dt: Fix64) {
         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
-        if self.shrink_timer > 0.0 {
-            self.shrink_timer -= dt.to_num::<f64>();
+        if self.shrink_timer > Fix64::ZERO {
+            self.shrink_timer -= dt;
             return;
         }
         let b = Balance::default();
@@ -2666,7 +2669,7 @@ impl World {
         self.time = Fix64::ZERO;
         // 缩圈计时重启（098c XA：回合开始即启动 EA 定时器）
         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
-        self.shrink_timer = Balance::default().shrink_ring_secs * alive.sqrt();
+        self.shrink_timer = Fix64::from_num(Balance::default().shrink_ring_secs * alive.sqrt());
         // 冰面（冰面批）
         self.roll_ice();
         // 每轮推进布局种子 → 下一小局的柱子配置与上一轮不同（联机下两端 world 同步此字段，确定性一致）。
