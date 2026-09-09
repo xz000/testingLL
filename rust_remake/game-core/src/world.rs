@@ -6276,12 +6276,12 @@ mod tests {
             world.step(none.clone(), dt);
         }
         let hp_after = world.players[1].hp.to_num::<f64>();
-        assert!(hp_after < hp_before, "黑洞应每秒扣血（0.3+0.2×L），{} -> {}", hp_before, hp_after);
+        assert!(hp_after < hp_before, "黑洞应每秒扣血（0.3+0.0737×L camp2），{} -> {}", hp_before, hp_after);
     }
 
-    /// 文档数值回归：S019 锁链 / S018 引力 A·B 的伤害与回复公式。
-    /// 来源「术士之战技能说明整理.md」：锁链伤害 `0.2+0.1×L`；引力·黑洞伤害 `0.3+0.2×L`；
-    /// 引力·力场 每秒伤害 `2+1.25×L`、每秒生命恢复 `1%+0.2%×L`（MAX_HP=100 → 1.0+0.2×L）。
+    /// 文档数值回归：S019 锁链 / S018 引力 A·B 的伤害与回复公式（均按 098c w3a_strings camp2 对齐）。
+    /// 锁链伤害 `0.2+0.0842×L`；引力·黑洞伤害 `0.3+0.0737×L`；
+    /// 引力·力场 每秒伤害 `2.25+0.3026×L`、每秒生命恢复 `1.0+0.0737×L`（MAX_HP=100）。
     /// 其中 L = 升级次数 = level-1（见 `SkillGrowth::stats`）。
     #[test]
     fn doc_s019_s018_growth_matches_doc() {
@@ -6289,19 +6289,19 @@ mod tests {
         let l = (lvl - 1) as f64;
         // S019 锁链（A 蓝链）
         let d = DefTable::def(SkillId::S019).growth.stats(lvl).damage.to_num::<f64>();
-        assert!((d - (0.2 + 0.1 * l)).abs() < 1e-6, "锁链伤害 {d} != {}", 0.2 + 0.1 * l);
+        assert!((d - (0.2 + 0.0842 * l)).abs() < 1e-6, "锁链伤害 {d} != {}", 0.2 + 0.0842 * l);
         // S018 引力·黑洞（A）
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
-        assert!((d - (0.3 + 0.2 * l)).abs() < 1e-6, "黑洞伤害 {d} != {}", 0.3 + 0.2 * l);
+        assert!((d - (0.3 + 0.0737 * l)).abs() < 1e-6, "黑洞伤害 {d} != {}", 0.3 + 0.0737 * l);
         // S018 引力·力场（B）
         let st = DefTable::def_alt(SkillId::S018).expect("S018 应有 B 形态").growth.stats(lvl);
         let d = st.damage.to_num::<f64>();
         let e = st.extra.to_num::<f64>();
-        assert!((d - (2.0 + 1.25 * l)).abs() < 1e-6, "力场每秒伤害 {d} != {}", 2.0 + 1.25 * l);
-        assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "力场每秒回复 {e} != {}", 1.0 + 0.2 * l);
+        assert!((d - (2.25 + 0.3026 * l)).abs() < 1e-6, "力场每秒伤害 {d} != {}", 2.25 + 0.3026 * l);
+        assert!((e - (1.0 + 0.0737 * l)).abs() < 1e-6, "力场每秒回复 {e} != {}", 1.0 + 0.0737 * l);
     }
 
-    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.2×L` 每秒）。
+    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.0737×L` camp2 每秒）。
     #[test]
     fn s018_black_hole_damages_enemy_in_field() {
         let mut world = World::new(2, 1008);
@@ -7300,8 +7300,8 @@ mod tests {
             world.step(none.clone(), dt);
         }
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
-        // 化身 Gn ×1.5：灾变第一段 12×1.5 = 18（非天罚 10，证明替换+增益同时生效）
-        assert!((d1 - 18.0).abs() < 0.5, "化身灾变第一段应 12×Gn1.5=18 伤，实际 {d1}");
+        // 化身 Gn ×1.5：灾变第一段 11×1.5 = 16.5（098c Cataclysm 伤害 11 起；非天罚 10，证明替换+增益同时生效）
+        assert!((d1 - 16.5).abs() < 0.5, "化身灾变第一段应 11×Gn1.5=16.5 伤，实际 {d1}");
     }
 
     /// 国王模式：每队随机选王（同种子确定性）；弑王 → 凶手全队 Doom。
