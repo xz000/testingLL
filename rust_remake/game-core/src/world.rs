@@ -3903,6 +3903,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
             }
             SkillEffect::GravityZone { pull_speed, .. } => {
                 // 引力场（Y3）：在点击处/朝目标方向发射一个吸引附近敌人的场。（数值走 stats）
+                // 吸引力（098c Force）随等级成长，走 stats.extra；effect 的 pull_speed 仅作 L1 兜底。
+                let pull = if stats.extra > Fix64::ZERO { stats.extra } else { pull_speed };
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     let range = Fix64::from_num(stats.range.to_num::<f64>().max(1.0));
@@ -3913,7 +3915,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             dir,
                             speed: stats.speed,
                             radius: stats.radius,
-                            pull_speed,
+                            pull_speed: pull,
                             damage_per_sec: stats.damage,
                             remaining: stats.duration,
                         },

@@ -1837,10 +1837,10 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S018 引力（Y 键）——098c 校准：CD 25 恒定（20 级）；speed 850 / aoe 200 / 漩涡 5*jn。
-            // 复用现有 GravityZone 原型（飞行场沿途吸拉）——该臂的 speed/radius/duration/range
-            // 读 growth（stats），数值故放 growth；仅 pull_speed 走 effect 字段（spec 未给，占位 300 TODO）。
-            // 098b 升级版为「落点原地漩涡」，差异 TODO M2 后续标定。
+            // S018 引力（Y 键）——098c 校准：CD 25 恒定（camp2）；aoe 200 / 漩涡 5*jn。
+            // 复用现有 GravityZone 原型（飞行场沿途吸拉）——speed/radius/duration/range 读 growth（stats）。
+            // 吸引力（098c Force 12→19）走 growth.extra_*，由 world.rs 施法分支读入 pull_speed；
+            // effect.pull_speed 仅作 L1 兜底（=12）。098b 升级版为「落点原地漩涡」，差异 TODO M2 后续标定。
             SkillId::S018 => SkillDef {
                 id,
                 tree: SkillTree::Y,
@@ -1848,8 +1848,8 @@ impl DefTable {
                 needs_point: true,
                 effect: GravityZone {
                     speed: Fix64::ZERO,
-                    // 吸引力（098c mc）：13+升级次数；占位取基础 13（逐级缩放 TODO）。
-                    pull_speed: Fix64::from_num(13.0),
+                    // 吸引力（098c Force）：L1=12；逐级缩放走 growth.extra_*（见 world.rs 施法分支）。
+                    pull_speed: Fix64::from_num(12.0),
                     radius: Fix64::ZERO,
                     life: 0.0,
                     range: Fix64::ZERO,
@@ -1861,6 +1861,12 @@ impl DefTable {
                     // damage_delta=(1.7-0.3)/19≈0.0737（Rust L20 = 098c L8 = 1.7）。
                     damage_base: 0.3,
                     damage_delta: 0.0737,
+                    // 吸引力（098c Force）：12→19（8 档，+1/级）。Rust max_level=20 → camp2：
+                    // extra_delta=(19-12)/19≈0.3684（Rust L20 = 098c L8 = 19）。
+                    // 走 stats.extra 由 world.rs 读入 pull_speed（effect 的 pull_speed 不随等级成长，
+                    // 仅作 L1 兜底）。单位与 098c Force 一致（随后被 LEGACY_SPEED 缩放为内部速度）。
+                    extra_base: 12.0,
+                    extra_delta: 0.3684,
                     // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
                     // ——语义不同。贴 098b 升级版（落点原地漩涡 5s）取 0（场不漂移）；飞行段弹体化 TODO。
                     speed_base: 0.0,
@@ -2272,8 +2278,8 @@ impl DefTable {
                 name: "引力·力场",
                 needs_point: true,
                 effect: StarZone {
-                    damage_per_sec: Fix64::ZERO, // stats（0.2+0.25L → 2+0.25L? 取 growth）
-                    heal_per_sec: Fix64::ZERO,
+                    damage_per_sec: Fix64::ZERO, // stats（2.25+0.3026L）取 growth
+                    heal_per_sec: Fix64::ZERO,   // stats.extra（1.0+0.0737L）取 growth
                     radius: Fix64::from_num(200.0),
                     duration: 5.0,
                     range: Fix64::from_num(1200.0),
@@ -3256,6 +3262,9 @@ mod tests {
         let s20 = d.stats_at(20);
         assert!(near(s20.speed, 0.0, 1e-3) && near(s20.radius, 200.0, 1e-3), "原地漩涡（speed=0）半径 200 走 growth");
         assert!(near(s20.duration, 5.0, 1e-3), "漩涡应持续 5*jn 秒");
+        // 吸引力（098c Force）：12→19（8 档），camp2 至 L20=19；走 stats.extra 由 world.rs 读入 pull_speed。
+        assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 吸引力应 12（098c Force）");
+        assert!(near(s20.extra, 19.0, 1e-1), "L20 吸引力应 ≈19（098c L8），实际 {:?}", s20.extra);
         // S019 锁链·钩引（A 形态）：CD 17→8（camp2 对齐 098c L9=8）；radius 35；拉拽+0.5s 定身。
         let d = DefTable::def(SkillId::S019);
         assert_eq!(d.name, "锁链·钩引");
