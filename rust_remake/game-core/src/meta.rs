@@ -58,8 +58,9 @@ impl Default for MatchConfig {
             gold_per_kill: 0,
             place_rewards: Vec::new(),
             starting_gold: 20,
-            // 098c 计分（D9 批次3）：胜利 2 分、击杀 2 分、助攻 1 分
-            score_per_kill: 2,
+            // 098c 计分（JASS 实证；globals ko=1/Ko=1/mo=2）：胜利 2 分、击杀 1 分、助攻 1 分。
+            // 注：MECHANICS.md §5「击杀 2 分」是笔误，实际 ko=1（war3map_pretty.j:2 / :9028 / :10292）。
+            score_per_kill: 1,
             score_per_assist: 1,
             score_per_round_win: 2,
             game_mode: 1,
@@ -651,16 +652,16 @@ mod tests {
             &[0, 1],
             34,
         );
-        // 打两轮（每轮胜者 0 得 1 分 + 击杀分）
+        // 打两轮（每轮胜者 0 得 击杀 1 分 + 轮胜 2 分）
         for _ in 0..2 {
             m.register_kill(0);
             m.register_round_win(0);
             m.finish_round(vec![0, 1]);
         }
-        // score = 2 轮 × (杀 2 + 胜 2) = 8 ≥ 3 → 已提前终局
+        // score = 2 轮 × (杀 1 + 胜 2) = 6 ≥ 3 → 已提前终局
         assert_eq!(m.phase, MatchPhase::Finished, "En2 达到胜利分应提前终局");
         let ranking = m.final_ranking();
-        assert_eq!(ranking[0], (0, 8), "按分数降序，实际 {ranking:?}");
+        assert_eq!(ranking[0], (0, 6), "按分数降序，实际 {ranking:?}");
         // En1 同分数时按 best_placement 升序
         let mut m1 = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         m1.finish_round(vec![0, 1]);
@@ -695,8 +696,8 @@ mod tests {
         assert_eq!(config.gold_per_round, 10);
         assert_eq!(config.gold_per_kill, 0);
         assert!(config.place_rewards.is_empty());
-        // 098c 计分（D9 批次3）：胜 2 / 杀 2 / 助 1
-        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (2, 1, 2));
+        // 098c 计分（JASS 实证 globals ko=1/Ko=1/mo=2）：胜 2 / 杀 1 / 助 1
+        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 2));
         // 开局购物 Wo=40 / 每轮 wo=30（D6/M4 En 批）
         assert_eq!(config.shopping_time_secs, 40.0);
         assert_eq!(config.learn_time_secs, 30.0);
@@ -706,14 +707,14 @@ mod tests {
         // 击杀只给分
         m.register_kill(0);
         assert_eq!(m.profiles[0].gold, 30, "击杀金默认 0");
-        assert_eq!(m.profiles[0].score, 2, "098c 击杀 2 分");
+        assert_eq!(m.profiles[0].score, 1, "098c 击杀 1 分（globals ko=1）");
         assert_eq!(m.profiles[0].current_streak, 1);
         // 助攻
         m.register_assists(1, 0, &[0, 1]);
-        assert_eq!(m.profiles[0].score, 2, "击杀者不算助攻");
+        assert_eq!(m.profiles[0].score, 1, "击杀者不算助攻");
         // 轮胜分
         m.register_round_win(0);
-        assert_eq!(m.profiles[0].score, 4, "098c 轮胜 2 分");
+        assert_eq!(m.profiles[0].score, 3, "098c 轮胜 2 分（1 击杀 + 2 轮胜）");
         // 连杀标签
         assert_eq!(MatchState::streak_label(2), None);
         assert_eq!(MatchState::streak_label(3), Some("大杀特杀"));
