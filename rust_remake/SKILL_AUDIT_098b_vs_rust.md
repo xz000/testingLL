@@ -164,17 +164,17 @@
 | 项 | 文档 | Rust（`skill.rs:1383-1408`） | 标记 |
 | --- | --- | --- | --- |
 | 价格 | 11 | 无价格表 | 缺失 |
-| 等级 | 6 级 | `max_level = 9`（`skill.rs:1321`） | 差异(待确认) |
-| 伤害 | 7 / 8 / 9 / 10 / 11 / 12（+1/级） | `damage_base 6.5 / delta 0.5` | 差异(待确认) |
+| 等级 | 6 级（098b） | `max_level = 9`（对齐 098c w3a 9 档） | 差异(待确认)（按 098c 9 档） |
+| 伤害 | w3a「7 + range」→15 + range（9 档）；文档 7→12 | `damage_base 8.0 / delta 1.0`（098c JASS `7+1×Ur`，Ur=等级 L → 8→16） | **一致(098c)** |
 | 冷却 | 15.0 / 13.5 / 12.5 / 12.0 / 11.5 / 11.0 | `cooldown_base 15.0 / delta −0.6875`（L2=14.31、L9=9.5） | L1 **一致**；逐档差异(待确认) |
 | 距离/存活 | 4.5 秒 | `life = 4.5` | **一致** |
 | 施法者碰撞使其爆炸并自身加速 2.25 秒 | 有 | 未建模 | 缺失 |
 
-依据（`skill.rs:1381-1382`、`1403`）：
-> `// S003 追踪弹（D 键）——spec: CD 15→9.5（9 级，步长 -0.6875）；speed 900 / radius 29；`
-> `// life 4.5*(1+1.5*.1*oi)=4.5s；伤害 gX = jb(Er)（M1 用 6+0.5*Xv 近似，consolidated 标注公式 jb 未解码）。`
-> `// gX = jb(Er) 未解码，M1 近似 6+0.5×L → L1=6.5。`
-→ **伤害明确是未解码占位**，与文档 7→12 的差距属已知缺口。
+依据（`skill.rs:1444-1446`、`1463-1470`）：
+> `// S003 追踪弹（D 键）——...w3a「Damage: N + range」中的 range = 098c `Ur`（D 槽法术等级计数）：`
+> `// 因 R009/R005/R00Z 互斥，玩家只持有一个 D 槽技能，Ur≡本技能等级，已等价于 per-level `7+1×(L-1)`...`
+> `// 伤害（098c JASS function Lb: `7 + 1*Ur`）：Ur 为 D 槽法术等级计数，解锁即 +1、每次升级再 +1 → Ur = 等级 L`
+→ w3a「+ range」**非飞行距离加成**，而是 Ur 等级计数；因三 D 槽技能互斥，Ur≡等级，per-level 模型已正确覆盖（详见 §已知冲突台账 S003 行）。Rust 取 `base 8.0 / delta 1.0`（L1=8 / L9=16）。
 
 #### 2.2.4 电弧 —— **已实装**（`S023`）
 
@@ -885,11 +885,13 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | S017 A/B | 参数 | 两分支共用一张表 | w3a 实为**两个独立技能**（bind / silence） | 分别取（已改） | 规则 2 |
 | S010 B | 持续 | A 形态 3.1 | w3a 独立技能 + dispatch `invisibility 4*jn` | **4.0**（已改） | 规则 2 |
 | S000 火球 | 档数 | w3a **12 档** 7.0→14.7 | Rust `max_level=10`（研究上限） | **已裁决：保持 10 级** | 见下 |
-| S003 追踪弹 | 伤害 | w3a「7 + range」→15 + range | Rust 6.5+0.5L | **已裁决：base/delta 已修 7.0/1.0；+range 待立项** | 见下 |
+| S003 追踪弹 | 伤害 | w3a「7 + range」→15 + range | Rust 6.5+0.5L | **已裁决：+range = Ur 等级计数（非距离）；互斥下 Ur≡等级，base/delta 改 8.0/1.0（7+1*Ur, Ur=L→8→16）** | 见下 |
 
 **待裁决项处理结果**：
 - **S000（已裁决，不改代码）**：w3a 火球能力表确为 12 档（7.0→14.7，+0.7/级，L12=14.7），但 098c 研究 R002 上限为 10 级（`skill.rs:1378` 注释 `ur 起点 1，上限 9 级研究 → 等级上限 10`），故**实玩上限就是 L10=13.3**。Rust `max_level=10` + `delta=0.7` 的 L10=13.3 **已与 098c 实玩吻合**（之前记录的「098c L10=14.0」系按 12 档误算，实为 L10=13.3、L12=14.7）。w3a 的 11/12 档在 098c 内因研究上限不可达，Rust 选择忠实复刻**实玩行为**而非完整能力表。若日后要让火球能升到 12 级（暴露 w3a 全部 12 档），仅需把 `max_level(S000)` 改 12，delta 0.7 已对。
-- **S003（已裁决，已修正基础系数）**：w3a 基础伤害系数为 +1/级（L1=7 … L9=15），Rust 原 6.5+0.5L（L9=10.5）明显偏低 → 改 `damage_base 7.0 / damage_delta 1.0`（L9=15，与 w3a 等级系数一致）；`s003_homing_matches_spec` 新增 `L1=7 / L9=15` 断言。w3a「Damage: N + range」中的 **`+ range` 距离加成机制仍未解码**（`jb(Er)` 公式不明），作为独立 TODO 留待后续立项；本次仅修正可解码的等级系数，不触碰未建模项。
+- **S003（已裁决，误读纠正）**：原把 w3a「Damage: N + range」解读为「飞行距离加成」，经 `098c/out/war3map_pretty.j` 反编译确认是**误读**。追踪弹命中伤害在 `function Lb`（line 5395）`call SI(nr, 7.+1.*Xv[nr], 1)`，其中 `Xv[弹体]=Ur[owner]`（施法 handler `Pb` line 5482）→ **damage = 7 + 1×Ur**。`Ur[id]` 是 D 槽法术等级计数，解锁（R005）+1、每次升级（R00O）+1 → Ur = 等级 L。
+  **关键：互斥性**——研究完任一 D 槽技能后，R009/R005/R00Z 三者全部 `SetPlayerTechMaxAllowed(uO,...,0)`（line 12934-12936），玩家**永远只持有一个** D 槽技能，故 `Ur` 只等于那一个技能的等级，**不存在跨技能累加协同**。因此 per-level `base + 1×(L-1)` 模型已正确覆盖，**无需共享 Ur 计数、无距离机制**。
+  Rust 原 6.5+0.5L（L9=10.5）偏低，且「+range 待立项」方向错误 → 改为 `damage_base 8.0 / damage_delta 1.0`（7+1×Ur，Ur=L → L1=8 / L9=16）；`s003_homing_matches_spec` 断言同步改为 `L1=8 / L9=16`。S002 闪电（6+1×Ur→7→15）、S004 回旋镖（6.4+0.8×Ur→7.2→13.6）同构且 Rust 已对齐，无需改动。
 
 ## 5.6 本轮（S011–S020）098c 端点（camp2）对齐记录
 
@@ -947,7 +949,7 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | --- | --- | --- | --- | --- |
 | G | Releases a fireball | 7.0→14.7；另支 5.5→11.0+DoT 3.0→8.5 | S000 | |
 | D | Calls forth a lightning | 7→15，CD 16.5→12 (9) | S002 | |
-| D | Casts a magical bolt that will track | 7→15 +range，CD 15→9.5 (9) | S003 | |
+| D | Casts a magical bolt that will track | 7→15 +range（range=Ur 等级计数，非距离），CD 15→9.5 (9) | S003 | |
 | D | magically enhanced shuriken…return to caster | 7.2→13.6，CD 16.0→8.2 (9) | S004 | |
 | C | Reflects all incoming missiles | Dur 3.0→4.2，CD 22.5→14.0 | S005 | |
 | C | Travel back in time | CD 22 | S006 | |
