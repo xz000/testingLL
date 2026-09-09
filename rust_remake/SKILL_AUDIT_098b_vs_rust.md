@@ -873,13 +873,13 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 | S019 | A | 伤害 | 0.2→1.8 (9) | 0.2 / 0.0842 | 20 |
 | S020 | A 灾变 | 伤害 | 11/12/13 (3) | 11 / 0.6667 | 4（精确） |
 | S008B | 岩浆 | CD / 伤害 | 20→16.5 / 4.5→15 (8) | 20 / −0.1842；4.5 / 0.5526 | 20 |
-| S009B | 分裂 | CD / 伤害 | 30→22 / 3→5.5 (6) | 30 / −0.4211；3 / 0.1316 | 20 |
-| S010B | 疾风·隐身 | CD / 持续 | **CD 与 A 共用**（098c IB）；持续 4（098c 调试 `Wind Walk (invisibility) 4*jn`） | 30 / −0.684；dur 4.0 | 20（维持原值） |
+| S009B | 分裂·区域 | CD / 伤害 | 30→20 / 3.0→6.5 (8, orb 环形弹) | 30 / −0.5263；3.0 / 0.1842 | 20 |
+| S010B | 疾风·隐身 | CD / 持续 | CD 30→17（8 档，独立技能"Become invisible…"）；持续 4 恒定 | 30 / −0.684；dur 4.0 | 20 |
 | S012B | 凤凰 | CD | 16.5→7.0 (Thrust, 9)；098c 名 `Thrust: Phoenix` | 16.5 / −0.5 | 20 |
-| S013B | 搬运 | CD / 射程 | 17.5→8.5 / 900 (10) | 17.5 / −0.4737；900（effect 同步） | 20 |
+| S013B | 搬运 | CD / 射程 | 14→4 (8)；**射程无数据** → 维持 600 | 14 / −0.5263；600 | 20 |
 | S014B | 削弱 | CD / 伤害 / 持续 | 22→18.5 / 5→11 / 7.5→18 (8) | 22 / −0.1842；5 / 0.3158；7.5 / 0.5526 | 20 |
-| S015B | 簇射 | CD / 伤害 | 16→10 / 2.6→3.8 (7) | 16 / −0.3158；2.6 / 0.0632 | 20 |
-| S016B | 充能 | CD / 伤害 | 20→13 / 6→13 (8) | 20 / −0.3684；6 / 0.3684 | 20 |
+| S015B | 簇射 | CD / 伤害 | 14→7 / 3.0→5.8 (8，"Fires 5 missiles at once") | 14 / −0.3684；3.0 / 0.1474 | 20 |
+| S016B | 充能 | CD / 伤害 | 23.5→18.5 / 6→12.3 (8，"return to you if you hit") | 23.5 / −0.2632；6 / 0.3316 | 20 |
 | S017B | 沉默 | CD | 16→12.5 (8) | 16 / −0.1842 | 20 |
 | S018B | 力场 | DPS / 回复 | 2.25→8.0 / 1.0→2.4 (8) | 2.25 / 0.3026；1.0 / 0.0737 | 20 |
 | S019B | 红链 | CD / 伤害 | 16 恒定 / 0.2→1.8 (9) | 16 / 0；0.2 / 0.0842 | 20 |
@@ -896,6 +896,55 @@ Rust：`warlock098b_def_alt` 的 `match` 中**无 `SkillId::S011` 分支**（`sk
 - `S012`：`Thrust: Phoenix` 3.1·jn（即凤凰=B 形态，098b 文档称「幽魂」）
 - `S014`：`Drain (slow)` (3+yr)·jn / `Drain (weaken)` (6+1.5·yr)·jn（yr=等级 → L1 4 / L8 11；L1 7.5 / L8 18，与 w3a 一致）
 - `S008`：`Meteor (magma)` 4·jn；`S018`：`Gravity (force field)` 5·jn
+
+### 5.7 按槽位（按键）的 098c ↔ Rust 技能映射总表
+
+用途：**确认每个 A/B 形态该用哪张 098c 表**。判归属的方法是比对 tooltip 首句（见「技能」列），
+而非靠 SkillId 数字相邻来猜——本轮 5 处误改全部源于「把同槽另一形态/另一技能的表套了上来」。
+
+| 槽 | 098c 技能（tooltip 首句辨识） | 098c 端点（L1→Lmax, 档） | Rust | 备注 |
+| --- | --- | --- | --- | --- |
+| G | Releases a fireball | 7.0→14.7；另支 5.5→11.0+DoT 3.0→8.5 | S000 | |
+| D | Calls forth a lightning | 7→15，CD 16.5→12 (9) | S002 | |
+| D | Casts a magical bolt that will track | 7→15 +range，CD 15→9.5 (9) | S003 | |
+| D | magically enhanced shuriken…return to caster | 7.2→13.6，CD 16.0→8.2 (9) | S004 | |
+| C | Reflects all incoming missiles | Dur 3.0→4.2，CD 22.5→14.0 | S005 | |
+| C | Travel back in time | CD 22 | S006 | |
+| C | absorb…convert to movement speed | CD 21，Dur 7.0→12.6，MaxAbsorb 5→19 | S007 | |
+| C | speed is buffed beyond any limits | CD 17.5→8.5 | **无对应** | 待查 |
+| E | Calls a meteor | 7-14→14-28，CD 20→16.5 | S008 A | |
+| E | Summon a boulder…**Magma** | DPS 0.6→2.7 / MaxAoE 4.5→15 / CD 20→16.5 (8) | S008 B | |
+| E | **splits into minor missiles** | 3.0→6.5，CD 30→20 (8) | S009 A | |
+| E | **an orb…bolts in a circular pattern** | 3.0→6.5，CD 30→20 (8) | S009 B | 与 A 端点相同 |
+| E | Gain invisibility…**backstab** | 5.4→8.6，Dur 3.1，CD 30→20 (8) | S010 A | |
+| E | **Become invisible**…transferred between allies | Dur 4 恒定，CD 30→17 (8) | S010 B | 独立技能，非 A 的 3.1 |
+| R | Teleports…Range **770→1330**，cd 16→5.5 (9) | | S011 | |
+| R | Teleports…Range **900**，cd 17.5→8.5 (10) | | **缺失** | 疑为 S011B 折跃（见 #9） |
+| R | **Accelerates toward target point** | 5.4→8.6，CD 16.5→7.0，Range 700→1100 (9) | S012 A | |
+| R | 同上（第二模式）`Thrust: Phoenix` 3.1·jn | CD 同上 | S012 B | 098b 文档称「幽魂」 |
+| R | Shoot a missile…**instantly will swap** | CD 16→6 (8) | S013 A | |
+| R | Cast a bolt…**transfer you to its location** | CD 14→4 (8) | S013 B | 无射程字段 |
+| T | steal the life…(drain slow) | 6→13，Dur 4→11，CD 22→16.5 (8) | S014 A | |
+| T | reduce enemy damage to 50% (weaken) | 5→11，Dur 7.5→18，CD 22→18.5 (8) | S014 B | |
+| T | **Cast multiple projectiles over time** | 2.6→4.0，Missiles 6→13，CD 16→9 (8) | S015 A | ⚠ 见下 |
+| T | **Fires 5 missiles at once** | 3.0→5.8，CD 14→7 (8) | S015 B | |
+| T | Fires a missile which will **bounce** | 6→13，CD 20→13，Range 900→1950 (8) | S016 A | |
+| T | **return to you if you hit** | 6→12.3，CD 23.5→18.5，Range 900 (8) | S016 B | |
+| Y | **bind its target to its current position** | CD 25→10，Dur 4.5→6.25 (8) | S017 A | 缠绕 |
+| Y | **Silence** targets' spells 5 seconds | CD 16→12.5 (8) | S017 B | 沉默（另一分支） |
+| Y | **pulls nearby missiles and warlocks** | Force 12→19，Dmg 0.3→1.7，CD 25 (8) | S018 A | |
+| Y | **Create a force field** | DPS 2.25→8.0，Heal 1.0→2.4，CD 26 (8) | S018 B | |
+| Y | Links yourself…（无感应） | CD 17→8，Dmg 0.2→1.8 (9) | S019 A | |
+| Y | …**lightning will be induced** | CD 16 恒定，Dmg 0.2→1.8 (9) | S019 B | |
+| F | Damage by 11/12/13 including yourself | | S020 | |
+| F | Damage by 10…Heals by 5/6/6.5 | | S021 | |
+| F | Damage nearby…Cataclysm/dispel link | | S001 | |
+
+**⚠ 遗留待议（本届未改）**：
+- **`S015 A` 流射端点存疑**：上一轮（#4）按 `spells.json` 采样 `[6,12]`/`[16,10]`/`2.6→3.8` 校准；
+  而 w3a **完整 8 档**为 `2.6→4.0`、Missiles `6→13`、CD `16→9`。按「w3a 逐档表优先于 spells.json 采样」
+  的原则应改为 `damage_delta 0.0737 / extra_delta 0.3684 / cooldown_delta -0.3684`，但会改动已闭环的 #4
+  及 `s009_s014_s015_s016_match_spec` 中「L20 连发数 12」的断言 → **待确认后单独立项**。
 
 **引力物理机制（待对比）**：098c 引力·暗物质工具提示给出 `Force 12→19`、`Damage 0.3→1.7`、`CD 25`（`spells.json` S018 `force: 12`）。Rust 侧 `GravityZone.pull_speed` 现为**占位 13.0**（effect 字段，不随等级成长），而 098c 的 Force 是**逐档 12→19**。要做物理机制对比需先定位 098c 施加该力的每 tick 逻辑（判断 Force 是加速度还是速度增量、与 33Hz 帧的关系），再决定 Rust 侧应建模为「每帧速度增量」还是「直接位移」。**建议单独立项**（涉及 JASS 施力点定位 + 与 Rust `step_area_forces` 的口径对齐），本轮未改。
 
