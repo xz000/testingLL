@@ -1376,6 +1376,8 @@ impl DefTable {
     pub fn max_level(id: SkillId) -> u32 {
         match id {
             // 098c：火球等级 = R002 研究（ur 起点 1，上限 9 级研究，L9953）→ 等级上限 10。
+            // 注：w3a 火球能力表虽定义 12 档（7.0→14.7），但研究上限 10 使其 11/12 档在 098c 内不可达；
+            // Rust 忠实复刻实玩上限 10（L10 伤害 13.3 = 098c L10）。要暴露全部 12 档只需改本行为 12。
             SkillId::S000 => 10,
             SkillId::S002 => 9,
             SkillId::S023 => 7,
@@ -1461,9 +1463,11 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 15.0,
                     cooldown_delta: -0.6875,
-                    // gX = jb(Er) 未解码，M1 近似 6+0.5×L → L1=6.5。
-                    damage_base: 6.5,
-                    damage_delta: 0.5,
+                    // 基础伤害系数（098c w3a Homing）：7→15（+1/级，9 档），即 base 7.0 / delta 1.0。
+                    // w3a「Damage: N + range」中的「+ range」为**距离加成**机制，未解码（jb(Er) 公式不明），
+                    // 此处仅建模可解码的等级系数；+range 项待后续立项（见审计文档 §5.5 待裁决台账）。
+                    damage_base: 7.0,
+                    damage_delta: 1.0,
                     ..DEF_ZERO
                 },
             },
@@ -3141,6 +3145,9 @@ mod tests {
         let s9 = def.stats_at(9);
         assert!(near(s1.cooldown, 15.0, 1e-3), "L1 CD 应 15（spec l1），实际 {:?}", s1.cooldown);
         assert!(near(s9.cooldown, 9.5, 1e-2), "L9 CD 应 9.5（spec lmax），实际 {:?}", s9.cooldown);
+        // 基础伤害系数（098c w3a Homing）：7→15（+1/级）；「+ range」距离加成未建模（TODO）。
+        assert!(near(s1.damage, 7.0, 1e-3), "L1 基础伤害应 7（w3a），实际 {:?}", s1.damage);
+        assert!(near(s9.damage, 15.0, 1e-2), "L9 基础伤害应 15（w3a L9），实际 {:?}", s9.damage);
         match def.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Homing, speed, radius, life, ignite, .. } => {
                 assert!(near(speed, 900.0, 1e-3), "speed 应 900（spec），实际 {speed:?}");
