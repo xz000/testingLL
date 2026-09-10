@@ -248,8 +248,12 @@ struct Game {
     last_ime_commit_frame: u64,
     /// 世界坐标 → 屏幕坐标的缩放
     scale: f32,
-    /// 相机偏移（竞技场中心在画面中央）
+    /// 相机偏移（世界原点 (0,0) 在屏幕上的位置）：每帧由 `cam` 推算，绘制时世界点 = world*scale + offset。
     offset: Point2<f32>,
+    /// 相机中心（屏幕中心所对应的世界坐标）；平移方向键/中键拖拽改它，缩放自适应。
+    cam: Point2<f32>,
+    /// 中键拖拽平移时的上一帧鼠标位置（`None` = 未拖拽）。
+    pan_drag: Option<Point2<f32>>,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
     net_link: Option<netlink::NetLinkUdp>,
     /// 局域网模式：本机在对局中的玩家序号（握手分配）。`net_link` 被 `mem::take` 临时置 None 时用它，
@@ -796,6 +800,8 @@ impl Game {
             last_ime_commit_frame: u64::MAX,
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
+            cam: Point2 { x: 0.0, y: 0.0 },
+            pan_drag: None,
             net_link,
             lan_my_index: PLAYER_ID as u8,
             net_host,
@@ -987,11 +993,72 @@ impl Game {
     }
 
     fn update_camera(&mut self, ctx: &Context) -> GameResult {
+        use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
         let (sw, sh) = ctx.gfx.drawable_size();
         // 令初始场地约占较短边的 45%（场地半径取 game-core 的 START_RADIUS，随 war3 尺度走）
         self.scale = sw.min(sh) * 0.45 / game_core::world::START_RADIUS as f32;
-        self.offset.x = sw / 2.0;
-        self.offset.y = sh / 2.0;
+
+        // 学习/整场配置阶段：相机锁定在场地中心（此时方向键用于商店滚动，不能平移）。
+        if self.pre_game_config {
+            self.cam = Point2 { x: 0.0, y: 0.0 };
+            self.pan_drag = None;
+        } else {
+            // 对战阶段：方向键平移（屏幕宽/秒 量级），中键拖拽平移，Home 复位到场地中心。
+            let dt = ctx.time.delta().as_secs_f32().clamp(0.0, 0.1);
+            let pan_speed = 1.1; // 屏幕对角线/秒
+            let mut dx = 0.0_f32;
+            let mut dy = 0.0_f32;
+            if ctx.keyboard.is_logical_key_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowLeft)) {
+                dx -= 1.0;
+            }
+            if ctx.keyboard.is_logical_key_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowRight)) {
+                dx += 1.0;
+            }
+            if ctx.keyboard.is_logical_key_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowUp)) {
+                dy -= 1.0;
+            }
+            if ctx.keyboard.is_logical_key_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowDown)) {
+                dy += 1.0;
+            }
+            if dx != 0.0 || dy != 0.0 {
+                self.cam.x += dx * (sw / self.scale) * pan_speed * dt;
+                self.cam.y += dy * (sh / self.scale) * pan_speed * dt;
+            }
+
+            // 中键拖拽：世界随光标移动（保持光标下的世界点不动）
+            let m = ctx.mouse.position();
+            if ctx.mouse.button_just_pressed(MouseButton::Middle) {
+                self.pan_drag = Some(m);
+            }
+            if ctx.mouse.button_just_released(MouseButton::Middle) {
+                self.pan_drag = None;
+            }
+            let drag = self.pan_drag;
+            if let Some(prev) = drag {
+                self.cam.x -= (m.x - prev.x) / self.scale;
+                self.cam.y -= (m.y - prev.y) / self.scale;
+                self.pan_drag = Some(m);
+            }
+
+            // Home 复位到场地中心
+            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Home)) {
+                self.cam = Point2 { x: 0.0, y: 0.0 };
+            }
+
+            // 限制相机不要飞太远（保留场地大致可见）
+            let max_r = game_core::world::START_RADIUS as f32 * 2.0;
+            let r = (self.cam.x * self.cam.x + self.cam.y * self.cam.y).sqrt();
+            if r > max_r {
+                let k = max_r / r;
+                self.cam.x *= k;
+                self.cam.y *= k;
+            }
+        }
+
+        // 世界 (0,0) 在屏幕上的位置：屏幕中心 - 相机中心*scale
+        self.offset.x = sw / 2.0 - self.cam.x * self.scale;
+        self.offset.y = sh / 2.0 - self.cam.y * self.scale;
         Ok(())
     }
 
@@ -2352,6 +2419,20 @@ impl Game {
             .is_logical_key_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Tab))
         {
             self.draw_scoreboard(&mut canvas, ctx)?;
+        }
+
+        // 视角平移提示（仅对战阶段显示）
+        if !self.pre_game_config {
+            let (_, sh) = ctx.gfx.drawable_size();
+            draw_text(
+                &mut canvas,
+                ctx,
+                "视角: 方向键/中键拖拽 平移 · Home 复位",
+                15.0,
+                Color::from_rgb(150, 165, 185),
+                Point2 { x: 12.0, y: sh - 14.0 },
+                true,
+            )?;
         }
 
         canvas.finish(ctx)?;
