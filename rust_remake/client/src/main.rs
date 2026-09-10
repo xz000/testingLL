@@ -2993,7 +2993,25 @@ impl Game {
                             canvas, ctx, &format!("· {}", d.name),
                             ui::theme::SMALL, ui::theme::text(), left_x + pad, ly,
                         )?;
-                        ly += 20.0;
+                        ly += 18.0;
+                        match id.next_tier() {
+                            Some(next) => {
+                                let nd = next.def();
+                                ui::text_left(
+                                    canvas, ctx,
+                                    &format!("  ↑ 升 {} · {}G", nd.name, nd.cost),
+                                    ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+                                )?;
+                                ly += 18.0;
+                            }
+                            None => {
+                                ui::text_left(
+                                    canvas, ctx, "  (满级)",
+                                    ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+                                )?;
+                                ly += 18.0;
+                            }
+                        }
                     }
                 }
                 ly += 6.0;
