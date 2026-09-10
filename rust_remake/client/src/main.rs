@@ -2766,11 +2766,8 @@ impl Game {
                             if let Some(s) = skill {
                                 if game_core::skill::DefTable::has_alt(s) {
                                     let on = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                                    let full = game_core::skill::DefTable::def_for(s, on).name;
-                                    let suffix = match full.find('·') {
-                                        Some(i) => &full[i + 1..],
-                                        None => "",
-                                    };
+                                    // 形态名后缀（目标/区域/滚石…），跟随切换；split_once 在字符边界切分不会越界
+                                    let suffix = game_core::skill::DefTable::form_suffix(s, on);
                                     if !suffix.is_empty() {
                                         let n = suffix.chars().count() as f32;
                                         let cx = bx + slot_w - 6.0 - n * 7.0;
