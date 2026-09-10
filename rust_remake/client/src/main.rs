@@ -2761,19 +2761,28 @@ impl Game {
                                     draw_text(canvas, ctx, "蓄力中", 15.0, Color::from_rgb(255, 200, 120), Point2 { x: bx + slot_w / 2.0, y: y0 + slot_h - 14.0 }, true)?;
                                 }
                             }
-                            // 形态角标：多形态技能在槽右下角显示当前形态索引（A/B），
-                            // 不写具体形态名；外层技能名仍用中性名，仅在角标标出 A/B。
+                            // 形态角标：多形态技能在槽右下角显示当前形态名（去掉中性前缀后的 ·xxx 部分，
+                            // 如 目标 / 区域 / 滚石），跟随切换；外层技能名仍用中性名（分裂弹…）。
                             if let Some(s) = skill {
                                 if game_core::skill::DefTable::has_alt(s) {
                                     let on = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                                    draw_text(
-                                        canvas, ctx,
-                                        if on { "B" } else { "A" },
-                                        14.0,
-                                        ui::theme::accent(),
-                                        Point2 { x: bx + slot_w - 16.0, y: y0 + slot_h - 20.0 },
-                                        true,
-                                    )?;
+                                    let full = game_core::skill::DefTable::def_for(s, on).name;
+                                    let suffix = match full.find('·') {
+                                        Some(i) => &full[i + 1..],
+                                        None => "",
+                                    };
+                                    if !suffix.is_empty() {
+                                        let n = suffix.chars().count() as f32;
+                                        let cx = bx + slot_w - 6.0 - n * 7.0;
+                                        draw_text(
+                                            canvas, ctx,
+                                            suffix,
+                                            14.0,
+                                            ui::theme::accent(),
+                                            Point2 { x: cx, y: y0 + slot_h - 14.0 },
+                                            true,
+                                        )?;
+                                    }
                                 }
                             }
                         }
