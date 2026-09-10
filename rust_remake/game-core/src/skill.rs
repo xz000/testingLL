@@ -1376,9 +1376,21 @@ impl DefTable {
     /// 具体形态（含后缀）见 `def_for`。无 `·` 的技能名原样返回。
     pub fn neutral_name(id: SkillId) -> &'static str {
         let n = Self::def(id).name;
-        match n.find('·') {
-            Some(i) => &n[..i],
+        // split_once 在字符边界切分，避免 · 是多字节字符时按字节下标切片越界
+        match n.split_once('·') {
+            Some((a, _)) => a,
             None => n,
+        }
+    }
+
+    /// 形态名后缀：去掉中性前缀后的 `·xxx` 部分（如 `分裂弹·目标` → `目标`、`分裂弹·区域` → `区域`）。
+    /// 无 `·` 的技能返回空串。供 HUD 角标显示当前形态名用。
+    pub fn form_suffix(id: SkillId, alt: bool) -> &'static str {
+        let full = Self::def_for(id, alt).name;
+        // split_once 在字符边界切分，避免 · 是多字节字符时按字节下标切片越界（曾误用 find+[i+1..] 导致 panic）
+        match full.split_once('·') {
+            Some((_, s)) => s,
+            None => "",
         }
     }
 
@@ -3492,6 +3504,16 @@ mod tests {
         assert_eq!(DefTable::neutral_name(SkillId::S000), "火球");
         assert_eq!(DefTable::neutral_name(SkillId::S001), "天罚");
         assert_eq!(DefTable::neutral_name(SkillId::S002), "闪电");
+    }
+
+    #[test]
+    fn form_suffix_returns_alt_part_without_panic() {
+        // 多形态技能：form_suffix 返回 · 之后的形态名（目标/区域），且不在多字节字符内越界
+        assert_eq!(DefTable::form_suffix(SkillId::S009, false), "目标");
+        assert_eq!(DefTable::form_suffix(SkillId::S009, true), "区域");
+        assert_eq!(DefTable::form_suffix(SkillId::S013, true), "搬运");
+        // 单形态技能：无后缀返回空串（HUD 角标据此不显示）
+        assert_eq!(DefTable::form_suffix(SkillId::S000, false), "");
     }
 
     #[test]
