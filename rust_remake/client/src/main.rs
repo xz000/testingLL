@@ -2728,7 +2728,7 @@ impl Game {
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
                         // 技能名：外层用中性基础名（不绑定具体形态；形态见详情面板）
                         let label = match skill {
-                            Some(s) => game_core::skill::DefTable::def(s).name,
+                            Some(s) => game_core::skill::DefTable::neutral_name(s),
                             None => "—",
                         };
                         draw_text(canvas, ctx, key.letter(), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
@@ -2851,7 +2851,7 @@ impl Game {
                     let bound = me.bound_skill(key);
                     let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
                     let txt = match bound {
-                        Some(s) => format!("[{}] {} Lv{}", key.letter(), game_core::skill::DefTable::def(s).name, lv),
+                        Some(s) => format!("[{}] {} Lv{}", key.letter(), game_core::skill::DefTable::neutral_name(s), lv),
                         None => format!("[{}] 未绑定", key.letter()),
                     };
                     let sel = self.learn_tree_key == Some(key);
@@ -2910,8 +2910,8 @@ impl Game {
                                     let hover = r.contains(mouse);
                                     let cost = skill.learn_cost();
                                     let affordable = me.gold >= cost;
-                                    // 行用中性基础名（不绑定具体形态；形态见详情面板）
-                                    let form_name = game_core::skill::DefTable::def(*skill).name;
+                                    // 行用中性基础名（去掉 ·形态 后缀；形态见详情面板）
+                                    let form_name = game_core::skill::DefTable::neutral_name(*skill);
                                     // 行状态仅表达"当前选中/悬停/普通"，不可用程度由文案说明——因为任何技能都可点开详情
                                     let st = if selected {
                                         ui::RowState::Selected
@@ -2941,9 +2941,9 @@ impl Game {
                                         let owned = me.bound_skill(key) == Some(skill);
                                         let lv = if owned { me.skill_level(skill) } else { 1 };
                                         let cost = skill.learn_cost();
-                                        // 标题用技能基础名（不绑定具体形态）；当前形态见下方「二形态」区
+                                        // 标题用中性基础名（去掉 ·形态 后缀）；当前形态见下方「二形态」区
                                         let on = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
-                                        let name = game_core::skill::DefTable::def(skill).name;
+                                        let name = game_core::skill::DefTable::neutral_name(skill);
                                         // 标题：名称 + 已购等级 / 价格
                                         let head = if owned {
                                             format!("{name}  Lv{lv}  （已购买）")
@@ -5537,8 +5537,8 @@ impl Game {
                 y += 34.0;
                 for (i, skill) in sel.tree().skills_in_tree().iter().enumerate() {
                     let star = if pr.bound_skill(sel) == Some(*skill) { "  [已选]" } else { "" };
-                    // 外层用中性基础名（不绑定具体形态；形态见详情面板）
-                    draw_text(&mut canvas, ctx, &format!("  {} {} {}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 19.0, Color::from_rgb(215, 220, 230), Point2 { x: lcx, y }, true)?;
+                    // 外层用中性基础名（去掉 ·形态 后缀；形态见详情面板）
+                    draw_text(&mut canvas, ctx, &format!("  {} {} {}", i + 1, game_core::skill::DefTable::neutral_name(*skill), star), 19.0, Color::from_rgb(215, 220, 230), Point2 { x: lcx, y }, true)?;
                     y += 28.0;
                 }
                 y += 10.0;
@@ -5551,9 +5551,9 @@ impl Game {
             for key in game_core::skill::CastKey::ALL {
                 let bound = pr.bound_skill(key);
                 let lv = bound.map(|s| pr.skill_level(s)).unwrap_or(0);
-                // 外层用中性基础名（不绑定具体形态；形态见详情面板）
+                // 外层用中性基础名（去掉 ·形态 后缀；形态见详情面板）
                 let txt = match bound {
-                    Some(s) => format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::def(s).name, lv),
+                    Some(s) => format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::neutral_name(s), lv),
                     None => format!("[{}] （未绑定）", key.letter()),
                 };
                 let highlight = self.learn_tree_key == Some(key);
