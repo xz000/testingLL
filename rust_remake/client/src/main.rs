@@ -1188,21 +1188,24 @@ impl Game {
             self.buy_or_upgrade_selected();
         }
 
-        // 形态切换（098c sC，B4/D13 #7）：B 键 = 把选中树已绑技能切到另一形态（免费、配置期）。
+        // 形态切换（098c sC，B4/D13 #7）：B 键 = 把「当前选中」技能切到另一形态（免费、配置期）。
+        // 跟随数字键选中的技能（learn_skill_index），不再只看已绑定技能——这样选中但未购买的技能也能切形态。
         if Self::char_just(ctx, "b") {
             if let Some(key) = learn_key {
-                if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                    if let Some(skill) = profile.bound_skill(key) {
+                if let Some(i) = self.learn_skill_index {
+                    if let Some(&skill) = key.tree().skills_in_tree().get(i) {
                         if game_core::skill::DefTable::has_alt(skill) {
                             let idx = skill.as_u32() as usize;
-                            if let Some(f) = profile.forms.get_mut(idx) {
-                                *f = !*f;
-                            }
-                            let new_name = game_core::skill::DefTable::def_for(skill, profile.forms[idx]).name;
-                            eprintln!("[learn] 形态切换 -> {new_name}");
-                            if let Some(wp) = self.world.players.get_mut(me as usize) {
-                                if let Some(f) = wp.forms.get_mut(idx) {
-                                    *f = profile.forms[idx];
+                            if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                                if let Some(f) = profile.forms.get_mut(idx) {
+                                    *f = !*f;
+                                }
+                                let new_name = game_core::skill::DefTable::def_for(skill, profile.forms[idx]).name;
+                                eprintln!("[learn] 形态切换 -> {new_name}");
+                                if let Some(wp) = self.world.players.get_mut(me as usize) {
+                                    if let Some(f) = wp.forms.get_mut(idx) {
+                                        *f = profile.forms[idx];
+                                    }
                                 }
                             }
                         } else {
@@ -3028,12 +3031,12 @@ impl Game {
                                             if lv >= cap {
                                                 (format!("已满级 Lv{lv}"), false)
                                             } else {
-                                                (format!("升级到 Lv{} ({}G)", lv + 1, cost), true)
+                                                (format!("升级到 Lv{} ({cost}G)  [=]", lv + 1), true)
                                             }
                                         } else if tree_locked {
                                             ("同树已锁定，不可购买".to_string(), false)
                                         } else if me.gold >= cost {
-                                            (format!("购买 ({cost}G)"), true)
+                                            (format!("购买 ({cost}G)  [=]"), true)
                                         } else {
                                             (format!("购买 ({cost}G) — 金币不足"), false)
                                         };
@@ -5582,7 +5585,7 @@ impl Game {
                 y += 28.0;
             }
         }
-        draw_text(&mut canvas, ctx, "字母C/R/E/D/Y/T/F/G选树  数字选技能看详情  =购买/升级", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.92 }, true)?;
+        draw_text(&mut canvas, ctx, "字母C/R/E/D/Y/T/F/G选树  数字选技能看详情  =购买/升级  B切换形态", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.92 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
