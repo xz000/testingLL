@@ -25,6 +25,9 @@ use ggez::{Context, GameResult};
 
 mod netlink;
 
+/// 可复用 UI 原语（U3）：主题 / 文本排版 / 面板 / 可点行 / 命中登记 / 滚动。
+mod ui;
+
 // Steam 联机逻辑（feature 门控，独立模块便于阅读维护；字段与方法均属 `Game`，纯逻辑分组）。
 mod steam;
 
@@ -228,7 +231,8 @@ struct Game {
     /// 商店页右栏滚动偏移（§3）：防御续航类 13 项会超屏，用滚轮/↑↓ 滚动。
     shop_scroll: usize,
     /// 学习界面鼠标命中盒（U2）：绘制时写入，update 里左键命中派发（1 帧延迟可忽略）。
-    learn_hitboxes: Vec<(graphics::Rect, LearnAction)>,
+    /// 学习界面命中登记（U3：泛型原语 `ui::HitRegistry`，替代裸 `Vec<(Rect, Action)>`）。
+    learn_hitboxes: ui::HitRegistry<LearnAction>,
     /// 机器人的当前目标点
     bot_targets: Vec<Option<Vec2>>,
     /// 机器人的确定性随机源
@@ -780,7 +784,7 @@ impl Game {
             learn_page: 0,
             shop_category: 0,
             shop_scroll: 0,
-            learn_hitboxes: Vec::new(),
+            learn_hitboxes: ui::HitRegistry::new(),
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
@@ -1008,15 +1012,33 @@ impl Game {
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(s.to_uppercase().into()))
     }
 
-    /// 学习界面左键命中派发（U2）：按 LearnAction 执行与键盘等价的操作。
+    /// 升级当前选中键绑定的技能（与 `=` 键等价）：计算乔丹上限后 `upgrade_skill`。
+    /// 抽成方法以便 `=` 键与 `LearnAction::Upgrade` 点击共用，避免两套逻辑分叉。
+    fn upgrade_selected_skill(&mut self) {
+        let me = self.self_index();
+        let Some(key) = self.learn_tree_key else { return };
+        let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else {
+            return;
+        };
+        let Some(skill) = profile.bound_skill(key) else { return };
+        // 098b 升级上限 alev + 乔丹之石 +2（M3 2c）。
+        let jordan = profile.items.iter().map(|it| it.def().fx.jordan_levels).sum::<u8>() as u32;
+        let cap = game_core::skill::DefTable::max_level(skill) + jordan;
+        let lv = profile.skill_level(skill);
+        if lv >= cap {
+            return;
+        }
+        let cost = skill.learn_cost();
+        profile.upgrade_skill(skill, cost);
+    }
+
+    /// 学习界面左键命中派发（U2/U3）：按 LearnAction 执行与键盘等价的操作。
+    ///
+    /// U3 补齐此前**只能键盘**的动作：商店大类 `Category`、成长属性 `Attribute`、
+    /// 升级 `Upgrade`、洗点 `Respec`、解绑 `Unbind`（`unbind_skill` 此前界面完全未暴露）。
     fn learn_dispatch_click(&mut self, ctx: &Context) {
         let m = ctx.mouse.position();
-        let hits: Vec<LearnAction> = self
-            .learn_hitboxes
-            .iter()
-            .filter(|(r, _)| r.contains(Point2 { x: m.x, y: m.y }))
-            .map(|(_, a)| *a)
-            .collect();
+        let hits = self.learn_hitboxes.hits_at(m);
         let me = self.self_index();
         for action in hits {
             match action {
@@ -1066,6 +1088,31 @@ impl Game {
                                 wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
                             }
                         }
+                    }
+                }
+                LearnAction::Category(cat) => {
+                    self.shop_category = cat;
+                    self.shop_scroll = 0;
+                }
+                LearnAction::Attribute(g) => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        let cur = profile.attributes.current(g);
+                        let cost = growth_attr_cost(cur);
+                        profile.buy_attribute(g, cost);
+                    }
+                }
+                LearnAction::Upgrade => {
+                    self.upgrade_selected_skill();
+                }
+                LearnAction::Respec => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        profile.respec(1.0);
+                    }
+                    self.learn_tree_key = None;
+                }
+                LearnAction::Unbind(key) => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        profile.unbind_skill(key);
                     }
                 }
             }
@@ -1132,28 +1179,7 @@ impl Game {
         // `=` 键：升级当前选中键绑定的技能
         if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into())) {
             eprintln!("[learn] '=' pressed, learn_tree_key={learn_key:?}");
-            if let Some(key) = learn_key {
-                if let Some(profile) = self
-                    .meta
-                    .profiles
-                    .iter_mut()
-                    .find(|pr| pr.player_id == me)
-                {
-                    if let Some(skill) = profile.bound_skill(key) {
-                        // 098b 升级上限 alev + 乔丹之石 +2（M3 2c）
-                        let jordan = profile.items.iter().map(|it| it.def().fx.jordan_levels).sum::<u8>() as u32;
-                        let cap = game_core::skill::DefTable::max_level(skill) + jordan;
-                        let lv = profile.skill_level(skill);
-                        if lv >= cap {
-                            eprintln!("[learn] {} 已达上限 {cap}（乔丹 +{jordan}）", game_core::skill::DefTable::def(skill).name);
-                        } else {
-                            let cost = skill.learn_cost();
-                            eprintln!("[learn] upgrade {} cost={}", game_core::skill::DefTable::def(skill).name, cost);
-                            profile.upgrade_skill(skill, cost);
-                        }
-                    }
-                }
-            }
+            self.upgrade_selected_skill();
         }
 
         // 形态切换（098c sC，B4/D13 #7）：B 键 = 把选中树已绑技能切到另一形态（免费、配置期）。
@@ -2762,194 +2788,330 @@ impl Game {
                 )?;
                 canvas.draw(&dim, graphics::DrawParam::new());
 
-                let cx = sw / 2.0;
-                let mut y = sh * 0.18;
+                let mouse = ctx.mouse.position();
+                self.learn_hitboxes.clear();
 
+                // 标题 + 剩余时间（右上）
                 let title = if self.meta.is_first_config() {
                     "开局配置".to_string()
                 } else {
                     format!("第 {} / {} 局结束 - 学习阶段", self.meta.round, self.meta.config.total_rounds)
                 };
-                draw_text(canvas, ctx, &title, 34.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y }, true)?;
-                y += 52.0;
+                ui::text_center(canvas, ctx, &title, 32.0, ui::theme::accent(), sw / 2.0, sh * 0.055)?;
+                ui::text_right(
+                    canvas, ctx,
+                    &format!("剩余 {:.0}s", self.meta.learn_remaining.max(0.0)),
+                    20.0, ui::theme::ok(), sw - 16.0, sh * 0.055,
+                )?;
 
-                // 分页标签（U0）：Tab 切换，当前页高亮；页签本身可点击（U2）
-                let mouse = ctx.mouse.position();
-                let pages = ["[1]技能", "[2]商店", "[3]属性"];
-                let mut px = cx - 150.0;
-                self.learn_hitboxes.clear();
-                for (i, tag) in pages.iter().enumerate() {
-                    let active = self.learn_page == i as u8;
-                    let tag_rect = graphics::Rect::new(px - 60.0, y - 16.0, 120.0, 30.0);
-                    let hovered = tag_rect.contains(Point2 { x: mouse.x, y: mouse.y });
-                    draw_text(canvas, ctx, tag, 22.0,
-                        if active { Color::from_rgb(255, 210, 120) } else if hovered { Color::from_rgb(200, 205, 220) } else { Color::from_rgb(120, 128, 145) },
-                        Point2 { x: px, y }, true)?;
+                // 我的档案（顶部一行）
+                let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) else {
+                    return Ok(());
+                };
+                let info = format!(
+                    "金币 {}   击杀 {}   最佳名次 #{}   成长点 {}",
+                    me.gold, me.total_kills, me.best_placement, me.growth_points
+                );
+                ui::text_center(canvas, ctx, &info, 19.0, ui::theme::text(), sw / 2.0, sh * 0.10)?;
+
+                // 页签（顶部居中一行，当前页高亮，可点击）
+                let tab_y = sh * 0.145;
+                let pages = [("[1]技能", 0u8), ("[2]商店", 1u8), ("[3]精通属性", 2u8)];
+                let tab_w = 150.0;
+                let total_w = tab_w * pages.len() as f32;
+                let mut tx = sw / 2.0 - total_w / 2.0 + tab_w / 2.0;
+                for (label, pi) in pages {
+                    let active = self.learn_page == pi;
+                    let r = graphics::Rect::new(tx - tab_w / 2.0, tab_y - 16.0, tab_w, 32.0);
+                    let hover = r.contains(mouse);
+                    let fill = Mesh::new_rectangle(
+                        &ctx.gfx, DrawMode::fill(), r,
+                        if active { ui::theme::row_selected() } else if hover { ui::theme::row_hover() } else { ui::theme::row_bg() },
+                    )?;
+                    canvas.draw(&fill, graphics::DrawParam::new());
+                    let color = if active { ui::theme::accent() } else if hover { ui::theme::text() } else { ui::theme::text_dim() };
+                    ui::text_center(canvas, ctx, label, 20.0, color, tx, tab_y)?;
                     if !active {
-                        self.learn_hitboxes.push((tag_rect, LearnAction::Page(i as u8)));
-                        // 页签动作复用 Tree 通道之前先记页号——见下方 hitpage 通道
+                        self.learn_hitboxes.push((r, LearnAction::Page(pi)));
                     }
-                    px += 150.0;
+                    tx += tab_w;
                 }
-                y += 46.0;
 
-                // 我的档案：金币 / 击杀 / 最佳名次
-                if let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
-                    let info = format!(
-                        "金币 {}   击杀 {}   最佳名次 #{}",
-                        me.gold, me.total_kills, me.best_placement
-                    );
-                    draw_text(canvas, ctx, &info, 24.0, Color::WHITE, Point2 { x: cx, y }, true)?;
-                    y += 44.0;
+                // 面板几何：左「配装总览」常驻 + 右「当前页内容」。
+                let pad = ui::theme::PAD;
+                let left_w = (sw * 0.26).clamp(240.0, 340.0);
+                let left_x = pad;
+                let right_x = left_x + left_w + pad * 2.0;
+                let right_w = sw - right_x - pad;
+                let panel_y = sh * 0.20;
+                let panel_h = sh * 0.74;
+                let right_edge = right_x + right_w;
+                let bot_edge = panel_y + panel_h;
+                ui::panel(canvas, ctx, graphics::Rect::new(left_x, panel_y, left_w, panel_h), Some("配装总览"))?;
+                ui::panel(canvas, ctx, graphics::Rect::new(right_x, panel_y, right_w, panel_h), None)?;
 
+                // ============ 左栏：配装总览 ============
+                let mut ly = panel_y + 42.0;
+                ui::text_left(canvas, ctx, "技能槽", ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly)?;
+                ly += 22.0;
+                for key in game_core::skill::CastKey::ALL {
+                    let bound = me.bound_skill(key);
+                    let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
+                    let txt = match bound {
+                        Some(s) => {
+                            let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                            format!("[{}] {} Lv{}", key.letter(), game_core::skill::DefTable::def_for(s, alt).name, lv)
+                        }
+                        None => format!("[{}] 未绑定", key.letter()),
+                    };
+                    let sel = self.learn_tree_key == Some(key);
+                    let r = graphics::Rect::new(left_x + 4.0, ly, left_w - 8.0, ui::theme::ROW_H);
+                    let hover = r.contains(mouse);
+                    let st = if sel {
+                        ui::RowState::Selected
+                    } else if hover {
+                        ui::RowState::Hover
+                    } else {
+                        ui::RowState::Normal
+                    };
+                    ui::row(canvas, ctx, r, &txt, ui::theme::BODY, st)?;
+                    self.learn_hitboxes.push((r, LearnAction::Tree(key)));
+                    ly += ui::theme::ROW_H + 4.0;
+                }
+                ly += 8.0;
+                ui::text_left(
+                    canvas, ctx,
+                    &format!("物品 {}/{}", me.items.len(), me.inventory_slots()),
+                    ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+                )?;
+                ly += 22.0;
+                let m = me.mastery;
+                ui::text_left(
+                    canvas, ctx,
+                    &format!("精通  命{} 远{} 时{} 包{}", m.life, m.range, m.time, m.backpack),
+                    ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+                )?;
+                ly += 26.0;
+                let respec_r = graphics::Rect::new(left_x + 4.0, ly, left_w - 8.0, ui::theme::ROW_H);
+                let respec_hover = respec_r.contains(mouse);
+                ui::row(
+                    canvas, ctx, respec_r, "[洗点 X] 全额退款",
+                    ui::theme::BODY, if respec_hover { ui::RowState::Hover } else { ui::RowState::Normal },
+                )?;
+                self.learn_hitboxes.push((respec_r, LearnAction::Respec));
+
+                // ============ 右栏：当前页内容 ============
+                let rx = right_x + pad;
+                let content_w = right_w - pad * 2.0;
                 match self.learn_page {
                     0 => {
-                    // 提示操作
-                    draw_text(
-                        canvas, ctx,
-                        "字母(C/R/E/D/Y/T/F/G) 选中树 -> 数字 1-3 绑定 -> = 升级，B 切形态，X 洗点",
-                        19.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
-                    y += 40.0;
-
-                    // 每个键：树名 + 已绑定技能（行可点击选中树；已绑技能名可点击切形态，U2）
-                    for key in game_core::skill::CastKey::ALL {
-                        let bound = me.bound_skill(key);
-                        let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
-                        let bound_txt = match bound {
-                            Some(s) => {
-                                let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                                let form = if alt { "B" } else { "A" };
-                                let name = game_core::skill::DefTable::def_for(s, alt).name;
-                                let toggle = if game_core::skill::DefTable::has_alt(s) { "（点此切形态）" } else { "" };
-                                format!("{name}［{form}］ @Lv{lv}{toggle}")
+                        // 技能页：选中树后展示其技能选项 + 升级/切形态/解绑按钮
+                        match self.learn_tree_key {
+                            Some(key) => {
+                                ui::text_left(
+                                    canvas, ctx,
+                                    &format!("{} 树 — 选技能绑定 / 升级 / 切形态 / 解绑", key.tree().name_zh()),
+                                    ui::theme::BODY, ui::theme::accent(), rx, panel_y + 14.0,
+                                )?;
+                                let mut ry = panel_y + 46.0;
+                                for (i, skill) in key.tree().skills_in_tree().iter().enumerate() {
+                                    let bound_here = me.bound_skill(key) == Some(*skill);
+                                    let r = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
+                                    let hover = r.contains(mouse);
+                                    let st = if bound_here {
+                                        ui::RowState::Selected
+                                    } else if hover {
+                                        ui::RowState::Hover
+                                    } else {
+                                        ui::RowState::Normal
+                                    };
+                                    ui::row(canvas, ctx, r, &format!("{}  {}", i + 1, game_core::skill::DefTable::def(*skill).name), ui::theme::BODY, st)?;
+                                    self.learn_hitboxes.push((r, LearnAction::Skill(i)));
+                                    ry += ui::theme::ROW_H + 4.0;
+                                }
+                                ry += 6.0;
+                                // 三个按钮：升级 / 切形态 / 解绑
+                                let bound = me.bound_skill(key);
+                                let btn_gap = 8.0;
+                                let btn_w = (content_w - btn_gap * 2.0) / 3.0;
+                                let mut bx = rx;
+                                let up_r = graphics::Rect::new(bx, ry, btn_w, ui::theme::ROW_H);
+                                let can_up = bound.is_some();
+                                let up_st = if can_up {
+                                    if up_r.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+                                } else {
+                                    ui::RowState::Disabled
+                                };
+                                let up_label = match bound {
+                                    Some(s) => {
+                                        let jordan = me.items.iter().map(|it| it.def().fx.jordan_levels).sum::<u8>() as u32;
+                                        let cap = game_core::skill::DefTable::max_level(s) + jordan;
+                                        let lv = me.skill_level(s);
+                                        if lv >= cap {
+                                            format!("已满级 Lv{lv}")
+                                        } else {
+                                            format!("升级 ({}G)", s.learn_cost())
+                                        }
+                                    }
+                                    None => "未绑定".to_string(),
+                                };
+                                ui::row(canvas, ctx, up_r, &up_label, ui::theme::BODY, up_st)?;
+                                if can_up {
+                                    self.learn_hitboxes.push((up_r, LearnAction::Upgrade));
+                                }
+                                bx += btn_w + btn_gap;
+                                let form_r = graphics::Rect::new(bx, ry, btn_w, ui::theme::ROW_H);
+                                let has_alt = bound.map(game_core::skill::DefTable::has_alt).unwrap_or(false);
+                                let form_st = if has_alt {
+                                    if form_r.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+                                } else {
+                                    ui::RowState::Disabled
+                                };
+                                ui::row(canvas, ctx, form_r, if has_alt { "切形态 (B)" } else { "无二形态" }, ui::theme::BODY, form_st)?;
+                                if has_alt {
+                                    if let Some(s) = bound {
+                                        self.learn_hitboxes.push((form_r, LearnAction::Form(s)));
+                                    }
+                                }
+                                bx += btn_w + btn_gap;
+                                let un_r = graphics::Rect::new(bx, ry, btn_w, ui::theme::ROW_H);
+                                let un_st = if can_up {
+                                    if un_r.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+                                } else {
+                                    ui::RowState::Disabled
+                                };
+                                ui::row(canvas, ctx, un_r, "解绑", ui::theme::BODY, un_st)?;
+                                if can_up {
+                                    self.learn_hitboxes.push((un_r, LearnAction::Unbind(key)));
+                                }
                             }
-                            None => "未绑定".to_string(),
-                        };
-                        let row_rect = graphics::Rect::new(cx - 260.0, y - 15.0, 520.0, 30.0);
-                        let row_hover = row_rect.contains(Point2 { x: mouse.x, y: mouse.y });
-                        let color = if self.learn_tree_key == Some(key) {
-                            Color::from_rgb(255, 210, 120)
-                        } else if row_hover {
-                            Color::from_rgb(235, 238, 245)
-                        } else {
-                            Color::from_rgb(210, 215, 225)
-                        };
-                        let line = format!("[{}] {}树   {}", key.letter(), key.tree().name_zh(), bound_txt);
-                        draw_text(canvas, ctx, &line, 21.0, color, Point2 { x: cx, y }, true)?;
-                        if self.learn_tree_key != Some(key) {
-                            self.learn_hitboxes.push((row_rect, LearnAction::Tree(key)));
-                        } else if let Some(sk) = bound {
-                            if game_core::skill::DefTable::has_alt(sk) {
-                                // 形态点击区：行内技能名起（右侧半行）
-                                let form_rect = graphics::Rect::new(cx - 20.0, y - 15.0, 280.0, 30.0);
-                                self.learn_hitboxes.push((form_rect, LearnAction::Form(sk)));
+                            None => {
+                                ui::text_left(
+                                    canvas, ctx,
+                                    "← 在左侧「配装总览」里点一个技能槽来配置",
+                                    ui::theme::BODY, ui::theme::text_dim(), rx, panel_y + 14.0,
+                                )?;
                             }
                         }
-                        y += 32.0;
-                    }
-
-                    // 被选中的树的技能选项
-                    if let Some(key) = self.learn_tree_key {
-                        y += 12.0;
-                        draw_text(canvas, ctx, &format!("{} 树的技能（按数字 1-3 选）：", key.letter()), 20.0, Color::from_rgb(255,210,120), Point2 { x: cx, y }, true)?;
-                        y += 32.0;
-                        for (i, skill) in key.tree().skills_in_tree().iter().enumerate() {
-                            let opt_rect = graphics::Rect::new(cx - 260.0, y - 13.0, 520.0, 26.0);
-                            let opt_hover = opt_rect.contains(Point2 { x: mouse.x, y: mouse.y });
-                            let line = format!("  {}  {}", i + 1, game_core::skill::DefTable::def(*skill).name);
-                            draw_text(canvas, ctx, &line, 18.0,
-                                if opt_hover { Color::from_rgb(255, 235, 180) } else { Color::from_rgb(220,220,230) },
-                                Point2 { x: cx, y }, true)?;
-                            self.learn_hitboxes.push((opt_rect, LearnAction::Skill(i)));
-                            y += 26.0;
-                        }
-                    }
                     }
                     1 => {
-                        // 商店页（§3 改造）：左栏三大类（B/N/M 切换），右栏当前大类明细。
-                        // 两列各自维护 y，避免单列超屏；tooltip 移到屏幕底部固定说明条，不再撑高右栏。
-                        draw_text(canvas, ctx, "B/N/M 切换大类 · 数字键购买 · ↑↓/PgUp-PgDn 滚动明细", 18.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
-                        y += 36.0;
-
-                        // 左栏：三大类
-                        let lx = cx - 380.0;
-                        let mut ly = y;
+                        // 商店页：左小栏三大类（可点）+ 右明细（clamp 11 行，滚轮/↑↓ 滚动）
+                        let cat_w = content_w * 0.34;
+                        let item_x = rx + cat_w + 12.0;
+                        let item_w = right_edge - item_x - pad;
+                        let mut cy = panel_y + 14.0;
                         for (ci, name) in game_core::item::SHOP_CATEGORIES.iter().enumerate() {
                             let sel = ci as u8 == self.shop_category;
-                            let tag = format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], name);
-                            draw_text(canvas, ctx, &tag, 20.0,
-                                if sel { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(185, 192, 208) },
-                                Point2 { x: lx, y: ly }, true)?;
-                            ly += 34.0;
+                            let r = graphics::Rect::new(rx, cy, cat_w, ui::theme::ROW_H);
+                            let hover = r.contains(mouse);
+                            let st = if sel {
+                                ui::RowState::Selected
+                            } else if hover {
+                                ui::RowState::Hover
+                            } else {
+                                ui::RowState::Normal
+                            };
+                            ui::row(canvas, ctx, r, &format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], name), ui::theme::BODY, st)?;
+                            self.learn_hitboxes.push((r, LearnAction::Category(ci as u8)));
+                            cy += ui::theme::ROW_H + 4.0;
                         }
-
-                        // 右栏：当前大类明细（按家族分组、族内按档位升序）
                         let items = game_core::item::shop_category_items(self.shop_category);
-                        let max_rows = 14usize;
-                        let start = self.shop_scroll.min(items.len().saturating_sub(max_rows));
+                        let visible = 11usize;
+                        let (start, end) = ui::scroll_window(items.len(), visible, self.shop_scroll);
                         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
-                        let rx = cx + 80.0;
-                        let mut ry = y;
+                        let mut iy = panel_y + 14.0;
                         let mut hover_desc: Option<&'static str> = None;
-                        for (vis_i, d) in items.iter().enumerate().skip(start).take(max_rows) {
+                        for (vis_i, d) in items.iter().enumerate().take(end).skip(start) {
                             let num = vis_i - start;
-                            let key_lbl = keys.get(num).copied().unwrap_or("");
                             let owned = me.items.contains(&d.id);
-                            let it_rect = graphics::Rect::new(rx - 240.0, ry - 13.0, 480.0, 26.0);
-                            let it_hover = it_rect.contains(Point2 { x: mouse.x, y: mouse.y });
-                            let col = if owned { Color::from_rgb(120, 220, 140) } else if it_hover { Color::from_rgb(255, 235, 180) } else { Color::from_rgb(220, 220, 230) };
-                            let line = format!("[{}] {}  （{}G）{}", key_lbl, d.name, d.cost, if owned { " ·已持有" } else { "" });
-                            draw_text(canvas, ctx, &line, 17.0, col, Point2 { x: rx, y: ry }, true)?;
-                            self.learn_hitboxes.push((it_rect, LearnAction::Item(d.id)));
-                            if it_hover {
+                            let r = graphics::Rect::new(item_x, iy, item_w, ui::theme::ROW_H);
+                            let hover = r.contains(mouse);
+                            let st = if owned {
+                                ui::RowState::Selected
+                            } else if hover {
+                                ui::RowState::Hover
+                            } else {
+                                ui::RowState::Normal
+                            };
+                            let label = format!(
+                                "[{}] {}  {}G{}",
+                                keys.get(num).copied().unwrap_or(""),
+                                d.name, d.cost,
+                                if owned { " ✓" } else { "" }
+                            );
+                            ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+                            self.learn_hitboxes.push((r, LearnAction::Item(d.id)));
+                            if hover {
                                 hover_desc = Some(d.desc);
                             }
-                            ry += 26.0;
+                            iy += ui::theme::ROW_H + 2.0;
                         }
-
-                        // 底部固定说明条：hover 物品详情 + 滚动指示（不与右栏争高度）
                         if let Some(desc) = hover_desc {
-                            draw_text(canvas, ctx, desc, 15.0, Color::from_rgb(160, 170, 190), Point2 { x: cx, y: sh - 64.0 }, true)?;
+                            ui::text_left(canvas, ctx, desc, ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 44.0)?;
                         }
-                        if items.len() > max_rows {
-                            draw_text(canvas, ctx, &format!("共 {} 件，↑↓/PgUp-PgDn 滚动（当前 {}-{}）",
-                                items.len(), start + 1, (start + max_rows).min(items.len())),
-                                14.0, Color::from_rgb(150, 160, 180), Point2 { x: cx, y: sh - 38.0 }, true)?;
+                        if items.len() > visible {
+                            ui::text_left(
+                                canvas, ctx,
+                                &format!("共 {} 件 · 滚轮/↑↓ 滚动（{}-{}）", items.len(), start + 1, end),
+                                ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 22.0,
+                            )?;
                         }
-
-                        // 让后续的「剩余学习时间」落在两栏之下，避免重叠。
-                        y = ry.max(ly) + 10.0;
                     }
                     _ => {
-                        // 属性页：精通 1-4 + 成长属性 Z/H/J/K/L/;
-                        draw_text(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留）：", 19.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
-                        y += 38.0;
-                        let m = me.mastery;
-                        let mlines = [
-                            format!("  [1] 生命精通  Lv{}/{}（{}G）吸血+8%/级", m.life, game_core::meta::Mastery::CAPS[0], game_core::meta::Mastery::COSTS[0]),
-                            format!("  [2] 远程精通  Lv{}/{}（{}G）火球爆炸+12%/级", m.range, game_core::meta::Mastery::CAPS[1], game_core::meta::Mastery::COSTS[1]),
-                            format!("  [3] 时间精通  Lv{}/{}（{}G）法术持续/射程+10%/级", m.time, game_core::meta::Mastery::CAPS[2], game_core::meta::Mastery::COSTS[2]),
-                            format!("  [4] 背包研究  Lv{}/{}（{}G）物品栏 +1 格", m.backpack, game_core::meta::Mastery::CAPS[3], game_core::meta::Mastery::COSTS[3]),
+                        // 属性页：精通 1-4（可点）+ 成长属性 5 项（可点）
+                        let mut ay = panel_y + 14.0;
+                        ui::text_left(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ay += 22.0;
+                        let mm = [
+                            ("生命精通", m.life, 0usize),
+                            ("远程精通", m.range, 1),
+                            ("时间精通", m.time, 2),
+                            ("背包研究", m.backpack, 3),
                         ];
-                        for (i, line) in mlines.into_iter().enumerate() {
-                            let mm_rect = graphics::Rect::new(cx - 260.0, y - 13.0, 520.0, 26.0);
-                            let mm_hover = mm_rect.contains(Point2 { x: mouse.x, y: mouse.y });
-                            draw_text(canvas, ctx, &line, 17.0,
-                                if mm_hover { Color::from_rgb(200, 225, 255) } else { Color::from_rgb(150, 200, 255) },
-                                Point2 { x: cx, y }, true)?;
-                            self.learn_hitboxes.push((mm_rect, LearnAction::Mastery(i)));
-                            y += 26.0;
+                        for (name, lv, kind) in mm {
+                            let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+                            let hover = r.contains(mouse);
+                            let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+                            let label = format!(
+                                "[{}] {} Lv{}/{} ({}G)",
+                                kind + 1, name, lv, game_core::meta::Mastery::CAPS[kind], game_core::meta::Mastery::COSTS[kind]
+                            );
+                            ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+                            self.learn_hitboxes.push((r, LearnAction::Mastery(kind)));
+                            ay += ui::theme::ROW_H + 4.0;
                         }
-                        y += 16.0;
-                        draw_text(canvas, ctx, "属性（Z 金换成长点；H 生命 / J 移速 / K 护甲 / L 法抗 / ; 击退）：", 19.0, Color::from_rgb(170,180,200), Point2 { x: cx, y }, true)?;
-                        y += 34.0;
-                        draw_text(canvas, ctx, &format!("成长点 {}   属性点 H{} J{} K{} L{} ;{}", me.growth_points, me.attributes.hp_bonus, me.attributes.speed_bonus, me.attributes.armor, me.attributes.spell_resist, me.attributes.kb_resist), 17.0, Color::from_rgb(220, 220, 230), Point2 { x: cx, y }, true)?;
+                        ay += 6.0;
+                        ui::text_left(canvas, ctx, &format!("成长点 {}  ·  按 Z 用金币换成长点", me.growth_points), ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ay += 22.0;
+                        ui::text_left(canvas, ctx, "属性（点击购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ay += 22.0;
+                        let attrs: [(game_core::attribute::GrowthAttr, &str, char); 5] = [
+                            (game_core::attribute::GrowthAttr::Hp, "生命", 'H'),
+                            (game_core::attribute::GrowthAttr::Speed, "移速", 'J'),
+                            (game_core::attribute::GrowthAttr::Armor, "护甲", 'K'),
+                            (game_core::attribute::GrowthAttr::SpellResist, "法抗", 'L'),
+                            (game_core::attribute::GrowthAttr::KbResist, "击退", ';'),
+                        ];
+                        for (g, name, keych) in attrs {
+                            let cur = me.attributes.current(g);
+                            let cost = growth_attr_cost(cur);
+                            let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+                            let hover = r.contains(mouse);
+                            let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+                            let label = format!("[{keych}] {name}  Lv{cur}  ({cost}点)");
+                            ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+                            self.learn_hitboxes.push((r, LearnAction::Attribute(g)));
+                            ay += ui::theme::ROW_H + 4.0;
+                        }
                     }
                 }
 
-                    y += 24.0;
-                    draw_text(canvas, ctx, &format!("剩余学习时间：{:.0} 秒（Tab 切页）", self.meta.learn_remaining.max(0.0)), 20.0, Color::from_rgb(150,220,160), Point2 { x: cx, y }, true)?;
-                }
+                // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）
+                ui::text_center(
+                    canvas, ctx,
+                    "字母选树 · 1-3 绑技能 · = 升级 · B 形态 · X 洗点 · Tab 翻页",
+                    ui::theme::SMALL, ui::theme::text_dim(), sw / 2.0, sh - 14.0,
+                )?;
             }
             MatchPhase::Finished => {
                 // 终局结算
@@ -3859,6 +4021,26 @@ impl event::EventHandler for Game {
 
     fn focus_event(&mut self, _ctx: &mut Context, gained: bool) -> GameResult {
         eprintln!("[input] window focus gained={gained}");
+        Ok(())
+    }
+
+    /// 鼠标滚轮（U3）：仅在学习阶段 + 商店页驱动明细滚动；
+    /// 其余阶段/页无滚动内容，忽略。y>0 上滚、y<0 下滚（与 ↑↓ 方向一致）。
+    /// winit 循环已在 main.rs:5842 把 `MouseWheel` 转发到此。
+    fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, y: f32) -> GameResult {
+        use game_core::meta::MatchPhase;
+        if self.meta.phase != MatchPhase::Learning || self.learn_page != 1 {
+            return Ok(());
+        }
+        let items = game_core::item::shop_category_items(self.shop_category);
+        let visible = 11usize; // U3：可见行数 clamp 到 11（与 1..9/0/- 键对齐）
+        let max_scroll = items.len().saturating_sub(visible);
+        let step = 1usize;
+        if y > 0.0 {
+            self.shop_scroll = self.shop_scroll.saturating_sub(step);
+        } else if y < 0.0 {
+            self.shop_scroll = (self.shop_scroll + step).min(max_scroll);
+        }
         Ok(())
     }
 
@@ -5636,6 +5818,16 @@ enum LearnAction {
     Mastery(usize),
     /// 切换到第 i 页
     Page(u8),
+    /// 切换商店大类（0=机动 1=防御续航 2=攻击特殊）——补齐鼠标点击（U3）
+    Category(u8),
+    /// 购买 1 点成长属性——补齐鼠标点击（U3）
+    Attribute(game_core::attribute::GrowthAttr),
+    /// 升级当前选中键绑定的技能（等价 `=` 键）——补齐鼠标点击（U3）
+    Upgrade,
+    /// 洗点（全额退款，等价 `X` 键）——补齐鼠标点击（U3）
+    Respec,
+    /// 解除某键绑定（`unbind_skill`，此前界面完全未暴露）
+    Unbind(game_core::skill::CastKey),
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
