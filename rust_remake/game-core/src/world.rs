@@ -273,6 +273,9 @@ pub enum ProjectileKind {
         emit_angle: f64,
         /// 回旋镖出程距离（098c cO：前向匀减速到 0 的位置）。
         out_dist: Fix64,
+        /// 击中柱子时**镜向反弹**而非被挡下消失（术士之战：火球击中柱子能够反弹）。
+        /// 仅火球（S000）为 true；反弹的同时仍按 098c 对柱子造成伤害（nx=40 可摧毁）。
+        pillar_bounce: bool,
     },
 }
 
@@ -673,6 +676,7 @@ impl World {
                     burst: 0,
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
+                    pillar_bounce: false,
                 },
                 pos,
                 alive: true,
@@ -1481,12 +1485,34 @@ impl World {
                     if let ProjectileKind::Boomerang { vel, .. } = &mut pr.kind {
                         *vel = crate::fix::mirror_by(*vel, normal);
                         pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
-                    } else if let ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, vel, .. } =
-                        &mut pr.kind
+                    } else if let ProjectileKind::W098b {
+                        proj: crate::skill::W098bProjKind::Boomerang,
+                        vel,
+                        ..
+                    } = &mut pr.kind
                     {
                         // 098b 回旋镖撞柱反弹（与 D2 原型同手感）；Straight/Homing 被柱子挡下消失。
                         *vel = crate::fix::mirror_by(*vel, normal);
                         pr.pos = o.pos + normal * min;
+                    } else if let ProjectileKind::W098b { vel, pillar_bounce: true, .. } = &mut pr.kind {
+                        // 术士之战：火球击中柱子能够反弹（Straight 运动由 vel 驱动）。
+                        // 反弹同时仍按 098c 对柱子造成伤害（nx=40 可摧毁），与「被挡下消失」分支一致。
+                        // 注意：柱面是「面」，反弹应沿切向反射（v' = v − 2(v·n)n）。
+                        // `mirror_by` 是「沿法线所在直线」反射（保留法向、翻转切向），正面撞击时 v 不变，故这里不用它。
+                        let dot = vel.dot(normal); // normal 已是单位向量（delta/dist）
+                        *vel -= normal * (dot * Fix64::from_num(2));
+                        pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
+                        let dmg = match &pr.kind {
+                            ProjectileKind::W098b { gx, .. } => gx.to_num::<f64>(),
+                            _ => 0.0,
+                        };
+                        if dmg > 0.0 {
+                            let o = &mut self.obstacles[oi];
+                            o.hp = o.hp.saturating_sub(dmg.ceil() as u32);
+                        }
+                        if self.obstacles[oi].hp == 0 {
+                            self.obstacles.remove(oi);
+                        }
                     } else {
                         // 098c 柱子可摧毁（nx=40，D9 批次3）：火球类直伤弹命中扣 HP，归零移除
                         //（每轮 re-layout 即重生成）。其余弹体被挡下消失。
@@ -2151,6 +2177,7 @@ impl World {
                         burst: 0,
                         emit_cooldown: Fix64::ZERO,
                         emit_angle: 0.0,
+                        pillar_bounce: false,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -2303,6 +2330,7 @@ impl World {
                     burst: 0,
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
+                    pillar_bounce: false,
                 },
                 pos,
                 alive: true,
@@ -2948,6 +2976,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Fix64::ZERO
                             },
                             emit_angle: 0.0,
+                            // 术士之战：火球击中柱子能够反弹（其余直射弹仍被柱子挡下消失）。
+                            pillar_bounce: id == crate::skill::SkillId::S000,
                         },
                         pos: ppos,
                         alive: true,
@@ -5536,7 +5566,6 @@ mod tests {
     }
 
     /// S004 回旋镖：出程后回程拉回施法者，回到附近即收回消失。
-    #[test]
     /// 098c 弧线回旋镖（Ub，D9 技能手感批）：命中后不消失——反向飞回施法者再消失。
     #[test]
     fn s004_boomerang_hits_then_returns_to_caster() {
@@ -5742,6 +5771,43 @@ mod tests {
             }
         }
         assert!(world.obstacles.is_empty(), "柱子 HP 40 应被火球连发摧毁");
+    }
+
+    /// 术士之战「火球击中柱子能够反弹」：火球（S000）撞柱**镜向反弹**继续飞行，
+    /// 同时仍按 098c 对柱子造成伤害（nx=40 可摧毁）；其它直射弹仍被柱子挡下消失。
+    #[test]
+    fn fireball_bounces_off_pillar() {
+        let mut world = World::new(2, 978);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0));
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new(); // 清 CD
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut bounced = false;
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+            for pr in world.projectiles.iter() {
+                if !pr.alive {
+                    continue;
+                }
+                if let ProjectileKind::W098b { vel, pillar_bounce: true, .. } = pr.kind {
+                    if vel.x < Fix64::ZERO {
+                        bounced = true;
+                    }
+                }
+            }
+        }
+        assert!(bounced, "火球撞柱应镜向反弹（vel.x 由正变负），而非被挡下消失");
+        assert!(!world.obstacles.is_empty(), "单次反弹不应摧毁 40HP 柱子（火球直伤约 7）");
+        assert!(world.obstacles[0].hp < 40, "反弹的同时应仍对柱子造成伤害，实际 HP={}", world.obstacles[0].hp);
     }
 
     /// 098c 动量交换（D9 批次2）：高速玩家撞低速玩家 → 速度法向分量交换。
