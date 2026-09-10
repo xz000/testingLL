@@ -144,6 +144,43 @@ pub fn text_center(
     draw_text_at(canvas, ctx, s, size, color, center_x, y, true)
 }
 
+/// **自动换行的左对齐文本**（技能描述等长文案用）。
+///
+/// 按显示宽度估算切行：CJK 记 2 单位、ASCII 记 1 单位，`max_w / (size / 2)` 得每行容量。
+/// 逐行调用 `text_left` 绘制，返回**下一行的 y**（调用方直接用它续排后续内容）。
+#[allow(clippy::too_many_arguments)]
+pub fn text_wrapped(
+    canvas: &mut Canvas,
+    ctx: &Context,
+    s: &str,
+    size: f32,
+    color: Color,
+    x: f32,
+    y: f32,
+    max_w: f32,
+) -> GameResult<f32> {
+    let capacity = ((max_w / (size * 0.5)).max(4.0)) as usize;
+    let mut line = String::new();
+    let mut width = 0usize;
+    let mut yy = y;
+    for ch in s.chars() {
+        let w = if ch.is_ascii() { 1 } else { 2 };
+        if width + w > capacity {
+            text_left(canvas, ctx, &line, size, color, x, yy)?;
+            yy += size + 4.0;
+            line.clear();
+            width = 0;
+        }
+        line.push(ch);
+        width += w;
+    }
+    if !line.is_empty() {
+        text_left(canvas, ctx, &line, size, color, x, yy)?;
+        yy += size + 4.0;
+    }
+    Ok(yy)
+}
+
 /// 右对齐文本（**右下角**在 `(right, y)`）——角落信息 / 价格列用这个。
 pub fn text_right(
     canvas: &mut Canvas,

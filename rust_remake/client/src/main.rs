@@ -2951,12 +2951,12 @@ impl Game {
                                         };
                                         ui::text_left(canvas, ctx, &head, ui::theme::BODY, ui::theme::accent(), rx, ry)?;
                                         ry += 22.0;
-                                        // 技能描述
-                                        ui::text_left(
+                                        // 技能描述（长文案自动换行，返回下一行 y）
+                                        ry = ui::text_wrapped(
                                             canvas, ctx, game_core::skill::DefTable::desc(skill),
-                                            ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
+                                            ui::theme::SMALL, ui::theme::text_dim(), rx, ry, content_w,
                                         )?;
-                                        ry += 20.0;
+                                        ry += 2.0;
                                         // 关键数值（未购按 1 级预览）
                                         let st = game_core::skill::DefTable::def(skill).stats_at(lv);
                                         ui::text_left(
