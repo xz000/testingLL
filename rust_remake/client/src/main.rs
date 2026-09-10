@@ -2976,10 +2976,27 @@ impl Game {
                 ly += 8.0;
                 ui::text_left(
                     canvas, ctx,
-                    &format!("物品 {}/{}", me.items.len(), me.inventory_slots()),
+                    &format!("持有物品 ({}/{})", me.items.len(), me.inventory_slots()),
                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                 )?;
                 ly += 22.0;
+                if me.items.is_empty() {
+                    ui::text_left(
+                        canvas, ctx, "（空）",
+                        ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+                    )?;
+                    ly += 20.0;
+                } else {
+                    for &id in me.items.iter() {
+                        let d = id.def();
+                        ui::text_left(
+                            canvas, ctx, &format!("· {}", d.name),
+                            ui::theme::SMALL, ui::theme::text(), left_x + pad, ly,
+                        )?;
+                        ly += 20.0;
+                    }
+                }
+                ly += 6.0;
                 let m = me.mastery;
                 ui::text_left(
                     canvas, ctx,
