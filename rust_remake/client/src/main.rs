@@ -2259,6 +2259,20 @@ impl Game {
                         true,
                     )?;
                 }
+                // 回合数（常驻 HUD）：当前局 / 总轮数——局间信息常驻，便于随时掌握进度。
+                draw_text(
+                    &mut canvas,
+                    ctx,
+                    &format!(
+                        "第 {} / {} 局",
+                        self.meta.round,
+                        self.meta.config.total_rounds
+                    ),
+                    19.0,
+                    Color::from_rgb(255, 235, 150),
+                    Point2 { x: 14.0, y: 88.0 },
+                    true,
+                )?;
                 // 物品栏（U1）：技能栏正上方一行（居中对齐；技能栏 y = sh-80、高 56 → 物品栏 y = sh-148）
                 let item_slots = pr.inventory_slots() as f32;
                 let slot_w = 52.0;
@@ -2310,7 +2324,155 @@ impl Game {
             }
         }
 
+        // 局内记分板（CS 式：**按住 Tab** 显示）：画在最上层。
+        if ctx
+            .keyboard
+            .is_logical_key_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Tab))
+        {
+            self.draw_scoreboard(&mut canvas, ctx)?;
+        }
+
         canvas.finish(ctx)?;
+        Ok(())
+    }
+
+    /// 局内记分板（CS 式：**按住 Tab** 显示）：列 = 玩家 / 分数 / 击杀 / 存活。
+    /// 玩家数超过 `SCOREBOARD_MAX_ROWS` 时只显示**头部 + 尾部 + 本人**，其余折叠为「…」。
+    fn draw_scoreboard(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        const SCOREBOARD_MAX_ROWS: usize = 8;
+        const ROW_H: f32 = 30.0;
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let me = self.self_index();
+
+        // 分数降序（同分按 id 升序，保证确定性）；存活取自 world（帧内真实状态）。
+        let mut rows: Vec<(u32, u32, u32, bool)> = self
+            .meta
+            .profiles
+            .iter()
+            .map(|p| {
+                let alive = self
+                    .world
+                    .players
+                    .get(p.player_id as usize)
+                    .map(|w| w.alive)
+                    .unwrap_or(false);
+                (p.player_id, p.score, p.total_kills, alive)
+            })
+            .collect();
+        rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+
+        // 人多 → 头 3 + 「…」+ 尾 2 + 本人（若未被包含则补在末尾）
+        let shown: Vec<Option<(u32, u32, u32, bool)>> = if rows.len() <= SCOREBOARD_MAX_ROWS {
+            rows.iter().map(|r| Some(*r)).collect()
+        } else {
+            let tail_start = rows.len() - 2;
+            let mut v: Vec<Option<(u32, u32, u32, bool)>> = Vec::new();
+            for r in rows.iter().take(3) {
+                v.push(Some(*r));
+            }
+            v.push(None); // 「…」
+            for r in rows.iter().skip(tail_start) {
+                v.push(Some(*r));
+            }
+            let in_head_or_tail = rows
+                .iter()
+                .take(3)
+                .chain(rows.iter().skip(tail_start))
+                .any(|r| r.0 == me);
+            if !in_head_or_tail {
+                if let Some(pos) = rows.iter().position(|r| r.0 == me) {
+                    v.push(None);
+                    v.push(Some(rows[pos]));
+                }
+            }
+            v
+        };
+
+        let w = 400.0;
+        let h = 96.0 + shown.len() as f32 * ROW_H;
+        let x0 = sw / 2.0 - w / 2.0;
+        let y0 = sh / 2.0 - h / 2.0;
+        let panel = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(x0, y0, w, h),
+            Color::from_rgba(10, 12, 18, 228),
+        )?;
+        canvas.draw(&panel, graphics::DrawParam::new());
+        let border = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::stroke(2.0),
+            graphics::Rect::new(x0, y0, w, h),
+            Color::from_rgb(90, 110, 140),
+        )?;
+        canvas.draw(&border, graphics::DrawParam::new());
+
+        // 标题：第 N / M 局
+        draw_text(
+            canvas,
+            ctx,
+            &format!(
+                "第 {} / {} 局",
+                self.meta.round,
+                self.meta.config.total_rounds
+            ),
+            22.0,
+            Color::from_rgb(255, 220, 120),
+            Point2 { x: sw / 2.0, y: y0 + 14.0 },
+            true,
+        )?;
+
+        // 表头（draw_text 恒按 center.x 水平居中 → 传列中心点）
+        let head_y = y0 + 52.0;
+        let head_c = Color::from_rgb(150, 170, 200);
+        for (label, cx) in [
+            ("玩家", x0 + 70.0),
+            ("分数", x0 + 190.0),
+            ("击杀", x0 + 270.0),
+            ("存活", x0 + 350.0),
+        ] {
+            draw_text(canvas, ctx, label, 16.0, head_c, Point2 { x: cx, y: head_y }, true)?;
+        }
+
+        // 数据行
+        for (i, row) in shown.iter().enumerate() {
+            let y = head_y + 26.0 + i as f32 * ROW_H;
+            match row {
+                None => {
+                    draw_text(
+                        canvas,
+                        ctx,
+                        "…",
+                        18.0,
+                        Color::from_rgb(120, 130, 150),
+                        Point2 { x: x0 + 70.0, y },
+                        true,
+                    )?;
+                }
+                Some((pid, score, kills, alive)) => {
+                    let is_me = *pid == me;
+                    let c = if is_me {
+                        Color::from_rgb(255, 230, 140)
+                    } else {
+                        Color::from_rgb(215, 225, 240)
+                    };
+                    let name = if is_me {
+                        format!("玩家{pid} (我)")
+                    } else {
+                        format!("玩家{pid}")
+                    };
+                    draw_text(canvas, ctx, &name, 18.0, c, Point2 { x: x0 + 70.0, y }, true)?;
+                    draw_text(canvas, ctx, &score.to_string(), 18.0, c, Point2 { x: x0 + 190.0, y }, true)?;
+                    draw_text(canvas, ctx, &kills.to_string(), 18.0, c, Point2 { x: x0 + 270.0, y }, true)?;
+                    let (s, ac) = if *alive {
+                        ("存活", Color::from_rgb(130, 230, 150))
+                    } else {
+                        ("出局", Color::from_rgb(210, 120, 120))
+                    };
+                    draw_text(canvas, ctx, s, 18.0, ac, Point2 { x: x0 + 350.0, y }, true)?;
+                }
+            }
+        }
         Ok(())
     }
 
