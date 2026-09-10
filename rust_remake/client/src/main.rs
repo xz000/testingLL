@@ -1002,9 +1002,9 @@ impl Game {
 
     /// 学习阶段交互：
     /// - 按字母键 → 选中该键对应的技能树（learn_tree_key）
-    /// - 按数字键 1..N → 把选中的树里的第 N 个技能绑定到该键
-    /// - 按 `=` → 升级当前键绑定的技能
-    /// - 按 `X` → 洗点（全额退款 + 清空绑定）
+    /// - 按数字键 1..N → 花钱购买选中的树里的第 N 个技能（同树其余技能整场锁定）
+    /// - 按 `=` → 升级当前键已购技能
+    /// - 按 `B` → 切换当前键已购技能的形态
     // 判断某字符键是否刚被按下（大小写不敏感：Caps Lock / Shift 下字母也能匹配，如选树按 c 时 Caps Lock 收 `C` 也能命中）。
     fn char_just(ctx: &Context, s: &str) -> bool {
         use ggez::input::keyboard::Key;
@@ -1035,7 +1035,7 @@ impl Game {
     /// 学习界面左键命中派发（U2/U3）：按 LearnAction 执行与键盘等价的操作。
     ///
     /// U3 补齐此前**只能键盘**的动作：商店大类 `Category`、成长属性 `Attribute`、
-    /// 升级 `Upgrade`、洗点 `Respec`、解绑 `Unbind`（`unbind_skill` 此前界面完全未暴露）。
+    /// 升级 `Upgrade`。
     fn learn_dispatch_click(&mut self, ctx: &Context) {
         let m = ctx.mouse.position();
         let hits = self.learn_hitboxes.hits_at(m);
@@ -1053,7 +1053,7 @@ impl Game {
                     if let Some(key) = self.learn_tree_key {
                         if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
                             if let Some(&skill) = key.tree().skills_in_tree().get(i) {
-                                profile.bind_skill(key, skill);
+                                profile.purchase_skill(key, skill);
                             }
                         }
                     }
@@ -1103,17 +1103,6 @@ impl Game {
                 }
                 LearnAction::Upgrade => {
                     self.upgrade_selected_skill();
-                }
-                LearnAction::Respec => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        profile.respec(1.0);
-                    }
-                    self.learn_tree_key = None;
-                }
-                LearnAction::Unbind(key) => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        profile.unbind_skill(key);
-                    }
                 }
             }
         }
@@ -1167,8 +1156,8 @@ impl Game {
                         .iter_mut()
                         .find(|pr| pr.player_id == me)
                     {
-                        profile.bind_skill(key, *skill);
-                        eprintln!("[learn] bind tree={} digit='{}' -> {} onto pid={} binds={:?}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name, profile.player_id, profile.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
+                        profile.purchase_skill(key, *skill);
+                        eprintln!("[learn] purchase tree={} digit='{}' -> {} onto pid={} binds={:?}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name, profile.player_id, profile.key_slots.iter().map(|s| s.map(|x| x.as_u32())).collect::<Vec<_>>());
                     } else {
                         eprintln!("[learn] WARN bind failed: no profile pid={me} (pids={:?}) [self_index 找不到自己的 profile → 绑定丢失]", self.meta.profiles.iter().map(|p| p.player_id).collect::<Vec<_>>());
                     }
@@ -1205,19 +1194,6 @@ impl Game {
                     }
                 }
             }
-        }
-
-        // `X`：洗点（全额退款）
-        if Self::char_just(ctx, "x") {
-            if let Some(profile) = self
-                .meta
-                .profiles
-                .iter_mut()
-                .find(|pr| pr.player_id == me)
-            {
-                profile.respec(1.0);
-            }
-            self.learn_tree_key = None;
         }
     }
 
@@ -2892,48 +2868,56 @@ impl Game {
                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                 )?;
                 ly += 26.0;
-                let respec_r = graphics::Rect::new(left_x + 4.0, ly, left_w - 8.0, ui::theme::ROW_H);
-                let respec_hover = respec_r.contains(mouse);
-                ui::row(
-                    canvas, ctx, respec_r, "[洗点 X] 全额退款",
-                    ui::theme::BODY, if respec_hover { ui::RowState::Hover } else { ui::RowState::Normal },
+                ui::text_left(
+                    canvas, ctx,
+                    "（技能整场锁定，购买后同树其余技能不可再选）",
+                    ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                 )?;
-                self.learn_hitboxes.push((respec_r, LearnAction::Respec));
 
                 // ============ 右栏：当前页内容 ============
                 let rx = right_x + pad;
                 let content_w = right_w - pad * 2.0;
                 match self.learn_page {
                     0 => {
-                        // 技能页：选中树后展示其技能选项 + 升级/切形态/解绑按钮
+                        // 技能页：选中树后展示其技能选项 + 升级/切形态按钮
                         match self.learn_tree_key {
                             Some(key) => {
                                 ui::text_left(
                                     canvas, ctx,
-                                    &format!("{} 树 — 选技能绑定 / 升级 / 切形态 / 解绑", key.tree().name_zh()),
+                                    &format!("{} 树 — 选技能购买 / 升级 / 切形态", key.tree().name_zh()),
                                     ui::theme::BODY, ui::theme::accent(), rx, panel_y + 14.0,
                                 )?;
                                 let mut ry = panel_y + 46.0;
+                                let tree_locked = me.slot_locked(key);
                                 for (i, skill) in key.tree().skills_in_tree().iter().enumerate() {
                                     let bound_here = me.bound_skill(key) == Some(*skill);
                                     let r = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
                                     let hover = r.contains(mouse);
-                                    let st = if bound_here {
-                                        ui::RowState::Selected
-                                    } else if hover {
-                                        ui::RowState::Hover
+                                    let cost = me.spell_purchase_cost(skill.learn_cost());
+                                    let affordable = me.gold >= cost;
+                                    // 行状态：已购=选中；同树已锁=禁用；金币不足=禁用；否则普通/悬停
+                                    let (st, label) = if bound_here {
+                                        (ui::RowState::Selected, format!("{} {}  ✓已购", i + 1, game_core::skill::DefTable::def(*skill).name))
+                                    } else if tree_locked {
+                                        (ui::RowState::Disabled, format!("{} {}  （同树已锁定）", i + 1, game_core::skill::DefTable::def(*skill).name))
+                                    } else if !affordable {
+                                        (ui::RowState::Disabled, format!("{} {}  ({}G 金币不足)", i + 1, game_core::skill::DefTable::def(*skill).name, cost))
                                     } else {
-                                        ui::RowState::Normal
+                                        let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+                                        (st, format!("{} {}  ({}G 购买)", i + 1, game_core::skill::DefTable::def(*skill).name, cost))
                                     };
-                                    ui::row(canvas, ctx, r, &format!("{}  {}", i + 1, game_core::skill::DefTable::def(*skill).name), ui::theme::BODY, st)?;
-                                    self.learn_hitboxes.push((r, LearnAction::Skill(i)));
+                                    ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+                                    // 仅当可购买（未锁且金币够）时才接受点击；purchase_skill 内部再校验
+                                    if !tree_locked && affordable && !bound_here {
+                                        self.learn_hitboxes.push((r, LearnAction::Skill(i)));
+                                    }
                                     ry += ui::theme::ROW_H + 4.0;
                                 }
                                 ry += 6.0;
-                                // 三个按钮：升级 / 切形态 / 解绑
+                                // 两个按钮：升级 / 切形态
                                 let bound = me.bound_skill(key);
                                 let btn_gap = 8.0;
-                                let btn_w = (content_w - btn_gap * 2.0) / 3.0;
+                                let btn_w = (content_w - btn_gap) / 2.0;
                                 let mut bx = rx;
                                 let up_r = graphics::Rect::new(bx, ry, btn_w, ui::theme::ROW_H);
                                 let can_up = bound.is_some();
@@ -2972,17 +2956,6 @@ impl Game {
                                     if let Some(s) = bound {
                                         self.learn_hitboxes.push((form_r, LearnAction::Form(s)));
                                     }
-                                }
-                                bx += btn_w + btn_gap;
-                                let un_r = graphics::Rect::new(bx, ry, btn_w, ui::theme::ROW_H);
-                                let un_st = if can_up {
-                                    if un_r.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
-                                } else {
-                                    ui::RowState::Disabled
-                                };
-                                ui::row(canvas, ctx, un_r, "解绑", ui::theme::BODY, un_st)?;
-                                if can_up {
-                                    self.learn_hitboxes.push((un_r, LearnAction::Unbind(key)));
                                 }
                             }
                             None => {
@@ -3109,7 +3082,7 @@ impl Game {
                 // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）
                 ui::text_center(
                     canvas, ctx,
-                    "字母选树 · 1-3 绑技能 · = 升级 · B 形态 · X 洗点 · Tab 翻页",
+                    "字母选树 · 1-3 购买技能 · = 升级 · B 形态 · Tab 翻页",
                     ui::theme::SMALL, ui::theme::text_dim(), sw / 2.0, sh - 14.0,
                 )?;
             }
@@ -5510,7 +5483,7 @@ impl Game {
                 y += 28.0;
             }
         }
-        draw_text(&mut canvas, ctx, "字母C/R/E/D/Y/T/F/G选树  数字绑技能  =升级  X洗点", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.92 }, true)?;
+        draw_text(&mut canvas, ctx, "字母C/R/E/D/Y/T/F/G选树  数字购买技能  =升级", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.92 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
@@ -5824,10 +5797,6 @@ enum LearnAction {
     Attribute(game_core::attribute::GrowthAttr),
     /// 升级当前选中键绑定的技能（等价 `=` 键）——补齐鼠标点击（U3）
     Upgrade,
-    /// 洗点（全额退款，等价 `X` 键）——补齐鼠标点击（U3）
-    Respec,
-    /// 解除某键绑定（`unbind_skill`，此前界面完全未暴露）
-    Unbind(game_core::skill::CastKey),
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。

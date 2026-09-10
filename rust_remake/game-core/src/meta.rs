@@ -102,6 +102,9 @@ impl Mastery {
     }
 }
 
+/// 技能购买涨价步长（金币）：自第 4 个技能起，每多买一个技能单价加此值（对标 098c 买越多越贵）。
+pub const SPELL_COST_ESCALATION: i32 = 8;
+
 /// 一位玩家在整场对抗中的累计档案。
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerProfile {
@@ -124,7 +127,7 @@ pub struct PlayerProfile {
     pub key_slots: [Option<SkillId>; 8],
     /// 持有的物品（098b 6 格；升级链同家族替换，M3）。
     pub items: Vec<crate::item::ItemId>,
-    /// 累计在技能升级上花费的金币（用于洗点退款）
+    /// 累计在技能购买/升级上花费的金币
     pub gold_spent: i32,
     /// 战斗属性（4.6b）：Hp/移速等成长值，跨局/跨端确定性同步。
     pub attributes: crate::attribute::Attributes,
@@ -173,14 +176,58 @@ impl PlayerProfile {
         self.key_slots[key.as_u32() as usize]
     }
 
-    /// 把一个技能绑定到某个键。转换技能会保留各自已有等级，仅改变键指向。
-    pub fn bind_skill(&mut self, key: CastKey, skill: SkillId) {
-        self.key_slots[key.as_u32() as usize] = Some(skill);
+    /// 已购买的技能数量（键位已占用的数量）。用于涨价判定（对标 098c `oi[id]`）。
+    pub fn purchased_spell_count(&self) -> usize {
+        self.key_slots.iter().filter(|s| s.is_some()).count()
     }
 
-    /// 解除某键的绑定。
-    pub fn unbind_skill(&mut self, key: CastKey) {
-        self.key_slots[key.as_u32() as usize] = None;
+    /// 购买第 N 个技能的价格（对标 098c 买越多越贵）。
+    ///
+    /// 前 3 个技能按基础价 `base`；自第 4 个起每多买一个加 `SPELL_COST_ESCALATION`。
+    /// `base` 来自 `SkillId::learn_cost`（购买 = 1 级，与升级同价起点）。
+    pub fn spell_purchase_cost(&self, base: i32) -> i32 {
+        let n = self.purchased_spell_count();
+        if n < 3 {
+            base
+        } else {
+            base + (n as i32 - 2) * SPELL_COST_ESCALATION
+        }
+    }
+
+    /// 花钱购买某键（树）下的一个技能：扣金币、置 1 级、锁定该树其余技能。
+    ///
+    /// 对标 098c `kf`：技能需经 WC3 科技树购买扣金（此处直接扣 `gold`），
+    /// 同树（槽）内 3 选 1 互斥、整场锁定不可改（无洗点/解绑）。
+    ///
+    /// 返回是否购买成功：
+    /// - 技能不属于该键对应的树 → 失败；
+    /// - 该键已被占用（整场锁定）→ 失败；
+    /// - 金币不足 → 失败（不绑定、不扣金）。
+    pub fn purchase_skill(&mut self, key: CastKey, skill: SkillId) -> bool {
+        if !key.tree().skills_in_tree().contains(&skill) {
+            return false;
+        }
+        let idx = key.as_u32() as usize;
+        if self.key_slots[idx].is_some() {
+            return false;
+        }
+        let cost = self.spell_purchase_cost(skill.learn_cost());
+        if self.gold < cost {
+            return false;
+        }
+        self.gold -= cost;
+        self.gold_spent += cost;
+        let sidx = skill.as_u32() as usize;
+        if let Some(lv) = self.skill_levels.get_mut(sidx) {
+            *lv = 1;
+        }
+        self.key_slots[idx] = Some(skill);
+        true
+    }
+
+    /// 某键（树）是否已锁定（已购买技能、整场不可改）。用于 UI 判定同树其余技能是否可购。
+    pub fn slot_locked(&self, key: CastKey) -> bool {
+        self.key_slots[key.as_u32() as usize].is_some()
     }
 
     /// 购买/升级物品（M3）：金币不足失败；同家族持有低档则替换（098b 升级链语义）。
@@ -235,9 +282,11 @@ impl PlayerProfile {
         6 + self.mastery.backpack as usize
     }
 
-    /// 购买/升级某技能一级。返回是否成功（金币不足则失败）；成功计入洗点累计花费。
+    /// 购买/升级某技能一级。返回是否成功（金币不足则失败）；成功计入累计花费。
     ///
     /// `cost(当前等级) -> 升级到 当前等级+1 的价格`。调用方负责提供价格表。
+    ///
+    /// 注：升级是对已购技能升等级（1→2→…），不触发同树互斥，也不受涨价影响。
     pub fn upgrade_skill(&mut self, skill: SkillId, cost: i32) -> bool {
         if self.gold < cost {
             return false;
@@ -246,20 +295,6 @@ impl PlayerProfile {
         self.gold_spent += cost;
         self.skill_levels[skill.as_u32() as usize] += 1;
         true
-    }
-
-    /// 洗点：按 `refund_ratio`（0..=1）返还升级花费的金币，清空所有键位绑定并把技能等级重置为 1。
-    ///
-    /// `refund_ratio` 由配置决定（原版全额退；也可设比例）。
-    pub fn respec(&mut self, refund_ratio: f64) {
-        let ratio = refund_ratio.clamp(0.0, 1.0);
-        let refund = (self.gold_spent as f64 * ratio).round() as i32;
-        self.gold += refund;
-        self.gold_spent = 0;
-        self.key_slots = [None; 8];
-        for lv in self.skill_levels.iter_mut() {
-            *lv = 1;
-        }
     }
 
     // ---- 4.6b 成长点 / 属性购买 ----
@@ -780,40 +815,53 @@ mod tests {
     }
 
     #[test]
-    fn bind_and_respec_full_refund() {
+    fn purchase_skill_spends_gold_locks_slot_and_escalates() {
         let mut p = PlayerProfile::new(0, 8);
-        // 绑定 C 键到 Rock，E 键到 Blink
-        p.bind_skill(CastKey::C, SkillId::Rock);
-        p.bind_skill(CastKey::E, SkillId::Blink);
-        assert_eq!(p.bound_skill(CastKey::C), Some(SkillId::Rock));
-        assert_eq!(p.bound_skill(CastKey::E), Some(SkillId::Blink));
+        p.gold = 200;
+        // 购买 D 树技能 S002（learn_cost=11）；前 3 个不涨价
+        assert!(p.purchase_skill(CastKey::D, SkillId::S002));
+        assert_eq!(p.gold, 189);
+        assert_eq!(p.bound_skill(CastKey::D), Some(SkillId::S002));
+        assert_eq!(p.skill_level(SkillId::S002), 1);
+        assert_eq!(p.gold_spent, 11);
 
-        // 升级 Rock 两级（花费 10 + 15）
-        p.gold = 100;
-        assert!(p.upgrade_skill(SkillId::Rock, 10));
-        assert!(p.upgrade_skill(SkillId::Rock, 15));
-        assert_eq!(p.skill_level(SkillId::Rock), 3);
-        assert_eq!(p.gold_spent, 25);
+        // 同树（槽）内互斥：D 树其它技能不可再购（整场锁定）
+        assert!(!p.purchase_skill(CastKey::D, SkillId::S003));
+        assert_eq!(p.bound_skill(CastKey::D), Some(SkillId::S002));
 
-        // 全额洗点：返还所有金币、清绑定、重置等级
-        p.respec(1.0);
-        assert_eq!(p.gold, 100); // 100 - 25 + 25 = 100
-        assert_eq!(p.bound_skill(CastKey::C), None);
-        assert_eq!(p.skill_level(SkillId::Rock), 1);
-        assert_eq!(p.gold_spent, 0);
+        // 技能不属于该键的树 → 失败
+        assert!(!p.purchase_skill(CastKey::D, SkillId::S008));
+
+        // 第 2、3 个技能仍按基础价（S008=14, S011=11）
+        assert!(p.purchase_skill(CastKey::E, SkillId::S008));
+        assert_eq!(p.gold, 175);
+        assert!(p.purchase_skill(CastKey::R, SkillId::S011));
+        assert_eq!(p.gold, 164);
+        assert_eq!(p.purchased_spell_count(), 3);
+
+        // 第 4 个起涨价：基础价 + (3-2)*ESCALATION
+        let cost = p.spell_purchase_cost(SkillId::S014.learn_cost()); // 14 + 8 = 22
+        assert_eq!(cost, 22);
+        let before = p.gold;
+        assert!(p.purchase_skill(CastKey::T, SkillId::S014));
+        assert_eq!(p.gold, before - 22);
     }
 
     #[test]
-    fn respec_partial_refund() {
+    fn purchase_skill_fails_when_poor_or_occupied() {
         let mut p = PlayerProfile::new(1, 8);
-        p.gold = 100;
-        assert!(p.upgrade_skill(SkillId::Rock, 30));
-        assert!(p.upgrade_skill(SkillId::Fake, 20));
-        assert_eq!(p.gold_spent, 50);
-        // 50% 退还
-        p.respec(0.5);
-        assert_eq!(p.gold, 100 - 50 + 25); // = 75
-        assert_eq!(p.skill_level(SkillId::Rock), 1);
+        p.gold = 5;
+        // 金币不足：S002 基础价 11
+        assert!(!p.purchase_skill(CastKey::D, SkillId::S002));
+        assert_eq!(p.bound_skill(CastKey::D), None);
+        assert_eq!(p.gold, 5); // 未扣金
+
+        // 充值后购买成功
+        p.gold = 50;
+        assert!(p.purchase_skill(CastKey::D, SkillId::S002));
+        // 该键已锁定，重复购买同一技能也失败（整场不可改）
+        assert!(!p.purchase_skill(CastKey::D, SkillId::S002));
+        assert_eq!(p.bound_skill(CastKey::D), Some(SkillId::S002));
     }
 
     #[test]
