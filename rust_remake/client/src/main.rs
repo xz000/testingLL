@@ -2726,9 +2726,12 @@ impl Game {
 
                         let skill = me.bound_skill(*key);
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
-                        // 技能名
+                        // 技能名：跟随当前出战形态（形态B 时显示形态B 名称）
                         let label = match skill {
-                            Some(s) => game_core::skill::DefTable::def(s).name,
+                            Some(s) => {
+                                let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                                game_core::skill::DefTable::def_for(s, alt).name
+                            }
                             None => "—",
                         };
                         draw_text(canvas, ctx, key.letter(), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
@@ -2913,6 +2916,13 @@ impl Game {
                                     let hover = r.contains(mouse);
                                     let cost = skill.learn_cost();
                                     let affordable = me.gold >= cost;
+                                    // 已绑定技能显示当前出战形态名（形态B 时显示形态B 名称）
+                                    let form_name = if bound_here {
+                                        let alt = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
+                                        game_core::skill::DefTable::def_for(*skill, alt).name
+                                    } else {
+                                        game_core::skill::DefTable::def(*skill).name
+                                    };
                                     // 行状态仅表达"当前选中/悬停/普通"，不可用程度由文案说明——因为任何技能都可点开详情
                                     let st = if selected {
                                         ui::RowState::Selected
@@ -2922,13 +2932,13 @@ impl Game {
                                         ui::RowState::Normal
                                     };
                                     let label = if bound_here {
-                                        format!("{} {}  ✓已购", i + 1, game_core::skill::DefTable::def(*skill).name)
+                                        format!("{} {}  ✓已购", i + 1, form_name)
                                     } else if tree_locked {
-                                        format!("{} {}  （同树已锁定）", i + 1, game_core::skill::DefTable::def(*skill).name)
+                                        format!("{} {}  （同树已锁定）", i + 1, form_name)
                                     } else if affordable {
-                                        format!("{} {}  ({}G)", i + 1, game_core::skill::DefTable::def(*skill).name, cost)
+                                        format!("{} {}  ({}G)", i + 1, form_name, cost)
                                     } else {
-                                        format!("{} {}  ({}G 金币不足)", i + 1, game_core::skill::DefTable::def(*skill).name, cost)
+                                        format!("{} {}  ({}G 金币不足)", i + 1, form_name, cost)
                                     };
                                     ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                                     // 任何技能（含已锁定/金币不足）都可点击查看详情，只是买不了
@@ -2939,10 +2949,12 @@ impl Game {
                                 // ---- 详情面板：名称 / 描述 / 数值 / 二形态 / 购买-升级按钮 ----
                                 if let Some(i) = self.learn_skill_index {
                                     if let Some(&skill) = key.tree().skills_in_tree().get(i) {
-                                        let name = game_core::skill::DefTable::def(skill).name;
                                         let owned = me.bound_skill(key) == Some(skill);
                                         let lv = if owned { me.skill_level(skill) } else { 1 };
                                         let cost = skill.learn_cost();
+                                        // 已购买技能标题显示「当前出战形态」名（形态B 时显示形态B 名称）；未购按形态A 预览
+                                        let on = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
+                                        let name = game_core::skill::DefTable::def_for(skill, owned && on).name;
                                         // 标题：名称 + 已购等级 / 价格
                                         let head = if owned {
                                             format!("{name}  Lv{lv}  （已购买）")
@@ -2970,14 +2982,19 @@ impl Game {
                                             ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
                                         )?;
                                         ry += 22.0;
-                                        // 二形态：明确显示当前是【开】还是【关】+ 当前形态名
+                                        // 二形态：同时列出两种形态名 + 当前出战形态 + 一键切换（按钮直接写出目标形态名，不再用「开/关」）
                                         if game_core::skill::DefTable::has_alt(skill) {
-                                            let idx = skill.as_u32() as usize;
-                                            let on = me.forms.get(idx).copied().unwrap_or(false);
-                                            let cur = game_core::skill::DefTable::def_for(skill, on).name;
+                                            let a = game_core::skill::DefTable::def_for(skill, false).name;
+                                            let b = game_core::skill::DefTable::def_for(skill, true).name;
                                             ui::text_left(
                                                 canvas, ctx,
-                                                &format!("二形态：当前【{}】 — {}", if on { "开" } else { "关" }, cur),
+                                                &format!("二形态  形态A：{a}   ⇄   形态B：{b}"),
+                                                ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
+                                            )?;
+                                            ry += 22.0;
+                                            ui::text_left(
+                                                canvas, ctx,
+                                                &format!("当前出战：{}", if on { b } else { a }),
                                                 ui::theme::SMALL, ui::theme::accent(), rx, ry,
                                             )?;
                                             ry += 22.0;
@@ -2985,7 +3002,7 @@ impl Game {
                                             let fst = if fr.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal };
                                             ui::row(
                                                 canvas, ctx, fr,
-                                                if on { "切回形态 A  (B)" } else { "切到形态 B  (B)" },
+                                                &format!("切换为 {}  (B)", if on { a } else { b }),
                                                 ui::theme::BODY, fst,
                                             )?;
                                             self.learn_hitboxes.push((fr, LearnAction::Form(skill)));
@@ -5530,8 +5547,16 @@ impl Game {
                 draw_text(&mut canvas, ctx, &sel_line, 22.0, Color::from_rgb(255, 210, 120), Point2 { x: lcx, y }, true)?;
                 y += 34.0;
                 for (i, skill) in sel.tree().skills_in_tree().iter().enumerate() {
-                    let star = if pr.bound_skill(sel) == Some(*skill) { "  [已选]" } else { "" };
-                    draw_text(&mut canvas, ctx, &format!("  {} {} {}", i + 1, game_core::skill::DefTable::def(*skill).name, star), 19.0, Color::from_rgb(215, 220, 230), Point2 { x: lcx, y }, true)?;
+                    let bound = pr.bound_skill(sel) == Some(*skill);
+                    let star = if bound { "  [已选]" } else { "" };
+                    // 已绑定技能显示当前出战形态名（形态B 时显示形态B 名称）
+                    let nm = if bound {
+                        let alt = pr.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
+                        game_core::skill::DefTable::def_for(*skill, alt).name
+                    } else {
+                        game_core::skill::DefTable::def(*skill).name
+                    };
+                    draw_text(&mut canvas, ctx, &format!("  {} {} {}", i + 1, nm, star), 19.0, Color::from_rgb(215, 220, 230), Point2 { x: lcx, y }, true)?;
                     y += 28.0;
                 }
                 y += 10.0;
@@ -5545,7 +5570,11 @@ impl Game {
                 let bound = pr.bound_skill(key);
                 let lv = bound.map(|s| pr.skill_level(s)).unwrap_or(0);
                 let txt = match bound {
-                    Some(s) => format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::def(s).name, lv),
+                    Some(s) => {
+                        // 显示当前出战形态名（形态B 时显示形态B 名称）
+                        let alt = pr.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                        format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::def_for(s, alt).name, lv)
+                    }
                     None => format!("[{}] （未绑定）", key.letter()),
                 };
                 let highlight = self.learn_tree_key == Some(key);
