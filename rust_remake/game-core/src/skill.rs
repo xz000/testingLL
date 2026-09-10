@@ -1371,6 +1371,17 @@ impl DefTable {
         legacy_scale_def(Self::raw_def(id))
     }
 
+    /// 中性技能名：去掉形态后缀 `·xxx`（如 `分裂弹·目标` → `分裂弹`）。
+    /// 用于外层列表 / HUD——不绑定具体形态，避免形态名随切换闪变、产生歧义；
+    /// 具体形态（含后缀）见 `def_for`。无 `·` 的技能名原样返回。
+    pub fn neutral_name(id: SkillId) -> &'static str {
+        let n = Self::def(id).name;
+        match n.find('·') {
+            Some(i) => &n[..i],
+            None => n,
+        }
+    }
+
     /// 技能描述（学习界面点击技能后展示）。
     ///
     /// 文案来源：`术士之战技能说明整理.md`（43 张游戏内提示框截图逐张转录）。
@@ -3470,6 +3481,17 @@ mod tests {
             }
             ref e => panic!("S008 effect 应为 Warlock098b，实际 {e:?}"),
         }
+    }
+
+    #[test]
+    fn neutral_name_strips_alt_suffix() {
+        // 多形态技能：外层应显示中性名（去掉 ·形态 后缀），不随切换闪变
+        assert_eq!(DefTable::neutral_name(SkillId::S009), "分裂弹");
+        assert_eq!(DefTable::neutral_name(SkillId::S013), "移形换位");
+        // 单形态技能：无后缀，原样返回
+        assert_eq!(DefTable::neutral_name(SkillId::S000), "火球");
+        assert_eq!(DefTable::neutral_name(SkillId::S001), "天罚");
+        assert_eq!(DefTable::neutral_name(SkillId::S002), "闪电");
     }
 
     #[test]
