@@ -102,9 +102,6 @@ impl Mastery {
     }
 }
 
-/// 技能购买涨价步长（金币）：自第 4 个技能起，每多买一个技能单价加此值（对标 098c 买越多越贵）。
-pub const SPELL_COST_ESCALATION: i32 = 8;
-
 /// 一位玩家在整场对抗中的累计档案。
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerProfile {
@@ -176,27 +173,20 @@ impl PlayerProfile {
         self.key_slots[key.as_u32() as usize]
     }
 
-    /// 已购买的技能数量（键位已占用的数量）。用于涨价判定（对标 098c `oi[id]`）。
+    /// 已购买的技能数量（键位已占用的数量）。用于 UI 显示「已购 N 个」。
+    ///
+    /// 注：098c 实测每个法术科技在 `war3map.w3q` 只有**单级金币成本**（10~15），
+    /// 购买后科技即被 `SetPlayerTechMaxAllowed(...,0)` 锁死，`Jf` 抬级不生效——
+    /// 故 098c **无**「买越多越贵」的功能性涨价（"Purchase cost..." 为遗留提示）。
+    /// 各技能价格即 `SkillId::learn_cost`，不随已购数量变化。
     pub fn purchased_spell_count(&self) -> usize {
         self.key_slots.iter().filter(|s| s.is_some()).count()
     }
 
-    /// 购买第 N 个技能的价格（对标 098c 买越多越贵）。
-    ///
-    /// 前 3 个技能按基础价 `base`；自第 4 个起每多买一个加 `SPELL_COST_ESCALATION`。
-    /// `base` 来自 `SkillId::learn_cost`（购买 = 1 级，与升级同价起点）。
-    pub fn spell_purchase_cost(&self, base: i32) -> i32 {
-        let n = self.purchased_spell_count();
-        if n < 3 {
-            base
-        } else {
-            base + (n as i32 - 2) * SPELL_COST_ESCALATION
-        }
-    }
-
     /// 花钱购买某键（树）下的一个技能：扣金币、置 1 级、锁定该树其余技能。
     ///
-    /// 对标 098c `kf`：技能需经 WC3 科技树购买扣金（此处直接扣 `gold`），
+    /// 对标 098c `kf`：技能经 WC3 科技树购买扣金（此处直接扣 `gold`），
+    /// 每个技能有固定单价（`SkillId::learn_cost`，10~15，单级、不随数量涨价），
     /// 同树（槽）内 3 选 1 互斥、整场锁定不可改（无洗点/解绑）。
     ///
     /// 返回是否购买成功：
@@ -211,7 +201,7 @@ impl PlayerProfile {
         if self.key_slots[idx].is_some() {
             return false;
         }
-        let cost = self.spell_purchase_cost(skill.learn_cost());
+        let cost = skill.learn_cost();
         if self.gold < cost {
             return false;
         }
@@ -815,10 +805,10 @@ mod tests {
     }
 
     #[test]
-    fn purchase_skill_spends_gold_locks_slot_and_escalates() {
+    fn purchase_skill_spends_gold_locks_slot_no_escalation() {
         let mut p = PlayerProfile::new(0, 8);
         p.gold = 200;
-        // 购买 D 树技能 S002（learn_cost=11）；前 3 个不涨价
+        // 购买 D 树技能 S002（learn_cost=11，固定单价，不随已购数量涨价）
         assert!(p.purchase_skill(CastKey::D, SkillId::S002));
         assert_eq!(p.gold, 189);
         assert_eq!(p.bound_skill(CastKey::D), Some(SkillId::S002));
@@ -832,19 +822,18 @@ mod tests {
         // 技能不属于该键的树 → 失败
         assert!(!p.purchase_skill(CastKey::D, SkillId::S008));
 
-        // 第 2、3 个技能仍按基础价（S008=14, S011=11）
+        // 第 2、3 个技能按各自基础价（S008=14, S011=11）
         assert!(p.purchase_skill(CastKey::E, SkillId::S008));
         assert_eq!(p.gold, 175);
         assert!(p.purchase_skill(CastKey::R, SkillId::S011));
         assert_eq!(p.gold, 164);
         assert_eq!(p.purchased_spell_count(), 3);
 
-        // 第 4 个起涨价：基础价 + (3-2)*ESCALATION
-        let cost = p.spell_purchase_cost(SkillId::S014.learn_cost()); // 14 + 8 = 22
-        assert_eq!(cost, 22);
+        // 098c 无功能性涨价：第 4 个技能仍按基础价（S014=14），不叠加
         let before = p.gold;
         assert!(p.purchase_skill(CastKey::T, SkillId::S014));
-        assert_eq!(p.gold, before - 22);
+        assert_eq!(p.gold, before - 14);
+        assert_eq!(p.purchased_spell_count(), 4);
     }
 
     #[test]
