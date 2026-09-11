@@ -208,6 +208,10 @@ struct Game {
     meta: MatchState,
     /// 玩家本人待发送的移动目标（右键设置；成功发给 World 后由 World 保留）
     player_target: Option<Vec2>,
+    /// 世界是否已接受当前 `player_target`（本机角色的 `move_target` 曾等于它）。
+    /// 用于「到位即清除」：只有世界先接受、后来又清掉（到达/被定身/停止）时，本端才停止重发，
+    /// 避免「刚下达目标、世界尚未应用（尤其 client 有 RTT）」时被误清而丢指令。
+    player_target_accepted: bool,
     /// 待发送的施法命令（左键确认后产生，直到世界进入前摇才清）
     pending_cast: Option<(SkillId, Option<Vec2>)>,
     /// 本机角色上一帧是否处于施法中（`note_self_cast` 用：检测"刚进入施法"的边沿来清移动目标）。
@@ -792,6 +796,7 @@ impl Game {
             world,
             meta,
             player_target: None,
+            player_target_accepted: false,
             pending_cast: None,
             self_was_busy: false,
             pending_skill: None,
@@ -1690,6 +1695,7 @@ impl Game {
                 self.queued_cmds.clear(); // 普通即时移动：打断并清空之前排的队列
                 self.pending_clear_signal = true; // 也让 World 清空其队列
                 self.player_target = Some(world);
+                self.player_target_accepted = false; // 新目标：重新等待世界接受
             }
         }
     }
@@ -1772,15 +1778,18 @@ impl Game {
         }
         self.self_was_busy = busy;
         // 到达清除（回归修复）：`player_target` 是电平量（每帧重发，防帧同步输入缓存丢指令），
-        // 但到达目标后必须清除，否则「到位后仍每帧重发 → 一旦被击退/位移，角色会自己走回旧目标」。
-        // 判定：世界已不再朝目标前进（move_target 为 None）且已靠近该点。
-        // 距离阈值兜底冰面「不吸附」情形（到达时世界清 move_target 但不落点）。
-        // `near` 守卫同时避免「刚下达远点目标、世界尚未应用该输入」时被误清。
+        // 但「移动到位即清除移动目标」这一原有语义必须保留——否则到位后仍每帧重发，
+        // 一旦被击退/位移，角色会自己走回旧目标。冰面同理（世界到达时也会清 move_target）。
+        // 判定：世界先接受该目标（曾见 `move_target`），随后又清掉它（到达/被定身/停止）→ 本端也停止重发。
+        // `accepted` 守卫避免「刚下达目标、世界尚未应用（client 有 RTT）」时误清而丢指令；
+        // `p.pos == t` 兜底「一帧内即到」不吸附的即时到达。
         if let Some(t) = self.player_target {
             if let Some(p) = self.world.players.get(me as usize) {
-                let near = (p.pos - t).length_squared() <= Fix64::from_num(1.5) * Fix64::from_num(1.5);
-                if p.move_target.is_none() && near {
+                if p.move_target.is_some() {
+                    self.player_target_accepted = true;
+                } else if self.player_target_accepted || p.pos == t {
                     self.player_target = None;
+                    self.player_target_accepted = false;
                 }
             }
         }
