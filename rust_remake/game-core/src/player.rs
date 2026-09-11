@@ -391,11 +391,30 @@ impl Player {
         {
             return;
         }
-        // 怀表（M3）：增益时长 ×mult、减益时长 ÷div（098b I00M/I00N）。
-        let adjusted = match kind {
-            BuffKind::Tied | BuffKind::Scorched => remaining / self.item_fx.debuff_dur_div.max(1.0),
-            _ => remaining * self.item_fx.buff_dur_mult * self.dur_mult,
+        // 怀表（M3，098b I00M/I00N）：自身增益时长 ×buff_dur_mult；受到【沉默】时长 ÷debuff_dur_div。
+        // 修正：原实现把 Slow/Pancake/Weakened/Silenced 等减益误当增益、用 buff_dur_mult 延长，
+        // 又把除数错套到 Tied/Scorched 上——与 item.rs 描述「受沉默 -15%」及 skill.rs 注记都不符。
+        let gain_mult = match kind {
+            // 自身增益：受怀表延长。
+            BuffKind::Speed(_)
+            | BuffKind::Reflect
+            | BuffKind::Stealth
+            | BuffKind::Windwalk(_)
+            | BuffKind::Boost
+            | BuffKind::LavaShield
+            | BuffKind::Aegis
+            | BuffKind::Mirror => self.item_fx.buff_dur_mult,
+            // 其余（减益）：怀表不延长。
+            _ => 1.0,
         };
+        // 只有「沉默」被怀表缩短（098b：受沉默 -15%/-25%）。
+        let silence_div = if matches!(kind, BuffKind::Silenced) {
+            self.item_fx.debuff_dur_div.max(1.0)
+        } else {
+            1.0
+        };
+        // 化身（dur_mult）法术时长 ×1.2 对增益/减益均生效。
+        let adjusted = remaining * gain_mult * self.dur_mult / silence_div;
         self.add_buff_fix(kind, Fix64::from_num(adjusted));
     }
 
@@ -817,6 +836,14 @@ impl Player {
         self.damageplus = 0.0;
         self.cmd_head = 0;
         self.cmd_len = 0;
+        // 回合瞬态：避免上一局末触发的效果泄漏进下一局
+        // （熔岩靴激活 CD / 凤凰态 / 潜行吸血 CD / 守护充能 / 复活调度 / 冰面标记）。
+        self.lava_boot_cd = Fix64::ZERO;
+        self.phoenix_remaining = Fix64::ZERO;
+        self.windwalk_cd = Fix64::ZERO;
+        self.aegis_charged = false;
+        self.respawn_at = None;
+        self.on_ice = false;
         self.caster = Caster::new();
     }
 
