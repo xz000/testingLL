@@ -38,11 +38,6 @@ impl Rng {
         // 取值落到 (-1, 1) 而非 [0, 1)，一半的取值为负、系统性扭曲所有调用点分布。
         super::fix::Fix64::from_bits((self.next() >> 32) as u32 as i64)
     }
-
-    /// 返回 [-1.0, 1.0] 的定点小数。
-    pub fn next_fix_signed(&mut self) -> super::fix::Fix64 {
-        self.next_fix() * super::fix::Fix64::from_num(2) - super::fix::Fix64::ONE
-    }
 }
 
 #[cfg(test)]
