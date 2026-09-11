@@ -381,6 +381,9 @@ struct Game {
     /// Steam：大厅操作失败提示（加入失败/房间已满等），返回菜单后用红字展示，避免只 eprintln 用户看不到。
     #[cfg(feature = "steam")]
     steam_lobby_error: Option<String>,
+    /// Steam：房主提前离开后的提示覆盖层（`true`=显示「房主已离开」，等待用户按 Q 返回，不再静默 reset）。
+    #[cfg(feature = "steam")]
+    steam_host_left_overlay: bool,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -901,6 +904,8 @@ impl Game {
             steam_list_searching: false,
             #[cfg(feature = "steam")]
             steam_lobby_error: None,
+            #[cfg(feature = "steam")]
+            steam_host_left_overlay: false,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -2660,6 +2665,28 @@ impl Game {
         }
         let flow_y = if rnote.is_empty() { sh * 0.18 + 66.0 } else { sh * 0.18 + 92.0 };
         draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: flow_y }, true)?;
+        // 主操作行（flow_y+48）画成可点击按钮：等效键盘 U（就绪/取消）或房主回车（开始倒计时）。
+        // 倒计时锁定窗口内不可点（与键盘 U 一致）。
+        let by = flow_y + 48.0;
+        let countdown_locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
+            || (self.steam_cli_ls.is_some() && self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STEAM_COUNTDOWN_LOCK_SECS);
+        let host_start_action = self.steam_host_ls.is_some() && self.steam_manual_start_pending && !self.steam_manual_countdown;
+        let actionable = host_start_action || !countdown_locked;
+        let btn_bg = if actionable { Color::from_rgb(48, 66, 50) } else { Color::from_rgb(34, 38, 44) };
+        let btn_border = if actionable { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(80, 86, 96) };
+        let btn_rect = graphics::Rect::new(cx - 280.0, by - 24.0, 560.0, 48.0);
+        let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), btn_rect, btn_bg)?;
+        canvas.draw(&bg, graphics::DrawParam::new());
+        let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), btn_rect, btn_border)?;
+        canvas.draw(&border, graphics::DrawParam::new());
+        // 鼠标悬停高亮（仅可点时）。
+        if actionable {
+            let mpos = ctx.mouse.position();
+            if btn_rect.contains(mpos) {
+                let hl = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), btn_rect, Color::from_rgba(90, 220, 130, 40))?;
+                canvas.draw(&hl, graphics::DrawParam::new());
+            }
+        }
         // 倒计时提示：优先区分「不满员由房主手动确认」与「满员全员就绪」，否则会显示成误导的"全员就绪"。
         if self.steam_manual_countdown {
             // host 本机：不满员手动倒计时（本地直接数秒）。
@@ -3458,6 +3485,26 @@ impl event::EventHandler for Game {
                 return Ok(());
             }
             self.steam_poll_lobby_pending(ctx);
+            self.accumulator = 0.0;
+            return Ok(());
+        }
+
+        // 房主提前离开后的提示覆盖层：暂停房间输入，等用户按 Q/回车/Esc 返回主菜单（不再静默 reset）。
+        #[cfg(feature = "steam")]
+        if self.steam_host_left_overlay {
+            let dismiss = ctx
+                .keyboard
+                .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Escape))
+                || Self::char_just(ctx, "q")
+                || ctx
+                    .keyboard
+                    .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Enter));
+            if dismiss {
+                self.steam_host_left_overlay = false;
+                self.steam_leave_room();
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             self.accumulator = 0.0;
             return Ok(());
         }
@@ -4323,6 +4370,11 @@ impl event::EventHandler for Game {
         if self.steam_lobby_pending.is_some() {
             return self.draw_steam_connecting(ctx);
         }
+        // 房主已离开覆盖层：盖在一切之上，等用户确认返回。
+        #[cfg(feature = "steam")]
+        if self.steam_host_left_overlay {
+            return self.draw_steam_host_left_overlay(ctx);
+        }
         if self.app == AppState::MainMenu {
             return self.draw_menu(ctx);
         }
@@ -4453,6 +4505,7 @@ impl Game {
             self.steam_lobby_list = false;
             self.steam_lobby_pending = None;
             self.steam_lobby_pending_since = None;
+            self.steam_host_left_overlay = false;
             self.steam_list_requested = false;
             self.steam_list_lobbies = Vec::new();
             self.steam_join_lobby_id = None;
@@ -4658,6 +4711,27 @@ impl Game {
             Point2 { x: cx, y: sh * 0.26 + 40.0 },
             true,
         )?;
+        // 模式图例：1-5 对应玩法名，方便房主不看文档也能选。
+        let legend: [(u8, &str); 5] = [
+            (1, "轮次"),
+            (2, "死亡竞赛"),
+            (3, "化身"),
+            (4, "国王"),
+            (5, "最后生还"),
+        ];
+        let legend_txt = legend
+            .iter()
+            .map(|(m, n)| format!("{m}={n}"))
+            .collect::<Vec<_>>()
+            .join("  ·  ");
+        draw_text(
+            canvas, ctx,
+            &format!("玩法图例：{legend_txt}"),
+            18.0,
+            Color::from_rgb(150, 170, 195),
+            Point2 { x: cx, y: sh * 0.26 + 70.0 },
+            true,
+        )?;
         let labels = ["房间名", "备注"];
         let vals = [self.steam_edit_name.clone(), self.steam_edit_note.clone()];
         let mut y = sh * 0.42;
@@ -4743,6 +4817,7 @@ impl Game {
     #[cfg(feature = "steam")]
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
         use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
         // 「邀请好友」面板展开时由面板优先吃键（I/Q 收起、↑↓ 选择、回车 邀请、A 开 Steam 邀请窗口、R 刷新）。
         // 面板是**非模态**的：下面房间的网络逻辑（上行/广播/倒计时）照常每帧跑，
         // 否则 host 打开面板挑人时 client 会因收不到 host 心跳而判定「host 已离开」自动退房。
@@ -4799,6 +4874,33 @@ impl Game {
             eprintln!("[steam-lobby] local ready = {}", self.steam_local_ready);
         } else if ready_pressed && locked {
             eprintln!("[steam-lobby] ignoring ready-cancel during locked countdown");
+        }
+        // 鼠标点击主操作按钮：等效键盘 U（就绪/取消）或房主回车（开始倒计时）。
+        if !panel_open {
+            let (sw, sh) = ctx.gfx.drawable_size();
+            let cx = sw / 2.0;
+            let (_, rnote) = self.steam_current_room_info();
+            let flow_y = if rnote.is_empty() { sh * 0.18 + 66.0 } else { sh * 0.18 + 92.0 };
+            let by = flow_y + 48.0;
+            let btn_rect = graphics::Rect::new(cx - 280.0, by - 24.0, 560.0, 48.0);
+            let host_start_action = self.steam_host_ls.is_some() && self.steam_manual_start_pending && !self.steam_manual_countdown;
+            if ctx.mouse.button_just_pressed(MouseButton::Left) && btn_rect.contains(ctx.mouse.position()) && (host_start_action || !locked) {
+                if host_start_action {
+                    self.steam_manual_countdown = true;
+                    self.steam_was_all_ready = true;
+                    self.steam_countdown = STEAM_READY_COUNTDOWN_SECS;
+                    eprintln!("[steam-host] host confirms underfull start (mouse click) -> {STEAM_READY_COUNTDOWN_SECS}s countdown");
+                } else {
+                    self.steam_local_ready = !self.steam_local_ready;
+                    if !self.steam_local_ready {
+                        self.steam_was_all_ready = false;
+                        self.steam_countdown = 0.0;
+                    }
+                    eprintln!("[steam-lobby] local ready = {} (mouse click)", self.steam_local_ready);
+                }
+                self.accumulator = 0.0;
+                return Ok(());
+            }
         }
         let mut entered_config = false;
         // 本机当前输入（房间阶段就用它做「在场信号」，对齐局域网 upload；与对局开始后一致）。
@@ -4944,15 +5046,16 @@ impl Game {
                 }
             }
         }
-        // client：host 提前离开（超过 N 帧收不到 host 广播）→ 自动退出房间回主菜单（host 不应让 client 永久卡在等待）。
+        // client：host 提前离开（超过 N 帧收不到 host 广播）→ 显示「房主已离开」覆盖层，等用户确认再回主菜单
+        // （不再静默 reset_to_main_menu，避免用户一脸懵地回到主菜单）。
         let host_missing = self.steam_cli_ls.is_some()
             && self.steam_lobby_silent_ticks >= STEAM_LOBBY_SILENT_TIMEOUT_TICKS;
         if host_missing {
             eprintln!(
-                "[steam-client] host left (no heartbeat for {} ticks) -> leave room",
+                "[steam-client] host left (no heartbeat for {} ticks) -> show overlay",
                 self.steam_lobby_silent_ticks
             );
-            self.steam_leave_room();
+            self.steam_host_left_overlay = true;
             self.accumulator = 0.0;
             return Ok(());
         }
@@ -6029,6 +6132,20 @@ impl Game {
             draw_text(&mut canvas, ctx, &format!("已等待 {waited:.1}s"), 18.0, graphics::Color::from_rgb(150, 160, 178), Point2 { x: cx, y: cy + 62.0 }, true)?;
         }
         draw_text(&mut canvas, ctx, "按 Q / Esc 取消", 18.0, graphics::Color::from_rgb(150, 165, 185), Point2 { x: cx, y: cy + 98.0 }, true)?;
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+
+    /// 房主提前离开后的提示覆盖层：避免静默 reset 让用户一脸懵；按 Q / 回车 / Esc 返回主菜单。
+    #[cfg(feature = "steam")]
+    fn draw_steam_host_left_overlay(&self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        let (sw, sh) = ctx.gfx.drawable_size();
+        let cx = sw / 2.0;
+        let cy = sh / 2.0;
+        draw_text(&mut canvas, ctx, "房主已离开房间", 44.0, graphics::Color::from_rgb(255, 130, 120), Point2 { x: cx, y: cy - 40.0 }, true)?;
+        draw_text(&mut canvas, ctx, "房主已退出或断开，本场无法继续", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: cy + 8.0 }, true)?;
+        draw_text(&mut canvas, ctx, "按 Q / 回车 / Esc 返回主菜单", 20.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: cy + 56.0 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
