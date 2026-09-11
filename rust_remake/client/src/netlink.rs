@@ -40,6 +40,8 @@ pub struct NetLink<T: Transport> {
     players: u8,
     /// 连续未收到权威帧的 tick 计数（用于判断是否掉线/可重连）。每次成功收到帧时清零。
     stale_ticks: u64,
+    /// 最近一次检测到帧同步分歧的 seq（`Some` = 与 host 世界哈希不一致）。供上层提示/处理。
+    desync_seq: Option<u64>,
 }
 
 pub type NetLinkUdp = NetLink<StdUdpTransport>;
@@ -71,6 +73,7 @@ impl<T: Transport> NetLink<T> {
             my_index: 0,
             players: 0,
             stale_ticks: 0,
+            desync_seq: None,
         })
     }
 
@@ -118,6 +121,11 @@ impl<T: Transport> NetLink<T> {
     /// 距上次成功收到权威帧的连续 tick 数。
     pub fn stale_ticks(&self) -> u64 {
         self.stale_ticks
+    }
+
+    /// 最近检测到的帧同步分歧 seq（`Some` = 与 host 世界哈希不一致）。取走后清空。
+    pub fn take_desync_seq(&mut self) -> Option<u64> {
+        self.desync_seq.take()
     }
 
     /// 掉线后发起重连：向 host 发 `ReconnectReq`，尝试收 `Snapshot`。
@@ -189,7 +197,16 @@ impl<T: Transport> NetLink<T> {
                     }
                 }
                 world.step(inputs, dt);
-                Ok(Some(ls.expect_seq() - 1))
+                let seq = ls.expect_seq() - 1;
+                // 分歧检测：若 host 广播过该 seq 的世界哈希，与本端比对；不一致即帧同步分歧。
+                if let Some(host_hash) = ls.take_state_hash_for(seq) {
+                    let mine = game_core::world_ser::state_hash(world);
+                    if mine != host_hash {
+                        eprintln!("[netlink] DESYNC at seq={seq}: host={host_hash:#018x} mine={mine:#018x}");
+                        self.desync_seq = Some(seq);
+                    }
+                }
+                Ok(Some(seq))
             }
             None => Ok(None),
         }

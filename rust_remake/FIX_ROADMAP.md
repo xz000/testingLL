@@ -86,9 +86,15 @@
 - [x] `world_ser.rs:414` `last_hit_by` 加 `<np` 边界校验（与玩家 id 同规）。
 - [x] 修 CLI Steam 取消/失败崩溃：4 处取消/失败分支统一 `app=MainMenu`；`compute_inputs` 前置校验 `bot_targets/bot_rngs` 长度并加空世界保护。
 
-### 批次 3 — 帧同步正确性（最高价值，需真机验证）
-- [ ] `world.rs:1384/1395` f64 trig → 确定性 `cordic`，`emit_angle` 改定点。
-- [ ] 新增周期性世界校验和：复用 `world_ser::encode` + 廉价 hash，帧头带 `state_hash`，不一致即 Resync+快照。
+### 批次 3 — 帧同步正确性（最高价值，需真机验证）  ✅ 已完成（自动 Resync 留待观察后跟进）
+- [x] `world.rs:1384/1395` f64 libm `cos/sin` → 确定性 `crate::fix::{cos,sin}`（CORDIC）；f64 仅保留「常数×k+角度状态」的 IEEE 四则运算。
+- [x] 新增周期性世界状态哈希 + 分歧检测：
+  - `world_ser::state_hash(w)`（序列化字节 FNV-1a 64，纯整数确定）。
+  - 协议新增 `Packet::StateHash{seq,hash}`；host 每 `SNAPSHOT_EVERY` 帧广播 host 应用完 `seq` 后的哈希。
+  - client（Steam / LAN 各一路）推进到同 seq 时比对自身哈希，不一致 → 大声日志 + HUD 红条 + `desync_detected`。
+  - 加测试：proto 往返、lockstep 缓存/取用、state_hash 确定性。
+- [ ] **待跟进（需真机观察）**：确认哈希无误报后，再做「不一致即自动 Resync+快照重基线」。
+      本批次只做「检测+警示」而不自动重连，避免误报导致踢人。A5（反序列化数值合法性）亦未含。
 
 ### 批次 4 — 联机健壮性
 - [ ] `pending` 加上限 + 超时/降级；`try_advance` 缺口退避与计数。
@@ -109,3 +115,5 @@
 - 2026-09-11：**批次 1 全部完成并过门禁**（workspace test/clippy + steam test/clippy 全绿）。
 - 2026-09-11：**批次 2 全部完成并过门禁**。下一步：批次 3（帧同步正确性，含周期性世界校验和）。
   注：A5（反序列化数值合法性校验，如 out_dist/radius 除零、NaN 因子）为 🔍 项，未含在批次 2，后续补。
+- 2026-09-11：**批次 3 完成并过门禁**（确定性 trig + 周期性世界哈希与分歧检测；自动 Resync 待真机观察后跟进）。
+  下一步：批次 4（联机健壮性）。

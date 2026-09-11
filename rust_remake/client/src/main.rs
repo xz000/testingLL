@@ -454,6 +454,8 @@ struct Game {
     app: AppState,
     /// 客户端是否已因长时间收不到帧而进入“掉线/重连”状态（显示重连界面）。
     conn_dropped: bool,
+    /// 是否检测到帧同步分歧（本端世界哈希与 host 广播不一致）；置位后 HUD 显示警示。
+    desync_detected: bool,
     /// 客户端是否正在发起重连（已按 R，正等 host 快照）。
     reconnect_attempting: bool,
     /// 重连已持续尝试的帧数（S1 stall-abort 用，仅 Steam 路径使用）：超过阈值仍无快照则放弃本次重连，避免无限重试卡死。
@@ -972,6 +974,7 @@ impl Game {
             app,
             pre_game_config: app != AppState::MainMenu,
             conn_dropped: false,
+            desync_detected: false,
             reconnect_attempting: false,
             #[cfg(feature = "steam")]
             reconnect_stall_ticks: 0,
@@ -1855,6 +1858,7 @@ impl Game {
                         self.pending_stop_signal = false;
                         self.conn_dropped = false;
                         self.reconnect_attempting = false;
+                        self.desync_detected = false; // 已按 host 快照重建 → 清除分歧标记
                         // 重连一次成功即进入等待；重连接完毕后靠下一帧的权威帧驱动（stale 已归零）。
                         eprintln!("[client] reconnected: World rebuilt from snapshot, resuming lockstep");
                     }
@@ -2376,6 +2380,20 @@ impl Game {
         // 客户端掉线/重连覆盖层
         if self.conn_dropped {
             self.draw_reconnect_overlay(&mut canvas, ctx)?;
+        }
+
+        // 帧同步分歧警示：检测到本端世界哈希与 host 广播不一致时显示红条。
+        if self.desync_detected {
+            let (sw, _sh) = ctx.gfx.drawable_size();
+            let cx = sw / 2.0;
+            let bg = Mesh::new_rectangle(
+                &ctx.gfx,
+                DrawMode::fill(),
+                graphics::Rect::new(0.0, 0.0, sw, 34.0),
+                Color::from_rgba(160, 30, 30, 210),
+            )?;
+            canvas.draw(&bg, graphics::DrawParam::new());
+            draw_text(&mut canvas, ctx, "检测到帧同步分歧(desync)：本端状态与房主不一致，请退出重连", 18.0, Color::WHITE, Point2 { x: cx, y: 8.0 }, true)?;
         }
 
         // 对局内 HUD（D9 UI 批次2）：物品栏 6 格 + 金币。仅对战/学习阶段显示。
@@ -3979,6 +3997,8 @@ impl event::EventHandler for Game {
                                 // 周期快照（重连用 + 广播给所有 client，供「host 掉线接管」用）。
                                 self.host_frame_count += 1;
                                 if self.host_frame_count % SNAPSHOT_EVERY == 0 {
+                                    // 周期性世界状态哈希：client 推进到同 seq 时比对，判定帧同步分歧。
+                                    host.broadcast_state_hash(seq, game_core::world_ser::state_hash(&self.world));
                                     host.broadcast_snapshot(game_core::world_ser::world_to_bytes(&self.world), host.next_seq());
                                 }
                                 self.accumulator -= TICK;
@@ -4098,6 +4118,14 @@ impl event::EventHandler for Game {
                                     eprintln!("[steam-client] frame -> seq={last}, n_ents={n_ents}");
                                     self.steam_cli_last_seq = last;
                                 }
+                                // 分歧检测：若 host 广播过该 seq 的世界哈希，与本端比对；不一致即帧同步分歧。
+                                if let Some(host_hash) = cli.take_state_hash_for(last) {
+                                    let mine = game_core::world_ser::state_hash(&self.world);
+                                    if mine != host_hash {
+                                        eprintln!("[steam-client] DESYNC at seq={last}: host={host_hash:#018x} mine={mine:#018x}");
+                                        self.desync_detected = true;
+                                    }
+                                }
                                 self.accumulator -= TICK;
                             } else {
                                 // 本帧无权威帧：累计掉线计数，超阈值进入「主机迁移/重连探测」（host 可能掉线）。
@@ -4199,6 +4227,8 @@ impl event::EventHandler for Game {
                             // 周期保存快照（供掉线者重连时拉取当前状态接回）。
                             self.host_frame_count += 1;
                             if self.host_frame_count % SNAPSHOT_EVERY == 0 {
+                                // 周期性世界状态哈希：client 推进到同 seq 时比对，判定帧同步分歧。
+                                host.broadcast_state_hash(seq, game_core::world_ser::state_hash(&self.world));
                                 let wb = game_core::world_ser::world_to_bytes(&self.world);
                                 host.set_snapshot(wb, host.next_seq());
                             }
@@ -4248,6 +4278,11 @@ impl event::EventHandler for Game {
                         // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.note_self_cast();
+                            // 分歧检测：step_frame 内比对了 host 世界哈希，不一致则标记并警示。
+                            if let Some(seq) = link.take_desync_seq() {
+                                eprintln!("[client] DESYNC detected at seq={seq} -> 帧同步分歧，本局后续可能不一致");
+                                self.desync_detected = true;
+                            }
                             self.accumulator -= TICK;
                         } else {
                             link.bump_stale();
@@ -4544,6 +4579,7 @@ impl Game {
         // 清空运行状态。
         self.pre_game_config = false; // 主菜单不进入开局配置；选了模式后再进。
         self.conn_dropped = false;
+        self.desync_detected = false;
         self.reconnect_attempting = false;
         self.host_frame_count = 0;
         self.pre_game_timer = PRE_GAME_TIMEOUT_SECS;
@@ -5637,6 +5673,7 @@ impl Game {
         self.net_host_ls = None;
         self.net_ready = false;
         self.conn_dropped = false;
+        self.desync_detected = false;
         self.reconnect_attempting = false;
         self.host_frame_count = 0;
         self.steam_cli_stale_ticks = 0;

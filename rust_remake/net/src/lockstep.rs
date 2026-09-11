@@ -153,6 +153,16 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// 周期性广播世界状态哈希（分歧检测）：`hash` = host 应用完 `seq` 帧后世界状态的哈希。
+    /// client 推进到同 seq 时比对自身哈希，不一致即判定帧同步分歧（desync）。
+    pub fn broadcast_state_hash(&mut self, seq: u64, hash: u64) {
+        let pkt = Packet::StateHash { seq, hash };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
     /// 广播本局参与玩家的稳定身份（SteamID）列表给所有 client（对局开始、参与集确定后调用一次）。
     /// `ids[i]` = 参与玩家 new index i 的 SteamID。各端据此在 host 掉线时确定性选举新 host。
     pub fn broadcast_participants(&mut self, ids: &[u64]) {
@@ -791,7 +801,13 @@ pub struct ClientLockstep<T: Transport> {
     /// 最近收到的 `Takeover`（主机迁移接管信号，`(来源, 基线 seq, 更新后的参与集)`）。
     /// 新 host 可能在 client 尚未进入迁移时（fighting 阶段）广播；此处先缓存，迁移时取用，避免错过。
     latest_takeover: Option<(Peer, u64, Vec<u64>)>,
+    /// 周期收到的世界状态哈希（`(seq, host_hash)`），按 seq 缓存供 client 推进到该帧时比对。
+    /// 有界（只保留最近若干条），避免长期运行/落后时无界增长。
+    state_hashes: VecDeque<(u64, u64)>,
 }
+
+/// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
+const STATE_HASH_BUF: usize = 32;
 
 impl<T: Transport> ClientLockstep<T> {
     pub fn new(transport: T, my_index: u8, host: Peer) -> Self {
@@ -803,7 +819,28 @@ impl<T: Transport> ClientLockstep<T> {
             host,
             latest_snapshot: None,
             latest_takeover: None,
+            state_hashes: VecDeque::new(),
         }
+    }
+
+    /// 缓存 host 广播的状态哈希（按 seq 排序插入，保持有界）。
+    fn record_state_hash(&mut self, seq: u64, hash: u64) {
+        if self.state_hashes.len() >= STATE_HASH_BUF {
+            self.state_hashes.pop_front();
+        }
+        let pos = self.state_hashes.iter().position(|(s, _)| *s >= seq).unwrap_or(self.state_hashes.len());
+        self.state_hashes.insert(pos, (seq, hash));
+    }
+
+    /// 取走某 seq 对应的状态哈希（有则返回并移除）。client 应用完该帧后调用，与自身哈希比对。
+    pub fn take_state_hash_for(&mut self, seq: u64) -> Option<u64> {
+        let pos = self.state_hashes.iter().position(|(s, _)| *s == seq)?;
+        self.state_hashes.remove(pos).map(|(_, h)| h)
+    }
+
+    /// 丢弃所有 `seq <= upto` 的旧状态哈希（防止落后追赶时缓存被旧值占满）。
+    pub fn drop_state_hashes_up_to(&mut self, upto: u64) {
+        self.state_hashes.retain(|(s, _)| *s > upto);
     }
 
     /// 取走缓存的 `Takeover`（`(来源, 基线 seq, 更新后的参与集)`）。无则 None。
@@ -1045,6 +1082,10 @@ impl<T: Transport> ClientLockstep<T> {
                                 // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
                                 self.latest_snapshot = Some((world_bytes, seq));
                             }
+                            Packet::StateHash { seq, hash } => {
+                                // 缓存 host 的周期性世界哈希，供推进到该帧时比对（分歧检测）。
+                                self.record_state_hash(seq, hash);
+                            }
                             _ => {}
                         }
                     }
@@ -1079,6 +1120,10 @@ impl<T: Transport> ClientLockstep<T> {
                             Packet::Takeover { seq, participants } => {
                                 // 缓存新 host 的接管信号（含来源 + 更新后的参与集），供 client 稍后进入迁移时取用（避免错过单次广播）。
                                 self.latest_takeover = Some((from, seq, participants));
+                            }
+                            Packet::StateHash { seq, hash } => {
+                                // 缓存 host 的周期性世界哈希，供推进到该帧时比对（分歧检测）。
+                                self.record_state_hash(seq, hash);
                             }
                             _ => {}
                         }
@@ -1911,6 +1956,19 @@ mod tests {
         assert_eq!(cached.1, 42);
         assert!(cached.0 == host_peer, "缓存的来源应为发送者 peer");
         assert!(cli.take_latest_takeover().is_none(), "取走后应清空");
+    }
+
+    /// 分歧检测：host 广播状态哈希 → client 在 step_frame 里缓存 → 按 seq 取走比对（取走后清空）。
+    #[test]
+    fn client_caches_state_hash_for_desync_check() {
+        let (mut ht, ct) = pair();
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+        let host_peer = Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000)));
+        ht.send_to(&Packet::StateHash { seq: 42, hash: 0xDEAD_BEEF }.encode(), &host_peer).unwrap();
+        let _ = cli.step_frame(&mut rcv).unwrap();
+        assert_eq!(cli.take_state_hash_for(42), Some(0xDEAD_BEEF), "应缓存并取到该 seq 的哈希");
+        assert_eq!(cli.take_state_hash_for(42), None, "取走后应清空");
     }
 
     /// 阶段 2（快照广播）：host `broadcast_snapshot` 把快照广播给所有 client，client 在正常收帧循环
