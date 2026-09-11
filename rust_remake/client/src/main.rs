@@ -388,6 +388,9 @@ struct Game {
     /// 同时充当「连接中」状态（`draw`/`update` 据此显示「连接中…」并跳过菜单/房间输入）。`None` = 空闲/已进房。
     #[cfg(feature = "steam")]
     steam_lobby_pending: Option<SteamLobbyPending>,
+    /// Steam：进入「连接中」那一帧的时刻（用于连接界面显示已等待时长）；取消/完成即清零。
+    #[cfg(feature = "steam")]
+    steam_lobby_pending_since: Option<f64>,
     /// Steam：房主是否处于「编辑房间信息」子界面（房间就绪界面按 E 进入，回车保存 / Q 取消）。
     #[cfg(feature = "steam")]
     steam_room_edit: bool,
@@ -630,6 +633,8 @@ impl Game {
         let mut steam_sess: Option<net_steam::session::SteamSession> = None;
         #[cfg(feature = "steam")]
         let mut steam_lobby_pending: Option<SteamLobbyPending> = None;
+        #[cfg(feature = "steam")]
+        let steam_lobby_pending_since: Option<f64> = None;
         #[cfg(feature = "steam")]
         let steam_active: bool = false;
         #[cfg(feature = "steam")]
@@ -892,6 +897,8 @@ impl Game {
             steam_join_lobby_id: None,
             #[cfg(feature = "steam")]
             steam_lobby_pending,
+            #[cfg(feature = "steam")]
+            steam_lobby_pending_since,
             #[cfg(feature = "steam")]
             steam_room_edit: false,
             #[cfg(feature = "steam")]
@@ -3422,6 +3429,21 @@ impl event::EventHandler for Game {
         // 连接期间跳过其余菜单/房间输入（也不应被认为已进房），只泵回调 + 推进，完成后才落地进房。
         #[cfg(feature = "steam")]
         if self.steam_lobby_pending.is_some() {
+            // 取消：Q / Esc 放弃正在进行的建房/加入，回到大厅主界面（异步回调仍在跑，
+            // 但不再轮询落地，已创建的房会被放弃；代价最小、避免卡在黑屏）。
+            let cancel = ctx
+                .keyboard
+                .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Escape))
+                || Self::char_just(ctx, "q");
+            if cancel {
+                self.steam_lobby_pending = None;
+                self.steam_lobby_pending_since = None;
+                self.steam_lobby_menu = true;
+                self.steam_lobby_create = false;
+                self.steam_lobby_list = false;
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             self.steam_poll_lobby_pending(ctx);
             self.accumulator = 0.0;
             return Ok(());
@@ -4413,6 +4435,7 @@ impl Game {
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;
             self.steam_lobby_pending = None;
+            self.steam_lobby_pending_since = None;
             self.steam_list_requested = false;
             self.steam_list_lobbies = Vec::new();
             self.steam_join_lobby_id = None;
@@ -5276,7 +5299,7 @@ impl Game {
     /// （建 lockstep / 世界 / 战绩）。`is_host`=创建大厅，否则加入；`players` 仅 host 用；
     /// `room_name`/`room_note` 现为兼容保留（落地时改读 `self.steam_create_*`）。
     #[cfg(feature = "steam")]
-    fn enter_steam_mode(&mut self, _ctx: &mut Context, is_host: bool, players: u8, _room_name: Option<&str>, _room_note: Option<&str>) {
+    fn enter_steam_mode(&mut self, ctx: &mut Context, is_host: bool, players: u8, _room_name: Option<&str>, _room_note: Option<&str>) {
         let kind = if is_host {
             SteamLobbyPending::Host { players }
         } else {
@@ -5289,6 +5312,9 @@ impl Game {
             self.steam_lobby_menu = true;
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;
+        } else {
+            // 记录进入「连接中」的时刻，供连接界面显示已等待时长。
+            self.steam_lobby_pending_since = Some(ctx.time.time_since_start().as_secs_f64());
         }
     }
 
@@ -5342,6 +5368,7 @@ impl Game {
             net_steam::session::LobbyProgress::Done(Err(e)) => {
                 eprintln!("[steam] lobby op failed: {e:?}");
                 self.steam_lobby_pending = None;
+                self.steam_lobby_pending_since = None;
                 self.steam_lobby_menu = true;
                 self.steam_lobby_create = false;
                 self.steam_lobby_list = false;
@@ -5447,6 +5474,7 @@ impl Game {
             self.steam_lobby_list = false;
             self.steam_in_lobby = false;
             self.steam_lobby_pending = None;
+            self.steam_lobby_pending_since = None;
             return;
         }
         // 进入房间/就绪界面（无需再手动输入房间号）。
@@ -5946,15 +5974,26 @@ impl Game {
         Ok(())
     }
 
-    /// 连接中界面（S12 异步建厅/加入期间）：显示「连接中…」，避免空帧或误进房间界面。
+    /// 连接中界面（S12 异步建厅/加入期间）：显示状态/转圈/已等待时长，并可取消。
     #[cfg(feature = "steam")]
     fn draw_steam_connecting(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
         let cy = sh / 2.0;
-        draw_text(&mut canvas, ctx, "连接中…", 44.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: cy - 30.0 }, true)?;
-        draw_text(&mut canvas, ctx, "正在连接 Steam 大厅，请稍候", 20.0, graphics::Color::from_rgb(180, 190, 205), Point2 { x: cx, y: cy + 24.0 }, true)?;
+        let is_host = matches!(self.steam_lobby_pending, Some(SteamLobbyPending::Host { .. }));
+        let status = if is_host { "正在创建房间…" } else { "正在加入房间…" };
+        draw_text(&mut canvas, ctx, status, 44.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: cy - 64.0 }, true)?;
+        draw_text(&mut canvas, ctx, "正在连接 Steam 大厅，请稍候", 20.0, graphics::Color::from_rgb(180, 190, 205), Point2 { x: cx, y: cy - 18.0 }, true)?;
+        // 转圈动画（基于帧，无需额外字段）
+        let spinner = ["|", "/", "-", "\\"][(self.frame as usize / 8) % 4];
+        draw_text(&mut canvas, ctx, spinner, 30.0, graphics::Color::from_rgb(200, 210, 225), Point2 { x: cx, y: cy + 24.0 }, true)?;
+        // 已等待时长（连接界面让用户知道是否在卡住）
+        if let Some(t0) = self.steam_lobby_pending_since {
+            let waited = ctx.time.time_since_start().as_secs_f64() - t0;
+            draw_text(&mut canvas, ctx, &format!("已等待 {waited:.1}s"), 18.0, graphics::Color::from_rgb(150, 160, 178), Point2 { x: cx, y: cy + 62.0 }, true)?;
+        }
+        draw_text(&mut canvas, ctx, "按 Q / Esc 取消", 18.0, graphics::Color::from_rgb(150, 165, 185), Point2 { x: cx, y: cy + 98.0 }, true)?;
         canvas.finish(ctx)?;
         Ok(())
     }
