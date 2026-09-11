@@ -465,6 +465,8 @@ struct Game {
     pre_game_timer: f64,
     /// 主菜单当前选中项（方向键 ↑/↓ 移动 + 回车确认；数字键直选同步更新）。
     menu_selection: usize,
+    /// 主菜单底部提示行（如「局域网需命令行启动」），拾取局域网项后显示，避免只 eprintln 用户看不到。
+    menu_hint: String,
     /// 主菜单「Steam 大厅」子界面里，创建房间的玩家人数上限（2..=STEAM_MAX_PLAYERS）。
     #[cfg(feature = "steam")]
     steam_create_players: u8,
@@ -976,6 +978,7 @@ impl Game {
             host_frame_count: 0,
             pre_game_timer: PRE_GAME_TIMEOUT_SECS,
             menu_selection: 0,
+            menu_hint: String::new(),
             #[cfg(feature = "steam")]
             steam_create_players: STEAM_DEFAULT_PLAYERS,
             #[cfg(feature = "steam")]
@@ -3597,18 +3600,22 @@ impl event::EventHandler for Game {
                     0 => {
                         // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
                         eprintln!("[menu] -> Solo");
+                        self.menu_hint.clear();
                         self.app = AppState::Solo;
                         self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
                         self.pre_game_config = true;
                     }
                     1 => {
+                        // 局域网对战尚未在 GUI 内接通：提示用户改用命令行启动（避免只 eprintln 看不到）。
                         eprintln!("[menu] 局域网建设中：需命令行 --host <port> / --join <host:port>");
+                        self.menu_hint = "局域网对战需命令行启动：--host <port> 创建，或 --join <host:port> 加入（GUI 暂未接入）".to_string();
                     }
                     2 => {
                         // 进入 Steam 大厅选择子菜单（H 创建 / J 加入 / Q 返回）。
                         #[cfg(feature = "steam")]
                         {
                             eprintln!("[menu] -> Steam lobby menu");
+                            self.menu_hint.clear();
                             self.steam_lobby_menu = true;
                             self.steam_lobby_create = false;
                             self.steam_lobby_list = false;
@@ -5920,6 +5927,10 @@ impl Game {
 
         // 底部操作提示条
         draw_text(&mut canvas, ctx, "↑/↓ 选择    回车 确认    或直接按数字键", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.92 }, true)?;
+        // 局域网等需在 GUI 外接管的提示（拾取对应卡片后显示，避免只 eprintln 看不到）。
+        if !self.menu_hint.is_empty() {
+            draw_text(&mut canvas, ctx, &self.menu_hint, 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh * 0.85 }, true)?;
+        }
         canvas.finish(ctx)?;
         Ok(())
     }
