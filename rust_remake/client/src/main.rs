@@ -2692,7 +2692,7 @@ impl Game {
         let (rname, rnote) = self.steam_current_room_info();
         let n_in = self.steam_roster.len();
         let lock_txt = if self.steam_room_locked { "[锁]" } else { "[开]" };
-        let mut roomline = format!("房间：{rname}    人数 {n_in}");
+        let mut roomline = format!("房间：{rname}    人数 {n_in}    版本 v{}", game_core::PROTOCOL_VERSION);
         if self.steam_host_ls.is_some() {
             roomline.push_str(&format!("   {lock_txt}"));
         }
@@ -5466,16 +5466,28 @@ impl Game {
         }
         if just_named(NamedKey::Enter) || just('\r') {
             let sel = self.steam_list_selection;
-            if sel < self.steam_list_lobbies.len() && self.steam_list_lobbies[sel].members < self.steam_list_lobbies[sel].limit {
-                let lobby_id = self.steam_list_lobbies[sel].id;
+            if sel >= self.steam_list_lobbies.len() {
+                return;
+            }
+            let l = &self.steam_list_lobbies[sel];
+            if l.members >= l.limit {
+                eprintln!("[steam-list] 选中的房间已满");
+                self.steam_lobby_error = Some("选中的房间已满，请换一个".to_string());
+            } else if l.version != Some(game_core::PROTOCOL_VERSION) {
+                // 版本不符：拒绝加入（房主版本 None 视为旧构建/不兼容）。
+                eprintln!("[steam-list] 版本不符：房主 {:?} vs 本端 {}", l.version, game_core::PROTOCOL_VERSION);
+                self.steam_lobby_error = Some(format!(
+                    "版本不符（房主 {:?}，本端 {}），无法加入",
+                    l.version,
+                    game_core::PROTOCOL_VERSION
+                ));
+            } else {
+                let lobby_id = l.id;
                 eprintln!("[steam] join lobby by id {lobby_id}");
                 self.steam_lobby_list = false;
                 self.steam_lobby_menu = true;
                 self.steam_join_lobby_id = Some(lobby_id); // enter_steam_mode client 分支优先按其加入
                 self.enter_steam_mode(ctx, false, 2, None, None);
-            } else {
-                eprintln!("[steam-list] 选中的房间已满或无效");
-                self.steam_lobby_error = Some("选中的房间已满或无效，请换一个".to_string());
             }
         }
     }
@@ -5590,6 +5602,8 @@ impl Game {
             match kind {
                 SteamLobbyPending::Host { players } => {
                     sess.host_set_room_info(Some(self.steam_create_name.as_str()), Some(self.steam_create_note.as_str()))?;
+                    // 写入联机兼容版本：加入者/房间列表据此过滤不同版本的游戏（避免 desync）。
+                    sess.host_set_version(game_core::PROTOCOL_VERSION)?;
                     sess.host_set_rounds(self.steam_create_rounds)?;
                     sess.host_set_learn(self.steam_create_learn)?;
                     sess.host_set_starting_gold(self.steam_create_starting_gold)?;
@@ -5622,6 +5636,20 @@ impl Game {
                     self.app = AppState::SteamHost { players };
                 }
                 SteamLobbyPending::Join { lobby_id: _ } => {
+                    // 版本校验：不同 `PROTOCOL_VERSION` 的房一律拒绝（避免协议/模拟不兼容导致 desync）。
+                    // 旧房未写版本 = None → 视为不兼容（改前构建没有该元数据）。
+                    let host_ver = sess.lobby_version();
+                    if host_ver != Some(game_core::PROTOCOL_VERSION) {
+                        let msg = format!(
+                            "房间版本不兼容（房主 {:?}，本端 {}），已拒绝加入",
+                            host_ver,
+                            game_core::PROTOCOL_VERSION
+                        );
+                        eprintln!("[steam-join] {msg}");
+                        // 退房，避免以不兼容版本留在房里。
+                        sess.transport.matchmaking().leave_lobby(lobby);
+                        return Err(std::io::Error::other(msg));
+                    }
                     sess.prepare_transport()?;
                     self.steam_my_id = sess.transport.steam_id();
                     let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
@@ -6049,7 +6077,7 @@ impl Game {
                 draw_text(&mut canvas, ctx, "Steam 未启用", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
                 draw_text(&mut canvas, ctx, "需要 --features client/steam 构建", 20.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.44 }, true)?;
             }
-            draw_text(&mut canvas, ctx, "H 创建    J 加入    Q 返回", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            draw_text(&mut canvas, ctx, &format!("H 创建    J 加入    Q 返回    （本端版本 v{}，仅同版本可联机）", game_core::PROTOCOL_VERSION), 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.90 }, true)?;
             canvas.finish(ctx)?;
             return Ok(());
         }
@@ -6237,25 +6265,37 @@ impl Game {
                     })
                     .unwrap_or_else(|| "房主".to_string());
                 let full = format!("{}   {}", owner_name, l.name);
-                let meta = format!(
+                // 版本标注：房主版本与本端不一致（含旧房 None）标红，提示不可加入。
+                let ver_ok = l.version == Some(game_core::PROTOCOL_VERSION);
+                let mut meta = format!(
                     "人数 {}/{}    [{}]    {}",
                     l.members,
                     l.limit,
                     game_core::meta::MatchState::mode_name(l.mode),
                     l.note
                 );
+                if !ver_ok {
+                    meta.push_str(&format!("    [版本不符 {:?}]", l.version));
+                }
                 let selected = i == self.steam_list_selection;
                 let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(28, 31, 38) };
                 let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(head_x, y, head_w, 64.0), bg_col)?;
                 canvas.draw(&bg, graphics::DrawParam::new());
                 let mark = if selected { "[v]" } else { "[ ]" };
-                let name_col = if selected { Color::WHITE } else { Color::from_rgb(210, 214, 225) };
+                let name_col = if !ver_ok {
+                    Color::from_rgb(200, 130, 120) // 版本不符：偏红，且不可加入
+                } else if selected {
+                    Color::WHITE
+                } else {
+                    Color::from_rgb(210, 214, 225)
+                };
+                let meta_col = if ver_ok { Color::from_rgb(150, 156, 172) } else { Color::from_rgb(220, 150, 140) };
                 draw_text(canvas, ctx, &format!("{mark}{full}"), 24.0, name_col, Point2 { x: cx, y: y + 20.0 }, true)?;
-                draw_text(canvas, ctx, &meta, 16.0, Color::from_rgb(150, 156, 172), Point2 { x: cx, y: y + 44.0 }, true)?;
+                draw_text(canvas, ctx, &meta, 16.0, meta_col, Point2 { x: cx, y: y + 44.0 }, true)?;
                 y += 74.0;
             }
         }
-        draw_text(canvas, ctx, "回车 加入    R 刷新    Q 返回", 18.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        draw_text(canvas, ctx, &format!("回车 加入    R 刷新    Q 返回    （本端版本 v{}）", game_core::PROTOCOL_VERSION), 18.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         if let Some(err) = self.steam_lobby_error.as_ref() {
             draw_text(canvas, ctx, err, 20.0, Color::from_rgb(255, 130, 120), Point2 { x: cx, y: sh * 0.84 }, true)?;
         }

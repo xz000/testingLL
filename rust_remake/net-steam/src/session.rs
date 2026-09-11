@@ -39,6 +39,9 @@ pub const ROOM_STARTING_GOLD_KEY: &str = "room_starting_gold";
 pub const ROOM_GOLD_PER_ROUND_KEY: &str = "room_gold_per_round";
 /// 大厅元数据：单轮名次奖励（逗号分隔的档位，host 建房时写入；加入者据此对齐 MatchConfig.place_rewards）。
 pub const ROOM_PLACE_REWARD_KEY: &str = "room_place_reward";
+/// 大厅元数据：联机兼容版本（`game_core::PROTOCOL_VERSION`）。host 建房时写入，
+/// 加入者/列表据此过滤不同版本的游戏（避免改前/改后构建联机导致 desync）。
+pub const ROOM_VERSION_KEY: &str = "room_version";
 /// Rich Presence 键：好友列表里显示的自定义状态文案（无本地化配置时 Steam 直接显示它）。
 pub const PRESENCE_STATUS_KEY: &str = "status";
 /// Rich Presence 键：`connect` 会让好友看到「加入游戏」按钮，值由
@@ -474,6 +477,8 @@ pub struct LobbyInfo {
     pub note: String,
     /// 游戏模式（元数据 `room_mode`；缺省 1=轮次）。
     pub mode: u8,
+    /// 联机兼容版本（元数据 `room_version`；旧房/缺省为 `None`）。
+    pub version: Option<u32>,
 }
 
 impl SteamSession {
@@ -667,6 +672,26 @@ impl SteamSession {
             .and_then(|s| s.parse().ok())
     }
 
+    /// 写入联机兼容版本（建房时调用，供加入者/列表过滤不同版本的游戏）。
+    pub fn host_set_version(&self, version: u32) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_version: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_VERSION_KEY, &version.to_string());
+        Ok(())
+    }
+
+    /// 读取本房联机兼容版本（加入者校验用；旧房/未设置为 None，视为不兼容）。
+    pub fn lobby_version(&self) -> Option<u32> {
+        let l = self.lobby?;
+        self.transport
+            .matchmaking()
+            .lobby_data(l, ROOM_VERSION_KEY)
+            .and_then(|s| s.parse().ok())
+    }
+
     pub fn lobby_gold_per_round(&self) -> Option<i32> {
         let l = self.lobby?;
         self.transport
@@ -850,6 +875,7 @@ impl SteamSession {
             let name = mm.lobby_data(l, ROOM_NAME_KEY).unwrap_or_else(|| "未命名房间".to_string());
             let note = mm.lobby_data(l, ROOM_NOTE_KEY).unwrap_or_default();
             let mode = mm.lobby_data(l, ROOM_MODE_KEY).and_then(|s| s.parse().ok()).unwrap_or(1);
+            let version = mm.lobby_data(l, ROOM_VERSION_KEY).and_then(|s| s.parse().ok());
             out.push(LobbyInfo {
                 id: l.raw(),
                 owner,
@@ -858,6 +884,7 @@ impl SteamSession {
                 name,
                 note,
                 mode,
+                version,
             });
         }
         LobbyListProgress::Done(Ok(out))
