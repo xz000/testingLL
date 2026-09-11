@@ -742,13 +742,9 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
     }
     // 轮数（岩浆成长，D9）
     wu32(&mut o, w.round_number);
-    // 闪电视觉段（098c 反射多段）
-    wu32(&mut o, w.lightning_visual.len() as u32);
-    for (a, b, rem) in &w.lightning_visual {
-        wvec(&mut o, *a);
-        wvec(&mut o, *b);
-        wfix(&mut o, *rem);
-    }
+    // 注意：`lightning_visual`（闪电特效显示剩余时间）是纯渲染瞬态，仅 client 读、
+    // 不参与确定性模拟，故**不写入**序列化字节——否则 state_hash 会把视觉瞬态也算进去，
+    // 两端瞬态若有任一帧差异（哪怕模拟完全同步）就会误报 desync。
     // 冰面（U4 圆圈化）：u8 数量 + 每个（圆心+半径）
     wu8(&mut o, w.ice.len() as u8);
     for (c, r) in &w.ice {
@@ -835,15 +831,8 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     }
     // 轮数（岩浆成长，D9）
     let round_number = u32at(b, &mut p)?;
-    // 闪电视觉段
-    let n_lv = u32at(b, &mut p)? as usize;
-    let mut lightning_visual = Vec::with_capacity(n_lv.min(64));
-    for _ in 0..n_lv.min(64) {
-        let a = vecat(b, &mut p)?;
-        let b2 = vecat(b, &mut p)?;
-        let rem = fixat(b, &mut p)?;
-        lightning_visual.push((a, b2, rem));
-    }
+    // 闪电视觉段不参与序列化（见 world_to_bytes），解码端恒为空。
+    let lightning_visual = Vec::new();
     let n_ice = u8at(b, &mut p)? as usize;
     let mut ice = Vec::with_capacity(n_ice);
     for _ in 0..n_ice {
@@ -984,7 +973,7 @@ mod tests {
         assert_eq!(w.eliminated_order, back.eliminated_order);
         assert_eq!(w.kills_this_round, back.kills_this_round);
         assert_eq!(w.damage_matrix, back.damage_matrix, "伤害矩阵 equal");
-        assert_eq!(w.lightning_visual, back.lightning_visual, "闪电视觉段 equal");
+        // lightning_visual 是瞬态渲染痕迹，不参与序列化（见 lightning_visual_not_serialized 测试）。
         assert_eq!(w.ice, back.ice, "冰面 equal");
         // 模式/角色（B3）
         assert_eq!(w.mode, back.mode);
@@ -996,6 +985,28 @@ mod tests {
         assert_eq!(w.shrink_timer, back.shrink_timer, "缩圈倒计时必须随快照同步");
         assert_eq!(w.pending_avatar, back.pending_avatar, "下轮化身必须随快照同步");
         assert_eq!(w.pending_kings, back.pending_kings, "下轮国王必须随快照同步");
+    }
+
+    /// 闪电视觉段（lightning_visual）是纯渲染瞬态：不参与序列化/快照/state_hash。
+    /// 回归：它若被写进 world_to_bytes，state_hash 会把「显示剩余时间」这种视觉瞬态也算进去，
+    /// 两端瞬态任一帧不一致（哪怕模拟完全同步）就会误报 desync。
+    #[test]
+    fn lightning_visual_not_serialized() {
+        let mut w = World::new(2, 7);
+        w.lightning_visual.push((
+            Vec2::ZERO,
+            Vec2::new(Fix64::ONE, Fix64::ONE),
+            Fix64::from_num(0.05),
+        ));
+        let bytes = world_to_bytes(&w);
+        let back = world_from_bytes(&bytes).expect("decode");
+        assert!(back.lightning_visual.is_empty(), "闪电视觉是瞬态，不应进入快照/哈希");
+
+        // 相同模拟状态下，带/不带瞬态视觉的 state_hash 必须一致。
+        let h_with = state_hash(&w);
+        let mut w_clean = back;
+        w_clean.lightning_visual.clear();
+        assert_eq!(state_hash(&w_clean), h_with, "瞬态视觉不得影响 state_hash");
     }
 
     /// 回归 U5：快照 round-trip 后，本端与「对端」继续跑相同帧，**缩圈进度必须仍一致**。
