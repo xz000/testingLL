@@ -484,8 +484,12 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
-    /// 丢弃在途的 PlayerCfg 旧包（不记入 `cfgs`），用于配置同步开始前清掉上一轮残留，
-    /// 避免 host 收到上一局延迟的旧配置就满足 `all_cfgs`、广播旧配置（局间绑定被清空的竞态）。
+    /// 清空在途旧包，用于配置同步开始前清掉上一轮残留，避免 host 收到上一局延迟的旧配置就满足
+    /// `all_cfgs`、广播旧配置（局间绑定被清空的竞态）。
+    ///
+    /// 注意：本函数在「轮次边界的 HostGather 首帧」才被调用，此时上一局已结束，**丢弃全部在途包是无害的**
+    /// （新轮的就绪/输入心跳由各端每帧重发，会立即补齐）。因此虽名为 `drain_cfg`，实际把当前缓冲清空即可，
+    /// 无需只挑 PlayerCfg、也无需回投递其余包。
     pub fn drain_cfg(&mut self) {
         let mut buf = [0u8; 2048];
         while let Ok(Some((n, _))) = self.transport.recv_from(&mut buf) {
@@ -809,6 +813,10 @@ pub struct ClientLockstep<T: Transport> {
 /// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
 const STATE_HASH_BUF: usize = 32;
 
+/// client 待按序推进帧的最大缓存条数（防「缺口长期不补 + 持续收新帧」时无界增长）。
+/// 通常远达不到（缺口超时会触发上层重连）；此处仅作内存安全兜底，超出则丢弃新帧（不跳帧、不分叉）。
+const PENDING_MAX: usize = 512;
+
 impl<T: Transport> ClientLockstep<T> {
     pub fn new(transport: T, my_index: u8, host: Peer) -> Self {
         ClientLockstep {
@@ -1072,7 +1080,7 @@ impl<T: Transport> ClientLockstep<T> {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Frame { seq, entries } => {
-                                if seq >= self.expect_seq {
+                                if seq >= self.expect_seq && self.pending.len() < PENDING_MAX {
                                     let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
                                     self.pending.insert(pos, (seq, entries));
                                     got = true;
@@ -1107,7 +1115,7 @@ impl<T: Transport> ClientLockstep<T> {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Frame { seq, entries } => {
-                                if seq >= self.expect_seq {
+                                if seq >= self.expect_seq && self.pending.len() < PENDING_MAX {
                                     // 只缓存 >= expect 的帧；丢弃过时帧。
                                     let pos = self.pending.iter().position(|(s, _)| *s >= seq).unwrap_or(self.pending.len());
                                     self.pending.insert(pos, (seq, entries));
