@@ -2146,7 +2146,7 @@ impl DefTable {
                     proj: W098bProjKind::Magma,
                     speed: Fix64::from_num(400.0),
                     radius: Fix64::from_num(72.0),
-                    life: Fix64::from_num(4.0),
+                    life: Fix64::from_num(2.0), // 098c OB: ev=2*(1+.1ei)
                     kb_ji: Fix64::from_num(0.8),
                     ignite: None,
                     blast: Some(Fix64::from_num(200.0)),
@@ -2332,7 +2332,7 @@ impl DefTable {
                     proj: W098bProjKind::Straight,
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(23.0),
-                    life: Fix64::from_num(2.0),
+                    life: Fix64::from_num(1.29), // 098c CC: ev=((range+$D2)/900)*1.0467, L1~1.29
                     kb_ji: Fix64::ONE,
                     ignite: None,
                     blast: None,

@@ -1243,6 +1243,13 @@ impl Game {
                         }
                     }
                 }
+                LearnAction::SkillCap => {
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        if profile.buy_skill_cap_bonus(5) {
+                            eprintln!("[learn] skill cap bonus -> +{}", profile.skill_cap_bonus);
+                        }
+                    }
+                }
                 LearnAction::Category(cat) => {
                     self.shop_category = cat;
                     self.shop_scroll = 0;
@@ -3475,6 +3482,16 @@ impl Game {
                             );
                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::Mastery(kind)));
+                            ay += ui::theme::ROW_H + 4.0;
+                        }
+                        // 技能上限突破（098c 乔丹之石原生化为购买项）：每档 +2，价 5G。
+                        {
+                            let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+                            let hover = r.contains(mouse);
+                            let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+                            let label = format!("[U] 技能上限突破 +{} (5G)", me.skill_cap_bonus);
+                            ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+                            self.learn_hitboxes.push((r, LearnAction::SkillCap));
                             ay += ui::theme::ROW_H + 4.0;
                         }
                         ay += 6.0;
@@ -6435,6 +6452,8 @@ enum LearnAction {
     Item(game_core::item::ItemId),
     /// 购买精通（0=生命 1=远程 2=时间 3=背包）
     Mastery(usize),
+    /// 技能上限突破（098c 乔丹原生化为购买项）
+    SkillCap,
     /// 切换到第 i 页
     Page(u8),
     /// 切换商店大类（0=机动 1=防御续航 2=攻击特殊）——补齐鼠标点击（U3）
