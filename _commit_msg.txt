@@ -1,0 +1,7 @@
+docs(skill): ground skill descriptions in the warlock tooltip md; wrap long text
+
+- DefTable::desc() rewritten from 术士之战技能说明整理.md (43 tooltip screenshots),
+  instead of previously invented one-liners. Skills with two modes now name
+  both modes (陨石/滚石, 影袭/潜行, 闪现/折跃, ...), matching has_alt/形态切换.
+- Add ui::text_wrapped (CJK 2 units / ASCII 1 unit) so long descriptions wrap
+  inside the detail panel instead of overflowing horizontally.
