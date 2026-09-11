@@ -878,6 +878,10 @@ pub struct SkillGrowth {
     pub extra_base: f64,
     pub extra_delta: f64,
     // mana_cost 已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
+    /// 逐档冷却覆盖（可选）：索引 = level-1（L1 起）。存在则忽略 base+delta（098c 逐档非线性）。
+    pub cooldown_levels: Option<&'static [f64]>,
+    /// 逐档伤害覆盖（可选）：索引 = level-1。
+    pub damage_levels: Option<&'static [f64]>,
 }
 
 impl SkillGrowth {
@@ -886,8 +890,17 @@ impl SkillGrowth {
         SkillStats {
             windup: Fix64::from_num(self.windup_base + self.windup_delta * l),
             recovery: Fix64::from_num(self.recovery_base),
-            cooldown: Fix64::from_num((self.cooldown_base + self.cooldown_delta * l).max(0.1)),
-            damage: Fix64::from_num(self.damage_base + self.damage_delta * l),
+            cooldown: Fix64::from_num(
+                self.cooldown_levels
+                    .and_then(|a| a.get(level.max(1) as usize - 1).copied())
+                    .unwrap_or(self.cooldown_base + self.cooldown_delta * l)
+                    .max(0.1),
+            ),
+            damage: Fix64::from_num(
+                self.damage_levels
+                    .and_then(|a| a.get(level.max(1) as usize - 1).copied())
+                    .unwrap_or(self.damage_base + self.damage_delta * l),
+            ),
             range: Fix64::from_num(self.range_base),
             radius: Fix64::from_num(self.radius_base + self.radius_delta * l),
             duration: Fix64::from_num(self.duration_base + self.duration_delta * l),
@@ -1643,6 +1656,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 30.0,
                     cooldown_delta: -1.4286, // 098c：30→20（8 档，原斜率）
+                    cooldown_levels: Some(&[30.0, 27.0, 25.0, 24.0, 23.0, 22.0, 21.0, 20.0]), // 098c 逐档
                     damage_base: 3.0,
                     damage_delta: 0.5,       // 098c：3.0→6.5（8 档，+0.5/级，原斜率）
                     ..DEF_ZERO
@@ -1674,6 +1688,7 @@ impl DefTable {
                     // 伤害 delta=(13-6)/19≈0.3684；持续时间 delta=(11-4)/19≈0.3684；CD delta=(16.5-22)/19≈-0.2895。
                     cooldown_base: 22.0,
                     cooldown_delta: -0.7857, // 098c: 22->16.5 (8 lv)
+                    cooldown_levels: Some(&[22.0, 20.0, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]),
                     damage_base: 6.0,
                     damage_delta: 1.0,       // 098c: 6->13 (8 lv)
                     duration_base: 4.0,
@@ -1707,6 +1722,7 @@ impl DefTable {
                     // 伤害 delta=(4.0-2.6)/19≈0.0737；连发 delta=(13-6)/19≈0.3684；CD delta=(9-16)/19≈-0.3684。
                     cooldown_base: 16.0,
                     cooldown_delta: -1.0,    // 098c: 16->9 (8 lv)
+                    cooldown_levels: Some(&[16.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0, 9.0]),
                     damage_base: 2.6,
                     damage_delta: 0.2,       // 098c: 2.6->4.0 (8 lv)
                     speed_base: 700.0,
@@ -1741,6 +1757,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
                     cooldown_delta: -1.0,    // 098c: 20->13 (8 lv)
+                    cooldown_levels: Some(&[20.0, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0, 13.0]),
                     damage_base: 6.0,
                     damage_delta: 1.0,       // 098c: 6->13 (8 lv, +1/lv)
                     // 098c Gc: range 750+150L (L1=900, L8=1950)
@@ -1822,6 +1839,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 30.0,
                     cooldown_delta: -1.857, // 098c: 30->17 (8 lv)
+                    cooldown_levels: Some(&[30.0, 26.0, 23.0, 21.0, 20.0, 19.0, 18.0, 17.0]),
                     duration_base: 3.1,
                     // 背刺伤害 5.4->11（8 档，+0.8/级）
                     damage_base: 5.4,
@@ -1857,6 +1875,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 16.5,
                     cooldown_delta: -1.1875, // 098c: 16.5->7 (9 lv)
+                    cooldown_levels: Some(&[16.5, 14.5, 13.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0]),
                     max_distance_base: 700.0,
                     max_distance_delta: 50.0, // 098c: 700->1100 (9 lv)
                     damage_base: 5.4,
@@ -1909,6 +1928,7 @@ impl DefTable {
                     // CD delta=(10-25)/19≈-0.7895；持续 delta=(6.25-4.5)/19≈0.0921。
                     cooldown_base: 25.0,
                     cooldown_delta: -2.1428, // 098c: 25->10 (8 lv)
+                    cooldown_levels: Some(&[25.0, 21.0, 18.0, 16.0, 14.5, 13.0, 11.5, 10.0]),
                     damage_base: 3.0,
                     duration_base: 4.5,
                     duration_delta: 0.25,     // 098c: 4.5->6.25 (8 lv)
@@ -1981,6 +2001,7 @@ impl DefTable {
                     // CD delta=(8-17)/19≈-0.4737；伤害 delta=(1.8-0.2)/19≈0.0842。
                     cooldown_base: 17.0,
                     cooldown_delta: -1.125, // 098c: 17->8 (9 lv)
+                    cooldown_levels: Some(&[17.0, 14.5, 12.5, 11.0, 10.0, 9.5, 9.0, 8.5, 8.0]),
                     damage_base: 0.2,
                     damage_delta: 0.2,      // 098c: 0.2->1.8 (9 lv)
                     duration_base: 0.5,
@@ -2191,6 +2212,7 @@ impl DefTable {
                     // 伤害 delta=(6.5-3.0)/19≈0.1842；CD delta=(20-30)/19≈-0.5263。
                     cooldown_base: 30.0,
                     cooldown_delta: -1.4286, // 098c: 30->20 (8 lv, original slope)
+                    cooldown_levels: Some(&[30.0, 27.0, 25.0, 24.0, 23.0, 22.0, 21.0, 20.0]), // 098c 逐档
                     damage_base: 3.0,
                     damage_delta: 0.5,       // 098c: 3.0->6.5 (8 lv)
                     extra_base: 2.5,
@@ -3169,6 +3191,8 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
     max_distance_delta: 0.0,
     extra_base: 0.0,
     extra_delta: 0.0,
+    cooldown_levels: None,
+    damage_levels: None,
 };
 
 // 由于 SkillDef 由 DefTable::def 直接构造（非 const，因需运行时 from_num），
@@ -3600,6 +3624,15 @@ mod tests {
             }
             ref e => panic!("S016 effect 应为 Warlock098b(Bounce)，实际 {e:?}"),
         }
+    }
+
+    /// 逐档冷却（098c 非线性）：S009 CD L4 应为 24（线性会得 25.71）。
+    #[test]
+    fn per_level_cooldown_matches_098c() {
+        let d = DefTable::def(SkillId::S009);
+        assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
+        assert!(near(d.stats_at(4).cooldown, 24.0, 1e-3), "L4 should be 24 (098c), got {:?}", d.stats_at(4).cooldown);
+        assert!(near(d.stats_at(8).cooldown, 20.0, 1e-3));
     }
 
     #[test]
