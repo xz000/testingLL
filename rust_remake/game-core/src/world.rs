@@ -1371,7 +1371,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 出程恒速、过半程后朝施法者当前位置回拉。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -1425,38 +1425,29 @@ impl World {
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Boomerang => {
-                            // 098c 弧线物理（Ub，D9 技能手感批）：前向匀减速（到出程距离处速度归零）+
-                            // 横向侧偏恒定（左右交替）→ 自然弧线；前向归零后向施法者加速回飞。
+                            // 098c 弧线物理（Ub/ub）：出程 = 前向匀减速 + 横向匀加速（横向从 ±300 到 ∓300），
+                            // 前向归零转回程 = 横向加速度反向，沿对称弧线回飞施法者。
                             let owner_pos = self
                                 .players
                                 .get(pr.owner as usize)
                                 .map(|o| o.pos)
                                 .unwrap_or(pr.pos);
+                            let dir = *forward_dir;
+                            let perp = Vec2::new(-dir.y, dir.x);
+                            // 前向减速度 yb = -speed²/(2·out_dist)；横向加速度 Yb = -speed·lateral/out_dist（098c Ub）。
+                            let yb = -(*speed * *speed) / (Fix64::from_num(2.0) * *out_dist);
+                            let yb_lat = -(*speed * *lateral) / *out_dist;
                             if !*returning {
-                                // 前向分量匀减速：decel = v0²/(2×out_dist)，v0=speed
-                                let dec = (*speed * *speed) / (Fix64::from_num(2.0) * *out_dist);
-                                let fwd_now = vel.dot(*forward_dir);
-                                let new_fwd = (fwd_now - dec * dt).max(Fix64::ZERO);
-                                let lat_dir = Vec2::new(-forward_dir.y, forward_dir.x);
-                                let lat_speed = vel.dot(lat_dir); // 带符号横向速度
-                                let lat_vec = if lat_speed.abs() > Fix64::ZERO {
-                                    lat_dir * lat_speed
-                                } else {
-                                    Vec2::ZERO
-                                };
-                                *vel = *forward_dir * new_fwd + lat_vec;
-                                if new_fwd <= Fix64::ZERO {
-                                    *returning = true; // 前向归零 → 开始回程
+                                *vel += (dir * yb + perp * yb_lat) * dt;
+                                if vel.dot(dir) <= Fix64::ZERO {
+                                    *returning = true; // 前向归零 → 回程
                                 }
-                            }
-                            if *returning {
+                            } else {
+                                // 回程：横向加速度反向（098c ub：U=Y, w=z），前向继续减速朝施法者。
+                                *vel += (dir * yb - perp * yb_lat) * dt;
                                 let d = owner_pos - pr.pos;
-                                let dist = d.length();
-                                if dist < Fix64::from_num(60.0) {
+                                if d.length() < Fix64::from_num(60.0) {
                                     pr.alive = false;
-                                } else if dist > Fix64::ZERO {
-                                    let back = (*speed * Fix64::from_num(1.5)).max(vel.length());
-                                    *vel = d.normalized() * back;
                                 }
                             }
                             pr.pos += *vel * dt;
@@ -2939,7 +2930,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     let ei = world.players[idx as usize].mastery[2] as f64;
                     let maxd = Fix64::from_num(800.0 * (1.0 + 0.15 * ei));
                     let od = click.clamp(Fix64::from_num(300.0), maxd);
-                    life = od * Fix64::from_num(2.0) / speed + od / (speed * Fix64::from_num(1.5)) + Fix64::from_num(0.4);
+                    life = od * Fix64::from_num(4.0) / speed + Fix64::from_num(0.4);
                     od
                 } else {
                     life * speed
@@ -2961,11 +2952,21 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 for k in -half..=half {
                     let ang = Fix64::from_num(spread_step) * Fix64::from_num(k);
                     let d = crate::fix::rotate_ccw(dir, ang);
+                    // 回旋镖横向侧偏 ±300/s（098c Wb，左右交替）；初速 = 前向 speed + 横向 lateral（098c Ub）。
+                    let (lat_val, vel_val) = if proj == crate::skill::W098bProjKind::Boomerang {
+                        let side = if world.players[idx as usize].boomerang_side { 1.0 } else { -1.0 };
+                        world.players[idx as usize].boomerang_side = !world.players[idx as usize].boomerang_side;
+                        let lat = Fix64::from_num(side * 300.0);
+                        let perp = Vec2::new(-d.y, d.x);
+                        (lat, d * speed + perp * lat)
+                    } else {
+                        (Fix64::ZERO, d * speed)
+                    };
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::W098b {
                             proj,
-                            vel: d * speed,
+                            vel: vel_val,
                             speed,
                             radius,
                             remaining: life,
@@ -2979,15 +2980,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             returning: false,
                             on_hit,
                             debuff_dur: stats.duration,
-                            // 回旋镖弧线（098c Ub，D9 技能手感批）：横向侧偏 ±300/s 左右交替，
-                            // 出程距离 = 速度×名义寿命（前向匀减速到 0 的位置）。
-                            lateral: if proj == crate::skill::W098bProjKind::Boomerang {
-                                let side = if world.players[idx as usize].boomerang_side { 1.0 } else { -1.0 };
-                                world.players[idx as usize].boomerang_side = !world.players[idx as usize].boomerang_side;
-                                Fix64::from_num(side * 300.0)
-                            } else {
-                                Fix64::ZERO
-                            },
+                            // 回旋镖横向侧偏速度（见上方 lat_val；非回旋镖恒 0）。
+                            lateral: lat_val,
                             forward_dir: dir,
                             out_dist: boomerang_out_dist,
                             // B4 形态：S009·目标=到点碎裂 6 片；S009·区域=0.12s 螺旋侧弹
