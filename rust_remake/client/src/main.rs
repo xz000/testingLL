@@ -375,6 +375,12 @@ struct Game {
     /// Steam：房间列表上次刷新的时间戳（秒，用于刷新节流，避免 Steam 搜索限速）。
     #[cfg(feature = "steam")]
     steam_list_last_refresh: f64,
+    /// Steam：房间列表是否正在搜索中（`true`=已发起搜索、结果未回；用于区分「搜索中」与「真无房间」）。
+    #[cfg(feature = "steam")]
+    steam_list_searching: bool,
+    /// Steam：大厅操作失败提示（加入失败/房间已满等），返回菜单后用红字展示，避免只 eprintln 用户看不到。
+    #[cfg(feature = "steam")]
+    steam_lobby_error: Option<String>,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -889,6 +895,10 @@ impl Game {
             steam_list_requested: false,
             #[cfg(feature = "steam")]
             steam_list_last_refresh: -999.0,
+            #[cfg(feature = "steam")]
+            steam_list_searching: false,
+            #[cfg(feature = "steam")]
+            steam_lobby_error: None,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -5237,6 +5247,7 @@ impl Game {
         let want_refresh = first || just('r') || just('R');
         if want_refresh && (first || now - self.steam_list_last_refresh >= LOBBY_REFRESH_COOLDOWN_SECS) {
             self.steam_list_requested = true;
+            self.steam_list_searching = true;
             self.steam_list_last_refresh = now;
             // 发起异步列表拉取（S12：不 sleep，注册回调后返回；结果由下面 tick 推进）。
             if let Some(sess) = self.steam_sess.as_mut() {
@@ -5251,6 +5262,8 @@ impl Game {
         if let Some(sess) = self.steam_sess.as_mut() {
             match sess.tick_lobby_list() {
                 net_steam::session::LobbyListProgress::Done(Ok(mut list)) => {
+                    // 搜索结束：置回非搜索态，区分「搜索中」与「真无房间」。
+                    self.steam_list_searching = false;
                     // 人数已满的大厅仍显示但不可选（steamworks 加入会失败）；这里仅排序展示。
                     list.sort_by_key(|l| (l.members >= l.limit, l.members));
                     self.steam_list_lobbies = list;
@@ -5260,6 +5273,7 @@ impl Game {
                     eprintln!("[steam-list] {} lobbies found", self.steam_list_lobbies.len());
                 }
                 net_steam::session::LobbyListProgress::Done(Err(e)) => {
+                    self.steam_list_searching = false;
                     eprintln!("[steam-list] list failed: {e:?}");
                     self.steam_list_lobbies = Vec::new();
                 }
@@ -5290,6 +5304,7 @@ impl Game {
                 self.enter_steam_mode(ctx, false, 2, None, None);
             } else {
                 eprintln!("[steam-list] 选中的房间已满或无效");
+                self.steam_lobby_error = Some("选中的房间已满或无效，请换一个".to_string());
             }
         }
     }
@@ -5313,7 +5328,8 @@ impl Game {
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;
         } else {
-            // 记录进入「连接中」的时刻，供连接界面显示已等待时长。
+            // 新一轮发起：清掉上次的失败提示，记录进入「连接中」的时刻。
+            self.steam_lobby_error = None;
             self.steam_lobby_pending_since = Some(ctx.time.time_since_start().as_secs_f64());
         }
     }
@@ -5367,6 +5383,8 @@ impl Game {
             }
             net_steam::session::LobbyProgress::Done(Err(e)) => {
                 eprintln!("[steam] lobby op failed: {e:?}");
+                // 失败提示上屏：返回大厅菜单后用红字展示，避免只 eprintln 用户看不到。
+                self.steam_lobby_error = Some(format!("加入失败：{e}"));
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
                 self.steam_lobby_menu = true;
@@ -5469,6 +5487,7 @@ impl Game {
         })();
         if let Err(e) = res {
             eprintln!("[steam-menu] failed to enter steam mode: {e:?}");
+            self.steam_lobby_error = Some(format!("进入房间失败：{e}"));
             self.steam_lobby_menu = true;
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;
@@ -5478,6 +5497,7 @@ impl Game {
             return;
         }
         // 进入房间/就绪界面（无需再手动输入房间号）。
+        self.steam_lobby_error = None;
         self.steam_lobby_menu = false;
         self.steam_in_lobby = true;
         self.steam_active = true;
@@ -5852,6 +5872,10 @@ impl Game {
                     draw_text(&mut canvas, ctx, name, 30.0, graphics::Color::from_rgb(235, 238, 245), Point2 { x: cx, y: y + card_h * 0.5 - 16.0 }, true)?;
                     draw_text(&mut canvas, ctx, desc, 17.0, graphics::Color::from_rgb(150, 155, 168), Point2 { x: cx, y: y + card_h * 0.5 + 18.0 }, true)?;
                 }
+                // 失败提示（加入失败/房间已满/进入房间失败）红字展示，返回菜单后可见。
+                if let Some(err) = self.steam_lobby_error.as_ref() {
+                    draw_text(&mut canvas, ctx, err, 22.0, graphics::Color::from_rgb(255, 130, 120), Point2 { x: cx, y: y0 + 3.0 * (card_h + gap) + 20.0 }, true)?;
+                }
             }
             #[cfg(not(feature = "steam"))]
             {
@@ -6006,8 +6030,13 @@ impl Game {
         draw_text(canvas, ctx, "加入房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.22 }, true)?;
         draw_text(canvas, ctx, "↑/↓ 选择，回车加入，R 刷新", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
         if self.steam_list_lobbies.is_empty() {
-            draw_text(canvas, ctx, "（暂无可加入的房间）", 28.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: sh * 0.5 }, true)?;
-            draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+            if self.steam_list_searching {
+                draw_text(canvas, ctx, "搜索中…", 28.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.5 }, true)?;
+                draw_text(canvas, ctx, "正在向 Steam 查询公开房间，请稍候", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+            } else {
+                draw_text(canvas, ctx, "（暂无可加入的房间）", 28.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: sh * 0.5 }, true)?;
+                draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+            }
         } else {
             let mut y = sh * 0.34;
             let head_w = (sw * 0.8).min(760.0);
@@ -6042,6 +6071,9 @@ impl Game {
             }
         }
         draw_text(canvas, ctx, "回车 加入    R 刷新    Q 返回", 18.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        if let Some(err) = self.steam_lobby_error.as_ref() {
+            draw_text(canvas, ctx, err, 20.0, Color::from_rgb(255, 130, 120), Point2 { x: cx, y: sh * 0.84 }, true)?;
+        }
         Ok(())
     }
 }

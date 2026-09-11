@@ -287,9 +287,14 @@ impl Game {
     /// 读取当前房间名与备注，host 从 matchmaking 读，无房间或非 host 时返回默认，返回二元组。
     #[cfg(feature = "steam")]
     pub(crate) fn steam_current_room_info(&self) -> (String, String) {
+        // host 建房后由 lockstep 持有 transport（steam_host_ls）；客户端用进房前的 cli transport（steam_cli_ls）。
+        // 两者取其一即可读取房间数据；都缺失（尚未进房）才回退默认。
         let t = match self.steam_host_ls.as_ref() {
             Some(ls) => ls.transport_ref(),
-            None => return ("未命名房间".to_string(), String::new()),
+            None => match self.steam_cli_ls.as_ref() {
+                Some(ls) => ls.transport_ref(),
+                None => return ("未命名房间".to_string(), String::new()),
+            },
         };
         let Some(lid) = self.steam_lobby_id else {
             return ("未命名房间".to_string(), String::new());
