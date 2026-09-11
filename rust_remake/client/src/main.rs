@@ -1771,6 +1771,19 @@ impl Game {
             self.pending_cast = None;
         }
         self.self_was_busy = busy;
+        // 到达清除（回归修复）：`player_target` 是电平量（每帧重发，防帧同步输入缓存丢指令），
+        // 但到达目标后必须清除，否则「到位后仍每帧重发 → 一旦被击退/位移，角色会自己走回旧目标」。
+        // 判定：世界已不再朝目标前进（move_target 为 None）且已靠近该点。
+        // 距离阈值兜底冰面「不吸附」情形（到达时世界清 move_target 但不落点）。
+        // `near` 守卫同时避免「刚下达远点目标、世界尚未应用该输入」时被误清。
+        if let Some(t) = self.player_target {
+            if let Some(p) = self.world.players.get(me as usize) {
+                let near = (p.pos - t).length_squared() <= Fix64::from_num(1.5) * Fix64::from_num(1.5);
+                if p.move_target.is_none() && near {
+                    self.player_target = None;
+                }
+            }
+        }
     }
 
     /// 生成本（模拟）帧内所有玩家的输入（单机：本机玩家 + 本地 AI 机器人）。
