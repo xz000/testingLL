@@ -254,6 +254,10 @@ struct Game {
     cam: Point2<f32>,
     /// 中键拖拽平移时的上一帧鼠标位置（`None` = 未拖拽）。
     pan_drag: Option<Point2<f32>>,
+    /// 用户缩放倍数（1.0 = 基准缩放；滚轮调整，持久化；窗口 resize 不影响）。
+    zoom: f32,
+    /// 本帧累积的滚轮增量（对战阶段用于光标锚点缩放），`update_camera` 消费后清零。
+    wheel: f32,
     /// 联网模式：加入 host 后用于每帧收发/喂 World；`None` = 单机（含本地 AI 机器人）。
     net_link: Option<netlink::NetLinkUdp>,
     /// 局域网模式：本机在对局中的玩家序号（握手分配）。`net_link` 被 `mem::take` 临时置 None 时用它，
@@ -802,6 +806,8 @@ impl Game {
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             cam: Point2 { x: 0.0, y: 0.0 },
             pan_drag: None,
+            zoom: 1.0,
+            wheel: 0.0,
             net_link,
             lan_my_index: PLAYER_ID as u8,
             net_host,
@@ -995,18 +1001,43 @@ impl Game {
     fn update_camera(&mut self, ctx: &Context) -> GameResult {
         use ggez::input::keyboard::Key;
         use ggez::input::mouse::MouseButton;
-        let (sw, sh) = ctx.gfx.drawable_size();
-        // 令初始场地约占较短边的 45%（场地半径取 game-core 的 START_RADIUS，随 war3 尺度走）
-        self.scale = sw.min(sh) * 0.45 / game_core::world::START_RADIUS as f32;
+        // 调参集中处（用户要求调平移手感/边界）：
+        const ZOOM_MIN: f32 = 0.5; // 滚轮缩小下限（看更大范围）
+        const ZOOM_MAX: f32 = 3.0; // 滚轮放大上限（看细节）
+        const ZOOM_RATE: f32 = 0.15; // 每单位滚轮的缩放强度
+        const PAN_SPEED: f32 = 1.1; // 方向键平移：屏幕对角线/秒
+        const CAM_MAX_R: f32 = 2.5; // 相机离原点上限 = CAM_MAX_R * START_RADIUS
 
-        // 学习/整场配置阶段：相机锁定在场地中心（此时方向键用于商店滚动，不能平移）。
+        let (sw, sh) = ctx.gfx.drawable_size();
+        // 基准缩放：场地约占短边 45%（随窗口尺寸自适应）。用户缩放 zoom 在它之上叠加。
+        let base = sw.min(sh) * 0.45 / game_core::world::START_RADIUS as f32;
+        let old_scale = self.scale; // 光标锚点缩放用：改缩放前世界点 → 改后不动
+        self.zoom = self.zoom.clamp(ZOOM_MIN, ZOOM_MAX);
+        self.scale = base * self.zoom;
+
+        // 学习/整场配置阶段：相机锁定在场地中心（方向键此时用于商店滚动，不能平移）。
         if self.pre_game_config {
             self.cam = Point2 { x: 0.0, y: 0.0 };
             self.pan_drag = None;
+            self.wheel = 0.0;
         } else {
-            // 对战阶段：方向键平移（屏幕宽/秒 量级），中键拖拽平移，Home 复位到场地中心。
+            // 对战阶段：方向键平移、中键拖拽、滚轮缩放、Home 场地中心、End 跳到自身（不跟随）。
+
+            // 滚轮缩放（光标锚点：缩放后光标下的世界点保持不动）
+            if self.wheel != 0.0 {
+                let factor = (self.wheel * ZOOM_RATE).exp();
+                let new_zoom = (self.zoom * factor).clamp(ZOOM_MIN, ZOOM_MAX);
+                let new_scale = base * new_zoom;
+                let m = ctx.mouse.position();
+                let cx = m.x - sw / 2.0;
+                let cy = m.y - sh / 2.0;
+                self.cam.x += cx * (1.0 / old_scale - 1.0 / new_scale);
+                self.cam.y += cy * (1.0 / old_scale - 1.0 / new_scale);
+                self.zoom = new_zoom;
+                self.wheel = 0.0;
+            }
+
             let dt = ctx.time.delta().as_secs_f32().clamp(0.0, 0.1);
-            let pan_speed = 1.1; // 屏幕对角线/秒
             let mut dx = 0.0_f32;
             let mut dy = 0.0_f32;
             if ctx.keyboard.is_logical_key_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowLeft)) {
@@ -1022,8 +1053,8 @@ impl Game {
                 dy += 1.0;
             }
             if dx != 0.0 || dy != 0.0 {
-                self.cam.x += dx * (sw / self.scale) * pan_speed * dt;
-                self.cam.y += dy * (sh / self.scale) * pan_speed * dt;
+                self.cam.x += dx * (sw / self.scale) * PAN_SPEED * dt;
+                self.cam.y += dy * (sh / self.scale) * PAN_SPEED * dt;
             }
 
             // 中键拖拽：世界随光标移动（保持光标下的世界点不动）
@@ -1041,13 +1072,21 @@ impl Game {
                 self.pan_drag = Some(m);
             }
 
-            // Home 复位到场地中心
+            // Home：镜头挪到场地中心；End：镜头挪到自身（一次性，不跟随）
             if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Home)) {
                 self.cam = Point2 { x: 0.0, y: 0.0 };
             }
+            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::End)) {
+                if let Some(p) = self.world.players.get(self.self_index() as usize) {
+                    self.cam = Point2 {
+                        x: p.pos.x.to_num::<f32>(),
+                        y: p.pos.y.to_num::<f32>(),
+                    };
+                }
+            }
 
             // 限制相机不要飞太远（保留场地大致可见）
-            let max_r = game_core::world::START_RADIUS as f32 * 2.0;
+            let max_r = game_core::world::START_RADIUS as f32 * CAM_MAX_R;
             let r = (self.cam.x * self.cam.x + self.cam.y * self.cam.y).sqrt();
             if r > max_r {
                 let k = max_r / r;
@@ -2427,7 +2466,7 @@ impl Game {
             draw_text(
                 &mut canvas,
                 ctx,
-                "视角: 方向键/中键拖拽 平移 · Home 复位",
+                "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Home 场地中心 · End 跳到自己",
                 15.0,
                 Color::from_rgb(150, 165, 185),
                 Point2 { x: 12.0, y: sh - 14.0 },
@@ -4218,6 +4257,12 @@ impl event::EventHandler for Game {
     /// winit 循环已在 main.rs:5842 把 `MouseWheel` 转发到此。
     fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, y: f32) -> GameResult {
         use game_core::meta::MatchPhase;
+        // 对战阶段：滚轮交给 `update_camera` 做光标锚点缩放（行/像素增量归一化，避免像素滚轮一下跳满）。
+        if !self.pre_game_config {
+            let n = if y.abs() > 5.0 { y / 100.0 } else { y };
+            self.wheel += n;
+            return Ok(());
+        }
         if self.meta.phase != MatchPhase::Learning || self.learn_page != 1 {
             return Ok(());
         }
