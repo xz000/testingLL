@@ -36,6 +36,9 @@ mod steam;
 const BOTS: u32 = 7;
 /// 固定步长模拟（帧率）
 const TICK: f64 = 1.0 / 60.0;
+/// 施法按键的「冷却预输入余量」（秒）：帧同步下客户端本地世界可能落后/领先权威若干帧，
+/// 只在 CD 剩余 <= 该值时响应按键（显示瞄准/施法），避免 CD 中按字母出现瞄准线误导玩家。
+const CAST_READY_LEAD_SECS: f64 = 0.2;
 /// 玩家本人 = id 0
 const PLAYER_ID: u32 = 0;
 
@@ -1610,6 +1613,20 @@ impl Game {
         eprintln!("[steam] staged world for {p} participant player(s)");
     }
 
+    /// 该技能当前是否「可施法」（按键门控用）：未在施法/后摇，且冷却剩余 <= 预输入余量。
+    /// 帧同步有固有延迟（本地世界可能落后权威若干帧），故留一小撮 lead，而非严格 == 0。
+    fn skill_cast_ready(&self, skill: SkillId) -> bool {
+        let me = self.self_index();
+        self.world
+            .players
+            .get(me as usize)
+            .map(|p| {
+                !p.caster.is_busy()
+                    && p.caster.cooldown_remaining(skill) <= Fix64::from_num(CAST_READY_LEAD_SECS)
+            })
+            .unwrap_or(false)
+    }
+
     /// 每帧统一轮询输入（键盘 + 鼠标都用 ggez 的 just-pressed 边沿检测）。
     fn poll_input(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
@@ -1637,6 +1654,10 @@ impl Game {
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(upper.into()));
             if just {
                 if let Some(skill) = bound_for(key) {
+                    // 冷却门控：CD 剩余 > 预输入余量时不响应（不显示瞄准/不施法），避免 CD 中按字母出现瞄准线误导。
+                    if !self.skill_cast_ready(skill) {
+                        continue;
+                    }
                     if game_core::skill::DefTable::def(skill).needs_point {
                         if shift {
                             self.player_target = None; // 队列操作：放弃即时移动目标，避免覆盖队列移动
@@ -1896,26 +1917,59 @@ impl Game {
         self.update_camera(ctx)?;
         let mut canvas = Canvas::from_frame(ctx, Color::from_rgb(18, 22, 34));
 
-        // 瞄准指示：从玩家到鼠标的画一条线（点目标技能待左键确认）。
-        if self.pending_skill.is_some() || self.pending_shift_skill.is_some() {
+        // 瞄准指示：从玩家到鼠标画一条线（点目标技能待左键确认），并显示射程截断与施法范围圈。
+        if let Some(skill) = self.pending_skill.or(self.pending_shift_skill) {
             if let Some(p) = self.world.players.get(self.self_index() as usize) {
+                let level = p.skill_level(skill);
+                let stats = game_core::skill::DefTable::def(skill).stats_at(level);
+                let max_dist = stats.max_distance;
+                let radius = stats.radius;
                 let pfx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
                 let pfy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
                 let mouse = ctx.mouse.position();
+                let target_w = self.screen_to_world(mouse.x, mouse.y);
+                let delta = target_w - p.pos;
+                let dist = delta.length();
+                // 射程截断：目标超程时把线端点/落点收回到射程处，并用更醒目的颜色提示超程。
+                let (end_w, over_range) = if max_dist > Fix64::ZERO && dist > max_dist {
+                    (p.pos + delta.normalized() * max_dist, true)
+                } else {
+                    (target_w, false)
+                };
+                let ex = end_w.x.to_num::<f32>() * self.scale + self.offset.x;
+                let ey = end_w.y.to_num::<f32>() * self.scale + self.offset.y;
+                let line_color = if over_range {
+                    Color::from_rgba(255, 120, 100, 200)
+                } else {
+                    Color::from_rgba(255, 220, 120, 190)
+                };
                 let aimline = Mesh::new_line(
                     &ctx.gfx,
                     &[
                         Point2 { x: pfx, y: pfy },
-                        Point2 { x: mouse.x, y: mouse.y },
+                        Point2 { x: ex, y: ey },
                     ],
                     2.0,
-                    Color::from_rgba(255, 220, 120, 190),
+                    line_color,
                 )?;
                 canvas.draw(&aimline, graphics::DrawParam::new());
+                // 施法范围圈（AoE）：radius > 0 时在落点画一圈，直观显示影响范围。
+                if radius > Fix64::ZERO {
+                    let rr = (radius.to_num::<f32>() * self.scale).max(3.0);
+                    let ring = Mesh::new_circle(
+                        &ctx.gfx,
+                        DrawMode::stroke(1.5),
+                        Point2 { x: ex, y: ey },
+                        rr,
+                        0.2,
+                        Color::from_rgba(140, 220, 255, 200),
+                    )?;
+                    canvas.draw(&ring, graphics::DrawParam::new());
+                }
                 let aimdot = Mesh::new_circle(
                     &ctx.gfx,
                     DrawMode::fill(),
-                    Point2 { x: mouse.x, y: mouse.y },
+                    Point2 { x: ex, y: ey },
                     5.0,
                     0.5,
                     Color::from_rgba(255, 220, 120, 220),
