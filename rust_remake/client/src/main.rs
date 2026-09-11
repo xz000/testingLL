@@ -444,8 +444,6 @@ struct Game {
     host_cfg_settle: u32,
     /// host 配置同步首次进入标记：本轮 HostGather 是否已清空在途旧包（`drain_cfg`+`reset_cfgs`）。
     host_cfg_drained: bool,
-    /// 联网：是否已完成 READY/GO 统一起始（可开始推进）。host=已广播 GO；client=已收 GO。
-    net_ready: bool,
     /// 联网多局：学习结束后「配置同步」阶段（见 `NetCfgSync`）。
     net_cfg: NetCfgSync,
     /// 开局前的技能配置阶段（第一局开始前先选/升级技能）。
@@ -469,9 +467,6 @@ struct Game {
     menu_selection: usize,
     /// 主菜单底部提示行（如「局域网需命令行启动」），拾取局域网项后显示，避免只 eprintln 用户看不到。
     menu_hint: String,
-    /// 主菜单「Steam 大厅」子界面里，创建房间的玩家人数上限（2..=STEAM_MAX_PLAYERS）。
-    #[cfg(feature = "steam")]
-    steam_create_players: u8,
     /// Steam 建房设置：总轮数（1..=STEAM_MAX_ROUNDS）。
     #[cfg(feature = "steam")]
     steam_create_rounds: u32,
@@ -969,7 +964,6 @@ impl Game {
             steam_stats_snapshot: None,
             #[cfg(feature = "steam")]
             steam_toast: (String::new(), 0.0),
-            net_ready: false,
             net_cfg: NetCfgSync::Idle,
             app,
             pre_game_config: app != AppState::MainMenu,
@@ -982,8 +976,6 @@ impl Game {
             pre_game_timer: PRE_GAME_TIMEOUT_SECS,
             menu_selection: 0,
             menu_hint: String::new(),
-            #[cfg(feature = "steam")]
-            steam_create_players: STEAM_DEFAULT_PLAYERS,
             #[cfg(feature = "steam")]
             steam_create_rounds: STEAM_DEFAULT_ROUNDS,
             #[cfg(feature = "steam")]
@@ -4492,7 +4484,6 @@ impl Game {
                 let mut host_ls = net::lockstep::HostLockstep::new(transport, n, true);
                 host_ls.set_client_identities(&identities);
                 self.net_host_ls = Some(host_ls);
-                self.net_ready = true;
             } else {
                 self.net_host = Some(hs); // 尚未收齐 client，继续等
             }
@@ -4514,7 +4505,6 @@ impl Game {
         self.lan_my_index = PLAYER_ID as u8;
         self.net_host = None;
         self.net_host_ls = None;
-        self.net_ready = false;
         self.net_cfg = NetCfgSync::Idle;
         // 放弃 Steam 会话（P2P 连接 / lockstep / 房间状态），回主菜单后重建。
         #[cfg(feature = "steam")]
@@ -5150,7 +5140,6 @@ impl Game {
                 };
                 self.steam_create_note = String::new();
                 self.steam_create_focus = 0;
-                self.steam_create_players = STEAM_DEFAULT_PLAYERS;
                 self.steam_create_rounds = STEAM_DEFAULT_ROUNDS;
                 self.steam_create_players_buf = STEAM_DEFAULT_PLAYERS.to_string();
                 self.steam_create_rounds_buf = STEAM_DEFAULT_ROUNDS.to_string();
@@ -5375,7 +5364,6 @@ impl Game {
                     auto_place_rewards(first)
                 }
             };
-            self.steam_create_players = players;
             self.steam_create_rounds = rounds;
             self.steam_create_learn = learn;
             self.steam_create_starting_gold = starting_gold;
@@ -5682,7 +5670,6 @@ impl Game {
         self.net_link = None;
         self.net_host = None;
         self.net_host_ls = None;
-        self.net_ready = false;
         self.conn_dropped = false;
         self.desync_detected = false;
         self.reconnect_attempting = false;

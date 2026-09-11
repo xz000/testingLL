@@ -12,7 +12,6 @@ use crate::skill::{SkillEffect, SkillId, DefTable};
 
 /// 场地收缩参数（复刻原版 `AreaScript` 的量级，稍加快以体现压迫感）。数值权威源见 [`crate::balance::Balance`]。
 pub const START_RADIUS: f64 = Balance::default().start_radius;
-pub const SHRINK_SPEED: f64 = Balance::default().shrink_speed; // 半径减少量 / 秒
 /// 出界伤害：球心距圆点 > 圈半径时，每帧扣除的 HP / 秒。
 /// 圈外 = 熔岩（098b 语义统一，D8/M5）：踩上（出圈）每秒受 `Uo×10` 伤害。
 pub const LAVA_HURT: f64 = Balance::default().out_hurt;
@@ -4177,15 +4176,6 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
     let t = ((p - a).dot(ab) / len_sq).clamp(Fix64::ZERO, Fix64::ONE);
     let proj = a + ab * t;
     (p - proj).length_squared() <= width * width
-}
-
-/// 两个圆球是否相交。保留供画线/技能判定等逻辑复用。
-#[allow(dead_code)]
-fn circles_overlap(a: Vec2, ar: Fix64, b: Vec2, br: Fix64) -> bool {
-    let dx = a.x - b.x;
-    let dy = a.y - b.y;
-    let rr = ar + br;
-    dx * dx + dy * dy < rr * rr
 }
 
 /// 成对解析玩家圆球碰撞：把重叠的两球沿中心连线推开，避免相互穿透。
