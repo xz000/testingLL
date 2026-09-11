@@ -7714,8 +7714,8 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
         world.players[1].move_target = None;
         world.players[1].team = 1;
-        // 远处第三个敌人站在滚石寿命尽头（400/s×4s=1600 码）附近，验证寿命尽爆炸
-        world.players.push(crate::player::Player::new(2, Vec2::new(d60(25.0), d60(1.0)), Fix64::from_num(30.0)));
+        // 第三个敌人站在滚石寿命尽头（098c OB: 400/s x 2s = 800 码）附近，验证寿命尽爆炸
+        world.players.push(crate::player::Player::new(2, Vec2::new(d60(13.0), d60(0.5)), Fix64::from_num(30.0)));
         let n = world.players.len();
         world.players[2].team = 1;
         world.players[2].move_target = None;
@@ -7731,7 +7731,7 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[1].has_buff(BuffKind::Pancake), "被滚石压过应「肉饼」减速");
-        // 滚石 4s 寿命尽爆炸（300 帧 = 5s，覆盖 4s 寿命 + 爆炸帧）
+        // 滚石 2s 寿命尽爆炸（覆盖寿命 + 爆炸帧）
         for _ in 0..300 {
             if world.players[2].hp < world.players[2].max_hp {
                 break;
