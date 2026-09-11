@@ -102,6 +102,9 @@ pub enum BuffKind {
     Tied,
     /// 疾跑/生命偷取（C1）：受击时返还一半伤害作回血，移速随累积回血量成长。
     Boost,
+    /// S007 急行吸收窗口（098c KR）：期间吸收 50% 伤害转为移速（`Player::s007_absorb/s007_bonus`）。
+    /// 移速 +35 本身由并存的 `Speed` buff 提供，本变体仅标记「吸收窗口 + 到期回落」。
+    Haste,
     /// S008 陨石灼烧「烤肉饼」（098b nB，D7）：期间伤害输出 ×0.1（Gn 惩罚）、
     /// 自然回血禁疗（Nn 清零）；持续伤害来自命中处的灼烧场（Star 复用），非本 buff。
     Scorched,
@@ -204,6 +207,10 @@ pub struct Player {
     /// 疾跑/生命偷取累积量（C1）。boost 期间受击返还一半回血并把待返还量暂存于此，
     /// 结束后一次性把移速加成回落（原版 `boostnow`）。
     pub boost_soaked: Fix64,
+    /// S007 急行：剩余可吸收伤害量（098c `sr=3+2×L`；仅 `Haste` 窗口内有效）。
+    pub s007_absorb: Fix64,
+    /// S007 急行：吸收伤害转化的移速平加累积（098c `Qr`，每点吸收 +15）。
+    pub s007_bonus: Fix64,
     /// 幻象（C4）「待幻」状态：存在时表示已施放但尚未在点击处留下假身；
     /// 记录已过时间用于计算剩余假身时长。`None` = 未处于待幻。
     pub fake_active: Option<Fix64>,
@@ -305,6 +312,8 @@ impl Player {
             windwalk_cd: Fix64::ZERO,
             kick: None,
             boost_soaked: Fix64::ZERO,
+            s007_absorb: Fix64::ZERO,
+            s007_bonus: Fix64::ZERO,
             fake_active: None,
             blink2_window: None,
             dash_active: false,
@@ -573,7 +582,13 @@ impl Player {
             mult *= 0.5;
         }
         // 物品平加/惩罚（war3 口径，M3）：速度之靴 +20 等、头盔/斗篷 -5 等。
-        let flat = self.item_fx.speed_add - self.item_fx.speed_penalty;
+        // S007 急行吸收转化移速（098c `Qr`，每点吸收 +15），仅 `Haste` 窗口内生效。
+        let s007_flat = if self.has_buff(BuffKind::Haste) {
+            self.s007_bonus.to_num::<f64>()
+        } else {
+            0.0
+        };
+        let flat = self.item_fx.speed_add - self.item_fx.speed_penalty + s007_flat;
         (Fix64::from_num(BASE_SPEED * self.speed_mult) + Fix64::from_num(flat)) * Fix64::from_num(mult)
     }
 
@@ -825,6 +840,8 @@ impl Player {
         self.shadow_anchor = None;
         self.shadow_window = Fix64::ZERO;
         self.boost_soaked = Fix64::ZERO;
+        self.s007_absorb = Fix64::ZERO;
+        self.s007_bonus = Fix64::ZERO;
         self.fake_active = None;
         self.blink2_window = None;
         self.dash_active = false;
@@ -892,12 +909,21 @@ impl Player {
     /// C1 疾跑：受击时若在 Boost buff 内，返回**实际应扣到 HP 上的净伤害**（返回一半作为回血，
     /// 并把待结算的移速成长量累进 [`Self::boost_soaked`]）。原版：`hp -= damage; hp += boostvalue`。
     pub fn soak_boost(&mut self, damage: Fix64) -> Fix64 {
-        if !self.has_buff(BuffKind::Boost) {
-            return damage;
+        let mut dmg = damage;
+        // C1 疾跑：Boost 期间返还一半（净扣一半），返还量累积作移速成长。
+        if self.has_buff(BuffKind::Boost) {
+            let refund = dmg / Fix64::from_num(2);
+            self.boost_soaked += refund;
+            dmg -= refund;
         }
-        let refund = damage / Fix64::from_num(2);
-        self.boost_soaked += refund;
-        damage - refund
+        // S007 急行：Haste 期间吸收 50%（上限 s007_absorb），每点吸收 +15 移速（098c Qr）。
+        if self.has_buff(BuffKind::Haste) && self.s007_absorb > Fix64::ZERO {
+            let absorb = (dmg / Fix64::from_num(2)).min(self.s007_absorb);
+            self.s007_absorb -= absorb;
+            self.s007_bonus += absorb * Fix64::from_num(15.0);
+            dmg -= absorb;
+        }
+        dmg
     }
 }
 
