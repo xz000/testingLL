@@ -4522,6 +4522,17 @@ impl Game {
             // 先清 Rich Presence：会话还活着（lockstep 仍持有 transport）时才写得到，
             // 一旦下面把 lockstep 丢掉，Steam Client 就没了，好友会一直看到「加入游戏」。
             self.steam_clear_presence();
+            // 退出对局时也离开 Steam 大厅，避免后端仍占席位（幽灵成员，要等平台超时才消失）。
+            // 房间阶段的 Q 走 steam_leave_room 已 leave；此处覆盖「Esc/Q 直接退对局」的路径。
+            // 重复 leave 为 no-op（Steam 对未在房内的 leave 调用安全）。
+            if let Some(lid) = self.steam_lobby_id {
+                let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+                if let Some(host) = self.steam_host_ls.as_ref() {
+                    host.transport_ref().matchmaking().leave_lobby(lobby);
+                } else if let Some(cli) = self.steam_cli_ls.as_ref() {
+                    cli.transport_ref().matchmaking().leave_lobby(lobby);
+                }
+            }
             self.steam_host_ls = None;
             self.steam_cli_ls = None;
             self.steam_in_lobby = false;
