@@ -35,4 +35,4 @@ pub fn version() -> &'static str {
 /// - 改动 `game_core::netcode` 的输入编码；
 /// - 改动 `game_core::world_ser` 的快照格式或**任何会影响模拟的字段**；
 /// - 改动技能/物品数值、世界模拟逻辑（会改变同一输入下的世界演化）。
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
