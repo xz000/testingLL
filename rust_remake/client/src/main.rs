@@ -1153,10 +1153,9 @@ impl Game {
             return;
         };
         let Some(skill) = profile.bound_skill(key) else { return };
-        // 098b 升级上限 alev + 乔丹之石 +2（M3 2c）。
-        let jordan = profile.items.iter().map(|it| it.def().fx.jordan_levels).sum::<u8>() as u32;
-        let cap = game_core::skill::DefTable::max_level(skill) + jordan;
+        // 升级上限 = 098c 基础档数 + 技能上限突破（乔丹原生购买项）；upgrade_skill 内部亦校验。
         let lv = profile.skill_level(skill);
+        let cap = game_core::skill::DefTable::max_level(skill) + profile.skill_cap_bonus;
         if lv >= cap {
             return;
         }
@@ -1403,7 +1402,10 @@ impl Game {
         if just("k") { buy(game_core::attribute::GrowthAttr::Armor); }
         if just("l") { buy(game_core::attribute::GrowthAttr::SpellResist); }
         if just(";") { buy(game_core::attribute::GrowthAttr::KbResist); }
-        // U/I（蓝上限/回蓝）已随无蓝量系统移除（PORT_098B_DECISIONS.md D3）。
+        // U（原蓝上限键，已退役）→ 技能上限突破（098c 乔丹之石原生化为购买项，每档 +2，价 5）。
+        if just("u") && profile.buy_skill_cap_bonus(5) {
+            eprintln!("[attr] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
+        }
     }
 
     /// M3 商店（学习期，§3 改造）：左栏三大类，B/N/M 切换；右栏当前类明细，

@@ -329,6 +329,10 @@ pub fn shop_category_items(cat: u8) -> Vec<&'static ItemDef> {
 pub fn shop_catalog() -> Vec<&'static ItemDef> {
     let mut out: Vec<&'static ItemDef> = Vec::new();
     for d in ITEMS {
+        // 乔丹之石退役：其「技能上限突破 +2」已原生化为学习界面购买项（JASS_AUDIT_098c.md §0 / D13）。
+        if d.id == ItemId::Jordan {
+            continue;
+        }
         if d.tier == 1 || d.family == ItemFamily::Standalone {
             out.push(d);
         }
@@ -400,7 +404,7 @@ mod tests {
     fn shop_catalog_lists_entry_points() {
         // 8 个家族入口 + 3 个单体（面具/法杖/乔丹）= 11。
         let cat = shop_catalog();
-        assert_eq!(cat.len(), 11, "商店入口 = 家族 t1 + 单体，实际 {}", cat.len());
+        assert_eq!(cat.len(), 10, "shop entries = family t1 + standalone (Jordan retired), got {}", cat.len());
         assert!(cat.iter().all(|d| d.tier == 1));
     }
 
