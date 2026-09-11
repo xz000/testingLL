@@ -2932,6 +2932,18 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                 };
+                // 回旋镖（S004，098c Ub）：出程距离 = 点击距离 clamp[300, 800×(1+0.15×时间精通)]，
+                // 前向 1500/s 匀减速到出程点归零后回程。life 由固定射程(1.6×speed)改为「出程+回程」总时长兜底。
+                let boomerang_out_dist = if proj == crate::skill::W098bProjKind::Boomerang {
+                    let click = target.map(|t| (t - ppos).length()).unwrap_or(Fix64::from_num(800.0));
+                    let ei = world.players[idx as usize].mastery[2] as f64;
+                    let maxd = Fix64::from_num(800.0 * (1.0 + 0.15 * ei));
+                    let od = click.clamp(Fix64::from_num(300.0), maxd);
+                    life = od * Fix64::from_num(2.0) / speed + od / (speed * Fix64::from_num(1.5)) + Fix64::from_num(0.4);
+                    od
+                } else {
+                    life * speed
+                };
                 // 火球法杖（M3 2c，I00D）：持杖者 S000 火球直伤改 5.5+0.5×L、点燃总量改 3+0.5×L。
                 let (gx, ignite_total) = if world.players[idx as usize].item_fx.fireball_burn
                     && id == crate::skill::SkillId::S000
@@ -2977,7 +2989,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Fix64::ZERO
                             },
                             forward_dir: dir,
-                            out_dist: life * speed,
+                            out_dist: boomerang_out_dist,
                             // B4 形态：S009·目标=到点碎裂 6 片；S009·区域=0.12s 螺旋侧弹
                             burst: if id == crate::skill::SkillId::S009 && !alt { 6 } else { 0 },
                             emit_cooldown: if id == crate::skill::SkillId::S009 && alt {

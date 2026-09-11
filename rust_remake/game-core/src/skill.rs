@@ -1539,9 +1539,10 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S004 回旋镖（D 键）——spec: CD 16→8.2（9 级，步长 -0.975）；radius 40；
-            // 伤害 gX = 6.4+.8*Xv（consolidated S004 行，直伤）+ qI 区域二次 0.5*mI（M2 补）；
-            // 速度：098b 为侧向分量公式（spec note），M1 用「出 400 / 回拉加速」近似，speed 字段存初速。
+            // S004 回旋镖（D 键）——spec: CD 16→8.2（9 级，步长 -0.975）；radius 38；
+            // 伤害 gX = 7.2+.8×Xv（=098c 逐档 tooltip L1 7.2 / L9 13.6，端点已对齐）+ qI 距离衰减（098c Zb，TODO 待解析）；
+            // 运动学对齐 098c Ub：前向初速 1500/s、出程距离 = 点击距离 clamp[300, 800×(1+0.15×时间精通)]，
+            // 前向匀减速到出程点归零后回程；横向侧偏 ±300/s 左右交替。
             SkillId::S004 => SkillDef {
                 id,
                 tree: SkillTree::D,
@@ -1549,8 +1550,8 @@ impl DefTable {
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Boomerang,
-                    speed: Fix64::from_num(700.0),
-                    radius: Fix64::from_num(40.0),
+                    speed: Fix64::from_num(1500.0),
+                    radius: Fix64::from_num(38.0),
                     life: Fix64::from_num(1.6),
                     kb_ji: Fix64::ONE,
                     ignite: None,
@@ -3230,18 +3231,19 @@ mod tests {
 
     #[test]
     fn s004_boomerang_matches_spec() {
-        // spec S004：CD 16→8.2（9 级，步长 -0.975）；radius 40；consolidated gX = 6.4+.8*Xv。
+        // spec S004：CD 16→8.2（9 级，步长 -0.975）；radius 38；speed 1500；gX = 7.2+.8×L。
         let def = DefTable::def(SkillId::S004);
         assert_eq!(def.name, "回旋镖");
         let s1 = def.stats_at(1);
         let s9 = def.stats_at(9);
         assert!(near(s1.cooldown, 16.0, 1e-3), "L1 CD 应 16（spec l1），实际 {:?}", s1.cooldown);
         assert!(near(s9.cooldown, 8.2, 1e-2), "L9 CD 应 8.2（spec lmax），实际 {:?}", s9.cooldown);
-        assert!(near(s1.damage, 7.2, 1e-3), "L1 gX 应 6.4+0.8×1=7.2，实际 {:?}", s1.damage);
-        assert!(near(s9.damage, 6.4 + 0.8 * 9.0, 1e-3), "L9 gX 应 6.4+0.8×9，实际 {:?}", s9.damage);
+        assert!(near(s1.damage, 7.2, 1e-3), "L1 gX 应 7.2，实际 {:?}", s1.damage);
+        assert!(near(s9.damage, 7.2 + 0.8 * 8.0, 1e-3), "L9 gX 应 13.6，实际 {:?}", s9.damage);
         match def.effect {
-            SkillEffect::Warlock098b { proj: W098bProjKind::Boomerang, radius, .. } => {
-                assert!(near(radius, 40.0, 1e-3), "radius 应 40（spec），实际 {radius:?}");
+            SkillEffect::Warlock098b { proj: W098bProjKind::Boomerang, speed, radius, .. } => {
+                assert!(near(radius, 38.0, 1e-3), "radius 应 38（098c Rv），实际 {radius:?}");
+                assert!(near(speed, 1500.0, 1e-3), "前向初速应 1500（098c $5DC），实际 {speed:?}");
             }
             ref e => panic!("S004 effect 应为 Warlock098b(Boomerang)，实际 {e:?}"),
         }
