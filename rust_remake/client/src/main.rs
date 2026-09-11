@@ -1627,6 +1627,38 @@ impl Game {
             .unwrap_or(false)
     }
 
+    /// 点目标技能的「施法射程」与「落点影响范围」指示（瞄准线显示用）：
+    /// 返回 (max_dist, radius)。max_dist = 射程（超程截断），radius = 落点 AoE 半径（>0 画圈）。
+    /// 射程优先取 growth 按等级的 stats；098b 名册弹体类用 effect 常量（speed×life / range / blast）。
+    fn skill_aim_hint(&self, skill: SkillId) -> (Fix64, Fix64) {
+        let def = game_core::skill::DefTable::def(skill);
+        let level = self
+            .world
+            .players
+            .get(self.self_index() as usize)
+            .map(|p| p.skill_level(skill))
+            .unwrap_or(1);
+        let stats = def.stats_at(level);
+        let max_dist = if stats.max_distance > Fix64::ZERO {
+            stats.max_distance
+        } else {
+            match def.effect {
+                game_core::skill::SkillEffect::Warlock098b { proj, speed, life, .. } => match proj {
+                    game_core::skill::W098bProjKind::Boomerang => Fix64::from_num(800.0),
+                    _ => speed * life,
+                },
+                game_core::skill::SkillEffect::W098bBolt { range, .. } => range,
+                _ => Fix64::ZERO,
+            }
+        };
+        let radius = match def.effect {
+            game_core::skill::SkillEffect::Warlock098b { blast, .. } => blast.unwrap_or(Fix64::ZERO),
+            game_core::skill::SkillEffect::W098bNova { radius, .. } => radius,
+            _ => Fix64::ZERO,
+        };
+        (max_dist, radius)
+    }
+
     /// 每帧统一轮询输入（键盘 + 鼠标都用 ggez 的 just-pressed 边沿检测）。
     fn poll_input(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
@@ -1920,10 +1952,7 @@ impl Game {
         // 瞄准指示：从玩家到鼠标画一条线（点目标技能待左键确认），并显示射程截断与施法范围圈。
         if let Some(skill) = self.pending_skill.or(self.pending_shift_skill) {
             if let Some(p) = self.world.players.get(self.self_index() as usize) {
-                let level = p.skill_level(skill);
-                let stats = game_core::skill::DefTable::def(skill).stats_at(level);
-                let max_dist = stats.max_distance;
-                let radius = stats.radius;
+                let (max_dist, radius) = self.skill_aim_hint(skill);
                 let pfx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
                 let pfy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
                 let mouse = ctx.mouse.position();
