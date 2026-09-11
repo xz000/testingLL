@@ -61,13 +61,15 @@
 
 ## 二、文档 vs 代码（“文档不一定对”成立）
 
-- 明显过期：`ROADMAP.md`、`UI_MENUS.md`、`PLAYTEST.md`、`ATTRIBUTE_SYSTEM.md`（Solo/菜单/Steam 栈/测试数全部对不上）。
-- 直接冲突：
-  - 计分：`098C_DIFF.md`（胜2/杀1/助1）vs `PORT_098B_DECISIONS.md`（2/2/1）。
-  - 熔岩成长：`098C_DIFF.md A8`（恒定 9/s）vs `PORT_098B_DECISIONS.md D9`（×round）。
-  - 移动模型：`D14`（已定 accel/decel）vs `098C_DIFF.md A2`（仍列待拍板）。
-  - Mana：`D3`（无蓝）vs `ATTRIBUTE_SYSTEM.md`（“加蓝”）。
-- **权威序**：以 **代码 + `098C_DIFF.md` + `resume.md`** 为准；其余视为历史记录。
+- 已删除的过期文档（2026-09-11 整理）：`ROADMAP.md` / `UI_MENUS.md` / `PLAYTEST.md` / `ATTRIBUTE_SYSTEM.md` /
+  `resume.md` / `PLAN.md` / `NEXT_STEPS.md` / `WORK_BACKLOG.md` / `NET_REWRITE.md` / `LOCKSTEP_FOUNDATION.md` /
+  `LATENCY_MASKING.md` / `SKILL_SPEC.md` —— 均已过时或互相冲突，一律以代码 + 下述权威文档为准。
+- 历史冲突（已解决，仅存证）：
+  - 计分：`098C_DIFF.md`（胜2/杀1/助1）vs `PORT_098B_DECISIONS.md`（1/1/1）—— 代码最终为 1/1/2（098c）。
+  - 熔岩成长：`098C_DIFF.md A8`（恒定 9/s，正确）vs `PORT_098B_DECISIONS.md D9`（×round 占位，已废弃）。
+  - 移动模型：`D14`（已定 accel/decel）vs `098C_DIFF.md A2`（冲量滑行，仍列待拍板）。
+- **权威序**：以 **代码 + `098C_DIFF.md` + `PORT_098B_DECISIONS.md` + `SKILL_AUDIT_098b_vs_rust.md`** 为准；
+  `RISK_ANALYSIS.md` / `STEAM_MULTIPLAYER_PLAN.md` / `RECONNECT.md` 为专项审查/规划，与代码不一致处以代码为准。
 
 ---
 
@@ -106,15 +108,15 @@
 - [ ] 输入序号来源校验（`slot_of` 同时校验 `from`）**延后**：Steam 为已认证 P2P，伪造面有限；
       UDP 收紧会破坏「重连后端点变化」的合法路径，需先设计身份-端点映射，风险>收益。
 
-### 批次 5 — 文档与死代码清理  ✅ 已完成（文档「重写」收敛为「标注状态」，避免误删历史）
+### 批次 5 — 文档与死代码清理  ✅ 已完成（文档「标注状态」后升级为「直接删除」）
 - [x] 删除确认无用的死代码：
   - `game-core/src/rng.rs` `next_fix_signed`（全仓无调用）。
   - `game-core/src/world.rs` `SHRINK_SPEED` 常量、`circles_overlap`（均无调用）。
   - `client/src/main.rs` 只写不读字段 `net_ready`、`steam_create_players`（及其全部赋值点）。
   - 复核澄清：`up_packet`/`parse_up` **并非死代码**（proto/Input 与 net 测试在用），保留。
-- [x] 文档状态标注（不做整篇重写；权威序见第二节）：过期文档 = `ROADMAP.md`/`UI_MENUS.md`/`PLAYTEST.md`/`ATTRIBUTE_SYSTEM.md`；
-  权威 = **代码 + `098C_DIFF.md` + `resume.md`**；冲突项已在第二节列出。
-- [ ] 待跟进：过期文档的整篇重写/归档（本次只标注，未改写，避免丢失历史决策信息）。
+- [x] 文档状态标注 → 升级为「直接删除」：`ROADMAP.md`/`UI_MENUS.md`/`PLAYTEST.md`/`ATTRIBUTE_SYSTEM.md` 及
+  `resume.md`/`PLAN.md`/`NEXT_STEPS.md`/`WORK_BACKLOG.md`/`NET_REWRITE.md`/`LOCKSTEP_FOUNDATION.md`/
+  `LATENCY_MASKING.md`/`SKILL_SPEC.md` 已删除（git 历史可恢复）；权威序见第二节。
 
 ---
 
@@ -127,5 +129,19 @@
 - 2026-09-11：**批次 3 完成并过门禁**（确定性 trig + 周期性世界哈希与分歧检测；自动 Resync 待真机观察后跟进）。
 - 2026-09-11：**批次 4 完成并过门禁**（leave_lobby 补退出路径 + pending 上限；drain_cfg/配置超时复核后降级、
   输入来源校验延后）。下一步：批次 5（文档与死代码清理）。
-- 2026-09-11：**批次 5 完成并过门禁**（删除确认死代码 + 文档状态标注；整篇文档重写留待跟进）。
-  **五个批次全部完成。**
+- 2026-09-11：**批次 5 完成并过门禁**（删除确认死代码 + 文档清理）。**五个批次全部完成。**
+- 2026-09-11：**文档整理**：删除 12 份过时/冲突文档（见第二节），保留权威文档。
+
+## 五、测试约定（防假绿，长期评审准则）
+
+> 迁移自已删除的 `PLAN.md`。网络层封帧 tag 丢失 bug 曾把全部输入静默丢弃，而各「两端 World 逐位一致」
+> 测试因「收不到帧就跳过 step、两端都停在初始态、比较恒成立」而**全线假绿**。教训：比较帧同步不变量，
+> 必须同时证明「测试真的推进了模拟、输入真的生效了」。
+
+1. 所有验证「两端 World 逐位一致」的联网测试，必须同时附带以下三件事，缺一不可：
+   - 证明合帧收到了该收的输入（如 `collected.len() >= N`，或 frame 里确含各玩家序号）；
+   - 证明真的推进过（如 `stepped > 0`）；
+   - 证明输入真实生效（如 `world.players != 初始World.players`）。
+2. 严禁无界阻塞循环：联网收发轮询必须用有界循环 + 超时 panic（`for _ in 0..2000 { ... }` + `expect`），
+   禁用 `loop { }` 等 UDP 包。
+3. 优先可用注入假 transport 的确定性测试，避免依赖真实 UDP 时序（sleep 同步）。
