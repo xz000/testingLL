@@ -57,8 +57,11 @@ pub fn parse_frame(buf: &[u8]) -> io::Result<(u64, Vec<(u8, &[u8])>)> {
     let seq = u64::from_be_bytes(seq_bytes);
     let buf = &buf[8..];
     let count = u16::from_be_bytes([buf[0], buf[1]]) as usize;
+    // 防放大 DoS：每条 entry 至少占 3 字节（idx:u8 + len:u16），count 不可能超过 remaining/3。
+    // 据此给预分配加上限，避免 10 字节报文声明 count=65535 触发无谓的大额分配。
+    let cap = (buf.len().saturating_sub(2)) / 3 + 1;
     let mut pos = 2;
-    let mut out = Vec::with_capacity(count);
+    let mut out = Vec::with_capacity(count.min(cap));
     for _ in 0..count {
         if pos + 3 > buf.len() {
             return Err(io::Error::other("frame truncated"));

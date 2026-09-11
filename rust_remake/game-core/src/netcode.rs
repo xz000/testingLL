@@ -165,7 +165,10 @@ pub fn decode_player_input(b: &[u8]) -> Result<PlayerInput, &'static str> {
         _ => return Err("bad cast tag"),
     };
     let n = r.u32()? as usize;
-    let mut queued = Vec::with_capacity(n);
+    // 防 DoS：每个 cmd 至少占 1 字节，n 不可能超过整包长度；据此给预分配加上限，
+    // 避免畸形/恶意报文用巨大 n（u32 最大 42 亿）触发 `Vec::with_capacity` 巨量分配 → abort。
+    // 循环本身也被 `r.cmd()?` 的越界检查兜底（读到包尾即返回 Err）。
+    let mut queued = Vec::with_capacity(n.min(b.len()));
     for _ in 0..n {
         queued.push(r.cmd()?);
     }

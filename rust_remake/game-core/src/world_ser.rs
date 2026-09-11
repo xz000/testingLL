@@ -411,7 +411,17 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     for lv in skill_levels.iter_mut() {
         *lv = u32at(b, p)?;
     }
-    let last_hit_by = if u8at(b, p)? != 0 { Some(u32at(b, p)?) } else { None };
+    let last_hit_by = if u8at(b, p)? != 0 {
+        let k = u32at(b, p)?;
+        // 下界防护（同 id）：越界 killer id 会被 record_death 当作玩家下标/比较使用，
+        // 且在下一帧被各端解码器判非法 → 重连/迁移失败或分叉。合法快照 k < np。
+        if (k as usize) >= np {
+            return None;
+        }
+        Some(k)
+    } else {
+        None
+    };
     let control = if u8at(b, p)? != 0 {
         let vel = vecat(b, p)?;
         let remaining = fixat(b, p)?;

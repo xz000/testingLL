@@ -1780,16 +1780,26 @@ impl Game {
 
     /// 生成本（模拟）帧内所有玩家的输入（单机：本机玩家 + 本地 AI 机器人）。
     fn compute_inputs(&mut self) -> Vec<PlayerInput> {
-        let mut inputs: Vec<PlayerInput> = self
-            .world
-            .players
-            .iter()
-            .map(|_| PlayerInput::default())
-            .collect();
+        let n = self.world.players.len();
+        let mut inputs: Vec<PlayerInput> = vec![PlayerInput::default(); n];
+        if n == 0 {
+            return inputs;
+        }
 
-        // 玩家本人
+        // 玩家本人（索引越界保护：正常世界必有 PLAYER_ID 槽）。
         let me = self.local_player_input();
-        inputs[PLAYER_ID as usize] = me;
+        if (PLAYER_ID as usize) < n {
+            inputs[PLAYER_ID as usize] = me;
+        }
+
+        // 机器人确定性 AI：仅在机器人状态已初始化时才驱动。
+        // `bot_targets`/`bot_rngs` 目前恒为空（从未填充），此处守卫避免在
+        // “CLI Steam 取消/失败后 app 未回主菜单”等 limbo 路径上索引越界崩溃；
+        // 未初始化时退化为「其余槽位保持 default（原地不动）」，与既有实际行为一致。
+        let bot_slots = n.saturating_sub(1);
+        if self.bot_targets.len() < bot_slots || self.bot_rngs.len() < bot_slots {
+            return inputs;
+        }
 
         // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
         let arena = self.world.arena_radius;
@@ -3473,6 +3483,9 @@ impl event::EventHandler for Game {
             if cancel {
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
+                // 关键：把 app 收回主菜单态。CLI `--steam-host/--steam-join` 直通时 app 是 SteamHost/SteamJoin，
+                // 若不清回，下一帧会落入「单机带 AI」分支导致崩溃（bot_targets 越界）且大厅菜单也不显示。
+                self.app = AppState::MainMenu;
                 self.steam_lobby_menu = true;
                 self.steam_lobby_create = false;
                 self.steam_lobby_list = false;
@@ -5425,9 +5438,12 @@ impl Game {
         if !self.steam_begin_lobby(kind) {
             // 会话缺失/发起失败 → 退回大厅主界面，等待用户重试。
             eprintln!("[steam-menu] enter_steam_mode: 无法发起大厅操作（会话缺失？）");
+            self.app = AppState::MainMenu;
             self.steam_lobby_menu = true;
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;
+            self.steam_lobby_pending = None;
+            self.steam_lobby_pending_since = None;
         } else {
             // 新一轮发起：清掉上次的失败提示，记录进入「连接中」的时刻。
             self.steam_lobby_error = None;
@@ -5488,6 +5504,8 @@ impl Game {
                 self.steam_lobby_error = Some(format!("加入失败：{e}"));
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
+                // 收回主菜单态（CLI 直通时 app 是 SteamHost/SteamJoin，不清回会有崩溃/黑屏风险）。
+                self.app = AppState::MainMenu;
                 self.steam_lobby_menu = true;
                 self.steam_lobby_create = false;
                 self.steam_lobby_list = false;
@@ -5589,6 +5607,7 @@ impl Game {
         if let Err(e) = res {
             eprintln!("[steam-menu] failed to enter steam mode: {e:?}");
             self.steam_lobby_error = Some(format!("进入房间失败：{e}"));
+            self.app = AppState::MainMenu;
             self.steam_lobby_menu = true;
             self.steam_lobby_create = false;
             self.steam_lobby_list = false;

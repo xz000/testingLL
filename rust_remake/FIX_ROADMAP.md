@@ -80,9 +80,11 @@
 - [x] `reset_state` 补齐回合瞬态：`lava_boot_cd/phoenix_remaining/windwalk_cd/aegis_charged/respawn_at/on_ice`（`player.rs`）。
 - [x] `steam_build_done` 死逻辑删除（`client/src/main.rs`）：字段恒 false 且显示全在 dead 的 `draw_pre_game`，已移除字段与各处引用，net API 传字面量 `false`。
 
-### 批次 2 — 崩溃/DoS 加固
-- [ ] 统一“带上限的读取”原语，覆盖 `netcode.rs:167`、`frame.rs:61`、`proto.rs` count、`world_ser.rs:414`、`proto.rs:208`（u16→u32）。
-- [ ] 修 CLI Steam 取消崩溃：取消/失败统一 `app=MainMenu`（或显式 limbo 态），`compute_inputs` 前置校验 `bot_targets` 长度。
+### 批次 2 — 崩溃/DoS 加固  ✅ 已完成
+- [x] 解码预分配加上限（防巨量分配）：`netcode.rs`（queued 按 `min(n, 包长)`）、`frame.rs`/`proto.rs`（count 按 remaining/3）。
+- [x] 快照长度 `u16`→`u32`（`proto.rs` 编解码）：>64KiB 世界快照不再静默截断；加回归测试（70KB 往返）。
+- [x] `world_ser.rs:414` `last_hit_by` 加 `<np` 边界校验（与玩家 id 同规）。
+- [x] 修 CLI Steam 取消/失败崩溃：4 处取消/失败分支统一 `app=MainMenu`；`compute_inputs` 前置校验 `bot_targets/bot_rngs` 长度并加空世界保护。
 
 ### 批次 3 — 帧同步正确性（最高价值，需真机验证）
 - [ ] `world.rs:1384/1395` f64 trig → 确定性 `cordic`，`emit_angle` 改定点。
@@ -105,4 +107,5 @@
 
 - 2026-09-11：建立本文件；批次 1 开工。
 - 2026-09-11：**批次 1 全部完成并过门禁**（workspace test/clippy + steam test/clippy 全绿）。
-  下一步：批次 2（崩溃/DoS 加固）。
+- 2026-09-11：**批次 2 全部完成并过门禁**。下一步：批次 3（帧同步正确性，含周期性世界校验和）。
+  注：A5（反序列化数值合法性校验，如 out_dist/radius 除零、NaN 因子）为 🔍 项，未含在批次 2，后续补。

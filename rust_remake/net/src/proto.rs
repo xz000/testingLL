@@ -203,9 +203,10 @@ impl Packet {
                 v
             }
             Packet::Snapshot { world_bytes, seq } => {
-                let mut v = Vec::with_capacity(1 + 2 + world_bytes.len() + 8);
+                // 长度用 u32：世界快照可超 64KiB，用 u16 会静默截断导致重连端拿到损坏快照。
+                let mut v = Vec::with_capacity(1 + 4 + world_bytes.len() + 8);
                 v.push(TAG_SNAPSHOT);
-                v.extend_from_slice(&(world_bytes.len() as u16).to_be_bytes());
+                v.extend_from_slice(&(world_bytes.len() as u32).to_be_bytes());
                 v.extend_from_slice(world_bytes);
                 v.extend_from_slice(&seq.to_be_bytes());
                 v
@@ -289,7 +290,9 @@ impl Packet {
                 }
                 let participants = buf[p_start..p_end].to_vec();
                 let count = u16::from_be_bytes([buf[p_end], buf[p_end + 1]]) as usize;
-                let mut entries = Vec::with_capacity(count);
+                // 防放大 DoS：每条 entry 至少 3 字节（idx:u8 + len:u16），count 不可能超过 remaining/3。
+                let cap = (buf.len().saturating_sub(p_end + 2)) / 3 + 1;
+                let mut entries = Vec::with_capacity(count.min(cap));
                 let mut pos = p_end + 2;
                 for _ in 0..count {
                     if pos + 3 > buf.len() {
@@ -307,13 +310,13 @@ impl Packet {
                 }
                 Some(Packet::PlayerCfgAll { entries, participants })
             }
-            TAG_SNAPSHOT if buf.len() >= 4 => {
-                let len = u16::from_be_bytes([buf[1], buf[2]]) as usize;
-                let end = 3usize + len;
+            TAG_SNAPSHOT if buf.len() >= 5 + 8 => {
+                let len = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]) as usize;
+                let end = 5usize + len;
                 if end + 8 > buf.len() {
                     return None;
                 }
-                let world_bytes = buf[3..end].to_vec();
+                let world_bytes = buf[5..end].to_vec();
                 let seq = u64::from_be_bytes(buf[end..end + 8].try_into().ok()?);
                 Some(Packet::Snapshot { world_bytes, seq })
             }
@@ -435,6 +438,21 @@ mod tests {
             let enc = p.encode();
             let dec = Packet::decode(&enc).expect("应能解码");
             assert_eq!(dec, p, "协议往返应一致: {p:?}");
+        }
+    }
+
+    /// 回归 A3：>64KiB 的快照必须完整往返（长度字段曾是 u16，会静默截断 → 重连端拿到损坏快照）。
+    #[test]
+    fn snapshot_over_64kib_roundtrips() {
+        let world_bytes = vec![0xABu8; 70_000];
+        let p = Packet::Snapshot { world_bytes: world_bytes.clone(), seq: 999 };
+        match Packet::decode(&p.encode()).expect("应能解码大快照") {
+            Packet::Snapshot { world_bytes: got, seq } => {
+                assert_eq!(seq, 999);
+                assert_eq!(got.len(), 70_000, "快照长度被截断");
+                assert_eq!(got, world_bytes);
+            }
+            other => panic!("解码成了别的包: {other:?}"),
         }
     }
 
