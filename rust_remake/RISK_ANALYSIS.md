@@ -246,4 +246,4 @@
 
 - 由 4 个并行只读 Agent 分别审查 网络同步层 / Steam 联机层 / 世界确定性 / 客户端与工程化，再由人工逐条复核关键证据（`proto.rs`、`world.rs` 死亡记账路径、`rng.rs`、`world_ser.rs`、`transport_steam.rs`、`main.rs` 退出判定、`publish.ps1`、`Cargo.toml`）。
 - 标注 `[已核实]` 的条目均已读源码确认；`[待验证]` 为需动态环境（真机/双账号/压力测试）才能定论者，已在各节末尾汇总。
-- 与原 `WORK_BACKLOG.md` / `resume.md` 的关系：本文件聚焦**代码层潜在缺陷**（含此前未记录的新问题），业务待办仍看 `WORK_BACKLOG.md`。
+- 与业务待办的关系：本文件聚焦**代码层潜在缺陷**（含此前未记录的新问题）；业务待办与修复路线见 `FIX_ROADMAP.md`。

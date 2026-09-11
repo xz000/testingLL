@@ -1,8 +1,7 @@
 # Steam 联机规划（Steam 为中心，纯玩家 P2P）
 
 > 创建 2026-08-25。核心决策记录 + 三阶段路线 + Steamworks 能力盘点。
-> 阅读顺序：`NEXT_STEPS.md`（交接）→ 本文件（Steam 联机主线）→ `RECONNECT.md`（重连机制）→
-> `ROADMAP.md` / `NET_REWRITE.md`（局域网/网络重写，作为备胎参考）。
+> 阅读顺序：本文件（Steam 联机主线）→ `RECONNECT.md`（重连机制）→ `FIX_ROADMAP.md`（修复路线/权威序）。
 
 ---
 
@@ -161,7 +160,7 @@
 1. 真机复验「人不满启动角色数一致」+ S5 房间界面（上一轮遗留，需双机）。
 2. ~~**开始三阶段主线：阶段 1 → 阶段 2 → 阶段 3**~~ ✅ 三阶段已完成并真机复验（2026-08-25）。
 3. ~~Steamworks 第一批：好友邀请 + Rich Presence~~ ✅ 已落（2026-08-29），**待真机双账号复验**
-   （复验清单见 `NEXT_STEPS.md`「Steamworks 第一批」节末）。
+   （真机双账号复验）。
 4. ~~Steamworks 第二批：成就 / 排行榜 / 头像 / Ping~~ ✅ 已落（2026-08-29），**待真机复验 + 后台配置 key**
-   （复验清单见 `NEXT_STEPS.md`「Steamworks 第二批」节末）。
+   （真机复验 + Steamworks 后台配置 key）。
 5. 复验通过后接最后一批：**云存档**（Remote Storage）。

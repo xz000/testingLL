@@ -3,7 +3,7 @@
 > 创建 2026-08-15。决策前提：**将来必须走 Steamworks 联机，且必须有重连功能**。
 > 本文论证为什么纯 lockstep 不能直接做重连、给出「Host 权威 + 状态快照(方案 A)」为推荐过渡、
 > 「专用服务器权威(方案 B / Dota2 式)」为最终形态，并落到现有代码的改动与落地顺序。
-> 关联：`ROADMAP.md`(三大功能) · `NET_REWRITE.md`(lockstep 重写) · `ATTRIBUTE_SYSTEM.md`
+> 关联：`STEAM_MULTIPLAYER_PLAN.md`(Steam 联机主线) · `RISK_ANALYSIS.md`(代码审查) · `FIX_ROADMAP.md`(修复路线/权威序)
 
 ---
 
