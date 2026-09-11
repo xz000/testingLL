@@ -68,9 +68,9 @@
   - 计分：`098C_DIFF.md`（胜2/杀1/助1）vs `PORT_098B_DECISIONS.md`（1/1/1）—— 代码最终为 1/1/2（098c）。
   - 熔岩成长：`098C_DIFF.md A8`（恒定 9/s，正确）vs `PORT_098B_DECISIONS.md D9`（×round 占位，已废弃）。
   - 移动模型：`D14`（已定 accel/decel）vs `098C_DIFF.md A2`（冲量滑行，仍列待拍板）。
-- **权威序**：以 **代码 + `098C_DIFF.md` + `PORT_098B_DECISIONS.md` + `AUDIT_098c_vs_rust.md`（全量对照台账）
-  + `SKILL_AUDIT_098b_vs_rust.md`** 为准；
+- **权威序**：以 **代码 + `JASS_AUDIT_098c.md`（JASS 实证台账，唯一真值） + `098C_DIFF.md` + `PORT_098B_DECISIONS.md`** 为准；
   `RISK_ANALYSIS.md` / `STEAM_MULTIPLAYER_PLAN.md` / `RECONNECT.md` 为专项审查/规划，与代码不一致处以代码为准。
+  **数值层只认 `JASS_AUDIT_098c.md`**（tooltip/`spells.json`/`GGEPSEUDO`/代码“未解码”注释均不作真值，已证多处有误）。
 
 ---
 
