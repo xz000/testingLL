@@ -275,6 +275,8 @@ pub enum ProjectileKind {
         /// 击中柱子时**镜向反弹**而非被挡下消失（术士之战：火球击中柱子能够反弹）。
         /// 仅火球（S000）为 true；反弹的同时仍按 098c 对柱子造成伤害（nx=40 可摧毁）。
         pillar_bounce: bool,
+        /// 红链（S019B）附加闪电伤害（098c `sc`：目标为友军/柱子时引发，1.0→3.4）；其余技能为 0。
+        lightning_dmg: Fix64,
     },
 }
 
@@ -676,6 +678,7 @@ impl World {
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
                     pillar_bounce: false,
+                    lightning_dmg: Fix64::ZERO,
                 },
                 pos,
                 alive: true,
@@ -1906,7 +1909,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -1917,6 +1920,9 @@ impl World {
                         None
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
                         nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
+                    } else if *on_hit == crate::skill::W098bOnHit::RedChain {
+                        // 红链可命中友军（触发闪电，098c sc）。
+                        nearest_hit_any(&self.players, pr.pos, pr.owner, *radius)
                     } else {
                         nearest_hit(&self.players, pr.pos, pr.owner, *radius)
                     };
@@ -2017,11 +2023,19 @@ impl World {
                                 }
                             }
                             crate::skill::W098bOnHit::RedChain => {
-                                // 锁链·红链（文档「红链」）：落地为持久 Tether，把**施法者**拉向
-                                // 命中目标（pull_speed 取负，见 step_area_forces 符号约定）。
-                                // 绑定目标仍逐帧承受每秒伤害（damage_per_sec=gx=0.2+0.1×L）。
-                                // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
-                                if !self.players[victim as usize].mirror_immune() {
+                                // 锁链·红链（文档「红链」）：链到敌人 → 把**施法者**拉向目标；
+                                // 链到**友军/柱子** → 引发闪电（098c `sc`，伤害 lightning_dmg=1.0→3.4）。
+                                let same_team = self.players.get(pr.owner as usize).map(|p| p.team)
+                                    == self.players.get(victim as usize).map(|p| p.team);
+                                if same_team {
+                                    if *lightning_dmg > Fix64::ZERO {
+                                        events.push((victim, *lightning_dmg, Some(pr.owner)));
+                                        self.lightning_visual.push((pr.pos, self.players[victim as usize].pos, Fix64::from_num(0.1)));
+                                    }
+                                } else if !self.players[victim as usize].mirror_immune() {
+                                    // 落地为持久 Tether，把施法者拉向命中目标（pull_speed 取负）。
+                                    // 绑定目标仍逐帧承受每秒伤害（damage_per_sec=gx=0.2+0.1×L）。
+                                    // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
                                     tether_spawns.push(Projectile {
                                         owner: pr.owner,
                                         kind: ProjectileKind::Tether {
@@ -2187,6 +2201,7 @@ impl World {
                         emit_cooldown: Fix64::ZERO,
                         emit_angle: 0.0,
                         pillar_bounce: false,
+                        lightning_dmg: Fix64::ZERO,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -2340,6 +2355,7 @@ impl World {
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
                     pillar_bounce: false,
+                    lightning_dmg: Fix64::ZERO,
                 },
                 pos,
                 alive: true,
@@ -2896,6 +2912,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         | crate::skill::SkillId::S003
                         | crate::skill::SkillId::S004
                 )));
+                // S016 弹跳弹：单跳射程 = max_distance（098c Range 900→1950），换算飞行时间 = range/speed。
+                if proj == crate::skill::W098bProjKind::Bounce {
+                    life = stats.max_distance / speed;
+                }
                 // S009·目标形态（B4）：寿命截断到点击距离 → 在目标点碎裂（JASS GB 飞抵目标点分裂）。
                 if id == crate::skill::SkillId::S009 && !alt {
                     if let Some(t) = target {
@@ -3002,6 +3022,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             emit_angle: 0.0,
                             // 术士之战：火球击中柱子能够反弹（其余直射弹仍被柱子挡下消失）。
                             pillar_bounce: id == crate::skill::SkillId::S000,
+                            // 红链闪电伤害（098c `sc`：仅 S019B 用，其余 0）。
+                            lightning_dmg: if on_hit == crate::skill::W098bOnHit::RedChain { stats.extra } else { Fix64::ZERO },
                         },
                         pos: ppos,
                         alive: true,
@@ -3117,8 +3139,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Haste => {
+                        // S007 急行：+35 移速（Speed buff）+ 吸收窗口（Haste buff，吸收 50%→移速）。
+                        // 吸收上限 sr = 3+2×L（098c KR），每点吸收 +15 移速（Qr）。
+                        let lv = caster_level as f64;
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                            p.add_buff(BuffKind::Haste, dur);
+                            p.s007_absorb = Fix64::from_num(3.0 + 2.0 * lv);
+                            p.s007_bonus = Fix64::ZERO;
                         }
                     }
                     crate::skill::W098bUtilKind::Windwalk => {
@@ -4114,6 +4142,26 @@ fn nearest_hit(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Opti
     })
 }
 
+/// 同 `nearest_hit`，但**不排除友军**（红链 S019B：链到友军/柱子时引发闪电，098c `sc`）。
+fn nearest_hit_any(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Option<(u32, Vec2)> {
+    let mut best: Option<(Fix64, u32)> = None;
+    for p in players.iter() {
+        if !p.alive || p.id == owner {
+            continue;
+        }
+        let d = p.pos - pos;
+        let d_sq = d.length_squared();
+        let rr = (radius + p.radius) * (radius + p.radius);
+        if d_sq <= rr && best.map(|(bd, _)| d_sq < bd).unwrap_or(true) {
+            best = Some((d_sq, p.id));
+        }
+    }
+    best.and_then(|(_, id)| {
+        let owner_idx = players.iter().position(|p| p.id == id)?;
+        Some((id, players[owner_idx].pos - pos))
+    })
+}
+
 /// 同 `nearest_hit`，但额外排除一个 `skip` id（供链镖跳跃：不命中上一个目标）。
 fn nearest_hit_with_skip(
     players: &[Player],
@@ -4901,6 +4949,60 @@ mod tests {
         let expected_drop = (oob_total / Fix64::from_num(2)).to_num::<f64>();
         let actual_drop = (hp0 - world.players[0].hp).to_num::<f64>();
         assert!((actual_drop - expected_drop).abs() < 0.5, "boost 应返还一半回血，实际净扣 {} 期望 {}", actual_drop, expected_drop);
+    }
+
+    /// S007 急行：吸收 50% 伤害转为移速（098c KR/Qr），吸收上限 sr=3+2L。
+    #[test]
+    fn s007_haste_absorbs_damage_into_speed() {
+        let mut world = World::new(2, 43);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S007, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..3 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::Haste), "S007 吸收窗口应激活");
+        assert!(world.players[0].s007_absorb > Fix64::ZERO, "初始应有可吸收量（3+2L）");
+        assert_eq!(world.players[0].s007_bonus, Fix64::ZERO, "初始吸收转化为 0");
+        // 出界受伤 → 吸收一部分，转化为移速加成。
+        world.players[0].pos = Vec2::new(d60(100.0), Fix64::ZERO);
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].s007_bonus > Fix64::ZERO, "受伤后应累积移速加成（Qr）");
+        assert!(world.players[0].s007_absorb < Fix64::from_num(3.0 + 2.0), "吸收量应减少（sr 上限 3+2L）");
+    }
+
+    /// S019B 红链：命中友军 → 引发闪电伤害（098c `sc`）。
+    #[test]
+    fn s019b_redchain_lightning_on_ally() {
+        let mut world = World::new(2, 47);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // p1 与 p0 同队（友军）+ S019 切 B 形态（红链）。
+        world.players[1].team = world.players[0].team;
+        world.players[0].forms[SkillId::S019.as_u32() as usize] = true;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..90 {
+            world.step(none.clone(), dt);
+            if world.players[1].hp < hp1 {
+                break;
+            }
+        }
+        assert!(world.players[1].hp < hp1, "红链命中友军应引发闪电伤害（098c sc）");
     }
 
     #[test]

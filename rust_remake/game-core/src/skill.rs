@@ -1742,6 +1742,10 @@ impl DefTable {
                     cooldown_delta: -0.3684, // 098c：20 → 13（8 级），camp2 对齐至 L20=13
                     damage_base: 6.0,
                     damage_delta: 1.0,
+                    // 098c Range 900→1950（8 档，+150/级）→ camp2 至 L20=1950：delta=(1950-900)/19≈55.2632。
+                    // 单跳射程（world.rs 弹体创建时 life = max_distance/speed）。
+                    max_distance_base: 900.0,
+                    max_distance_delta: 55.2632,
                     ..DEF_ZERO
                 },
             },
@@ -2374,7 +2378,7 @@ impl DefTable {
                 },
             },
             // S019B 锁链·红链（文档「红链」）：**把你拉向敌人**（与 A 蓝链拉目标向施法者相反）。
-            // 闪电（目标为队友/柱子时附加 1.0+0.1×L 切割伤害）暂未实现，见 `W098bOnHit::RedChain` 注释。
+            // 闪电（098c `sc`：目标为队友/柱子时引发，1.0→3.4）——数值走 growth.extra，见 world.rs。
             SkillId::S019 => SkillDef {
                 id,
                 tree: SkillTree::Y,
@@ -2400,6 +2404,10 @@ impl DefTable {
                     damage_base: 0.2,
                     damage_delta: 0.0842,
                     duration_base: 0.5,
+                    // 098c 红链闪电（目标为友军/柱子时引发）：1.0→3.4（9 级）→ camp2 至 L20=3.4：
+                    // delta=(3.4-1.0)/19≈0.1263。world.rs 读 stats.extra 作为闪电伤害。
+                    extra_base: 1.0,
+                    extra_delta: 0.1263,
                     ..DEF_ZERO
                 },
             },
