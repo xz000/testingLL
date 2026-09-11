@@ -407,6 +407,13 @@ impl Game {
         }
         let Some(t) = self.steam_transport() else { return };
         let my_id = t.steam_id();
+        // 触发头像/昵称下载：steamworks 不会自动拉**非好友**的 lobby 成员头像，
+        // 不显式 request 的话 medium_avatar() 可能一直返回 None，导致房友（随机匹配来的）头像永远空白。
+        // 好友已在 list_friends 里 request 过，这里再 request 是幂等 no-op；非阻塞（false）避免卡帧。
+        for id in ids.iter().copied() {
+            t.friends()
+                .request_user_information(net_steam::steamworks::SteamId::from_raw(id), false);
+        }
         // ping：只查房间成员里的别人（自己到自己是 0，没意义；好友没建会话也测不出来）。
         let mut pings = Vec::new();
         for id in member_ids.iter().copied().filter(|id| *id != my_id) {
