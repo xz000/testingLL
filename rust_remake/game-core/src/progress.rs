@@ -19,7 +19,7 @@ use crate::skill::SkillId;
 /// v7（B1 精通）：加入 mastery 4 字节（生命/远程/时间/背包）。
 /// v8（B2 队伍）：加入 team 1 字节。
 /// v9（B4 形态）：加入 forms（u16 数量 + 每项 1 字节，按 SkillId 索引）。
-pub const CONFIG_VERSION: u8 = 9;
+pub const CONFIG_VERSION: u8 = 10;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -60,6 +60,8 @@ pub struct PlayerConfig {
     pub team: u8,
     /// 形态位（v9，B4）：按 SkillId 索引。
     pub forms: Vec<bool>,
+    /// 技能上限突破（v10）：乔丹原生购买项，每档 +2。
+    pub skill_cap_bonus: u32,
 }
 
 impl PlayerConfig {
@@ -80,6 +82,7 @@ impl PlayerConfig {
             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
             team: p.team,
             forms: p.forms.clone(),
+            skill_cap_bonus: p.skill_cap_bonus,
         }
     }
 
@@ -105,6 +108,7 @@ impl PlayerConfig {
             backpack: self.mastery[3],
         };
         p.team = self.team;
+        p.skill_cap_bonus = self.skill_cap_bonus;
         let n = p.forms.len();
         for (i, f) in self.forms.iter().enumerate().take(n) {
             p.forms[i] = *f;
@@ -154,6 +158,8 @@ impl PlayerConfig {
         for f in &self.forms {
             out.push(*f as u8);
         }
+        // skill_cap_bonus（v10）。
+        put_u32(&mut out, self.skill_cap_bonus);
         out
     }
 
@@ -218,6 +224,7 @@ impl PlayerConfig {
             forms.push(*buf.get(pos)? != 0);
             pos += 1;
         }
+        let skill_cap_bonus = u32_at(buf, pos)?;
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -229,6 +236,7 @@ impl PlayerConfig {
             mastery,
             team,
             forms,
+            skill_cap_bonus,
         })
     }
 }
