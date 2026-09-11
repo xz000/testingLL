@@ -3357,8 +3357,7 @@ impl Game {
                                         }
                                         // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=升级一级
                                         let (label, enabled) = if owned {
-                                            let jordan = me.items.iter().map(|it| it.def().fx.jordan_levels).sum::<u8>() as u32;
-                                            let cap = game_core::skill::DefTable::max_level(skill) + jordan;
+                                            let cap = game_core::skill::DefTable::max_level(skill) + me.skill_cap_bonus;
                                             if lv >= cap {
                                                 (format!("已满级 Lv{lv}"), false)
                                             } else {
@@ -3523,7 +3522,7 @@ impl Game {
                 // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）
                 ui::text_center(
                     canvas, ctx,
-                    "字母选树 · 1-3 选技能看详情 · = 购买/升级 · B 切形态 · Tab 翻页",
+                    "字母选树 · 数字选技能看详情 · = 购买/升级 · B 切形态 · Tab 翻页",
                     ui::theme::SMALL, ui::theme::text_dim(), sw / 2.0, sh - 14.0,
                 )?;
             }
@@ -3591,7 +3590,7 @@ impl Game {
                         }
                     }
                 }
-                draw_text(canvas, ctx, "对局结束 - 按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
+                draw_text(canvas, ctx, "按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
             }
         }
         Ok(())
@@ -5849,262 +5848,14 @@ impl Game {
         self.accumulator = 0.0;
     }
 
-    /// 开局前配置面板：显示当前绑定/等级/金币，提示按 Space 开始第一轮。
-    /// TODO(绘制统一，阶段3)：首局已改走 Learning 界面，本函数待并入 `draw_meta_overlay` 后删除。
-    #[allow(dead_code)]
-    fn draw_pre_game(&self, ctx: &mut Context) -> GameResult {
-        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
-        let (sw, sh) = ctx.gfx.drawable_size();
-        let cx = sw / 2.0;
-        draw_text(&mut canvas, ctx, "开局 - 配置技能", 46.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
-        // Steam：配置阶段为「所有玩家配完统一开始」；否则为局域网/单机的按空格开始。
-        #[cfg(feature = "steam")]
-        if self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
-            draw_text(&mut canvas, ctx, "选择技能后按 P 确认配好", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
-        } else {
-            draw_text(&mut canvas, ctx, "按 Space/P 开始第一轮，Esc 返回主菜单", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
-        }
-        #[cfg(not(feature = "steam"))]
-        draw_text(&mut canvas, ctx, "按 Space/P 开始第一轮，Esc 返回主菜单", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
-        // 准备状态面板：显示各玩家已加入/已就绪，避免“以为卡住”。
-        let me = self.self_index();
-        if self.app != AppState::Solo {
-            let mut r = sh * 0.12 + 96.0;
-            draw_text(&mut canvas, ctx, "== 玩家准备状态 ==", 20.0, graphics::Color::from_rgb(200, 210, 220), Point2 { x: cx, y: r }, true)?;
-            r += 28.0;
-            if let Some(host) = self.net_host_ls.as_ref() {
-                let total = self.world.players.len();
-                for i in 0..total {
-                    let (name, ready) = if i == 0 {
-                        ("host(你)".to_string(), host.local_cfg_ready())
-                    } else {
-                        (format!("玩家{i}"), host.client_cfg_ready(i as u8))
-                    };
-                    let (txt, col) = if ready {
-                        (format!("  {name}  [v] 已就绪"), Color::from_rgb(90, 220, 130))
-                    } else if (i as u32) == me {
-                        (format!("  {name}  [ ] 等你按空格"), Color::from_rgb(240, 200, 70))
-                    } else {
-                        (format!("  {name}  [ ] 等待上报"), Color::from_rgb(170, 175, 185))
-                    };
-                    draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
-                    r += 26.0;
-                }
-            } else if let Some(hs) = self.net_host.as_ref() {
-                draw_text(&mut canvas, ctx, &format!("  已加入 {}/{} 个玩家", hs.joined, hs.expected()), 18.0, Color::from_rgb(170, 175, 185), Point2 { x: cx, y: r }, true)?;
-                draw_text(&mut canvas, ctx, "  等所有玩家加入后：每个窗口先点击再按空格就绪", 17.0, Color::from_rgb(140, 160, 180), Point2 { x: cx, y: r + 26.0 }, true)?;
-            } else {
-                // LAN client：显示自身是否已就绪。
-                let ready = self.net_cfg == NetCfgSync::ClientWait;
-                let (txt, col) = if ready {
-                    ("  [v] 已就绪，等待 host 开始...".to_string(), Color::from_rgb(90, 220, 130))
-                } else {
-                    ("  [ ] 未就绪 - 请先点击本窗口，再按空格就绪".to_string(), Color::from_rgb(240, 200, 70))
-                };
-                draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
-            }
-            // Steam：显示各端配好（build_done）状态，等待全员配完统一开始。
-            #[cfg(feature = "steam")]
-            if let Some(host) = self.steam_host_ls.as_ref() {
-                let total = self.world.players.len();
-                for i in 0..total {
-                    let (name, done) = if i == 0 {
-                        ("host(你)".to_string(), false)
-                    } else {
-                        (format!("玩家{i}"), host.client_build_done(i as u8))
-                    };
-                    let (txt, col) = if done {
-                        (format!("  {name}  [v] 已配好"), Color::from_rgb(90, 220, 130))
-                    } else if (i as u32) == self.self_index() {
-                        (format!("  {name}  [ ] 选技能后按 P"), Color::from_rgb(240, 200, 70))
-                    } else {
-                        (format!("  {name}  [ ] 配好中"), Color::from_rgb(170, 175, 185))
-                    };
-                    draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
-                    r += 26.0;
-                }
-            } else if self.steam_cli_ls.is_some() {
-                draw_text(&mut canvas, ctx, "  [ ] 选技能后按 P 确认配好", 18.0, Color::from_rgb(240, 200, 70), Point2 { x: cx, y: r }, true)?;
-            }
-        }
-        if self.app == AppState::Solo {
-            draw_text(&mut canvas, ctx, &format!("（单机：{:.0} 秒后自动用默认配置开始）", self.pre_game_timer.max(0.0)), 17.0, graphics::Color::from_rgb(140, 160, 180), Point2 { x: cx, y: sh * 0.12 + 92.0 }, true)?;
-        }
-        // 下方分左右两栏：左=技能树与键位绑定，右=成长点与属性购买；底部一条操作提示。
-        let lcx = sw * 0.30; // 左栏中心
-        let rcx = sw * 0.72; // 右栏中心
-        let col_top = sh * 0.22;
-        // —— 右栏：成长点 / 属性购买面板。
-        if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
-            let mut gy = col_top;
-            draw_text(&mut canvas, ctx, "== 成长 / 属性 ==", 20.0, Color::from_rgb(130, 220, 255), Point2 { x: rcx, y: gy }, true)?;
-            gy += 34.0;
-            draw_text(&mut canvas, ctx, &format!("成长点 {}    金币 {}", pr.growth_points, pr.gold), 22.0, Color::from_rgb(220, 230, 245), Point2 { x: rcx, y: gy }, true)?;
-            gy += 34.0;
-            let a = &pr.attributes;
-            draw_text(&mut canvas, ctx, &format!("生命 +{}%", a.hp_bonus * 10), 19.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
-            gy += 28.0;
-            draw_text(&mut canvas, ctx, &format!("移速 +{}%", a.speed_bonus * 5), 19.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
-            gy += 28.0;
-            draw_text(&mut canvas, ctx, &format!("护甲 -{}%  法抗 -{}%", a.armor * 6, a.spell_resist * 6), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
-            gy += 28.0;
-            draw_text(&mut canvas, ctx, &format!("击退 -{}%", a.kb_resist * 12), 18.0, Color::from_rgb(200, 210, 220), Point2 { x: rcx, y: gy }, true)?;
-            gy += 34.0;
-            draw_text(&mut canvas, ctx, "购买：Z 金币换点", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
-            gy += 26.0;
-            draw_text(&mut canvas, ctx, "H生命 J移速 K护甲", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
-            gy += 26.0;
-            draw_text(&mut canvas, ctx, "L法抗 ;击退", 17.0, Color::from_rgb(160, 180, 200), Point2 { x: rcx, y: gy }, true)?;
-            // M3 商店（UI 升级）：标题栏 + 金币、持有物品（带升级链进度）、
-            // 可购列表（名字/价格/一句话详情，三态着色：可买/买不起/已持有该链顶级）、
-            // 满员提示。数字键购买，逻辑在 poll_shop。
-            gy += 30.0;
-            let me = self.self_index();
-            let profile = self.meta.profiles.iter().find(|pr| pr.player_id == me);
-            let (gold, owned, items_full) = profile
-                .map(|pr| {
-                    (
-                        pr.gold,
-                        pr.items.clone(),
-                        pr.items.len() >= pr.inventory_slots(),
-                    )
-                })
-                .unwrap_or((0, Vec::new(), false));
-            // 持有物品：名字 + 档位，金色
-            let owned_str = if owned.is_empty() {
-                "无".to_string()
-            } else {
-                owned
-                    .iter()
-                    .map(|it| it.def().name.to_string())
-                    .collect::<Vec<_>>()
-                    .join("、")
-            };
-            draw_text(
-                &mut canvas,
-                ctx,
-                &format!("物品栏 ({}/{}）：{}", owned.len(), pr.inventory_slots(), owned_str),
-                18.0,
-                Color::from_rgb(255, 220, 140),
-                Point2 { x: rcx, y: gy },
-                true,
-            )?;
-            gy += 26.0;
-            draw_text(
-                &mut canvas,
-                ctx,
-                &format!("== 商店 ==  金币 {gold}   （数字键购买）"),
-                19.0,
-                Color::from_rgb(140, 255, 170),
-                Point2 { x: rcx, y: gy },
-                true,
-            )?;
-            gy += 26.0;
-            let catalog = game_core::item::shop_catalog();
-            let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
-            // 三态着色：可买=亮白 / 买不起=暗灰 / 已持有该链顶级=绿色勾
-            let owned_ids: Vec<game_core::item::ItemId> = owned.to_vec();
-            for (i, d) in catalog.iter().enumerate() {
-                if i >= keys.len() {
-                    break;
-                }
-                let col = i % 2;
-                let row = i / 2;
-                let x = rcx - 280.0 + col as f32 * 290.0;
-                let y = gy + row as f32 * 40.0;
-                // 已持有该链最高档？
-                let owns_this = owned_ids
-                    .iter()
-                    .any(|&it| it.def().family == d.family && it.def().tier >= d.tier);
-                let next_of_owned = owned_ids.iter().any(|&it| {
-                    it.def().family == d.family && d.tier == it.def().tier + 1
-                });
-                let (color, tag) = if owns_this {
-                    (Color::from_rgb(110, 200, 120), " [已持有]")
-                } else if next_of_owned {
-                    (Color::from_rgb(140, 220, 255), " [可升级]")
-                } else if gold < d.cost {
-                    (Color::from_rgb(120, 130, 145), " [金币不足]")
-                } else if items_full && !next_of_owned {
-                    (Color::from_rgb(150, 140, 120), " [物品栏已满]")
-                } else {
-                    (Color::from_rgb(220, 228, 240), "")
-                };
-                draw_text(
-                    &mut canvas,
-                    ctx,
-                    &format!("[{}] {}  {}金{}", keys[i], d.name, d.cost, tag),
-                    16.0,
-                    color,
-                    Point2 { x, y },
-                    true,
-                )?;
-                // 详情行（缩进小字）
-                draw_text(
-                    &mut canvas,
-                    ctx,
-                    d.desc,
-                    14.0,
-                    Color::from_rgb(140, 148, 162),
-                    Point2 { x: x + 18.0, y: y + 17.0 },
-                    true,
-                )?;
-            }
-        }
-        // —— 左栏：技能树与键位绑定。
-        let me = self.self_index();
-        if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == me) {
-            let mut y = col_top;
-            draw_text(&mut canvas, ctx, "== 技能 配置 ==", 20.0, Color::from_rgb(255, 210, 120), Point2 { x: lcx, y }, true)?;
-            y += 34.0;
-            let gold_line = format!("金币：{}    击杀：{}    最佳名次：#{}", pr.gold, pr.total_kills, pr.best_placement);
-            draw_text(&mut canvas, ctx, &gold_line, 20.0, Color::from_rgb(220, 224, 232), Point2 { x: lcx, y }, true)?;
-            y += 34.0;
-            // 当前选中树：高亮字样，提醒按了字母 C/R/E... 已选中哪棵/可选技能。
-            if let Some(sel) = self.learn_tree_key {
-                let sel_line = format!("[{}] {} 树（当前选中）", sel.letter(), sel.tree().name_zh());
-                draw_text(&mut canvas, ctx, &sel_line, 22.0, Color::from_rgb(255, 210, 120), Point2 { x: lcx, y }, true)?;
-                y += 34.0;
-                for (i, skill) in sel.tree().skills_in_tree().iter().enumerate() {
-                    let star = if pr.bound_skill(sel) == Some(*skill) { "  [已选]" } else { "" };
-                    // 外层用中性基础名（去掉 ·形态 后缀；形态见详情面板）
-                    draw_text(&mut canvas, ctx, &format!("  {} {} {}", i + 1, game_core::skill::DefTable::neutral_name(*skill), star), 19.0, Color::from_rgb(215, 220, 230), Point2 { x: lcx, y }, true)?;
-                    y += 28.0;
-                }
-                y += 10.0;
-            } else {
-                draw_text(&mut canvas, ctx, "（按字母 C/R/E/D/Y/T/F/G 选树）", 18.0, Color::from_rgb(170, 175, 185), Point2 { x: lcx, y }, true)?;
-                y += 32.0;
-            }
-            draw_text(&mut canvas, ctx, "各键当前绑定：", 19.0, Color::from_rgb(225, 228, 235), Point2 { x: lcx, y }, true)?;
-            y += 30.0;
-            for key in game_core::skill::CastKey::ALL {
-                let bound = pr.bound_skill(key);
-                let lv = bound.map(|s| pr.skill_level(s)).unwrap_or(0);
-                // 外层用中性基础名（去掉 ·形态 后缀；形态见详情面板）
-                let txt = match bound {
-                    Some(s) => format!("[{}] {}  @Lv{}", key.letter(), game_core::skill::DefTable::neutral_name(s), lv),
-                    None => format!("[{}] （未绑定）", key.letter()),
-                };
-                let highlight = self.learn_tree_key == Some(key);
-                draw_text(&mut canvas, ctx, &txt, 20.0, if highlight { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(225, 228, 235) }, Point2 { x: lcx, y }, true)?;
-                y += 28.0;
-            }
-        }
-        draw_text(&mut canvas, ctx, "字母C/R/E/D/Y/T/F/G选树  数字选技能看详情  =购买/升级  B切换形态", 18.0, graphics::Color::from_rgb(160, 170, 185), Point2 { x: cx, y: sh * 0.92 }, true)?;
-        canvas.finish(ctx)?;
-        Ok(())
-    }
-
-
-    /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
+        /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
     fn draw_menu(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
 
         // 标题区
-        let title = "帧同步圆球竞技场";
+        let title = "术士之战 Warlock Brawl";
         draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
         draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.14 + 64.0 }, true)?;
 
@@ -6141,11 +5892,10 @@ impl Game {
             {
                 let subs: [(&str, &str); 3] = [
                     ("创建房间", "选房间名与玩家人数，然后进入房间"),
-                    ("加入房间", "从房间列表选择并加入（S2 接入房间列表）"),
+                    ("加入房间", "从房间列表选择并加入"),
                     ("返回主菜单", "回到主菜单选择"),
                 ];
                 draw_text(&mut canvas, ctx, "Steam 对战 - 大厅", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.27 }, true)?;
-                draw_text(&mut canvas, ctx, "H 创建    J 加入    Q 返回", 20.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.36 }, true)?;
                 let mpos = ctx.mouse.position();
                 for (i, (name, desc)) in subs.iter().enumerate() {
                     let y = y0 + (i as f32) * (card_h + gap);
@@ -6187,7 +5937,7 @@ impl Game {
         // 主菜单三个入口卡片
         let items: [(u8, &str, &str); 3] = [
             (1, "单机技能试验场", "无 AI 自由试技能与数值（进入后配置技能开始）"),
-            (2, "局域网对战", "建设中：需命令行 --host <port> / --join <host:port>"),
+            (2, "局域网对战", "同机/内网：命令行 --host <port> / --join <host:port>"),
             (3, "Steam 在线对战", "联网与好友实时对抗（进入 Steam 大厅）"),
         ];
         let mpos = ctx.mouse.position();
@@ -6231,7 +5981,6 @@ impl Game {
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
-        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建 · Q 返回", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.12 + 44.0 }, true)?;
 
         let labels = [
             "房间名", "备注", "玩家人数", "总轮数",
@@ -6745,7 +6494,7 @@ fn main() -> GameResult {
     eprintln!("[main] building ggez context (window)...");
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
-        .window_setup(ggez::conf::WindowSetup::default().title("帧同步圆球竞技场 — 阶段1"))
+        .window_setup(ggez::conf::WindowSetup::default().title("术士之战 Warlock Brawl"))
         .window_mode(
             ggez::conf::WindowMode::default()
                 .dimensions(1280.0, 720.0)
