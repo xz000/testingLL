@@ -2916,6 +2916,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 if proj == crate::skill::W098bProjKind::Bounce {
                     life = stats.max_distance / speed;
                 }
+                // S008 陨石（098c iB）：speed = 点击距离/1.35（变速度，1.35s 命中；非固定 400）。
+                let mut speed = speed;
+                if id == crate::skill::SkillId::S008 && !alt {
+                    let d = target.map(|t| (t - ppos).length()).unwrap_or(Fix64::ZERO);
+                    if d > Fix64::ZERO {
+                        speed = d / Fix64::from_num(1.35);
+                    }
+                }
                 // S009·目标形态（B4）：寿命截断到点击距离 → 在目标点碎裂（JASS GB 飞抵目标点分裂）。
                 if id == crate::skill::SkillId::S009 && !alt {
                     if let Some(t) = target {
@@ -6485,18 +6493,18 @@ mod tests {
     fn doc_s019_s018_growth_matches_doc() {
         let lvl = 3u32;
         let l = (lvl - 1) as f64;
-        // S019 锁链（A 蓝链）
+        // S019 chain (A)
         let d = DefTable::def(SkillId::S019).growth.stats(lvl).damage.to_num::<f64>();
-        assert!((d - (0.2 + 0.0842 * l)).abs() < 1e-6, "锁链伤害 {d} != {}", 0.2 + 0.0842 * l);
-        // S018 引力·黑洞（A）
+        assert!((d - (0.2 + 0.2 * l)).abs() < 1e-6, "chain dmg {d} != {}", 0.2 + 0.2 * l);
+        // S018 gravity blackhole (A)
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
-        assert!((d - (0.3 + 0.0737 * l)).abs() < 1e-6, "黑洞伤害 {d} != {}", 0.3 + 0.0737 * l);
-        // S018 引力·力场（B）
-        let st = DefTable::def_alt(SkillId::S018).expect("S018 应有 B 形态").growth.stats(lvl);
+        assert!((d - (0.3 + 0.2 * l)).abs() < 1e-6, "blackhole dmg {d} != {}", 0.3 + 0.2 * l);
+        // S018 force field (B)
+        let st = DefTable::def_alt(SkillId::S018).expect("S018 has B form").growth.stats(lvl);
         let d = st.damage.to_num::<f64>();
         let e = st.extra.to_num::<f64>();
-        assert!((d - (2.25 + 0.3026 * l)).abs() < 1e-6, "力场每秒伤害 {d} != {}", 2.25 + 0.3026 * l);
-        assert!((e - (1.0 + 0.0737 * l)).abs() < 1e-6, "力场每秒回复 {e} != {}", 1.0 + 0.0737 * l);
+        assert!((d - (2.25 + 0.8214 * l)).abs() < 1e-6, "field dps {d} != {}", 2.25 + 0.8214 * l);
+        assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "field hps {e} != {}", 1.0 + 0.2 * l);
     }
 
     /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.0737×L` camp2 每秒）。

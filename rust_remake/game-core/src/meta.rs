@@ -136,6 +136,8 @@ pub struct PlayerProfile {
     pub team: u8,
     /// 形态位（B4，按 SkillId 索引）：true=B 形态；学习界面 B 键切换。
     pub forms: Vec<bool>,
+    /// 技能上限突破（098c 乔丹之石功能的原生购买界面项）：每购买一次 +2。
+    pub skill_cap_bonus: u32,
 }
 
 impl PlayerProfile {
@@ -160,6 +162,7 @@ impl PlayerProfile {
             mastery: Mastery::default(),
             team: player_id as u8,
             forms: vec![false; skill_count.max(crate::MAX_SKILL_SLOTS)],
+            skill_cap_bonus: 0,
         }
     }
 
@@ -281,9 +284,26 @@ impl PlayerProfile {
         if self.gold < cost {
             return false;
         }
+        let idx = skill.as_u32() as usize;
+        // 等级上限：098c 基础档数 + 上限突破（乔丹之石原生化为购买项，每档 +2）。
+        let cap = crate::skill::DefTable::max_level(skill) + self.skill_cap_bonus;
+        if self.skill_levels[idx] >= cap {
+            return false;
+        }
         self.gold -= cost;
         self.gold_spent += cost;
-        self.skill_levels[skill.as_u32() as usize] += 1;
+        self.skill_levels[idx] += 1;
+        true
+    }
+
+    /// 购买「技能上限突破」（098c 乔丹之石原生化为购买界面项）：花费金币，每买一次所有技能上限 +2。
+    pub fn buy_skill_cap_bonus(&mut self, cost: i32) -> bool {
+        if self.gold < cost {
+            return false;
+        }
+        self.gold -= cost;
+        self.gold_spent += cost;
+        self.skill_cap_bonus += 2;
         true
     }
 

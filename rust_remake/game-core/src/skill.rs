@@ -1451,19 +1451,20 @@ impl DefTable {
             SkillId::S004 => 9,
             SkillId::S005 => 9,
             SkillId::S006 => 8,
-            SkillId::S007 => 20,
-            SkillId::S008 => 20,
-            SkillId::S009 => 20,
-            SkillId::S010 => 20,
+            // 098c 基础档数（JASS_AUDIT_098c.md §0）：多为 8~9 级；乔丹之石 +2 突破。
+            SkillId::S007 => 8,
+            SkillId::S008 => 8,
+            SkillId::S009 => 8,
+            SkillId::S010 => 8,
             SkillId::S011 => 9,
-            SkillId::S012 => 20,
-            SkillId::S013 => 20,
-            SkillId::S014 => 20,
-            SkillId::S015 => 20,
-            SkillId::S016 => 20,
-            SkillId::S017 => 20,
-            SkillId::S018 => 20,
-            SkillId::S019 => 20,
+            SkillId::S012 => 9,
+            SkillId::S013 => 8,
+            SkillId::S014 => 8,
+            SkillId::S015 => 8,
+            SkillId::S016 => 8,
+            SkillId::S017 => 8,
+            SkillId::S018 => 8,
+            SkillId::S019 => 9,
             SkillId::S020 => 4,
             SkillId::S021 => 4,
             SkillId::S001 => 4,
@@ -1596,9 +1597,9 @@ impl DefTable {
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(400.0),
+                    speed: Fix64::from_num(400.0), // 098c iB: real speed = click_dist/1.35 (see world.rs), 400 fallback
                     radius: Fix64::from_num(72.0),
-                    life: Fix64::from_num(2.0),
+                    life: Fix64::from_num(1.35),   // 098c iB: ev=1.35
                     kb_ji: Fix64::from_num(0.8),
                     // 灼烧场（半径/每跳数值未解码，暂 75/总量均摊 TODO）+ Scorched debuff（D7）。
                     ignite: Some(Fix64::from_num(7.5)),
@@ -1609,9 +1610,9 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
-                    cooldown_delta: -0.183,
+                    cooldown_delta: -0.5, // 098c: 20->16.5 (8 lv)
                     damage_base: 12.0,
-                    damage_delta: 2.0,
+                    damage_delta: 2.0,   // 098c: gX=10+2L (L1=12)
                     // 灼烧时长 4*jn（durations S008）→ debuff 与灼烧场共用。
                     duration_base: 4.0,
                     ..DEF_ZERO
@@ -1629,7 +1630,7 @@ impl DefTable {
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(900.0),
+                    speed: Fix64::from_num(700.0), // 098c GB：目标形态 700（原 900 系误估）
                     radius: Fix64::from_num(50.0),
                     life: Fix64::from_num(2.0),
                     kb_ji: Fix64::from_num(1.4),
@@ -1641,9 +1642,9 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 30.0,
-                    cooldown_delta: -0.526,
+                    cooldown_delta: -1.4286, // 098c：30→20（8 档，原斜率）
                     damage_base: 3.0,
-                    damage_delta: 0.1842,
+                    damage_delta: 0.5,       // 098c：3.0→6.5（8 档，+0.5/级，原斜率）
                     ..DEF_ZERO
                 },
             },
@@ -1672,11 +1673,11 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
                     // 伤害 delta=(13-6)/19≈0.3684；持续时间 delta=(11-4)/19≈0.3684；CD delta=(16.5-22)/19≈-0.2895。
                     cooldown_base: 22.0,
-                    cooldown_delta: -0.2895,
+                    cooldown_delta: -0.7857, // 098c: 22->16.5 (8 lv)
                     damage_base: 6.0,
-                    damage_delta: 0.3684,
+                    damage_delta: 1.0,       // 098c: 6->13 (8 lv)
                     duration_base: 4.0,
-                    duration_delta: 0.3684,
+                    duration_delta: 1.0,     // 098c: 4->11 (8 lv)
                     ..DEF_ZERO
                 },
             },
@@ -1705,13 +1706,13 @@ impl DefTable {
                     // 单发 2.6→4.0、missiles 6→13、CD 16→9。Rust max_level=20 → camp2 端点对齐：
                     // 伤害 delta=(4.0-2.6)/19≈0.0737；连发 delta=(13-6)/19≈0.3684；CD delta=(9-16)/19≈-0.3684。
                     cooldown_base: 16.0,
-                    cooldown_delta: -0.3684, // 098c：16 → 9（8 档）
+                    cooldown_delta: -1.0,    // 098c: 16->9 (8 lv)
                     damage_base: 2.6,
-                    damage_delta: 0.0737,    // 098c：2.6 → 4.0（8 档），camp2 对齐至 L20=4.0
+                    damage_delta: 0.2,       // 098c: 2.6->4.0 (8 lv)
                     speed_base: 700.0,
-                    // 098c：missiles 6 → 13（L1→L8），camp2 至 L20=13；Sweep 执行处读 stats.extra 作为连发数。
+                    // 098c: missiles 6->13 (8 lv)
                     extra_base: 6.0,
-                    extra_delta: 0.3684,
+                    extra_delta: 1.0,
                     ..DEF_ZERO
                 },
             },
@@ -1728,7 +1729,7 @@ impl DefTable {
                 effect: Warlock098b {
                     proj: W098bProjKind::Bounce,
                     speed: Fix64::from_num(900.0),
-                    radius: Fix64::from_num(35.0),
+                    radius: Fix64::from_num(38.0), // 098c Gc: r38
                     life: Fix64::from_num(1.0),
                     kb_ji: Fix64::ONE,
                     ignite: None,
@@ -1739,13 +1740,12 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
-                    cooldown_delta: -0.3684, // 098c：20 → 13（8 级），camp2 对齐至 L20=13
+                    cooldown_delta: -1.0,    // 098c: 20->13 (8 lv)
                     damage_base: 6.0,
-                    damage_delta: 1.0,
-                    // 098c Range 900→1950（8 档，+150/级）→ camp2 至 L20=1950：delta=(1950-900)/19≈55.2632。
-                    // 单跳射程（world.rs 弹体创建时 life = max_distance/speed）。
+                    damage_delta: 1.0,       // 098c: 6->13 (8 lv, +1/lv)
+                    // 098c Gc: range 750+150L (L1=900, L8=1950)
                     max_distance_base: 900.0,
-                    max_distance_delta: 55.2632,
+                    max_distance_delta: 150.0,
                     ..DEF_ZERO
                 },
             },
@@ -1760,9 +1760,9 @@ impl DefTable {
                 effect: W098bUtility { kind: W098bUtilKind::Reflect, speed: Fix64::ZERO, max_distance: Fix64::ZERO },
                 growth: SkillGrowth {
                     cooldown_base: 25.0,
-                    cooldown_delta: -1.375,
+                    cooldown_delta: -1.375, // 098c: 25->14 (9 lv)
                     duration_base: 2.8,
-                    duration_delta: 0.175, // 098c：2.8 → 4.2（9 档）
+                    duration_delta: 0.2,    // 098c JASS (2.6+0.2L)*jn -> L1=2.8
                     ..DEF_ZERO
                 },
             },
@@ -1798,7 +1798,7 @@ impl DefTable {
                     cooldown_base: 21.0,
                     cooldown_delta: 0.0,
                     duration_base: 7.0,
-                    duration_delta: 0.2947, // 098c：7.0 → 12.6（8 档），camp2 对齐至 L20=12.6
+                    duration_delta: 0.8, // 098c: 7.0->12.6 (8 lv, +0.8/lv)
                     ..DEF_ZERO
                 },
             },
@@ -1821,11 +1821,11 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 30.0,
-                    cooldown_delta: -0.684,
+                    cooldown_delta: -1.857, // 098c: 30->17 (8 lv)
                     duration_base: 3.1,
-                    // 接触踢击/背刺伤害 5.4+0.2947L（098c 背刺，camp2 对齐至 L20=11）
+                    // 背刺伤害 5.4->11（8 档，+0.8/级）
                     damage_base: 5.4,
-                    damage_delta: 0.2947,
+                    damage_delta: 0.8,
                     ..DEF_ZERO
                 },
             },
@@ -1856,11 +1856,11 @@ impl DefTable {
                 effect: W098bUtility { kind: W098bUtilKind::Dash, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(700.0) },
                 growth: SkillGrowth {
                     cooldown_base: 16.5,
-                    cooldown_delta: -0.5,
+                    cooldown_delta: -1.1875, // 098c: 16.5->7 (9 lv)
                     max_distance_base: 700.0,
-                    max_distance_delta: 21.0526,
+                    max_distance_delta: 50.0, // 098c: 700->1100 (9 lv)
                     damage_base: 5.4,
-                    damage_delta: 0.1684,
+                    damage_delta: 0.4,        // 098c: 5.4->8.6 (9 lv)
                     ..DEF_ZERO
                 },
             },
@@ -1876,8 +1876,8 @@ impl DefTable {
                 effect: W098bUtility { kind: W098bUtilKind::Swap, speed: Fix64::ZERO, max_distance: Fix64::from_num(660.0) },
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
-                    cooldown_delta: -0.5263,
-                    max_distance_base: 660.0,
+                    cooldown_delta: -1.4286, // 098c: 16->6 (8 lv)
+                    max_distance_base: 900.0, // 098c MB: range 900 (was 660)
                     ..DEF_ZERO
                 },
             },
@@ -1893,9 +1893,9 @@ impl DefTable {
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(900.0),
-                    radius: Fix64::from_num(23.0),
-                    life: Fix64::from_num(2.0),
+                    speed: Fix64::from_num(1000.0), // 098c rC: speed 1000
+                    radius: Fix64::from_num(39.0),  // 098c rC: r39
+                    life: Fix64::from_num(1.1),     // 098c rC: ev=1.1
                     kb_ji: Fix64::ONE,
                     ignite: None,
                     blast: None,
@@ -1908,10 +1908,10 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
                     // CD delta=(10-25)/19≈-0.7895；持续 delta=(6.25-4.5)/19≈0.0921。
                     cooldown_base: 25.0,
-                    cooldown_delta: -0.7895,
+                    cooldown_delta: -2.1428, // 098c: 25->10 (8 lv)
                     damage_base: 3.0,
                     duration_base: 4.5,
-                    duration_delta: 0.0921,
+                    duration_delta: 0.25,     // 098c: 4.5->6.25 (8 lv)
                     ..DEF_ZERO
                 },
             },
@@ -1938,19 +1938,19 @@ impl DefTable {
                     // 黑洞每秒伤害（098c mc）：0.3→1.7（8 级）。Rust max_level=20 → camp2：
                     // damage_delta=(1.7-0.3)/19≈0.0737（Rust L20 = 098c L8 = 1.7）。
                     damage_base: 0.3,
-                    damage_delta: 0.0737,
+                    damage_delta: 0.2,       // 098c: 0.3->1.7 (8 lv)
                     // 吸引力（098c Force）：12→19（8 档，+1/级）。Rust max_level=20 → camp2：
                     // extra_delta=(19-12)/19≈0.3684（Rust L20 = 098c L8 = 19）。
                     // 走 stats.extra 由 world.rs 读入 pull_speed（effect 的 pull_speed 不随等级成长，
                     // 仅作 L1 兜底）。单位与 098c Force 一致（随后被 LEGACY_SPEED 缩放为内部速度）。
                     extra_base: 12.0,
-                    extra_delta: 0.3684,
+                    extra_delta: 1.0,        // 098c: Force 12->19 (8 lv)
                     // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
                     // ——语义不同。贴 098b 升级版（落点原地漩涡 5s）取 0（场不漂移）；飞行段弹体化 TODO。
-                    speed_base: 0.0,
+                    speed_base: 400.0,       // 098c Jc: flying field speed 400
                     radius_base: 200.0,
                     duration_base: 5.0,
-                    range_base: 1200.0,
+                    range_base: 900.0,       // 098c Jc: range 900*(1+.1ei)
                     ..DEF_ZERO
                 },
             },
@@ -1965,7 +1965,7 @@ impl DefTable {
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(800.0),
+                    speed: Fix64::from_num(900.0), // 098c uc: speed 900
                     radius: Fix64::from_num(35.0),
                     life: Fix64::from_num(2.0),
                     kb_ji: Fix64::ONE,
@@ -1980,9 +1980,9 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L9）：
                     // CD delta=(8-17)/19≈-0.4737；伤害 delta=(1.8-0.2)/19≈0.0842。
                     cooldown_base: 17.0,
-                    cooldown_delta: -0.4737,
+                    cooldown_delta: -1.125, // 098c: 17->8 (9 lv)
                     damage_base: 0.2,
-                    damage_delta: 0.0842,
+                    damage_delta: 0.2,      // 098c: 0.2->1.8 (9 lv)
                     duration_base: 0.5,
                     ..DEF_ZERO
                 },
@@ -2159,9 +2159,9 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
                     // 伤害 delta=(15-4.5)/19≈0.5526；CD delta=(16.5-20)/19≈-0.1842。
                     cooldown_base: 20.0,
-                    cooldown_delta: -0.1842,
+                    cooldown_delta: -0.5,    // 098c: 20->16.5 (8 lv)
                     damage_base: 4.5,
-                    damage_delta: 0.5526,
+                    damage_delta: 1.5,       // 098c: 4.5->15 (8 lv)
                     duration_base: 4.0,
                     ..DEF_ZERO
                 },
@@ -2190,9 +2190,9 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐：
                     // 伤害 delta=(6.5-3.0)/19≈0.1842；CD delta=(20-30)/19≈-0.5263。
                     cooldown_base: 30.0,
-                    cooldown_delta: -0.5263,
+                    cooldown_delta: -1.4286, // 098c: 30->20 (8 lv, original slope)
                     damage_base: 3.0,
-                    damage_delta: 0.1842,
+                    damage_delta: 0.5,       // 098c: 3.0->6.5 (8 lv)
                     extra_base: 2.5,
                     extra_delta: 0.5,
                     ..DEF_ZERO
@@ -2216,7 +2216,7 @@ impl DefTable {
                     // 持续：098c 调试输出 S010 两模式分别为「Wind Walk (charge) 3.1*jn」与
                     // 「Wind Walk (invisibility) 4*jn」→ **B 形态取 4.0**（勿套用 A 形态的 3.1）。
                     cooldown_base: 30.0,
-                    cooldown_delta: -0.684,
+                    cooldown_delta: -1.857, // 098c: 30->17 (8 lv, shared with A)
                     duration_base: 4.0,
                     ..DEF_ZERO
                 },
@@ -2244,11 +2244,11 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
                     // 伤害 delta=(11-5)/19≈0.3158；持续 delta=(18-7.5)/19≈0.5526；CD delta=(18.5-22)/19≈-0.1842。
                     cooldown_base: 22.0,
-                    cooldown_delta: -0.1842,
+                    cooldown_delta: -0.5,    // 098c: 22->18.5 (8 lv)
                     damage_base: 5.0,
-                    damage_delta: 0.3158,
+                    damage_delta: 0.8571,    // 098c: 5->11 (8 lv)
                     duration_base: 7.5,
-                    duration_delta: 0.5526,
+                    duration_delta: 1.5,     // 098c: 7.5->18 (8 lv)
                     ..DEF_ZERO
                 },
             },
@@ -2277,9 +2277,9 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐：
                     // 伤害 delta=(5.8-3.0)/19≈0.1474；CD delta=(7-14)/19≈-0.3684。
                     cooldown_base: 14.0,
-                    cooldown_delta: -0.3684,
+                    cooldown_delta: -1.0,    // 098c: 14->7 (8 lv)
                     damage_base: 3.0,
-                    damage_delta: 0.1474,
+                    damage_delta: 0.4,       // 098c: 3.0->5.8 (8 lv)
                     ..DEF_ZERO
                 },
             },
@@ -2293,7 +2293,7 @@ impl DefTable {
                 effect: W098bUtility { kind: W098bUtilKind::Phoenix, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(770.0) },
                 growth: SkillGrowth {
                     cooldown_base: 16.5,
-                    cooldown_delta: -0.5, // 098c Thrust camp2 对齐（Rust L20 = 098c L9 = 7.0）
+                    cooldown_delta: -1.1875, // 098c: 16.5->7 (9 lv)
                     max_distance_base: 770.0,
                     max_distance_delta: 55.0,
                     damage_base: 4.0,
@@ -2315,7 +2315,7 @@ impl DefTable {
                     // 射程：该 tooltip **无射程字段** → 维持 098b 文档口径 600（600×(1+.1ei)）。
                     // （"Teleports ... Range: 900 / cd 17.5→8.5" 是 R 槽**另一个**技能，非搬运。）
                     cooldown_base: 14.0,
-                    cooldown_delta: -0.5263,
+                    cooldown_delta: -1.4286, // 098c: 14->4 (8 lv)
                     max_distance_base: 600.0,
                     ..DEF_ZERO
                 },
@@ -2343,7 +2343,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     // 098c 校准（w3a_strings.txt Disable=silence）：CD 16→12.5（8 级）→ camp2 对齐（Rust L20=12.5）。
                     cooldown_base: 16.0,
-                    cooldown_delta: -0.1842,
+                    cooldown_delta: -0.5, // 098c: 16->12.5 (8 lv)
                     damage_base: 3.0,
                     duration_base: 5.0,
                     ..DEF_ZERO
@@ -2360,19 +2360,19 @@ impl DefTable {
                     heal_per_sec: Fix64::ZERO,   // stats.extra（1.0+0.0737L）取 growth
                     radius: Fix64::from_num(200.0),
                     duration: 5.0,
-                    range: Fix64::from_num(1200.0),
+                    range: Fix64::from_num(850.0),
                 },
                 growth: SkillGrowth {
                     cooldown_base: 26.0,
                     // 力场每秒伤害（098c Lc/Mc）：2.25→8.0（8 级）→ camp2：damage_delta=(8.0-2.25)/19≈0.3026。
                     damage_base: 2.25,
-                    damage_delta: 0.3026,
+                    damage_delta: 0.8214, // 098c: 2.25->8.0 (8 lv)
                     // 每秒生命恢复（098c Lc）：1.0→2.4（8 级）→ camp2：extra_delta=(2.4-1.0)/19≈0.0737。
                     extra_base: 1.0,
-                    extra_delta: 0.0737,
+                    extra_delta: 0.2,     // 098c: heal 1.0->2.4 (8 lv)
                     radius_base: 200.0,
                     duration_base: 5.0,
-                    range_base: 1200.0,
+                    range_base: 850.0,    // 098c Mc: range 850*(1+.1ei)
                     speed_base: 850.0,
                     ..DEF_ZERO
                 },
@@ -2386,7 +2386,7 @@ impl DefTable {
                 needs_point: true,
                 effect: Warlock098b {
                     proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(800.0),
+                    speed: Fix64::from_num(900.0), // 098c Uc: speed 900
                     radius: Fix64::from_num(35.0),
                     life: Fix64::from_num(2.0),
                     kb_ji: Fix64::ONE,
@@ -2402,12 +2402,12 @@ impl DefTable {
                     cooldown_base: 16.0,
                     cooldown_delta: 0.0,
                     damage_base: 0.2,
-                    damage_delta: 0.0842,
+                    damage_delta: 0.2,      // 098c: 0.2->1.8 (9 lv)
                     duration_base: 0.5,
                     // 098c 红链闪电（目标为友军/柱子时引发）：1.0→3.4（9 级）→ camp2 至 L20=3.4：
                     // delta=(3.4-1.0)/19≈0.1263。world.rs 读 stats.extra 作为闪电伤害。
                     extra_base: 1.0,
-                    extra_delta: 0.1263,
+                    extra_delta: 0.3,       // 098c: lightning 1.0->3.4 (9 lv)
                     ..DEF_ZERO
                 },
             },
@@ -2436,9 +2436,9 @@ impl DefTable {
                     // Rust max_level=20 → camp2 端点对齐：
                     // 伤害 delta=(12.3-6)/19≈0.3316；CD delta=(18.5-23.5)/19≈-0.2632。
                     cooldown_base: 23.5,
-                    cooldown_delta: -0.2632,
+                    cooldown_delta: -0.7143, // 098c: 23.5->18.5 (8 lv)
                     damage_base: 6.0,
-                    damage_delta: 0.3316,
+                    damage_delta: 0.9,       // 098c: 6->12.3 (8 lv)
                     ..DEF_ZERO
                 },
             },
@@ -3286,7 +3286,7 @@ mod tests {
         let d = DefTable::def(SkillId::S010);
         assert_eq!(d.name, "疾风步·冲锋");
         assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 17.0, 1e-1), "L20 CD 应 ≈17，实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(8).cooldown, 17.0, 1e-1), "L8 CD should be ~17, got {:?}", d.stats_at(8).cooldown);
         assert!(near(d.stats_at(1).duration, 3.1, 1e-3));
         match d.effect {
             SkillEffect::W098bUtility { kind: W098bUtilKind::Charge, speed, .. } => {
@@ -3324,8 +3324,8 @@ mod tests {
         let d = DefTable::def(SkillId::S013);
         assert_eq!(d.name, "移形换位·置换");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 6.0, 1e-1), "L20 CD 应 ≈6（098c L8），实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).max_distance, 660.0, 1e-3), "射程应 660");
+        assert!(near(d.stats_at(8).cooldown, 6.0, 1e-1), "L8 CD should be ~6, got {:?}", d.stats_at(8).cooldown);
+        assert!(near(d.stats_at(1).max_distance, 900.0, 1e-3), "range should be 900");
     }
 
     #[test]
@@ -3334,29 +3334,28 @@ mod tests {
         let d = DefTable::def(SkillId::S017);
         assert_eq!(d.name, "禁锢·缠绕");
         assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 10.0, 1e-1), "L20 CD 应 ≈10（098c L8），实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).duration, 4.5, 1e-3), "L1 缠绕持续应 4.5");
+        assert!(near(d.stats_at(8).cooldown, 10.0, 1e-1), "L8 CD should be ~10, got {:?}", d.stats_at(8).cooldown);
+        assert!(near(d.stats_at(1).duration, 4.5, 1e-3), "L1 bind duration should be 4.5");
         match d.effect {
             SkillEffect::Warlock098b { speed, radius, on_hit: W098bOnHit::Cripple, .. } => {
-                assert!(near(speed, 900.0, 1e-3) && near(radius, 23.0, 1e-3));
+                assert!(near(speed, 1000.0, 1e-3) && near(radius, 39.0, 1e-3));
             }
             ref e => panic!("S017 effect 错：{e:?}"),
         }
         // S018 引力·暗物质（A 形态）：CD 25 恒定（098c Gravity）；漩涡半径 200 / 5s。
         let d = DefTable::def(SkillId::S018);
         assert_eq!(d.name, "引力·暗物质");
-        assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3) && near(d.stats_at(20).cooldown, 25.0, 1e-3));
-        let s20 = d.stats_at(20);
-        assert!(near(s20.speed, 0.0, 1e-3) && near(s20.radius, 200.0, 1e-3), "原地漩涡（speed=0）半径 200 走 growth");
-        assert!(near(s20.duration, 5.0, 1e-3), "漩涡应持续 5*jn 秒");
-        // 吸引力（098c Force）：12→19（8 档），camp2 至 L20=19；走 stats.extra 由 world.rs 读入 pull_speed。
-        assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 吸引力应 12（098c Force）");
-        assert!(near(s20.extra, 19.0, 1e-1), "L20 吸引力应 ≈19（098c L8），实际 {:?}", s20.extra);
+        assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3) && near(d.stats_at(8).cooldown, 25.0, 1e-3));
+        let s8 = d.stats_at(8);
+        assert!(near(s8.speed, 400.0, 1e-3) && near(s8.radius, 200.0, 1e-3), "flying field speed 400, radius 200");
+        assert!(near(s8.duration, 5.0, 1e-3), "field should last 5*jn sec");
+        assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 Force should be 12");
+        assert!(near(s8.extra, 19.0, 1e-1), "L8 Force should be ~19, got {:?}", s8.extra);
         // S019 锁链·钩引（A 形态）：CD 17→8（camp2 对齐 098c L9=8）；radius 35；拉拽+0.5s 定身。
         let d = DefTable::def(SkillId::S019);
         assert_eq!(d.name, "锁链·钩引");
         assert!(near(d.stats_at(1).cooldown, 17.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 8.0, 1e-1), "L20 CD 应 ≈8（098c L9），实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(9).cooldown, 8.0, 1e-1), "L9 CD should be ~8, got {:?}", d.stats_at(9).cooldown);
         match d.effect {
             SkillEffect::Warlock098b { radius, on_hit: W098bOnHit::ChainPull, .. } => {
                 assert!(near(radius, 35.0, 1e-3));
@@ -3491,14 +3490,14 @@ mod tests {
         let def = DefTable::def(SkillId::S008);
         assert_eq!(def.name, "陨石");
         let s1 = def.stats_at(1);
-        let s20 = def.stats_at(20);
-        assert!(near(s1.cooldown, 20.0, 1e-3), "L1 CD 应 20，实际 {:?}", s1.cooldown);
-        assert!(near(s20.cooldown, 16.5, 1e-1), "L20 CD 应 ≈16.5，实际 {:?}", s20.cooldown);
-        assert!(near(s1.damage, 12.0, 1e-3), "L1 gX 应 10+2=12，实际 {:?}", s1.damage);
-        assert!(near(s20.damage, 10.0 + 2.0 * 20.0, 1e-3), "L20 gX 应 10+2×20，实际 {:?}", s20.damage);
+        let s8 = def.stats_at(8);
+        assert!(near(s1.cooldown, 20.0, 1e-3), "L1 CD should be 20, got {:?}", s1.cooldown);
+        assert!(near(s8.cooldown, 16.5, 1e-1), "L8 CD should be ~16.5, got {:?}", s8.cooldown);
+        assert!(near(s1.damage, 12.0, 1e-3), "L1 gX should be 12, got {:?}", s1.damage);
+        assert!(near(s8.damage, 10.0 + 2.0 * 8.0, 1e-3), "L8 gX should be 10+2x8, got {:?}", s8.damage);
         match def.effect {
             SkillEffect::Warlock098b { speed, radius, life, blast, kb_ji, .. } => {
-                assert!(near(speed, 400.0, 1e-3) && near(radius, 72.0, 1e-3) && near(life, 2.0, 1e-3));
+                assert!(near(speed, 400.0, 1e-3) && near(radius, 72.0, 1e-3) && near(life, 1.35, 1e-3));
                 assert!(near(blast.unwrap(), 200.0, 1e-3), "陨石应带 200 爆炸半径");
                 assert!(near(kb_ji, 0.8, 1e-3));
             }
@@ -3533,9 +3532,9 @@ mod tests {
         let d = DefTable::def(SkillId::S009);
         assert_eq!(d.name, "分裂弹·目标");
         assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 20.0, 1e-1), "L20 CD 应 ≈20，实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).damage, 3.0, 1e-3), "L1 伤害应 3.0");
-        assert!(near(d.stats_at(20).damage, 6.5, 1e-1), "L20 伤害应 ≈6.5（098c 上限），实际 {:?}", d.stats_at(20).damage);
+        assert!(near(d.stats_at(8).cooldown, 20.0, 1e-1), "L8 CD should be ~20, got {:?}", d.stats_at(8).cooldown);
+        assert!(near(d.stats_at(1).damage, 3.0, 1e-3), "L1 damage should be 3.0");
+        assert!(near(d.stats_at(8).damage, 6.5, 1e-1), "L8 damage should be ~6.5, got {:?}", d.stats_at(8).damage);
         match d.effect {
             SkillEffect::Warlock098b { radius, kb_ji, .. } => {
                 assert!(near(radius, 50.0, 1e-3));
@@ -3550,7 +3549,7 @@ mod tests {
         let alt14 = DefTable::def_alt(SkillId::S014).expect("S014 应有 B 形态");
         assert_eq!(alt14.name, "汲取·削弱");
         assert!(near(d.stats_at(1).cooldown, 22.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 16.5, 1e-1), "L20 CD 应 ≈16.5（098c L8），实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(8).cooldown, 16.5, 1e-1), "L8 CD should be ~16.5, got {:?}", d.stats_at(8).cooldown);
         match d.effect {
             SkillEffect::Warlock098b { speed, radius, kb_ji, .. } => {
                 assert!(near(speed, 700.0, 1e-3) && near(radius, 27.0, 1e-3) && near(kb_ji, 0.8, 1e-3));
@@ -3563,9 +3562,9 @@ mod tests {
         let d = DefTable::def(SkillId::S015);
         assert_eq!(d.name, "火焰喷射·流射");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 9.0, 1e-1), "L20 CD 应 ≈9（098c L8），实际 {:?}", d.stats_at(20).cooldown);
-        assert!(near(d.stats_at(1).damage, 2.6, 1e-3), "L1 单发伤害应 2.6（098c）");
-        assert!(near(d.stats_at(20).damage, 4.0, 1e-1), "L20 单发伤害应 ≈4.0（098c L8），实际 {:?}", d.stats_at(20).damage);
+        assert!(near(d.stats_at(8).cooldown, 9.0, 1e-1), "L8 CD should be ~9, got {:?}", d.stats_at(8).cooldown);
+        assert!(near(d.stats_at(1).damage, 2.6, 1e-3), "L1 damage should be 2.6");
+        assert!(near(d.stats_at(8).damage, 4.0, 1e-1), "L8 damage should be ~4.0, got {:?}", d.stats_at(8).damage);
         match d.effect {
             SkillEffect::Sweep { count, cadence, turn_step, .. } => {
                 assert_eq!(count, 6, "流射 L1 应 6 发（098c missiles[0]）");
@@ -3575,8 +3574,8 @@ mod tests {
             ref e => panic!("S015 effect 错：{e:?}"),
         }
         // 连发数随等级成长：098c missiles 6→13（8 档）→ L20 应为 13（走 stats.extra，由 Sweep 执行处读取）
-        let n20 = d.stats_at(20).extra.to_num::<f64>().round() as u32;
-        assert_eq!(n20, 13, "L20 连发数应 13（098c L8），实际 {}", n20);
+        let n20 = d.stats_at(8).extra.to_num::<f64>().round() as u32;
+        assert_eq!(n20, 13, "L8 missile count should be 13, got {}", n20);
         // B 形态：簇射 = 锥形 5 道 ±11°，伤害 3.0+0.1474L（camp2 对齐 098c "Fires 5 missiles at once" 3.0→5.8）
         let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
         assert_eq!(alt15.name, "火焰喷射·簇射");
@@ -3593,11 +3592,11 @@ mod tests {
         let d = DefTable::def(SkillId::S016);
         assert_eq!(d.name, "弹跳弹");
         assert!(near(d.stats_at(1).cooldown, 20.0, 1e-3));
-        assert!(near(d.stats_at(20).cooldown, 13.0, 1e-1), "L20 CD 应 ≈13（098c 上限），实际 {:?}", d.stats_at(20).cooldown);
+        assert!(near(d.stats_at(8).cooldown, 13.0, 1e-1), "L8 CD should be ~13, got {:?}", d.stats_at(8).cooldown);
         assert!(near(d.stats_at(1).damage, 6.0, 1e-3));
         match d.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Bounce, speed, radius, .. } => {
-                assert!(near(speed, 900.0, 1e-3) && near(radius, 35.0, 1e-3));
+                assert!(near(speed, 900.0, 1e-3) && near(radius, 38.0, 1e-3));
             }
             ref e => panic!("S016 effect 应为 Warlock098b(Bounce)，实际 {e:?}"),
         }
