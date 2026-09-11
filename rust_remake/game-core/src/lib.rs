@@ -25,3 +25,14 @@ pub const MAX_SKILL_SLOTS: usize = 73;
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
+
+/// **联机兼容版本**：任何会改变「线上协议」或「确定性模拟结果」的改动都必须 +1。
+/// 大厅建房时写入该值，加入者比对；不一致即拒绝加入，避免改前/改后构建联机导致
+/// desync / 握手失败 / 行为分叉（这类问题极难从现象定位）。
+///
+/// 何时需要 +1（举例）：
+/// - 改动 `net::proto` 的任何包格式 / tag；
+/// - 改动 `game_core::netcode` 的输入编码；
+/// - 改动 `game_core::world_ser` 的快照格式或**任何会影响模拟的字段**；
+/// - 改动技能/物品数值、世界模拟逻辑（会改变同一输入下的世界演化）。
+pub const PROTOCOL_VERSION: u32 = 1;
