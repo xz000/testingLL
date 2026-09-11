@@ -1194,6 +1194,8 @@ impl World {
         // 碎裂/侧弹生成队列（B4：S009 目标形态到点碎裂、区域形态螺旋侧弹）
         // (owner, 位置, 速度, gx, 弹半径, 寿命, kb_ji)
         let mut spawn_bullets: Vec<(u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
+        // 098c 回旋镖回程到位结算：(owner, 位置, gx, kb_ji) —— 对命中半径 qI 内目标 AOE（距离衰减）。
+        let mut boomerang_settles: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
@@ -1447,6 +1449,8 @@ impl World {
                                 *vel += (dir * yb - perp * yb_lat) * dt;
                                 let d = owner_pos - pr.pos;
                                 if d.length() < Fix64::from_num(60.0) {
+                                    // 098c oB：回程到位 → 记录结算（命中半径 qI 内 AOE，见循环后 2c1.5 段）。
+                                    boomerang_settles.push((pr.owner, pr.pos, *gx, *kb_ji));
                                     pr.alive = false;
                                 }
                             }
@@ -1546,8 +1550,6 @@ impl World {
         let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
         // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
         let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
-        // 098c 回旋镖命中转回程：(proj 下标, 返回速度)。
-        let mut boomerang_returns: Vec<(usize, Fix64)> = Vec::new();
         // 098b on_hit 控制效果：(受害者, Tied 时长)。
         let mut debuffs: Vec<(u32, f64)> = Vec::new();
         // 链体（锁链）生成：命中落地为持久 Tether，逐帧对绑定目标施加每秒伤害并按 pull_speed 符号拉拽。
@@ -1904,13 +1906,16 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, vel, returning, on_hit, debuff_dur, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
                     // Bounce 命中判定排除上一跳受害者（target）——重定向瞬间还贴着旧目标，
                     // 不排除会每帧重复结算同一目标刷伤害。
-                    let hit = if *proj == crate::skill::W098bProjKind::Bounce {
+                    // 098c 回旋镖：飞行中不结算（oB 在回程寿命耗尽时对命中半径 qI 内目标一次性 AOE 结算）。
+                    let hit = if *proj == crate::skill::W098bProjKind::Boomerang {
+                        None
+                    } else if *proj == crate::skill::W098bProjKind::Bounce {
                         nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
                     } else {
                         nearest_hit(&self.players, pr.pos, pr.owner, *radius)
@@ -2037,11 +2042,7 @@ impl World {
                                 silences.push((victim, debuff_dur.to_num::<f64>()));
                             }
                         }
-                        // 回旋镖命中：不消失——转回程飞向施法者（098c Sb）。共享借用内
-                        // 不可写，经 boomerang_returns 在 2c2 段统一写回。
-                        if *proj == crate::skill::W098bProjKind::Boomerang && !*returning {
-                            boomerang_returns.push((pi, vel.length().max(*speed)));
-                        }
+                        // （098c 回旋镖飞行中不命中、不转回程：回程由运动学前向归零触发、到位时 AOE 结算。）
                         // Bounce（S016 弹跳弹）：命中不消失——伤害 ×0.8（下限 0.2），
                         // 重定向到**全场**最近的「非 owner、非上一跳目标」敌人（不限判定半径——
                         // 半径内扫描会因 or_else 兜底重新选中贴脸的旧目标，弹永远到不了下一家）；
@@ -2128,16 +2129,23 @@ impl World {
                 *remaining = *life; // 单跳寿命重置（ev 语义）
             }
         }
-        // 2c2) 应用回旋镖命中转回程：置 returning、速度指向施法者当前位置（098c Sb）。
-        for (pi, ret_speed) in boomerang_returns {
-            let owner_id = ps[pi].owner;
-            let proj_pos = ps[pi].pos;
-            if let ProjectileKind::W098b { vel, returning, .. } = &mut ps[pi].kind {
-                *returning = true;
-                if let Some(o) = self.players.get(owner_id as usize) {
-                    let d = o.pos - proj_pos;
-                    if d.length_squared() > Fix64::ZERO {
-                        *vel = d.normalized() * ret_speed;
+        // 2c2) 回旋镖回程到位结算（098c oB）：对命中半径 qI = $D2×√(1+0.25xi) 内敌人
+        // 造成伤害（Zb 随命中距离衰减：因子 = 1 − d/(400+40xi)）+ KI 击退。
+        for (owner, pos, gx, kb_ji) in boomerang_settles {
+            let xi = self.players.get(owner as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
+            let q_i = Fix64::from_num(210.0 * (1.0 + 0.25 * xi).sqrt());
+            for j in 0..n {
+                let p = &self.players[j];
+                if !p.alive || p.id == owner {
+                    continue;
+                }
+                let d = (p.pos - pos).length();
+                if d <= q_i + p.radius {
+                    let factor = (Fix64::ONE - d / Fix64::from_num(400.0 + 40.0 * xi)).max(Fix64::ZERO);
+                    events.push((p.id, gx * factor, Some(owner)));
+                    if d > Fix64::ZERO {
+                        let kb = warlock_ki_knockback(p.mana, gx, kb_ji);
+                        pushes.push((p.id, (p.pos - pos).normalized() * kb, W098B_KB_TIME, true));
                     }
                 }
             }
@@ -5590,30 +5598,36 @@ mod tests {
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
-        // 全程每帧检查：命中 → 弹不消失 → 回到施法者附近（<120）→ 收回消失
-        let mut hit = false;
-        let mut returned_near_caster = false;
-        let mut despawned_after_return = false;
-        for _ in 0..120 {
+        // 098c 机制：回旋镖飞行全程不结算，只在回程到位时对命中半径 qI（210）内敌人 AOE（伤害随距离衰减）。
+        let mut boom_seen = false;
+        let mut hit_while_flying = false;
+        let mut hit_on_return = false;
+        let mut settled = false;
+        for _ in 0..180 {
             world.step(none.clone(), dt);
             let boom_now = world
                 .projectiles
                 .iter()
                 .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
+            if boom_now {
+                boom_seen = true;
+            }
             if world.players[1].hp < hp1 {
-                hit = true;
+                if boom_now {
+                    hit_while_flying = true; // 不应发生：飞行途中不结算
+                } else {
+                    hit_on_return = true;
+                }
             }
-            if hit && boom_now {
-                returned_near_caster = true;
-            }
-            if hit && returned_near_caster && !boom_now {
-                despawned_after_return = true;
+            if hit_on_return && !boom_now {
+                settled = true;
                 break;
             }
         }
-        assert!(hit, "回旋镖出程应命中敌人（7.2）");
-        assert!(returned_near_caster, "命中后回旋镖应飞回施法者附近（窗口期内）");
-        assert!(despawned_after_return, "回到施法者后收回消失");
+        assert!(boom_seen, "回旋镖应至少存在若干帧（飞行中）");
+        assert!(!hit_while_flying, "098c：回旋镖飞行途中不应结算伤害");
+        assert!(hit_on_return, "回程到位应对 210 半径内敌人造成伤害");
+        assert!(settled, "结算后回旋镖消失");
     }
 
     /// S008 陨石灼烧「烤肉饼」（D7）：命中 → Scorched（禁疗+输出 ×0.1）4s + 灼烧 DoT 场。
