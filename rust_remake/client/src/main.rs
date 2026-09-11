@@ -1,8 +1,9 @@
-//! ggez 客户端 —— 阶段 1：核心玩法单机 demo。
+//! ggez 客户端 —— Warlock Brawl（098c）复刻的输入采集与渲染层。
 //!
 //! - 玩家圆：**右键**设置移动目标点，圆球匀速走过去，到达即停
 //! - 场地逐渐收缩，出界扣血；球被挤到边缘/相互重叠会受压损血
-//! - 若干机器人（确定性 AI）在同一场地游走，演示多人对抗氛围
+//! - 单机模式下有确定性机器人 AI 陪练
+//! - 联网：局域网（--host/--join）与 Steam 大厅（--steam-host/--steam-join）
 //!
 //! 玩法逻辑全部在 `game-core` 的 `World` 中，本文件只负责输入采集与渲染。
 
@@ -1787,6 +1788,21 @@ impl Game {
         }
     }
 
+    /// 玩家显示名：联网时优先用 Steam 昵称（roster 以 slot==player_id 对齐），否则回退「玩家{id}」。
+    fn player_label(&self, player_id: u32) -> String {
+        #[cfg(feature = "steam")]
+        if let Some((_, name, _)) = self
+            .steam_roster
+            .iter()
+            .find(|(slot, _, _)| *slot as u32 == player_id)
+        {
+            if !name.is_empty() {
+                return name.clone();
+            }
+        }
+        format!("玩家{player_id}")
+    }
+
     /// 生成「本机玩家最终配置快照」的编码字节（学习阶段结束/就绪时上报给 host）。
     fn local_player_cfg(&self) -> Vec<u8> {
         let me = self.self_index();
@@ -2753,9 +2769,9 @@ impl Game {
                         Color::from_rgb(215, 225, 240)
                     };
                     let name = if is_me {
-                        format!("玩家{pid} (我)")
+                        format!("{} (我)", self.player_label(*pid))
                     } else {
-                        format!("玩家{pid}")
+                        self.player_label(*pid)
                     };
                     draw_text(canvas, ctx, &name, 18.0, c, Point2 { x: x0 + 70.0, y }, true)?;
                     draw_text(canvas, ctx, &score.to_string(), 18.0, c, Point2 { x: x0 + 190.0, y }, true)?;
@@ -2772,7 +2788,7 @@ impl Game {
         Ok(())
     }
 
-    /// Steam 房间/就绪界面：列出成员昵称 + 就绪状态，按 o 就绪/取消，全就绪倒计时。
+    /// Steam 房间/就绪界面：列出成员昵称 + 就绪状态，按 U 就绪/取消，全就绪倒计时。
     #[cfg(feature = "steam")]
     fn draw_steam_ready_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = ctx.gfx.drawable_size();
@@ -2845,7 +2861,7 @@ impl Game {
         }
         // host 附加“编辑房间”入口，显示在底部。
         if self.steam_host_ls.is_some() {
-            draw_text(canvas, ctx, "E 编辑房间名/备注与锁定    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            draw_text(canvas, ctx, "E 编辑房间（含 L 锁定）    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         } else {
             draw_text(canvas, ctx, "U 就绪/取消    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         }
@@ -3543,7 +3559,7 @@ impl Game {
                 let mut sorted: Vec<_> = self.meta.profiles.iter().collect();
                 sorted.sort_by_key(|p| p.best_placement);
                 for p in sorted.iter() {
-                    let line = format!("玩家{}  金币{}  击杀{}  最佳名次#{}", p.player_id, p.gold, p.total_kills, p.best_placement);
+                    let line = format!("{}  金币{}  击杀{}  最佳名次#{}", self.player_label(p.player_id), p.gold, p.total_kills, p.best_placement);
                     draw_text(canvas, ctx, &line, 24.0, Color::WHITE, Point2 { x: cx, y }, true)?;
                     y += 40.0;
                 }
@@ -3553,7 +3569,7 @@ impl Game {
                 y += 36.0;
                 for (rank, (pid, score)) in self.meta.final_ranking().iter().enumerate() {
                     let color = if rank == 0 { Color::from_rgb(255, 220, 90) } else { Color::from_rgb(200, 210, 225) };
-                    let line = format!("#{}  玩家{}  {} 分", rank + 1, pid, score);
+                    let line = format!("#{}  {}  {} 分", rank + 1, self.player_label(*pid), score);
                     draw_text(canvas, ctx, &line, 22.0, color, Point2 { x: cx, y }, true)?;
                     y += 34.0;
                 }
