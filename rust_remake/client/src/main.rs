@@ -333,9 +333,6 @@ struct Game {
     /// Steam：房间阶段等待满员/就绪的累计帧数（用于节流打印诊断，避免每帧刷屏）。
     #[cfg(feature = "steam")]
     steam_lobby_wait_ticks: u32,
-    /// Steam：本端是否已在「开局配置」阶段配好技能/配置（配完即置 true，host 据此收集各端 build_done 统一开战）。
-    #[cfg(feature = "steam")]
-    steam_build_done: bool,
     /// Steam（host）：房间阶段是否已经历过「全员就绪」状态（用于倒计时只在真正全员就绪后才开始，避免边界"秒进/永不进"）。
     #[cfg(feature = "steam")]
     steam_was_all_ready: bool,
@@ -874,8 +871,6 @@ impl Game {
             steam_roster_all_ready: false,
             #[cfg(feature = "steam")]
             steam_all_ready: false,
-            #[cfg(feature = "steam")]
-            steam_build_done: false,
             #[cfg(feature = "steam")]
             steam_was_all_ready: false,
             #[cfg(feature = "steam")]
@@ -3991,7 +3986,7 @@ impl event::EventHandler for Game {
                             // 保活：配置同步阶段也每帧上行（就绪 + 配好 + 在场输入），既防止 P2P 空闲被拆，
                             // 也持续向 host 续报 build_done=true（host 端判定“所有端配完”始终成立）。
                             let ref_enc = game_core::netcode::encode_player_input(&self.local_player_input());
-                            let _ = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &ref_enc);
+                            let _ = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &ref_enc);
                             // 上报我的 PlayerCfg（client 每帧发一次，确保 host 无论如何进入 HostGather 都能收到；
                             // Steam 可靠通道保证送达，重发仅为覆盖“host 尚未开始收集”的时序）。
                             let cfg_bytes = self.local_player_cfg();
@@ -4070,7 +4065,7 @@ impl event::EventHandler for Game {
                         while self.accumulator >= TICK {
                             let me = self.local_player_input();
                             let enc = game_core::netcode::encode_player_input(&me);
-                            let _ = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &enc);
+                            let _ = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &enc);
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
                                 self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
                                 let n = self.world.players.len();
@@ -4484,7 +4479,6 @@ impl Game {
             self.steam_in_lobby = false;
             self.steam_active = false;
             self.steam_local_ready = false;
-            self.steam_build_done = false;
             self.steam_was_all_ready = false;
             self.steam_countdown = 0.0;
             self.steam_manual_start_pending = false;
@@ -4908,7 +4902,7 @@ impl Game {
         if let Some(cli) = self.steam_cli_ls.as_mut() {
             // client：房间阶段用「就绪+在场+配好」合包持续上行（`RoomState`），走已证实可靠的输入在场通道。
             // 房间阶段 build_done 恒为 false（进配置后才置 true）。
-            let room_res = cli.send_room_state(self.steam_local_ready, self.steam_build_done, &presence_enc);
+            let room_res = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &presence_enc);
             if let Err(e) = room_res {
                 if self.steam_last_sent_ready.is_none() {
                     eprintln!("[steam-client] send_room_state failed: {e:?}");
@@ -5063,10 +5057,7 @@ impl Game {
             self.steam_in_lobby = false;
             self.meta.begin_first_round_config(); // 首局进配置学习（倒计时归零开战）
             self.pre_game_config = true; // 供 Fighting 分支 stage_first 判断（首局重建 world）
-            // 本端进入配置：build_done 由玩家在配置阶段重新按 o 确认（重新收集）。
-            // （不再对 host 侧 client build_done 做 reset：client 会在其进入配置、按 o 后再次上报 build_done=true，
-            //  避免“host 进配置晚于 client 已配完、reset 把已上报的 build_done 清掉导致 host 永远等不到”。）
-            self.steam_build_done = false;
+            // 注：旧的「配好 build_done」机制已废弃（本流程用 all_cfgs 配置同步 + 倒计时驱动），故无字段需清。
             self.net_cfg = NetCfgSync::Idle;
         }
         // host：节流刷新成员名单（client 加入后 host 界面才能显示新成员）。
@@ -5612,7 +5603,6 @@ impl Game {
         self.steam_in_lobby = true;
         self.steam_active = true;
         self.steam_local_ready = false;
-        self.steam_build_done = false;
         self.steam_was_all_ready = false;
         self.steam_manual_start_pending = false;
         self.steam_manual_countdown = false;
@@ -5664,11 +5654,7 @@ impl Game {
         // Steam：配置阶段为「所有玩家配完统一开始」；否则为局域网/单机的按空格开始。
         #[cfg(feature = "steam")]
         if self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
-            if self.steam_build_done {
-                draw_text(&mut canvas, ctx, "[v] 我已配好，等待所有玩家配完统一开始...", 22.0, graphics::Color::from_rgb(90, 220, 130), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
-            } else {
-                draw_text(&mut canvas, ctx, "选择技能后按 P 确认配好", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
-            }
+            draw_text(&mut canvas, ctx, "选择技能后按 P 确认配好", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         } else {
             draw_text(&mut canvas, ctx, "按 Space/P 开始第一轮，Esc 返回主菜单", 22.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.12 + 60.0 }, true)?;
         }
@@ -5717,7 +5703,7 @@ impl Game {
                 let total = self.world.players.len();
                 for i in 0..total {
                     let (name, done) = if i == 0 {
-                        ("host(你)".to_string(), self.steam_build_done)
+                        ("host(你)".to_string(), false)
                     } else {
                         (format!("玩家{i}"), host.client_build_done(i as u8))
                     };
@@ -5732,12 +5718,7 @@ impl Game {
                     r += 26.0;
                 }
             } else if self.steam_cli_ls.is_some() {
-                let (txt, col) = if self.steam_build_done {
-                    ("  [v] 我已配好，等待全员配完统一开始...".to_string(), Color::from_rgb(90, 220, 130))
-                } else {
-                    ("  [ ] 选技能后按 P 确认配好".to_string(), Color::from_rgb(240, 200, 70))
-                };
-                draw_text(&mut canvas, ctx, &txt, 18.0, col, Point2 { x: cx, y: r }, true)?;
+                draw_text(&mut canvas, ctx, "  [ ] 选技能后按 P 确认配好", 18.0, Color::from_rgb(240, 200, 70), Point2 { x: cx, y: r }, true)?;
             }
         }
         if self.app == AppState::Solo {

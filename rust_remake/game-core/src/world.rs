@@ -816,6 +816,11 @@ impl World {
         // b) 推进施法状态机；收集本帧“前摇结束”的效果并执行
         let mut fire_queue: Vec<(u32, SkillId, Option<Vec2>)> = Vec::new();
         for (idx, p) in self.players.iter_mut().enumerate() {
+            if !p.alive {
+                // 死亡即取消在途前摇，避免“尸体施法”（record_death 也会清，双保险）。
+                p.caster.interrupt();
+                continue;
+            }
             if let Some((id, target)) = p.caster.advance(dt) {
                 fire_queue.push((idx as u32, id, target));
                 p.caster.begin_cooldown(id);
@@ -1012,6 +1017,8 @@ impl World {
     /// （`damage_player` 早退 / `explode_at` continue 已保证），故不会重复记账。
     fn record_death(&mut self, victim: u32) {
         self.eliminated_order.push(victim);
+        // 死亡即打断施法：清除在途前摇，避免尸体继续走完施法（见 handle_casts 的 alive 门）。
+        self.players[victim as usize].caster.interrupt();
         if let Some(k) = self.players[victim as usize].last_hit_by {
             self.kills_this_round.push((k, victim));
         }

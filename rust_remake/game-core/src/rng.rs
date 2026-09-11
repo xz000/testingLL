@@ -33,8 +33,10 @@ impl Rng {
 
     /// 返回 [0.0, 1.0) 的定点小数。
     pub fn next_fix(&mut self) -> super::fix::Fix64 {
-        // 取低 32 位作为 Q32.32 的小数部分
-        super::fix::Fix64::from_bits((self.next() >> 32) as i32 as i64)
+        // 取随机数高 32 位放入 Q32.32（I32F32）的小数部分。
+        // 必须零扩展（`as u32`）：若用 `as i32` 会符号扩展，整数部分变成 -1，
+        // 取值落到 (-1, 1) 而非 [0, 1)，一半的取值为负、系统性扭曲所有调用点分布。
+        super::fix::Fix64::from_bits((self.next() >> 32) as u32 as i64)
     }
 
     /// 返回 [-1.0, 1.0] 的定点小数。
@@ -61,5 +63,20 @@ mod tests {
         let mut a = Rng::new(1);
         let mut b = Rng::new(2);
         assert_ne!(a.next(), b.next());
+    }
+
+    /// 回归：next_fix 必须落在 [0,1)，不得出现负值（曾经 i32 符号扩展导致一半取值为负）。
+    #[test]
+    fn next_fix_stays_in_unit_interval() {
+        let mut r = Rng::new(0xC0FF_EE12_3456_789A);
+        let zero = crate::fix::Fix64::ZERO;
+        let one = crate::fix::Fix64::ONE;
+        let mut saw_nonzero = false;
+        for _ in 0..10_000 {
+            let v = r.next_fix();
+            assert!(v >= zero && v < one, "next_fix out of [0,1): {v}");
+            saw_nonzero |= v > zero;
+        }
+        assert!(saw_nonzero, "next_fix 恒为 0，分布异常");
     }
 }
