@@ -43,6 +43,9 @@ pub const TAG_ROOM_STATE: u8 = 16;
 pub const TAG_TAKEOVER: u8 = 17;
 /// host → 所有 client：本局参与玩家的稳定身份（SteamID）列表，供各端在 host 掉线时确定性选举新 host。
 pub const TAG_PARTICIPANTS: u8 = 18;
+/// host → 所有 client：周期性世界状态哈希（分歧检测）。`[seq:u64][hash:u64]`，`seq` = 该哈希对应的帧号。
+/// client 推进到同 seq 时比对自己世界的哈希，不一致即判定帧同步分歧（desync）。
+pub const TAG_STATE_HASH: u8 = 19;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -95,6 +98,8 @@ pub enum Packet {
     Takeover { seq: u64, participants: Vec<u64> },
     /// host→所有 client：本局参与玩家的稳定身份（SteamID）列表（选举新 host 用）。
     Participants { ids: Vec<u64> },
+    /// host→所有 client：周期性世界状态哈希（分歧检测）。`hash` = host 应用完 `seq` 帧后世界状态的哈希。
+    StateHash { seq: u64, hash: u64 },
 }
 
 impl Packet {
@@ -234,6 +239,13 @@ impl Packet {
                 for id in ids {
                     v.extend_from_slice(&id.to_be_bytes());
                 }
+                v
+            }
+            Packet::StateHash { seq, hash } => {
+                let mut v = Vec::with_capacity(17);
+                v.push(TAG_STATE_HASH);
+                v.extend_from_slice(&seq.to_be_bytes());
+                v.extend_from_slice(&hash.to_be_bytes());
                 v
             }
         }
@@ -391,6 +403,11 @@ impl Packet {
                 }
                 Some(Packet::Participants { ids })
             }
+            TAG_STATE_HASH if buf.len() >= 17 => {
+                let seq = u64::from_be_bytes(buf[1..9].try_into().ok()?);
+                let hash = u64::from_be_bytes(buf[9..17].try_into().ok()?);
+                Some(Packet::StateHash { seq, hash })
+            }
             _ => None,
         }
     }
@@ -433,6 +450,7 @@ mod tests {
             Packet::Resync { seq: 789 },
             Packet::Takeover { seq: 12345, participants: vec![111, 222, 333] },
             Packet::Participants { ids: vec![111, 222, 333] },
+            Packet::StateHash { seq: 120, hash: 0xDEAD_BEEF_1234_5678 },
         ];
         for p in cases {
             let enc = p.encode();

@@ -1387,8 +1387,10 @@ impl World {
                             let n = *burst as i64;
                             let base = std::f64::consts::TAU / n as f64;
                             for k in 0..n {
-                                let ang = base * k as f64 + *emit_angle;
-                                let d = Vec2::new(Fix64::from_num(ang.cos()), Fix64::from_num(ang.sin()));
+                                // 确定性三角：f64 只用于「常数×k + 角度状态」的 IEEE 四则运算（逐位确定），
+                                // 三角函数走 CORDIC（crate::fix），避免平台 libm 差异导致帧同步 desync。
+                                let ang = Fix64::from_num(base * k as f64 + *emit_angle);
+                                let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
                                 spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.8), *kb_ji));
                             }
                         }
@@ -1399,7 +1401,9 @@ impl World {
                         if *emit_cooldown <= Fix64::ZERO {
                             *emit_cooldown = Fix64::from_num(0.12);
                             *emit_angle += 0.52; // ≈30° 螺旋步进
-                            let d = Vec2::new(Fix64::from_num((*emit_angle).cos()), Fix64::from_num((*emit_angle).sin()));
+                            // 确定性三角：走 CORDIC（见上）。
+                            let ang = Fix64::from_num(*emit_angle);
+                            let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
                             spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.7), *kb_ji));
                         }
                     }

@@ -716,7 +716,20 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
     Some(Projectile { owner, kind, pos, alive })
 }
 
-/// World 搴忓垪鍖?鍙嶅簭鍒楀寲銆?
+/// 世界状态哈希（周期性帧同步分歧检测用）：对序列化字节做 FNV-1a 64。
+/// 两端在相同输入下必须得到同一哈希；不一致即判定 desync。
+/// 纯整数运算，跨平台确定（不含浮点/平台库）。
+pub fn state_hash(w: &World) -> u64 {
+    let bytes = world_to_bytes(w);
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in &bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// World 搴忓垪鍖?鍙嶅簭鍒楄寲銆?
 pub fn world_to_bytes(w: &World) -> Vec<u8> {
     let mut o = Vec::new();
     wfix(&mut o, w.arena_radius);
@@ -1031,6 +1044,16 @@ mod tests {
         assert!(cmd_indices_valid(MAX_CMDS - 1, MAX_CMDS));
         assert!(!cmd_indices_valid(MAX_CMDS, 0), "head 越界应拒绝");
         assert!(!cmd_indices_valid(0, MAX_CMDS + 1), "len 越界应拒绝");
+    }
+
+    /// 状态哈希（分歧检测）：相同世界 → 相同哈希；不同世界 → 不同哈希。
+    #[test]
+    fn state_hash_is_deterministic_and_sensitive() {
+        let a = World::new(3, 99);
+        let b = World::new(3, 99);
+        assert_eq!(state_hash(&a), state_hash(&b), "相同世界必须同哈希（两端可据此判定一致）");
+        let c = World::new(3, 1234);
+        assert_ne!(state_hash(&a), state_hash(&c), "不同世界应得不同哈希");
     }
 
     #[test]
