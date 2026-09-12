@@ -1,0 +1,5 @@
+892| meta.begin_first_round_config();
+4333| self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
+4429| self.meta.finish_first_round_config();
+4452| let now = self.meta.tick_learning(dt.min(0.25));
+5950| self.meta.begin_first_round_config(); // 首局进配置学习（倒计时归零开战）
