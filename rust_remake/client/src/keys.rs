@@ -347,14 +347,24 @@ mod source_scan_tests {
     /// 曾把清屏插在标题绘制之前 → 清完又被菜单文字画上去，子界面下面仍压着主菜单文字。
     #[test]
     fn lobby_clear_happens_after_menu_content() {
-        let clear = idx("if in_lobby_menu {\n            // **清屏**");
-        let title = idx("let title = \"术士之战 Warlock Brawl\";");
+        // 用源码里的 **ASCII 标记** 锚定（中文/缩进/结构都易变，标记稳定），
+        // 且限定在 `draw_menu` 内比较顺序（同名分支在 update 里也有）。
+        let dm = idx("fn draw_menu(");
+        let scope = &SRC[dm..];
+        let pos = |needle: &str| {
+            dm + scope
+                .find(needle)
+                .unwrap_or_else(|| panic!("draw_menu 内找不到 {needle:?}"))
+        };
+        let title = pos("let title = ");
+        let clear = pos("LAYOUT-CLEAR");
+        let create = pos("CREATE-BRANCH");
+        assert!(title < clear, "清屏必须在菜单内容之后（否则等于没清，回归④）");
+        assert!(clear < create, "清屏必须在建房分支绘制之前");
+        let seg = &SRC[create..(create + 400).min(SRC.len())];
         assert!(
-            clear > title,
-            "清屏必须在菜单内容（标题等）之后，否则等于没清（回归④）"
+            seg.contains("draw_room_cfg_editor"),
+            "建房分支应绘制统一设置编辑器（而非已退休的旧建房界面）"
         );
-        // 子界面绘制应在清屏之后（第 2/3 步后，建房流程改画统一编辑器 `draw_room_cfg_editor`）
-        let create = idx("self.draw_room_cfg_editor(&mut canvas, ctx)?;");
-        assert!(create > clear, "统一编辑器绘制应在清屏之后");
     }
 }

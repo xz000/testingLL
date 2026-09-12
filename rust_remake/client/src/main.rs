@@ -7073,6 +7073,7 @@ impl Game {
 
         // Steam 大厅：建房设置 / 房间列表 / 大厅主界面三种子界面。
         if in_lobby_menu {
+            // LAYOUT-CLEAR: lobby sub-screen clears the canvas before drawing
             // **清屏**：主菜单的标题/卡片/提示已经画在同一张画布上；子界面直接叠画会让它们透在
             // 下面（用户看到的"创建房间"下面还有一行"术士之战 Warlock Brawl"就是此因）。
             // 注意必须清在**这里**（菜单内容之后、子界面之前），早一步清等于没清。
@@ -7088,6 +7089,7 @@ impl Game {
             }
             // 建房设置界面。
             #[cfg(feature = "steam")]
+            // CREATE-BRANCH: unified settings editor in create mode
             if self.steam_lobby_create {
                 // 统一设置界面（创建模式）：与房内 `O` 同一个编辑器。
                 self.draw_room_cfg_editor(&mut canvas, ctx)?;
