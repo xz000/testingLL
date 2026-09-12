@@ -3119,7 +3119,7 @@ impl Game {
             canvas, ctx,
             &format!("房间设置   （自定义 {n} 项）"),
             ui::theme::TITLE,
-            Color::from_rgb(255, 210, 120),
+            layout::border_selected(),
             sw / 2.0,
             py + 26.0,
         )?;
@@ -3129,7 +3129,7 @@ impl Game {
         for g in settings_ui::Group::ALL {
             let sel = g == self.room_cfg_group;
             let col = if sel {
-                Color::from_rgb(255, 210, 120)
+                layout::border_selected()
             } else {
                 ui::theme::text_dim()
             };
@@ -3151,9 +3151,9 @@ impl Game {
             let sel = i == self.room_cfg_row;
             let custom = settings_ui::is_custom(&self.match_cfg, id);
             let col = if sel {
-                Color::from_rgb(255, 235, 170)
+                layout::text_accent()
             } else if custom {
-                Color::from_rgb(255, 200, 90)
+                layout::text_custom()
             } else {
                 ui::theme::text()
             };
@@ -5460,7 +5460,7 @@ impl Game {
                 format!("  {}", vals[i])
             };
             draw_text(canvas, ctx, &disp, 22.0, if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE }, Point2 { x: left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
-            y += box_h + 34.0;
+            y += box_h + layout::FIELD_GAP_Y;
         }
         // 房间锁（内容带内、两字段之下，留足行距避免与字段重叠）
         let lock_txt = if self.steam_room_locked { "[v] 已锁定（他人不能加入）" } else { "[ ] 未锁定（可加入）" };
@@ -6931,7 +6931,7 @@ impl Game {
     fn draw_steam_create_lobby(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "创建房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.075 }, true)?;
+        draw_text(canvas, ctx, "创建房间", 36.0, layout::border_selected(), Point2 { x: cx, y: sh * 0.075 }, true)?;
 
         let labels = [
             "房间名", "备注", "玩家人数", "总轮数",
@@ -6972,9 +6972,10 @@ impl Game {
             CreateAction::OpenSettings,
         ));
         let mpos = ui::mouse_design(ctx);
-        let box_w = 300.0;
-        let box_h = 44.0;
-        let label_w = 140.0;
+        // 尺寸取共享常量（与设置编辑器同一套视觉语言）。
+        let box_w = layout::FIELD_BOX_W;
+        let box_h = layout::FIELD_BOX_H;
+        let label_w = layout::FIELD_LABEL_W;
         let col_w = label_w + box_w;
         let gap = 56.0;
         let total_w = col_w * 2.0 + gap;
@@ -6997,20 +6998,20 @@ impl Game {
                 .push((field_rect, CreateAction::Focus(i as u8)));
             let hover = field_rect.contains(mpos);
             let bg_col = if selected {
-                Color::from_rgb(56, 66, 84)
+                layout::bg_selected()
             } else if hover {
-                Color::from_rgb(38, 44, 56)
+                layout::bg_hover()
             } else {
-                Color::from_rgb(28, 32, 42)
+                layout::bg_normal()
             };
             let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), field_rect, bg_col)?;
             canvas.draw(&bg, graphics::DrawParam::new());
             if selected || hover {
-                let bc = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(90, 104, 126) };
+                let bc = if selected { layout::border_selected() } else { layout::border_hover() };
                 let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), field_rect, bc)?;
                 canvas.draw(&border, graphics::DrawParam::new());
             }
-            let label_col = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(215, 220, 232) };
+            let label_col = if selected { layout::border_selected() } else { layout::text_normal() };
             draw_text(canvas, ctx, labels[i], 22.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 13.0 }, true)?;
             let disp = if vals[i].is_empty() { placeholders[i].to_string() } else { vals[i].clone() };
             let val_col = if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE };
@@ -7026,7 +7027,7 @@ impl Game {
                         btn,
                     );
                     let on = br.contains(mpos);
-                    let bc = if on { Color::from_rgb(70, 84, 106) } else { Color::from_rgb(38, 44, 56) };
+                    let bc = if on { layout::border_hover() } else { layout::bg_hover() };
                     let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), br, bc)?;
                     canvas.draw(&bg, graphics::DrawParam::new());
                     draw_text(canvas, ctx, sym, 22.0, Color::from_rgb(220, 226, 238), Point2 { x: br.x + btn / 2.0, y: br.y + 1.0 }, true)?;
@@ -7051,9 +7052,9 @@ impl Game {
             format!("自定义 {n} 项")
         };
         let badge_col = if n == 0 {
-            Color::from_rgb(150, 160, 175)
+            layout::text_dim()
         } else {
-            Color::from_rgb(255, 200, 90)
+            layout::text_custom()
         };
         ui::text_center(
             canvas, ctx,
@@ -7072,7 +7073,7 @@ impl Game {
         // 状态带：右侧按钮 [创建房间] / [取消]（鼠标可点；键盘仍是回车/Q）。
         {
             let bw = 150.0;
-            let bh = 30.0;
+            let bh = layout::ROW_H + 2.0;
             let by = b.status.y - 9.0;
             let bx = cx + 170.0;
             for (k, (label, act)) in [
@@ -7086,11 +7087,11 @@ impl Game {
                 let on = br.contains(mpos);
                 let primary = k == 0;
                 let bc = if on {
-                    if primary { Color::from_rgb(70, 120, 80) } else { Color::from_rgb(90, 70, 70) }
+                    if primary { layout::btn_primary_hover() } else { layout::btn_secondary_hover() }
                 } else if primary {
-                    Color::from_rgb(42, 74, 52)
+                    layout::btn_primary()
                 } else {
-                    Color::from_rgb(56, 46, 46)
+                    layout::btn_secondary()
                 };
                 let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), br, bc)?;
                 canvas.draw(&bg, graphics::DrawParam::new());
