@@ -35,6 +35,8 @@ mod steam;
 mod keys;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 mod settings_ui;
+/// 版面骨架（四带网格）：把"各界面手工摆坐标"改成"按带填充"，可单测。
+mod layout;
 
 /// 机器人数量（不含玩家本人）。当前 Solo/局域网均无本地 AI；保留该常量供将来“带 AI 测试”模式复用。
 #[allow(dead_code)]
