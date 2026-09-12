@@ -1523,6 +1523,13 @@ impl Game {
                 self.meta.register_damage_score(p as u32, dmg);
             }
         }
+        // 累计伤害（098c `Rn[12+i]`）：本轮伤害并入总伤害（须在 finish_round 清矩阵前）。
+        for p in 0..self.world.players.len() {
+            let dmg = self.world.round_damage_of(p as u32);
+            if let Some(pr) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == p as u32) {
+                pr.total_damage += dmg;
+            }
+        }
         let placement = self.world.placement();
         // 轮胜利分（D6，B2 队伍化）：存活方全员各 +2（098c mo；全员死光=平局不发）。
         for winner in self.world.round_winners() {
@@ -3523,7 +3530,7 @@ impl Game {
                 let mut sorted: Vec<_> = self.meta.profiles.iter().collect();
                 sorted.sort_by_key(|p| p.best_placement);
                 for p in sorted.iter() {
-                    let line = format!("{}  金币{}  击杀{}  最佳名次#{}", self.player_label(p.player_id), p.gold, p.total_kills, p.best_placement);
+                    let line = format!("{}  金币{}  击杀{}  伤害{:.0}  最佳名次#{}", self.player_label(p.player_id), p.gold, p.total_kills, p.total_damage, p.best_placement);
                     draw_text(canvas, ctx, &line, 24.0, Color::WHITE, Point2 { x: cx, y }, true)?;
                     y += 40.0;
                 }
@@ -4440,6 +4447,13 @@ impl event::EventHandler for Game {
                         }
                     }
                     if self.meta.profiles.iter().any(|pr| pr.score >= self.meta.config.win_score) {
+                        // 累计伤害（098c Rn[12+i]）：DM 无回合重置，整场伤害一次性并入。
+                        for p in 0..self.world.players.len() {
+                            let dmg = self.world.round_damage_of(p as u32);
+                            if let Some(pr) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == p as u32) {
+                                pr.total_damage += dmg;
+                            }
+                        }
                         let placement = self.meta.final_ranking().into_iter().map(|(id, _)| id).collect();
                         self.meta.finish_round(placement);
                     }
