@@ -26,19 +26,26 @@
 
 ## 二、联机「偶尔一卡一卡」的成因（按怀疑度排序）
 
-### A. 所有包共用一个**可靠有序**频道 → 周期性快照队头阻塞（最可疑）
+### A. 所有包共用一个**可靠有序**频道 → 周期性快照队头阻塞（设计隐患，影响取决于链路）
 
 - `SteamTransport::send_reliable` 固定 `send_message_to_user(identity, flags, data, /*channel=*/0)`，
   flags = `RELIABLE_NO_NAGLE | AUTO_RESTART_BROKEN_SESSION`（`net-steam/src/transport_steam.rs:95`）。
-  接收端也固定 `receive_messages_on_channel(0, batch)`。
+  接收端也固定 `receive_messages_on_channel(0, batch)`。同一 channel 上 RELIABLE = **有序恰好一次**。
 - **每 30 帧（约 0.5s）**host 会 `broadcast_snapshot(...)` 把**整个 World** 序列化后发给所有 client
   （`client/src/main.rs` 两处 `host_frame_count % SNAPSHOT_EVERY == 0`，`SNAPSHOT_EVERY = 30`）。
-- 快照很大：`net/src/proto.rs` 有 `snapshot_over_64kib_roundtrips` 测试 → 实测可 **>64KiB**。
-- 大快照与 60Hz 的小 `Frame` 包走**同一个可靠有序频道**：可靠有序 = **前一条完整送达前，后面的帧包不能交付**。
-  于是一次 64KiB 快照（多包）到达期间，后面的帧全被挡住；若其中任一包丢失，还要等重传（一个 RTT）→
-  **每 0.5s 一次周期性卡顿**，与“偶尔一卡一卡”的观感高度吻合。
-- 同类还有 `StateHash`（每 30 帧，很小，问题不大）、以及会话暂不可发时 `flush_pending` 的 FIFO 补发队列
-  （`send_to` 里“有 pending 就追加队尾”，会让帧包排在快照后面）。
+- **实测快照大小**（临时测试 `world_to_bytes`，已验证后删除）：
+  2 人 ≈ **3.0KB**、4 人 ≈ **6.1KB**、8 人 ≈ **12.5KB**（还带若干弹体/柱时略大）。
+  ⚠️ 修正：`net/src/proto.rs` 的 `snapshot_over_64kib_roundtrips` 是**合成负载**测试，
+   **不代表**真实快照 >64KiB（之前初稿误引了它）。
+- 即便如此，大快照与 60Hz 小 `Frame` 包走**同一可靠有序频道**：可靠有序 = **前一条完整送达前后面不交付**。
+  正常情况下 12KB ≈ 8 个满包，队头窗口只有几～十几 ms（影响小）；但**一旦其中一个包丢失**，
+  重传要一个 RTT（几十～上百 ms），期间后面的帧全被挡 → 偶发明显卡顿。
+  另外会话暂不可发时 `flush_pending` 的 FIFO 补发队列（`send_to` 里“有 pending 就追加队尾”）
+  会让帧包排在快照后面，也放大突发。
+- 同类还有 `StateHash`（每 30 帧，很小）。
+
+> 结论：A 是**设计隐患 + 偶发大卡**的主因（快照不大但共用可靠有序频道）；
+> 日常的“持续小抖”更可能来自 B（host 产帧被输入到达牵着走）与 C（client 追赶快进）。
 
 ### B. host 产帧节奏被“输入到达”牵着走
 
