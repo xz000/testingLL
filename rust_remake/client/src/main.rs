@@ -105,6 +105,11 @@ const STEAM_DEFAULT_STARTING_GOLD: i32 = 0;
 /// Steam 建房：每轮固定金币（参与奖）默认值（与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 20;
+/// 基础生命恢复默认值（HP/s；098c `In=.05`/0.1s）。
+const STEAM_DEFAULT_REGEN: f64 = 0.5;
+/// R 键可循环的基础回血档位（098c `-C9` 是常量式，故用档位而非输入框）。
+#[cfg(feature = "steam")]
+const STEAM_REGEN_CHOICES: [f64; 6] = [0.5, 0.0, 0.25, 0.75, 1.0, 2.0];
 /// Steam 建房：名次奖励默认输入（单数字 = 第一名奖励，自动按 0.6 比例递减到 0；
 /// 也可输入逗号分隔档位 `30,20,10` 手动精确控制）。
 #[cfg(feature = "steam")]
@@ -515,6 +520,9 @@ struct Game {
     /// Steam 建房设置：游戏模式（098c nn：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还）。
     #[cfg(feature = "steam")]
     steam_create_mode: u8,
+    /// 建房时选择的基础回血（HP/s）。
+    #[cfg(feature = "steam")]
+    steam_create_regen: f64,
     /// 当前场次局间准备时间（秒；host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_learn_secs: u32,
@@ -533,6 +541,9 @@ struct Game {
     /// 游戏模式（098c nn，B3）：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还。
     /// Steam host 房间界面 1-5 并写大厅元数据；solo/LAN 用 --mode 参数。
     match_mode: u8,
+    /// 本局生效的基础回血（HP/s）。
+    #[cfg(feature = "steam")]
+    match_regen: f64,
     /// 队伍数（B2）：1=FFA；国王模式强制 2。
     match_teams: u8,
     /// Steam：房间界面是否展开「邀请好友」面板（I 开关；不是模态，房间网络逻辑照常每帧跑）。
@@ -685,6 +696,12 @@ impl Game {
             .and_then(|i| std::env::args().nth(i + 1))
             .and_then(|v| v.parse().ok())
             .unwrap_or(1);
+        // 基础生命恢复（--regen X；098c 主机常量 `-C9`，默认 0.5/s）。Steam 进房后由大厅元数据覆盖。
+        let init_regen: f64 = std::env::args()
+            .position(|a| a == "--regen")
+            .and_then(|i| std::env::args().nth(i + 1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(STEAM_DEFAULT_REGEN);
         #[cfg(feature = "steam")]
         let init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
         #[cfg(feature = "steam")]
@@ -755,6 +772,7 @@ impl Game {
             _ => {
                 let mut w = World::new(player_count.max(1), seed);
                 w.configure_mode(init_mode); // 非Steam 路径：--mode N（B3）
+                w.configure_regen(init_regen); // 非Steam 路径：--regen X
                 w
             }
         };
@@ -776,6 +794,7 @@ impl Game {
             #[cfg(not(feature = "steam"))]
             let cfg = MatchConfig {
                 game_mode: init_mode,
+                base_regen: init_regen,
                 team_count: if init_mode == 4 { 2 } else { 1 },
                 // Solo 试验场（AppState::Solo/MainMenu 即 sandbox）：给充裕金币，便于一次性试多套技能/物品。
                 starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { 0 },
@@ -1024,7 +1043,11 @@ impl Game {
             steam_create_place: auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST),
             #[cfg(feature = "steam")]
             steam_create_mode: init_mode.max(1),
+            #[cfg(feature = "steam")]
+            steam_create_regen: STEAM_DEFAULT_REGEN,
             match_mode: init_mode,
+            #[cfg(feature = "steam")]
+            match_regen: init_regen,
             match_teams: 1,
             #[cfg(feature = "steam")]
             match_rounds: init_rounds,
@@ -1647,6 +1670,7 @@ impl Game {
             starting_gold: self.match_starting_gold,
             place_rewards: self.match_place_rewards.clone(),
             game_mode: self.match_mode,
+            base_regen: self.match_regen,
             // 国王模式按 098c kX 自动两队（其余按房间设置，默认 FFA）
             team_count: if self.match_mode == 4 { 2 } else { self.match_teams },
             ..Default::default()
@@ -1659,6 +1683,7 @@ impl Game {
     fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
         self.world = game_core::world::World::new(p.max(1) as u32, seed);
         self.world.configure_mode(self.match_mode);
+        self.world.configure_regen(self.match_regen);
         self.meta = game_core::meta::MatchState::new(
             self.match_config(),
             &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -5419,6 +5444,7 @@ impl Game {
                 };
                 self.steam_create_note = String::new();
                 self.steam_create_focus = 0;
+                self.steam_create_regen = STEAM_DEFAULT_REGEN;
                 self.steam_create_rounds = STEAM_DEFAULT_ROUNDS;
                 self.steam_create_players_buf = STEAM_DEFAULT_PLAYERS.to_string();
                 self.steam_create_rounds_buf = STEAM_DEFAULT_ROUNDS.to_string();
@@ -5460,6 +5486,15 @@ impl Game {
         // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
         if just('m') || just('M') {
             self.steam_create_mode = if self.steam_create_mode >= 5 { 1 } else { self.steam_create_mode + 1 };
+        }
+        // R：循环切换基础回血档位（098c 主机常量 `-C9`）。
+        if just('r') || just('R') {
+            let i = STEAM_REGEN_CHOICES
+                .iter()
+                .position(|v| (v - self.steam_create_regen).abs() < 1e-9)
+                .map(|i| (i + 1) % STEAM_REGEN_CHOICES.len())
+                .unwrap_or(0);
+            self.steam_create_regen = STEAM_REGEN_CHOICES[i];
         }
         // 字段编号与两列布局：左列=0..3（房名/备注/人数/轮数），右列=4..7（准备/初始金币/每轮金币/名次奖励）。
         // 二维方向键导航：↑↓ 同列上下移动，←→ 左右换列，Tab=↑（回退一格）。
@@ -5652,7 +5687,8 @@ impl Game {
             self.steam_create_starting_gold = starting_gold;
             self.steam_create_gold_per_round = gold_per_round;
             self.steam_create_place = place;
-            self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
+            self.match_regen = self.steam_create_regen;
+        self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
             let name = self.steam_create_name.clone();
             let note = self.steam_create_note.clone();
             eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_per_round={gold_per_round} place={:?} name='{name}' note='{note}'", self.steam_create_place);
@@ -5892,6 +5928,7 @@ impl Game {
                     sess.host_set_gold_per_round(self.steam_create_gold_per_round)?;
                     sess.host_set_place_reward(&self.steam_create_place)?;
                     sess.host_set_mode(self.match_mode)?;
+                    sess.host_set_regen(self.steam_create_regen)?;
                     self.match_rounds = self.steam_create_rounds;
                     self.match_learn_secs = self.steam_create_learn;
                     self.match_starting_gold = self.steam_create_starting_gold;
@@ -5940,6 +5977,7 @@ impl Game {
                     self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
                     self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
                     self.match_mode = sess.lobby_mode().unwrap_or(1);
+                    self.match_regen = sess.lobby_regen().unwrap_or(STEAM_DEFAULT_REGEN);
                     self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
                     let host_id = sess.host_steam_id().unwrap_or(0);
                     let my_slot = sess.my_slot();
@@ -5964,6 +6002,7 @@ impl Game {
             }
             self.world = game_core::world::World::new(n.max(1) as u32, seed);
             self.world.configure_mode(self.match_mode);
+            self.world.configure_regen(self.match_regen);
             self.meta = game_core::meta::MatchState::new(
                 self.match_config(),
                 &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -6235,7 +6274,15 @@ impl Game {
             ),
             19.0, Color::from_rgb(150, 220, 180), Point2 { x: cx, y: sh * 0.86 }, true,
         )?;
-        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · M 切换模式 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        draw_text(
+            canvas, ctx,
+            &format!(
+                "基础回血（R 键切换）：{} /s   [098c 主机常量 -C9，默认 0.5]",
+                self.steam_create_regen
+            ),
+            19.0, Color::from_rgb(150, 220, 180), Point2 { x: cx, y: sh * 0.835 }, true,
+        )?;
+        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · M 切换模式 · R 回血 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         Ok(())
     }
 

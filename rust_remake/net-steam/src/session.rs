@@ -37,6 +37,9 @@ pub const ROOM_LEARN_KEY: &str = "room_learn";
 pub const ROOM_STARTING_GOLD_KEY: &str = "room_starting_gold";
 /// 大厅元数据：每轮固定金币（参与奖，host 建房时写入；加入者据此对齐 MatchConfig.gold_per_round）。
 pub const ROOM_GOLD_PER_ROUND_KEY: &str = "room_gold_per_round";
+
+/// 基础生命恢复（HP/s）。098c 里它是主机常量 `-C9`（`In`），默认 `In=.05`/0.1s = 0.5/s。
+pub const ROOM_REGEN_KEY: &str = "room_regen";
 /// 大厅元数据：单轮名次奖励（逗号分隔的档位，host 建房时写入；加入者据此对齐 MatchConfig.place_rewards）。
 pub const ROOM_PLACE_REWARD_KEY: &str = "room_place_reward";
 /// 大厅元数据：联机兼容版本（`game_core::PROTOCOL_VERSION`）。host 建房时写入，
@@ -698,6 +701,26 @@ impl SteamSession {
         self.transport
             .matchmaking()
             .lobby_data(l, ROOM_GOLD_PER_ROUND_KEY)
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// 设置基础生命恢复（HP/s；098c 主机常量 `-C9`）。
+    pub fn host_set_regen(&self, per_sec: f64) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_regen: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_REGEN_KEY, &per_sec.to_string());
+        Ok(())
+    }
+
+    /// 读取基础生命恢复（加入者对齐 host 设置用）。
+    pub fn lobby_regen(&self) -> Option<f64> {
+        let l = self.lobby?;
+        self.transport
+            .matchmaking()
+            .lobby_data(l, ROOM_REGEN_KEY)
             .and_then(|s| s.parse().ok())
     }
 

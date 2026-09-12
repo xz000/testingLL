@@ -15,6 +15,8 @@ use crate::skill::{CastKey, SkillId};
 /// 一场完整对抗的总小局数与时长配置。
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatchConfig {
+    /// 基础生命恢复（HP/s）。098c 主机常量 `-C9`（`In`，默认 `In=.05`/0.1s = **0.5/s**）。
+    pub base_regen: f64,
     /// 总小局数
     pub total_rounds: u32,
     /// 学习阶段时长（秒）；0 用 0 表示"无学习阶段，自动进入下一局"
@@ -64,6 +66,7 @@ impl Default for MatchConfig {
             score_per_assist: 1,
             score_per_round_win: 2,
             game_mode: 1,
+            base_regen: 0.5,
             team_count: 1,
             win_score: 10,
             shopping_time_secs: 40.0,
