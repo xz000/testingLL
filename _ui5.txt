@@ -1,0 +1,54 @@
+ 2239             }
+ 2240             // 禁锢（Tied）/沉默 → 紫灰环
+ 2241             if p.tied() || p.silenced() {
+ 2242                 draw_ring!(ring, Color::from_rgba(170, 130, 200, 200));
+ 2243                 ring += 4.0;
+ 2244             }
+ 2245             // 国王（模式 4）→ 金皇冠环（最外层）
+ 2246             if self.world.kings.contains(&p.id) {
+ 2247                 draw_ring!(ring + 2.0, Color::from_rgba(255, 200, 60, 230));
+ 2248             }
+ 2249             // 化身（模式 3）→ 描边加粗视觉（画一个大外环）
+ 2250             if self.world.avatar == Some(p.id) {
+ 2251                 let av = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(4.0), Point2 { x: fx, y: fy }, r + 10.0, 0.5, Color::from_rgba(255, 90, 90, 200))?;
+ 2252                 canvas.draw(&av, graphics::DrawParam::new());
+ 2253             }
+ 2254             // 内圈 Steam 头像（B6，D13 #12）：64px 头像裁成内切圆后缩放进角色圆内；LAN/无 Steam 无头像（角色色即身份）。
+ 2255             #[cfg(feature = "steam")]
+ 2256             {
+ 2257                 let steam_id_of = self.steam_roster.iter().find(|(slot, _, _)| *slot as u32 == p.id).map(|(_, _, id)| *id);
+ 2258                 if let Some(sid) = steam_id_of {
+ 2259                     let _ = self.steam_draw_avatar(&mut canvas, sid, fx - r * 0.62, fy - r * 0.62, r * 1.24);
+ 2260                 }
+ 2261             }
+ 2262 
+ 2263             // 护盾：外圈浅色圆环（护盾激活时）
+ 2264             if p.shield() {
+ 2265                 let sring = Mesh::new_circle(
+ 2266                     &ctx.gfx,
+ 2267                     DrawMode::stroke(3.0),
+ 2268                     Point2 { x: fx, y: fy },
+ 2269                     r + 6.0,
+ 2270                     0.5,
+ 2271                     Color::from_rgba(120, 210, 255, 190),
+ 2272                 )?;
+ 2273                 canvas.draw(&sring, graphics::DrawParam::new());
+ 2274             }
+ 2275 
+ 2276             // 施法前摇提示：只对“自己”显示（其他客户端不应看到蓄力动画，只看到释放瞬间的效果）。
+ 2277             if p.id == me_idx {
+ 2278                 if let game_core::skill::CastPhase::Windup { remaining, .. } = p.caster.phase() {
+ 2279                     let ring = Mesh::new_circle(
+ 2280                         &ctx.gfx,
+ 2281                         DrawMode::stroke(3.0),
+ 2282                         Point2 { x: fx, y: fy },
+ 2283                         r + 8.0 + (remaining.to_num::<f32>() * 120.0), // 前摇开始时大，结束时小
+ 2284                         0.3,
+ 2285                         Color::from_rgba(255, 180, 80, 200),
+ 2286                     )?;
+ 2287                     canvas.draw(&ring, graphics::DrawParam::new());
+ 2288                 }
+ 2289             }
+ 2290 
+ 2291             // HP 条
+ 2292             let bw = (r * 2.0).max(16.0);

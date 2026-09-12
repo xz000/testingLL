@@ -1,0 +1,140 @@
+ 2607                 graphics::Rect::new(0.0, 0.0, sw, 34.0),
+ 2608                 Color::from_rgba(160, 30, 30, 210),
+ 2609             )?;
+ 2610             canvas.draw(&bg, graphics::DrawParam::new());
+ 2611             draw_text(&mut canvas, ctx, "检测到帧同步分歧(desync)：本端状态与房主不一致，请退出重连", 18.0, Color::WHITE, Point2 { x: cx, y: 8.0 }, true)?;
+ 2612         }
+ 2613 
+ 2614         // 对局内 HUD（D9 UI 批次2）：物品栏（容量随背包研究 1~10）+ 金币。仅对战/学习阶段显示。
+ 2615         if !self.world.sandbox || self.meta.phase == game_core::meta::MatchPhase::Fighting {
+ 2616             if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
+ 2617                 let (sw, sh) = (ui::UI_W, ui::UI_H);
+ 2618                 // 左上状态区（U1）：金币/模式/精通纵排，不再散排重叠
+ 2619                 draw_text(
+ 2620                     &mut canvas,
+ 2621                     ctx,
+ 2622                     &format!("金币 {}", pr.gold),
+ 2623                     19.0,
+ 2624                     Color::from_rgb(255, 220, 120),
+ 2625                     Point2 { x: 14.0, y: 20.0 },
+ 2626                     true,
+ 2627                 )?;
+ 2628                 draw_text(
+ 2629                     &mut canvas,
+ 2630                     ctx,
+ 2631                     &format!(
+ 2632                         "模式：{}（{}）",
+ 2633                         game_core::meta::MatchState::mode_name(self.match_mode),
+ 2634                         if self.match_teams >= 2 { "两队" } else { "FFA" }
+ 2635                     ),
+ 2636                     16.0,
+ 2637                     Color::from_rgb(170, 200, 255),
+ 2638                     Point2 { x: 14.0, y: 44.0 },
+ 2639                     true,
+ 2640                 )?;
+ 2641                 let m = pr.mastery;
+ 2642                 if m.life + m.range + m.time + m.backpack > 0 {
+ 2643                     draw_text(
+ 2644                         &mut canvas,
+ 2645                         ctx,
+ 2646                         &format!("精通 命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
+ 2647                         15.0,
+ 2648                         Color::from_rgb(170, 200, 255),
+ 2649                         Point2 { x: 14.0, y: 66.0 },
+ 2650                         true,
+ 2651                     )?;
+ 2652                 }
+ 2653                 // 进度（常驻 HUD）：死斗/最后生还无回合概念，改显示目标分；其余显示当前局 / 总轮数。
+ 2654                 let progress = if self.match_mode == 2 {
+ 2655                     format!("死斗：目标 {} 分", self.meta.config.win_score)
+ 2656                 } else {
+ 2657                     format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+ 2658                 };
+ 2659                 draw_text(
+ 2660                     &mut canvas,
+ 2661                     ctx,
+ 2662                     &progress,
+ 2663                     19.0,
+ 2664                     Color::from_rgb(255, 235, 150),
+ 2665                     Point2 { x: 14.0, y: 88.0 },
+ 2666                     true,
+ 2667                 )?;
+ 2668                 // 物品栏（U1）：技能栏正上方一行（居中对齐；技能栏 y = sh-80、高 56 → 物品栏 y = sh-148）
+ 2669                 let item_slots = pr.inventory_slots() as f32;
+ 2670                 let slot_w = 52.0;
+ 2671                 let total_w = slot_w * item_slots;
+ 2672                 let x0 = sw / 2.0 - total_w / 2.0;
+ 2673                 let y0 = sh - 148.0;
+ 2674                 for i in 0..pr.inventory_slots() {
+ 2675                     let x = x0 + i as f32 * slot_w;
+ 2676                     // 槽位底框
+ 2677                     let slot_bg = Mesh::new_rectangle(
+ 2678                         &ctx.gfx,
+ 2679                         DrawMode::fill(),
+ 2680                         graphics::Rect::new(x, y0, slot_w - 4.0, slot_w - 4.0),
+ 2681                         Color::from_rgba(30, 34, 46, 200),
+ 2682                     )?;
+ 2683                     canvas.draw(&slot_bg, graphics::DrawParam::new());
+ 2684                     let slot_border = Mesh::new_rectangle(
+ 2685                         &ctx.gfx,
+ 2686                         DrawMode::stroke(2.0),
+ 2687                         graphics::Rect::new(x, y0, slot_w - 4.0, slot_w - 4.0),
+ 2688                         Color::from_rgba(90, 100, 120, 220),
+ 2689                     )?;
+ 2690                     canvas.draw(&slot_border, graphics::DrawParam::new());
+ 2691                     // 物品名（两行截断：取前 4 字）
+ 2692                     if let Some(it) = pr.items.get(i) {
+ 2693                         let d = it.def();
+ 2694                         let name: String = d.name.chars().take(4).collect();
+ 2695                         draw_text(
+ 2696                             &mut canvas,
+ 2697                             ctx,
+ 2698                             &name,
+ 2699                             13.0,
+ 2700                             Color::from_rgb(255, 230, 160),
+ 2701                             Point2 { x: x + (slot_w - 4.0) / 2.0, y: y0 + (slot_w - 4.0) / 2.0 - 2.0 },
+ 2702                             true,
+ 2703                         )?;
+ 2704                     }
+ 2705                 }
+ 2706             }
+ 2707         }
+ 2708 
+ 2709         // Steam 提示条（成就上报等）：画在最上层，几秒后自动消失。
+ 2710         #[cfg(feature = "steam")]
+ 2711         {
+ 2712             let now = ctx.time.time_since_start().as_secs_f64();
+ 2713             if !self.steam_toast.0.is_empty() && now < self.steam_toast.1 {
+ 2714                 let (sw, sh) = (ui::UI_W, ui::UI_H);
+ 2715                 draw_text(&mut canvas, ctx, &self.steam_toast.0, 22.0, Color::from_rgb(255, 215, 120), Point2 { x: sw / 2.0, y: sh * 0.08 }, true)?;
+ 2716             }
+ 2717         }
+ 2718 
+ 2719         // 局内记分板（CS 式：**按住 Tab** 显示）：画在最上层。
+ 2720         if ctx
+ 2721             .keyboard
+ 2722             .is_logical_key_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Tab))
+ 2723         {
+ 2724             self.draw_scoreboard(&mut canvas, ctx)?;
+ 2725         }
+ 2726 
+ 2727         // 视角平移提示（仅对战阶段显示）
+ 2728         if !self.pre_game_config {
+ 2729             let (_, sh) = (ui::UI_W, ui::UI_H);
+ 2730             draw_text(
+ 2731                 &mut canvas,
+ 2732                 ctx,
+ 2733                 "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Home 场地中心 · End 跳到自己",
+ 2734                 15.0,
+ 2735                 Color::from_rgb(150, 165, 185),
+ 2736                 Point2 { x: 12.0, y: sh - 14.0 },
+ 2737                 true,
+ 2738             )?;
+ 2739         }
+ 2740 
+ 2741         canvas.finish(ctx)?;
+ 2742         Ok(())
+ 2743     }
+ 2744 
+ 2745     /// 局内记分板（CS 式：**按住 Tab** 显示）：列 = 玩家 / 分数 / 击杀 / 存活。
+ 2746     /// 玩家数超过 `SCOREBOARD_MAX_ROWS` 时只显示**头部 + 尾部 + 本人**，其余折叠为「…」。

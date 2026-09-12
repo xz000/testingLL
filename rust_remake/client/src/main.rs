@@ -2688,7 +2688,7 @@ impl Game {
                         Color::from_rgba(90, 100, 120, 220),
                     )?;
                     canvas.draw(&slot_border, graphics::DrawParam::new());
-                    // 物品名（两行截断：取前 4 字）
+                    // 物品名（截断到 4 字）+ 右上角**档位角标**（名字里的 "1/2/3" 会被截掉，用角标补回）
                     if let Some(it) = pr.items.get(i) {
                         let d = it.def();
                         let name: String = d.name.chars().take(4).collect();
@@ -2701,6 +2701,18 @@ impl Game {
                             Point2 { x: x + (slot_w - 4.0) / 2.0, y: y0 + (slot_w - 4.0) / 2.0 - 2.0 },
                             true,
                         )?;
+                        // 档位角标：仅同家族多档时显示（怀表 1/2、靴 1/2/3、头盔 1/2/3…）
+                        if d.family != game_core::item::ItemFamily::Standalone {
+                            draw_text(
+                                &mut canvas,
+                                ctx,
+                                &format!("{}", d.tier),
+                                12.0,
+                                Color::from_rgb(150, 200, 255),
+                                Point2 { x: x + slot_w - 12.0, y: y0 + 4.0 },
+                                true,
+                            )?;
+                        }
                     }
                 }
             }
@@ -3147,6 +3159,20 @@ impl Game {
                         };
                         draw_text(canvas, ctx, key.letter(), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
                         draw_text(canvas, ctx, label, 15.0, Color::WHITE, slot_center, true)?;
+                        // 形态角标（右下）：该技能有第二形态且当前为 B 时标出形态名后缀
+                        // —— 中性名会剥掉「·形态」，否则对局中看不出自己是 A 还是 B。
+                        if let Some(s) = skill {
+                            let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                            if alt && game_core::skill::DefTable::has_alt(s) {
+                                draw_text(
+                                    canvas, ctx,
+                                    game_core::skill::DefTable::form_suffix(s, true),
+                                    12.0, Color::from_rgb(150, 220, 180),
+                                    Point2 { x: bx + slot_w - 14.0, y: y0 + slot_h - 10.0 },
+                                    true,
+                                )?;
+                            }
+                        }
 
                         // 冷却遮罩 + 倒计时
                         if let Some(s) = skill {
@@ -3348,7 +3374,7 @@ impl Game {
                 let m = me.mastery;
                 ui::text_left(
                     canvas, ctx,
-                    &format!("精通  命{} 远{} 时{} 包{}", m.life, m.range, m.time, m.backpack),
+                    &format!("精通  命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                 )?;
                 ly += 26.0;

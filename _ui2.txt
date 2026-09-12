@@ -1,0 +1,58 @@
+===== around line 2640 =====
+ 2640                 )?;
+ 2641                 let m = pr.mastery;
+ 2642                 if m.life + m.range + m.time + m.backpack > 0 {
+ 2643                     draw_text(
+ 2644                         &mut canvas,
+ 2645                         ctx,
+ 2646                         &format!("精通 命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
+ 2647                         15.0,
+ 2648                         Color::from_rgb(170, 200, 255),
+ 2649                         Point2 { x: 14.0, y: 66.0 },
+ 2650                         true,
+ 2651                     )?;
+ 2652                 }
+ 2653                 // 进度（常驻 HUD）：死斗/最后生还无回合概念，改显示目标分；其余显示当前局 / 总轮数。
+ 2654                 let progress = if self.match_mode == 2 {
+ 2655                     format!("死斗：目标 {} 分", self.meta.config.win_score)
+ 2656                 } else {
+
+===== around line 3345 =====
+ 3345                     }
+ 3346                 }
+ 3347                 ly += 6.0;
+ 3348                 let m = me.mastery;
+ 3349                 ui::text_left(
+ 3350                     canvas, ctx,
+ 3351                     &format!("精通  命{} 远{} 时{} 包{}", m.life, m.range, m.time, m.backpack),
+ 3352                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3353                 )?;
+ 3354                 ly += 26.0;
+ 3355                 ui::text_left(
+ 3356                     canvas, ctx,
+ 3357                     "（技能整场锁定，购买后同树其余技能不可再选）",
+ 3358                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3359                 )?;
+
+===== around line 2290 =====
+ 2290 
+ 2291             // HP 条
+ 2292             let bw = (r * 2.0).max(16.0);
+ 2293             let ratio = (p.hp / p.max_hp).to_num::<f32>().clamp(0.0, 1.0);
+ 2294             let y_bar = fy - r - 12.0;
+ 2295             let bg = Mesh::new_rectangle(
+ 2296                 &ctx.gfx,
+ 2297                 DrawMode::fill(),
+ 2298                 graphics::Rect::new(fx - bw / 2.0, y_bar, bw, 5.0),
+ 2299                 Color::from_rgba(10, 12, 18, 190),
+ 2300             )?;
+ 2301             let fg = Mesh::new_rectangle(
+ 2302                 &ctx.gfx,
+ 2303                 DrawMode::fill(),
+ 2304                 graphics::Rect::new(fx - bw / 2.0, y_bar, bw * ratio, 5.0),
+ 2305                 hp_color(ratio),
+ 2306             )?;
+ 2307             canvas.draw(&bg, graphics::DrawParam::new());
+ 2308             canvas.draw(&fg, graphics::DrawParam::new());
+ 2309         }
+ 2310 

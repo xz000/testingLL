@@ -1,0 +1,503 @@
+
+===== update_camera (line 1069) =====
+   第一次升级就是购买
+   [learn] select tree '{letter}' (key=Key::Character)
+   [learn] select tree={} digit='{}' -> {}
+   [learn] '=' pressed, learn_tree_key={learn_key:?} idx={:?}
+   [learn] 形态切换 -> {new_name}
+   [learn] {} 无第二形态
+   生命精通
+   范围精通
+   射程精通
+   背包研究
+   [shop] 卖出 {}（+{} 金，余 {}）
+   [shop] 物品格已满（{slots}，背包研究可扩容）
+   [shop] 购买 {}（-{} 金，余 {}）
+   [shop] {} 不可购买（需 {} 金，现有 {}）
+   [learn] skill cap bonus +2 -> +{}
+   [learn] 精通 {sel} 已升级
+   [learn] 精通 {sel} 需要 {} 金或已达上限 {}
+   [blood] 玩家{killer} 发出 First Blood!
+   [streak] {} 结束了 {} 的{}!
+   [streak] 玩家{killer} 终结了 {victim_streak} 连杀
+   [teardown] profiles pre: {:?}
+   [teardown] world post: {:?}
+   [cfg-sync] applied idx={} -> pid={} skill {:?}->{:?} binds {:?}->{:?}
+   [cfg-sync] WARN no profile matches idx={player_index} (pids={pids:?}) [game 技能同步若缺这段说明 profile 匹配失败]
+   [cfg-sync] WARN decode fail idx={} len={}
+   steam
+   steam
+   [steam] staged world for {p} participant player(s)
+   steam
+   steam
+   steam
+   steam
+   玩家{player_id}
+   精确版
+   [client] reconnect flow: sending ReconnectReq...
+   [client] got Snapshot seq={seq}, rebuilding World ({n} bytes)
+   [client] reconnected: World rebuilt from snapshot, resuming lockstep
+   [client] failed to decode snapshot, retrying on next keypress
+   [client] reconnect error: {e:?}
+
+===== draw_scene (line 2055) =====
+   岩浆吞噬 {:.0}%
+   steam
+   steam
+   检测到帧同步分歧(desync)：本端状态与房主不一致，请退出重连
+   金币 {}
+   模式：{}（{}）
+   两队
+   FFA
+   精通 命{} 范{} 射{} 包{}
+   死斗：目标 {} 分
+   第 {} / {} 局
+   steam
+   视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Home 场地中心 · End 跳到自己
+
+===== draw_scoreboard (line 2747) =====
+   死斗  目标 {} 分
+   第 {} / {} 局
+   玩家
+   分数
+   击杀
+   伤害
+   存活
+   {} (我)
+   {dmg:.0}
+   存活
+   出局
+   steam
+
+===== draw_steam_ready_overlay (line 2892) =====
+   房间 - 等待所有人就绪
+   [锁]
+   [开]
+   房间：{rname}    人数 {n_in}    版本 v{}
+      {lock_txt}
+   备注：{rnote}
+   流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战
+   全员就绪
+   即将开始（不可取消）
+   按 U 可取消
+   人数不足（已入 {n_in}）：房主已确认，{secs:.0} 秒后进配置（{hint}）
+   即将开始（不可取消）
+   按 U 可取消
+   人数不足（已入 {n_in}）：房主已确认，{secs:.0} 秒后进配置（{hint}）
+   全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）
+   人数不足（已入 {n_in}）：当前全员就绪，按回车 开始倒计时
+   已就绪：等其他人就绪（人数不足时由你按回车开始）
+   已就绪：等其他人就绪
+   ▶ 按 U 就绪（再按 U 取消）
+   E 编辑房间（含 L 锁定）    I 邀请好友    Q 退出房间
+   U 就绪/取消    I 邀请好友    Q 退出房间
+   == 就绪状态 ==
+   [v]
+   （我）
+     {mark}  {name}{me_tag}
+   {ms} ms
+   -- ms
+   steam
+   steam
+
+===== draw_steam_friend_panel (line 3019) =====
+   == 邀请好友 ==
+   （暂无好友 / 正在拉取…）
+   [v]
+   （已在房间）
+   （在线）
+   （离线）
+     {mark}  {name}{tag}
+   ↑/↓ 选择    回车 邀请    A Steam 邀请窗口    R 刷新    I/Q 收起
+
+===== draw_reconnect_overlay (line 3072) =====
+   正在重连…
+   连接已断开
+   按 R 从 host 拉取快照重连
+
+===== draw_meta_overlay (line 3093) =====
+   steam
+   延迟 {ms} ms
+   延迟 -- ms
+   蓄力中
+   Shift+右键 排移动 / Shift+技能(Shift+左键点目标) 排施法 / S 清空指令队列
+   开局配置
+   第 {} / {} 局结束 - 学习阶段
+   剩余 {:.0}s
+   金币 {}   击杀 {}   最佳名次 #{}
+   [1]技能
+   [2]商店
+   [3]成长
+   配装总览
+   技能槽
+   [{}] {} Lv{}
+   [{}] 未绑定
+   持有物品 ({}/{})
+   （空）
+     ↑ 升 {} · {}G
+     (满级)
+   精通  命{} 远{} 时{} 包{}
+   （技能整场锁定，购买后同树其余技能不可再选）
+   {} 树 — 点技能查看详情，再购买 / 升级
+   当前选中/悬停/普通
+   {} {}  ✓已购
+   {} {}  （同树已锁定）
+   {} {}  ({}G)
+   {} {}  ({}G 金币不足)
+   {name}  Lv{lv}  （已购买）
+   {name}  {cost}G
+   Lv{lv}  伤害 {:.1}  冷却 {:.1}s  射程 {:.0}
+   二形态  形态A：{a}   ⇄   形态B：{b}
+   当前出战：{}
+   切换为 {}  (B)
+   二形态：无
+   已满级 Lv{lv}
+   升级到 Lv{} ({cost}G)  [=]
+   同树已锁定，不可购买
+   购买 ({cost}G)  [=]
+   购买 ({cost}G) — 金币不足
+   ← 点击上方技能查看详情 / 购买 / 切形态
+   ← 在左侧「配装总览」里点一个技能槽来配置
+   {}物品栏 {}/{}：{}
+   【卖出模式 V】
+   [{key}] 卖出 {}  +{}G
+   [{key}] {} → {}  {}G
+   [{key}] {}  {}G
+   [{key}] {} 已满级
+   [V] 切换买/卖模式
+   [=] 确认购买/卖出选中项
+   共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· 数字选中、= 确认、V 切换买/卖
+   精通 / 上限突破（数字或点击选中、= 确认购买）
+   生命精通
+   范围精通
+   射程精通
+   背包研究
+   [{}] {} Lv{}/{} ({}G)
+   [U] 技能上限突破 +{} (5G)
+   [=] 确认购买选中项
+   字母选树 · 数字选技能看详情 · = 购买/升级 · B 切形态 · Tab 翻页
+   对局结束
+   {}  金币{}  击杀{}  伤害{:.0}  最佳名次#{}
+   最终得分排名
+   #{}  {}  {} 分
+   steam
+   Steam 统计：场次 {}    胜场 {}    击杀 {}
+   排行榜：暂无数据（需在 Steamworks 后台建榜）
+   排行榜 TOP5
+   #{}  {}  {} 分
+   按 Q 返回主菜单
+   steam
+   steam
+   steam
+   steam
+   steam
+   steam
+   steam
+   steam
+   steam
+   [menu] select={}
+   [menu] select={}
+   [menu] -> Solo
+   [menu] 局域网建设中：需命令行 --host <port> / --join <host:port>
+   局域网对战需命令行启动：--host <port> 创建，或 --join <host:port> 加入（GUI 暂未接入）
+   steam
+   [menu] -> Steam lobby menu
+   [steam] session ready, display name='{}'
+   [steam] session init failed: {e:?}
+   steam
+   [menu] Steam 未启用（需 --features client/steam 构建）
+   steam
+   [meta] finished -> back to main menu
+   [solo] first config {}
+   timeout -> auto-start
+   manual start
+   steam
+   steam
+   steam
+   steam
+   [meta] round {} learning done -> {} (config sync)
+   ClientWait
+   HostGather
+   [meta] round {} learning done -> next round (single)
+   [exit] Esc -> back to main menu
+   steam
+   [cfg-sync] 配置未收齐（竞态），本轮放弃同步，下一帧重试
+   [cfg-sync] HOST COLLECT idx={} binds={:?}
+   pre-game
+   next round
+   [steam-host] synced {} player configs -> {stage} (round {}), participants={p}, ids={pids:?}
+   [steam-host] SUPERSEDED: 收到新 host 的 Takeover，已取缔，退回主菜单
+   [steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues
+   [steam-host] emit seq={seq}, n_entries={}
+   [steam-host] trying to emit but waiting for client input (present={})
+   [steam-client] ClientWait sending cfg len={cfg_len} ok={send_ok} expect_seq={} stats(direct={},queued={},recv={})
+   pre-game
+   next round
+   [steam-client] got {} player configs -> {stage} (round {}), participants={}
+   [steam-client] got participants ids={ids:?}
+   [steam-client] reindexed me orig={me_orig} -> new={me_new}
+   [steam-client] frame -> seq={last}, n_ents={n_ents}
+   [steam-client] DESYNC at seq={last}: host={host_hash:#018x} mine={mine:#018x}
+   [steam-client] NO frames for {} ticks -> entering reconnect-probe / host-migration
+   [cfg-sync] 配置未收齐（竞态），本轮放弃同步，下一帧重试
+   [cfg-sync] HOST COLLECT idx={} binds={:?}
+   pre-game
+   next round
+   [meta] host synced {} player configs -> {stage} (round {})
+   [host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues
+   [host] emit seq=0: started, n_entries={}
+   pre-game
+   next round
+   [meta] client got {} player configs -> {stage} (round {})
+   [client] DESYNC detected at seq={seq} -> 帧同步分歧，本局后续可能不一致
+   [client] NO frames for {} ticks -> connection dropped, waiting for reconnect (R)
+   [blood] 玩家{killer} 发出 First Blood!
+   [streak] 玩家{killer} 终结了 {victim_streak} 连杀
+   [input] key_down focused logical={:?} repeated={repeated}
+   [input] window focus gained={gained}
+   steam
+   steam
+   steam
+   steam
+   [host] ALL {} clients joined -> hand to HostLockstep
+   steam
+   steam
+   已刷新好友列表
+   已打开 Steam 邀请窗口（可勾选多位好友）
+   尚未在房间里，无法邀请
+   {} 已经在房间里了
+   已邀请 {}{}
+    } else { 
+   尚未在房间里，无法邀请
+   steam
+   [steam-room] set joinable={} (locked={})
+   [steam-room] 模式 -> {}
+   未命名房间
+   [steam-room] saved name='{name}' note='{}'
+    abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/
+   steam
+
+===== draw_steam_room_edit (line 5067) =====
+   编辑房间信息
+   模式（host 按 1-5 切换）：{}
+   轮次
+   死亡竞赛
+   化身
+   国王
+   最后生还
+   {m}={n}
+   玩法图例：{legend_txt}
+   房间名
+   备注
+   （输入房间名）
+   （可选）
+   [v] 已锁定（他人不能加入）
+   [ ] 未锁定（可加入）
+   房间锁：{lock_txt}（按 L 切换）
+   人数上限建房时固定（steamworks 限制），用房间锁控制新入
+   回车 保存    Q 取消    L 锁房
+   steam
+   [steam-host] a player left the room (members {prev_len} -> {new_len}), waiting
+   [steam-host] roster updated: {new_len} member(s)
+   steam
+   [steam] leave room -> main menu
+   steam
+   [steam-invite] friend list opened ({} friends)
+   [steam-lobby] local ready = {}
+   [steam-lobby] ignoring ready-cancel during locked countdown
+   [steam-host] host confirms underfull start (mouse click) -> {STEAM_READY_COUNTDOWN_SECS}s countdown
+   [steam-lobby] local ready = {} (mouse click)
+   [steam-client] send_room_state failed: {e:?}
+   [steam-client] sent room_state ready={} to host
+   [steam-client] host says all ready -> config menu
+   [steam-client] roster ready snapshot: {entries:?} manual_ms={manual_ms}
+   [steam-client] all ready -> countdown {}
+   [steam-client] ready countdown zero -> config menu (StartConfig fallback)
+   [steam-host] host confirms underfull start ({present}/{expected} clients) -> {STEAM_READY_COUNTDOWN_SECS}s countdown
+   [steam-host] underfull countdown cancelled (someone un-readied or left)
+   manual(underfull)
+   full ready
+   [steam-host] {how} countdown zero -> start with {n} participant client(s), mask={mask:?}
+   [steam-client] host left (no heartbeat for {} ticks) -> show overlay
+   steam
+   [menu] Steam -> create-lobby setup
+   我的房间
+   {disp}的房间
+   [menu] Steam -> join lobby list
+   steam
+    abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/
+   start
+   round
+   start
+   start
+   start
+   start
+   steam
+   steam
+   [steam-list] start list failed: {e:?}
+   [steam-list] 刷新太快（Steam 搜索限速），请几秒后再按 R
+   [steam-list] {} lobbies found
+   [steam-list] list failed: {e:?}
+   [steam-list] 模式筛选 -> {}
+   全部
+   [steam-list] 选中的房间已满
+   选中的房间已满，请换一个
+   [steam-list] 版本不符：房主 {:?} vs 本端 {}
+   版本不符（房主 {:?}，本端 {}），无法加入
+   [steam] join lobby by id {lobby_id}
+   steam
+   [steam-menu] enter_steam_mode: 无法发起大厅操作（会话缺失？）
+   steam
+   [steam] begin lobby failed: {e:?}
+   steam
+   [steam] lobby op failed: {e:?}
+   加入失败：{e}
+   steam
+   steam 会话丢失
+   [steam-host] lobby={:?}, my slot={}
+   房间版本不兼容（房主 {:?}，本端 {}），已拒绝加入
+   [steam-join] {msg}
+   [steam-menu] failed to enter steam mode: {e:?}
+   进入房间失败：{e}
+
+===== draw_menu (line 6093) =====
+   术士之战 Warlock Brawl
+   —— 选择对战模式 ——
+   steam
+   steam
+   steam
+   steam
+   steam
+   创建房间
+   选房间名与玩家人数，然后进入房间
+   加入房间
+   从房间列表选择并加入
+   返回主菜单
+   回到主菜单选择
+   Steam 对战 - 大厅
+   steam
+   Steam 未启用
+   需要 --features client/steam 构建
+   H 创建    J 加入    Q 返回    （本端版本 v{}，仅同版本可联机）
+   单机技能试验场
+   无 AI 自由试技能与数值（进入后配置技能开始）
+   局域网对战
+   同机/内网：命令行 --host <port> / --join <host:port>
+   Steam 在线对战
+   联网与好友实时对抗（进入 Steam 大厅）
+   [v]
+   [{num}]  {mark}{name}
+   ↑/↓ 选择    回车 确认    或直接按数字键
+   steam
+
+===== draw_steam_create_lobby (line 6222) =====
+   创建房间
+   房间名
+   备注
+   玩家人数
+   总轮数
+   准备时间(秒)
+   初始金币
+   每轮金币
+   名次奖励
+   直接输入文字，Backspace 删除（支持中文输入法）
+   可留空；直接输入文字
+   +/− 步进，或直接输数字（2 ~ 64）
+   +/− 步进，或直接输数字（1 ~ 256）
+   局与局之间的准备时间（8 ~ 256 秒）
+   第一局开局一次性发放，独立于每轮金币（0 ~ 99999）
+   每轮固定参与奖（0 ~ 99999）
+   输第一名金额（如 30，自动按 0.6 递减到 0）；或用逗号分隔手动档位 30,20,10
+   （输入房间名）
+   （可留空）
+   （默认 2）
+   （默认 3）
+   （默认 20 秒）
+   （默认 0）
+   （默认 20）
+   （默认 30）
+   游戏模式（M 键切换）：{}   [1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还]
+   基础回血（R 键切换）：{} /s   [098c 主机常量 -C9，默认 0.5]
+   ↑↓ ←→ 方向键切换字段 · 回车 创建房间 · M 切换模式 · R 回血 · Q 取消
+   steam
+
+===== draw_steam_connecting (line 6312) =====
+   正在创建房间…
+   正在加入房间…
+   正在连接 Steam 大厅，请稍候
+   已等待 {waited:.1}s
+   按 Q / Esc 取消
+   steam
+
+===== draw_steam_host_left_overlay (line 6337) =====
+   房主已离开房间
+   房主已退出或断开，本场无法继续
+   按 Q / 回车 / Esc 返回主菜单
+   steam
+
+===== draw_steam_lobby_list (line 6352) =====
+   加入房间
+   全部
+   ↑/↓ 选择，回车加入，R 刷新，F 筛选模式：[{filter_name}]
+   搜索中…
+   正在向 Steam 查询公开房间，请稍候
+   （无 [{filter_name}] 模式的房间）
+   按 F 切换筛选条件，或 R 重新搜索
+   （暂无可加入的房间）
+   让好友先创建房间，或按 R 重新搜索
+   房主
+   人数 {}/{}    [{}]    {}
+       [版本不符 {:?}]
+   [v]
+   {mark}{full}
+   回车 加入    R 刷新    Q 返回    （本端版本 v{}）
+
+===== draw_text (line 6490) =====
+   cjk
+   --solo
+   --join
+   --host
+   steam
+   --steam-host
+   steam
+   --steam-join
+   steam
+   steam
+   +connect_lobby
+   --players
+   steam
+   Error on quit_event: {e:?}
+   Error on update: {e:?}
+   Error on begin_frame: {e:?}
+   Error on draw: {e:?}
+   Error on end_frame: {e:?}
+   [main] app = {:?} args = {:?}
+   [main] building ggez context (window)...
+   frame-sync-arena
+   remake
+   术士之战 Warlock Brawl
+   steam
+   同帧 IME 提交 + just(c) 应被抑制，避免重复插入
+   steam
+   无 IME 提交时应正常允许 ASCII 白名单插入
+   steam
+   跨帧(≥2帧)双发不被当前方案抑制——残留风险边界
+   steam
+   0 名次奖励至少 1 档
+   奖励应单调不增
+   exe
+   --solo
+   exe
+   exe
+   --host
+   --players
+   exe
+   --join
+   steam
+   exe
+   +connect_lobby
+   exe
+   +connect_lobby
+   not-a-number
+   exe
+   +connect_lobby

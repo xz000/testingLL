@@ -1,0 +1,16 @@
+ 3141                     let total_w = n * slot_w + (n - 1.0) * gap;
+ 3142                     let x0 = (sw - total_w) / 2.0;
+ 3143                     let y0 = sh - slot_h - 24.0;
+ 3144                     for (i, key) in game_core::skill::CastKey::ALL.iter().enumerate() {
+ 3145                         let bx = x0 + i as f32 * (slot_w + gap);
+ 3146                         let rect = graphics::Rect::new(bx, y0, slot_w, slot_h);
+ 3147                         // 底板
+ 3148                         let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, Color::from_rgba(15, 18, 26, 210))?;
+ 3149                         canvas.draw(&bg, graphics::DrawParam::new());
+ 3150                         let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), rect, Color::from_rgba(90, 100, 120, 230))?;
+ 3151                         canvas.draw(&border, graphics::DrawParam::new());
+ 3152 
+ 3153                         let skill = me.bound_skill(*key);
+ 3154                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
+ 3155                         // 技能名：外层用中性基础名（不绑定具体形态；形态见详情面板）
+ 3156                         let label = match skill {
