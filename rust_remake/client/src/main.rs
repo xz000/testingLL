@@ -6366,7 +6366,11 @@ impl Game {
             let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
             let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
-            let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
+            // 轮数取本界面字段；其余（准备时间/初始金币/每轮金币/名次奖励）一律取 `match_cfg` ——
+            // 它们已改由设置编辑器（`O`）维护，建房界面不再重复一份。
+            let rounds = parse_num(&self.steam_create_rounds_buf, self.match_cfg.total_rounds)
+                .clamp(1, STEAM_MAX_ROUNDS);
+            self.match_cfg.total_rounds = rounds;
             let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
                 .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
             let starting_gold = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD)
@@ -6947,33 +6951,21 @@ impl Game {
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "创建房间", 36.0, layout::border_selected(), Point2 { x: cx, y: sh * 0.075 }, true)?;
 
-        let labels = [
-            "房间名", "备注", "玩家人数", "总轮数",
-            "准备时间(秒)", "初始金币", "每轮金币", "名次奖励",
-        ];
+        // 只留**房间身份**类字段；经济/时长/名次奖励等一律由 `match_cfg`（按 `O` 编辑）负责 ——
+        // 之前这里重复了一份（准备时间/初始金币/每轮金币/名次奖励），两处设置同一件事容易不一致。
+        let labels = ["房间名", "备注", "玩家人数", "总轮数"];
         let hints = [
             "直接输入文字，Backspace 删除（支持中文输入法）",
             "可留空；直接输入文字",
             "+/− 步进，或直接输数字（2 ~ 64）",
-            "+/− 步进，或直接输数字（1 ~ 256）",
-            "局与局之间的准备时间（8 ~ 256 秒）",
-            "第一局开局一次性发放，独立于每轮金币（0 ~ 99999）",
-            "每轮固定参与奖（0 ~ 99999）",
-            "输第一名金额（如 30，自动按 0.6 递减到 0）；或用逗号分隔手动档位 30,20,10",
+            "本场打几轮（1 ~ 50）；也可在 `O` 设置里改",
         ];
-        let placeholders = [
-            "（输入房间名）", "（可留空）", "（默认 2）", "（默认 3）",
-            "（默认 20 秒）", "（默认 0）", "（默认 20）", "（默认 30）",
-        ];
+        let placeholders = ["（输入房间名）", "（可留空）", "（默认 2）", "（默认 3）"];
         let vals = [
             self.steam_create_name.clone(),
             self.steam_create_note.clone(),
             self.steam_create_players_buf.clone(),
             self.steam_create_rounds_buf.clone(),
-            self.steam_create_learn_buf.clone(),
-            self.steam_create_starting_gold_buf.clone(),
-            self.steam_create_gold_per_round_buf.clone(),
-            self.steam_create_place_buf.clone(),
         ];
         // ── 版面：按 `layout::bands` 四带摆放，不再手工摆坐标 ──
         // 起因：原先"聚焦字段下方各画一行提示"，第 4 行的提示会压到下一条信息（层次问题）。
@@ -6996,13 +6988,13 @@ impl Game {
         let left_col_left = cx - total_w / 2.0;
         let right_col_left = left_col_left + col_w + gap;
         // 4 行字段均分内容带（留出底部一行给"当前字段说明"）。
-        let rows = 4.0;
+        let rows = 2.0;
         let row_h = (b.content.h - 34.0) / rows;
         let y0 = b.content.y;
         // 字段 → 列/行：左列 0..4（房名/备注/人数/轮数），右列 4..8（准备/初始金币/每轮金币/名次奖励）。
-        for i in 0..8 {
-            let col = i / 4;
-            let row = i % 4;
+        for i in 0..4 {
+            let col = i / 2;
+            let row = i % 2;
             let total_left = if col == 0 { left_col_left } else { right_col_left };
             let y = y0 + row as f32 * row_h;
             let selected = i == self.steam_create_focus;
@@ -7051,7 +7043,7 @@ impl Game {
             }
         }
         // 内容带底：**当前字段**的说明（只一行，替换原先"每字段下方一行"的做法）。
-        let focus = self.steam_create_focus.min(7);
+        let focus = self.steam_create_focus.min(3);
         draw_text(
             canvas, ctx,
             &format!("▶ {}：{}", labels[focus], hints[focus]),
