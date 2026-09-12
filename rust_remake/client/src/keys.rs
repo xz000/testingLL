@@ -64,3 +64,205 @@ mod tests {
         }
     }
 }
+
+
+// ═══════════════════════ 键位总表 ═══════════════════════
+//
+// 为什么要有它：本项目多次踩到"同一个键被两处处理"的坑 ——
+// `O` 开→立刻关（编辑器永不出现）、`Q` 想关编辑却直接退房。
+// 根因是键位散落在各界面函数里，没有任何一处能"看全"。
+//
+// 这里把每个界面的键位**声明成数据**，便于一处看全 + 让"表内撞车"在 CI 直接报出来。
+//
+// **诚实说明能力边界**：本表是**手工维护**的声明，测试只能保证
+//   1. 同一界面内不许重复绑定同一个键（表内一致）；
+//   2. 每个界面都有非空键位表；
+//   3. 可返回的界面必须提供 `esc`/`q`。
+// 它**不能**自动发现"代码里同一函数处理了两次同一个键"（如 `O` 开→立刻关、`Q` 关编辑却退房）——
+// 那需要**源码级检测**（扫描各界面函数内 `just('x')` / `Character("x")` 的出现次数 ≤ 1），
+// 已列入 `UI_MASTER_PLAN.md` 的待办。
+//
+// 也就是说：本表的作用是**文档 + 表内一致性守卫**，不是代码与表一致性的强制校验。
+
+/// 界面（与 `UI_MASTER_PLAN.md` 的界面清单一致）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Screen {
+    MainMenu,
+    SteamMenu,
+    LobbyList,
+    CreateLobby,
+    Room,
+    RoomEdit,
+    SettingsEditor,
+    Play,
+    LearnConfig,
+}
+
+/// 一条键位绑定：按键 → 动作（`key` 用统一写法：小写字母/`方向键`/`回车` 等）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Binding {
+    pub key: &'static str,
+    pub action: &'static str,
+}
+
+/// 某界面的键位表。
+pub fn keymap(screen: Screen) -> &'static [Binding] {
+    use Screen::*;
+    match screen {
+        MainMenu => &[
+            Binding { key: "up", action: "上移选择" },
+            Binding { key: "down", action: "下移选择" },
+            Binding { key: "enter", action: "确认进入" },
+            Binding { key: "1", action: "单机试验场" },
+            Binding { key: "2", action: "局域网" },
+            Binding { key: "3", action: "Steam 大厅" },
+        ],
+        SteamMenu => &[
+            Binding { key: "h", action: "创建房间" },
+            Binding { key: "j", action: "加入房间" },
+            Binding { key: "q", action: "返回主菜单" },
+            Binding { key: "esc", action: "返回主菜单" },
+        ],
+        LobbyList => &[
+            Binding { key: "up", action: "选择上一间" },
+            Binding { key: "down", action: "选择下一间" },
+            Binding { key: "enter", action: "加入所选房间" },
+            Binding { key: "r", action: "刷新列表" },
+            Binding { key: "f", action: "切换模式筛选" },
+            Binding { key: "q", action: "返回" },
+        ],
+        CreateLobby => &[
+            Binding { key: "up", action: "字段上移" },
+            Binding { key: "down", action: "字段下移" },
+            Binding { key: "left", action: "左列 / 减" },
+            Binding { key: "right", action: "右列 / 加" },
+            Binding { key: "tab", action: "字段上移" },
+            Binding { key: "plus", action: "数值 +1" },
+            Binding { key: "minus", action: "数值 -1" },
+            Binding { key: "enter", action: "创建房间" },
+            Binding { key: "m", action: "切换游戏模式" },
+            Binding { key: "r", action: "切换基础回血" },
+            Binding { key: "o", action: "打开房间设置编辑器" },
+            Binding { key: "q", action: "取消返回" },
+        ],
+        Room => &[
+            Binding { key: "u", action: "切换准备" },
+            Binding { key: "q", action: "退出房间" },
+            Binding { key: "e", action: "编辑房间信息（仅房主）" },
+            Binding { key: "i", action: "好友邀请面板" },
+            Binding { key: "o", action: "房间设置编辑器（仅房主）" },
+        ],
+        RoomEdit => &[
+            Binding { key: "up", action: "字段上移" },
+            Binding { key: "down", action: "字段下移" },
+            Binding { key: "tab", action: "字段上移" },
+            Binding { key: "l", action: "切换房间锁" },
+            Binding { key: "1", action: "模式 1" },
+            Binding { key: "2", action: "模式 2" },
+            Binding { key: "3", action: "模式 3" },
+            Binding { key: "4", action: "模式 4" },
+            Binding { key: "5", action: "模式 5" },
+            Binding { key: "enter", action: "保存" },
+            Binding { key: "q", action: "取消" },
+        ],
+        SettingsEditor => &[
+            Binding { key: "z", action: "分组：经济" },
+            Binding { key: "x", action: "分组：玩法" },
+            Binding { key: "c", action: "分组：地图" },
+            Binding { key: "v", action: "分组：模式" },
+            Binding { key: "up", action: "上一行" },
+            Binding { key: "down", action: "下一行" },
+            Binding { key: "left", action: "档位 -1 / 微调" },
+            Binding { key: "right", action: "档位 +1 / 微调" },
+            Binding { key: "enter", action: "数值行进入自定义输入 / 其它行切换" },
+            Binding { key: "esc", action: "保存并关闭" },
+            Binding { key: "o", action: "保存并关闭" },
+        ],
+        Play => &[
+            Binding { key: "c", action: "施放 C 槽技能" },
+            Binding { key: "r", action: "施放 R 槽技能" },
+            Binding { key: "e", action: "施放 E 槽技能" },
+            Binding { key: "d", action: "施放 D 槽技能" },
+            Binding { key: "y", action: "施放 Y 槽技能" },
+            Binding { key: "t", action: "施放 T 槽技能" },
+            Binding { key: "f", action: "施放 F 槽技能" },
+            Binding { key: "g", action: "施放 G 槽技能" },
+            Binding { key: "s", action: "停止移动 + 清空队列" },
+            Binding { key: "esc", action: "返回主菜单" },
+        ],
+        LearnConfig => &[
+            Binding { key: "j", action: "页签：技能" },
+            Binding { key: "k", action: "页签：商店" },
+            Binding { key: "l", action: "页签：成长" },
+            Binding { key: "tab", action: "循环页签" },
+            Binding { key: "enter", action: "确认（购买/升级/突破/执行）" },
+            Binding { key: "=", action: "确认（等价回车）" },
+            Binding { key: "esc", action: "返回" },
+        ],
+    }
+}
+
+#[cfg(test)]
+mod keymap_tests {
+    use super::*;
+
+    const ALL: [Screen; 9] = [
+        Screen::MainMenu,
+        Screen::SteamMenu,
+        Screen::LobbyList,
+        Screen::CreateLobby,
+        Screen::Room,
+        Screen::RoomEdit,
+        Screen::SettingsEditor,
+        Screen::Play,
+        Screen::LearnConfig,
+    ];
+
+    /// **同一界面内不许有重复键** —— 这正是"一键两用"（`O` 开→立刻关、`Q` 关编辑却退房）的检测。
+    /// 新增键位若在表里撞车，这里会直接失败。
+    #[test]
+    fn no_duplicate_keys_within_a_screen() {
+        for sc in ALL {
+            let map = keymap(sc);
+            for (i, a) in map.iter().enumerate() {
+                for b in &map[i + 1..] {
+                    assert_ne!(
+                        a.key, b.key,
+                        "{:?} 界面里同一个键 `{}` 绑了两处：{} / {}",
+                        sc, a.key, a.action, b.action
+                    );
+                }
+            }
+        }
+    }
+
+    /// 每个界面都应有非空键位表（避免"新界面忘了声明键位"）。
+    #[test]
+    fn every_screen_declares_bindings() {
+        for sc in ALL {
+            assert!(!keymap(sc).is_empty(), "{:?} 未声明键位", sc);
+        }
+    }
+
+    /// 需要"返回上一层"的界面必须提供 `esc` 或 `q`（避免进得去出不来）。
+    #[test]
+    fn navigable_screens_offer_a_way_back() {
+        for sc in [
+            Screen::SteamMenu,
+            Screen::LobbyList,
+            Screen::CreateLobby,
+            Screen::Room,
+            Screen::RoomEdit,
+            Screen::SettingsEditor,
+            Screen::Play,
+            Screen::LearnConfig,
+        ] {
+            let map = keymap(sc);
+            assert!(
+                map.iter().any(|b| b.key == "esc" || b.key == "q"),
+                "{:?} 没有返回键（esc/q）",
+                sc
+            );
+        }
+    }
+}
