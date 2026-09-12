@@ -6111,6 +6111,20 @@ impl Game {
         let Some(sess) = self.steam_sess.as_ref() else {
             return; // 无会话（单机/尚未进 Steam 流程）：设置只存在本地，无需发布
         };
+        // ── 把 `match_cfg`（唯一真值源）同步到本端建房期字段 ──
+        // 不这样做的话，"在房间里按 O 改初始金币/每轮金币/轮数"只改了设置串，
+        // 房主这一局用的却仍是**建房那一刻**拷贝出来的 `match_*` → 看起来"改了没用"。
+        self.match_mode = self.match_cfg.game_mode;
+        self.match_regen = self.match_cfg.base_regen;
+        self.match_rounds = self.match_cfg.total_rounds;
+        self.match_learn_secs = self.match_cfg.between_rounds_time_secs as u32;
+        self.match_starting_gold = self.match_cfg.starting_gold;
+        self.match_gold_per_round = self.match_cfg.gold_per_round;
+        self.match_place_rewards = self.match_cfg.place_rewards.clone();
+        // 世界层同样立即生效（回血/收缩）。
+        self.world.configure_regen(self.match_cfg.base_regen);
+        self.world
+            .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
         // 模式另有独立元数据键（房间列表按模式筛选要读它）；设置串是权威来源。
         let _ = sess.host_set_mode(self.match_cfg.game_mode);
         match sess.host_set_cfg(&cfg) {
