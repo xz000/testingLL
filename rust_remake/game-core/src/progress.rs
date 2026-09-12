@@ -21,7 +21,7 @@ use crate::skill::SkillId;
 /// v9（B4 形态）：加入 forms（u16 数量 + 每项 1 字节，按 SkillId 索引）。
 /// v10：加入 skill_cap_bonus（u32）。
 /// v11（2026-09-12）：删除属性购买系统（移除 attributes 5×u32 与 growth_points u32）。
-pub const CONFIG_VERSION: u8 = 14;
+pub const CONFIG_VERSION: u8 = 15;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -62,6 +62,8 @@ pub struct PlayerConfig {
     /// 乔丹之石突破次数（v14）：**按槽**记录（8 槽）。
     /// 098c `Hf`：每买一颗戒指（5G）只能给**一个**槽 +2，用掉即消耗，但**可反复购买** → 无次数上限。
     pub jordan_breaks: [u8; 8],
+    /// 已购买法术数（v15）：驱动技能升级涨价（098c `oi`）。
+    pub spell_buys: u8,
 }
 
 impl PlayerConfig {
@@ -81,6 +83,7 @@ impl PlayerConfig {
             team: p.team,
             forms: p.forms.clone(),
             jordan_breaks: p.jordan_breaks,
+            spell_buys: p.spell_buys,
         }
     }
 
@@ -105,6 +108,7 @@ impl PlayerConfig {
         };
         p.team = self.team;
         p.jordan_breaks = self.jordan_breaks;
+        p.spell_buys = self.spell_buys;
         let n = p.forms.len();
         for (i, f) in self.forms.iter().enumerate().take(n) {
             p.forms[i] = *f;
@@ -150,6 +154,7 @@ impl PlayerConfig {
         for n in &self.jordan_breaks {
             out.push(*n);
         }
+        out.push(self.spell_buys);
         out
     }
 
@@ -210,6 +215,7 @@ impl PlayerConfig {
             *slot = *buf.get(pos)?;
             pos += 1;
         }
+        let spell_buys = *buf.get(pos)?; // 最后一个字段，无需再推进 pos
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -220,6 +226,7 @@ impl PlayerConfig {
             team,
             forms,
             jordan_breaks,
+            spell_buys,
         })
     }
 }

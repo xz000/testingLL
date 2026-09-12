@@ -150,6 +150,10 @@ pub struct PlayerProfile {
     /// 每买一颗戒指（5G）只能给**一个**槽 +2，用掉后戒指即被消耗（"can only be applied once"）；
     /// 但**可反复购买**，故次数不设上限（`cap_bonus = 2 × 次数`）。
     pub jordan_breaks: [u8; 8],
+    /// 已购买的法术数（098c JASS `oi[id]`；`war3map_pretty.j` 25849 自增、20376 初始化）。
+    /// 买下第 3/4/5 个法术时各触发一次 `Jf`，把全部升级科技的已研究等级 +1 →
+    /// **此后每次技能升级都贵一个 `glvl`**（见 [`Self::upgrade_cost_escalated`]）。
+    pub spell_buys: u8,
 }
 
 impl PlayerProfile {
@@ -174,6 +178,7 @@ impl PlayerProfile {
             team: player_id as u8,
             forms: vec![false; skill_count.max(crate::MAX_SKILL_SLOTS)],
             jordan_breaks: [0; 8],
+            spell_buys: 0,
         }
     }
 
@@ -225,6 +230,8 @@ impl PlayerProfile {
         if let Some(lv) = self.skill_levels.get_mut(sidx) {
             *lv = 1;
         }
+        // 098c `war3map_pretty.j` 25849：买下法术即 `oi[id] = oi[id] + 1`（驱动后续涨价）。
+        self.spell_buys = self.spell_buys.saturating_add(1);
         self.key_slots[idx] = Some(skill);
         true
     }
@@ -337,6 +344,18 @@ impl PlayerProfile {
         self.skill_levels[idx] += 1;
         true
     }
+    /// 因「已购买法术数」造成的升级涨价档数（098c `oi[id] > 2` → 每买一个触发一次 `Jf`，最多到 `oi == 6`）。
+    ///
+    /// `spell_buys` 为 3/4/5 时各已触发一次（买第 6 个法术时 `oi == 6`，JASS 显式跳过不触发）。
+    pub fn spell_cost_step(&self) -> i32 {
+        self.spell_buys.saturating_sub(2).min(3) as i32
+    }
+
+    /// 该技能**当前**的升级价：基础升级价 + 涨价档数 × `glvl`（098c war3 升级金价公式）。
+    pub fn upgrade_cost_escalated(&self, skill: SkillId) -> i32 {
+        skill.upgrade_cost() + self.spell_cost_step() * crate::skill::SkillId::UPGRADE_COST_PER_LEVEL
+    }
+
     /// 该槽的乔丹之石突破**次数**（098c `Hf`：每颗戒指只 +2 一次，但可反复购买）。
     pub fn jordan_breaks_for(&self, key: crate::skill::CastKey) -> u8 {
         self.jordan_breaks[key.as_u32() as usize]
@@ -777,6 +796,35 @@ mod tests {
     }
 
     /// 乔丹之石在不同槽之间各自累计、互不影响。
+    /// 技能涨价（098c `oi[id]` + `Jf`）：买第 3/4/5 个法术各触发一次，
+    /// 每次让所有技能升级价 +`glvl`（w3q `glvl` 实证 = 10）；第 6 个不再触发。
+    fn spell_upgrade_cost_escalates_after_third_purchase() {
+        use crate::skill::SkillId;
+        let per_level = SkillId::UPGRADE_COST_PER_LEVEL;
+        let mut m = MatchState::new(MatchConfig::default(), &[0], 34);
+        let p = &mut m.profiles[0];
+        p.gold = 10_000;
+        let base = SkillId::S002.upgrade_cost();
+
+        // 档位公式（098c：`oi[id] > 2` 起每买一个触发一次 `Jf`，`oi == 6` 时 JASS 显式跳过）
+        let expect = |buys: u8| (buys.saturating_sub(2).min(3)) as i32;
+        for buys in 0u8..=8 {
+            p.spell_buys = buys;
+            assert_eq!(p.spell_cost_step(), expect(buys), "buys={buys} 的涨价档");
+            assert_eq!(
+                p.upgrade_cost_escalated(SkillId::S002),
+                base + expect(buys) * per_level,
+                "buys={buys} 的升级价"
+            );
+        }
+
+        // 真实购买也要计数（098c `oi[id] = oi[id] + 1`）
+        p.spell_buys = 0;
+        let key = PlayerProfile::key_of_skill(SkillId::S002).expect("S002 应有所属槽");
+        assert!(p.purchase_skill(key, SkillId::S002), "购买应成功");
+        assert_eq!(p.spell_buys, 1, "买下法术应使计数 +1");
+    }
+
     #[test]
     fn jordan_breaks_are_per_slot_cumulative() {
         use crate::skill::SkillId;

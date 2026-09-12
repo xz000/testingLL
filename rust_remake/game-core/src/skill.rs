@@ -319,6 +319,17 @@ impl SkillId {
         }
     }
 
+    /// 技能升级价的**每级增量**（098c `war3map.w3q` 的 `glvl` = "Gold Cost per Level" 实证）。
+    ///
+    /// war3 的升级金价 = `gglb + glvl × 已研究等级`；Warlock 的 JASS `Jf`（`war3map_pretty.j` 25493）
+    /// 会在玩家买下第 3/4/5 个法术时对**全部**升级科技 `AddPlayerTechResearched(+1)`，
+    /// 于是每次触发都让"下一级升级价"上涨一个 `glvl` —— 这就是
+    /// `"Purchase cost of spells has increased"`（25856）的精确机制。
+    ///
+    /// 实测：所有技能对应的 B 槽研究条目 `glvl` 均为 **10**（`R00J`…`R00X` 等；仅 `R015` 为 5，
+    /// 其技能 S? 未在 098c 名册里，故不计）。因此统一取 10。
+    pub const UPGRADE_COST_PER_LEVEL: i32 = 10;
+
     /// 技能**升级价**（从 L1 升到 L2 起，每级固定价，不涨价）。
     /// 来源：098c `war3map.w3q` 的「升级研究」条目 `gglb`（JASS `kf` 中 buy 研究设其 max allowed）。
     /// 映射：R002→S000 / R00P→S002 / R00O→S003 / R010→S004 / R00T→S005 / R012→S006 /

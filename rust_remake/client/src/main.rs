@@ -1215,7 +1215,8 @@ impl Game {
         if lv >= cap {
             return;
         }
-        let cost = skill.upgrade_cost();
+        // 098c：升级价 = 基础升级价 + 涨价档数 × glvl（买第 3/4/5 个法术各触发一次 `Jf`）。
+        let cost = profile.upgrade_cost_escalated(skill);
         profile.upgrade_skill(skill, cost);
     }
 
@@ -3612,7 +3613,12 @@ impl Game {
                                                     (format!("已满级 Lv{lv}"), false)
                                                 }
                                             } else {
-                                                (format!("升级到 Lv{} ({cost}G)  [= / 回车]", lv + 1), true)
+                                                {
+                                                    // 升级价与购买价是**两套**（且升级价会随已购法术数涨价），
+                                                    // 此前这里误显示了 `cost`（= learn_cost）—— 修正为实际扣款价。
+                                                    let ucost = me.upgrade_cost_escalated(skill);
+                                                    (format!("升级到 Lv{} ({ucost}G)  [= / 回车]", lv + 1), true)
+                                                }
                                             }
                                         } else if tree_locked {
                                             ("同树已锁定，不可购买".to_string(), false)
