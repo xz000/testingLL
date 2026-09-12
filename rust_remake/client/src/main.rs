@@ -587,6 +587,10 @@ struct Game {
     /// 自定义数值输入缓冲（编辑器内按回车开始输入；回车提交、Esc 取消）。
     #[cfg(feature = "steam")]
     room_cfg_input: Option<String>,
+    /// 建房界面字段的**命中注册表**（绘制时登记、点击时派发；绘制与命中同源）。
+    /// 每帧绘制前清空，避免残留旧矩形导致"点到不存在的东西"。
+    #[cfg(feature = "steam")]
+    create_hitboxes: Vec<(graphics::Rect, u8)>,
     /// 上次见到的**房间设置串**（大厅元数据）——用于检测"房主改了设置"：
     /// 一旦变化即取消本端准备（第 5 步），并同步应用新设置。
     #[cfg(feature = "steam")]
@@ -1096,6 +1100,8 @@ impl Game {
             room_cfg_row: 0,
             #[cfg(feature = "steam")]
             room_cfg_input: None,
+            #[cfg(feature = "steam")]
+            create_hitboxes: Vec::new(),
             #[cfg(feature = "steam")]
             match_regen: init_regen,
             match_teams: 1,
@@ -6051,6 +6057,19 @@ impl Game {
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
         // ── 房间设置编辑器（`O` 打开）：打开时**独占**输入，回车/Esc/O 关闭并重新发布设置串 ──
+        // 鼠标：左键点击字段 → 聚焦该字段（键鼠都支持；命中表由绘制阶段登记）。
+        if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
+            let m = ui::mouse_design(ctx);
+            if let Some((_, idx)) = self
+                .create_hitboxes
+                .iter()
+                .find(|(r, _)| r.contains(m))
+                .copied()
+            {
+                self.steam_create_focus = idx as usize;
+                eprintln!("[menu] 鼠标选择字段 #{}", idx);
+            }
+        }
         // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
         // 否则同一帧"开→立刻关"，表现为"按 O 毫无反应"（曾如此）。
         let o_pressed = just('o') || just('O');
@@ -6666,7 +6685,7 @@ impl Game {
     }
 
         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
-    fn draw_menu(&self, ctx: &mut Context) -> GameResult {
+    fn draw_menu(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
         let (sw, sh) = (ui::UI_W, ui::UI_H);
@@ -6810,7 +6829,7 @@ impl Game {
 
     /// 绘制「建房设置」界面：房间名 / 备注 / 人数 三字段，当前聚焦字段高亮。
     #[cfg(feature = "steam")]
-    fn draw_steam_create_lobby(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+    fn draw_steam_create_lobby(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "创建房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.075 }, true)?;
@@ -6847,6 +6866,8 @@ impl Game {
         // 起因：原先"聚焦字段下方各画一行提示"，第 4 行的提示会压到下一条信息（层次问题）。
         // 现在：提示统一放**状态带**（只一行），键位说明放**提示带**（屏幕最底）。
         let b = layout::bands(sw, sh);
+        self.create_hitboxes.clear(); // 绘制即重建命中表（绘制与命中同源）
+        let mpos = ui::mouse_design(ctx);
         let box_w = 300.0;
         let box_h = 44.0;
         let label_w = 140.0;
@@ -6866,11 +6887,22 @@ impl Game {
             let total_left = if col == 0 { left_col_left } else { right_col_left };
             let y = y0 + row as f32 * row_h;
             let selected = i == self.steam_create_focus;
-            let bg_col = if selected { Color::from_rgb(56, 66, 84) } else { Color::from_rgb(28, 32, 42) };
-            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(total_left + label_w, y, box_w, box_h), bg_col)?;
+            // 鼠标：字段框登记命中 + 悬停高亮（键鼠都支持）。
+            let field_rect = graphics::Rect::new(total_left + label_w, y, box_w, box_h);
+            self.create_hitboxes.push((field_rect, i as u8));
+            let hover = field_rect.contains(mpos);
+            let bg_col = if selected {
+                Color::from_rgb(56, 66, 84)
+            } else if hover {
+                Color::from_rgb(38, 44, 56)
+            } else {
+                Color::from_rgb(28, 32, 42)
+            };
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), field_rect, bg_col)?;
             canvas.draw(&bg, graphics::DrawParam::new());
-            if selected {
-                let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), graphics::Rect::new(total_left + label_w, y, box_w, box_h), Color::from_rgb(255, 210, 120))?;
+            if selected || hover {
+                let bc = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(90, 104, 126) };
+                let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), field_rect, bc)?;
                 canvas.draw(&border, graphics::DrawParam::new());
             }
             let label_col = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(215, 220, 232) };
