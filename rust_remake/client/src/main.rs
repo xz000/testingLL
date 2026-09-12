@@ -347,6 +347,20 @@ struct Game {
     /// IME 预编辑（拼音组合）进行中：为真时屏蔽 ASCII 白名单手工插入，
     /// 否则组合期间的物理键会被当成普通字母直接拼进去（与提交的中文重复/乱码）。
     ime_composing: bool,
+    /// 表现层（纯客户端）：伤害/治疗飘字。
+    float_texts: Vec<FloatText>,
+    /// 表现层（纯客户端）：首杀/连杀等顶部横幅。
+    banners: Vec<Banner>,
+    /// 表现层采样：上一帧各玩家 hp（索引 = player id）。
+    present_prev_hp: Vec<f32>,
+    /// 表现层采样：上一帧各玩家存活（推死亡/击杀）。
+    present_prev_alive: Vec<bool>,
+    /// 表现层采样：上一帧轮号（变 = 新一局 → 清表现并重新采样）。
+    present_round: u32,
+    /// 表现层：本场是否已播报 First Blood。
+    present_first_blood: bool,
+    /// 表现层：本场各玩家**当前连杀**（击杀 +1、阵亡清零）。
+    present_streak: Vec<u32>,
     /// 世界坐标 → 屏幕坐标的缩放
     scale: f32,
     /// 相机偏移（世界原点 (0,0) 在屏幕上的位置）：每帧由 `cam` 推算，绘制时世界点 = world*scale + offset。
@@ -966,6 +980,13 @@ impl Game {
             // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
             last_ime_commit_frame: u64::MAX,
             ime_composing: false,
+            float_texts: Vec::new(),
+            banners: Vec::new(),
+            present_prev_hp: Vec::new(),
+            present_prev_alive: Vec::new(),
+            present_round: 0,
+            present_first_blood: false,
+            present_streak: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             cam: Point2 { x: 0.0, y: 0.0 },
@@ -2298,6 +2319,8 @@ impl Game {
 
     fn draw_scene(&mut self, ctx: &mut Context) -> GameResult {
         self.update_camera(ctx)?;
+        // 表现层：先推进/采样（hp 差分 → 飘字/横幅），再画。
+        self.update_presentation(ctx.time.delta().as_secs_f32());
         let mut canvas = Canvas::from_frame(ctx, Color::from_rgb(18, 22, 34));
         ui::set_design_coordinates(&mut canvas, ctx);
 
@@ -2981,6 +3004,9 @@ impl Game {
                 draw_text(&mut canvas, ctx, &self.steam_toast.0, 22.0, Color::from_rgb(255, 215, 120), Point2 { x: sw / 2.0, y: sh * 0.08 }, true)?;
             }
         }
+
+        // 表现层：飘字（世界） + 首杀/连杀横幅（屏幕中上），画在世界之上、记分板之下。
+        self.draw_presentation(&mut canvas, ctx)?;
 
         // 局内记分板（CS 式：**按住 Tab** 显示）：画在最上层。
         if ctx
@@ -4285,6 +4311,159 @@ impl Game {
                 }
                 draw_text(canvas, ctx, "按 Q 返回主菜单", 22.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: y + 30.0 }, true)?;
             }
+        }
+        Ok(())
+    }
+}
+
+impl Game {
+    /// 表现层：推进并采样客户端表现（飘字 / 横幅）。每帧绘制时调一次。
+    ///
+    /// 事件来源是**客户端上帧状态差分**（hp 下降=伤害、上升=治疗、alive→dead=阵亡），
+    /// 不往 `World` 加任何字段、不进快照（PRESENTATION_PLAN §5 纪律）。
+    fn update_presentation(&mut self, dt: f32) {
+        self.float_texts.retain_mut(|f| {
+            f.life -= dt;
+            f.life > 0.0
+        });
+        self.banners.retain_mut(|b| {
+            b.life -= dt;
+            b.life > 0.0
+        });
+
+        let n = self.world.players.len();
+        // 世界重建（人数变化）→ 重新采样，不产生事件。
+        if self.present_prev_hp.len() != n {
+            self.reseed_presentation();
+        }
+        // 新一局（reset_round）：清表现并重新采样，避免把“复活回血/重生”误报成治疗/击杀。
+        if self.world.round_number != self.present_round {
+            self.present_round = self.world.round_number;
+            self.present_prev_hp = self.world.players.iter().map(|p| p.hp.to_num::<f32>()).collect();
+            self.present_prev_alive = self.world.players.iter().map(|p| p.alive).collect();
+            self.float_texts.clear();
+            return;
+        }
+        let in_fight = self.meta.phase == game_core::meta::MatchPhase::Fighting;
+        if !in_fight {
+            // 非对局阶段只同步采样（进对局第一帧不误报）。
+            for i in 0..n {
+                self.present_prev_hp[i] = self.world.players[i].hp.to_num::<f32>();
+                self.present_prev_alive[i] = self.world.players[i].alive;
+            }
+            return;
+        }
+        let me = self.self_index();
+        for i in 0..n {
+            let hp = self.world.players[i].hp.to_num::<f32>();
+            let alive = self.world.players[i].alive;
+            let was_alive = self.present_prev_alive[i];
+            let prev_hp = self.present_prev_hp[i];
+            if was_alive && !alive {
+                // 阵亡 → 击杀横幅（含首杀 / 连杀）；本人连杀清零。
+                let victim = self.world.players[i].id;
+                if let Some(slot) = self.present_streak.get_mut(i) {
+                    *slot = 0;
+                }
+                let killer = self.world.players[i].last_hit_by.filter(|k| *k != victim);
+                if let Some(k) = killer {
+                    if let Some(slot) = self.present_streak.get_mut(k as usize) {
+                        *slot += 1;
+                    }
+                    let count = self.present_streak.get(k as usize).copied().unwrap_or(1);
+                    let who = self.player_label(k);
+                    let vl = self.player_label(victim);
+                    if !self.present_first_blood {
+                        self.present_first_blood = true;
+                        self.push_banner("First Blood!".to_string(), Color::from_rgb(255, 210, 90));
+                    }
+                    let text = match game_core::meta::MatchState::streak_label(count) {
+                        Some(label) => format!("{who} 击杀了 {vl}  ·  {label} ×{count}"),
+                        None => format!("{who} 击杀了 {vl}"),
+                    };
+                    self.push_banner(text, Color::from_rgb(255, 150, 90));
+                } else {
+                    let vl = self.player_label(victim);
+                    self.push_banner(format!("{vl} 阵亡"), Color::from_rgb(180, 180, 190));
+                }
+            } else if was_alive && alive {
+                if let Some(txt) = health_delta_text(prev_hp, hp) {
+                    let color = if txt.starts_with('-') {
+                        if i as u32 == me {
+                            Color::from_rgb(255, 120, 110)
+                        } else {
+                            Color::from_rgb(255, 235, 180)
+                        }
+                    } else {
+                        Color::from_rgb(120, 225, 150)
+                    };
+                    let pos = self.world.players[i].pos;
+                    self.push_float(pos, txt, color);
+                }
+            }
+            self.present_prev_hp[i] = hp;
+            self.present_prev_alive[i] = alive;
+        }
+    }
+
+    /// 采样数组按当前世界重建（人数/轮号），并清空本场首杀标记。
+    fn reseed_presentation(&mut self) {
+        self.present_prev_hp = self.world.players.iter().map(|p| p.hp.to_num::<f32>()).collect();
+        self.present_prev_alive = self.world.players.iter().map(|p| p.alive).collect();
+        self.present_streak = vec![0; self.world.players.len()];
+        self.present_round = self.world.round_number;
+        self.present_first_blood = false;
+        self.float_texts.clear();
+        self.banners.clear();
+    }
+
+    /// 压入一条飘字（带上限，超出丢最旧）。
+    fn push_float(&mut self, pos: Vec2, text: String, color: Color) {
+        if self.float_texts.len() >= PRESENTATION_MAX_FLOATS {
+            self.float_texts.remove(0);
+        }
+        self.float_texts.push(FloatText {
+            pos,
+            text,
+            color,
+            life: FLOAT_TEXT_LIFE,
+            max_life: FLOAT_TEXT_LIFE,
+        });
+    }
+
+    /// 压入一条横幅（同文案去重抬到最新；带上限）。
+    fn push_banner(&mut self, text: String, color: Color) {
+        self.banners.retain(|b| b.text != text);
+        if self.banners.len() >= PRESENTATION_MAX_BANNERS {
+            self.banners.remove(0);
+        }
+        self.banners.push(Banner {
+            text,
+            color,
+            life: BANNER_LIFE,
+            max_life: BANNER_LIFE,
+        });
+    }
+
+    /// 绘制飘字（世界坐标 → 屏幕）与横幅（屏幕中上）。在 `draw_scene` 末尾调用。
+    fn draw_presentation(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        for f in &self.float_texts {
+            let t = (f.life / f.max_life).clamp(0.0, 1.0); // 1 → 0
+            let rise = (1.0 - t) * 42.0;
+            let x = f.pos.x.to_num::<f32>() * self.scale + self.offset.x;
+            let y = f.pos.y.to_num::<f32>() * self.scale + self.offset.y - rise;
+            let mut c = f.color;
+            c.a = (t * 1.6).clamp(0.0, 1.0);
+            draw_text(canvas, ctx, &f.text, 20.0, c, Point2 { x, y: y - 16.0 }, true)?;
+        }
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let mut y = sh * 0.12;
+        for b in &self.banners {
+            let t = (b.life / b.max_life).clamp(0.0, 1.0);
+            let mut c = b.color;
+            c.a = (t * 1.6).clamp(0.0, 1.0);
+            draw_text(canvas, ctx, &b.text, 26.0, c, Point2 { x: sw / 2.0, y }, true)?;
+            y += 34.0;
         }
         Ok(())
     }
@@ -7733,6 +7912,52 @@ enum LearnAction {
     Category(u8),
 }
 
+/// 客户端本地表现：飘字（伤害/治疗数字）。世界坐标 + 向上漂移。
+///
+/// **纯客户端、不进快照**：由绘制期间的 hp 差分推导（见 `Game::update_presentation`），
+/// 与确定性无关（PRESENTATION_PLAN §5）。
+#[derive(Clone, Debug)]
+struct FloatText {
+    /// 生成时的世界坐标。
+    pos: Vec2,
+    text: String,
+    color: Color,
+    life: f32,
+    max_life: f32,
+}
+
+/// 客户端本地表现：屏幕中上横幅（首杀 / 连杀 / 击杀播报）。
+#[derive(Clone, Debug)]
+struct Banner {
+    text: String,
+    color: Color,
+    life: f32,
+    max_life: f32,
+}
+
+/// 飘字存活秒数。
+const FLOAT_TEXT_LIFE: f32 = 1.0;
+/// 横幅存活秒数。
+const BANNER_LIFE: f32 = 2.6;
+/// 触发飘字的最小血量变化（过滤回血等微小变化）。
+const PRESENTATION_MIN_DELTA: f32 = 1.0;
+/// 飘字/横幅数量上限（防刷屏）。
+const PRESENTATION_MAX_FLOATS: usize = 64;
+const PRESENTATION_MAX_BANNERS: usize = 5;
+
+/// 把一次血量变化转成飘字文本：负=伤害（`-N`）、正=治疗（`+N`）、微小变化忽略。
+/// 纯函数，便于单测（与绘制/世界无关）。
+fn health_delta_text(prev: f32, cur: f32) -> Option<String> {
+    let d = cur - prev;
+    if d <= -PRESENTATION_MIN_DELTA {
+        Some(format!("-{}", (-d).round() as i32))
+    } else if d >= PRESENTATION_MIN_DELTA {
+        Some(format!("+{}", d.round() as i32))
+    } else {
+        None
+    }
+}
+
 /// 商店页一行（列表 / 键盘选择 / 详情面板共用同一构造）。
 ///
 /// 旧模型把 `[买]`/`[卖]` 前缀塞进行标签、行内同时编码买卖两个动作，既难读也难点。
@@ -8227,6 +8452,15 @@ mod tests {
         // 金币不足
         p.gold = 0;
         assert_eq!(Game::shop_buy_block(&p, &rows[0]), Some("金币不足"));
+    }
+
+    /// 飘字的血量变化归类：伤害为负、治疗为正、微小变化忽略。
+    #[test]
+    fn health_delta_text_classifies_damage_and_heal() {
+        assert_eq!(super::health_delta_text(100.0, 87.4), Some("-13".to_string()));
+        assert_eq!(super::health_delta_text(50.0, 62.0), Some("+12".to_string()));
+        assert_eq!(super::health_delta_text(50.0, 50.4), None, "微小变化忽略");
+        assert_eq!(super::health_delta_text(50.0, 49.2), None);
     }
 
     /// 成长页「购买」按钮的禁用原因：金币不足 / 已满级。
