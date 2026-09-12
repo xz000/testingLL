@@ -20,7 +20,7 @@ for ln in io.open('_ours.tsv', encoding='utf-8').read().split('\n')[1:]:
         q = ln.split('\t')
         ours[(q[0], q[1], int(q[2]))] = q
 
-SKIP = {'S007B', 'S011B'}
+SKIP = {'S007B'}  # S007B 在 098c 里不可达（C 树无形态切换菜单），故不实装
 
 
 def num(v):

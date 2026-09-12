@@ -1,0 +1,17 @@
+Ash2	A	1	MISSING_OURS		
+S000	B	11	MISSING_OURS		
+S000	B	12	MISSING_OURS		
+S000	B	13	MISSING_OURS		
+S000	B	14	MISSING_OURS		
+S007	B	1	cooldown	33.0	21.0
+S007	B	2	cooldown	28.0	21.0
+S007	B	3	cooldown	24.0	21.0
+S007	B	5	cooldown	19.0	21.0
+S007	B	6	cooldown	17.0	21.0
+S007	B	7	cooldown	15.0	21.0
+S007	B	8	cooldown	13.0	21.0
+S022	A	1	cooldown	0.5	19.0
+S027	A	1	cooldown	0.0	1.0
+S032	A	1	cooldown	0.0	1.0
+S034	A	1	cooldown	0.0	1.0
+S128	A	1	MISSING_OURS		
