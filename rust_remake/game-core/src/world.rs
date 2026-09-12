@@ -461,6 +461,16 @@ pub struct World {
     pub ice: Vec<(Vec2, Fix64)>,
 }
 
+/// `explode_at` 的伤害距离衰减方式（098c 实证）。
+#[derive(Copy, Clone, Debug)]
+enum DmgFalloff {
+    None,
+    /// 乘法：`dmg × (1 - d/k)`（陨石 `oB` 的 `Zb`）。
+    Mul(Fix64),
+    /// 加法：`dmg - d/k`（灾变 `qC`）。
+    Sub(Fix64),
+}
+
 impl World {
     /// 创建一场对局。`player_count` 为玩家人数；`seed` 用于 AI / 初始布局等确定性随机。
     pub fn new(player_count: u32, seed: u64) -> Self {
@@ -2305,7 +2315,7 @@ impl World {
 
         // 3) 结算爆炸（石头 / 导弹）
         for e in &explode {
-            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false, None);
+            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false, DmgFalloff::None);
         }
 
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
@@ -2456,11 +2466,11 @@ impl World {
             });
         }
         for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false, None);
+            self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false, DmgFalloff::None);
         }
         // 陨石落地（098c `oB`）：中心伤害 `12+2L`，随距离衰减 `(1 - d/(400+40xi))`，同队/自身免疫。
         for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
-            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, false, Some(denom));
+            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, false, DmgFalloff::Mul(denom));
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -2595,7 +2605,7 @@ impl World {
     /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
     #[allow(clippy::too_many_arguments)]
     /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: Option<Fix64>) -> u32 {
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: DmgFalloff) -> u32 {
         let r_sq = radius * radius;
         // 攻方 Gn 系数（灼烧 ×0.1，D7）：循环前取出，避免 iter_mut 借用冲突。
         let owner_gn = self
@@ -2619,12 +2629,18 @@ impl World {
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
                 }
-                let mut dmg = damage * Fix64::from_num(owner_gn * p.dmg_taken_mult);
-                // 陨石（098c `oB` `Zb`）：伤害随距离线性衰减 `(1 - d/(400+40xi))`。
-                if let Some(denom) = dmg_falloff {
-                    let decay = (Fix64::ONE - d_sq.sqrt() / denom).max(Fix64::ZERO);
-                    dmg *= decay;
-                }
+                let mut dmg = {
+                    // 距离衰减（098c）：陨石为乘法 `×(1-d/k)`；灾变为加法 `dmg - d/k`。
+                    let base = match dmg_falloff {
+                        DmgFalloff::Sub(k) => (damage - d_sq.sqrt() / k).max(Fix64::ZERO),
+                        _ => damage,
+                    };
+                    let mut v = base * Fix64::from_num(owner_gn * p.dmg_taken_mult);
+                    if let DmgFalloff::Mul(k) = dmg_falloff {
+                        v *= (Fix64::ONE - d_sq.sqrt() / k).max(Fix64::ZERO);
+                    }
+                    v
+                };
                 // 守护之盾充能窗口（098c HC 'aegs' buff 5*jn）：受伤减免（I00H 25% / I00I 75%）。
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     dmg *= Fix64::from_num(1.0 - p.item_fx.smite_reduction);
@@ -3207,15 +3223,22 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚（098c mC，普通局 F 键）：半径 250、衰减 1-d/1000、伤害 10+血剑。
-                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, None);
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::None);
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
-                        // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
-                        //（damage_base=12、+4/级 ≈ $B/$C/$E 占位）；放完 stage+1；命中者+50 移速简化为自加速。
+                        // S020 灾变（098c `qC` 实证）：伤害按阶段 `$B/$C/$E` = **11/12/14**（+血剑 Zr）；
+                        // stage0/1：半径 300、伤害 `cX - d/60`；stage2：半径 400、伤害 `cX - d/40`；
+                        // 受击方为异队（`cn[] != cn[ri]`，自身/同队免疫）；放完 stage+1；自身 +50 移速 4s。
                         let stage = world.players[idx as usize].catastrophe_stage % 3;
-                        let r = if stage == 2 { Fix64::from_num(400.0) } else { radius };
-                        let stage_gx = gx + Fix64::from_num(stage as i64 * 4);
-                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true, None);
+                        let (base, r, falloff_div) = match stage {
+                            0 => (11.0, 300.0, 60.0),
+                            1 => (12.0, 300.0, 60.0),
+                            _ => (14.0, 400.0, 40.0),
+                        };
+                        let stage_gx = Fix64::from_num(base) + Fix64::from_num(world.players[idx as usize].item_fx.smite_bonus);
+                        let r = Fix64::from_num(r);
+                        let falloff_div = Fix64::from_num(falloff_div);
+                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true, DmgFalloff::Sub(falloff_div));
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
@@ -3223,7 +3246,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     crate::skill::W098bNovaKind::Devotion => {
                         // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚；500 内**队友**
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, None);
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::None);
                         let caster_team = world.players[idx as usize].team;
                         let allies: Vec<u32> = world
                             .players
@@ -7562,8 +7585,8 @@ mod tests {
             world.step(none.clone(), dt);
         }
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
-        // 化身 Gn ×1.5：灾变第一段 11×1.5 = 16.5（098c Cataclysm 伤害 11 起；非天罚 10，证明替换+增益同时生效）
-        assert!((d1 - 16.5).abs() < 0.5, "化身灾变第一段应 11×Gn1.5=16.5 伤，实际 {d1}");
+        // 化身 Gn ×1.5：灾变 stage0 基础 11、加法衰减 `-d/60`（d=120 → -2）→ (11-2)×1.5 = 13.5
+        assert!((d1 - 13.5).abs() < 0.5, "化身灾变 stage0 应 (11-120/60)×Gn1.5=13.5 伤，实际 {d1}");
     }
 
     /// 国王模式：每队随机选王（同种子确定性）；弑王 → 凶手全队 Doom。
