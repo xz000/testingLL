@@ -261,3 +261,24 @@
 |---|---|
 | **`w3u`（单位数据）** | 头部计数语义与 w3t 不同，尚未解出；单位基础数值（HP/移速/攻击）仍未交叉校验 |
 | 物品能力其余字段 | `Ilif`（生命）已校验；移速/回复/击退/吸血等能力字段（如 `Imvs` 等）尚未逐一对照，待与 w3a 物品能力表逐项展开 |
+
+
+## 附四：w3u（单位）交叉校验（2026-09-12）
+
+解析方式见 `tools/README.md` §4：w3u 头部语义特殊，改用「候选记录头扫描 + 精确闭合」，
+**50/51 条记录精确闭合** ✅。
+
+### 结论
+| 项 | 098c w3u | 我方 | 判定 |
+|---|---|---|---|
+| **Warlock 英雄**（`hpea→h000`）移速 `umvs` | **210** | `balance.rs::base_speed = 210` | ✅ 一致 |
+| **Warlock 英雄**最大生命 `uhpm` | **100** | `balance.rs::max_hp = 100` | ✅ 一致 |
+| **障碍物单位**（`obs0..obs6`/`obt0..obt6`）`uhpm` | 1000（WC3 单位基础值，**未被使用**） | 可摧毁 HP = 40 | ✅ 一致（JASS `constant real nx=40` + `gv[]` 计数 + “40/40” 飘字才是真值） |
+| 障碍物摆放 | 单位 `obs*/obt*`，运行时 `XN(...,'obs0'+GetRandomInt(0,1)+2*(gx-1), 7, GetRandomReal(0,360))` **随机摆放** | `_layout_obstacles` 程序化随机 | ✅ 语义一致 |
+| **Warlock 技能槽** | `uabi = W001,W003,W007,W004,W005,W006,W002,W000` | 我方 8 槽（C/R/E/D/Y/T/F/G） | 一致（8 个形态切换按钮） |
+| 商店/UI 单位 | `u000` Merchant / `u001` Spells 1 / `u002` Spells 2 / `u003` Items / `u004` Stone of Jordan / `u005` Sell | 我方以 UI 面板复刻（D13：功能本质 + 原生载体） | 一致（无需单位载体） |
+| 物品展示 dummy | `h001..h00G`（Mask of Death / Cape / Helm / Staff / Jordan / Blood Sword / Aegis / Lava Treads / Pocket Watch / Sell 1-6） | 对应商店条目 | 一致 |
+
+### 遗留
+- w3u 的**字段取值位置**与 w3t/w3a 不同（值在 `+8`），工具已分别处理；
+- 除 `umvs`/`uhpm` 外，其余单位字段（护甲/攻击/视野等）我方未建模（D13：只复刻功能本质），未逐项对照。
