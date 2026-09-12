@@ -3214,7 +3214,7 @@ impl Game {
         }
         ui::text_center(
             canvas, ctx,
-            "Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车=自定义输入/切换 · Esc 保存关闭（改动会取消全员准备）",
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车=切换/保存关闭",
             ui::theme::SMALL,
             Color::from_rgb(160, 200, 255),
             sw / 2.0,
@@ -6051,6 +6051,10 @@ impl Game {
                     .keyboard
                     .is_logical_key_just_pressed(&Key::Character(c.to_uppercase().into()))
         };
+        // **"编辑当前行"键**：`T`（Type）或 **`Shift+回车`** —— 两种习惯都支持。
+        // 之所以不让裸回车兼任：回车是"确认/建房"，共用会导致建房时无法提交（曾如此）。
+        let edit_key = just("t")
+            || (ctx.keyboard.active_modifiers.shift_key() && just_named(NamedKey::Enter));
         // ── 自定义输入态：只处理文本键 ──
         if let Some(mut buf) = self.room_cfg_input.take() {
             let rows = settings_ui::SettingId::rows(self.room_cfg_group);
@@ -6159,9 +6163,10 @@ impl Game {
                 }
                 return true;
             }
-            // 大厅元数据项（房名/备注）：回车进入**文本输入**（预填当前值）。
+            // 大厅元数据项（房名/备注）：**`T`** 进入文本输入（预填当前值）。
+            // 用独立键是为了把回车留给"确认/建房" —— 两者共用回车会让建房时无法提交（曾经如此）。
             if id.target() == settings_ui::SettingTarget::Meta {
-                if just_named(NamedKey::Enter) {
+                if edit_key {
                     self.room_cfg_input = Some(settings_ui::meta_value(&self.room_meta, id));
                     eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
                     return true;
@@ -6189,31 +6194,35 @@ impl Game {
                     self.match_cfg.non_default_setting_count()
                 );
             }
-            // 回车：数值行 → 进入输入态（预填当前值）；枚举/开关 → 直接切换。
-            if just_named(NamedKey::Enter) {
-                if id.num_range().is_some() || id.int_range().is_some() {
-                    let v = settings_ui::value(&self.match_cfg, id);
-                    let init = if (v.fract()).abs() < 1e-9 {
-                        format!("{}", v.round() as i64)
-                    } else {
-                        format!("{v}")
-                    };
-                    self.room_cfg_input = Some(init);
-                    eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
+            // **`T`**：数值行 → 进入自定义输入（预填当前值）。
+            // **回车**：枚举/开关 → 直接切换；非创建模式下回车 = 保存并关闭（见下）。
+            if edit_key && (id.num_range().is_some() || id.int_range().is_some()) {
+                let v = settings_ui::value(&self.match_cfg, id);
+                let init = if (v.fract()).abs() < 1e-9 {
+                    format!("{}", v.round() as i64)
                 } else {
-                    settings_ui::nudge(&mut self.match_cfg, id, 1);
-                    eprintln!(
-                        "[cfg] {} = {}（自定义 {} 项）",
-                        id.label(),
-                        settings_ui::value_text(&self.match_cfg, id),
-                        self.match_cfg.non_default_setting_count()
-                    );
-                }
+                    format!("{v}")
+                };
+                self.room_cfg_input = Some(init);
+                eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
+                return true;
+            }
+            if just_named(NamedKey::Enter)
+                && !(id.num_range().is_some() || id.int_range().is_some())
+            {
+                // 枚举/开关：回车切换
+                settings_ui::nudge(&mut self.match_cfg, id, 1);
+                eprintln!(
+                    "[cfg] {} = {}（自定义 {} 项）",
+                    id.label(),
+                    settings_ui::value_text(&self.match_cfg, id),
+                    self.match_cfg.non_default_setting_count()
+                );
                 return true;
             }
         }
-        // 编辑模式：Esc / O 关闭并发布（关闭即生效）
-        if just_named(NamedKey::Escape) || just("o") {
+        // 编辑模式：**回车 / Esc / O** 都表示"保存并关闭"（关闭即生效）。
+        if just_named(NamedKey::Enter) || just_named(NamedKey::Escape) || just("o") {
             self.room_cfg_edit = false;
             self.publish_room_cfg();
             return false;
