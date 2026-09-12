@@ -68,6 +68,7 @@ pub enum SettingId {
     PillarMode,
     IceMode,
     // 模式
+    GameMode,
     GoldRewardsEnabled,
 }
 
@@ -98,7 +99,7 @@ impl SettingId {
                 ShrinkRingSecs,
             ],
             Group::Map => &[ArenaShape, PillarMode, IceMode],
-            Group::Mode => &[GoldRewardsEnabled],
+            Group::Mode => &[GameMode, GoldRewardsEnabled],
         }
     }
 
@@ -125,6 +126,7 @@ impl SettingId {
             ArenaShape => "地图形状",
             PillarMode => "柱子",
             IceMode => "冰面",
+            GameMode => "游戏模式",
             GoldRewardsEnabled => "金币奖励总开关",
         }
     }
@@ -153,6 +155,7 @@ impl SettingId {
             ArenaShape => "当前仅圆形；后续可扩正方形/六边形。",
             PillarMode => "关闭 / 随机 / 每局必有。",
             IceMode => "关闭 / 随机 / 每局必有。",
+            GameMode => "1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还。改动会取消全员准备。",
             GoldRewardsEnabled => "关闭后所有金币奖励归零（等价 098c `-no reward`）；点数不受影响。",
         }
     }
@@ -161,6 +164,7 @@ impl SettingId {
     pub fn enum_tiers(self) -> Option<&'static [&'static str]> {
         match self {
             SettingId::PillarMode | SettingId::IceMode => Some(&["关闭", "随机", "每局必有"]),
+            SettingId::GameMode => Some(&["轮次", "死亡竞赛", "化身", "国王", "最后生还"]),
             SettingId::ArenaShape => Some(&["圆形"]),
             _ => None,
         }
@@ -227,6 +231,7 @@ pub fn value(cfg: &MatchConfig, id: SettingId) -> f64 {
         ShrinkRingSecs => cfg.shrink_ring_secs,
         BaseRegen => cfg.base_regen,
         ArenaShape => cfg.arena_shape as f64,
+        GameMode => cfg.game_mode as f64,
         PillarMode => cfg.pillar_mode as f64,
         IceMode => cfg.ice_mode as f64,
         GoldRewardsEnabled => cfg.gold_rewards_enabled as i32 as f64,
@@ -257,6 +262,7 @@ fn set(cfg: &mut MatchConfig, id: SettingId, v: f64) {
         ShrinkRingSecs => cfg.shrink_ring_secs = v,
         BaseRegen => cfg.base_regen = v,
         ArenaShape => cfg.arena_shape = bv,
+        GameMode => cfg.game_mode = v.round().clamp(1.0, 5.0) as u8,
         PillarMode => cfg.pillar_mode = bv.min(2),
         IceMode => cfg.ice_mode = bv.min(2),
         GoldRewardsEnabled => cfg.gold_rewards_enabled = v >= 0.5,
@@ -284,10 +290,12 @@ pub fn nudge(cfg: &mut MatchConfig, id: SettingId, dir: i32) {
         return;
     }
     if let Some(tiers) = id.enum_tiers() {
-        let cur = value(cfg, id).round() as i32;
+        // `GameMode` 的值是 1-based（1..=5），而档位表是 0-based 列表 → 这里换算。
+        let base = if id == SettingId::GameMode { 1 } else { 0 };
+        let cur = value(cfg, id).round() as i32 - base;
         let n = tiers.len() as i32;
         let next = (cur + dir).rem_euclid(n.max(1));
-        set(cfg, id, next as f64);
+        set(cfg, id, (next + base) as f64);
         return;
     }
     if let Some((min, max, step)) = id.num_range() {
@@ -339,7 +347,9 @@ pub fn commit_input(cfg: &mut MatchConfig, id: SettingId, text: &str) -> bool {
 pub fn value_text(cfg: &MatchConfig, id: SettingId) -> String {
     let v = value(cfg, id);
     if let Some(tiers) = id.enum_tiers() {
-        let i = (v.round() as usize).min(tiers.len().saturating_sub(1));
+        // `GameMode` 是 1-based，档位表 0-based（同 `nudge` 的换算）。
+        let base = if id == SettingId::GameMode { 1 } else { 0 };
+        let i = ((v.round() as i32 - base).max(0) as usize).min(tiers.len().saturating_sub(1));
         return tiers.get(i).copied().unwrap_or("?").to_string();
     }
     if id == SettingId::GoldRewardsEnabled {
@@ -449,6 +459,24 @@ mod tests {
             nudge(&mut c, SettingId::StartingGold, -1);
         }
         assert_eq!(c.starting_gold, 0, "不应低于 0");
+    }
+
+    /// 游戏模式行：1..=5 环绕，且写入 `game_mode`（改它会经设置串触发全员取消准备）。
+    #[test]
+    fn game_mode_row_cycles_1_to_5() {
+        let mut c = fresh();
+        assert_eq!(c.game_mode, 1, "默认轮次");
+        assert_eq!(value_text(&c, SettingId::GameMode), "轮次");
+        nudge(&mut c, SettingId::GameMode, 1);
+        assert_eq!(c.game_mode, 2);
+        assert_eq!(value_text(&c, SettingId::GameMode), "死亡竞赛");
+        for _ in 0..4 {
+            nudge(&mut c, SettingId::GameMode, 1);
+        }
+        assert_eq!(c.game_mode, 1, "应环绕回轮次");
+        nudge(&mut c, SettingId::GameMode, -1);
+        assert_eq!(c.game_mode, 5, "反向应到 5");
+        assert!(is_custom(&c, SettingId::GameMode));
     }
 
     /// 自定义输入：合法值写入并钳制；非法值保留原值；枚举/开关拒绝输入。
