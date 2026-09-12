@@ -302,9 +302,37 @@ pub const SHOP_CATEGORIES: [&str; 3] = ["机动", "防御续航", "攻击特殊"
 /// 三大类的切换键标签（B/N/M，避开属性页的 J/K/L 属性购买，无冲突）。
 pub const SHOP_CATEGORY_KEYS: [&str; 3] = ["B", "N", "M"];
 
-/// 指定大类下的物品（按家族展示顺序、族内按档位升序）。用于商店页右栏。
+/// 商店条目（098c 语义：**每家族一条目**，购买时按持有档位自动进化）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShopEntry {
+    /// 家族（Standalone 下每条独立物品自成一族条目）。
+    pub family: ItemFamily,
+    /// 当前持有（同家族），无则 `None`。
+    pub owned: Option<ItemId>,
+    /// 可购买目标：无持有=最低档；持低档=下一档；已满级=`None`。
+    pub target: Option<ItemId>,
+}
+
+impl ItemFamily {
+    /// 家族显示名。
+    pub fn name_zh(self) -> &'static str {
+        match self {
+            ItemFamily::Boots => "速度之靴",
+            ItemFamily::Helm => "头盔",
+            ItemFamily::Cloak => "斗篷",
+            ItemFamily::Amulet => "坠饰",
+            ItemFamily::PocketWatch => "怀表",
+            ItemFamily::GuardianShield => "守护之盾",
+            ItemFamily::LavaBoots => "熔岩靴",
+            ItemFamily::BloodSword => "鲜血之剑",
+            ItemFamily::Standalone => "独立物品",
+        }
+    }
+}
+
+/// 指定大类下的商店条目（每家族一条；Standalone 逐件）。用于商店页右栏。
 /// cat：0=机动(靴/熔岩靴) 1=防御续航(头盔/斗篷/坠饰/怀表/守护盾) 2=攻击特殊(独立物品/鲜血剑)。
-pub fn shop_category_items(cat: u8) -> Vec<&'static ItemDef> {
+pub fn shop_category_entries(cat: u8, items: &[ItemId]) -> Vec<ShopEntry> {
     let fams: &[&[ItemFamily]] = &[
         &[ItemFamily::Boots, ItemFamily::LavaBoots],
         &[
@@ -316,13 +344,34 @@ pub fn shop_category_items(cat: u8) -> Vec<&'static ItemDef> {
         ],
         &[ItemFamily::Standalone, ItemFamily::BloodSword],
     ];
-    let mut v: Vec<&'static ItemDef> = Vec::new();
-    if let Some(fams) = fams.get(cat as usize) {
-        for f in *fams {
-            v.extend(ItemDef::chain(*f));
+    let mut out = Vec::new();
+    let Some(fams) = fams.get(cat as usize) else {
+        return out;
+    };
+    for f in *fams {
+        if *f == ItemFamily::Standalone {
+            // 独立物品：逐件；乔丹已退役（技能上限突破另有入口）。
+            for d in ITEMS.iter().filter(|d| d.family == ItemFamily::Standalone) {
+                if d.id == ItemId::Jordan {
+                    continue;
+                }
+                let owned = items.iter().copied().find(|it| *it == d.id);
+                out.push(ShopEntry {
+                    family: ItemFamily::Standalone,
+                    owned,
+                    target: if owned.is_some() { None } else { Some(d.id) },
+                });
+            }
+            continue;
         }
+        let owned = items.iter().copied().find(|it| it.def().family == *f);
+        let target = match owned {
+            None => ItemDef::chain(*f).first().map(|d| d.id),
+            Some(cur) => cur.next_tier(),
+        };
+        out.push(ShopEntry { family: *f, owned, target });
     }
-    v
+    out
 }
 
 /// 商店可见的购买入口：各家族最低档 + 无链单体（升级在持有低档时指向下一档）。
