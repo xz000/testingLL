@@ -802,3 +802,43 @@ endfunction
 - 结构对齐 ✅（击杀/助攻/回合/胜利四条线都在；`ED` 物品回收价一致 ✅）
 - 缺"**点数 vs 金币**"的区分（098c 是 `ko/Ko/mo` 点数 + `lo/Lo/Mo/po` 金币两套）
 - 默认值需与对话框默认项统一后再改（含上表这条候选差异）
+
+
+### ⑤ 结案：**098c 有整组"金币发放模式"**（用户提示 + JASS 实证）
+
+用户提示"098c 有多种发放金钱的模式 / 有个 league 参数"——证实，且找到两处聊天指令模式：
+
+```jass
+18609  if s=="-no reward" then
+18611    set Mo=0            // 胜利金
+18613    set po=0            // 回合金
+18615    set lo=0            // 击杀金
+18617    "no reward activated - no gold rewards from kills and wins"
+
+18620  if s=="-league" or s=="-league B" then
+18622    call ad()           // 关奖励 + 关冰面（另一种更彻底的流程）
+18624    call DestroyTrigger(vn); call ExecuteFunc("gd")
+18628    "League mode activated - no gold rewards - ice off"
+```
+
+**由此解开的疑点**：`WR`(5254) 与 `iI`(5546) 两个回合结算函数各带两处 `+po` ——
+即**不同金币模式走不同的发放流程**，不是冗余代码。
+
+**098c 的金币维度小结**：
+
+| 维度 | 设置/指令 | 全局默认 |
+|---|---|---|
+| 击杀金币 | `lo`（设置 12） | 1 |
+| 助攻金币 | `Lo`（设置 13） | 1 |
+| 胜利金币 | `Mo`（设置 15） | 2 |
+| 回合/伤害金 | `po`（设置 16） | 1 |
+| 击杀/助攻/胜利**分** | `ko` / `Ko` / `mo`（设置 10/11/14） | 1 / 1 / 2 |
+| 初始金币 | `Qo` | 20 |
+| **模式** | `-no reward`（关 lo/Mo/po）、`-league`（全关奖励+关冰） | — |
+
+**我方实装（本轮）**：默认值已对齐 098c（`starting_gold 20`、`gold_per_round 1`、`gold_per_kill 1`、
+`gold_per_assist 1`（新增）、`gold_per_round_win 2`（新增）），并补上**助攻金**与**胜利金**的发放
+（此前助攻金写死 `+= 0`、胜利金完全未发）。
+
+**仍缺**：`-no reward` / `-league` 这类**模式开关**（属房间级设置，与现有 `game_mode` 的 5 种玩法正交）。
+待后续按"主机可配"接入（类似已有的回血档位 `host_set_regen`）。
