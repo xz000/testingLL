@@ -867,6 +867,10 @@ pub enum W098bOnHit {
     RedChain,
     /// S017 禁锢·沉默（形态 B，098c CC）：禁施法（可移动）。
     Silence,
+    /// S013A 移形换位（098c `MB`）：弹体命中敌人 → 施法者与目标**互换位置**，弹体销毁。
+    SwapTarget,
+    /// S013B 搬运（098c `pB`）：弹体到达后把**施法者传送到弹体位置**（命中/到期均可用）。
+    CarrySelf,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。
@@ -1929,7 +1933,19 @@ impl DefTable {
                 tree: SkillTree::R,
                 name: "移形换位·置换",
                 needs_point: true,
-                effect: W098bUtility { kind: W098bUtilKind::Swap, speed: Fix64::ZERO, max_distance: Fix64::from_num(660.0) },
+                effect: Warlock098b {
+                    // 098c `MB`：弹体速度 1700、半径 40、射程 900×(1+.1ei)；命中敌人 → 互换位置。
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(1700.0),
+                    radius: Fix64::from_num(40.0),
+                    life: Fix64::from_num(900.0 / 1700.0),
+                    kb_ji: Fix64::ONE,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::SwapTarget,
+                },
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
                     cooldown_delta: -1.4286, // 098c: 16->6 (8 lv)
@@ -2343,7 +2359,19 @@ impl DefTable {
                 tree: SkillTree::R,
                 name: "移形换位·搬运",
                 needs_point: true,
-                effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(600.0) },
+                effect: Warlock098b {
+                    // 098c `pB`：弹体速度 800、半径 40、射程 600×(1+.1ei)；到达后把施法者传送过去。
+                    proj: W098bProjKind::Straight,
+                    speed: Fix64::from_num(800.0),
+                    radius: Fix64::from_num(40.0),
+                    life: Fix64::from_num(600.0 / 800.0),
+                    kb_ji: Fix64::ZERO,
+                    ignite: None,
+                    blast: None,
+                    count: 1,
+                    spread_step: 0.0,
+                    on_hit: W098bOnHit::CarrySelf,
+                },
                 growth: SkillGrowth {
                     // 098c 校准（w3a_strings.txt 搬运 "Cast a bolt that will transfer you to its location"，8 档）：
                     // CD 14→4。max_level=8，delta 取原斜率（1.4286/级）。

@@ -704,14 +704,20 @@ impl World {
         }
         // 凤凰弹生成（B4-R）：转向处发射（直射弹，伤害=stats.damage）
         for (owner, pos, dir) in phoenix_shots.drain(..) {
-            let (speed, life, dmg) = (Fix64::from_num(800.0), Fix64::from_num(1.2), Fix64::from_num(4.5));
+            // 098c `tB` 实证：凤凰弹速度 **1000**、半径 **44**、寿命 `1.4×(1+.1ei)`；
+            // 伤害因子 `Xv = Wr+wr`（R 槽等级，handler `ea/xa` 未解码）→ 用 S012 当前等级伤害代替。
+            let ei = self.players.get(owner as usize).map(|p| p.mastery[2] as f64).unwrap_or(0.0);
+            let lv = self.players.get(owner as usize).map(|p| p.skill_level(crate::skill::SkillId::S012)).unwrap_or(1);
+            let dmg = crate::skill::DefTable::def(crate::skill::SkillId::S012).stats_at(lv).damage;
+            let speed = Fix64::from_num(1000.0);
+            let life = Fix64::from_num(1.4 * (1.0 + 0.1 * ei));
             self.projectiles.push(Projectile {
                 owner,
                 kind: ProjectileKind::W098b {
                     proj: crate::skill::W098bProjKind::Straight,
                     vel: dir * speed,
                     speed,
-                    radius: Fix64::from_num(20.0),
+                    radius: Fix64::from_num(44.0),
                     remaining: life,
                     life,
                     gx: dmg,
@@ -1438,13 +1444,19 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 出程恒速、过半程后朝施法者当前位置回拉。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
                         pr.alive = false;
+                        // S013B 搬运（`pB`）：弹体到期也把施法者传送过去。
+                        if *on_hit == crate::skill::W098bOnHit::CarrySelf {
+                            if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                o.pos = pr.pos;
+                            }
+                        }
                         // 098c `oB`：回旋镖在飞行计时结束时就地做命中半径 qI 内 AOE 结算
                         //（**不是**靠「回到施法者附近」——玩家一移动就永远回不来了）。
                         if *proj == crate::skill::W098bProjKind::Boomerang {
@@ -1980,6 +1992,9 @@ impl World {
                     } else if blast.is_some() {
                         // 陨石：飞行途中不结算（098c `iB`：一路飞到点击点，仅在到点由 `oB` 做 AOE）。
                         None
+                    } else if *on_hit == crate::skill::W098bOnHit::CarrySelf {
+                        // 搬运弹体（098c `pB`）：不与玩家碰撞，飞抵落点后才传送施法者。
+                        None
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
                         nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
                     } else if *on_hit == crate::skill::W098bOnHit::RedChain {
@@ -2118,6 +2133,23 @@ impl World {
                             crate::skill::W098bOnHit::Silence => {
                                 // 禁锢·沉默（098c CC，B4-Y）：禁施法（可移动）。
                                 silences.push((victim, debuff_dur.to_num::<f64>()));
+                            }
+                            crate::skill::W098bOnHit::SwapTarget => {
+                                // S013A 换位（098c `MB`）：命中敌人 → 施法者与该敌人**互换位置**，弹体销毁。
+                                let a = pr.owner as usize;
+                                let b = victim as usize;
+                                if a != b {
+                                    let pa = self.players[a].pos;
+                                    let pb = self.players[b].pos;
+                                    self.players[a].pos = pb;
+                                    self.players[b].pos = pa;
+                                }
+                            }
+                            crate::skill::W098bOnHit::CarrySelf => {
+                                // S013B 搬运（098c `pB`）：把施法者传送到弹体位置。
+                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                    o.pos = pr.pos;
+                                }
                             }
                         }
                         // （098c 回旋镖飞行中不命中、不转回程：回程由运动学前向归零触发、到位时 AOE 结算。）
@@ -6765,7 +6797,7 @@ mod tests {
         assert!(world.players[0].control.is_none(), "撞墙后强制位移应截断（control 清空）");
     }
 
-    /// S013 移形换位：与目标点附近的敌人互换位置。
+    /// S013A 移形换位（098c `MB`）：**弹体**命中敌人 → 双方互换位置，弹体销毁。
     #[test]
     fn s013_swap_exchanges_with_enemy() {
         let mut world = World::new(2, 959);
@@ -6779,8 +6811,17 @@ mod tests {
             PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
-        assert!(near_d(world.players[0].pos.x, 5.0, 0.5), "施法者应换到敌人位置，实际 {:?}", world.players[0].pos);
-        assert!(near_d(world.players[1].pos.x, 0.0, 0.5), "敌人应被换到施法者原位置，实际 {:?}", world.players[1].pos);
+        // 弹体飞行（1700/s，300 距离 ≈ 18 帧）后命中 → 换位。
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        assert!(near_d(world.players[0].pos.x, 5.0, 1.0), "施法者应换到敌人位置，实际 {:?}", world.players[0].pos);
+        assert!(near_d(world.players[1].pos.x, 0.0, 1.0), "敌人应被换到施法者原位置，实际 {:?}", world.players[1].pos);
+        assert!(
+            !world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { .. })),
+            "命中后换位弹体应销毁"
+        );
     }
 
     /// S002 闪电：瞬发射线立即伤害（无前摇等待弹体），写 lightning_visual，KI 击退。
@@ -8135,7 +8176,11 @@ mod tests {
             PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
-        // 搬运：瞬移到目标点附近（600 码射程内 → 480 落点；命不命中都会被搬到远处）
+        // 搬运现在是**弹体**（098c `pB`）：飞抵落点后才把施法者传送过去，故需推进若干帧。
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
         let d = world.players[0].pos.length().to_num::<f64>();
         assert!(d > 300.0, "搬运应把施法者搬到远处（>300），实际 {d}");
         // 对照 A 形态（置换）：点空地时也是自己瞬移，但点敌人时换位——本测试验证 B 后不互换
@@ -8164,11 +8209,14 @@ mod tests {
             PlayerInput { set_target: Some(Vec2::new(d60(6.0), d60(3.0))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
+        let mut spawned = false;
         for _ in 0..40 {
             world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+            if world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { .. })) {
+                spawned = true;
+            }
         }
-        let missiles = world.projectiles.iter().filter(|p| p.alive && matches!(p.kind, ProjectileKind::W098b { .. })).count();
-        assert!(missiles >= 1, "凤凰转向应发射凤凰弹，实际 {missiles}");
+        assert!(spawned, "凤凰转向应发射凤凰弹");
         assert!(world.players[1].hp < world.players[1].max_hp, "凤凰弹/接触应伤害敌人");
     }
 
