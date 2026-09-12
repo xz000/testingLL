@@ -61,13 +61,16 @@ pub struct MatchConfig {
 
 impl Default for MatchConfig {
     fn default() -> Self {
-        // 经济默认值对齐 **098c 全局声明**（`war3map_pretty.j` 205-224）：
-        //   ko=1/Ko=1/mo=2（点数）、lo=1/Lo=1/Mo=2（金币）、po=1（回合金）、Qo=20（初始金）。
-        // 注：此处**修正**了旧的"098b ed()"默认（回合金曾取 10、击杀金曾取 0，均与 098c 不符）。
+        // 经济默认值对齐 **098c 全局声明 + 设置对话框**（`war3map_pretty.j` 205-224 / 18799-18813）：
+        //   设置 10 ko=1 / 11 Ko=1 / 14 mo=2        ← 点数
+        //   设置 12 lo=1 / 13 Lo=1 / 15 Mo=2        ← 金币（击杀/助攻/胜利）
+        //   设置 16 po=1（Damage Gold Reward，回合结算时另加）
+        //   设置 17 qo=10（**Gold per round** = 每轮基础金币）← 注意是 `qo` 不是 `po`
+        //   Qo=20（初始金币）
         MatchConfig {
             total_rounds: 3,
             learn_time_secs: 30.0, // 098b wo=30
-            gold_per_round: 1,
+            gold_per_round: 10, // 设置 17 `qo`（此前误按 `po=1` 改成 1，已改回）
             gold_per_kill_cfg_unused_marker: 0,
             gold_per_assist: 1,
             gold_per_round_win: 2,
@@ -757,9 +760,9 @@ mod tests {
             ..Default::default()
         };
         let m = MatchState::new(config, &[0, 1], 8);
-        // 第一局 = 初始金币 50 + 回合金（098c `po` 默认 1）= 51
-        assert_eq!(m.profiles[0].gold, 50 + 1);
-        assert_eq!(m.profiles[1].gold, 50 + 1);
+        // 第一局 = 初始金币 50 + 每轮金（098c 设置 17 `qo` = 10）= 60
+        assert_eq!(m.profiles[0].gold, 50 + 10);
+        assert_eq!(m.profiles[1].gold, 50 + 10);
     }
 
     /// 模式专属奖励直发（098c 化身模式 `AI` 的 `+lo` / `+1`）。
@@ -964,9 +967,10 @@ mod tests {
     fn d6_economy_defaults_match_098b() {
         // PORT_098B_DECISIONS.md D6：So=20 / so=10 / 击杀金 0（只给分）/ 名次奖默认空。
         let config = MatchConfig::default();
-        // 098c 全局默认（`war3map_pretty.j` 205-224）：Qo=20 / po=1 / lo=1 / Lo=1 / Mo=2。
+        // 098c 全局默认 + 设置项（`war3map_pretty.j` 205-224 / 18799-18813）：
+        // Qo=20 初始金、qo=10 每轮金（设置 17）、lo=1/Lo=1/Mo=2 击杀/助攻/胜利金。
         assert_eq!(config.starting_gold, 20, "初始金币 Qo");
-        assert_eq!(config.gold_per_round, 1, "回合金 po");
+        assert_eq!(config.gold_per_round, 10, "每轮金币 = 设置 17 `qo`");
         assert_eq!(config.gold_per_kill, 1, "击杀金 lo");
         assert_eq!(config.gold_per_assist, 1, "助攻金 Lo");
         assert_eq!(config.gold_per_round_win, 2, "胜利金 Mo");
@@ -978,10 +982,10 @@ mod tests {
         assert_eq!(config.learn_time_secs, 30.0);
         assert_eq!(config.game_mode, 1);
         let mut m = MatchState::new(config, &[0, 1], 8);
-        assert_eq!(m.profiles[0].gold, 20 + 1, "开局 Qo=20 + 首轮 po=1");
+        assert_eq!(m.profiles[0].gold, 20 + 10, "开局 Qo=20 + 首轮 qo=10");
         // 击杀：发分 + 发金（098c `ko=1` / `lo=1`）
         m.register_kill(0);
-        assert_eq!(m.profiles[0].gold, 21 + 1, "击杀金 lo=1（基线 21）");
+        assert_eq!(m.profiles[0].gold, 30 + 1, "击杀金 lo=1（基线 30 = 20+10）");
         assert_eq!(m.profiles[0].score, 1, "098c 击杀 1 分（globals ko=1）");
         assert_eq!(m.profiles[0].current_streak, 1);
         // 助攻
