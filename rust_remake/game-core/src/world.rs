@@ -418,6 +418,10 @@ impl Obstacle {
 pub struct World {
     pub players: Vec<Player>,
     pub arena_radius: Fix64,
+    /// 基础生命恢复（HP/s）。098c 里它是主机可调常量
+    /// （`-C9` → `In`，默认 `In=.05` / 0.1s tick = **0.5/s`）；这里做成可覆写字段，
+    /// 便于测试隔离与以后接入房间设置（默认 = [`crate::balance::Balance::default`]）。
+    pub base_regen: f64,
     /// 试验场模式（单机技能试验场）：不缩圈、不出圈掉血、不判对局结束。
     pub sandbox: bool,
     /// 柱子/障碍布局使用的确定性种子。每轮递增，保证各小局地形不同、且两端一致。
@@ -492,6 +496,7 @@ impl World {
         World {
             players,
             arena_radius,
+            base_regen: crate::balance::Balance::default().hp_regen,
             sandbox: false,
             round_seed: seed,
             obstacles,
@@ -635,20 +640,30 @@ impl World {
                     p.control = None;
                 }
             }
-            // 098b 全局生命恢复 Nn=0.05/s（D7）+ 物品回复（斗篷/坠饰，M3）；灼烧期间禁疗。
-            // 注：098b 说明「每级精通增加 5% 生命回复」**不实现**——098c 全局回复 uhpr=0
-            // （`Balance::hp_regen=0.0`，回复全靠物品/技能），5%×0=0 为空操作；且 098c 的精通
-            // 只经 `Hn` 影响击退（kf L12917），无精通→回血链路。故按 098c 不引入该加成。
+            // 基础生命恢复（098c `In[]`：地图自维护、0.1s 定时器回血；基础 **0.5/s**）
+            // + 物品回复（斗篷/坠饰等）。化身另有角色倍率 `In *= (1+n/2)`（`role_regen_mult`）。
+            // 注：098c 的精通只经 `Hn` 影响击退（kf L12917），无精通→回血链路。
             if p.alive && !p.healing_blocked() {
-                let regen = (crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty).max(0.0);
+                let regen = ((self.base_regen
+                    + p.item_fx.regen_add
+                    - p.item_fx.regen_penalty)
+                    .max(0.0))
+                    * p.role_regen_mult;
                 p.hp = (p.hp + Fix64::from_num(regen) * dt).min(p.max_hp);
             }
-            // Doom（098c 国王模式：弑王全队永久 -1 hp/s，B3b）；可致死亡。
-            if p.alive && p.doom > 0.0 {
-                p.hp = (p.hp - Fix64::from_num(p.doom) * dt).max(Fix64::ZERO);
-                if p.hp == Fix64::ZERO {
-                    p.alive = false;
-                    new_deaths.push(p.id);
+            // Doom（098c 国王模式：弑王者所在队伍 −10 HP/s，持续 50s）；可致死亡。
+            if p.doom > 0.0 {
+                if p.alive {
+                    p.hp = (p.hp - Fix64::from_num(p.doom) * dt).max(Fix64::ZERO);
+                    if p.hp == Fix64::ZERO {
+                        p.alive = false;
+                        new_deaths.push(p.id);
+                    }
+                }
+                // 098c `LO(function II, 50, ...)` → 50 s 后 `In += 1`（解除）。
+                p.doom_remaining = (p.doom_remaining - dt).max(Fix64::ZERO);
+                if p.doom_remaining == Fix64::ZERO {
+                    p.doom = 0.0;
                 }
             }
             // S006 时光回溯（098b ER）：倒计时到点闪回锚点并还原 HP（不低于 1，避免回溯自杀）。
@@ -1120,13 +1135,15 @@ impl World {
                 }
             }
             4 => {
-                // 弑王 Doom（098c `AI` nn==4）：**王所在队伍**的存活成员 `In -= 1`（回血 -1/s）。
+                // 弑王 Doom（098c `AI` nn==4）：**王所在队伍**的存活成员 `In -= 1` → −10 HP/s，
+                // 持续 50 s（`LO(function II, 50, ...)` 后 `In += 1` 解除）。
                 // （JASS：`if bn[i] and Nn[i] and cn[NI]==cn[i] then In[i]=In[i]-1.`，NI=死去的王。）
                 if self.kings.contains(&victim) {
                     let vteam = self.players[victim as usize].team;
                     for p in self.players.iter_mut() {
                         if p.team == vteam && p.alive && p.id != victim {
-                            p.doom += 1.0;
+                            p.doom = 10.0;
+                            p.doom_remaining = Fix64::from_num(50.0);
                         }
                     }
                 }
@@ -2822,7 +2839,9 @@ impl World {
     }
 
     /// 每轮角色设置（B3）：化身（模式 3）与国王（模式 4）的 F 槽替换与增益。
-    /// - 化身：碰撞半径 50、Gn ×1.5 起始、法术时长 ×1.2（jn）、F→灾变 S020（098c L11950）。
+    /// - 化身（098c `Bf`，n = 参与人数）：**独占一队**（`cn[FV]=1`，其余 `cn=0` 互为盟友）、
+    ///   碰撞半径 50、`Gn ×1.5`、法术时长 ×1.2（jn）、回血 ×(1+n/2)、受击退 ÷(n/1.5)、
+    ///   F→灾变 S020（`Vn[FV]` 上 `S001→S020`）。
     /// - 国王：受伤 ×0.9、岩浆 ×0.9（hn/To ×0.9，L12251）、F→虔诚 S021。
     ///
     /// 其余玩家的角色增益全部复位。
@@ -2835,13 +2854,27 @@ impl World {
             p.dmg_taken_mult = 1.0;
             p.lava_taken_mult = 1.0;
             p.dur_mult = 1.0;
+            p.role_kb_mult = 1.0;
+            p.role_regen_mult = 1.0;
             p.radius = Fix64::from_num(crate::balance::Balance::default().default_radius);
         }
         if let Some(av) = avatar {
+            // 098c `Bf`（化身加冕）实证，n = 参与人数：
+            //   `Rv[Xn[FV]]=50`（碰撞半径）、`Gn *= 1.5`、`jn *= 1.2`、
+            //   `In *= (1 + n/2)`（回血）、`Hn /= (n/1.5)`（受击退）、
+            //   `cn[FV]=1` 且其余人 `cn[i]=0` → **化身独占一队 vs 其余人互为盟友**、
+            //   `S001 → S020`（F 槽换灾变）。
+            let n = self.players.len().max(1) as f64;
+            for p in self.players.iter_mut() {
+                p.team = 0;
+            }
             if let Some(p) = self.players.get_mut(av as usize) {
+                p.team = 1;
                 p.radius = Fix64::from_num(50.0);
                 p.growth = 1.5;
                 p.dur_mult = 1.2;
+                p.role_kb_mult = 1.5 / n;
+                p.role_regen_mult = 1.0 + n / 2.0;
             }
             self.f_override[av as usize] = Some(SkillId::S020);
         }
@@ -5406,6 +5439,7 @@ mod tests {
         /// 让 player0 朝 +X 发一发滚动火球（掷弹），返回（player1 掉了多少血，场上出现过的火球数）。
         fn fire(with_pillar: bool) -> (Fix64, usize) {
             let mut world = World::new(2, 77);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
             world.obstacles.clear();
             world.sandbox = true; // 不缩圈、不判回合结束，保证只受柱子影响
             world.players[0].pos = Vec2::new(d60(-6.0), Fix64::ZERO);
@@ -6017,6 +6051,7 @@ mod tests {
     fn item_combat_hooks_lifesteal_and_firestaff() {
         // 吸血：玩家1 持面具，闪电打玩家0 → 回血 24%×10=2.4
         let mut world = World::new(2, 969);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::new(d60(5.0), Fix64::ZERO);
@@ -6234,6 +6269,7 @@ mod tests {
     #[test]
     fn lava_boots_resist_out_of_bounds_damage() {
         let mut world = World::new(1, 971);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.players[0].pos = Vec2::new(d60(20.5), d60(20.5)); // 场外（熔岩上）
         world.players[0].set_items(&[crate::item::ItemId::LavaBoots1]);
         world.players[0].hp = Fix64::from_num(50.0);
@@ -6261,6 +6297,7 @@ mod tests {
         assert!(lost > 0.5 && lost < 3.0, "窗口内熔岩伤应减免至 1.125/s，1s 损 {lost}");
         // 无靴对照：单独 1s 全额 9
         let mut world2 = World::new(1, 971);
+        world2.base_regen = 0.0; // 屏蔽基础回血，单独量度熔岩伤
         world2.players[0].pos = Vec2::new(d60(20.5), d60(20.5));
         world2.players[0].hp = Fix64::from_num(50.0);
         for _ in 0..60 {
@@ -6274,6 +6311,7 @@ mod tests {
     #[test]
     fn item_effects_apply_to_player_stats() {
         let mut world = World::new(1, 968);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         let p = &mut world.players[0];
         p.set_items(&[
             crate::item::ItemId::Boots3,   // +40 移速
@@ -6286,9 +6324,9 @@ mod tests {
         let expected_speed = crate::player::BASE_SPEED + expected_flat;
         let got = p.base_speed_for_test().to_num::<f64>();
         assert!((got - expected_speed).abs() < 0.01, "移速应 {expected_speed}，实际 {got}");
-        // 回复：098c 无基础 + 0.4 斗篷 + 0.1 坠饰 = 0.5
+        // 回复：098c 基础 0.5/s + 0.4 斗篷 + 0.1 坠饰 = 1.0/s
         let regen = crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty;
-        assert!((regen - 0.5).abs() < 1e-6, "回复应 0.5/s，实际 {regen}");
+        assert!((regen - 1.0).abs() < 1e-6, "回复应 0.5(基础)+0.4+0.1 = 1.0/s，实际 {regen}");
         // kb：098c 无点数属性 → 仅物品（头盔）0.32
         assert!((p.effective_kb_reduction() - 0.32).abs() < 1e-9);
         // 生命上限：基础 100 + 物品 20 + 30 = 150（refresh_derived 落账）
@@ -6296,28 +6334,30 @@ mod tests {
         assert!(near(p.max_hp, 150.0, 0.01), "生命上限应 150，实际 {:?}", p.max_hp);
     }
 
-    /// 098c 无基础回血（uhpr=0，D9 批次3）——物品回复（斗篷）生效；灼烧禁疗。
+    /// 098c **基础回血 0.5/s**（`In=.05` 每 0.1s；同 tick 的岩浆 `To=.9`=9/s 为同刻度佐证）
+    /// ——物品回复（斗篷）在其上叠加；灼烧禁疗。
     #[test]
-    fn hp_regen_item_only_and_blocked_by_scorch() {
+    fn hp_regen_base_plus_item_and_blocked_by_scorch() {
         let mut world = World::new(1, 967);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].hp = Fix64::from_num(50.0);
         world.step(vec![PlayerInput::default()], dt);
         let none = vec![PlayerInput::default()];
-        // 无物品：2s 不回血（098c 无基础回血）
+        // 无物品：基础 0.5/s → 2s 回 1.0
         for _ in 0..120 {
             world.step(none.clone(), dt);
         }
-        assert!(near(world.players[0].hp, 50.0, 0.001), "无基础回血（098c），实际 {:?}", world.players[0].hp);
-        // 斗篷 3（098c +0.4/s）：2s 回 0.8
+        let base = world.players[0].hp.to_num::<f64>() - 50.0;
+        assert!((base - 1.0).abs() < 0.05, "基础回血 2s 应回 1.0（0.5/s），实际 {base}");
+        // 斗篷 3（+0.4/s）→ 合计 0.9/s，2s 回 1.8
         world.players[0].set_items(&[crate::item::ItemId::Cloak3]);
         world.players[0].hp = Fix64::from_num(50.0);
         for _ in 0..120 {
             world.step(none.clone(), dt);
         }
         let gained = world.players[0].hp.to_num::<f64>() - 50.0;
-        assert!((gained - 0.8).abs() < 0.05, "斗篷 2s 应回 0.8，实际 {gained}");
-        // 灼烧 → 禁疗（含物品回复）
+        assert!((gained - 1.8).abs() < 0.05, "基础 0.5 + 斗篷 0.4 = 0.9/s，2s 应回 1.8，实际 {gained}");
+        // 灼烧 → 禁疗（含基础与物品回复）
         world.players[0].hp = Fix64::from_num(50.0);
         world.players[0].add_buff(BuffKind::Scorched, 4.0);
         for _ in 0..120 {
@@ -6330,6 +6370,7 @@ mod tests {
     #[test]
     fn s001_smiting_nova_hits_enemies_not_self() {
         let mut world = World::new(3, 963);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
@@ -6396,6 +6437,7 @@ mod tests {
     #[test]
     fn s021_devotion_hurts_enemy_and_heals_self() {
         let mut world = World::new(2, 965);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
@@ -6421,6 +6463,7 @@ mod tests {
     #[test]
     fn s021_devotion_heals_teammates_in_team_mode() {
         let mut world = World::new(3, 986);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         // 0/1 同队 0，2 为敌人；施法者半血站桩，队友贴身
@@ -6945,6 +6988,7 @@ mod tests {
     #[test]
     fn s016_bounce_jumps_with_decay() {
         let mut world = World::new(3, 955);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         world.sandbox = true; // 衰减击退位移 ~1335 会把人推出 1200 场地，排除出界掉血干扰
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -7210,6 +7254,7 @@ mod tests {
     fn f_self_explode_low_hp_floor_is_self_stay() {
         // Unity 低血量分支：GetHurt(min(10, hp-1))，当 hp<=11 时扣 hp-1 → 保底留 1 血。
         let mut world = World::new(2, 93);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -7404,6 +7449,7 @@ mod tests {
     #[test]
     fn mastery_vi_lifesteal_per_level() {
         let mut world = World::new(2, 981);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::new(d60(5.0), Fix64::ZERO);
@@ -7544,6 +7590,7 @@ mod tests {
     #[test]
     fn team_round_over_when_one_side_left() {
         let mut world = World::new(4, 988);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].team = 0;
@@ -7620,6 +7667,7 @@ mod tests {
     #[test]
     fn lms_killer_death_revives_victims_and_round_detects() {
         let mut world = World::new(3, 991);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         world.configure_mode(5);
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -7657,6 +7705,7 @@ mod tests {
     #[test]
     fn roles_replace_f_slot_and_apply_buffs() {
         let mut world = World::new(3, 992);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.configure_mode(3);
@@ -7672,7 +7721,8 @@ mod tests {
         assert!((world.players[1].lava_taken_mult - 0.9).abs() < 1e-9);
         // 替换后施放 S001 实际执行 S020（灾变三级第一段）：对 250 内敌人造成 12+4×stage
         world.set_roles(Some(0), &[]);
-        world.players[1].team = 1;
+        // 化身独占队 1（098c `cn[FV]=1`），其余人队 0 → 目标须在队 0 才是敌人
+        world.players[1].team = 0;
         world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
         world.players[1].move_target = None;
         let hp1 = world.players[1].hp;
@@ -7690,10 +7740,39 @@ mod tests {
         assert!((d1 - 13.5).abs() < 0.5, "化身灾变 stage0 应 (11-120/60)×Gn1.5=13.5 伤，实际 {d1}");
     }
 
+    /// 化身角色（098c `Bf`）：**独占一队 vs 其余人互为盟友** + 按人数缩放。
+    #[test]
+    fn avatar_role_teams_and_scaling() {
+        let mut world = World::new(4, 1002);
+        world.configure_mode(3);
+        world.set_roles(Some(2), &[]);
+        // 队伍：化身 cn=1，其余 cn=0（互为盟友）
+        assert_eq!(world.players[2].team, 1, "化身应独占队 1");
+        for i in [0usize, 1, 3] {
+            assert_eq!(world.players[i].team, 0, "其余人应为队 0（盟友）");
+        }
+        let p = &world.players[2];
+        let n = 4.0f64;
+        // 半径 50；Gn ×1.5；jn ×1.2
+        assert!((p.radius.to_num::<f64>() - 50.0).abs() < 1e-6);
+        assert!((p.growth - 1.5).abs() < 1e-9);
+        assert!((p.dur_mult - 1.2).abs() < 1e-9);
+        // In *= (1+n/2) → 回血倍率 3.0；Hn /= (n/1.5) → 角色击退乘子 1.5/4 = 0.375
+        assert!((p.role_regen_mult - 3.0).abs() < 1e-9, "回血倍率应 1+4/2=3");
+        assert!((p.role_kb_mult - 0.375).abs() < 1e-9, "击退乘子应 1.5/4=0.375");
+        // 受击退 = 1 - Hn = 62.5%（无物品/精通时）
+        assert!((p.effective_kb_reduction() - 0.625).abs() < 1e-9, "化身应少受击退 62.5%");
+        // 国王同样调用 set_roles 时不应改动队伍
+        world.set_roles(None, &[0]);
+        assert_eq!(world.players[2].team, 1, "非化身轮的队伍保持不变");
+        assert!((world.players[0].dmg_taken_mult - 0.9).abs() < 1e-9);
+    }
+
     /// 国王模式：每队随机选王（同种子确定性）；弑王 → 凶手全队 Doom。
     #[test]
     fn king_mode_roll_and_doom() {
         let mut world = World::new(4, 993);
+        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         for (i, p) in world.players.iter_mut().enumerate() {
             p.team = if i < 2 { 0 } else { 1 };
         }
@@ -7707,14 +7786,19 @@ mod tests {
         world.reset_round();
         assert_eq!(world.kings, kings, "reset_round 应应用掷出的王");
         assert_eq!(world.f_override[kings[0] as usize], Some(SkillId::S021));
-        // 弑王：队 1 的王被杀 → **王所在队伍（队 1）**存活成员 doom+1（098c `AI` nn==4）
+        // 弑王：队 1 的王被杀 → **王所在队伍（队 1）**存活成员 Doom（098c `AI` nn==4：`In -= 1`）
         let victim = kings.iter().find(|&&k| world.players[k as usize].team == 1).copied().unwrap();
         world.players[victim as usize].last_hit_by = Some(0);
         world.record_death(victim);
         assert_eq!(world.players[victim as usize].doom, 0.0, "死者本身（王）不因自己死亡得 Doom");
         let teammates: Vec<usize> = (0..4).filter(|&i| i != victim as usize && world.players[i].team == 1).collect();
         for &i in &teammates {
-            assert!((world.players[i].doom - 1.0).abs() < 1e-9, "王所在队伍的存活队友应 doom+1");
+            // `In -= 1`（0.1s 刻度）⇒ -10 HP/s，持续 50s（`LO(function II, 50, ...)` 后恢复）
+            assert!((world.players[i].doom - 10.0).abs() < 1e-9, "王所在队伍的存活队友应 Doom -10 HP/s");
+            assert!(
+                (world.players[i].doom_remaining - Fix64::from_num(50.0)).abs() < Fix64::from_num(1e-6),
+                "Doom 应持续 50s"
+            );
         }
         assert_eq!(world.players[0].doom, 0.0, "凶手（队0）不应得 Doom");
     }
