@@ -309,11 +309,13 @@ const W098B_KB_MAX_SPEED: f64 = 2000.0;
 /// 098b 火球点燃时长（秒）：consolidated S000「点燃 2.5×jn」。
 const W098B_IGNITE_SECONDS: f64 = 2.5;
 
-/// 098c KI 击退初速（D9 批次1）：`(100 + 目标当前魔法) × gX × JI` 单位/秒。
-/// 魔法为挨打回魔的张力值（出生 0 → 基数 100；挨打越多被推越远，满张力约 100 倍）。
+/// 098c KI 击退初速：`(100 + 目标当前魔法) × gX × Gn[攻] × hn[受] × JI`（单位/秒）。
+/// 魔法为挨打回魔的张力值（出生 0 → 基数 100；挨打越多被推越远）。
+/// `Gn[攻]` = 攻方伤害成长/灼烧惩罚；`hn[受]` = 受方受伤倍率（`dmg_taken_mult`）；
+/// `Hn[受]`（精通击退减免）由 `push_knockback` 内的 `effective_kb_reduction` 承担。
 /// 封顶防极端：初速上限 [`W098B_KB_MAX_SPEED`]。
-fn warlock_ki_knockback(victim_mana: f64, gx: Fix64, ji: Fix64) -> Fix64 {
-    let raw = Fix64::from_num(100.0 + victim_mana) * gx * ji;
+fn warlock_ki_knockback(victim_mana: f64, gx: Fix64, ji: Fix64, atk_gn: f64, vic_hn: f64) -> Fix64 {
+    let raw = Fix64::from_num((100.0 + victim_mana) * atk_gn * vic_hn) * gx * ji;
     raw.min(Fix64::from_num(W098B_KB_MAX_SPEED))
 }
 
@@ -1954,7 +1956,9 @@ impl World {
                         //（击退 700 位移会盖过 300 的拉拽）。
                         if !is_chain && dd.length_squared() > Fix64::ZERO {
                             let vmana = self.players[victim as usize].mana;
-                            let kb = warlock_ki_knockback(vmana, *gx, *kb_ji);
+                            let atk_gn = self.players.get(pr.owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
+                            let vic_hn = self.players[victim as usize].dmg_taken_mult;
+                            let kb = warlock_ki_knockback(vmana, *gx, *kb_ji, atk_gn, vic_hn);
                             pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
                         }
                         if let Some(total) = ignite {
@@ -2161,7 +2165,8 @@ impl World {
                     let factor = (Fix64::ONE - d / Fix64::from_num(400.0 + 40.0 * xi)).max(Fix64::ZERO);
                     events.push((p.id, gx * factor, Some(owner)));
                     if d > Fix64::ZERO {
-                        let kb = warlock_ki_knockback(p.mana, gx, kb_ji);
+                        let atk_gn = self.players.get(owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
+                        let kb = warlock_ki_knockback(p.mana, gx, kb_ji, atk_gn, p.dmg_taken_mult);
                         pushes.push((p.id, (p.pos - pos).normalized() * kb, W098B_KB_TIME, true));
                     }
                 }
@@ -2601,15 +2606,20 @@ impl World {
         list
     }
 
-    /// 本局对 `victim` 造成过伤害的玩家（排除 victim 自身；供助攻判定，D6）。
-    pub fn damage_dealers_of(&self, victim: u32) -> Vec<u32> {
-        let mut out = Vec::new();
+    /// 098c 助攻判定（`AI`/`Jn` 实证）：对死者伤害**最高且 >0**、且非凶手者 = **唯一助攻者**。
+    /// （098c 不是“有过伤害即助攻”，而是取 `Jn[受×12+攻]` 的 argmax；`cI>0` 即计。）
+    pub fn assist_damager_of(&self, victim: u32, killer: u32) -> Option<u32> {
+        let mut best: Option<(u32, Fix64)> = None;
         for (attacker, row) in self.damage_matrix.iter().enumerate() {
-            if attacker != victim as usize && row[victim as usize] > Fix64::ZERO {
-                out.push(attacker as u32);
+            if attacker == victim as usize || attacker as u32 == killer {
+                continue;
+            }
+            let d = row[victim as usize];
+            if d > Fix64::ZERO && best.map(|(_, bd)| d > bd).unwrap_or(true) {
+                best = Some((attacker as u32, d));
             }
         }
-        out
+        best.map(|(id, _)| id)
     }
 
     /// 掷冰面（098c YC/iA，冰面批）：50% 概率在场地内生成一块随机矩形冰面。
@@ -3320,10 +3330,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     if let Some(pid) = best_player {
                         // 玩家命中：KI 伤害 + 击退，光束终止（098c：单段只结算一名玩家）
                         let vmana = world.players[pid as usize].mana;
+                        let vic_hn = world.players[pid as usize].dmg_taken_mult;
+                        let atk_gn = world.players.get(idx as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
                         world.damage_player(pid, gx, Some(idx));
                         if let Some(p) = world.players.get_mut(pid as usize) {
                             if p.alive {
-                                let kb = warlock_ki_knockback(vmana, gx, kb_ji);
+                                let kb = warlock_ki_knockback(vmana, gx, kb_ji, atk_gn, vic_hn);
                                 p.push_knockback(dir * kb);
                             }
                         }
@@ -7418,6 +7430,44 @@ mod tests {
         assert!((world.players[0].doom - 1.0).abs() < 1e-9, "弑王者（队0）应得 Doom");
         assert!((world.players[1].doom - 1.0).abs() < 1e-9, "弑王者队友应得 Doom");
         assert_eq!(world.players[victim as usize].doom, 0.0, "死者本身（王）不应有 Doom");
+    }
+
+    /// 助攻（098c `AI`/`Jn`）：对死者伤害最高且 >0、非凶手者 = 唯一助攻；凶手/无伤害则无。
+    #[test]
+    fn assist_is_top_damager_excluding_killer() {
+        let mut world = World::new(4, 995);
+        // 玩家1 被 0/2/3 都伤过；凶手=0，2 伤害最高 -> 助攻=2
+        world.damage_matrix[0][1] = Fix64::from_num(9.0);
+        world.damage_matrix[2][1] = Fix64::from_num(20.0);
+        world.damage_matrix[3][1] = Fix64::from_num(4.0);
+        assert_eq!(world.assist_damager_of(1, 0), Some(2), "助攻应取非凶手的最高伤害者");
+        // 只有凶手伤过 -> 无助攻
+        world.damage_matrix[2][1] = Fix64::ZERO;
+        world.damage_matrix[3][1] = Fix64::ZERO;
+        assert_eq!(world.assist_damager_of(1, 0), None, "只有凶手时无助攻");
+        // 无任何伤害 -> 无助攻
+        world.damage_matrix[0][1] = Fix64::ZERO;
+        assert_eq!(world.assist_damager_of(1, 0), None);
+    }
+
+    /// 跃退公式含 Gn[攻]×hn[受]：攻方 Gn 越高、受方 hn 越低，击退越大。
+    #[test]
+    fn knockback_scales_with_attacker_gn_and_victim_hn() {
+        // 直接验证公式（同 mana/gx/ji，只变 gn/hn）
+        let base = super::warlock_ki_knockback(0.0, Fix64::ONE, Fix64::ONE, 1.0, 1.0);
+        let big_gn = super::warlock_ki_knockback(0.0, Fix64::ONE, Fix64::ONE, 2.0, 1.0);
+        let low_hn = super::warlock_ki_knockback(0.0, Fix64::ONE, Fix64::ONE, 1.0, 0.5);
+        assert!((big_gn - base * Fix64::from_num(2.0)).abs() < Fix64::from_num(1e-6));
+        assert!((low_hn - base * Fix64::from_num(0.5)).abs() < Fix64::from_num(1e-6));
+    }
+
+    /// 每轮开局 Gn = 0.5（098c XI）。
+    #[test]
+    fn round_start_gn_is_half() {
+        let mut world = World::new(2, 996);
+        world.players[0].growth = 3.3;
+        world.players[0].reset_state();
+        assert!((world.players[0].growth - 0.5).abs() < 1e-9, "重生/轮开局 Gn 应为 0.5");
     }
 
     /// 化身模式：下一轮化身 = 上一轮伤害最高者。

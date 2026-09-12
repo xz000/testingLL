@@ -806,7 +806,7 @@ impl Player {
         self.rewind = None;
         self.catastrophe_stage = 0;
         self.mana = 0.0; // 098c 出生魔法 0（D9）
-        self.growth = 1.0;
+        self.growth = 0.5; // 098c XI：每轮开局/重生 Gn ×0.5（净效果 0.5）
         self.boomerang_side = false;
         self.hp = self.max_hp;
         self.alive = true;
