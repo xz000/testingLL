@@ -40,6 +40,8 @@ pub const ROOM_GOLD_PER_ROUND_KEY: &str = "room_gold_per_round";
 
 /// 基础生命恢复（HP/s）。098c 里它是主机常量 `-C9`（`In`），默认 `In=.05`/0.1s = 0.5/s。
 pub const ROOM_REGEN_KEY: &str = "room_regen";
+/// 房间设置（`MatchConfig::to_meta_string()` 的紧凑串）——单键承载全部设置，便于整体替换与变更检测。
+pub const ROOM_SETTINGS_KEY: &str = "room_cfg";
 /// 大厅元数据：单轮名次奖励（逗号分隔的档位，host 建房时写入；加入者据此对齐 MatchConfig.place_rewards）。
 pub const ROOM_PLACE_REWARD_KEY: &str = "room_place_reward";
 /// 大厅元数据：联机兼容版本（`game_core::PROTOCOL_VERSION`）。host 建房时写入，
@@ -722,6 +724,24 @@ impl SteamSession {
             .matchmaking()
             .lobby_data(l, ROOM_REGEN_KEY)
             .and_then(|s| s.parse().ok())
+    }
+
+    /// 写入**全部房间设置**（紧凑串；`MatchConfig::to_meta_string()`）。
+    /// 用单键承载，避免为每个设置项各开一个元数据槽；任何改动都会整体替换该键。
+    pub fn host_set_cfg(&self, cfg: &str) -> io::Result<()> {
+        let Some(l) = self.lobby else {
+            return Err(io::Error::other("host_set_cfg: 尚未建厅"));
+        };
+        self.transport
+            .matchmaking()
+            .set_lobby_data(l, ROOM_SETTINGS_KEY, cfg);
+        Ok(())
+    }
+
+    /// 读取房间设置串（加入者对齐 host 用；未设置返回 None）。
+    pub fn lobby_cfg(&self) -> Option<String> {
+        let l = self.lobby?;
+        self.transport.matchmaking().lobby_data(l, ROOM_SETTINGS_KEY)
     }
 
     /// 设置单轮名次奖励档位（写进大厅元数据，逗号分隔；供加入者读取对齐）。
