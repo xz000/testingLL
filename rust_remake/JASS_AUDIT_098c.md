@@ -660,3 +660,36 @@ endfunction
    而"等级 → 单价"的映射要在**科技自身**的金价字段上找）
 3. 若 `R0xx` 确实无金价字段，则涨价的实际机制是 war3 引擎按 `SetPlayerTechMaxAllowed` +
    固定单价计算 —— 需要回到 JASS 找定价处。
+
+
+### B 轮：技能单价 / 涨价机制 **定案**（w3q 完全解析后）
+
+**先修掉一个自己造的坑**：`gglb`/`glmb` 等是**非逐级字段**（`level = 0`），
+而我在尾部块的容错分支里写了 `level == 0 → skip`，把它们全跳过了 → 才会出现
+"101 个对象里 0 个带金价字段"的假结论。改成允许 `level == 0` 后立刻拿到数据。
+
+**技能科技的金价（`war3map.w3q` 实证）**：
+
+| 科技 | 技能 | `gglb`（基础金价） | `glvl`（每级金价增量） | `glmb` | `grac` |
+|---|---|---|---|---|---|
+| `R000` | Inventory（背包研究） | 3 | 3 | 0 | commoner |
+| `R002` | Fireball | 5 | 11 | 0 | commoner |
+| `R010` | Boomerang | 7 | 10 | 0 | commoner |
+| `R00O` | Homing | 8 | 10 | 0 | commoner |
+| `R001` | Fire Spray | 14 | 10 | 0 | commoner |
+| `R005` | Homing（另一键位） | 10 | 10 | 0 | commoner |
+
+（44 个对象带非零 `glvl`；`glmb = 0` → 上限不由升级表控制，而由 JASS `SetPlayerTechMaxAllowed` 控制。）
+
+**涨价机制（与 JASS `Jf` 对上）**：war3 的升级金价 = `gglb + glvl × 已研究等级`；
+`Jf` 对全部 18 个科技 `AddPlayerTechResearched(+1)` →
+**每触发一次 `Jf`，该玩家所有技能的"下一级升级价"就上涨一个 `glvl`**（Fireball +11、其余多为 +10）。
+
+这解释了 25856 的 `"Purchase cost of spells has increased"`：
+购买第 3/4/5 个法术时各触发一次 `Jf` → **此后每次技能升级都更贵**，累计最多 +3×`glvl`。
+
+**下一步（实装）**：
+1. `PlayerProfile::spell_buys: u8`（成功购买新法术时 +1）
+2. 升级价 = `gglb[skill] + glvl[skill] × (已有等级 - 1 + jf)`，其中 `jf = spell_buys.saturating_sub(2).min(3)`
+3. 用 w3q 表作为唯一真值源，加交叉校验测试（类似 `w3a_cooldown_crosscheck`）
+4. `CONFIG_VERSION` / `PROTOCOL_VERSION` 各 +1（新字段进配置同步）
