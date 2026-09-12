@@ -2513,7 +2513,7 @@ impl Game {
             draw_text(&mut canvas, ctx, "检测到帧同步分歧(desync)：本端状态与房主不一致，请退出重连", 18.0, Color::WHITE, Point2 { x: cx, y: 8.0 }, true)?;
         }
 
-        // 对局内 HUD（D9 UI 批次2）：物品栏 6 格 + 金币。仅对战/学习阶段显示。
+        // 对局内 HUD（D9 UI 批次2）：物品栏（容量随背包研究 1~10）+ 金币。仅对战/学习阶段显示。
         if !self.world.sandbox || self.meta.phase == game_core::meta::MatchPhase::Fighting {
             if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
                 let (sw, sh) = ctx.gfx.drawable_size();
@@ -2545,22 +2545,23 @@ impl Game {
                     draw_text(
                         &mut canvas,
                         ctx,
-                        &format!("精通 命{} 远{} 时{} 包{}", m.life, m.range, m.time, m.backpack),
+                        &format!("精通 命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
                         15.0,
                         Color::from_rgb(170, 200, 255),
                         Point2 { x: 14.0, y: 66.0 },
                         true,
                     )?;
                 }
-                // 回合数（常驻 HUD）：当前局 / 总轮数——局间信息常驻，便于随时掌握进度。
+                // 进度（常驻 HUD）：死斗/最后生还无回合概念，改显示目标分；其余显示当前局 / 总轮数。
+                let progress = if self.match_mode == 2 {
+                    format!("死斗：目标 {} 分", self.meta.config.win_score)
+                } else {
+                    format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+                };
                 draw_text(
                     &mut canvas,
                     ctx,
-                    &format!(
-                        "第 {} / {} 局",
-                        self.meta.round,
-                        self.meta.config.total_rounds
-                    ),
+                    &progress,
                     19.0,
                     Color::from_rgb(255, 235, 150),
                     Point2 { x: 14.0, y: 88.0 },
@@ -3474,7 +3475,7 @@ impl Game {
                     _ => {
                         // 成长页：精通 1-4（可点）+ 技能上限突破（可点）
                         let mut ay = panel_y + 14.0;
-                        ui::text_left(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留；上限各 3 级）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ui::text_left(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留；上限见各档 x/6）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
                         ay += 22.0;
                         let mm = [
                             ("生命精通", m.life, 0usize),
@@ -6236,7 +6237,7 @@ enum LearnAction {
     Form(game_core::skill::SkillId),
     /// 购买物品
     Item(game_core::item::ItemId),
-    /// 购买精通（0=生命 1=远程 2=时间 3=背包）
+    /// 购买精通（0=生命 1=范围 2=射程 3=背包）
     Mastery(usize),
     /// 技能上限突破（098c 乔丹原生化为购买项）
     SkillCap,
