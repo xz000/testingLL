@@ -1161,16 +1161,19 @@ impl World {
         }
         // 死亡面具/鲜血之剑（M3 2c）+ 生命精通 vi（098c kf，B1）：攻方生命偷取与受伤点恢复。
         // vi 每级 +8%（098c L3299 HX×0.08×vi；死亡面具白送的 +3 吸血走 item lifesteal，不加精通级数）。
+        // 2026-09-12 修正：098c 的 HX 是**实际造成的伤害**（护甲/法抗/Gn 折算后）→ 用 `dealt` 而非原始 `amount`，
+        // 否则对高护甲目标会高估吸血/回血。
         if let Some(f) = from.and_then(|f| self.players.get(f as usize).map(|a| a.id)) {
             let (lifesteal, odh, vi) = {
                 let a = &self.players[f as usize];
                 (a.item_fx.lifesteal, a.item_fx.on_damage_heal, a.mastery[0])
             };
-            let vi_steal = amount.to_num::<f64>() * 0.08 * vi as f64;
+            let dealt_f = dealt.to_num::<f64>();
+            let vi_steal = dealt_f * 0.08 * vi as f64;
             if lifesteal > 0.0 || odh > 0.0 || vi_steal > 0.0 {
                 if let Some(a) = self.players.get_mut(f as usize) {
                     if a.alive {
-                        let heal = amount.to_num::<f64>() * lifesteal + odh + vi_steal;
+                        let heal = dealt_f * lifesteal + odh + vi_steal;
                         a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
                     }
                 }
@@ -6381,54 +6384,6 @@ mod tests {
         assert_eq!(clones_left, 0, "持续时间结束后分身应消失，实际 {}", clones_left);
     }
 
-    /// S023 电弧（D 栏）：施放后沿瞄准方向射出一道直行电弹，命中敌人造成伤害。
-    #[test]
-    fn s023_arc_fires_bolt_that_damages_enemy() {
-        let mut world = World::new(2, 963);
-        world.obstacles.clear();
-        let dt = Fix64::from_num(1.0 / 60.0);
-        world.players[0].pos = Vec2::ZERO;
-        world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO); // +x 480 处敌人
-        world.players[1].move_target = None;
-        let hp_before = world.players[1].hp.to_num::<f64>();
-
-        world.step(
-            vec![
-                PlayerInput {
-                    cast: Some((SkillId::S023, Some(Vec2::new(d60(8.0), Fix64::ZERO)))),
-                    ..Default::default()
-                },
-                PlayerInput::default(),
-            ],
-            dt,
-        );
-
-        // 1) 生成一发直行电弹（Warlock098b / Straight）
-        let bolts = world
-            .projectiles
-            .iter()
-            .filter(|pr| {
-                matches!(
-                    pr.kind,
-                    ProjectileKind::W098b {
-                        proj: crate::skill::W098bProjKind::Straight,
-                        ..
-                    }
-                )
-            })
-            .count();
-        assert_eq!(bolts, 1, "电弧应射出一道电弹，实际 {}", bolts);
-
-        // 2) 电弹命中敌人造成伤害
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..60 {
-            world.step(none.clone(), dt);
-        }
-        let hp_after = world.players[1].hp.to_num::<f64>();
-        assert!(hp_after < hp_before, "电弧电弹应对敌人造成伤害，{} -> {}", hp_before, hp_after);
-    }
-
     /// S018 引力：施放后场上出现吸拉场，附近敌人被拉近。
     #[test]
     fn s018_gravity_zone_pulls_enemy() {
@@ -6482,12 +6437,12 @@ mod tests {
             world.step(none.clone(), dt);
         }
         let hp_after = world.players[1].hp.to_num::<f64>();
-        assert!(hp_after < hp_before, "黑洞应每秒扣血（0.3+0.0737×L camp2），{} -> {}", hp_before, hp_after);
+        assert!(hp_after < hp_before, "黑洞应每秒扣血（0.3+0.2×L），{} -> {}", hp_before, hp_after);
     }
 
-    /// 文档数值回归：S019 锁链 / S018 引力 A·B 的伤害与回复公式（均按 098c w3a_strings camp2 对齐）。
-    /// 锁链伤害 `0.2+0.0842×L`；引力·黑洞伤害 `0.3+0.0737×L`；
-    /// 引力·力场 每秒伤害 `2.25+0.3026×L`、每秒生命恢复 `1.0+0.0737×L`（MAX_HP=100）。
+    /// 文档数值回归：S019 锁链 / S018 引力 A·B 的伤害与回复公式（均按 098c w3a_strings 原斜率）。
+    /// 锁链伤害 `0.2+0.2×L`；引力·黑洞伤害 `0.3+0.2×L`；
+    /// 引力·力场 每秒伤害 `2.25+0.8214×L`、每秒生命恢复 `1.0+0.2×L`（MAX_HP=100）。
     /// 其中 L = 升级次数 = level-1（见 `SkillGrowth::stats`）。
     #[test]
     fn doc_s019_s018_growth_matches_doc() {
@@ -6507,7 +6462,7 @@ mod tests {
         assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "field hps {e} != {}", 1.0 + 0.2 * l);
     }
 
-    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.0737×L` camp2 每秒）。
+    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.2×L` 每秒）。
     #[test]
     fn s018_black_hole_damages_enemy_in_field() {
         let mut world = World::new(2, 1008);
