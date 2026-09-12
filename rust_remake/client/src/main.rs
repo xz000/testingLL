@@ -3131,6 +3131,19 @@ impl Game {
         canvas.draw(&panel, graphics::DrawParam::new());
 
         let n = self.match_cfg.non_default_setting_count();
+        let read_only = self.steam_lobby_id.is_some()
+            && self.steam_host_ls.is_none()
+            && !self.room_cfg_create_mode;
+        if read_only {
+            ui::text_center(
+                canvas, ctx,
+                "只读：只有房主可以修改房间设置",
+                ui::theme::SMALL,
+                layout::text_custom(),
+                sw / 2.0,
+                py + 8.0,
+            )?;
+        }
         ui::text_center(
             canvas, ctx,
             &format!("房间设置   （自定义 {n} 项）"),
@@ -5682,7 +5695,8 @@ impl Game {
         // ── 房间内编辑设置（仅 host）：`O` 打开编辑器；关闭时重新发布 → 触发全员取消准备 ──
         let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()));
-        if self.steam_host_ls.is_some() && o_pressed {
+        // 房主可改、客户端可看（只读）——只要能确定在当前房间里就允许打开。
+        if o_pressed && (self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()) {
             self.room_cfg_edit = !self.room_cfg_edit;
             // 房主改设置前先**取消自己的准备**：避免"房主已准备、还开着设置面板"的错位状态。
             if self.room_cfg_edit && self.steam_local_ready {
@@ -6109,6 +6123,11 @@ impl Game {
         // 之所以不让裸回车兼任：回车是"确认/建房"，共用会导致建房时无法提交（曾如此）。
         let edit_key = just("t")
             || (ctx.keyboard.active_modifiers.shift_key() && just_named(NamedKey::Enter));
+        // **非房主只读**：在房间里打开的编辑器，客户端只能看不能改
+        // （改了也不会发布 → 只会让玩家困惑）。建房流程（create）必然是房主，故不在此列。
+        let read_only = self.steam_lobby_id.is_some()
+            && self.steam_host_ls.is_none()
+            && !self.room_cfg_create_mode;
         // ── 自定义输入态：只处理文本键 ──
         if let Some(mut buf) = self.room_cfg_input.take() {
             let rows = settings_ui::SettingId::rows(self.room_cfg_group);
@@ -6208,6 +6227,10 @@ impl Game {
             // 大厅元数据项（房名/备注）：**`T`** 进入文本输入（预填当前值）。
             // 用独立键是为了把回车留给"确认/建房" —— 两者共用回车会让建房时无法提交（曾经如此）。
             if id.target() == settings_ui::SettingTarget::Meta {
+                if edit_key && read_only {
+                    eprintln!("[cfg] 只读：只有房主可以修改房间设置");
+                    return true;
+                }
                 if edit_key {
                     self.room_cfg_input = Some(settings_ui::meta_value(&self.room_meta, id));
                     eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
@@ -6227,7 +6250,9 @@ impl Game {
             if just_named(NamedKey::ArrowRight) {
                 dir = 1;
             }
-            if dir != 0 {
+            if dir != 0 && read_only {
+                eprintln!("[cfg] 只读：只有房主可以修改房间设置");
+            } else if dir != 0 {
                 settings_ui::nudge(&mut self.match_cfg, id, dir);
                 eprintln!(
                     "[cfg] {} = {}（自定义 {} 项）",
@@ -6238,6 +6263,10 @@ impl Game {
             }
             // **`T`**：数值行 → 进入自定义输入（预填当前值）。
             // **回车**：枚举/开关 → 直接切换；非创建模式下回车 = 保存并关闭（见下）。
+            if edit_key && read_only {
+                eprintln!("[cfg] 只读：只有房主可以修改房间设置");
+                return true;
+            }
             if edit_key && (id.num_range().is_some() || id.int_range().is_some()) {
                 let v = settings_ui::value(&self.match_cfg, id);
                 let init = if (v.fract()).abs() < 1e-9 {
@@ -6247,6 +6276,10 @@ impl Game {
                 };
                 self.room_cfg_input = Some(init);
                 eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
+                return true;
+            }
+            if just_named(NamedKey::Enter) && read_only {
+                eprintln!("[cfg] 只读：只有房主可以修改房间设置");
                 return true;
             }
             if just_named(NamedKey::Enter)
