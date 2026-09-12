@@ -352,6 +352,30 @@ impl ProjectileKind {
             | ProjectileKind::Clone { .. } => return None,
         })
     }
+
+    /// 098c「弹体互撞」的类别与旗标（简化版）。
+    ///
+    /// 实证：098c 每个弹体带类别 `nv` 与 `Av[3p+1..3]` 互撞旗标；相撞时两边各跑自己的处理器
+    /// （火球 `ib`：对被撞弹体结算伤害并自毁 `IA(nr)`；回旋镖 `Ub` 只开 1/3 类 → 与同类不互撞）。
+    /// 098c 弹体有 HP、我们无，故简化为**相撞互毁**（岩浆另有「吸收」路径，不在此列）。
+    /// 返回 `(class, 可互撞的 class 位掩码)`；`None` = 不参与弹体互撞。
+    fn missile_collision(&self) -> Option<(u8, u8)> {
+        const C1: u8 = 1 << 0; // 弹（直射/追踪/弹跳/散射）
+        const C2: u8 = 1 << 1; // 回旋镖
+        const C3: u8 = 1 << 2; // 场/块（岩浆等）
+        match self {
+            ProjectileKind::W098b { proj, .. } => match proj {
+                crate::skill::W098bProjKind::Boomerang => Some((2, C1 | C3)),
+                crate::skill::W098bProjKind::Magma => None, // 岩浆走 magma_absorb
+                _ => Some((1, C1 | C2 | C3)),
+            },
+            ProjectileKind::Bullet { .. }
+            | ProjectileKind::Missile { .. }
+            | ProjectileKind::PushBullet { .. }
+            | ProjectileKind::BonusBomb { .. } => Some((1, C1 | C2 | C3)),
+            _ => None,
+        }
+    }
 }
 
 /// 静态圆形障碍（原版 demo 里实际用作"墙/柱子"的碰撞体）。
@@ -2132,6 +2156,45 @@ impl World {
             if let Some(p) = self.players.get_mut(vid as usize) {
                 if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Tied, dur);
+                }
+            }
+        }
+        // 2b3) 弹体互撞（098c `Av`/`hv` 简化版）：不同队伍的飞行弹体相撞 → 互毁。
+        // 回旋镖不与同类互撞（098c `Ub` 只开 1/3 类）；岩浆走 magma_absorb，已排除。
+        {
+            let n_proj = ps.len();
+            for i in 0..n_proj {
+                if !ps[i].alive {
+                    continue;
+                }
+                let Some((ci, fi)) = ps[i].kind.missile_collision() else {
+                    continue;
+                };
+                let ri = ps[i].kind.obstacle_radius().unwrap_or(Fix64::ZERO);
+                for j in (i + 1)..n_proj {
+                    if !ps[j].alive {
+                        continue;
+                    }
+                    let Some((cj, fj)) = ps[j].kind.missile_collision() else {
+                        continue;
+                    };
+                    if ps[i].owner == ps[j].owner {
+                        continue;
+                    }
+                    let ti = self.players.get(ps[i].owner as usize).map(|p| p.team);
+                    let tj = self.players.get(ps[j].owner as usize).map(|p| p.team);
+                    if ti.is_some() && ti == tj {
+                        continue;
+                    }
+                    if fi & (1 << (cj - 1)) == 0 || fj & (1 << (ci - 1)) == 0 {
+                        continue;
+                    }
+                    let rj = ps[j].kind.obstacle_radius().unwrap_or(Fix64::ZERO);
+                    let rr = ri + rj;
+                    if (ps[i].pos - ps[j].pos).length_squared() <= rr * rr {
+                        ps[i].alive = false;
+                        ps[j].alive = false;
+                    }
                 }
             }
         }
@@ -5679,6 +5742,40 @@ mod tests {
         assert!(!hit_while_flying, "098c：回旋镖飞行途中不应结算伤害");
         assert!(hit_on_return, "回程到位应对 210 半径内敌人造成伤害");
         assert!(settled, "结算后回旋镖消失");
+    }
+
+    /// 弹体互撞（098c `Av`→ 简化互毁）：两队火球对飞应互毁、不伤及玩家。
+    #[test]
+    fn opposing_missiles_collide_and_destroy_each_other() {
+        let mut world = World::new(2, 1201);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let p0 = Vec2::new(d60(-3.0), Fix64::ZERO);
+        let p1 = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[0].pos = p0;
+        world.players[1].pos = p1;
+        world.players[0].move_target = None;
+        world.players[1].move_target = None;
+        let hp0 = world.players[0].hp;
+        let hp1 = world.players[1].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S000, Some(p1))), ..Default::default() },
+                PlayerInput { cast: Some((SkillId::S000, Some(p0))), ..Default::default() },
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert_eq!(world.players[0].hp, hp0, "对撞火球不应伤及施法者 0");
+        assert_eq!(world.players[1].hp, hp1, "对撞火球不应伤及施法者 1");
+        assert!(
+            !world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { .. })),
+            "对撞后应无火球残留"
+        );
     }
 
     /// S008 陨石灼烧「烤肉饼」（D7）：命中 → Scorched（禁疗+输出 ×0.1）4s + 灼烧 DoT 场。
