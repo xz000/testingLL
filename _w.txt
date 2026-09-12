@@ -1,0 +1,12 @@
+979         assert_eq!(config.game_mode, 1);
+980         let mut m = MatchState::new(config, &[0, 1], 8);
+981         assert_eq!(m.profiles[0].gold, 20 + 1, "开局 Qo=20 + 首轮 po=1");
+982         // 击杀只给分
+983         m.register_kill(0);
+984         assert_eq!(m.profiles[0].gold, 30, "击杀金默认 0");
+985         assert_eq!(m.profiles[0].score, 1, "098c 击杀 1 分（globals ko=1）");
+986         assert_eq!(m.profiles[0].current_streak, 1);
+987         // 助攻
+988         m.register_assists(1, 0, &[0, 1]);
+989         assert_eq!(m.profiles[0].score, 1, "击杀者不算助攻");
+990         // 轮胜分
