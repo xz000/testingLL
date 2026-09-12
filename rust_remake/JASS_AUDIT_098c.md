@@ -842,3 +842,50 @@ endfunction
 
 **仍缺**：`-no reward` / `-league` 这类**模式开关**（属房间级设置，与现有 `game_mode` 的 5 种玩法正交）。
 待后续按"主机可配"接入（类似已有的回血档位 `host_set_regen`）。
+
+
+### ⑥ 结案：`R017` "20 any mastery" **不是精通上限**，而是击退减免的载体
+
+**实证（`war3map_pretty.j` 25588–25600）**：
+
+```jass
+25588  set lf = I2R(vi[id]+ei[id]+xi[id])        // = 生命 + 范围 + 射程 三种精通等级之和
+25590  if iV[$C+24*id] then set lf = lf-3 endif   // 持有物品 I004 时**等效多 3 级**
+25596  set Hn[id] = Hn[id]*(1./(1-.025*(lf-1)))
+25598  set Hn[id] = Hn[id]*(1-.025*(lf))
+25600  call SetPlayerTechResearched(Player(id),'R017',R2I(lf))
+```
+
+- `Hn[id]` = **受击退缩放**（我方已有 `mastery_kb_reduction` 与相关测试）。
+- `R017` 只是**把 `lf` 灌进一个假升级**供 war3 引擎读，`glvl=20` 是编辑器里的等级上限（给 `lf` 留余量）。
+  故它**与精通价格/上限无关**，`R00D/R00I/R00Y` 的 `glvl=6` 才是真上限（本台账 ② 已定案）。
+- 唯一引用点就是 25600 这一处 —— 排除了"还有别的用途"的可能。
+
+**我方对照**：`player.rs::mastery_kb_reduction()` = `0.025 × (mastery[0..2] 之和)` ✅ **逐项一致**。
+
+**发现一处遗漏**：JASS 25590 的 **`I004` 持有则 `lf -= 3`**（等效 +3 级精通，即 +7.5% 击退减免）
+我方未实现。`$C` = 物品标志位索引 12，对应 `I004`（需再从 w3t 确认该物品的家族/名称后接入）。
+
+---
+
+## 待办登记：**房间设置对齐 098c 设置对话框**（用户指定，⑥ 之后综合判断）
+
+098c 的设置项共 **17 项**（`war3map_pretty.j` 18768–18813），我方房间参数目前只覆盖少数：
+
+| id | 设置 | 我方现状 |
+|---|---|---|
+| 1 | Lava Damage | 有待核（岩浆伤害） |
+| 2 | Damage Multiplier | ✗ 无 |
+| 3 | Knockback Multiplier | ✗ 无 |
+| 4 | Shop Time | ✅ `shopping_time_secs` |
+| 5 | Shop Time initial | 部分 |
+| 6 | Shrink Time per player | 有待核（场地收缩） |
+| 7 | Arena (0=random) | 部分（有随机场地） |
+| 8 | Pillar (0=random) | 部分（有随机柱子） |
+| 9 | HP Regeneration | ✅ `host_set_regen`（已做档位） |
+| 10-16 | 击杀/助攻/胜利 点数与金币、伤害金 | ✅ 本轮已对齐默认值；**尚未做成房主可调项** |
+| 17 | Gold per round | 同上 |
+| — | `-no reward` / `-league` 模式 | ✗ 无 |
+
+**下一步建议（待用户拍板）**：把这 17 项做成"房间参数"（复用已有 `host_set_regen` 的键值元数据模式），
+或先只做**奖励类 8 项 + 两个模式开关**（对游戏经济影响最直接）。
