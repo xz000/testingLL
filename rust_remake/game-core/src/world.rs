@@ -2838,6 +2838,11 @@ impl World {
         self.mode = mode;
     }
 
+    /// 设置基础生命恢复（HP/s）。098c 对应主机常量 `-C9`（`In`，默认 0.5/s）。
+    pub fn configure_regen(&mut self, per_sec: f64) {
+        self.base_regen = per_sec;
+    }
+
     /// 每轮角色设置（B3）：化身（模式 3）与国王（模式 4）的 F 槽替换与增益。
     /// - 化身（098c `Bf`，n = 参与人数）：**独占一队**（`cn[FV]=1`，其余 `cn=0` 互为盟友）、
     ///   碰撞半径 50、`Gn ×1.5`、法术时长 ×1.2（jn）、回血 ×(1+n/2)、受击退 ÷(n/1.5)、
@@ -6332,6 +6337,20 @@ mod tests {
         // 生命上限：基础 100 + 物品 20 + 30 = 150（refresh_derived 落账）
         p.refresh_derived();
         assert!(near(p.max_hp, 150.0, 0.01), "生命上限应 150，实际 {:?}", p.max_hp);
+    }
+
+    /// `configure_regen`：房间设置可调基础回血（098c 主机常量 `-C9`）。
+    #[test]
+    fn configure_regen_overrides_base_regen() {
+        let mut world = World::new(1, 1003);
+        world.configure_regen(2.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].hp = Fix64::from_num(50.0);
+        for _ in 0..60 {
+            world.step(vec![PlayerInput::default()], dt);
+        }
+        let gained = world.players[0].hp.to_num::<f64>() - 50.0;
+        assert!((gained - 2.0).abs() < 0.05, "1s 应回 2.0，实际 {gained}");
     }
 
     /// 098c **基础回血 0.5/s**（`In=.05` 每 0.1s；同 tick 的岩浆 `To=.9`=9/s 为同刻度佐证）
