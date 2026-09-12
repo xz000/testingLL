@@ -33,6 +33,8 @@ mod ui;
 mod steam;
 /// 界面按键契约（确认键等）：文案与判定放一起，单测钉住两者一致。
 mod keys;
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+mod settings_ui;
 
 /// 机器人数量（不含玩家本人）。当前 Solo/局域网均无本地 AI；保留该常量供将来“带 AI 测试”模式复用。
 #[allow(dead_code)]
@@ -570,8 +572,17 @@ struct Game {
     /// **完整房间设置**（`MatchConfig`）：建房时经 `host_set_cfg` 写入大厅元数据，
     /// 入房时读出对齐。含经济/玩法/地图全部可配项（见 `ROOM_SETTINGS_PLAN.md`）。
     match_cfg: game_core::meta::MatchConfig,
+    /// 房间设置编辑器是否打开（建房/房间内均可，`O` 切换）。仅 Steam 大厅路径使用。
+    #[cfg(feature = "steam")]
+    room_cfg_edit: bool,
+    /// 当前分组页签与行号（编辑器内导航）。
+    #[cfg(feature = "steam")]
+    room_cfg_group: settings_ui::Group,
+    #[cfg(feature = "steam")]
+    room_cfg_row: usize,
     /// 上次见到的**房间设置串**（大厅元数据）——用于检测"房主改了设置"：
     /// 一旦变化即取消本端准备（第 5 步），并同步应用新设置。
+    #[cfg(feature = "steam")]
     steam_cfg_seen: Option<String>,
     /// 本局生效的基础回血（HP/s）。
     #[cfg(feature = "steam")]
@@ -1068,7 +1079,14 @@ impl Game {
             steam_create_regen: STEAM_DEFAULT_REGEN,
             match_mode: init_mode,
             match_cfg: game_core::meta::MatchConfig { game_mode: init_mode, ..Default::default() },
+            #[cfg(feature = "steam")]
             steam_cfg_seen: None,
+            #[cfg(feature = "steam")]
+            room_cfg_edit: false,
+            #[cfg(feature = "steam")]
+            room_cfg_group: settings_ui::Group::Economy,
+            #[cfg(feature = "steam")]
+            room_cfg_row: 0,
             #[cfg(feature = "steam")]
             match_regen: init_regen,
             match_teams: 1,
@@ -2662,6 +2680,9 @@ impl Game {
                 self.draw_steam_room_edit(&mut canvas, ctx)?;
             } else {
                 self.draw_steam_ready_overlay(&mut canvas, ctx)?;
+        if self.room_cfg_edit {
+            self.draw_room_cfg_editor(&mut canvas, ctx)?;
+        }
             }
         }
 
@@ -2995,7 +3016,138 @@ impl Game {
 
     /// Steam 房间/就绪界面：列出成员昵称 + 就绪状态，按 U 就绪/取消，全就绪倒计时。
     #[cfg(feature = "steam")]
+    /// 房间面板上的设置徽章：`默认（原版）` / `自定义 N 项`（host 另有 `[O]编辑` 提示）。
+    #[cfg(feature = "steam")]
+    fn draw_room_cfg_badge(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let n = self.match_cfg.non_default_setting_count();
+        let text = if n == 0 {
+            "房间设置：默认（原版）".to_string()
+        } else {
+            format!("房间设置：自定义 {n} 项 ⚠")
+        };
+        let col = if n == 0 {
+            ui::theme::text_dim()
+        } else {
+            Color::from_rgb(255, 200, 90)
+        };
+        let edit_hint = if self.steam_host_ls.is_some() {
+            "   [O] 编辑"
+        } else {
+            ""
+        };
+        ui::text_center(
+            canvas, ctx,
+            &format!("{text}{edit_hint}"),
+            ui::theme::SMALL, col,
+            ui::UI_W / 2.0, ui::UI_H * 0.075,
+        )?;
+        Ok(())
+    }
+
+    /// 房间设置编辑器覆盖层（`O` 打开）：分组页签 + 行列表 + 值 + 说明。
+    /// 交互提示与逻辑同源（`settings_ui`）。
+    #[cfg(feature = "steam")]
+    fn draw_room_cfg_editor(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        // 半透明底 + 面板
+        let dim = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, sw, sh),
+            Color::from_rgba(6, 8, 14, 225),
+        )?;
+        canvas.draw(&dim, graphics::DrawParam::new());
+        let pw = sw * 0.72;
+        let ph = sh * 0.76;
+        let px = (sw - pw) / 2.0;
+        let py = (sh - ph) / 2.0;
+        let panel = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(px, py, pw, ph),
+            Color::from_rgba(20, 24, 34, 245),
+        )?;
+        canvas.draw(&panel, graphics::DrawParam::new());
+
+        let n = self.match_cfg.non_default_setting_count();
+        ui::text_center(
+            canvas, ctx,
+            &format!("房间设置   （自定义 {n} 项）"),
+            ui::theme::TITLE,
+            Color::from_rgb(255, 210, 120),
+            sw / 2.0,
+            py + 26.0,
+        )?;
+
+        // 分组页签
+        let mut tx = px + 24.0;
+        for g in settings_ui::Group::ALL {
+            let sel = g == self.room_cfg_group;
+            let col = if sel {
+                Color::from_rgb(255, 210, 120)
+            } else {
+                ui::theme::text_dim()
+            };
+            ui::text_left(
+                canvas, ctx,
+                &format!("[{}] {}", g.hotkey().to_uppercase(), g.name()),
+                ui::theme::BODY, col, tx, py + 56.0,
+            )?;
+            tx += 110.0;
+        }
+
+        // 行列表
+        let rows = settings_ui::SettingId::rows(self.room_cfg_group);
+        let mut y = py + 86.0;
+        let row_w = pw - 48.0;
+        for (i, &id) in rows.iter().enumerate() {
+            let sel = i == self.room_cfg_row;
+            let custom = settings_ui::is_custom(&self.match_cfg, id);
+            let col = if sel {
+                Color::from_rgb(255, 235, 170)
+            } else if custom {
+                Color::from_rgb(255, 200, 90)
+            } else {
+                ui::theme::text()
+            };
+            ui::text_left(
+                canvas, ctx,
+                &format!("{}{}", if sel { "▶ " } else { "  " }, id.label()),
+                ui::theme::BODY, col, px + 24.0, y,
+            )?;
+            ui::text_right(
+                canvas, ctx,
+                &settings_ui::value_text(&self.match_cfg, id),
+                ui::theme::BODY, col, px + 24.0 + row_w, y,
+            )?;
+            y += 24.0;
+        }
+
+        // 说明 + 操作提示
+        if let Some(&id) = rows.get(self.room_cfg_row.min(rows.len().saturating_sub(1))) {
+            ui::text_center(
+                canvas, ctx,
+                settings_ui::SettingId::hint(id),
+                ui::theme::SMALL,
+                ui::theme::text_dim(),
+                sw / 2.0,
+                py + ph - 52.0,
+            )?;
+        }
+        ui::text_center(
+            canvas, ctx,
+            "Z/X/C/V 分组 · ↑↓ 选择 · ←→ 调整 · 回车/O 保存并关闭（改动会取消全员准备）",
+            ui::theme::SMALL,
+            Color::from_rgb(160, 200, 255),
+            sw / 2.0,
+            py + ph - 26.0,
+        )?;
+        Ok(())
+    }
+
+    #[cfg(feature = "steam")]
     fn draw_steam_ready_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        self.draw_room_cfg_badge(canvas, ctx)?;
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(0.0, 0.0, sw, sh), Color::from_rgba(8, 10, 16, 225))?;
         canvas.draw(&dim, graphics::DrawParam::new());
@@ -5362,6 +5514,57 @@ impl Game {
         // client 端不满员手动倒计时用 host 广播的 manual_ms 判锁定，最后 LOCK 秒内不可按 U 取消（与 host 端一致）。
         let locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
             || (self.steam_cli_ls.is_some() && self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STEAM_COUNTDOWN_LOCK_SECS);
+        // ── 房间内编辑设置（仅 host）：`O` 打开编辑器；关闭时重新发布 → 触发全员取消准备 ──
+        if self.steam_host_ls.is_some() && (ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into())))
+        {
+            self.room_cfg_edit = !self.room_cfg_edit;
+            if !self.room_cfg_edit {
+                self.publish_room_cfg();
+            }
+        }
+        if self.room_cfg_edit {
+            let just_named = |n: winit::keyboard::NamedKey| {
+                ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n))
+            };
+            let just = |c: &str| {
+                ctx.keyboard
+                    .is_logical_key_just_pressed(&Key::Character(c.to_lowercase().into()))
+                    || ctx
+                        .keyboard
+                        .is_logical_key_just_pressed(&Key::Character(c.to_uppercase().into()))
+            };
+            for g in settings_ui::Group::ALL {
+                if just(&g.hotkey().to_string()) {
+                    self.room_cfg_group = g;
+                    self.room_cfg_row = 0;
+                }
+            }
+            let n_rows = settings_ui::SettingId::rows(self.room_cfg_group).len();
+            if n_rows > 0 {
+                if just_named(winit::keyboard::NamedKey::ArrowUp) {
+                    self.room_cfg_row = (self.room_cfg_row + n_rows - 1) % n_rows;
+                }
+                if just_named(winit::keyboard::NamedKey::ArrowDown) {
+                    self.room_cfg_row = (self.room_cfg_row + 1) % n_rows;
+                }
+                let id = settings_ui::SettingId::rows(self.room_cfg_group)
+                    [self.room_cfg_row.min(n_rows - 1)];
+                if just_named(winit::keyboard::NamedKey::ArrowLeft) {
+                    settings_ui::nudge(&mut self.match_cfg, id, -1);
+                }
+                if just_named(winit::keyboard::NamedKey::ArrowRight) {
+                    settings_ui::nudge(&mut self.match_cfg, id, 1);
+                }
+            }
+            if just_named(winit::keyboard::NamedKey::Enter) || just("o") {
+                self.room_cfg_edit = false;
+                self.publish_room_cfg();
+            }
+            // 注意：**不能**在此提前 return —— 下面的网络上行/心跳每帧都要跑，
+            // 否则房主打开编辑器时其余端会因收不到心跳而判定「房主已离开」。
+        }
+
         // ── 房间设置变更 → 取消全员准备（第 5 步）──
         // 依据：设置整串（`MatchConfig::to_meta_string`）是否变化。host 读自己的配置，
         // client 读大厅元数据 —— Steam 大厅数据本就对全房共享，因此**无需额外协议**。
@@ -5403,7 +5606,7 @@ impl Game {
             }
         }
 
-        if ready_pressed && !locked && !panel_open {
+        if ready_pressed && !locked && !panel_open && !self.room_cfg_edit {
             self.steam_local_ready = !self.steam_local_ready;
             if !self.steam_local_ready {
                 // 本端取消就绪：立即重置本地倒计时（不依赖 host 快照回传，避免“取消后重准备不重新数 5 秒”）。
@@ -5663,6 +5866,24 @@ impl Game {
         }
     }
 
+    /// 把当前房间设置**重新发布**到大厅元数据（`host` 改设置后调用）。
+    /// 各端检测到设置串变化即清空自己的「准备」（见 `steam_lobby_update`），
+    /// 因此这里只负责写入；不加锁、不弹窗。
+    #[cfg(feature = "steam")]
+    fn publish_room_cfg(&mut self) {
+        let cfg = self.match_cfg.to_meta_string();
+        if let Some(sess) = self.steam_sess.as_ref() {
+            match sess.host_set_cfg(&cfg) {
+                Ok(()) => eprintln!(
+                    "[cfg] 已发布房间设置（自定义 {} 项，{} 字节）",
+                    self.match_cfg.non_default_setting_count(),
+                    cfg.len()
+                ),
+                Err(e) => eprintln!("[cfg] 发布失败：{e}"),
+            }
+        }
+    }
+
     /// 建房设置界面输入：四个字段（房间名/备注/人数）。
     /// - ↑/↓ 或 Tab 切换字段；在文本字段可输入 ascii+空格+常用标点、Backspace 删末字符；人数字段 `+`/`-` 或直接输数字（2..=STEAM_MAX_PLAYERS）。
     /// - 回车=创建房间（用现有 steam_sess 建厅+写房间元数据）；Q=放弃返回大厅主界面。
@@ -5674,6 +5895,48 @@ impl Game {
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
+        // ── 房间设置编辑器（`O` 打开）：打开时**独占**输入，回车/Esc/O 关闭并重新发布设置串 ──
+        if just('o') || just('O') {
+            self.room_cfg_edit = !self.room_cfg_edit;
+            if !self.room_cfg_edit {
+                self.publish_room_cfg();
+            }
+        }
+        if self.room_cfg_edit {
+            // 分组：Z/X/C/V；行：↑↓；调值：←→；回车/O 关闭并发布。
+            for (g, ch) in [
+                (settings_ui::Group::Economy, "z"),
+                (settings_ui::Group::Gameplay, "x"),
+                (settings_ui::Group::Map, "c"),
+                (settings_ui::Group::Mode, "v"),
+            ] {
+                if just(ch.chars().next().unwrap()) || just(ch.to_uppercase().chars().next().unwrap()) {
+                    self.room_cfg_group = g;
+                    self.room_cfg_row = 0;
+                }
+            }
+            let rows = settings_ui::SettingId::rows(self.room_cfg_group);
+            if !rows.is_empty() {
+                if just_named(NamedKey::ArrowUp) {
+                    self.room_cfg_row = (self.room_cfg_row + rows.len() - 1) % rows.len();
+                }
+                if just_named(NamedKey::ArrowDown) {
+                    self.room_cfg_row = (self.room_cfg_row + 1) % rows.len();
+                }
+                let id = rows[self.room_cfg_row.min(rows.len() - 1)];
+                if just_named(NamedKey::ArrowLeft) {
+                    settings_ui::nudge(&mut self.match_cfg, id, -1);
+                }
+                if just_named(NamedKey::ArrowRight) {
+                    settings_ui::nudge(&mut self.match_cfg, id, 1);
+                }
+            }
+            if just_named(NamedKey::Enter) || just('o') {
+                self.room_cfg_edit = false;
+                self.publish_room_cfg();
+            }
+            return; // 编辑器打开时不吃建房界面的其它按键
+        }
         // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
         if just('m') || just('M') {
             self.steam_create_mode = if self.steam_create_mode >= 5 { 1 } else { self.steam_create_mode + 1 };
@@ -6409,6 +6672,23 @@ impl Game {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
+        // 房间设置摘要 + 「自定义 N 项」徽章：让玩家一眼看出房主是否开了高级设置。
+        let n = self.match_cfg.non_default_setting_count();
+        let badge = if n == 0 {
+            "默认（原版）".to_string()
+        } else {
+            format!("自定义 {n} 项")
+        };
+        let badge_col = if n == 0 {
+            Color::from_rgb(150, 160, 175)
+        } else {
+            Color::from_rgb(255, 200, 90)
+        };
+        ui::text_center(
+            canvas, ctx,
+            &format!("房间设置：{badge}   （按 O 编辑）"),
+            ui::theme::BODY, badge_col, cx, sh * 0.12 + 34.0,
+        )?;
 
         let labels = [
             "房间名", "备注", "玩家人数", "总轮数",
