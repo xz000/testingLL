@@ -693,3 +693,26 @@ endfunction
 2. 升级价 = `gglb[skill] + glvl[skill] × (已有等级 - 1 + jf)`，其中 `jf = spell_buys.saturating_sub(2).min(3)`
 3. 用 w3q 表作为唯一真值源，加交叉校验测试（类似 `w3a_cooldown_crosscheck`）
 4. `CONFIG_VERSION` / `PROTOCOL_VERSION` 各 +1（新字段进配置同步）
+
+
+## B 轮复核：③ 背包容量（**发现待查差异**）
+
+**双方数据**：
+
+| 背包研究购买数 | `L = 1 + 购买数` | w3q `R000` tooltip | 按其增量累进（基础 1） | 我方 `(L²+L)/2` |
+|---|---|---|---|---|
+| 0 | 1 | （Lv1 无文字） | 1 | 1 ✅ |
+| 1 | 2 | Lv2「+2 additional item slots」 | 3 | 3 ✅ |
+| 2 | 3 | Lv3「+3 additional item slots」 | 6 | 6 ✅ |
+| 3 | 4 | Lv4「+1 additional item slot」 | **7** | **10** ❌ |
+
+- **前三级完全一致** ✅ —— 我方公式与 w3q tooltip 的**增量**（+2、+3）在基础 1 之上逐项吻合。
+- **分歧在 Lv4**（背包精通买满 `CAPS[3] = 3` 之后）：w3q 说再 +1（→7），我方公式给 +4（→10）。
+- 补充：`R000` 的 `gglb = 3`、`glvl = 3`（与 `COSTS[3] = 3` 一致 ✅），tooltip 到 Lv6（`O?` 未使用）。
+
+**我方现状**：`meta.rs::inventory_slots()` = `0.5×(L²+L)`，注释称来源为 098c `bD` 实证；
+`CAPS[3] = 3` → 玩家最多到 `L = 4` → 10 格。
+
+**待查（下次）**：真正的格数来源应是**能力 `S128` 的逐级 item-capacity**（war3 里物品栏格数由能力决定，
+`S128` 由 `IncUnitAbilityLevel` 提升，见 25563）。需从 `war3map.w3a` 读 `S128` 的逐级字段确认，
+而不是继续用公式外推 —— 若 `S128` 只到 Lv3/4，则上限与"10 格"都要重新对。
