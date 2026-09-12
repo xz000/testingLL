@@ -1151,7 +1151,7 @@ impl Game {
         if lv >= cap {
             return;
         }
-        let cost = skill.learn_cost();
+        let cost = skill.upgrade_cost();
         profile.upgrade_skill(skill, cost);
     }
 
