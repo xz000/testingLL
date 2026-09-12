@@ -101,7 +101,7 @@ impl MatchConfig {
     /// 且"整体替换"天然满足"任何改动都要重新同步 + 取消准备"的需求。
     pub fn to_meta_string(&self) -> String {
         let f = |v: f64| format!("{v}");
-        let mut parts: Vec<String> = vec![
+        let parts: Vec<String> = vec![
             ROOM_SETTINGS_SCHEMA.to_string(),
             self.total_rounds.to_string(),
             f(self.learn_time_secs),
