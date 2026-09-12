@@ -7752,7 +7752,6 @@ mod tests {
             assert_eq!(world.players[i].team, 0, "其余人应为队 0（盟友）");
         }
         let p = &world.players[2];
-        let n = 4.0f64;
         // 半径 50；Gn ×1.5；jn ×1.2
         assert!((p.radius.to_num::<f64>() - 50.0).abs() < 1e-6);
         assert!((p.growth - 1.5).abs() < 1e-9);
