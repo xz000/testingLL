@@ -6672,6 +6672,20 @@ impl Game {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
 
+        // ── 大厅子界面先**清屏**：主菜单内容已经画在同一张画布上，
+        // 子界面若直接叠画，主菜单的标题/卡片/提示会透在下面 → 文字重叠
+        // （用户报告的"建房界面文字乱、重叠"就是此因，2026-09-12 修）。
+        #[cfg(feature = "steam")]
+        if self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list {
+            let bg = Mesh::new_rectangle(
+                &ctx.gfx,
+                DrawMode::fill(),
+                graphics::Rect::new(0.0, 0.0, sw, sh),
+                Color::from_rgb(18, 20, 26),
+            )?;
+            canvas.draw(&bg, graphics::DrawParam::new());
+        }
+
         // 标题区
         let title = "术士之战 Warlock Brawl";
         draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
