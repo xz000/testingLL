@@ -1,0 +1,111 @@
+===== 58..70 =====
+   58     /// 队伍号（v8，098c cn[]，B2）。
+   59     pub team: u8,
+   60     /// 形态位（v9，B4）：按 SkillId 索引。
+   61     pub forms: Vec<bool>,
+   62     /// 技能上限突破（v10）：乔丹原生购买项，每档 +2。
+   63     pub skill_cap_bonus: u32,
+   64 }
+   65 
+   66 impl PlayerConfig {
+   67     /// 从 `PlayerProfile` 生成快照。
+   68     pub fn from_profile(p: &PlayerProfile) -> Self {
+   69         let mut key_slots = [None; KEY_SLOTS];
+   70         for (i, slot) in key_slots.iter_mut().enumerate().take(KEY_SLOTS) {
+
+===== 78..88 =====
+   78             items: p.items.clone(),
+   79             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
+   80             team: p.team,
+   81             forms: p.forms.clone(),
+   82             skill_cap_bonus: p.skill_cap_bonus,
+   83         }
+   84     }
+   85 
+   86     /// 把快照应用回 `PlayerProfile`（供本端学习阶段后/收到 host 广播后同步本地档案）。
+   87     /// 只回写可同步字段（等级/绑定/金币），不覆盖击杀/名次等统计（那些本端一致不用同步）。
+   88     pub fn apply_to(&self, p: &mut PlayerProfile) {
+
+===== 100..112 =====
+  100             life: self.mastery[0],
+  101             range: self.mastery[1],
+  102             time: self.mastery[2],
+  103             backpack: self.mastery[3],
+  104         };
+  105         p.team = self.team;
+  106         p.skill_cap_bonus = self.skill_cap_bonus;
+  107         let n = p.forms.len();
+  108         for (i, f) in self.forms.iter().enumerate().take(n) {
+  109             p.forms[i] = *f;
+  110         }
+  111     }
+  112 
+
+===== 112..155 =====
+  112 
+  113     /// 编码为字节（带版本 + 长度前缀，可扩展）。
+  114     pub fn encode(&self) -> Vec<u8> {
+  115         let mut out = Vec::new();
+  116         out.push(CONFIG_VERSION);
+  117         out.extend_from_slice(&(self.skill_levels.len() as u16).to_be_bytes());
+  118         for lv in &self.skill_levels {
+  119             put_u32(&mut out, *lv);
+  120         }
+  121         // key_slots：先给槽数（应为 8），每个槽 `[present][skill_id u32 if present]`。
+  122         out.push(KEY_SLOTS as u8);
+  123         for s in &self.key_slots {
+  124             match s {
+  125                 Some(id) => {
+  126                     out.push(1);
+  127                     put_u32(&mut out, id.as_u32());
+  128                 }
+  129                 None => out.push(0),
+  130             }
+  131         }
+  132         put_i64(&mut out, self.gold);
+  133         put_i64(&mut out, self.gold_spent);
+  134         // items（v6）：u8 数量 + 每 item u32。
+  135         out.push(self.items.len() as u8);
+  136         for it in &self.items {
+  137             put_u32(&mut out, it.as_u32());
+  138         }
+  139         // mastery（v7）：生命/远程/时间/背包各 1 字节。
+  140         out.extend_from_slice(&self.mastery);
+  141         // team（v8）。
+  142         out.push(self.team);
+  143         // forms（v9）：u16 数量 + 每项 1 字节。
+  144         out.extend_from_slice(&(self.forms.len() as u16).to_be_bytes());
+  145         for f in &self.forms {
+  146             out.push(*f as u8);
+  147         }
+  148         // skill_cap_bonus（v10）。
+  149         put_u32(&mut out, self.skill_cap_bonus);
+  150         out
+  151     }
+  152 
+  153     /// 从字节解码；非法/截断返回 `None`。
+  154     pub fn decode(buf: &[u8]) -> Option<Self> {
+  155         if buf.is_empty() || buf[0] != CONFIG_VERSION {
+
+===== 200..220 =====
+  200         let mut forms = Vec::with_capacity(n_forms);
+  201         for _ in 0..n_forms {
+  202             forms.push(*buf.get(pos)? != 0);
+  203             pos += 1;
+  204         }
+  205         let skill_cap_bonus = u32_at(buf, pos)?;
+  206         Some(PlayerConfig {
+  207             skill_levels,
+  208             key_slots,
+  209             gold,
+  210             gold_spent,
+  211             items,
+  212             mastery,
+  213             team,
+  214             forms,
+  215             skill_cap_bonus,
+  216         })
+  217     }
+  218 }
+  219 
+  220 /// 让 gold/spent 以 i64 编解码。

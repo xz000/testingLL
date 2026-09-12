@@ -1,0 +1,60 @@
+===== 4150..4170 =====
+ 4150                                 self.steam_host_ls.is_some()
+ 4151                             }
+ 4152                             #[cfg(not(feature = "steam"))]
+ 4153                             {
+ 4154                                 false
+ 4155                             }
+ 4156                         };
+ 4157                     if client_side || host_side {
+ 4158                         // 进入配置同步前，清掉上一局残留的移动目标/施法请求：否则配置同步期间会随
+ 4159                         // 输入上行传给 host（host 产帧后用它设 move_target）→ 下一局角色走向上一局目标。
+ 4160                         self.player_target = None;
+ 4161                         self.pending_cast = None;
+ 4162                         let sync = if client_side {
+ 4163                             NetCfgSync::ClientWait
+ 4164                         } else {
+ 4165                             NetCfgSync::HostGather
+ 4166                         };
+ 4167                         eprintln!("[meta] round {} learning done -> {} (config sync)", self.meta.round, if client_side { "ClientWait" } else { "HostGather" });
+ 4168                         self.net_cfg = sync;
+ 4169                         // host 进入配置同步：重置“已清空在途旧包”标记，首帧会 drain + reset（避免收到旧包当本轮配置）。
+ 4170                         if sync == NetCfgSync::HostGather {
+
+===== 2045..2062 =====
+ 2045             Ok(Some((world_bytes, seq))) => {
+ 2046                 eprintln!("[client] got Snapshot seq={seq}, rebuilding World ({n} bytes)", n = world_bytes.len());
+ 2047                 link.align_after_reconnect().ok();
+ 2048                 match game_core::world_ser::world_from_bytes(&world_bytes) {
+ 2049                     Some(w) => {
+ 2050                         self.world = w;
+ 2051                         // 清空本地输入残留，避免把掉线期间的输入误带到接回后。
+ 2052                         self.player_target = None;
+ 2053                         self.pending_cast = None;
+ 2054                         self.self_was_busy = false;
+ 2055                         self.pending_skill = None;
+ 2056                         self.queued_cmds.clear();
+ 2057                         self.pending_shift_skill = None;
+ 2058                         self.pending_clear_signal = false;
+ 2059                         self.pending_stop_signal = false;
+ 2060                         self.conn_dropped = false;
+ 2061                         self.reconnect_attempting = false;
+ 2062                         self.desync_detected = false; // 已按 host 快照重建 → 清除分歧标记
+
+===== 1665..1680 =====
+ 1665             p.refresh_derived();
+ 1666         }
+ 1667         // 诊断：同步后 world 各玩家技能等级。
+ 1668         eprintln!("[teardown] world post: {:?}", self.world.players.iter().enumerate().map(|(i, p)| (i as u32, p.skill_levels.to_vec())).collect::<Vec<_>>());
+ 1669         self.world.round_number = self.meta.round; // 岩浆随回合成长（098c，D9）
+ 1670         self.world.reset_round();
+ 1671         self.player_target = None;
+ 1672         self.pending_cast = None;
+ 1673         self.self_was_busy = false;
+ 1674         self.pending_skill = None;
+ 1675         self.accumulator = 0.0;
+ 1676     }
+ 1677 
+ 1678     /// 把 host 广播的完整玩家配置（`PlayerCfgAll` entries）应用回本地 `meta.profiles`。
+ 1679     fn apply_player_cfgs(&mut self, entries: &[(u8, Vec<u8>)]) {
+ 1680         let pids: Vec<u32> = self.meta.profiles.iter().map(|pr| pr.player_id).collect();

@@ -1,0 +1,17 @@
+ 4119                 }
+ 4120 
+ 4121                 // 局域网 host：client 尚未全部加入（握手未完、net_host_ls 未建）时先暂停倒计时。
+ 4122                 // 否则倒计时归零会因 host_side/client_side 都为 false 而走「单机开局」分支
+ 4123                 // （下面的 teardown_round_end），导致 client 后续加入时两端不同步。
+ 4124                 if matches!(self.app, AppState::LanHost { .. })
+ 4125                     && self.net_host.is_some()
+ 4126                     && self.net_host_ls.is_none()
+ 4127                 {
+ 4128                     self.accumulator = 0.0;
+ 4129                     return Ok(());
+ 4130                 }
+ 4131 
+ 4132                 // 其余（联机首局/局间、单机局间）：倒计时；归零后单机直接下一局、联机进配置同步。
+ 4133                 let now = self.meta.tick_learning(dt.min(0.25));
+ 4134                 if self.meta.phase == MatchPhase::Fighting {
+ 4135                     let client_side = self.net_link.is_some()

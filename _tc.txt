@@ -1,0 +1,69 @@
+wns;
+    }
+
+    /// 是否正处于施法/后摇中（不能再次施放）。
+    pub fn is_busy(&self) -> bool {
+        !matches!(self.phase, CastPhase::Idle)
+    }
+
+    /// 是否正处于前摇（施法准备）中。前摇期间不能移动。
+    pub fn is_windup(&self) -> bool {
+        matches!(self.phase, CastPhase::Windup { .. })
+    }
+
+    /// 尝试开始施法。校验冷却、前/后摇与目标有效性。
+    pub fn try_cast(
+        &mut self,
+        def: &SkillDef,
+        level: u32,
+        target: Option<Vec2>,
+        self_pos: Vec2,
+        self_radius: Fix64,
+    ) -> Result<(), CastError> {
+        if self.is_busy() {
+            return Err(CastError::Busy);
+        }
+        let cd = self.cooldowns[def.id.as_u32() as usize];
+        if cd > Fix64::ZERO {
+            return Err(CastError::CoolingDown { remaining: cd });
+        }
+        // 点目标技能：目标过近时把落点钳制到最小施法距离，而不是拒绝施法。
+        // （原版直接判失败会导致“点了没反应”，且随位置偶发——改为钳制更友好、行为确定。）
+        let mut target = target;
+        if def.needs_point {
+            match target {
+                None => return Err(CastError::InvalidTarget),
+                Some(t) => {
+                    let min_range = self_radius.min(Fix64::from_num(1.0))
+                        + Fix64::from_num(0.5);
+                    let d = t - self_pos;
+                    let len = d.length();
+                    if len < min_range && len > Fix64::ZERO {
+                        // 朝点击方向，但至少飞到最小施法距离
+                        target = Some(self_pos + d.normalized() * min_range);
+                    }
+                }
+            }
+        }
+        let stats = def.stats_at(level);
+        let windup = stats.windup;
+        self.phase = CastPhase::Windup {
+            id: def.id,
+            target,
+            remaining: windup,
+        };
+        Ok(())
+    }
+
+    /// 被打断（被踢飞 / 重大控制）。非 Idle 时施法失败并退回 Idle。
+    pub fn interrupt(&mut self) {
+        if !matches!(self.phase, CastPhase::Idle) {
+            self.phase = CastPhase::Idle;
+        }
+    }
+
+    /// 一帧推进：前摇计时 → 施法完成，后摇计时 → 冷却计时。
+    ///
+    /// 返回 `Ok(Some((id, target)))` 表示此帧内前摇结束、需要执行效果；
+    /// 返回 `Err(())` 表示施法完成但效果执行由调用方处理。
+    pub fn advance(&mut self, dt: Fix64) -> Option<(SkillId, Option<Vec2>

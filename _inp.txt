@@ -1,0 +1,50 @@
+.encode(),
+            None => Vec::new(), // 异常：不应发生；空配置
+        }
+    }
+
+    /// 生成本（本机玩家）这一帧要下达的命令（移动 / 施法 / shift 队列 / 清队 / 停止）。
+    /// 单机模式把它放到 `PLAYER_ID`；联网模式由 `NetLink` 上行给 host、按我的序号归位。
+    fn local_player_input(&mut self) -> PlayerInput {
+        let set_target = self.player_target;
+        // 施法与移动都是**持续电平量**：在「施法被世界接受」（自己角色进入 is_busy）前持续重发，
+        // 由 `note_self_cast` 在接受的那一帧清除。这样：
+        //   - 帧同步下不会因 host 输入缓存覆盖而丢失施法指令（否则要点多次/迟滞，同移动 take 的回归）；
+        //   - 施法一旦被接受立即清，冷却归零不会自动重放（问题 2）。
+        let cast = self.pending_cast;
+        let queued = self.queued_cmds.drain(..).collect();
+        let clear_queue = self.pending_clear_signal;
+        let stop_move = self.pending_stop_signal;
+        self.pending_clear_signal = false;
+        self.pending_stop_signal = false;
+        PlayerInput {
+            set_target,
+            cast,
+            queued,
+            clear_queue,
+            stop_move,
+        }
+    }
+
+    /// 每次世界推进后调用一次：若本机角色**刚进入**施法（前摇/后摇开始），清除待发送的移动目标。
+    ///
+    /// 这是"精确版"实现：`player_target` 保持电平量（每帧重发，不会在帧同步输入缓存下丢失），
+    /// 只在施法真正开始的这一帧（`is_busy` 的 false→true 边沿）清一次 →
+    /// 施法结束（前摇结束进后摇后）不再自动走向旧目标（问题 1）；且施法失败
+    /// （冷却中，`is_busy` 仍为 false）时角色不停下。用 `is_busy` 而非 `is_windup`，
+    /// 能覆盖零前摇技能（Windup 一帧即转 Recovery，`is_windup` 永不成立）。
+    fn note_self_cast(&mut self) {
+        let me = self.self_index();
+        let busy = self
+            .world
+            .players
+            .get(me as usize)
+            .map(|p| p.caster.is_busy())
+            .unwrap_or(false);
+        if busy && !self.self_was_busy {
+            self.player_target = None;
+            self.pending_cast = None;
+        }
+        self.self_was_busy = busy;
+        // 到达清除（回归修复）：`player_target` 是电平量（每帧重发，防帧同步输入缓存丢指令），
+        // 但「移动到位即清除移动目标」这一原有语义必须保留——否则到位后仍每帧重发

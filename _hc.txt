@@ -1,0 +1,73 @@
+  863     ///
+  864     /// 返回 `just_cast`：每个玩家本帧是否新开始了一次施法（用于取消旧移动命令）。
+  865     fn handle_casts(&mut self, input: &InputSlice, dt: Fix64) -> Vec<bool> {
+  866         let mut just_cast = vec![false; self.players.len()];
+  867         // F 槽施法替换快照（B3：化身→灾变 S020 / 国王→虔诚 S021），避免借用冲突。
+  868         let f_overrides = self.f_override.clone();
+  869 
+  870         // a) 先应用新的施法请求（占用本帧的人手）
+  871         for (idx, (p, pi)) in self.players.iter_mut().zip(input.iter()).enumerate() {
+  872             if !p.alive {
+  873                 continue;
+  874             }
+  875             // 禁锢（Tied：定身+禁施法）与沉默（B4-Y：禁施法可移动）
+  876             if p.tied() || p.silenced() {
+  877                 continue;
+  878             }
+  879             if let Some((skill, target)) = pi.cast {
+  880                 // F 槽替换（模式 3/4）：天罚 S001 在化身/国王手里变成灾变/虔诚。
+  881                 let skill = if skill == SkillId::S001 {
+  882                     f_overrides.get(idx).copied().flatten().unwrap_or(skill)
+  883                 } else {
+  884                     skill
+  885                 };
+  886                 // C3 影身·召回：已有锚点时再按影身 = 立即传回（原版 `BackToShadow` 忽略冷却）
+  887                 if skill == SkillId::Shadow && p.shadow_anchor.is_some() {
+  888                     let anchor = p.shadow_anchor.take().unwrap();
+  889                     p.pos = anchor;
+  890                     p.shadow_window = Fix64::ZERO;
+  891                     p.move_target = None;
+  892                     just_cast[idx] = true;
+  893                     continue;
+  894                 }
+  895                 // R1b 二段闪·第二段：窗口内再按 = 免冷却短闪一次（原版 `Skillscd`，距离 4）
+  896                 if skill == SkillId::Blink2 && p.blink2_window.is_some() {
+  897                     p.blink2_window = None;
+  898                     if let Some(t) = target {
+  899                         let d = t - p.pos;
+  900                         let dist = d.length();
+  901                         if dist > Fix64::ZERO {
+  902                             // 短闪距离（旧尺度 4 → war3 尺度 ×60，过渡换算见 PORT_098B_DECISIONS.md D4）
+  903                             let md = Fix64::from_num(4.0 * 60.0);
+  904                             if dist > md {
+  905                                 p.pos += d.normalized() * md;
+  906                             } else {
+  907                                 p.pos = t;
+  908                             }
+  909                         }
+  910                     }
+  911                     p.move_target = None;
+  912                     just_cast[idx] = true;
+  913                     continue;
+  914                 }
+  915                 let def = DefTable::def(skill);
+  916                 // 无蓝量系统（PORT_098B_DECISIONS.md D3）：098b 施法不耗蓝，仅冷却/前摇门控。
+  917                 if p
+  918                     .caster
+  919                     .try_cast(&def, p.skill_level(skill), target, p.pos, p.radius)
+  920                     .is_ok()
+  921                 {
+  922                     // 施法开始：取消当前移动命令（施法优先于走位）
+  923                     p.move_target = None;
+  924                     just_cast[idx] = true;
+  925                 }
+  926             }
+  927         }
+  928 
+  929         // b) 推进施法状态机；收集本帧“前摇结束”的效果并执行
+  930         let mut fire_queue: Vec<(u32, SkillId, Option<Vec2>)> = Vec::new();
+  931         for (idx, p) in self.players.iter_mut().enumerate() {
+  932             if !p.alive {
+  933                 // 死亡即取消在途前摇，避免“尸体施法”（record_death 也会清，双保险）。
+  934                 p.caster.interrupt();
+  935                 continue;

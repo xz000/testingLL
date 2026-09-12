@@ -121,8 +121,6 @@ pub struct ItemEffects {
     pub scourge_double: bool,
     /// 火球点燃改写（火球法杖；TODO 2c）。
     pub fireball_burn: bool,
-    /// 技能可升超过上限的级数（乔丹之石 +2；接入 upgrade 上限 TODO 2c）。
-    pub jordan_levels: u8,
     /// 自身增益时长乘数（怀表 1.15/1.25）。
     pub buff_dur_mult: f64,
     /// 受到减益时长除数（怀表 1.15/1.25）。
@@ -166,7 +164,6 @@ const fn fx() -> ItemEffects {
         aegis_kb_reduction: 0.0,
         scourge_double: false,
         fireball_burn: false,
-        jordan_levels: 0,
         buff_dur_mult: 1.0,
         debuff_dur_div: 1.0,
         lava_resist_frac: 0.0,
@@ -210,8 +207,10 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::Amulet3, family: ItemFamily::Amulet, tier: 3, cost: 5, sell: 12, name: "坠饰 3", desc: "生命 +30 回复 +0.1/s（满级）", fx: ItemEffects { hp_add: 30.0, regen_add: 0.1, ..fx() } },
     // I00D 火球法杖：火球改 5.5+0.5L 直伤 + 3+0.5L 点燃 2.5s；天罚加倍时长/伤害（买 7 @bD 10708）
     ItemDef { id: ItemId::FireStaff, family: ItemFamily::Standalone, tier: 1, cost: 7, sell: 6, name: "火球法杖", desc: "火球附加点燃(3+0.5Lv/2.5s) 直伤降 5.5+0.5Lv；天罚加倍", fx: ItemEffects { fireball_burn: true, ..fx() } },
-    // I00E 乔丹之石戒指：技能可超上限 +2 级（不可售；买 5 @bD 10728）
-    ItemDef { id: ItemId::Jordan, family: ItemFamily::Standalone, tier: 1, cost: 5, sell: 0, name: "乔丹之石戒指", desc: "技能可超上限 +2 级；无法售出", fx: ItemEffects { jordan_levels: 2, ..fx() } },
+    // I00E 乔丹之石戒指：买一次即**解锁**「每个技能槽各一次免费突破上限」（+2）。
+    // 098c 实证：戒指解锁 `S027` 石头商店 → 商店按槽给出 `T000`–`T006`（每槽一颗、**免费**、需该槽有技能）；
+    // 每颗把该槽对应研究上限 +2（`Hf`）。卖掉戒指**不退钱**（`ED` 里 `'I00E'` 分支为空）→ `sell: 0`。
+    ItemDef { id: ItemId::Jordan, family: ItemFamily::Standalone, tier: 1, cost: 5, sell: 0, name: "乔丹之石戒指", desc: "解锁：每个技能槽各一次突破上限（+2）；不可售出", fx: ItemEffects { ..fx() } },
     // I00F 鲜血之剑 1：S001 等级+1（mC cX=10+Zr → +1 伤）；命中每敌回 (Zr+1)=2 血（买 8 @bD 10747）
     ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 8, sell: 7, name: "鲜血之剑 1", desc: "天罚伤害 +1；命中每敌回 2 血；可升 1 次", fx: ItemEffects { smite_bonus: 1.0, on_damage_heal: 2.0, ..fx() } },
     // I00G 鲜血之剑 2：Zr=2 → +2 伤；回 (Zr+1)=3 血/敌（买 8；卖 24 @ED 10498）
@@ -290,7 +289,6 @@ pub fn aggregate(items: &[ItemId]) -> ItemEffects {
         out.aegis_kb_reduction = out.aegis_kb_reduction.max(f.aegis_kb_reduction);
         out.scourge_double |= f.scourge_double;
         out.fireball_burn |= f.fireball_burn;
-        out.jordan_levels += f.jordan_levels;
         out.buff_dur_mult = out.buff_dur_mult.max(f.buff_dur_mult);
         out.debuff_dur_div = out.debuff_dur_div.max(f.debuff_dur_div);
         out.lava_resist_frac = out.lava_resist_frac.max(f.lava_resist_frac);
@@ -354,9 +352,6 @@ pub fn shop_category_entries(cat: u8, items: &[ItemId]) -> Vec<ShopEntry> {
         if *f == ItemFamily::Standalone {
             // 独立物品：逐件；乔丹已退役（技能上限突破另有入口）。
             for d in ITEMS.iter().filter(|d| d.family == ItemFamily::Standalone) {
-                if d.id == ItemId::Jordan {
-                    continue;
-                }
                 let owned = items.iter().copied().find(|it| *it == d.id);
                 out.push(ShopEntry {
                     family: ItemFamily::Standalone,
@@ -380,10 +375,6 @@ pub fn shop_category_entries(cat: u8, items: &[ItemId]) -> Vec<ShopEntry> {
 pub fn shop_catalog() -> Vec<&'static ItemDef> {
     let mut out: Vec<&'static ItemDef> = Vec::new();
     for d in ITEMS {
-        // 乔丹之石退役：其「技能上限突破 +2」已原生化为学习界面购买项（JASS_AUDIT_098c.md §0 / D13）。
-        if d.id == ItemId::Jordan {
-            continue;
-        }
         if d.tier == 1 || d.family == ItemFamily::Standalone {
             out.push(d);
         }
@@ -483,16 +474,13 @@ mod tests {
         assert!((f.hp_add - 20.0).abs() < 1e-9);
         assert!((f.kb_resist_frac - 0.32).abs() < 1e-9, "头盔不叠加：kb 取最大");
         assert!((f.buff_dur_mult - 1.25).abs() < 1e-9);
-        // 乔丹 ×2 → +4 级
-        let j = aggregate(&[ItemId::Jordan, ItemId::Jordan]);
-        assert_eq!(j.jordan_levels, 4);
     }
 
     #[test]
     fn shop_catalog_lists_entry_points() {
-        // 8 个家族入口 + 3 个单体（面具/法杖/乔丹）= 11。
+        // 8 个家族入口 + 4 个单体（面具/法杖/乔丹/…）= 12（乔丹已回归商店：它是「每槽一次突破上限」的解锁器）。
         let cat = shop_catalog();
-        assert_eq!(cat.len(), 10, "shop entries = family t1 + standalone (Jordan retired), got {}", cat.len());
+        assert_eq!(cat.len(), 11, "shop entries = 家族 t1 + 单体（含乔丹戒指，它已回归商店）, got {}", cat.len());
         assert!(cat.iter().all(|d| d.tier == 1));
     }
 

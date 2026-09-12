@@ -1,0 +1,35 @@
+   _ => Fix64::ZERO,
+            }
+        };
+        let radius = match def.effect {
+            game_core::skill::SkillEffect::Warlock098b { blast, .. } => blast.unwrap_or(Fix64::ZERO),
+            game_core::skill::SkillEffect::W098bNova { radius, .. } => radius,
+            _ => Fix64::ZERO,
+        };
+        (max_dist, radius)
+    }
+
+    /// 每帧统一轮询输入（键盘 + 鼠标都用 ggez 的 just-pressed 边沿检测）。
+    fn poll_input(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
+
+        // 玩家档案（本帧只读绑定的技能）
+        let me = self.self_index();
+        let bound_for = |key: game_core::skill::CastKey| -> Option<SkillId> {
+            self.meta
+                .profiles
+                .iter()
+                .find(|pr| pr.player_id == me)
+                .and_then(|p| p.bound_skill(key))
+        };
+
+        // shift 按住 = 预排队列模式（winit ModifiersState::shift_key()）。
+        let shift = ctx.keyboard.active_modifiers.shift_key();
+
+        // 1) 技能键：按下 → 施放该键绑定的技能（shift 时入列）
+        // 注意：winit 对 shift+字母会给大写逻辑字符，故按大小写都匹配，否则 shift+技能无法触发。
+        for (letter, key) in KEY_LETTERS {
+            let lower = letter.to_string();
+            let upper = letter.to_uppercase().to_string();
+            let just = ctx.keyboard.is_logical_key_just_pressed(&K

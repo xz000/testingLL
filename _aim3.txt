@@ -1,0 +1,40 @@
+ 2076                 eprintln!("[client] reconnect error: {e:?}");
+ 2077                 self.reconnect_attempting = false;
+ 2078             }
+ 2079         }
+ 2080     }
+ 2081 
+ 2082     fn draw_scene(&mut self, ctx: &mut Context) -> GameResult {
+ 2083         self.update_camera(ctx)?;
+ 2084         let mut canvas = Canvas::from_frame(ctx, Color::from_rgb(18, 22, 34));
+ 2085         ui::set_design_coordinates(&mut canvas, ctx);
+ 2086 
+ 2087         // 瞄准指示：从玩家到鼠标画一条线（点目标技能待左键确认），并显示射程截断与施法范围圈。
+ 2088         if let Some(skill) = self.pending_skill.or(self.pending_shift_skill) {
+ 2089             if let Some(p) = self.world.players.get(self.self_index() as usize) {
+ 2090                 let (max_dist, radius) = self.skill_aim_hint(skill);
+ 2091                 let pfx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
+ 2092                 let pfy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
+ 2093                 let mouse = ui::mouse_design(ctx);
+ 2094                 let target_w = self.screen_to_world(mouse.x, mouse.y);
+ 2095                 let delta = target_w - p.pos;
+ 2096                 let dist = delta.length();
+ 2097                 // 射程截断：目标超程时把线端点/落点收回到射程处，并用更醒目的颜色提示超程。
+ 2098                 let (end_w, over_range) = if max_dist > Fix64::ZERO && dist > max_dist {
+ 2099                     (p.pos + delta.normalized() * max_dist, true)
+ 2100                 } else {
+ 2101                     (target_w, false)
+ 2102                 };
+ 2103                 let ex = end_w.x.to_num::<f32>() * self.scale + self.offset.x;
+ 2104                 let ey = end_w.y.to_num::<f32>() * self.scale + self.offset.y;
+ 2105                 let line_color = if over_range {
+ 2106                     Color::from_rgba(255, 120, 100, 200)
+ 2107                 } else {
+ 2108                     Color::from_rgba(255, 220, 120, 190)
+ 2109                 };
+ 2110                 let aimline = Mesh::new_line(
+ 2111                     &ctx.gfx,
+ 2112                     &[
+ 2113                         Point2 { x: pfx, y: pfy },
+ 2114                         Point2 { x: ex, y: ey },
+ 2115                     ],

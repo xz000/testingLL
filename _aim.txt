@@ -1,0 +1,80 @@
+ 1796         // shift 按住 = 预排队列模式（winit ModifiersState::shift_key()）。
+ 1797         let shift = ctx.keyboard.active_modifiers.shift_key();
+ 1798 
+ 1799         // 1) 技能键：按下 → 施放该键绑定的技能（shift 时入列）
+ 1800         // 注意：winit 对 shift+字母会给大写逻辑字符，故按大小写都匹配，否则 shift+技能无法触发。
+ 1801         for (letter, key) in KEY_LETTERS {
+ 1802             let lower = letter.to_string();
+ 1803             let upper = letter.to_uppercase().to_string();
+ 1804             let just = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(lower.into()))
+ 1805                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(upper.into()));
+ 1806             if just {
+ 1807                 if let Some(skill) = bound_for(key) {
+ 1808                     // 冷却门控：CD 剩余 > 预输入余量时不响应（不显示瞄准/不施法），避免 CD 中按字母出现瞄准线误导。
+ 1809                     if !self.skill_cast_ready(skill) {
+ 1810                         continue;
+ 1811                     }
+ 1812                     if game_core::skill::DefTable::def(skill).needs_point {
+ 1813                         if shift {
+ 1814                             self.player_target = None; // 队列操作：放弃即时移动目标，避免覆盖队列移动
+ 1815                             self.pending_shift_skill = Some(skill);
+ 1816                         } else {
+ 1817                             self.pending_skill = Some(skill); // 等左键确认
+ 1818                         }
+ 1819                     } else if shift {
+ 1820                         self.player_target = None;
+ 1821                         self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, None));
+ 1822                     } else {
+ 1823                         self.pending_cast = Some((skill, None)); // 无需目标，直接施放
+ 1824                         self.pending_clear_signal = true; // 普通施法打断已排的队列
+ 1825                     }
+ 1826                 }
+ 1827             }
+ 1828         }
+ 1829         // S: 停止移动 + 清空 shift 队列（含 World 里的队列）—— 同样大小写都匹配
+ 1830         let s_pressed = ctx.keyboard.is_logical_key_pressed(&Key::Character("s".into()))
+ 1831             || ctx.keyboard.is_logical_key_pressed(&Key::Character("S".into()));
+ 1832         if s_pressed {
+ 1833             self.player_target = None;
+ 1834             self.pending_skill = None;
+ 1835             self.pending_cast = None;
+ 1836             self.pending_shift_skill = None;
+ 1837             self.queued_cmds.clear();
+ 1838             self.pending_clear_signal = true; // 让 World 也清空其命令队列
+ 1839             self.pending_stop_signal = true;  // 让 World 停止当前移动
+ 1840         }
+ 1841 
+ 1842         // 2) 左键：确认点目标技能（cursor 位置作为落点）
+ 1843         if ctx.mouse.button_just_pressed(MouseButton::Left) {
+ 1844             let m = ui::mouse_design(ctx);
+ 1845             let world = self.screen_to_world(m.x, m.y);
+ 1846             if let Some(skill) = self.pending_skill.take() {
+ 1847                 self.player_target = None;
+ 1848                 self.pending_cast = Some((skill, Some(world)));
+ 1849                 self.pending_clear_signal = true; // 普通施法打断已排的队列
+ 1850             } else if let Some(skill) = self.pending_shift_skill.take() {
+ 1851                 self.player_target = None;
+ 1852                 self.queued_cmds.push_back(game_core::player::Cmd::Cast(skill, Some(world)));
+ 1853             }
+ 1854         }
+ 1855 
+ 1856         // 3) 右键：设置移动目标（shift 时入列；普通右键即时移动会打断队列）
+ 1857         if ctx.mouse.button_just_pressed(MouseButton::Right) {
+ 1858             self.pending_skill = None;
+ 1859             self.pending_cast = None;
+ 1860             self.pending_shift_skill = None;
+ 1861             let m = ui::mouse_design(ctx);
+ 1862             let world = self.screen_to_world(m.x, m.y);
+ 1863             if shift {
+ 1864                 self.player_target = None; // 放弃即时移动，改为排队列
+ 1865                 self.queued_cmds.push_back(game_core::player::Cmd::Move(world));
+ 1866             } else {
+ 1867                 self.queued_cmds.clear(); // 普通即时移动：打断并清空之前排的队列
+ 1868                 self.pending_clear_signal = true; // 也让 World 清空其队列
+ 1869                 self.player_target = Some(world);
+ 1870                 self.player_target_accepted = false; // 新目标：重新等待世界接受
+ 1871             }
+ 1872         }
+ 1873     }
+ 1874 
+ 1875     /// 本局运行模式已并入 `AppState`（主菜单 / Solo / 局域网主机 / 局域网加入）。

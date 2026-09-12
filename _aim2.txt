@@ -1,0 +1,25 @@
+ 1951     /// 施法结束（前摇结束进后摇后）不再自动走向旧目标（问题 1）；且施法失败
+ 1952     /// （冷却中，`is_busy` 仍为 false）时角色不停下。用 `is_busy` 而非 `is_windup`，
+ 1953     /// 能覆盖零前摇技能（Windup 一帧即转 Recovery，`is_windup` 永不成立）。
+ 1954     fn note_self_cast(&mut self) {
+ 1955         let me = self.self_index();
+ 1956         let busy = self
+ 1957             .world
+ 1958             .players
+ 1959             .get(me as usize)
+ 1960             .map(|p| p.caster.is_busy())
+ 1961             .unwrap_or(false);
+ 1962         if busy && !self.self_was_busy {
+ 1963             self.player_target = None;
+ 1964             self.pending_cast = None;
+ 1965         }
+ 1966         self.self_was_busy = busy;
+ 1967         // 到达清除（回归修复）：`player_target` 是电平量（每帧重发，防帧同步输入缓存丢指令），
+ 1968         // 但「移动到位即清除移动目标」这一原有语义必须保留——否则到位后仍每帧重发，
+ 1969         // 一旦被击退/位移，角色会自己走回旧目标。冰面同理（世界到达时也会清 move_target）。
+ 1970         // 判定：世界先接受该目标（曾见 `move_target`），随后又清掉它（到达/被定身/停止）→ 本端也停止重发。
+ 1971         // `accepted` 守卫避免「刚下达目标、世界尚未应用（client 有 RTT）」时误清而丢指令；
+ 1972         // `p.pos == t` 兜底「一帧内即到」不吸附的即时到达。
+ 1973         if let Some(t) = self.player_target {
+ 1974             if let Some(p) = self.world.players.get(me as usize) {
+ 1975                 if p.move_target.is_some() {
