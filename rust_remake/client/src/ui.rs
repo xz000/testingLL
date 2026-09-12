@@ -12,6 +12,46 @@ use ggez::graphics::{self, Canvas, Color, DrawMode, Mesh, Text, TextFragment};
 use ggez::mint::{Point2, Vector2};
 use ggez::{Context, GameResult};
 
+// ---------- 逻辑分辨率与自适应缩放（E 方案） ----------
+//
+// 界面按固定设计空间 1280×720 排版；每屏创建 canvas 后调 [`set_design_coordinates`]，
+// ggez 会把设计空间映射到窗口（非 16:9 时以对称外扩矩形做 letterbox，保持比例不变形）。
+// 因此所有布局/字号/命中盒都直接用设计坐标，**不再用 `drawable_size()`**。
+// 鼠标：`ctx.mouse.position()` 是**物理像素**（与 `drawable_size` 同基准），用 [`mouse_design`] 逆变换。
+
+/// 逻辑设计宽度。
+pub const UI_W: f32 = 1280.0;
+/// 逻辑设计高度。
+pub const UI_H: f32 = 720.0;
+
+/// 窗口像素尺寸 → 屏坐标矩形（设计空间单位）。保证 16:9、居中、不变形。
+pub fn design_rect(win_w: f32, win_h: f32) -> graphics::Rect {
+    let ww = win_w.max(1.0);
+    let wh = win_h.max(1.0);
+    // 每窗口像素对应的设计单位数（保持等比）。
+    let s = (ww / UI_W).min(wh / UI_H);
+    let w = ww / s;
+    let h = wh / s;
+    graphics::Rect::new((UI_W - w) / 2.0, (UI_H - h) / 2.0, w, h)
+}
+
+/// 按当前窗口尺寸设置该 canvas 的屏坐标（即逻辑设计空间 + letterbox）。
+pub fn set_design_coordinates(canvas: &mut Canvas, ctx: &Context) {
+    let (ww, wh) = ctx.gfx.drawable_size();
+    canvas.set_screen_coordinates(design_rect(ww, wh));
+}
+
+/// 鼠标位置：窗口物理像素 → 设计空间坐标（命中盒/射线均用这个）。
+pub fn mouse_design(ctx: &Context) -> Point2<f32> {
+    let (ww, wh) = ctx.gfx.drawable_size();
+    let r = design_rect(ww, wh);
+    let m = ctx.mouse.position();
+    Point2 {
+        x: r.x + m.x / ww.max(1.0) * r.w,
+        y: r.y + m.y / wh.max(1.0) * r.h,
+    }
+}
+
 /// 统一主题。颜色是**函数**而非 const：本 ggez 版本的 `Color::from_rgb*` 不是 const fn，
 /// 无法用于常量初始化；尺寸类仍是 `const`。
 pub mod theme {
