@@ -28,13 +28,16 @@ pub struct MatchConfig {
     /// 每轮为每位玩家固定发放的金币（参与奖）
     pub gold_per_round: i32,
     /// 击杀金币（098c `lo`，全局默认 **1** —— `war3map_pretty.j` 209）。
-    pub gold_per_kill_cfg_unused_marker: i32,
     /// 助攻金币（098c `Lo`，默认 **1**；6060 `register_assists`）。
     pub gold_per_assist: i32,
     /// 胜利金币（098c `Mo`，默认 **2**）。
     pub gold_per_round_win: i32,
     /// 每一个击杀奖励的金币
     pub gold_per_kill: i32,
+    /// **伤害金**（098c 设置 16 `po`，全局默认 1）：回合结束时发给**本回合伤害最高**的玩家
+    /// （并列者都发）。实证 `war3map_pretty.j` 5364-5379：`if Rn[i] >= ZR then ... + po`，
+    /// 并播报 "X has dealt the most damage in this round (N)."。**与伤害量无关**，是"最高者独占"奖。
+    pub gold_per_most_damage: i32,
     /// 每轮结束时按名次的额外奖励（索引 = 名次-1，0=冠军；超过数组长度的名次不额外奖励）
     pub place_rewards: Vec<i32>,
     /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
@@ -71,10 +74,10 @@ impl Default for MatchConfig {
             total_rounds: 3,
             learn_time_secs: 30.0, // 098b wo=30
             gold_per_round: 10, // 设置 17 `qo`（此前误按 `po=1` 改成 1，已改回）
-            gold_per_kill_cfg_unused_marker: 0,
             gold_per_assist: 1,
             gold_per_round_win: 2,
             gold_per_kill: 1,
+            gold_per_most_damage: 1, // 098c 设置 16 `po`
             place_rewards: Vec::new(),
             starting_gold: 20,
             // 098c 计分（JASS 实证；globals ko=1/Ko=1/mo=2）：胜利 2 分、击杀 1 分、助攻 1 分。
@@ -167,6 +170,9 @@ pub struct PlayerProfile {
     /// 买下第 3/4/5 个法术时各触发一次 `Jf`，把全部升级科技的已研究等级 +1 →
     /// **此后每次技能升级都贵一个 `glvl`**（见 [`Self::upgrade_cost_escalated`]）。
     pub spell_buys: u8,
+    /// 本回合造成的伤害（098c `Rn[i]`）：回合结算时用于判定"伤害最高者"（设置 16 `po` 奖励），
+    /// 结算后清零。与 `score` 无关（`score` 是累计分）。
+    pub damage_this_round: f64,
 }
 
 impl PlayerProfile {
@@ -192,6 +198,7 @@ impl PlayerProfile {
             forms: vec![false; skill_count.max(crate::MAX_SKILL_SLOTS)],
             jordan_breaks: [0; 8],
             spell_buys: 0,
+            damage_this_round: 0.0,
         }
     }
 
@@ -541,6 +548,26 @@ impl MatchState {
                 }
             }
         }
+        // 098c 设置 16 `po`「Damage Gold Reward」（5364-5379 实证）：
+        // 回合结束时，**本回合伤害最高**的玩家（并列者都算）各得 `po` 金；随后清零本回合伤害。
+        // 注：与击杀/胜利金独立，是"最高伤害独占奖"，不按伤害量比例发放。
+        let most = self
+            .profiles
+            .iter()
+            .map(|p| p.damage_this_round)
+            .fold(0.0_f64, f64::max);
+        if most > 0.0 {
+            let reward = self.config.gold_per_most_damage;
+            for p in self.profiles.iter_mut() {
+                if p.damage_this_round >= most {
+                    p.gold += reward;
+                }
+            }
+        }
+        for p in self.profiles.iter_mut() {
+            p.damage_this_round = 0.0;
+        }
+
         // 进入学习阶段，或整场结束
         // En2 死亡竞赛：有人达到胜利分 → 提前终局（D6/En 批）。
         let early_win = self.config.game_mode == 2
@@ -594,6 +621,8 @@ impl MatchState {
     pub fn register_damage_score(&mut self, player_id: u32, damage: f64) {
         if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
             p.score += (damage / 20.0) as u32;
+            // 098c `Rn[i]`：本回合伤害累计（回合结算判"最高伤害"，见 `finish_round`）。
+            p.damage_this_round += damage;
         }
     }
 
@@ -869,6 +898,25 @@ mod tests {
         assert_eq!(p.gold, 20, "两次突破共 10 金");
         assert_eq!(p.jordan_breaks_for_skill(SkillId::S000), 1);
         assert_eq!(p.jordan_breaks_for_skill(SkillId::S002), 1);
+    }
+
+    /// 伤害金（098c 设置 16 `po`）：回合结束时**伤害最高者**得金，并列都拿，随后清零。
+    #[test]
+    fn most_damage_in_round_gets_po_gold() {
+        let mut m = MatchState::new(MatchConfig::default(), &[0, 1, 2], 8);
+        assert_eq!(m.config.gold_per_most_damage, 1, "098c `po` 默认 1");
+        let before: Vec<i32> = m.profiles.iter().map(|p| p.gold).collect();
+        // 玩家 0 打 50、玩家 1 打 50（并列最高）、玩家 2 打 10
+        m.register_damage_score(0, 50.0);
+        m.register_damage_score(1, 50.0);
+        m.register_damage_score(2, 10.0);
+        m.finish_round(vec![0, 1, 2]);
+        assert_eq!(m.profiles[0].gold, before[0] + 1, "并列最高者 0 应得 po");
+        assert_eq!(m.profiles[1].gold, before[1] + 1, "并列最高者 1 应得 po");
+        assert_eq!(m.profiles[2].gold, before[2], "非最高者不得");
+        for p in &m.profiles {
+            assert_eq!(p.damage_this_round, 0.0, "回合伤害应清零");
+        }
     }
 
     #[test]
