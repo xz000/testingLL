@@ -506,6 +506,9 @@ struct Game {
     /// Steam 建房设置：解析后的名次奖励档位（索引 = 名次-1）。
     #[cfg(feature = "steam")]
     steam_create_place: Vec<i32>,
+    /// Steam 建房设置：游戏模式（098c nn：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还）。
+    #[cfg(feature = "steam")]
+    steam_create_mode: u8,
     /// 当前场次局间准备时间（秒；host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_learn_secs: u32,
@@ -1008,6 +1011,8 @@ impl Game {
             steam_create_place_buf: STEAM_DEFAULT_PLACE_REWARD.to_string(),
             #[cfg(feature = "steam")]
             steam_create_place: auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST),
+            #[cfg(feature = "steam")]
+            steam_create_mode: init_mode.max(1),
             match_mode: init_mode,
             match_teams: 1,
             #[cfg(feature = "steam")]
@@ -5271,6 +5276,10 @@ impl Game {
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
+        // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
+        if just('m') || just('M') {
+            self.steam_create_mode = if self.steam_create_mode >= 5 { 1 } else { self.steam_create_mode + 1 };
+        }
         // 字段编号与两列布局：左列=0..3（房名/备注/人数/轮数），右列=4..7（准备/初始金币/每轮金币/名次奖励）。
         // 二维方向键导航：↑↓ 同列上下移动，←→ 左右换列，Tab=↑（回退一格）。
         const NUM_COLS: usize = 2;
@@ -5462,6 +5471,7 @@ impl Game {
             self.steam_create_starting_gold = starting_gold;
             self.steam_create_gold_per_round = gold_per_round;
             self.steam_create_place = place;
+            self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
             let name = self.steam_create_name.clone();
             let note = self.steam_create_note.clone();
             eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_per_round={gold_per_round} place={:?} name='{name}' note='{note}'", self.steam_create_place);
@@ -6034,7 +6044,16 @@ impl Game {
                 draw_text(canvas, ctx, &format!("▶ {}", hints[i]), 16.0, Color::from_rgb(150, 200, 255), Point2 { x: total_left + label_w, y: y + box_h + 8.0 }, false)?;
             }
         }
-        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        // 游戏模式（M 键循环 1-5）：显式一行，避免房主不知可改。
+        draw_text(
+            canvas, ctx,
+            &format!(
+                "游戏模式（M 键切换）：{}   [1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还]",
+                game_core::meta::MatchState::mode_name(self.steam_create_mode)
+            ),
+            19.0, Color::from_rgb(150, 220, 180), Point2 { x: cx, y: sh * 0.86 }, true,
+        )?;
+        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · M 切换模式 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         Ok(())
     }
 

@@ -1048,15 +1048,13 @@ impl World {
                 }
             }
             4 => {
-                // 弑王 Doom（098c L3114）：凶手所在队伍全员永久回血 -1 hp/s。
+                // 弑王 Doom（098c `AI` nn==4）：**王所在队伍**的存活成员 `In -= 1`（回血 -1/s）。
+                // （JASS：`if bn[i] and Nn[i] and cn[NI]==cn[i] then In[i]=In[i]-1.`，NI=死去的王。）
                 if self.kings.contains(&victim) {
-                    let killer = self.players[victim as usize].last_hit_by;
-                    if let Some(k) = killer {
-                        let kteam = self.players.get(k as usize).map(|p| p.team);
-                        for p in self.players.iter_mut() {
-                            if Some(p.team) == kteam {
-                                p.doom += 1.0;
-                            }
+                    let vteam = self.players[victim as usize].team;
+                    for p in self.players.iter_mut() {
+                        if p.team == vteam && p.alive && p.id != victim {
+                            p.doom += 1.0;
                         }
                     }
                 }
@@ -7423,13 +7421,16 @@ mod tests {
         world.reset_round();
         assert_eq!(world.kings, kings, "reset_round 应应用掷出的王");
         assert_eq!(world.f_override[kings[0] as usize], Some(SkillId::S021));
-        // 弑王：队 1 王被队 0 击杀 → 队 0 全员 doom+1
+        // 弑王：队 1 的王被杀 → **王所在队伍（队 1）**存活成员 doom+1（098c `AI` nn==4）
         let victim = kings.iter().find(|&&k| world.players[k as usize].team == 1).copied().unwrap();
         world.players[victim as usize].last_hit_by = Some(0);
         world.record_death(victim);
-        assert!((world.players[0].doom - 1.0).abs() < 1e-9, "弑王者（队0）应得 Doom");
-        assert!((world.players[1].doom - 1.0).abs() < 1e-9, "弑王者队友应得 Doom");
-        assert_eq!(world.players[victim as usize].doom, 0.0, "死者本身（王）不应有 Doom");
+        assert_eq!(world.players[victim as usize].doom, 0.0, "死者本身（王）不因自己死亡得 Doom");
+        let teammates: Vec<usize> = (0..4).filter(|&i| i != victim as usize && world.players[i].team == 1).collect();
+        for &i in &teammates {
+            assert!((world.players[i].doom - 1.0).abs() < 1e-9, "王所在队伍的存活队友应 doom+1");
+        }
+        assert_eq!(world.players[0].doom, 0.0, "凶手（队0）不应得 Doom");
     }
 
     /// 助攻（098c `AI`/`Jn`）：对死者伤害最高且 >0、非凶手者 = 唯一助攻；凶手/无伤害则无。
