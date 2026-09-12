@@ -5505,22 +5505,50 @@ impl Game {
             Point2 { x: cx, y: y + 64.0 },
             true,
         )?;
-        // 设置摘要（房内可见，`O` 改完关闭即更新）：轮数/初始金/每轮金/模式，比"只有轮数+金币"信息更全。
-        ui::text_center(
-            canvas, ctx,
-            &format!(
-                "{}  ·  {} 轮  ·  初始金 {}  ·  每轮金 {}  ·  回血 {}",
-                game_core::meta::MatchState::mode_name(self.meta.config.game_mode),
-                self.meta.config.total_rounds,
-                self.meta.config.starting_gold,
-                self.meta.config.gold_per_round,
-                self.meta.config.base_regen
-            ),
-            ui::theme::SMALL,
-            layout::text_dim(),
-            ui::UI_W / 2.0,
-            ui::UI_H * 0.105,
-        )?;
+        // ── 房间设置信息块（**所有端**可见）──
+        // 数据源是 `meta.config`：房主改动后（关闭 `O`）会即时更新；客户端也会在轮询到
+        // 设置串变化时同步（此前客户端只同步了 world/match_*，面板读旧快照 → "看不到房主设置"）。
+        {
+            let cfg = &self.meta.config;
+            let n = cfg.non_default_setting_count();
+            let custom = if n == 0 {
+                "默认（原版）".to_string()
+            } else {
+                format!("自定义 {n} 项")
+            };
+            ui::text_center(
+                canvas, ctx,
+                &format!(
+                    "{}  ·  {} 轮  ·  初始金 {}  ·  每轮金 {}  ·  回血 {}  ·  {}",
+                    game_core::meta::MatchState::mode_name(cfg.game_mode),
+                    cfg.total_rounds,
+                    cfg.starting_gold,
+                    cfg.gold_per_round,
+                    cfg.base_regen,
+                    custom
+                ),
+                ui::theme::SMALL,
+                if n == 0 { layout::text_dim() } else { layout::text_custom() },
+                ui::UI_W / 2.0,
+                ui::UI_H * 0.105,
+            )?;
+            // 图标/玩法补充行：让不熟悉的玩家也知道这局在玩什么。
+            ui::text_center(
+                canvas, ctx,
+                &format!(
+                    "伤害×{:.2}  击退×{:.2}  岩浆×{:.2}  柱子:{}  冰面:{}",
+                    cfg.damage_mult,
+                    cfg.knockback_mult,
+                    cfg.lava_damage_mult,
+                    match cfg.pillar_mode { 0 => "关", 1 => "随机", _ => "必有" },
+                    match cfg.ice_mode { 0 => "关", 1 => "随机", _ => "必有" }
+                ),
+                ui::theme::SMALL,
+                layout::text_dim(),
+                ui::UI_W / 2.0,
+                ui::UI_H * 0.128,
+            )?;
+        }
         // 状态带：房间设置徽章（与建房界面一致，`O` 可进设置编辑器）
         let n = self.match_cfg.non_default_setting_count();
         let badge = if n == 0 { "默认（原版）".to_string() } else { format!("自定义 {n} 项") };
@@ -5701,6 +5729,16 @@ impl Game {
                             self.world.configure_regen(self.match_cfg.base_regen);
                             self.world
                                 .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                            // **客户端也要更新 meta.config**：否则房间面板/对局信息读的是旧快照，
+                            // 表现为"客户端看不到房主的设置"（房主那边 publish 时会整份替换）。
+                            self.meta.config = self.match_cfg.clone();
+                            eprintln!(
+                                "[cfg] 已应用 host 设置：{} 轮 · 初始金 {} · 每轮金 {} · 模式 {}",
+                                self.match_cfg.total_rounds,
+                                self.match_cfg.starting_gold,
+                                self.match_cfg.gold_per_round,
+                                game_core::meta::MatchState::mode_name(self.match_cfg.game_mode)
+                            );
                         }
                     }
                     if !first_seen && self.steam_local_ready {
