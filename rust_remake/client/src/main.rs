@@ -1509,6 +1509,12 @@ impl Game {
             if victim_streak >= 3 {
                 eprintln!("[streak] 玩家{killer} 终结了 {victim_streak} 连杀");
             }
+            // 化身模式（098c `AI` nn==3）：击杀**非化身**者，凶手 +1 金（literal +1）。
+            if self.world.mode == 3 && self.world.avatar != Some(victim) {
+                if let Some(pr) = self.meta.profiles.iter_mut().find(|p| p.player_id == killer) {
+                    pr.gold += 1;
+                }
+            }
         }
         // 化身模式计分（098c L12055，B3）：每人本轮伤害/20 计入分数。
         if self.world.mode == 3 {
