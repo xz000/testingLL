@@ -271,3 +271,90 @@ mod keymap_tests {
         }
     }
 }
+
+
+/// **源码级回归检测**：针对本项目真实发生过的四个 UI bug，各写一条断言。
+///
+/// 为什么不用"统计某字母出现次数"：`just('o') || just('O')` 这类大小写成对的写法会误报，
+/// 检测会很脆。改为**断言结构**（顺序、守卫、是否存在早退），既稳健又能真正拦住回归。
+#[cfg(test)]
+mod source_scan_tests {
+    const SRC: &str = include_str!("main.rs");
+
+    fn idx(needle: &str) -> usize {
+        SRC.find(needle)
+            .unwrap_or_else(|| panic!("源码中找不到 {needle:?}（可能被重构改名，请同步本测试）"))
+    }
+
+    /// 回归①（`O` 开→立刻关）：建房界面里，编辑器分支**内部不得再判 `O`**。
+    ///
+    /// 曾因"外层 `O` 切换开 → 内层又判 `O` 关闭"导致编辑器永远打不开。
+    /// 现在的结构：外层用 `o_pressed` 切换一次；进入编辑器分支的条件里带 `!o_pressed`，
+    /// 且该分支内不再出现 `'o'` / `"o"` 的按键判定。
+    #[test]
+    fn create_screen_does_not_handle_o_twice() {
+        let start = idx("fn steam_lobby_create_update");
+        let after = &SRC[start..];
+        let guard = after
+            .find("if self.room_cfg_edit && !o_pressed")
+            .expect("建房界面的编辑器分支应带 `!o_pressed` 守卫（防止同帧开→关）");
+        let tail = &after[guard..];
+        // 该分支（到函数末尾）内不应再有 O 键判定。
+        let body_end = tail.find("\n    }\n").unwrap_or(tail.len());
+        let body = &tail[..body_end];
+        for pat in ["just('o')", "just(\"o\")", "just(\"O\")"] {
+            assert!(
+                !body.contains(pat),
+                "编辑器分支内又出现了 `{pat}` —— 会与外面的开关重复处理（回归①）"
+            );
+        }
+    }
+
+    /// 回归②（房主改房间信息 → 客户端判"房主已离开"）：编辑子界面**不得取代**大厅更新。
+    ///
+    /// 曾写成 `return self.steam_room_edit_update(...)`，导致心跳/上行停止。
+    /// 现在应当是"先处理编辑输入，再 return 大厅更新"。
+    #[test]
+    fn room_edit_does_not_replace_lobby_heartbeat() {
+        assert!(
+            !SRC.contains("return self.steam_room_edit_update"),
+            "房间信息编辑不得取代 steam_lobby_update（会停掉心跳，客户端会判房主离开）"
+        );
+        let i = idx("self.steam_room_edit_update(ctx, dt)?;");
+        let after = &SRC[i..];
+        let j = after
+            .find("return self.steam_lobby_update(ctx, dt);")
+            .expect("编辑输入之后必须仍然调用大厅更新（心跳/上行）");
+        assert!(j > 0 && j < 400, "大厅更新应紧跟在编辑输入之后");
+    }
+
+    /// 回归③（一键两用：`Q` 想关编辑却退了房）：子界面打开时大厅按键必须被守卫。
+    #[test]
+    fn lobby_keys_are_guarded_while_a_subscreen_is_open() {
+        let n = SRC.matches("!self.steam_room_edit").count();
+        assert!(
+            n >= 4,
+            "大厅按键（I/Q/E/O/U）应在子界面打开时被 `!self.steam_room_edit` 守卫，当前只有 {n} 处"
+        );
+        assert!(
+            SRC.contains("&& !self.steam_room_edit && !self.room_cfg_edit"),
+            "至少应有一处同时守卫编辑器与房间信息编辑"
+        );
+    }
+
+    /// 回归④（大厅子界面文字重叠）：清屏必须发生在菜单内容**之后**、子界面绘制**之前**。
+    ///
+    /// 曾把清屏插在标题绘制之前 → 清完又被菜单文字画上去，子界面下面仍压着主菜单文字。
+    #[test]
+    fn lobby_clear_happens_after_menu_content() {
+        let clear = idx("if in_lobby_menu {\n            // **清屏**");
+        let title = idx("let title = \"术士之战 Warlock Brawl\";");
+        assert!(
+            clear > title,
+            "清屏必须在菜单内容（标题等）之后，否则等于没清（回归④）"
+        );
+        // 子界面绘制应在清屏之后
+        let create = idx("self.draw_steam_create_lobby(&mut canvas, ctx)?;");
+        assert!(create > clear, "建房界面绘制应在清屏之后");
+    }
+}
