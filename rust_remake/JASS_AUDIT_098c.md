@@ -632,3 +632,31 @@ endfunction
 **下一步**：把这个尾部块按「`id(4)` 开头 + 记录序列」的规则 walk 一遍，
 产出 `升级 id → 逐级 gglb/glvl/glmb` 全表；然后确认 `R002` 是否在其中
 （若不在，说明 Warlock 的 R0xx 走的是另一条路径——需要再回溯 JASS 里这些科技的实际注册处）。
+
+
+### B 轮：w3q **完全解析成功**（第 5 次尝试，2026-09-12）
+
+**判定规则（不再靠位置/type 启发式）**：
+- **字段 id 一律以 `g` 开头**（`gnam`/`gglb`/`glvl`/`glmb`/`grac`/`gbpx`/`gub1`/…）
+- **对象 id 一律以 `R` 开头**（`Rhme`/`Rhpm`/`R000`…`R017`）
+- 尾部块 = 「`R****(4)` 开头 + 一串 `g***` 字段记录」，无对象头
+
+结果：`version=2 n=101 consumed=190493/190497` ✅ **整个文件走通**。
+
+**挖到的真值（重要）**：
+
+1. `R002` = **Fireball 技能升级**，`gub1` 是**逐级 tooltip**：
+   - Lv1–10 = 正常升级（"increases damage by 0.70"）
+   - **Lv11 / Lv12 = "Applied by the Stone of Jordan Ring"** ← ✅ **乔丹之石只给到 +2 级，且这两级在数据里是独立的两级**
+2. `R010` = **Boomerang**：Lv1–7 正常 + **Lv8/Lv9 = "Applied by the Stone of Jordan Ring"** ✅（同样是 +2）
+3. `R00O` = **Homing**：Lv1–7 + **Lv8/Lv9 = 乔丹** ✅
+4. 这些 `R0xx` 对象里**只有 `gnam` / `gub1` 等展示字段，没有 `gglb`（Gold Cost）** →
+   **技能的金价不来自 w3q 的升级条目**，而来自别处（很可能是 ability 数据或 JASS 常量）——
+   这正是"涨价"标定的下一个出口。
+
+**下一步**：
+1. 用同样的方式 dump 全部 101 个对象，确认哪些带 `gglb`/`glvl`/`glmb`（大概率是 R000 那类"通用升级"）
+2. 技能单价改从 **w3a ability** 或 JASS 常量取（JASS `Jf` 提升的正是这些 `R0xx` 科技的**已研究等级**，
+   而"等级 → 单价"的映射要在**科技自身**的金价字段上找）
+3. 若 `R0xx` 确实无金价字段，则涨价的实际机制是 war3 引擎按 `SetPlayerTechMaxAllowed` +
+   固定单价计算 —— 需要回到 JASS 找定价处。
