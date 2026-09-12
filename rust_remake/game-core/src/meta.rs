@@ -72,9 +72,8 @@ impl Default for MatchConfig {
 }
 
 /// 098c 精通研究（D12.3，kf handler 实证）：学习期购买、不涨价、跨回合永久保留。
-/// **上限（2026-09-12 w3q 实证）**：R00D/R00I/R00Y 各 **3 级**（`gnam` 出现等级 1/2/3）。
-/// **价格**：地图 w3q **未覆盖 `ggol`（基价）**，继承基础游戏 MPW 数据 → **地图内不可恢复**；
-/// 现值为**平衡占位**（生命6/范围5/射程4/背包2），非 JASS 实证值。
+/// **上限（2026-09-12 w3q 实证）**：R00D/R00I/R00Y 各 **6 级**（tooltip 名字「… Mastery 1..6」+ `glvl=6`）；
+/// **价格（w3q `gglb` 实证）**：生命 6 / 范围 7 / 射程 5 / 背包 3。
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Mastery {
     /// R00D **Life steal Mastery**（生命精通）：伤害吸血 +8%/级。
@@ -88,10 +87,11 @@ pub struct Mastery {
 }
 
 impl Mastery {
-    /// 购买价（**平衡占位**：098c 基价 `ggol` 在地图外，不可恢复；见结构体注释）。
-    pub const COSTS: [i32; 4] = [6, 5, 4, 2];
-    /// 级数上限：三精通各 3（w3q `gnam` 等级 1/2/3 实证）；背包 2 级 → 6→8 格。
-    pub const CAPS: [u8; 4] = [3, 3, 3, 2];
+    /// 购买价（**w3q `gglb` 实证**：生命 R00D=6 / 范围 R00I=7 / 射程 R00Y=5 / 背包 R000=3）。
+    pub const COSTS: [i32; 4] = [6, 7, 5, 3];
+    /// 级数上限：三精通各 **6**（w3q tooltip「Life steal Mastery 1..6」+ `glvl=6` 实证；
+    /// R017 合成科技 glvl=20 → 6+6+6=18 ≤ 20 亦相符）；背包 2 级 → 6→8 格。
+    pub const CAPS: [u8; 4] = [6, 6, 6, 2];
 
     /// 三精通总级数（击退减免用；背包不计——098c lf=vi+ei+xi）。
     pub fn levels(&self) -> u8 {
@@ -889,20 +889,21 @@ mod tests {
     fn mastery_buy_costs_caps_and_backpack() {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         let pr = &mut ms.profiles[0];
-        pr.gold = 20;
-        // 四系各买一级（4/5/6/2 = 17 金）
+        pr.gold = 100;
+        // 四系各买一级（生命6/范围7/射程5/背包3 = 21 金；w3q gglb 实证）
         assert!(pr.buy_mastery(0) && pr.buy_mastery(1) && pr.buy_mastery(2) && pr.buy_mastery(3));
-        assert_eq!(pr.gold, 3, "精通应扣费 17 金");
+        assert_eq!(pr.gold, 79, "精通应扣费 21 金");
         assert_eq!((pr.mastery.life, pr.mastery.range, pr.mastery.time, pr.mastery.backpack), (1, 1, 1, 1));
         // 金币不足失败
-        assert!(!pr.buy_mastery(0), "余 3 金买不起 4 金生命精通");
-        // 上限（占位 3/3/3/2）
-        pr.gold = 100;
+        pr.gold = 2;
+        assert!(!pr.buy_mastery(0), "余 2 金买不起 6 金生命精通");
+        // 上限（w3q glvl/tooltip 实证：生命/范围/射程各 6 级；背包 2）
+        pr.gold = 1000;
         assert!(pr.buy_mastery(3), "背包第 2 级");
         assert!(!pr.buy_mastery(3), "背包达上限 2 应失败");
-        assert!(pr.buy_mastery(0) && pr.buy_mastery(0), "生命第 2/3 级");
-        assert!(!pr.buy_mastery(0), "生命达上限 3 应失败");
-        assert_eq!(pr.mastery.life, 3, "生命精通应达占位上限 3");
+        for _ in 0..5 { assert!(pr.buy_mastery(0), "生命升到 6"); }
+        assert!(!pr.buy_mastery(0), "生命达上限 6 应失败");
+        assert_eq!(pr.mastery.life, 6, "生命精通上限 6");
         assert_eq!(pr.mastery.backpack, 2, "背包上限 2");
         // 背包扩容：6→8
         assert_eq!(pr.inventory_slots(), 8);
@@ -925,8 +926,8 @@ mod tests {
         // 同家族升级不受容量限制（替换语义）
         assert!(pr.buy_item(crate::item::ItemId::Boots2));
         assert_eq!(pr.items.len(), 8);
-        // levels() 只计三精通（life3 + range1 + time1）
-        assert_eq!(pr.mastery.levels(), 5);
+        // levels() 只计三精通（life6 + range1 + time1）
+        assert_eq!(pr.mastery.levels(), 8);
     }
 
     #[test]
