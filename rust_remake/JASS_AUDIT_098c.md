@@ -594,3 +594,22 @@ endfunction
    （`oi==6` 时不再触发；`oi` 在 `war3map_pretty.j` 25849 自增、20376 初始化。）
 
 **在拿到可信单价前不实装数值**（遵守"以实证为准、不猜"）。
+
+
+### B 轮：w3q 校准第 2 次尝试（更新）
+
+发现了现成的 `098c/out/objects.json`（含 `upgrades` 段，784 条、字段是**逐级** `levels:[{level,value}]`），
+本以为不用再写 walker。但实际查证：
+
+- `upgrades.objects` 里**找不到** `R002` / `R000` / `R010` / `R00O`（按 `old` 和 `new` 两个字段都试过）；
+- 样例条目形如 `{"old":"Rhme","new":"\u0000\u0000\u0000\u0000","fields":{"gnam":{"levels":[{"level":1,"value":""}]}}}`，
+  `new` 全 0 → **自定义 id 没有被正确解出**（很可能与该 dump 当时用的偏移有关）。
+- 先前 `json.dumps` 里出现的 `R002` 命中，来自其它段（如技能字符串），不是升级条目。
+
+**结论**：`objects.json` 的 upgrades 段**不足以**做涨价标定；要拿到 `R0xx` 的逐级金价，
+必须真正把 w3q 的条目头（old/new 两个 4 字节 id）与逐级字段解出来。
+`war3map.w3q` 里确认存在 53 个 `gglb`（Gold Cost）、44 个 `glvl`（Gold Cost per Level）、53 个 `glmb`（Max Level）字段，
+且字段是**带 level 的连续记录**（`gnam`/`gub1` 处可见 level=1,2,3…）。
+
+**下一步（不变）**：写 w3q walker（`field(4)+type(4)+level(4)+value/cstring`，条目边界 = 两个 4 字符 id），
+产出 `R0xx → 各级 gglb/glvl/glmb`，再实装 `spell_buys` + 三次跳档。
