@@ -567,6 +567,9 @@ struct Game {
     /// 游戏模式（098c nn，B3）：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还。
     /// Steam host 房间界面 1-5 并写大厅元数据；solo/LAN 用 --mode 参数。
     match_mode: u8,
+    /// **完整房间设置**（`MatchConfig`）：建房时经 `host_set_cfg` 写入大厅元数据，
+    /// 入房时读出对齐。含经济/玩法/地图全部可配项（见 `ROOM_SETTINGS_PLAN.md`）。
+    match_cfg: game_core::meta::MatchConfig,
     /// 本局生效的基础回血（HP/s）。
     #[cfg(feature = "steam")]
     match_regen: f64,
@@ -1061,6 +1064,7 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_create_regen: STEAM_DEFAULT_REGEN,
             match_mode: init_mode,
+            match_cfg: game_core::meta::MatchConfig { game_mode: init_mode, ..Default::default() },
             #[cfg(feature = "steam")]
             match_regen: init_regen,
             match_teams: 1,
@@ -1760,6 +1764,7 @@ impl Game {
     fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
         self.world = game_core::world::World::new(p.max(1) as u32, seed);
         self.world.configure_mode(self.match_mode);
+        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
         self.world.configure_regen(self.match_regen);
         self.meta = game_core::meta::MatchState::new(
             self.match_config(),
@@ -4081,7 +4086,10 @@ impl event::EventHandler for Game {
                         //  其金币/回合等是残留值，正是「退回主菜单再进 Solo 金币不对」的来源。）
                         eprintln!("[menu] -> Solo");
                         self.menu_hint.clear();
-                        let (w, m) = solo_world_and_meta();
+                        let (mut w, m) = solo_world_and_meta();
+                        // 单机路径同样应用房间设置（与建房/入房共用同一份 `MatchConfig`）。
+                        w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                        w.configure_regen(self.match_cfg.base_regen);
                         self.world = w;
                         self.meta = m;
                         self.app = AppState::Solo;
@@ -6067,6 +6075,10 @@ impl Game {
                     sess.host_set_place_reward(&self.steam_create_place)?;
                     sess.host_set_mode(self.match_mode)?;
                     sess.host_set_regen(self.steam_create_regen)?;
+                    // 房间设置整体写入（单键）；任何改动都会替换该键，供加入者整体对齐。
+                    self.match_cfg.game_mode = self.match_mode;
+                    self.match_cfg.base_regen = self.steam_create_regen;
+                    sess.host_set_cfg(&self.match_cfg.to_meta_string())?;
                     self.match_rounds = self.steam_create_rounds;
                     self.match_learn_secs = self.steam_create_learn;
                     self.match_starting_gold = self.steam_create_starting_gold;
@@ -6116,6 +6128,17 @@ impl Game {
                     self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
                     self.match_mode = sess.lobby_mode().unwrap_or(1);
                     self.match_regen = sess.lobby_regen().unwrap_or(STEAM_DEFAULT_REGEN);
+                    // 完整房间设置：优先用 host 的整串设置；缺失/格式不符则回退默认值。
+                    if let Some(cfg) = sess.lobby_cfg().and_then(|t| game_core::meta::MatchConfig::from_meta_string(&t)) {
+                        self.match_cfg = cfg;
+                        self.match_mode = self.match_cfg.game_mode;
+                        self.match_regen = self.match_cfg.base_regen;
+                        self.world.configure_regen(self.match_cfg.base_regen);
+                        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                        eprintln!("[cfg] 已对齐 host 房间设置（{} 字节）", self.match_cfg.to_meta_string().len());
+                    } else {
+                        eprintln!("[cfg] host 未提供房间设置串，使用默认值");
+                    }
                     self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
                     let host_id = sess.host_steam_id().unwrap_or(0);
                     let my_slot = sess.my_slot();
@@ -6140,6 +6163,7 @@ impl Game {
             }
             self.world = game_core::world::World::new(n.max(1) as u32, seed);
             self.world.configure_mode(self.match_mode);
+        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
             self.world.configure_regen(self.match_regen);
             self.meta = game_core::meta::MatchState::new(
                 self.match_config(),
