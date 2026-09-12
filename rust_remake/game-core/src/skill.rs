@@ -1491,31 +1491,35 @@ impl DefTable {
     /// 098b 升级上限（物体数据 `alev`；consolidated 总表「等级」列）。乔丹之石 +2 在此之上。
     /// 未列入的（Unity 版遗留技能）沿用统一上限 20。
     pub fn max_level(id: SkillId) -> u32 {
+        // 098c **基础上限** = 1（购买时授予）+ 升级研究上限 N（w3q/JASS `SetPlayerTechMaxAllowed` 实证）。
+        // 乔丹之石（T000–T006，`Hf`）再给对应升级研究 +2 → `+skill_cap_bonus` 后达「含乔丹」上限。
+        // 例：S002 研究上限 6 → base 7，+乔丹 = 9（buy tooltip 亦列 Level 1..7）。
         match id {
-            // 098c：火球等级 = R002 研究（ur 起点 1，上限 9 级研究，L9953）→ 等级上限 10。
-            // 注：w3a 火球能力表虽定义 12 档（7.0→14.7），但研究上限 10 使其 11/12 档在 098c 内不可达；
-            // Rust 忠实复刻实玩上限 10（L10 伤害 13.3 = 098c L10）。要暴露全部 12 档只需改本行为 12。
+            // 火球：R002 研究上限 9（+乔丹 T000 +2）→ base 10。
             SkillId::S000 => 10,
-            SkillId::S002 => 9,
-            SkillId::S023 => 7,
-            SkillId::S003 => 9,
-            SkillId::S004 => 9,
-            SkillId::S005 => 9,
-            SkillId::S006 => 8,
-            // 098c 基础档数（JASS_AUDIT_098c.md §0）：多为 8~9 级；乔丹之石 +2 突破。
-            SkillId::S007 => 8,
-            SkillId::S008 => 8,
-            SkillId::S009 => 8,
-            SkillId::S010 => 8,
-            SkillId::S011 => 9,
-            SkillId::S012 => 9,
-            SkillId::S013 => 8,
-            SkillId::S014 => 8,
-            SkillId::S015 => 8,
-            SkillId::S016 => 8,
-            SkillId::S017 => 8,
-            SkillId::S018 => 8,
-            SkillId::S019 => 9,
+            // 研究上限 6 → base 7（S002/S003/S004/S011/S012/S019）。
+            SkillId::S002 => 7,
+            SkillId::S003 => 7,
+            SkillId::S004 => 7,
+            SkillId::S011 => 7,
+            SkillId::S012 => 7,
+            SkillId::S019 => 7,
+            // 研究上限 5 → base 6（S005/S006/S007/S008/S009/S010/S013/S014/S015/S016/S017）。
+            SkillId::S005 => 6,
+            SkillId::S006 => 6,
+            SkillId::S007 => 6,
+            SkillId::S008 => 6,
+            SkillId::S009 => 6,
+            SkillId::S010 => 6,
+            SkillId::S013 => 6,
+            SkillId::S014 => 6,
+            SkillId::S015 => 6,
+            SkillId::S016 => 6,
+            SkillId::S017 => 6,
+            // 研究上限 4 → base 5。
+            SkillId::S018 => 5,
+            SkillId::S023 => 1, // 非 098c，已停用
+            // F 槽（天罚/灾变/虔诚）：非研究链，保留占位档数。
             SkillId::S020 => 4,
             SkillId::S021 => 4,
             SkillId::S001 => 4,

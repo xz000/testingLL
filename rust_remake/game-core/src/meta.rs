@@ -293,9 +293,10 @@ impl PlayerProfile {
         true
     }
 
-    /// 购买「技能上限突破」（098c 乔丹之石原生化为购买界面项）：花费金币，每买一次所有技能上限 +2。
+    /// 购买「技能上限突破」（098c 乔丹之石原生化为购买界面项）：花费金币，**限购一次**，
+    /// 所有技能上限 +2（对应 098c T000–T006 的升级研究 +2）。
     pub fn buy_skill_cap_bonus(&mut self, cost: i32) -> bool {
-        if self.gold < cost {
+        if self.gold < cost || self.skill_cap_bonus >= 2 {
             return false;
         }
         self.gold -= cost;
