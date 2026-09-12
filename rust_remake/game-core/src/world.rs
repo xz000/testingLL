@@ -278,6 +278,20 @@ pub enum ProjectileKind {
         /// 红链（S019B）附加闪电伤害（098c `sc`：目标为友军/柱子时引发，1.0→3.4）；其余技能为 0。
         lightning_dmg: Fix64,
     },
+    /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
+    /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
+    DelayedBlast {
+        /// AOE 半径（098c `qI = 210×√(1+.25×远程精通)`）。
+        radius: Fix64,
+        /// 中心伤害（098c `Zb` 的 `12+2L`）。
+        damage: Fix64,
+        /// KI 击退系数 JI。
+        kb_ji: Fix64,
+        /// 距离衰减分母（098c `400+40×xi`）。
+        falloff_denom: Fix64,
+        /// 剩余时间（098c `ev=1.35`），到 0 落地爆炸。
+        remaining: Fix64,
+    },
 }
 
 /// 撒弹线的撒弹方式。
@@ -349,7 +363,8 @@ impl ProjectileKind {
             | ProjectileKind::Tether { .. }
             | ProjectileKind::Star { .. }
             | ProjectileKind::BindLine { .. }
-            | ProjectileKind::Clone { .. } => return None,
+            | ProjectileKind::Clone { .. }
+            | ProjectileKind::DelayedBlast { .. } => return None,
         })
     }
 
@@ -1221,6 +1236,8 @@ impl World {
         let mut returners: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         // 098b AoE 爆炸（陨石命中/到期）：中心 KI 全额、线性距离衰减到 20%（近似 qI 衰减）。
         let mut expiry_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64)> = Vec::new(); // (owner, 中心, 半径, gx, ji)
+        // 陨石落点（098c `oB`）：(owner, 落点, 半径, 中心伤害, kb_ji, 衰减分母)
+        let mut delayed_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 碎裂/侧弹生成队列（B4：S009 目标形态到点碎裂、区域形态螺旋侧弹）
         // (owner, 位置, 速度, gx, 弹半径, 寿命, kb_ji)
         let mut spawn_bullets: Vec<(u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
@@ -1231,6 +1248,14 @@ impl World {
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
         for pr in ps.iter_mut() {
             match &mut pr.kind {
+                ProjectileKind::DelayedBlast { radius, damage, kb_ji, falloff_denom, remaining } => {
+                    // 陨石落点（098c `oB`）：倒计时结束 → 以落点为中心 AOE（伤害随距离衰减）。
+                    *remaining -= dt;
+                    if *remaining <= Fix64::ZERO {
+                        pr.alive = false;
+                        delayed_blasts.push((pr.owner, pr.pos, *radius, *damage, *kb_ji, *falloff_denom));
+                    }
+                }
                 ProjectileKind::Rock { fuse, .. } => {
                     *fuse -= dt;
                     if *fuse <= Fix64::ZERO {
@@ -1942,6 +1967,9 @@ impl World {
                     // 098c 回旋镖：飞行中不结算（oB 在回程寿命耗尽时对命中半径 qI 内目标一次性 AOE 结算）。
                     let hit = if *proj == crate::skill::W098bProjKind::Boomerang {
                         None
+                    } else if blast.is_some() {
+                        // 陨石：飞行途中不结算（098c `iB`：一路飞到点击点，仅在到点由 `oB` 做 AOE）。
+                        None
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
                         nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
                     } else if *on_hit == crate::skill::W098bOnHit::RedChain {
@@ -2132,7 +2160,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } => {}
+                ProjectileKind::Rock { .. } | ProjectileKind::Decoy { .. } | ProjectileKind::ScatterLine { .. } | ProjectileKind::Chain { .. } | ProjectileKind::Returner { .. } | ProjectileKind::DelayedBlast { .. } => {}
             }
         }
 
@@ -2277,7 +2305,7 @@ impl World {
 
         // 3) 结算爆炸（石头 / 导弹）
         for e in &explode {
-            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false);
+            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false, None);
         }
 
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
@@ -2428,7 +2456,11 @@ impl World {
             });
         }
         for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false);
+            self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false, None);
+        }
+        // 陨石落地（098c `oB`）：中心伤害 `12+2L`，随距离衰减 `(1 - d/(400+40xi))`，同队/自身免疫。
+        for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
+            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, false, Some(denom));
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -2563,7 +2595,7 @@ impl World {
     /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
     #[allow(clippy::too_many_arguments)]
     /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool) -> u32 {
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: Option<Fix64>) -> u32 {
         let r_sq = radius * radius;
         // 攻方 Gn 系数（灼烧 ×0.1，D7）：循环前取出，避免 iter_mut 借用冲突。
         let owner_gn = self
@@ -2588,6 +2620,11 @@ impl World {
                     p.last_hit_by = Some(owner);
                 }
                 let mut dmg = damage * Fix64::from_num(owner_gn * p.dmg_taken_mult);
+                // 陨石（098c `oB` `Zb`）：伤害随距离线性衰减 `(1 - d/(400+40xi))`。
+                if let Some(denom) = dmg_falloff {
+                    let decay = (Fix64::ONE - d_sq.sqrt() / denom).max(Fix64::ZERO);
+                    dmg *= decay;
+                }
                 // 守护之盾充能窗口（098c HC 'aegs' buff 5*jn）：受伤减免（I00H 25% / I00I 75%）。
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     dmg *= Fix64::from_num(1.0 - p.item_fx.smite_reduction);
@@ -3056,6 +3093,38 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 } else {
                     (stats.damage, ignite.map(|base| if stats.extra > Fix64::ZERO { stats.extra } else { base }))
                 };
+                // 陨石（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
+                // 1.35s 后在点击点炸开：半径 `210×√(1+.25×远程精通)`；伤害 `(12+2L)×(1 - d/(400+40xi))`；
+                // 同队（含施法者本人）免疫由 AOE 的队伍过滤保证。
+                if id == crate::skill::SkillId::S008 && proj == crate::skill::W098bProjKind::Straight {
+                    let ppos = world.players[idx as usize].pos;
+                    let dir_v = match target {
+                        Some(t) => {
+                            let dd = t - ppos;
+                            if dd.length() > Fix64::ZERO {
+                                dd.normalized()
+                            } else {
+                                Vec2::new(Fix64::ONE, Fix64::ZERO)
+                            }
+                        }
+                        None => Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    };
+                    let landing = target.unwrap_or(ppos + dir_v * Fix64::from_num(800.0));
+                    let xi = world.players[idx as usize].mastery[1] as f64;
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::DelayedBlast {
+                            radius: Fix64::from_num(210.0 * (1.0 + 0.25 * xi).sqrt()),
+                            damage: stats.damage,
+                            kb_ji,
+                            falloff_denom: Fix64::from_num(400.0 + 40.0 * xi),
+                            remaining: Fix64::from_num(1.35),
+                        },
+                        pos: landing,
+                        alive: true,
+                    });
+                    continue;
+                }
                 // 连发（count>1）：以施法方向为中心、±spread_step 对称扇出（火焰喷射锥形 5 道）。
                 let half = (count.max(1) as i64 - 1) / 2;
                 for k in -half..=half {
@@ -3138,7 +3207,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚（098c mC，普通局 F 键）：半径 250、衰减 1-d/1000、伤害 10+血剑。
-                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, None);
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变：三级递进（0→1→2 循环），半径 300/300/400、伤害随 stage 递增
@@ -3146,7 +3215,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let stage = world.players[idx as usize].catastrophe_stage % 3;
                         let r = if stage == 2 { Fix64::from_num(400.0) } else { radius };
                         let stage_gx = gx + Fix64::from_num(stage as i64 * 4);
-                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true);
+                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true, None);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
@@ -3154,7 +3223,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     crate::skill::W098bNovaKind::Devotion => {
                         // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚；500 内**队友**
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true);
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, None);
                         let caster_team = world.players[idx as usize].team;
                         let allies: Vec<u32> = world
                             .players
@@ -5778,57 +5847,54 @@ mod tests {
         );
     }
 
-    /// S008 陨石灼烧「烤肉饼」（D7）：命中 → Scorched（禁疗+输出 ×0.1）4s + 灼烧 DoT 场。
+    /// S008 陨石（098c `iB`/`oB`）：**无飞行弹体**，落点 1.35s 后定时爆炸；自身/同队免疫。
     #[test]
-    fn s008_meteor_scorches_heal_block_and_gn_debuff() {
+    fn s008_meteor_is_delayed_blast_and_self_immune() {
         let mut world = World::new(2, 966);
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO);
+        // 敌人站在落点附近（±18 内，位于衰减范围内，且在场内避免熔浆伤害）。
+        let landing = Vec2::new(d60(6.0), Fix64::ZERO);
+        world.players[1].pos = landing + Vec2::new(d60(0.3), Fix64::ZERO);
         world.players[1].move_target = None;
-        world.step(vec![
-            PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(12.0), Fix64::ZERO)))), ..Default::default() },
-            PlayerInput::default(),
-        ], dt);
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
-        let mut scorched = false;
-        for _ in 0..150 {
-            world.step(none.clone(), dt); // 速度 400 → 800 距离需 2s
-            if world.players[1].has_buff(BuffKind::Scorched) {
-                scorched = true;
-            }
-        }
-        assert!(scorched, "陨石命中应给目标挂 Scorched（烤肉饼）debuff");
-        // 禁疗：把目标压到 99 血，自然回血应被禁（0.05/s × 2s = 0.1 才对，禁疗则不动）
-        let hp = world.players[1].hp.to_num::<f64>();
-        let _ = hp;
-        // 输出惩罚：灼烧中的玩家1 打玩家0，伤害应 ×0.1
-        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
-        world.players[1].move_target = None;
-        world.players[0].caster = crate::skill::Caster::new();
-        world.players[1].caster = crate::skill::Caster::new();
+        let hp1_before = world.players[1].hp;
         let hp0_before = world.players[0].hp;
-        // 用 TestLightning（Unity 原型）由玩家1施放打玩家0（瞄准 (0,0) 方向）
-        let cast_input = vec![
-            PlayerInput::default(),
-            PlayerInput { cast: Some((SkillId::TestLightning, Some(Vec2::ZERO))), ..Default::default() },
-        ];
-        world.step(cast_input.clone(), dt);
-        // windup（若有）内持续按住意图直到施放完成（≤0.3s），结算后立即读血。
-        for _ in 0..20 {
-            if world.players[0].hp < hp0_before {
-                break;
-            }
-            world.step(cast_input.clone(), dt);
-        }
-        let dealt = (hp0_before - world.players[0].hp).to_num::<f64>();
-        // TestLightning push_damage=10（damage_base），×0.1 = 1；容差防回血
-        assert!(
-            dealt > 0.5 && dealt < 2.0,
-            "灼烧者输出应 ×0.1（≈1），实际 {dealt}"
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S008, Some(landing))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
         );
+        // 落地前：场上应是 DelayedBlast（落点），而不是任何飞行弹体。
+        assert!(
+            world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::DelayedBlast { .. })),
+            "陨石应在落点生成 DelayedBlast"
+        );
+        assert!(
+            !world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { .. })),
+            "陨石不应有飞行弹体"
+        );
+        // 落地前不结算。
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert_eq!(world.players[1].hp, hp1_before, "1.0s 时还没到 1.35s，不应结算");
+        // 到点：敌人受中心附近伤害（≈14）、施法者自身不受伤害、不卐 Scorched。
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.players[1].hp < hp1_before,
+            "到点应对范围内敌人造成伤害（{} -> {}）",
+            hp1_before.to_num::<f64>(),
+            world.players[1].hp.to_num::<f64>()
+        );
+        assert_eq!(world.players[0].hp, hp0_before, "陨石不应伤及施法者本人（同队免疫）");
+        assert!(!world.players[1].has_buff(BuffKind::Scorched), "098c 陨石不施加灼烧");
     }
 
     /// M3 2c：死亡面具吸血——攻方按伤害 24% 回血；火球法杖改写火球直伤 5.5+0.5L。

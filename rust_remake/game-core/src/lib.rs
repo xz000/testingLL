@@ -36,4 +36,5 @@ pub fn version() -> &'static str {
 /// - 改动技能/物品数值、世界模拟逻辑（会改变同一输入下的世界演化）。
 ///
 /// v7（2026-09-12）：删除属性购买系统（`Player` 的 speed_mult/armor/spell/kb 因子从快照移除）。
-pub const PROTOCOL_VERSION: u32 = 7;
+/// v8（2026-09-12）：陨石改为 `ProjectileKind::DelayedBlast`（落点定时爆炸，无飞行弹体）。
+pub const PROTOCOL_VERSION: u32 = 8;

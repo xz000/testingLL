@@ -2488,36 +2488,28 @@ impl Game {
                     let line = Mesh::new_line(&ctx.gfx, &[Point2 { x: fx, y: fy }, Point2 { x: ex, y: ey }], 4.0, Color::from_rgba(200, 120, 255, 200))?;
                     canvas.draw(&line, graphics::DrawParam::new());
                 }
-                game_core::world::ProjectileKind::W098b { proj, radius, blast, vel, remaining, life, .. } => {
+                game_core::world::ProjectileKind::W098b { proj, radius, .. } => {
                     // 098b 名册弹体（M1/M2）：按形态配色。
                     let r = (radius.to_num::<f32>() * self.scale).max(4.0);
-                    // 陨石（Straight + blast）：098c `iB` 是 dummy 在**离地 1000** 俯冲（视觉从天空来），
-                    // 玩法不变；2D 原生化为「地面目标环 + 到点爆发」，不再画从玩家出发的飞行弹。
-                    // 落点 = 当前位置 + 速度×剩余时间（匀速直线，无需额外状态）。
-                    if proj == game_core::skill::W098bProjKind::Straight && blast.is_some() {
-                        let land = pr.pos + vel * remaining;
-                        let lx = land.x.to_num::<f32>() * self.scale + self.offset.x;
-                        let ly = land.y.to_num::<f32>() * self.scale + self.offset.y;
-                        let br = (blast.unwrap().to_num::<f32>() * self.scale).max(8.0);
-                        // 目标环（=落地 AOE 半径）
-                        let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: lx, y: ly }, br, 0.6, Color::from_rgba(255, 150, 60, 210))?;
-                        canvas.draw(&ring, graphics::DrawParam::new());
-                        // 内环随剩余时间收缩：到点归零 = 落地。
-                        let frac = 1.0 - (remaining.to_num::<f32>() / life.to_num::<f32>().max(0.001)).clamp(0.0, 1.0);
-                        let ir = (br * (1.0 - frac)).max(2.0);
-                        let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(3.0), Point2 { x: lx, y: ly }, ir, 0.6, Color::from_rgba(255, 220, 140, 230))?;
-                        canvas.draw(&inner, graphics::DrawParam::new());
-                    } else {
-                        let color = match proj {
-                            game_core::skill::W098bProjKind::Straight => Color::from_rgb(255, 130, 60),
-                            game_core::skill::W098bProjKind::Homing => Color::from_rgb(200, 110, 255),
-                            game_core::skill::W098bProjKind::Boomerang => Color::from_rgb(90, 220, 230),
-                            game_core::skill::W098bProjKind::Bounce => Color::from_rgb(255, 220, 80),
-                            game_core::skill::W098bProjKind::Magma => Color::from_rgb(255, 120, 40),
-                        };
-                        let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
-                        canvas.draw(&dot, graphics::DrawParam::new());
-                    }
+                    let color = match proj {
+                        game_core::skill::W098bProjKind::Straight => Color::from_rgb(255, 130, 60),
+                        game_core::skill::W098bProjKind::Homing => Color::from_rgb(200, 110, 255),
+                        game_core::skill::W098bProjKind::Boomerang => Color::from_rgb(90, 220, 230),
+                        game_core::skill::W098bProjKind::Bounce => Color::from_rgb(255, 220, 80),
+                        game_core::skill::W098bProjKind::Magma => Color::from_rgb(255, 120, 40),
+                    };
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
+                    canvas.draw(&dot, graphics::DrawParam::new());
+                }
+                game_core::world::ProjectileKind::DelayedBlast { radius, remaining, .. } => {
+                    // 陨石落点（098c `oB`）：地面目标环 + 随剩余时间收缩的落地指示（无飞行弹体）。
+                    let br = (radius.to_num::<f32>() * self.scale).max(8.0);
+                    let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, br, 0.6, Color::from_rgba(255, 150, 60, 210))?;
+                    canvas.draw(&ring, graphics::DrawParam::new());
+                    let frac = 1.0 - (remaining.to_num::<f32>() / 1.35).clamp(0.0, 1.0);
+                    let ir = (br * (1.0 - frac)).max(2.0);
+                    let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(3.0), Point2 { x: px, y: py }, ir, 0.6, Color::from_rgba(255, 220, 140, 230))?;
+                    canvas.draw(&inner, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::Clone { owner, .. } => {
                     // 镜像分身（C 栏）：半透明圆，沿用所有者的队伍色以便辨识。

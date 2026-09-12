@@ -1659,19 +1659,19 @@ impl DefTable {
                     radius: Fix64::from_num(72.0),
                     life: Fix64::from_num(1.35),   // 098c iB: ev=1.35
                     kb_ji: Fix64::from_num(0.8),
-                    // 灼烧场（半径/每跳数值未解码，暂 75/总量均摊 TODO）+ Scorched debuff（D7）。
-                    ignite: Some(Fix64::from_num(7.5)),
-                    blast: Some(Fix64::from_num(200.0)),
+                    // 陨石落点走 `ProjectileKind::DelayedBlast`（无飞行弹体）：以下字段仅供 `stats` 取值。
+                    ignite: None,
+                    blast: None,
                     count: 1,
                     spread_step: 0.0,
-                    on_hit: W098bOnHit::Scorched,
+                    on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
                     cooldown_delta: -0.5, // 098c: 20->16.5 (8 lv)
                     cooldown_levels: Some(&[20.0, 19.5, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]), // w3a acdn 实证
-                    damage_base: 12.0,
-                    damage_delta: 2.0,   // 098c: gX=10+2L (L1=12)
+                    damage_base: 14.0,
+                    damage_delta: 2.0,   // 098c `Zb = 12+2L`（L 1-based → L1=14）
                     // 灼烧时长 4*jn（durations S008）→ debuff 与灼烧场共用。
                     duration_base: 4.0,
                     ..DEF_ZERO
@@ -3523,20 +3523,21 @@ mod tests {
 
     #[test]
     fn s008_meteor_matches_spec() {
-        // spec：speed 400 / radius 72 / life 2s / aoe 200 / CD 20→16.5（20 级）；
-        // detailed XB：KI($A+2*Xv, .8)，$A=10 → gX L1=12。
+        // 098c `iB`（运动学已改为无弹体落点定时爆炸）/`oB`（爆炸）：
+        // 伤害 `Zb = 12+2L`（L 1-based → L1=14、L8=28）；CD 20→16.5（逐档）；
+        // 爆炸半径/衰减由 cast 与 `explode_at` 按 `210×√(1+.25xi)` / `400+40xi` 计算（见 world.rs）。
         let def = DefTable::def(SkillId::S008);
         assert_eq!(def.name, "陨石");
         let s1 = def.stats_at(1);
         let s8 = def.stats_at(8);
         assert!(near(s1.cooldown, 20.0, 1e-3), "L1 CD should be 20, got {:?}", s1.cooldown);
         assert!(near(s8.cooldown, 16.5, 1e-1), "L8 CD should be ~16.5, got {:?}", s8.cooldown);
-        assert!(near(s1.damage, 12.0, 1e-3), "L1 gX should be 12, got {:?}", s1.damage);
-        assert!(near(s8.damage, 10.0 + 2.0 * 8.0, 1e-3), "L8 gX should be 10+2x8, got {:?}", s8.damage);
+        assert!(near(s1.damage, 14.0, 1e-3), "L1 Zb should be 14, got {:?}", s1.damage);
+        assert!(near(s8.damage, 12.0 + 2.0 * 8.0, 1e-3), "L8 Zb should be 12+2x8, got {:?}", s8.damage);
         match def.effect {
-            SkillEffect::Warlock098b { speed, radius, life, blast, kb_ji, .. } => {
-                assert!(near(speed, 400.0, 1e-3) && near(radius, 72.0, 1e-3) && near(life, 1.35, 1e-3));
-                assert!(near(blast.unwrap(), 200.0, 1e-3), "陨石应带 200 爆炸半径");
+            SkillEffect::Warlock098b { kb_ji, ignite, blast, .. } => {
+                // 爆炸改由 `DelayedBlast` 承担，def 不再持有 ignite/blast。
+                assert!(ignite.is_none() && blast.is_none(), "陨石改由 DelayedBlast 承担，def 不应再带 ignite/blast");
                 assert!(near(kb_ji, 0.8, 1e-3));
             }
             ref e => panic!("S008 effect 应为 Warlock098b，实际 {e:?}"),
