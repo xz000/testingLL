@@ -254,6 +254,42 @@ enum SteamLobbyPending {
     Join { lobby_id: Option<u64> },
 }
 
+/// 文本输入焦点（`InputMode::TextInput` 的具体字段）。
+///
+/// **这是 IME 提交的唯一去处**：`on_text_input` 由 `text_focus()` 决定写入哪个缓冲，
+/// 因此中文输入法确认提交的文本能进任意文本框（此前只覆盖部分界面，设置编辑器完全收不到）。
+/// 同时，处于文本态时各界的字母快捷键被屏蔽（避免打字被快捷键抢走）。
+#[cfg(feature = "steam")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum TextField {
+    /// 建房界面：房间名。
+    CreateName,
+    /// 建房界面：备注。
+    CreateNote,
+    /// 房间信息编辑：房间名（E 已退休，保留兼容）。
+    RoomEditName,
+    /// 房间信息编辑：备注。
+    RoomEditNote,
+    /// 房间设置编辑器（`O`）：当前行的自定义输入（房名/备注/数值）。
+    CfgCustom,
+}
+
+/// 文本字段长度上限（字符数，不是字节——中文一个字算 1）。
+#[cfg(feature = "steam")]
+const TEXT_FIELD_MAX_CHARS: usize = 40;
+
+/// 把 IME 提交的文本并入缓冲：剔除控制字符、按**字符数**限长（中文一字算 1）。
+/// 抽成纯函数便于单测（多字提交/控制字符/限长）。
+#[cfg(feature = "steam")]
+fn append_text_limited(buf: &mut String, text: &str, max_chars: usize) {
+    for ch in text.chars().filter(|c| !c.is_control()) {
+        if buf.chars().count() >= max_chars {
+            break;
+        }
+        buf.push(ch);
+    }
+}
+
 struct Game {
     /// 当前小局的战斗世界
     world: World,
@@ -308,6 +344,9 @@ struct Game {
     /// IME 去重：最近一次 `Ime::Commit` 提交的帧（置为当时 `frame+1`，即 `just(c)` 将要运行的下一帧）。
     /// `just(c)` ASCII 白名单在该帧跳过，避免同一物理键重复插入（C8，需真机验证）。
     last_ime_commit_frame: u64,
+    /// IME 预编辑（拼音组合）进行中：为真时屏蔽 ASCII 白名单手工插入，
+    /// 否则组合期间的物理键会被当成普通字母直接拼进去（与提交的中文重复/乱码）。
+    ime_composing: bool,
     /// 世界坐标 → 屏幕坐标的缩放
     scale: f32,
     /// 相机偏移（世界原点 (0,0) 在屏幕上的位置）：每帧由 `cam` 推算，绘制时世界点 = world*scale + offset。
@@ -926,6 +965,7 @@ impl Game {
             frame: 0,
             // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
             last_ime_commit_frame: u64::MAX,
+            ime_composing: false,
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             cam: Point2 { x: 0.0, y: 0.0 },
@@ -5229,45 +5269,62 @@ impl event::EventHandler for Game {
 }
 
 impl Game {
+    /// 当前文本输入焦点；`None` = 非文本态（字母快捷键生效）。见 `TextField`。
+    #[cfg(feature = "steam")]
+    fn text_focus(&self) -> Option<TextField> {
+        if self.room_cfg_edit {
+            // 设置编辑器打开时：只有正在自定义输入某行才接管文本，否则快捷键（分组/导航）照常。
+            return if self.room_cfg_input.is_some() {
+                Some(TextField::CfgCustom)
+            } else {
+                None
+            };
+        }
+        if self.steam_room_edit {
+            return match self.steam_room_edit_focus {
+                0 => Some(TextField::RoomEditName),
+                1 => Some(TextField::RoomEditNote),
+                _ => None,
+            };
+        }
+        if self.steam_lobby_create {
+            return match self.steam_create_focus {
+                0 => Some(TextField::CreateName),
+                1 => Some(TextField::CreateNote),
+                _ => None,
+            };
+        }
+        None
+    }
+
+    /// 按焦点取文本缓冲（[`Self::text_focus`] 的对应写入目标）。
+    #[cfg(feature = "steam")]
+    fn text_buffer_mut(&mut self, f: TextField) -> Option<&mut String> {
+        match f {
+            TextField::CreateName => Some(&mut self.steam_create_name),
+            TextField::CreateNote => Some(&mut self.steam_create_note),
+            TextField::RoomEditName => Some(&mut self.steam_edit_name),
+            TextField::RoomEditNote => Some(&mut self.steam_edit_note),
+            TextField::CfgCustom => self.room_cfg_input.as_mut(),
+        }
+    }
+
     /// 文本输入回调（由自定义事件循环在 winit 的 `Ime::Commit` 事件上调用）：
-    /// 把输入法确认提交的字符追加到当前聚焦的文本字段。支持中文 IME（建房界面/编辑房间信息的房间名与备注）。
-    /// 注意：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit`（见事件循环处 `WindowEvent::Ime` 分支）。
-    /// 仅在对应界面且聚焦文本字段（0/1）时生效；其他界面忽略。
+    /// 把输入法确认提交的字符追加到 [`Self::text_focus`] 指向的文本字段（支持中文 IME）。
+    /// 注意：winit 0.30 已移除 `ReceivedCharacter`，文本只走 `Ime::Commit`（见事件循环 `WindowEvent::Ime` 分支）。
     fn on_text_input(&mut self, text: &str) {
         // 标记最近一次 IME 提交发生在下一帧（即 `just(c)` 将要运行的帧），供 ASCII 白名单去重（C8）。
         self.last_ime_commit_frame = self.frame.wrapping_add(1);
         #[cfg(feature = "steam")]
         {
-            if text.is_empty() {
-                return;
-            }
             // 剔除控制字符（\r \n \t 等）；中文全角字符/空格都保留。
             let clean: String = text.chars().filter(|c| !c.is_control()).collect();
             if clean.is_empty() {
                 return;
             }
-            let target: Option<&mut String> =
-                if self.steam_lobby_create && self.steam_create_focus <= 1 {
-                    Some(if self.steam_create_focus == 0 {
-                        &mut self.steam_create_name
-                    } else {
-                        &mut self.steam_create_note
-                    })
-                } else if self.steam_room_edit && self.steam_room_edit_focus <= 1 {
-                    Some(if self.steam_room_edit_focus == 0 {
-                        &mut self.steam_edit_name
-                    } else {
-                        &mut self.steam_edit_note
-                    })
-                } else {
-                    None
-                };
-            if let Some(buf) = target {
-                for ch in clean.chars() {
-                    if buf.len() < 80 {
-                        buf.push(ch);
-                    }
-                }
+            let Some(focus) = self.text_focus() else { return };
+            if let Some(buf) = self.text_buffer_mut(focus) {
+                append_text_limited(buf, &clean, TEXT_FIELD_MAX_CHARS);
             }
         }
         #[cfg(not(feature = "steam"))]
@@ -5493,7 +5550,8 @@ impl Game {
                 eprintln!("[steam-room] 总轮数 -> {}", self.match_cfg.total_rounds);
             }
         }
-        if just('q') || just('Q') {
+        // 文本态（正在输入房名/备注）下 `Q` 是普通字符，不退出本界面。
+        if self.text_focus().is_none() && (just('q') || just('Q')) {
             self.steam_room_edit = false;
             return Ok(());
         }
@@ -5528,7 +5586,10 @@ impl Game {
             return Ok(());
         }
         let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
-        if buf.len() < 80 && !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame) {
+        if buf.chars().count() < TEXT_FIELD_MAX_CHARS
+            && !self.ime_composing
+            && !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame)
+        {
             // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
             const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
             for c in CHARS.chars() {
@@ -6255,7 +6316,7 @@ impl Game {
                 } else {
                     eprintln!("[cfg] 输入「{buf}」非法，保留原值");
                 }
-            } else if just_named(NamedKey::Escape) || just("o") {
+            } else if just_named(NamedKey::Escape) {
                 eprintln!("[cfg] 已取消输入");
             } else {
                 if just_named(NamedKey::Backspace) {
@@ -6263,22 +6324,29 @@ impl Game {
                 }
                 // 文本行（房名/备注，大厅元数据）：接受**完整可打印字符**（字母/空格/标点/中文）。
                 // 数值行：仅数字/小数点/负号。此前一律只收数字 → 房名连字母都打不进去（真 bug）。
+                //
+                // 中文/任意 IME 文本由 `on_text_input` 在事件层写入 `room_cfg_input`（已在本 buf 里），
+                // 故本帧已收到 IME 提交时不再走下面的 ASCII 白名单，避免同一按键重复插入（C8）。
                 let is_text_row = id.target() == settings_ui::SettingTarget::Meta;
                 let charset = if is_text_row {
                     " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/"
                 } else {
                     "0123456789.-"
                 };
-                for c in charset.chars() {
-                    let cs = c.to_string();
-                    let pressed = ctx
-                        .keyboard
-                        .is_logical_key_just_pressed(&Key::Character(cs.clone().into()))
-                        || ctx
+                if !self.ime_composing
+                    && !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame)
+                {
+                    for c in charset.chars() {
+                        let cs = c.to_string();
+                        let pressed = ctx
                             .keyboard
-                            .is_logical_key_just_pressed(&Key::Character(cs.to_uppercase().into()));
-                    if pressed && buf.len() < 60 {
-                        buf.push(c);
+                            .is_logical_key_just_pressed(&Key::Character(cs.clone().into()))
+                            || ctx
+                                .keyboard
+                                .is_logical_key_just_pressed(&Key::Character(cs.to_uppercase().into()));
+                        if pressed && buf.chars().count() < TEXT_FIELD_MAX_CHARS {
+                            buf.push(c);
+                        }
                     }
                 }
                 self.room_cfg_input = Some(buf); // 仍在输入态
@@ -6514,7 +6582,9 @@ impl Game {
         }
         // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
         // 否则同一帧"开→立刻关"，表现为"按 O 毫无反应"（曾如此）。
-        let o_pressed = just('o') || just('O');
+        // 文本态（正在输入房名/备注）下 `O` 是普通字符，不打开编辑器。
+        let text_mode = self.text_focus().is_some();
+        let o_pressed = !text_mode && (just('o') || just('O'));
         if o_pressed {
             self.room_cfg_edit = !self.room_cfg_edit;
             if !self.room_cfg_edit {
@@ -6530,11 +6600,12 @@ impl Game {
             return; // 编辑器打开时不吃建房界面的其它按键
         }
         // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
-        if just('m') || just('M') {
+        // 文本态下 M/R/Q 都是普通字符，让 `on_text_input` / ASCII 白名单处理，不触发快捷键。
+        if !text_mode && (just('m') || just('M')) {
             self.steam_create_mode = if self.steam_create_mode >= 5 { 1 } else { self.steam_create_mode + 1 };
         }
         // R：循环切换基础回血档位（098c 主机常量 `-C9`）。
-        if just('r') || just('R') {
+        if !text_mode && (just('r') || just('R')) {
             let i = STEAM_REGEN_CHOICES
                 .iter()
                 .position(|v| (v - self.steam_create_regen).abs() < 1e-9)
@@ -6560,7 +6631,7 @@ impl Game {
             (cur_col, cur_row)
         };
         self.steam_create_focus = nc * ROWS_PER_COL + nr;
-        if just('q') || just('Q') {
+        if !text_mode && (just('q') || just('Q')) {
             self.steam_lobby_create = false; // 返回大厅主界面
             return;
         }
@@ -6573,12 +6644,14 @@ impl Game {
                     return;
                 }
                 let buf = if self.steam_create_focus == 0 { &mut self.steam_create_name } else { &mut self.steam_create_note };
-                if buf.len() >= 80 {
+                if buf.chars().count() >= TEXT_FIELD_MAX_CHARS {
                     return;
                 }
                 // 可打印 ascii 字符（字母大小写/数字/空格/常用标点）。
                 // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
-                if !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame) {
+                if !self.ime_composing
+                    && !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame)
+                {
                     const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
                     for c in CHARS.chars() {
                         if just(c) {
@@ -7844,9 +7917,16 @@ impl winit::application::ApplicationHandler for GameApp {
                 // winit 0.30 统一用 IME 事件报告文本输入：
                 // - 普通键盘字符（英文/数字/标点）与中文输入法组合提交都走 `Ime::Commit`；
                 //   （本机 IME 已在 `resumed` 里 set_ime_allowed(true)）
+                self.game.ime_composing = false;
                 self.game.on_text_input(&text);
             }
-            WindowEvent::Ime(_) => {}
+            WindowEvent::Ime(Ime::Preedit(text, _)) => {
+                // 拼音组合中：非空 = 正在预编辑。期间屏蔽手工 ASCII 插入（见 `ime_composing`）。
+                self.game.ime_composing = !text.is_empty();
+            }
+            WindowEvent::Ime(Ime::Enabled) | WindowEvent::Ime(Ime::Disabled) => {
+                self.game.ime_composing = false;
+            }
 
             WindowEvent::Resized(size) => {
                 // 逻辑分辨率 + letterbox 后已能自适应缩放；仅保留一个极小下限防呆（避免窗口被拖到 0 大小）。
@@ -8159,6 +8239,27 @@ mod tests {
     }
 
     use super::*;
+
+    /// IME 提交文本的并入：支持中文、剔除控制字符、按**字符数**限长。
+    #[cfg(feature = "steam")]
+    #[test]
+    fn ime_text_appends_chinese_and_clamps() {
+        use super::append_text_limited;
+        let mut buf = String::new();
+        append_text_limited(&mut buf, "你好世界", 40);
+        assert_eq!(buf, "你好世界");
+        // 追加不覆盖
+        append_text_limited(&mut buf, "abc", 40);
+        assert_eq!(buf, "你好世界abc");
+        // 控制字符剔除
+        let mut b2 = String::new();
+        append_text_limited(&mut b2, "a\nb\tc", 40);
+        assert_eq!(b2, "abc");
+        // 字符数限长（3）：已有 "ab" 再提交 "中文" 只进 1 个中文字符
+        let mut b3 = String::from("ab");
+        append_text_limited(&mut b3, "中文", 3);
+        assert_eq!(b3, "ab中", "应按字符数限长而非字节数");
+    }
 
     // C8：IME 去重判定（与 `ime_commit_suppresses_ascii` 对应）。
     // 设备验证（真机 IME 日志）已确认 c6db353 实现在 winit 0.30 下正确；
