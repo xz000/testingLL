@@ -21,7 +21,7 @@ use crate::skill::SkillId;
 /// v9（B4 形态）：加入 forms（u16 数量 + 每项 1 字节，按 SkillId 索引）。
 /// v10：加入 skill_cap_bonus（u32）。
 /// v11（2026-09-12）：删除属性购买系统（移除 attributes 5×u32 与 growth_points u32）。
-pub const CONFIG_VERSION: u8 = 12;
+pub const CONFIG_VERSION: u8 = 13;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -59,6 +59,8 @@ pub struct PlayerConfig {
     pub team: u8,
     /// 形态位（v9，B4）：按 SkillId 索引。
     pub forms: Vec<bool>,
+    /// 是否已买下乔丹之石（v13）：**不占物品栏**，一次性解锁（098c：戒指 5 金）。
+    pub jordan_unlocked: bool,
     /// 乔丹之石突破（v12）：**按槽**记录（8 槽），每槽一次、+2（098c `T000`–`T006`）。
     pub jordan_used: [bool; 8],
 }
@@ -79,6 +81,7 @@ impl PlayerConfig {
             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
             team: p.team,
             forms: p.forms.clone(),
+            jordan_unlocked: p.jordan_unlocked,
             jordan_used: p.jordan_used,
         }
     }
@@ -103,6 +106,7 @@ impl PlayerConfig {
             backpack: self.mastery[3],
         };
         p.team = self.team;
+        p.jordan_unlocked = self.jordan_unlocked;
         p.jordan_used = self.jordan_used;
         let n = p.forms.len();
         for (i, f) in self.forms.iter().enumerate().take(n) {
@@ -145,7 +149,8 @@ impl PlayerConfig {
         for f in &self.forms {
             out.push(*f as u8);
         }
-        // 乔丹之石突破（v12）：8 槽各 1 字节。
+        // 乔丹之石（v13）：解锁位 + 8 槽各 1 字节。
+        out.push(self.jordan_unlocked as u8);
         for used in &self.jordan_used {
             out.push(*used as u8);
         }
@@ -204,6 +209,8 @@ impl PlayerConfig {
             forms.push(*buf.get(pos)? != 0);
             pos += 1;
         }
+        let jordan_unlocked = *buf.get(pos)? != 0;
+        pos += 1;
         let mut jordan_used = [false; 8];
         for slot in jordan_used.iter_mut() {
             *slot = *buf.get(pos)? != 0;
@@ -218,6 +225,7 @@ impl PlayerConfig {
             mastery,
             team,
             forms,
+            jordan_unlocked,
             jordan_used,
         })
     }

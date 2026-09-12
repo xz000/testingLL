@@ -1,0 +1,33 @@
+::Helm2], "同家族应替换为高档");
+        // 不同家族共存（098c：每步同价 5 金）
+        pr.gold = 10;
+        assert!(pr.buy_item(crate::item::ItemId::Boots1));
+        assert_eq!(pr.items.len(), 2);
+    }
+
+    #[test]
+    fn buy_item_allows_distinct_standalone_and_no_dup() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 100;
+        pr.mastery.backpack = 3; // 容量 10，避免容量影响本测试
+        // 三个独立物品（死亡面具/火球法杖/乔丹）应可共存，互不替换
+        assert!(pr.buy_item(crate::item::ItemId::FireMask));
+        assert!(pr.buy_item(crate::item::ItemId::FireStaff));
+        pr.jordan_unlocked = true; // 乔丹之石：不占物品栏的一次性解锁
+        assert_eq!(pr.items.len(), 3, "独立物品应共存而非互相删除");
+        // 重复购买同一独立物品应失败（不再扣钱）
+        let g = pr.gold;
+        assert!(!pr.buy_item(crate::item::ItemId::FireMask), "重复持有应被拒绝");
+        assert_eq!(pr.gold, g, "重复购买不应扣钱");
+    }
+
+    #[test]
+    fn buy_item_requires_stepwise_tier_upgrade() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 100;
+        pr.mastery.backpack = 3; // 容量充足
+        // 不能跳档：直接买三级靴应失败。
+        assert!(!pr.buy_item(crate::item::ItemId::Boots3), "不能跳档直接买三级");
+        assert!(!pr.buy_item(crate::item::ItemId::Boots2), "首件
