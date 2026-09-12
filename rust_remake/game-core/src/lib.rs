@@ -3,7 +3,6 @@
 //! 该 crate 只包含游戏规则与确定性模拟：定点数、玩家、场地、碰撞、技能。
 //! 渲染与输入在 `client` crate 中处理；联网在阶段 3 接入。
 
-pub mod attribute;
 pub mod balance;
 pub mod fix;
 pub mod meta;
@@ -35,4 +34,6 @@ pub fn version() -> &'static str {
 /// - 改动 `game_core::netcode` 的输入编码；
 /// - 改动 `game_core::world_ser` 的快照格式或**任何会影响模拟的字段**；
 /// - 改动技能/物品数值、世界模拟逻辑（会改变同一输入下的世界演化）。
-pub const PROTOCOL_VERSION: u32 = 6;
+///
+/// v7（2026-09-12）：删除属性购买系统（`Player` 的 speed_mult/armor/spell/kb 因子从快照移除）。
+pub const PROTOCOL_VERSION: u32 = 7;

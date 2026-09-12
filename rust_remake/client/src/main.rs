@@ -57,15 +57,6 @@ const CLIENT_STALE_TICKS: u64 = 180;
 #[cfg(feature = "steam")]
 const MIGRATE_PROBE_TICKS: u64 = 60;/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
-/// 每局发放的成长点（4.6b，占位数值，后续平衡）。
-const GROWTH_PER_ROUND: u32 = 3;
-/// 用金币兑换 1 成长点的成本（占位）。
-const GOLD_PER_GROWTH: i32 = 20;
-/// 某属性已有 `cur` 点时，买下一级成长点的成本（便宜斜坡，占位）。
-fn growth_attr_cost(cur: u32) -> u32 {
-    cur + 1 // base 1，每级 +1
-}
-
 /// Steamworks 应用 AppID（对应根目录 `steam_appid.txt` = 908660）。
 #[cfg(feature = "steam")]
 const APP_ID: u32 = 908660;/// Steam P2P 虚拟端口（host/peer 约定一致）。
@@ -1230,7 +1221,7 @@ impl Game {
                         if profile.buy_item(id) {
                             if let Some(p) = self.world.players.get_mut(me as usize) {
                                 p.set_items(&profile.items);
-                                p.apply_attributes(&profile.attributes);
+                                p.refresh_derived();
                             }
                         }
                     }
@@ -1254,13 +1245,6 @@ impl Game {
                 LearnAction::Category(cat) => {
                     self.shop_category = cat;
                     self.shop_scroll = 0;
-                }
-                LearnAction::Attribute(g) => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        let cur = profile.attributes.current(g);
-                        let cost = growth_attr_cost(cur);
-                        profile.buy_attribute(g, cost);
-                    }
                 }
                 LearnAction::BuySelected => {
                     self.buy_or_upgrade_selected();
@@ -1357,7 +1341,8 @@ impl Game {
     /// - `Z`：用金币换 1 成长点。
     /// - `H`=Hp、`J`=Speed、`K`=Armor、`L`=法抗、`;`=击退。（U/I 蓝量键已随无蓝量系统移除）
     fn poll_growth_buy(&mut self, ctx: &Context) {
-        // 属性页（U0）：Z/H/J/K/L/; 买属性；数字 1-4 买精通（原 U/I/O/P，P 与 solo 开始键解耦）
+        // 属性页（U0）：数字 1-4 买精通（原 U/I/O/P，P 与 solo 开始键解耦）；U 技能上限突破。
+        // 成长点/属性购买已删除（2026-09-12，098c 无此机制）。
         if self.learn_page != 2 {
             return;
         }
@@ -1395,21 +1380,6 @@ impl Game {
         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else {
             return;
         };
-        if just("z") && profile.buy_growth_with_gold(GOLD_PER_GROWTH) {
-            eprintln!("[attr] 金币→成长点：金币 {}", profile.gold);
-        }
-        let mut buy = |g: game_core::attribute::GrowthAttr| {
-            let cur = profile.attributes.current(g);
-            let cost = growth_attr_cost(cur);
-            if profile.buy_attribute(g, cost) {
-                eprintln!("[attr] 买 {g:?} +1（点 {}", profile.attributes.current(g));
-            }
-        };
-        if just("h") { buy(game_core::attribute::GrowthAttr::Hp); }
-        if just("j") { buy(game_core::attribute::GrowthAttr::Speed); }
-        if just("k") { buy(game_core::attribute::GrowthAttr::Armor); }
-        if just("l") { buy(game_core::attribute::GrowthAttr::SpellResist); }
-        if just(";") { buy(game_core::attribute::GrowthAttr::KbResist); }
         // U（原蓝上限键，已退役）→ 技能上限突破（098c 乔丹之石原生化为购买项，每档 +2，价 5）。
         if just("u") && profile.buy_skill_cap_bonus(5) {
             eprintln!("[attr] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
@@ -1498,7 +1468,7 @@ impl Game {
                 // 同步到战斗世界
                 if let Some(p) = self.world.players.get_mut(me as usize) {
                     p.set_items(&profile.items);
-                    p.apply_attributes(&profile.attributes);
+                    p.refresh_derived();
                 }
             } else {
                 eprintln!("[shop] {} 需要 {} 金（现有 {}）", effective.def().name, effective.def().cost, profile.gold);
@@ -1537,10 +1507,6 @@ impl Game {
             self.meta.register_round_win(winner);
         }
         self.meta.finish_round(placement);
-        // 4.6b：每局给所有玩家发成长点（用于买属性）。
-        for profile in self.meta.profiles.iter_mut() {
-            profile.add_growth_points(GROWTH_PER_ROUND);
-        }
     }
 
     /// 进入下一局前：把玩家的技能等级从档案同步到世界，并重置世界。
@@ -1553,9 +1519,9 @@ impl Game {
             for i in 0..p.skill_levels.len().min(profile.skill_levels.len()) {
                 p.skill_levels[i] = profile.skill_levels[i];
             }
-            // 4.6b：把玩家属性（Hp/移速等）派生到战斗数值（确定性纯函数，跨端/跨局一致）。
+            // 把物品派生数值（生命等）同步到战斗世界（确定性纯函数，跨端/跨局一致）。
             p.set_items(&profile.items);
-            p.apply_attributes(&profile.attributes);
+            p.refresh_derived();
         }
         // 诊断：同步后 world 各玩家技能等级。
         eprintln!("[teardown] world post: {:?}", self.world.players.iter().enumerate().map(|(i, p)| (i as u32, p.skill_levels.to_vec())).collect::<Vec<_>>());
@@ -3138,8 +3104,8 @@ impl Game {
                     return Ok(());
                 };
                 let info = format!(
-                    "金币 {}   击杀 {}   最佳名次 #{}   成长点 {}",
-                    me.gold, me.total_kills, me.best_placement, me.growth_points
+                    "金币 {}   击杀 {}   最佳名次 #{}",
+                    me.gold, me.total_kills, me.best_placement
                 );
                 ui::text_center(canvas, ctx, &info, 19.0, ui::theme::text(), sw / 2.0, sh * 0.10)?;
 
@@ -3507,30 +3473,6 @@ impl Game {
                             let label = format!("[U] 技能上限突破 +{} (5G)", me.skill_cap_bonus);
                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::SkillCap));
-                            ay += ui::theme::ROW_H + 4.0;
-                        }
-                        ay += 6.0;
-                        ui::text_left(canvas, ctx, &format!("成长点 {}  ·  按 Z 用金币换成长点", me.growth_points), ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
-                        ay += 22.0;
-                        ui::text_left(canvas, ctx, "属性（点击购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
-                        ay += 22.0;
-                        let attrs: [(game_core::attribute::GrowthAttr, &str, char); 5] = [
-                            (game_core::attribute::GrowthAttr::Hp, "生命", 'H'),
-                            (game_core::attribute::GrowthAttr::Speed, "移速", 'J'),
-                            (game_core::attribute::GrowthAttr::Armor, "护甲", 'K'),
-                            (game_core::attribute::GrowthAttr::SpellResist, "法抗", 'L'),
-                            (game_core::attribute::GrowthAttr::KbResist, "击退", ';'),
-                        ];
-                        for (g, name, keych) in attrs {
-                            let cur = me.attributes.current(g);
-                            let cost = growth_attr_cost(cur);
-                            let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
-                            let hover = r.contains(mouse);
-                            let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
-                            let label = format!("[{keych}] {name}  Lv{cur}  ({cost}点)");
-                            ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
-                            self.learn_hitboxes.push((r, LearnAction::Attribute(g)));
-                            ay += ui::theme::ROW_H + 4.0;
                         }
                     }
                 }
@@ -6223,8 +6165,6 @@ enum LearnAction {
     Page(u8),
     /// 切换商店大类（0=机动 1=防御续航 2=攻击特殊）——补齐鼠标点击（U3）
     Category(u8),
-    /// 购买 1 点成长属性——补齐鼠标点击（U3）
-    Attribute(game_core::attribute::GrowthAttr),
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
