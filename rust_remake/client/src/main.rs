@@ -225,6 +225,10 @@ struct Game {
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 学习阶段当前选中的技能下标（树内第 i 个）；点击技能名称=选中查看详情，不直接购买。
     learn_skill_index: Option<usize>,
+    /// 商店页当前选中项（ItemId；None=未选）。单击只选中看详情，`=` 才购买/卖出。
+    learn_shop_sel: Option<game_core::item::ItemId>,
+    /// 成长页当前选中（0..3=精通类，4=技能上限突破；None=未选）。单击只选中，`=` 才购买。
+    learn_growth_sel: Option<usize>,
     /// 学习界面分页（U0）：0=技能页 1=商店页 2=属性页；数字键只在当前页生效。
     learn_page: u8,
     /// 商店页当前选中大类（§3）：0=机动 1=防御续航 2=攻击特殊（B/N/M 切换）。
@@ -765,7 +769,7 @@ impl Game {
                 total_rounds: init_rounds,
                 learn_time_secs: init_learn_secs as f64,
                 gold_per_round: init_gold_per_round,
-                starting_gold: init_starting_gold,
+                starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { init_starting_gold },
                 place_rewards: init_place_rewards.clone(),
                 ..Default::default()
             };
@@ -773,6 +777,8 @@ impl Game {
             let cfg = MatchConfig {
                 game_mode: init_mode,
                 team_count: if init_mode == 4 { 2 } else { 1 },
+                // Solo 试验场（AppState::Solo/MainMenu 即 sandbox）：给充裕金币，便于一次性试多套技能/物品。
+                starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { 0 },
                 ..Default::default()
             };
             MatchState::new(cfg, &meta_ids, 8)
@@ -813,6 +819,8 @@ impl Game {
             // 默认首选一棵技能树（第一个键 C），让“按数字键绑技能”立即可用，不必先想到去按字母键选树。
             learn_tree_key: game_core::skill::CastKey::ALL.first().copied(),
             learn_skill_index: None,
+            learn_shop_sel: None,
+            learn_growth_sel: None,
             learn_page: 0,
             shop_category: 0,
             shop_scroll: 0,
@@ -1235,40 +1243,19 @@ impl Game {
                     }
                 }
                 LearnAction::Item(id) => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        if profile.buy_item(id) {
-                            if let Some(p) = self.world.players.get_mut(me as usize) {
-                                p.set_items(&profile.items);
-                                p.refresh_derived();
-                            }
-                        }
-                    }
+                    // 单击只选中看详情（不直接购买）；按 `=` 才购买。
+                    self.learn_shop_sel = Some(id);
                 }
                 LearnAction::Sell(id) => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        if profile.sell_item(id) {
-                            if let Some(p) = self.world.players.get_mut(me as usize) {
-                                p.set_items(&profile.items);
-                                p.refresh_derived();
-                            }
-                        }
-                    }
+                    // 卖出模式：单击选中；按 `=` 才卖出。
+                    self.learn_shop_sel = Some(id);
                 }
                 LearnAction::Mastery(kind) => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        if profile.buy_mastery(kind) {
-                            if let Some(wp) = self.world.players.get_mut(me as usize) {
-                                wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
-                            }
-                        }
-                    }
+                    // 成长页：单击选中；按 `=` 才购买。
+                    self.learn_growth_sel = Some(kind);
                 }
                 LearnAction::SkillCap => {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        if profile.buy_skill_cap_bonus(5) {
-                            eprintln!("[learn] skill cap bonus -> +{}", profile.skill_cap_bonus);
-                        }
-                    }
+                    self.learn_growth_sel = Some(4);
                 }
                 LearnAction::Category(cat) => {
                     self.shop_category = cat;
@@ -1369,48 +1356,50 @@ impl Game {
     /// - `Z`：用金币换 1 成长点。
     /// - `H`=Hp、`J`=Speed、`K`=Armor、`L`=法抗、`;`=击退。（U/I 蓝量键已随无蓝量系统移除）
     fn poll_growth_buy(&mut self, ctx: &Context) {
-        // 属性页（U0）：数字 1-4 买精通（原 U/I/O/P，P 与 solo 开始键解耦）；U 技能上限突破。
-        // 成长点/属性购买已删除（2026-09-12，098c 无此机制）。
+        // 成长页：数字 1-4 / U **只选中**（看详情）；`=`/回车 才确认购买（与技能页一致）。
         if self.learn_page != 2 {
             return;
         }
-        {
-            use ggez::input::keyboard::Key;
-            let me = self.self_index();
-            const MASTERY: [(&str, usize); 4] =
-                [("生命精通", 0), ("范围精通", 1), ("射程精通", 2), ("背包研究", 3)];
-            for (i, (name, kind)) in MASTERY.iter().enumerate() {
-                let digit = char::from(b'1' + i as u8).to_string();
-                if ctx.keyboard.is_logical_key_just_pressed(&Key::Character(digit.into())) {
-                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
-                        if profile.buy_mastery(*kind) {
-                            eprintln!("[learn] 精通 {name} -> Lv{}", match kind { 0 => profile.mastery.life, 1 => profile.mastery.range, 2 => profile.mastery.time, _ => profile.mastery.backpack });
-                            if let Some(wp) = self.world.players.get_mut(me as usize) {
-                                wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
-                            }
-                        } else {
-                            eprintln!(
-                                "[learn] 精通 {name} 需要 {} 金或已达上限 {}",
-                                game_core::meta::Mastery::COSTS[*kind],
-                                game_core::meta::Mastery::CAPS[*kind]
-                            );
-                        }
-                    }
-                }
-            }
-        }
         use ggez::input::keyboard::Key;
         let me = self.self_index();
-        let just = |k: &str| {
-            ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.into()))
-                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_uppercase().into()))
+        const MASTERY: [(&str, usize); 4] =
+            [("生命精通", 0), ("范围精通", 1), ("射程精通", 2), ("背包研究", 3)];
+        for (i, _) in MASTERY.iter().enumerate() {
+            let digit = char::from(b'1' + i as u8).to_string();
+            if ctx.keyboard.is_logical_key_just_pressed(&Key::Character(digit.into())) {
+                self.learn_growth_sel = Some(i);
+            }
+        }
+        if Self::char_just(ctx, "u") {
+            self.learn_growth_sel = Some(4); // 4 = 技能上限突破
+        }
+        let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter));
+        if !confirm {
+            return;
+        }
+        let Some(sel) = self.learn_growth_sel else {
+            return;
         };
         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else {
             return;
         };
-        // U（原蓝上限键，已退役）→ 技能上限突破（098c 乔丹之石原生化为购买项，每档 +2，价 5）。
-        if just("u") && profile.buy_skill_cap_bonus(5) {
-            eprintln!("[attr] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
+        if sel == 4 {
+            if profile.buy_skill_cap_bonus(5) {
+                eprintln!("[learn] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
+            }
+        } else if profile.buy_mastery(sel) {
+            let name = MASTERY[sel].0;
+            eprintln!("[learn] 精通 {name} 已升级");
+            if let Some(wp) = self.world.players.get_mut(me as usize) {
+                wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
+            }
+        } else {
+            eprintln!(
+                "[learn] 精通 {sel} 需要 {} 金或已达上限 {}",
+                game_core::meta::Mastery::COSTS[sel],
+                game_core::meta::Mastery::CAPS[sel]
+            );
         }
     }
 
@@ -1489,7 +1478,7 @@ impl Game {
             .take(max_rows)
             .copied()
             .collect();
-        let mut sold_or_bought = false;
+        // 数字键：只**选中**对应行（看详情）；购买/卖出需按 `=` 确认（与技能页一致）。
         for (i, k) in keys.iter().enumerate() {
             let pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character((*k).into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_uppercase().into()));
@@ -1499,31 +1488,34 @@ impl Game {
             let Some(entry) = visible.get(i) else {
                 continue;
             };
-            if self.shop_sell_mode {
-                // 卖出：按 sell 价返还金币并移除。
-                if let Some(id) = entry.owned {
-                    if profile.sell_item(id) {
+            let id = if self.shop_sell_mode { entry.owned } else { entry.target };
+            if let Some(id) = id {
+                self.learn_shop_sel = Some(id);
+            }
+        }
+        // `=`/回车：确认购买/卖出当前选中项。
+        let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter));
+        let mut sold_or_bought = false;
+        if confirm {
+            if let Some(id) = self.learn_shop_sel {
+                if self.shop_sell_mode {
+                    if profile.items.contains(&id) && profile.sell_item(id) {
                         eprintln!("[shop] 卖出 {}（+{} 金，余 {}）", id.def().name, id.def().sell, profile.gold);
                         sold_or_bought = true;
                     }
+                } else {
+                    let slots = profile.inventory_slots();
+                    let owned = profile.items.iter().any(|it| it.def().family == id.def().family);
+                    if !owned && profile.items.len() >= slots {
+                        eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
+                    } else if profile.buy_item(id) {
+                        eprintln!("[shop] 购买 {}（-{} 金，余 {}）", id.def().name, id.def().cost, profile.gold);
+                        sold_or_bought = true;
+                    } else {
+                        eprintln!("[shop] {} 不可购买（需 {} 金，现有 {}）", id.def().name, id.def().cost, profile.gold);
+                    }
                 }
-                continue;
-            }
-            // 购买：只能买目标档（无持有=最低档；持低=下一档；满级=None）。
-            let Some(target) = entry.target else {
-                eprintln!("[shop] {} 已满级", entry.family.name_zh());
-                continue;
-            };
-            let slots = profile.inventory_slots();
-            if entry.owned.is_none() && profile.items.len() >= slots {
-                eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
-                break;
-            }
-            if profile.buy_item(target) {
-                eprintln!("[shop] 购买 {}（-{} 金，余 {}）", target.def().name, target.def().cost, profile.gold);
-                sold_or_bought = true;
-            } else {
-                eprintln!("[shop] {} 需要 {} 金（现有 {}）", target.def().name, target.def().cost, profile.gold);
             }
         }
         if sold_or_bought {
@@ -3556,7 +3548,14 @@ impl Game {
                                         None => (format!("[{key}] {} 已满级", e.family.name_zh()), true, None, ""),
                                     }
                                 };
-                            let st = if disabled {
+                            let row_id = match action {
+                                Some(LearnAction::Item(id)) | Some(LearnAction::Sell(id)) => Some(id),
+                                _ => None,
+                            };
+                            let selected = row_id.is_some() && row_id == self.learn_shop_sel;
+                            let st = if selected {
+                                ui::RowState::Selected
+                            } else if disabled {
                                 ui::RowState::Normal
                             } else if hover {
                                 ui::RowState::Hover
@@ -3577,14 +3576,14 @@ impl Game {
                         }
                         ui::text_left(
                             canvas, ctx,
-                            &format!("共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· V 切换买/卖", entries.len(), start + 1, end),
+                            &format!("共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· 数字选中、= 确认、V 切换买/卖", entries.len(), start + 1, end),
                             ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 22.0,
                         )?;
                     }
                     _ => {
                         // 成长页：精通 1-4（可点）+ 技能上限突破（可点）
                         let mut ay = panel_y + 14.0;
-                        ui::text_left(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留；上限见各档 x/6）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ui::text_left(canvas, ctx, "精通 / 上限突破（数字或点击选中、= 确认购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
                         ay += 22.0;
                         let mm = [
                             ("生命精通", m.life, 0usize),
@@ -3595,7 +3594,13 @@ impl Game {
                         for (name, lv, kind) in mm {
                             let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
-                            let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+                            let st = if self.learn_growth_sel == Some(kind) {
+                                ui::RowState::Selected
+                            } else if hover {
+                                ui::RowState::Hover
+                            } else {
+                                ui::RowState::Normal
+                            };
                             let label = format!(
                                 "[{}] {} Lv{}/{} ({}G)",
                                 kind + 1, name, lv, game_core::meta::Mastery::CAPS[kind], game_core::meta::Mastery::COSTS[kind]
@@ -3608,7 +3613,13 @@ impl Game {
                         {
                             let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
-                            let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+                            let st = if self.learn_growth_sel == Some(4) {
+                                ui::RowState::Selected
+                            } else if hover {
+                                ui::RowState::Hover
+                            } else {
+                                ui::RowState::Normal
+                            };
                             let label = format!("[U] 技能上限突破 +{} (5G)", me.skill_cap_bonus);
                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::SkillCap));
