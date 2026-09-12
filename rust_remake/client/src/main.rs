@@ -1381,15 +1381,18 @@ impl Game {
                         }
                     }
                 }
-                LearnAction::Item(id) => {
-                    // 单击只选中看详情（不直接购买）；按 `=`/回车 才购买。
+                LearnAction::ShopSelect(id) => {
+                    // 单击列表行只选中看详情（不直接买卖）；按 `=`/退格 或点详情按钮才执行。
                     self.learn_shop_sel = Some(id);
                 }
-                LearnAction::Sell(id) => {
-                    // 卖出模式：单击选中；按 `=` 才卖出。
+                LearnAction::ShopBuy(id) => {
+                    // 详情区「购买」按钮：设选中并执行（shop_confirm 按是否持有决定买/卖，此处必为买）。
                     self.learn_shop_sel = Some(id);
+                    self.shop_confirm();
                 }
-                LearnAction::ShopConfirm => {
+                LearnAction::ShopSell(id) => {
+                    // 详情区「卖出」按钮：设选中并执行卖出。
+                    self.learn_shop_sel = Some(id);
                     self.shop_confirm();
                 }
                 LearnAction::GrowthConfirm => {
@@ -1544,84 +1547,66 @@ impl Game {
         let _ = (me, MASTERY);
     }
 
-    /// 商店页行列表：**两区并列** —— 先「可购买」（受左栏分类筛选），后「已持有（可卖）」。
-    /// 返回 `(标签, 动作, 悬停描述)`，绘制与键盘选择共用同一构造，避免两处不一致。
+    /// 商店页行列表（**每家族/单体一行**，受左栏分类筛选）。
     ///
-    /// 为何不做「买/卖模式」：098c 里买（`u000` 商店）与卖（`u005` Sell）本就是两个入口；
-    /// 而列表**内容**随买卖而变（买=每家族下一步，卖=已持有），
-    /// 并列两区即可免去模式状态，还能一眼看清「能买什么 / 手里有什么」。
+    /// 行只描述物品本身（名称 + 当前档 → 目标档 + 价格），**不再带 `[买]`/`[卖]` 前缀**；
+    /// 买卖动作改由选中后的详情报里的两个按钮（各带快捷键 + 禁用态）承担，
+    /// 与技能页「列表 + 详情」的交互一致。绘制与键盘选择共用同一构造。
     fn shop_rows(
         me: &game_core::meta::PlayerProfile,
         category: u8,
-    ) -> Vec<(String, Option<LearnAction>, Option<LearnAction>, &'static str)> {
-        // **一行两动作**（用户建议，2026-09-12）：同一件物品不再占"买一行 / 卖一行"两行 ——
-        //   `=`/回车 = 购买或升级该家族；`退格`/`Delete` = 卖出当前持有的该家族物品（若有）。
-        // 返回 `(标签, 主动作, 次动作(卖出), 说明)`。
-        let mut rows: Vec<(String, Option<LearnAction>, Option<LearnAction>, &'static str)> = Vec::new();
+    ) -> Vec<ShopRow> {
+        let mut rows: Vec<ShopRow> = Vec::new();
         for e in game_core::item::shop_category_entries(category, &me.items) {
-            let sell = e.owned.map(LearnAction::Sell);
-            match e.target {
-                Some(t) => {
-                    let d = t.def();
-                    let base = match e.owned {
-                        Some(cur) => format!("[买] {} → {}  {}G", cur.def().name, d.name, d.cost),
-                        None => format!("[买] {}  {}G", d.name, d.cost),
-                    };
-                    let label = if me.gold >= d.cost { base } else { format!("{base}（金币不足）") };
-                    let label = if e.owned.is_none() && me.items.len() >= me.inventory_slots() {
-                        format!("{label}（背包已满）")
-                    } else {
-                        label
-                    };
-                    rows.push((label, Some(LearnAction::Item(t)), sell, d.desc));
-                }
-                None => match e.owned {
-                    Some(cur) => {
-                        let d = cur.def();
-                        rows.push((
-                            format!("[卖] {}  已满级  +{}G", d.name, d.sell),
-                            Some(LearnAction::Sell(cur)),
-                            None,
-                            d.desc,
-                        ));
-                    }
-                    None => rows.push((format!("[买] {}（已满级）", e.family.name_zh()), None, None, "")),
-                },
-            }
+            let buy = e.target;
+            let sell = e.owned;
+            // 描述优先展示可购买目标（未购/可升级时玩家最关心升到哪），否则展示已持有物。
+            let desc = buy.or(sell).map(|id| id.def().desc).unwrap_or("");
+            let label = match (sell, buy) {
+                (Some(cur), Some(t)) => format!("{} → {}  {}G", cur.def().name, t.def().name, t.def().cost),
+                (Some(cur), None) => format!("{}  （已满级）", cur.def().name),
+                (None, Some(t)) => format!("{}  {}G", t.def().name, t.def().cost),
+                (None, None) => format!("{}  （不可购买）", e.family.name_zh()),
+            };
+            rows.push(ShopRow { label, buy, sell, desc });
         }
         rows
     }
 
+    /// 不能购买该行的原因；`None` = 可购买。绘制时据此把「购买」按钮置灰并写明原因。
+    fn shop_buy_block(
+        me: &game_core::meta::PlayerProfile,
+        row: &ShopRow,
+    ) -> Option<&'static str> {
+        let Some(target) = row.buy else { return Some("已满级") };
+        // 同家族升级是替换而非新增，不受物品栏容量限制（对齐 buy_item 内部逻辑）。
+        let same_family = row.sell.is_some();
+        if !same_family && me.items.len() >= me.inventory_slots() {
+            return Some("背包已满");
+        }
+        if me.gold < target.def().cost {
+            return Some("金币不足");
+        }
+        None
+    }
+
     /// 由商店行模型解析"退格/Delete 该卖出哪件物品"（**纯函数**，便于单测）。
     ///
-    /// - 选中行的主动作对应该家族 → 卖该家族**当前持有**的那件（行模型的次动作）；
-    /// - 选中行本身是卖出行（满级家族）→ 卖它自己；
-    /// - **未选中**时回退到第一件可卖物品（退格不必先选择）。
+    /// - 选中行有可卖物 → 卖该家族**当前持有**的那件；
+    /// - 选中行无（未持有）→ 回退到第一件可卖物品；
+    /// - **未选中**时同样回退（退格不必先选择）。
     fn shop_sell_target(
-        rows: &[(String, Option<LearnAction>, Option<LearnAction>, &'static str)],
+        rows: &[ShopRow],
         sel: Option<game_core::item::ItemId>,
     ) -> Option<game_core::item::ItemId> {
-        let action_id = |a: &Option<LearnAction>| match a {
-            Some(LearnAction::Item(id)) | Some(LearnAction::Sell(id)) => Some(*id),
-            _ => None,
-        };
         if let Some(sel) = sel {
-            for (_, act, alt, _) in rows {
-                if action_id(act) == Some(sel) {
-                    if let Some(LearnAction::Sell(sid)) = alt {
-                        return Some(*sid);
-                    }
-                    if let Some(LearnAction::Sell(sid)) = act {
-                        return Some(*sid);
-                    }
+            if let Some(row) = rows.iter().find(|r| r.contains(sel)) {
+                if let Some(sid) = row.sell {
+                    return Some(sid);
                 }
             }
         }
-        rows.iter().find_map(|(_, act, alt, _)| match (act, alt) {
-            (_, Some(LearnAction::Sell(sid))) => Some(*sid),
-            (Some(LearnAction::Sell(sid)), _) => Some(*sid),
-            _ => None,
-        })
+        rows.iter().find_map(|r| r.sell)
     }
 
     fn shop_confirm(&mut self) {
@@ -1675,6 +1660,22 @@ impl Game {
         }
     }
 
+    /// 成长页：某精通当前等级。
+    fn mastery_level(me: &game_core::meta::PlayerProfile, kind: usize) -> u8 {
+        [me.mastery.life, me.mastery.range, me.mastery.time, me.mastery.backpack][kind]
+    }
+
+    /// 不能购买该精通的原因；`None` = 可购买。绘制时据此把按钮置灰并写明原因。
+    fn mastery_block(me: &game_core::meta::PlayerProfile, kind: usize) -> Option<&'static str> {
+        if Self::mastery_level(me, kind) >= game_core::meta::Mastery::CAPS[kind] {
+            return Some("已满级");
+        }
+        if me.gold < game_core::meta::Mastery::COSTS[kind] {
+            return Some("金币不足");
+        }
+        None
+    }
+
     /// M3 商店（学习期，§3 改造）：左栏三大类，B/N/M 切换；右栏当前类明细，
     /// 数字键 1..9/0/- 购买可见窗口条目；持有同家族低档时为「升级」（buy_item 内替换）。
     fn poll_shop(&mut self, ctx: &Context) {
@@ -1721,31 +1722,20 @@ impl Game {
         }
 
         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
-        // 数字键：只**选中**对应行（看详情）；买/卖需按 `=`/回车 确认（与技能页一致）。
+        // 数字键：只**选中**对应行（看详情）；买/卖需按 `=`/退格 或点详情按钮（与技能页一致）。
         for (i, k) in keys.iter().enumerate() {
             let pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character((*k).into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_uppercase().into()));
             if !pressed {
                 continue;
             }
-            let Some((_, action, alt, _)) = rows.get(self.shop_scroll + i) else {
+            let Some(row) = rows.get(self.shop_scroll + i) else {
                 continue;
             };
-            if let Some(LearnAction::Item(id) | LearnAction::Sell(id)) =
-                (*action).or(*alt)
-            {
-                self.learn_shop_sel = Some(id);
-            }
+            self.learn_shop_sel = row.select_id();
         }
-        // `=`/回车：确认执行当前选中行（买或卖由行决定）。
-        // **退格 / Delete：卖出当前选中行所持有的物品**（用户建议：与 `=` 同一行两动作）。
-        let sell_key = ctx
-            .keyboard
-            .is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Backspace))
-            || ctx
-                .keyboard
-                .is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Delete));
-        if sell_key {
+        // **退格 / Delete：卖出**（选中行持有该家族物品则卖它；否则回退到第一件可卖物）。
+        if keys::sell_just(ctx) {
             match Self::shop_sell_target(&rows, self.learn_shop_sel) {
                 Some(sid) => {
                     eprintln!("[shop] 退格：卖出 {}", sid.def().name);
@@ -1757,9 +1747,18 @@ impl Game {
                 }
             }
         }
-        let confirm = keys::confirm_just(ctx);
-        if confirm {
-            self.shop_confirm();
+        // `=`/回车：只走**购买/升级**（行无购买目标时提示，不误卖出）。
+        if keys::confirm_just(ctx) {
+            let row = self
+                .learn_shop_sel
+                .and_then(|sel| rows.iter().find(|r| r.contains(sel)));
+            match row.and_then(|r| r.buy) {
+                Some(t) => {
+                    self.learn_shop_sel = Some(t);
+                    self.shop_confirm();
+                }
+                None => eprintln!("[shop] 该物品已满级，无法购买（按退格可卖出）"),
+            }
         }
     }
 
@@ -3698,7 +3697,6 @@ impl Game {
                 let right_w = sw - right_x - pad;
                 let panel_y = sh * 0.20;
                 let panel_h = sh * 0.74;
-                let right_edge = right_x + right_w;
                 let bot_edge = panel_y + panel_h;
                 ui::panel(canvas, ctx, graphics::Rect::new(left_x, panel_y, left_w, panel_h), Some("配装总览"))?;
                 ui::panel(canvas, ctx, graphics::Rect::new(right_x, panel_y, right_w, panel_h), None)?;
@@ -3975,13 +3973,13 @@ impl Game {
                     1 => {
                         // 商店页：左小栏三大类（只筛选「可购买」区）+ 右明细（**两区并列**：可购买 / 持有可卖）。
                         // 不再有「买/卖模式」：每行自带 `[买]`/`[卖]` 前缀，数字选中、= / 回车 执行该行动作。
-                        let cat_w = content_w * 0.34;
-                        let item_x = rx + cat_w + 12.0;
-                        let item_w = right_edge - item_x - pad;
+                        // 商店页：与技能页同构 —— 顶部选分类 → 中部物品列表（数字选中）→
+                        // 详情区显示描述 + 「购买」「卖出」两个按钮（各带快捷键，不可用时置灰并写明原因）。
+                        let cat_w = (content_w / 3.0) - 6.0;
                         let mut cy = panel_y + 14.0;
                         for (ci, name) in game_core::item::SHOP_CATEGORIES.iter().enumerate() {
                             let sel = ci as u8 == self.shop_category;
-                            let r = graphics::Rect::new(rx, cy, cat_w, ui::theme::ROW_H);
+                            let r = graphics::Rect::new(rx + ci as f32 * (cat_w + 9.0), cy, cat_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
                             let st = if sel {
                                 ui::RowState::Selected
@@ -3992,60 +3990,30 @@ impl Game {
                             };
                             ui::row(canvas, ctx, r, &format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], name), ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::Category(ci as u8)));
-                            cy += ui::theme::ROW_H + 4.0;
                         }
-                        let rows = Self::shop_rows(me, self.shop_category);
-                        let rows_len = rows.len();
-                        // 物品栏状态区：画在**左侧分类栏下方**（那里是空白）。
-                        // 之前画在 `panel_y - 18.0`（面板上方）会被顶出屏幕/被面板遮住，玩家看不到。
-                        let mut hy = cy + 10.0;
+                        cy += ui::theme::ROW_H + 10.0;
                         ui::text_left(
                             canvas, ctx,
                             &format!("物品栏 {}/{}    金币 {}G", me.items.len(), me.inventory_slots(), me.gold),
-                            ui::theme::SMALL, ui::theme::accent(), rx, hy,
+                            ui::theme::SMALL, ui::theme::accent(), rx, cy,
                         )?;
-                        hy += 20.0;
-                        ui::text_left(canvas, ctx, "当前持有：", ui::theme::SMALL, ui::theme::text_dim(), rx, hy)?;
-                        hy += 18.0;
-                        if me.items.is_empty() {
-                            ui::text_left(canvas, ctx, "（无）", ui::theme::SMALL, ui::theme::text_dim(), rx, hy)?;
-                        } else {
-                            for id in me.items.iter() {
-                                // 名称自带档位（如「Boots 3」），玩家能直接看出各家族的当前档。
-                                ui::text_left(
-                                    canvas, ctx,
-                                    &format!("· {}（回收 +{}G）", id.def().name, id.def().sell),
-                                    ui::theme::SMALL, ui::theme::text_dim(), rx, hy,
-                                )?;
-                                hy += 18.0;
-                            }
-                        }
-                        let visible = 10usize;
+                        cy += 24.0;
+
+                        let rows = Self::shop_rows(me, self.shop_category);
+                        let rows_len = rows.len();
+                        let visible = 8usize;
                         let (start, end) = ui::scroll_window(rows_len, visible, self.shop_scroll);
                         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
-                        let mut iy = panel_y + 14.0;
-                        let mut hover_desc: Option<&'static str> = None;
-                        for (ni, (label, action, sell_alt, desc)) in rows.into_iter().enumerate().take(end).skip(start) {
+                        // 选中行克隆一份供详情区使用（避免与行列表的借用冲突）。
+                        let selected_row: Option<ShopRow> = self
+                            .learn_shop_sel
+                            .and_then(|sel| rows.iter().find(|r| r.contains(sel)).cloned());
+                        let mut iy = cy;
+                        for (ni, row) in rows.iter().enumerate().take(end).skip(start) {
                             let key = keys.get(ni - start).copied().unwrap_or("");
-                            let r = graphics::Rect::new(item_x, iy, item_w, ui::theme::ROW_H);
+                            let r = graphics::Rect::new(rx, iy, content_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
-                            // 主动作优先；只有次动作（卖出）时以它为准（如"已满级"行）。
-                            // 注：此处在 `into_iter()` 的**拥有**上下文里，无需解引用。
-                            let row_action = action.or(sell_alt);
-                            let row_id = match &row_action {
-                                Some(LearnAction::Item(id)) | Some(LearnAction::Sell(id)) => Some(*id),
-                                _ => None,
-                            };
-                            let selected = row_id.is_some() && row_id == self.learn_shop_sel;
-                            // 把**两个动作**都标在行上，避免"看起来都靠等号"：
-                            //   `=`/回车 = 购买或升级；`退格`/`Delete` = 卖出当前持有物（标注回收金）。
-                            let label = if let Some(LearnAction::Sell(sid)) = sell_alt {
-                                format!("{label}   [= 操作 · 退格 卖出 +{}G]", sid.def().sell)
-                            } else if matches!(action, Some(LearnAction::Sell(_))) {
-                                format!("{label}   [= 或 退格 卖出]")
-                            } else {
-                                label
-                            };
+                            let selected = row.select_id() == self.learn_shop_sel;
                             let st = if selected {
                                 ui::RowState::Selected
                             } else if hover {
@@ -4053,45 +4021,84 @@ impl Game {
                             } else {
                                 ui::RowState::Normal
                             };
-                            ui::row(canvas, ctx, r, &format!("[{key}] {label}"), ui::theme::BODY, st)?;
-                            if let Some(a) = action {
-                                self.learn_hitboxes.push((r, a));
+                            ui::row(canvas, ctx, r, &format!("[{key}] {}", row.label), ui::theme::BODY, st)?;
+                            if let Some(id) = row.select_id() {
+                                self.learn_hitboxes.push((r, LearnAction::ShopSelect(id)));
                             }
-                            if hover && !desc.is_empty() {
-                                hover_desc = Some(desc);
+                            iy += ui::theme::ROW_H + 4.0;
+                        }
+                        iy += 6.0;
+
+                        // ---- 详情区：名称 / 描述 / 购买按钮 / 卖出按钮 ----
+                        match &selected_row {
+                            Some(row) => {
+                                let name = row.buy.or(row.sell).map(|id| id.def().name).unwrap_or("");
+                                ui::text_left(canvas, ctx, name, ui::theme::BODY, ui::theme::accent(), rx, iy)?;
+                                iy += 24.0;
+                                if !row.desc.is_empty() {
+                                    iy = ui::text_wrapped(canvas, ctx, row.desc, ui::theme::SMALL, ui::theme::text_dim(), rx, iy, content_w)?;
+                                }
+                                iy += 4.0;
+                                // 购买按钮：不可买时置灰并写明原因。
+                                let buy_block = Self::shop_buy_block(me, row);
+                                let (buy_label, buy_ok) = match (row.buy, buy_block) {
+                                    (Some(t), None) => (format!("{} 购买 {}（{}G）", keys::CONFIRM_HINT, t.def().name, t.def().cost), true),
+                                    (Some(t), Some(reason)) => (format!("{} 购买 {}（{}G）— {}", keys::CONFIRM_HINT, t.def().name, t.def().cost, reason), false),
+                                    (None, _) => (format!("{} 购买 — 已满级", keys::CONFIRM_HINT), false),
+                                };
+                                let br = graphics::Rect::new(rx, iy, content_w, ui::theme::ROW_H);
+                                let bst = if buy_ok {
+                                    if br.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+                                } else {
+                                    ui::RowState::Disabled
+                                };
+                                ui::row(canvas, ctx, br, &buy_label, ui::theme::BODY, bst)?;
+                                if buy_ok {
+                                    if let Some(t) = row.buy {
+                                        self.learn_hitboxes.push((br, LearnAction::ShopBuy(t)));
+                                    }
+                                }
+                                iy += ui::theme::ROW_H + 4.0;
+                                // 卖出按钮：未持有时置灰。
+                                let (sell_label, sell_ok) = match row.sell {
+                                    Some(sid) => (format!("{} 卖出 {}（+{}G）", keys::SELL_HINT, sid.def().name, sid.def().sell), true),
+                                    None => (format!("{} 卖出 — 未持有该物品", keys::SELL_HINT), false),
+                                };
+                                let sr = graphics::Rect::new(rx, iy, content_w, ui::theme::ROW_H);
+                                let sst = if sell_ok {
+                                    if sr.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+                                } else {
+                                    ui::RowState::Disabled
+                                };
+                                ui::row(canvas, ctx, sr, &sell_label, ui::theme::BODY, sst)?;
+                                if sell_ok {
+                                    if let Some(sid) = row.sell {
+                                        self.learn_hitboxes.push((sr, LearnAction::ShopSell(sid)));
+                                    }
+                                }
                             }
-                            iy += ui::theme::ROW_H + 2.0;
+                            None => {
+                                ui::text_left(
+                                    canvas, ctx, "← 点上方物品查看详情 / 购买 / 卖出",
+                                    ui::theme::SMALL, ui::theme::text_dim(), rx, iy,
+                                )?;
+                            }
                         }
-                        // 可点的确认行（与键盘 `=`/回车 等价；鼠标用户从选中到执行不用离开鼠标）
-                        let cr = graphics::Rect::new(item_x, iy + 2.0, item_w, ui::theme::ROW_H);
-                        let chover = cr.contains(mouse);
-                        let cst = if chover { ui::RowState::Hover } else { ui::RowState::Normal };
-                        ui::row(canvas, ctx, cr, "[= / 回车] 确认执行选中行（[买] 购买 · [卖] 卖出）", ui::theme::BODY, cst)?;
-                        self.learn_hitboxes.push((cr, LearnAction::ShopConfirm));
-                        if let Some(desc) = hover_desc {
-                            ui::text_left(canvas, ctx, desc, ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 44.0)?;
-                        }
+                        let range = if rows_len == 0 { "（无）".to_string() } else { format!("（{}-{}）", start + 1, end) };
                         ui::text_left(
                             canvas, ctx,
-                            &format!(
-                                "共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· 数字选中 · = 或回车 执行（[买] 购买 / [卖] 卖出）",
-                                rows_len, start + 1, end
-                            ),
-                            ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 22.0,
+                            &format!("共 {rows_len} 条 · 滚轮/↑↓ 滚动 {range} · 数字选中"),
+                            ui::theme::SMALL, ui::theme::text_dim(), rx, bot_edge - 22.0,
                         )?;
                     }
                     _ => {
-                        // 成长页：精通 1-4（可点）+ 技能上限突破（可点）
+                        // 成长页：精通列表（数字选中）→ 详情区显示描述 + 「购买」按钮
+                        // （带快捷键，金币不足/满级时置灰并写明原因）。
                         let mut ay = panel_y + 14.0;
-                        ui::text_left(canvas, ctx, "精通 / 上限突破（数字或点击选中，= 或回车 确认购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
-                        ay += 22.0;
-                        let mm = [
-                            ("生命精通", m.life, 0usize),
-                            ("范围精通", m.range, 1),
-                            ("射程精通", m.time, 2),
-                            ("背包研究", m.backpack, 3),
-                        ];
-                        for (name, lv, kind) in mm {
+                        ui::text_left(canvas, ctx, &format!("金币 {}G", me.gold), ui::theme::SMALL, ui::theme::accent(), rx, ay)?;
+                        ay += 24.0;
+                        for (kind, (name, _)) in MASTERY_INFO.iter().enumerate() {
+                            let lv = Self::mastery_level(me, kind);
                             let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
                             let st = if self.learn_growth_sel == Some(kind) {
@@ -4101,29 +4108,51 @@ impl Game {
                             } else {
                                 ui::RowState::Normal
                             };
-                            let label = format!(
-                                "[{}] {} Lv{}/{} ({}G)",
-                                kind + 1, name, lv, game_core::meta::Mastery::CAPS[kind], game_core::meta::Mastery::COSTS[kind]
-                            );
+                            let label = format!("[{}] {}  Lv{}/{}", kind + 1, name, lv, game_core::meta::Mastery::CAPS[kind]);
                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::Mastery(kind)));
                             ay += ui::theme::ROW_H + 4.0;
                         }
-                        // 说明：技能上限突破改由**乔丹之石戒指 + 技能详情**触发（098c 语义），此页不再出售。
+                        ay += 8.0;
+                        // ---- 详情区：名称 / 描述 / 购买按钮 ----
+                        match self.learn_growth_sel {
+                            Some(kind) => {
+                                let (name, desc) = MASTERY_INFO[kind];
+                                let lv = Self::mastery_level(me, kind);
+                                let cost = game_core::meta::Mastery::COSTS[kind];
+                                let cap = game_core::meta::Mastery::CAPS[kind];
+                                ui::text_left(canvas, ctx, &format!("{name}  Lv{lv} / {cap}"), ui::theme::BODY, ui::theme::accent(), rx, ay)?;
+                                ay += 24.0;
+                                ay = ui::text_wrapped(canvas, ctx, desc, ui::theme::SMALL, ui::theme::text_dim(), rx, ay, content_w)?;
+                                ay += 4.0;
+                                let block = Self::mastery_block(me, kind);
+                                let (label, enabled) = match block {
+                                    None => (format!("{} 购买（{}G）", keys::CONFIRM_HINT, cost), true),
+                                    Some(reason) => (format!("{} 购买（{}G）— {}", keys::CONFIRM_HINT, cost, reason), false),
+                                };
+                                let br = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+                                let bst = if enabled {
+                                    if br.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+                                } else {
+                                    ui::RowState::Disabled
+                                };
+                                ui::row(canvas, ctx, br, &label, ui::theme::BODY, bst)?;
+                                if enabled {
+                                    self.learn_hitboxes.push((br, LearnAction::GrowthConfirm));
+                                }
+                            }
+                            None => {
+                                ui::text_left(
+                                    canvas, ctx, "← 点上方精通查看详情 / 购买",
+                                    ui::theme::SMALL, ui::theme::text_dim(), rx, ay,
+                                )?;
+                            }
+                        }
                         ui::text_left(
                             canvas, ctx,
-                            "（技能上限突破：把技能升满后按「突破上限 +2」。098c：每颗乔丹之石戒指 5 金、\n用掉即消耗，**可反复购买**——即每次 +2 都要 5 金；戒指不占物品栏）",
-                            ui::theme::SMALL, ui::theme::text_dim(), rx, ay,
+                            "（技能上限突破在「技能」页详情里用乔丹之石，不在此页）",
+                            ui::theme::SMALL, ui::theme::text_dim(), rx, bot_edge - 22.0,
                         )?;
-                        ay += 24.0;
-                        {
-                            // 可点的确认按钮（与键盘 `=`/回车 等价）。
-                            let cr = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
-                            let chover = cr.contains(mouse);
-                            let cst = if chover { ui::RowState::Hover } else { ui::RowState::Normal };
-                            ui::row(canvas, ctx, cr, "[= / 回车] 确认购买选中项", ui::theme::BODY, cst)?;
-                            self.learn_hitboxes.push((cr, LearnAction::GrowthConfirm));
-                        }
                     }
                 }
 
@@ -4131,8 +4160,8 @@ impl Game {
                 // 否则在商店/成长页会显示技能页的键，造成误导。
                 let hint = match self.learn_page {
                     0 => "字母选树 · 数字选技能看详情 · = 或回车 购买/升级/乔丹突破 · B 切形态 · J/K/L 翻页",
-                    1 => "B/N/M 选分类 · 数字选中 · =/回车 购买/升级 · 退格 卖出持有物 · 滚轮/↑↓ 滚动 · J/K/L 翻页",
-                    _ => "数字选精通 · = 或回车 确认购买（上限突破在「技能」页详情里用乔丹之石）· J/K/L 翻页",
+                    1 => "B/N/M 选分类 · 数字选中 · = 购买/升级 · 退格 卖出 · 滚轮/↑↓ 滚动 · J/K/L 翻页",
+                    _ => "数字选精通 · = 或回车 购买 · J/K/L 翻页（技能上限突破在「技能」页）",
                 };
                 ui::text_center(
                     canvas, ctx, hint,
@@ -7599,12 +7628,12 @@ enum LearnAction {
     BuySelected,
     /// 切换技能 A/B 形态
     Form(game_core::skill::SkillId),
-    /// 购买物品
-    Item(game_core::item::ItemId),
-    /// 卖出物品（098c `-sell` 原生化为界面操作）
-    Sell(game_core::item::ItemId),
-    /// 商店：确认购买/卖出当前选中项（等价 `=`）
-    ShopConfirm,
+    /// 商店：选中某一行查看详情（不直接买卖）
+    ShopSelect(game_core::item::ItemId),
+    /// 商店详情：购买/升级该物品（等价 `=`/回车）
+    ShopBuy(game_core::item::ItemId),
+    /// 商店详情：卖出该物品（等价 退格/Delete）
+    ShopSell(game_core::item::ItemId),
     /// 成长：确认购买当前选中项（等价 `=`）
     GrowthConfirm,
     /// 技能详情：用乔丹之石突破该技能**所在槽**的上限（+2；每次 5G，可反复）。
@@ -7616,6 +7645,42 @@ enum LearnAction {
     /// 切换商店大类（0=机动 1=防御续航 2=攻击特殊）——补齐鼠标点击（U3）
     Category(u8),
 }
+
+/// 商店页一行（列表 / 键盘选择 / 详情面板共用同一构造）。
+///
+/// 旧模型把 `[买]`/`[卖]` 前缀塞进行标签、行内同时编码买卖两个动作，既难读也难点。
+/// 新模型：行只描述**这个家族/物品**，买卖是详情区里的两个按钮（各带快捷键 + 禁用态）。
+#[derive(Clone, Debug, PartialEq)]
+struct ShopRow {
+    /// 行标签：家族/物品名 + 当前档 → 目标档 + 价格。**不含 [买]/[卖] 前缀**。
+    label: String,
+    /// 可购买目标（家族下一步 / 未持有的单体）；已满级为 None。
+    buy: Option<game_core::item::ItemId>,
+    /// 当前持有（家族当前档，可卖）；未持有为 None。
+    sell: Option<game_core::item::ItemId>,
+    /// 选中时显示的描述。
+    desc: &'static str,
+}
+
+impl ShopRow {
+    /// 用于「选中」判定的代表 id（优先可购买目标，否则已持有物）。
+    fn select_id(&self) -> Option<game_core::item::ItemId> {
+        self.buy.or(self.sell)
+    }
+
+    /// 该 id 是否属于本行（买卖任一动作）。
+    fn contains(&self, id: game_core::item::ItemId) -> bool {
+        self.buy == Some(id) || self.sell == Some(id)
+    }
+}
+
+/// 成长页精通信息：名称 / 描述（选中时显示在详情区）。索引与 `Mastery::COSTS/CAPS` 对应。
+const MASTERY_INFO: [(&str, &str); 4] = [
+    ("生命精通", "造成伤害时回复生命（吸血 +8%/级）。"),
+    ("范围精通", "火球爆炸范围与击退力度 +12%/级（需有落点爆炸）。"),
+    ("射程精通", "法术射程与持续 +10%/级（火球系 +15%/级）。"),
+    ("背包研究", "物品栏容量提升（3 → 6 → 10 格）。"),
+];
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
 /// **居中**绘制文本（`center` 是**中心点**）。
@@ -7938,25 +8003,25 @@ fn main() -> GameResult {
 mod tests {
     /// 退格卖出的**目标解析**（纯函数）：三种情形都要对 ——
     /// ① 未选中 → 回退到第一件可卖物；② 选中"已持有家族的购买行" → 卖**当前持有**那件；
-    /// ③ 选中"满级卖出行" → 卖它自己。
+    /// ③ 选中"满级行" → 卖它自己。
     #[test]
     fn shop_sell_target_resolution() {
         use game_core::item::ItemId;
-        type Row = (String, Option<super::LearnAction>, Option<super::LearnAction>, &'static str);
+        let row = |label: &str, buy: Option<ItemId>, sell: Option<ItemId>| super::ShopRow {
+            label: label.to_string(),
+            buy,
+            sell,
+            desc: "",
+        };
 
         // ① 空行 + 未选中 → None
-        let empty: Vec<Row> = Vec::new();
+        let empty: Vec<super::ShopRow> = Vec::new();
         assert_eq!(super::Game::shop_sell_target(&empty, None), None);
 
         // ② 持有 Boots1、可升 Boots2：选中购买行(Boots2) 应解析出**卖 Boots1**
-        let rows: Vec<Row> = vec![
-            (
-                "[buy] Boots1 -> Boots2".to_string(),
-                Some(super::LearnAction::Item(ItemId::Boots2)),
-                Some(super::LearnAction::Sell(ItemId::Boots1)),
-                "",
-            ),
-            ("[buy] Cloak".to_string(), Some(super::LearnAction::Item(ItemId::Cloak1)), None, ""),
+        let rows = vec![
+            row("Boots1 → Boots2", Some(ItemId::Boots2), Some(ItemId::Boots1)),
+            row("Cloak1", Some(ItemId::Cloak1), None),
         ];
         assert_eq!(
             super::Game::shop_sell_target(&rows, Some(ItemId::Boots2)),
@@ -7975,17 +8040,12 @@ mod tests {
             Some(ItemId::Boots1)
         );
 
-        // ③ 满级行：主动作就是卖出
-        let maxed: Vec<Row> = vec![(
-            "[sell] Boots3 maxed".to_string(),
-            Some(super::LearnAction::Sell(ItemId::Boots3)),
-            None,
-            "",
-        )];
+        // ③ 满级行：无购买目标，持有物本身可卖
+        let maxed = vec![row("Boots3（已满级）", None, Some(ItemId::Boots3))];
         assert_eq!(
             super::Game::shop_sell_target(&maxed, Some(ItemId::Boots3)),
             Some(ItemId::Boots3),
-            "满级行的主动作即卖出"
+            "满级行的持有物即卖它自己"
         );
         assert_eq!(
             super::Game::shop_sell_target(&maxed, None),
@@ -7994,43 +8054,79 @@ mod tests {
         );
     }
 
-    /// 商店"一行两动作"（用户建议）：同一家族只有一行 ——
-    /// 已购买时该行带**卖出次动作**（退格键），满级家族则该行的主动作就是卖出。
+    /// 商店"一行两动作"（用户建议）：同一家族只有一行，行内同时给出可购目标与持有物；
+    /// **行标签不再带 `[买]`/`[卖]` 前缀**（动作移到详情区按钮）。
     #[test]
-    fn shop_rows_have_single_row_per_family_with_sell_action() {
-        use game_core::item::{ItemFamily, ItemId};
-        use game_core::meta::{MatchConfig, PlayerProfile};
+    fn shop_rows_have_single_row_per_family_with_buy_and_sell() {
+        use game_core::item::ItemId;
+        use game_core::meta::PlayerProfile;
 
-        // 空手：任意家族都不应有卖出动作
+        // 空手：任意家族都不应有卖出项，但都应有可购目标。
         let mut p = PlayerProfile::new(0, 8);
         p.gold = 100;
         let rows = Game::shop_rows(&p, 0);
         assert!(!rows.is_empty(), "商店应有可购买项");
         assert!(
-            rows.iter().all(|(_, _, sell, _)| sell.is_none()),
-            "未持有任何物品时不应有卖出动作"
+            rows.iter().all(|r| r.sell.is_none()),
+            "未持有任何物品时不应有卖出项"
+        );
+        assert!(rows.iter().all(|r| r.buy.is_some()), "应都有可购买目标");
+        assert!(
+            rows.iter().all(|r| !r.label.contains("[买]") && !r.label.contains("[卖]")),
+            "行标签不应再带 [买]/[卖] 前缀：{:?}",
+            rows.iter().map(|r| &r.label).collect::<Vec<_>>()
         );
 
-        // 买一件一级靴 → 该家族那一行应带卖出次动作，且**不额外多出一行**
+        // 买一件一级靴 → 该家族那一行应带卖出项（当前持有），且**不额外多出一行**。
         assert!(p.buy_item(ItemId::Boots1), "应能购买一级靴");
         let before = Game::shop_rows(&p, 0).len();
         let rows = Game::shop_rows(&p, 0);
         let boot_row = rows
             .iter()
-            .find(|(label, _, _, _)| label.contains("Boots") || label.contains("靴"))
+            .find(|r| r.sell == Some(ItemId::Boots1))
             .expect("靴家族应有一行");
-        assert!(
-            matches!(boot_row.2, Some(LearnAction::Sell(ItemId::Boots1))),
-            "持有 Boots1 时该行的次动作应是卖出 Boots1（退格键），实际 {:?}",
-            boot_row.2
-        );
-        // 行的总数不应因购买而增加（旧的实现会多出"已持有"区的一行）
+        assert_eq!(boot_row.buy, Some(ItemId::Boots2), "持有 Boots1 时下一档应为 Boots2");
         assert_eq!(
             rows.len(),
             before,
             "同一家族不应因购买而多出一行（一行两动作）"
         );
-        let _ = ItemFamily::Boots;
+    }
+
+    /// 商店「购买」按钮的禁用原因：金币不足 / 背包已满 / 已满级。
+    #[test]
+    fn shop_buy_block_reports_reasons() {
+        use game_core::item::ItemId;
+        use game_core::meta::PlayerProfile;
+        let mut p = PlayerProfile::new(0, 8);
+        p.gold = 100;
+        let rows = Game::shop_rows(&p, 0);
+        assert_eq!(Game::shop_buy_block(&p, &rows[0]), None, "金币足/背包空应可买");
+        // 满级行不可买
+        let maxed = super::ShopRow {
+            label: String::new(),
+            buy: None,
+            sell: Some(ItemId::Boots3),
+            desc: "",
+        };
+        assert_eq!(Game::shop_buy_block(&p, &maxed), Some("已满级"));
+        // 金币不足
+        p.gold = 0;
+        assert_eq!(Game::shop_buy_block(&p, &rows[0]), Some("金币不足"));
+    }
+
+    /// 成长页「购买」按钮的禁用原因：金币不足 / 已满级。
+    #[test]
+    fn mastery_block_reports_reasons() {
+        use game_core::meta::PlayerProfile;
+        let mut p = PlayerProfile::new(0, 8);
+        p.gold = 100;
+        assert_eq!(Game::mastery_block(&p, 0), None, "金币足应可买");
+        p.gold = 0;
+        assert_eq!(Game::mastery_block(&p, 0), Some("金币不足"));
+        p.gold = 1000;
+        p.mastery.backpack = game_core::meta::Mastery::CAPS[3];
+        assert_eq!(Game::mastery_block(&p, 3), Some("已满级"));
     }
 
     use super::*;

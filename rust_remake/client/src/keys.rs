@@ -16,12 +16,20 @@ use winit::keyboard::NamedKey;
 /// 改这里就等于改三处显示；`tests` 会校验主界面源码里出现的提示就是它。
 pub const CONFIRM_HINT: &str = "[= / 回车]";
 
+/// 「卖出」操作的界面提示文案（商店详情「卖出」按钮，与键盘退格/Delete 对应）。
+pub const SELL_HINT: &str = "[退格 / Delete]";
+
 /// 「确认」键是否在本帧被按下：`=` 或 回车（含小键盘回车）。
 ///
 /// 三个页面（技能/商店/成长）的确认一律走这里，避免再次出现"某页少接一个键"。
 pub fn confirm_just(ctx: &Context) -> bool {
     // 注：winit 的 `NamedKey` 只有 `Enter`（主键盘与小键盘回车都归一到这里）。
     confirm_char_just(ctx, "=") || named_just(ctx, NamedKey::Enter)
+}
+
+/// 「卖出」键是否在本帧被按下：退格 或 Delete（商店详情卖出按钮的键盘入口）。
+pub fn sell_just(ctx: &Context) -> bool {
+    named_just(ctx, NamedKey::Backspace) || named_just(ctx, NamedKey::Delete)
 }
 
 fn confirm_char_just(ctx: &Context, s: &str) -> bool {
@@ -45,6 +53,12 @@ mod tests {
         assert_eq!(CONFIRM_HINT, "[= / 回车]", "提示文案被改动时此测试会提醒同步文档");
         assert!(CONFIRM_HINT.contains('='), "文案应承诺 `=` 键");
         assert!(CONFIRM_HINT.contains("回车"), "文案应承诺回车键");
+    }
+
+    #[test]
+    fn sell_hint_matches_accepted_keys() {
+        assert!(SELL_HINT.contains("退格"), "文案应承诺退格键");
+        assert!(SELL_HINT.contains("Delete"), "文案应承诺 Delete 键");
     }
 
     /// 主界面必须**引用**共享文案与共享判定，而不是各写各的。
