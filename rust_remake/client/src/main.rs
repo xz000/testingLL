@@ -6067,7 +6067,7 @@ impl Game {
                 .copied()
             {
                 self.steam_create_focus = idx as usize;
-                eprintln!("[menu] 鼠标选择字段 #{}", idx);
+                eprintln!("[menu] 鼠标选择字段 #{idx}");
             }
         }
         // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
