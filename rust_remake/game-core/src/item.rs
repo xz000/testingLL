@@ -37,9 +37,9 @@ pub enum ItemId {
     Helm1,
     /// I006
     Helm2,
-    /// I007
+    /// I008（098c 名为「Boots 2」，中间档）
     Boots2,
-    /// I008
+    /// I007（098c 名为「Boots 3」，最高档）
     Boots3,
     /// I003
     Cloak3,
@@ -192,10 +192,12 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::Helm1, family: ItemFamily::Helm, tier: 1, cost: 9, sell: 8, name: "头盔 1", desc: "击退-16% 生命+10 移速-5；不叠加；可升 2 次", fx: ItemEffects { kb_resist_frac: 0.16, hp_add: 10.0, speed_penalty: 5.0, ..fx() } },
     // I006 头盔 2：-24% +15 生命 -10 移速（买 9 @bD 10698）
     ItemDef { id: ItemId::Helm2, family: ItemFamily::Helm, tier: 2, cost: 9, sell: 16, name: "头盔 2", desc: "击退-24% 生命+15 移速-10；不叠加；可升 1 次", fx: ItemEffects { kb_resist_frac: 0.24, hp_add: 15.0, speed_penalty: 10.0, ..fx() } },
-    // I007 速度之靴 3（Rust 命名）：Rust 把 I007 当作 tier2(+30)；098c 实际 I007 为最高档（卖 12 @ED 10425，买 5）
-    ItemDef { id: ItemId::Boots2, family: ItemFamily::Boots, tier: 2, cost: 5, sell: 12, name: "速度之靴 2", desc: "移速 +30；可升 1 次", fx: ItemEffects { speed_add: 30.0, ..fx() } },
-    // I008 速度之靴 2（Rust 命名）：098c 中 I008 为中间档（卖 8 @ED 10420，买 5）；Rust 当作 tier3(+40)
-    ItemDef { id: ItemId::Boots3, family: ItemFamily::Boots, tier: 3, cost: 5, sell: 8, name: "速度之靴 3", desc: "移速 +40（满级）", fx: ItemEffects { speed_add: 40.0, ..fx() } },
+    // I008 速度之靴 2（**098c 名为「Boots 2」**，中间档）：+30 移速（卖 8 @ED 10420，买 5）
+    // 注：此前我方把 I007/I008 与档位弄反（I007 当 tier2、I008 当 tier3），导致
+    // 售价与档位错配（顶级反而卖得少）；w3t `unam` 实证：I007="Boots 3"、I008="Boots 2"。
+    ItemDef { id: ItemId::Boots2, family: ItemFamily::Boots, tier: 2, cost: 5, sell: 8, name: "速度之靴 2", desc: "移速 +30；可升 1 次", fx: ItemEffects { speed_add: 30.0, ..fx() } },
+    // I007 速度之靴 3（**098c 名为「Boots 3」**，最高档）：+40 移速（卖 12 @ED 10425，买 5）
+    ItemDef { id: ItemId::Boots3, family: ItemFamily::Boots, tier: 3, cost: 5, sell: 12, name: "速度之靴 3", desc: "移速 +40（满级）", fx: ItemEffects { speed_add: 40.0, ..fx() } },
     // I003 斗篷 3：+0.40/s（卖 9 @ED 10471；买 4）
     ItemDef { id: ItemId::Cloak3, family: ItemFamily::Cloak, tier: 3, cost: 4, sell: 9, name: "斗篷 3", desc: "回复 +0.4/s（满级）", fx: ItemEffects { regen_add: 0.4, ..fx() } },
     // I009 斗篷 2：+0.30/s（卖 6 @ED 10466；买 4）
@@ -397,6 +399,43 @@ pub fn base_move_speed() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// w3t 交叉校验（真值源：098c `war3map.w3t` 的 `unam`/`iabi`，配合 w3a 物品能力字段 `Ilif`）。
+    #[test]
+    fn w3t_crosscheck_item_bonuses() {
+        // 生命加成（w3a 物品能力 `Ilif`）：
+        //   A007=+10 → Helm1/Amulet1；A00D=+15 → Helm2；A004=+20 → Helm3/Amulet2；
+        //   A00H=+30 → Amulet3；A000=-10 → GuardianShield1/2。
+        let hp = [
+            (ItemId::Helm1, 10.0),
+            (ItemId::Helm2, 15.0),
+            (ItemId::Helm3, 20.0),
+            (ItemId::Amulet1, 10.0),
+            (ItemId::Amulet2, 20.0),
+            (ItemId::Amulet3, 30.0),
+            (ItemId::GuardianShield1, -10.0),
+            (ItemId::GuardianShield2, -10.0),
+        ];
+        for (id, want) in hp {
+            assert_eq!(id.def().fx.hp_add, want, "{id:?} 生命加成不符 w3a Ilif");
+        }
+
+        // 速度之靴三档（w3t `unam` 实证）：I000=Boots 1、I008=Boots 2、I007=Boots 3
+        // → 档位 1/2/3 分别 +20/+30/+40，且售价随档位递增（4/8/12）。
+        let b1 = ItemId::Boots1.def();
+        let b2 = ItemId::Boots2.def();
+        let b3 = ItemId::Boots3.def();
+        assert_eq!((b1.tier, b1.fx.speed_add), (1, 20.0));
+        assert_eq!((b2.tier, b2.fx.speed_add), (2, 30.0));
+        assert_eq!((b3.tier, b3.fx.speed_add), (3, 40.0));
+        assert!(
+            b1.sell < b2.sell && b2.sell < b3.sell,
+            "售价应随档位递增（098c ED: 4/8/12），实际 {}/{}/{}",
+            b1.sell,
+            b2.sell,
+            b3.sell
+        );
+    }
 
     #[test]
     fn catalog_has_24_items_with_unique_ids() {
