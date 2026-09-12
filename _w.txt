@@ -1,52 +1,22 @@
-18765 endif
-18766 
-18767 
-18768 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF001|r |c00E8E800Lava Damage|r                = |c0000FFFF"+R2S(To[0]*$A)+"|r")
-18769 
-18770 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF002|r |c00E8E800Damage Multiplier|r        = |c0000FFFF"+R2S(Gn[0])+"|r")
-18771 
-18772 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF003|r |c00E8E800Knockback Multiplier|r    = |c0000FFFF"+R2S(Hn[0])+"|r")
-18773 
-18774 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF004|r |c00E8E800Shop Time|r                    = |c0000FFFF"+R2S(uo)+"|r")
-18775 
-18776 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF005|r |c00E8E800Shop Time initial|r           = |c0000FFFF"+R2S(Uo)+"|r")
-18777 
-18778 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF006|r |c00E8E800Shrink Time per player|r  = |c0000FFFF"+R2S(wo)+"|r")
-18779 
-18780 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF007|r |c00E8E800Arena (0 is random)|r    = |c0000FFFF"+I2S(to)+"|r")
-18781 
-18782 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF008|r |c00E8E800Pillar (0 is random)|r      = |c0000FFFF"+I2S(Po)+"|r")
-18783 
-18784 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF009|r |c00E8E800HP Regeneration|r         = |c0000FFFF"+R2S(In[0])+"|r")
-18785 
-18786 call DisplayTimedTextToPlayer(Player(0),0,0,999,"Type |c0080FF00-C|r |c00E8E800#|r |c0000FFFF[new value]|r , where # is the number on list.")
-18787 
-18788 call DisplayTimedTextToPlayer(Player(0),0,0,999,"Write |c0080FF00-constants 2|r to see more constants")
-18789 
-18790 else
-18791 if s=="-constants 2" or s=="-c2" then
-18792 
-18793 if GetLocalPlayer()==Player(0)then
-18794 
-18795 call ClearTextMessages()
-18796 endif
-18797 
-18798 
-18799 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0010|r |c00E8E800Kill Point Reward|r            = |c0000FFFF"+I2S(ko)+"|r")
-18800 
-18801 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0011|r |c00E8E800Assist Point Reward|r       = |c0000FFFF"+I2S(Ko)+"|r")
-18802 
-18803 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0012|r |c00E8E800Kill Gold Reward|r   = |c0000FFFF"+I2S(lo)+"|r")
-18804 
-18805 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0013|r |c00E8E800Assist Gold Reward|r   = |c0000FFFF"+I2S(Lo)+"|r")
-18806 
-18807 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0014|r |c00E8E800Win Point Reward|r         = |c0000FFFF"+I2S(mo)+"|r")
-18808 
-18809 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0015|r |c00E8E800Win Gold Reward|r          = |c0000FFFF"+I2S(Mo)+"|r")
-18810 
-18811 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0016|r |c00E8E800Damage Gold Reward|r  = |c0000FFFF"+I2S(po)+"|r")
-18812 
-18813 call DisplayTimedTextToPlayer(Player(0),0,0,999,"|c0080FF0017|r |c00E8E800Gold per round|r             = |c0000FFFF"+I2S(qo)+"|r")
-18814 
-18815 call DisplayTimedTextToPlayer(Player(0),0,0,999,"Type |c0080FF00-C|r |c00E8E800#|r |c0000FFFF[new value]|r , where # is the number on list.")
-18816 
+579             p.gold += self.config.gold_per_kill;
+580             p.score += self.config.score_per_kill;
+581             p.current_streak += 1; // 连杀计数（死亡清零在 register_death）
+582         }
+583         first
+584     }
+585 
+586     /// 直接给某玩家加金（模式专属奖励用；098c 化身模式 `AI` 的 `+lo` / `+1`）。
+587     pub fn grant_gold(&mut self, player_id: u32, amount: i32) {
+588         if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
+589             p.gold += amount;
+590         }
+591     }
+592 
+593     /// 化身模式计分（098c L12055：Ln += 本轮伤害/20，B3）。
+594     pub fn register_damage_score(&mut self, player_id: u32, damage: f64) {
+595         if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
+596             p.score += (damage / 20.0) as u32;
+597         }
+598     }
+599 
+600     /// 死亡结算（D6）：受害者连杀清零（连杀播报由调用方在清零前读取）。
