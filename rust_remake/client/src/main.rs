@@ -6110,25 +6110,13 @@ impl Game {
         // 注意必须在"行级回车处理"之前判断，否则回车总被行处理吃掉（此前就是这个 bug：
         // 建房时回车变成了"自定义输入"，只能连按 Esc 再回车才能建房）。
         if self.room_cfg_create_mode && just_named(NamedKey::Enter) {
-            let n_rows = settings_ui::SettingId::rows(self.room_cfg_group).len();
-            let id = if n_rows == 0 {
-                None
-            } else {
-                Some(settings_ui::SettingId::rows(self.room_cfg_group)[self.room_cfg_row.min(n_rows - 1)])
-            };
-            let is_text_meta = id
-                .map(|id| {
-                    id.target() == settings_ui::SettingTarget::Meta
-                        && id != settings_ui::SettingId::PlayerLimit
-                })
-                .unwrap_or(false);
-            if !is_text_meta {
-                // 任意非文本行按回车 → 直接建房（底部也会补按钮，见后续步骤）
-                self.create_confirm_pending = true;
-                self.room_cfg_edit = false;
-                return false;
-            }
-            // 文本行：进入输入（预填当前值），下面行处理会接管
+            // **创建模式下回车恒等于"建房"**（不分行类型）。
+            // 曾经对"文本行"放行、期望它去进输入，结果默认停在房间名那一行时回车毫无反应
+            //（用户实测：连按回车也进不去房间）。现在输入统一走 `T` / `Shift+回车`，
+            // 回车只承担"确认/建房"，语义单一。
+            self.create_confirm_pending = true;
+            self.room_cfg_edit = false;
+            return false;
         }
         // 创建模式下 Esc/O = 取消建房流程（回大厅主界面）
         if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o")) {
