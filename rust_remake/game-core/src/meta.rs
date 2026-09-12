@@ -764,6 +764,10 @@ impl MatchState {
         for p in self.profiles.iter_mut() {
             p.damage_this_round = 0.0;
         }
+        // **本轮参与奖在结算时发放**（098c `WR`/`iI` 的 `+po` 就在回合结束时）——
+        // 这样玩家**进下一轮商店之前**钱已到账；此前放在 `advance_round`（下一局开始）→
+        // 商店里没钱可花。
+        self.give_round_gold();
 
         // 进入学习阶段，或整场结束
         // En2 死亡竞赛：有人达到胜利分 → 提前终局（D6/En 批）。
@@ -927,6 +931,15 @@ impl MatchState {
     /// 首局配置期有两条路径会走到这里：`tick_learning` 倒计时结束、单机 `finish_first_round_config`。
     pub fn enter_first_round(&mut self) {
         self.phase = MatchPhase::Fighting;
+        self.grant_opening_gold();
+    }
+
+    /// 发放「开局金」= 初始金 + 首轮参与奖，**只发一次**（幂等）。
+    ///
+    /// 触发点有**两处**，谁先到谁发：
+    /// - `begin_first_round_config`（**第一次进配置/商店**）—— 玩家此时就要买东西，必须有钱；
+    /// - `enter_first_round`（直接开战，例如跳过配置的路径）。
+    fn grant_opening_gold(&mut self) {
         if !self.opening_gold_granted {
             self.opening_gold_granted = true;
             self.give_starting_gold();
@@ -939,6 +952,9 @@ impl MatchState {
     /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发参与奖）。
     pub fn begin_first_round_config(&mut self) {
         self.phase = MatchPhase::Learning;
+        // **第一次进配置（商店）时就发钱**：否则玩家在配置期无钱可买
+        //（单机试验场曾因此"进商店没钱买东西"）。
+        self.grant_opening_gold();
         self.learn_remaining = self.config.shopping_time_secs;
         self.pending_first_round = true;
     }
@@ -957,7 +973,7 @@ impl MatchState {
     fn advance_round(&mut self) {
         self.round += 1;
         self.phase = MatchPhase::Fighting;
-        self.give_round_gold(); // 新的参与奖
+        // 参与奖已在上一轮的 `finish_round` 结算时发放（进商店前到账），此处不再发。
     }
 }
 
@@ -977,6 +993,21 @@ mod tests {
             &[0, 1, 2],
             8,
         )
+    }
+
+    #[test]
+    fn first_config_phase_grants_opening_gold_so_you_can_shop() {
+        let mut m = sample();
+        assert_eq!(m.profiles[0].gold, 0, "构造时（还没进商店）不应发钱");
+        m.begin_first_round_config(); // = 第一次进配置/商店
+        assert_eq!(
+            m.profiles[0].gold,
+            40,
+            "进配置期就要发 初始金 20 + 首轮参与奖 20（sample 口径），否则没钱买东西"
+        );
+        // 配置期结束进入第一局：不应重复发
+        m.finish_first_round_config();
+        assert_eq!(m.profiles[0].gold, 40, "开局不重复发（幂等）");
     }
 
     #[test]
@@ -1059,6 +1090,7 @@ mod tests {
     /// 乔丹之石在不同槽之间各自累计、互不影响。
     /// 技能涨价（098c `oi[id]` + `Jf`）：买第 3/4/5 个法术各触发一次，
     /// 每次让所有技能升级价 +`glvl`（w3q `glvl` 实证 = 10）；第 6 个不再触发。
+    #[test]
     fn spell_upgrade_cost_escalates_after_third_purchase() {
         use crate::skill::SkillId;
         let per_level = SkillId::UPGRADE_COST_PER_LEVEL;
@@ -1118,9 +1150,9 @@ mod tests {
         m.register_damage_score(1, 50.0);
         m.register_damage_score(2, 10.0);
         m.finish_round(vec![0, 1, 2]);
-        assert_eq!(m.profiles[0].gold, before[0] + 1, "并列最高者 0 应得 po");
-        assert_eq!(m.profiles[1].gold, before[1] + 1, "并列最高者 1 应得 po");
-        assert_eq!(m.profiles[2].gold, before[2], "非最高者不得");
+        assert_eq!(m.profiles[0].gold, before[0] + 1 + 10, "最高伤害 po=1 + 结算参与奖 10");
+        assert_eq!(m.profiles[1].gold, before[1] + 1 + 10);
+        assert_eq!(m.profiles[2].gold, before[2] + 10, "非最高者只拿参与奖");
         for p in &m.profiles {
             assert_eq!(p.damage_this_round, 0.0, "回合伤害应清零");
         }
@@ -1154,9 +1186,9 @@ mod tests {
         m.enter_first_round(); // 开局发钱（098c：开局时才发）
         // 名次：0=冠军（+30+存活），1=第二（+20），2=第三（+10）
         m.finish_round(vec![0, 1, 2]);
-        assert_eq!(m.profiles[0].gold, 40 + 30);
-        assert_eq!(m.profiles[1].gold, 40 + 20);
-        assert_eq!(m.profiles[2].gold, 40 + 10);
+        assert_eq!(m.profiles[0].gold, 40 + 30 + 20, "名次 30 + 结算参与奖 20");
+        assert_eq!(m.profiles[1].gold, 40 + 20 + 20);
+        assert_eq!(m.profiles[2].gold, 40 + 10 + 20);
         assert_eq!(m.profiles[0].best_placement, 1);
         assert_eq!(m.profiles[1].best_placement, 2);
         assert_eq!(m.round_placements.len(), 1);
@@ -1447,7 +1479,7 @@ mod tests {
         let gold_before2 = m.profiles[0].gold;
         m.tick_learning(m.learn_remaining + 0.1);
         assert_eq!(m.round, 2, "局间学习归零应 +round");
-        assert!(m.profiles[0].gold > gold_before2, "局间学习归零应发参与奖");
+        assert_eq!(m.profiles[0].gold, gold_before2, "round start must not grant again");
     }
 
     // 4.6b 成长点测试已随属性系统删除（2026-09-12）。
@@ -1535,7 +1567,6 @@ mod tests {
 
     #[test]
     fn room_settings_defaults_match_098c() {
-        use crate::skill::SkillId as _;
         let c = MatchConfig::default();
         // 经济（设置 10-17 + 初始金）
         assert_eq!(c.starting_gold, 20, "初始金 Qo=20");
