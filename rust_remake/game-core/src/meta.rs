@@ -82,7 +82,8 @@ pub struct Mastery {
     pub range: u8,
     /// R00Y **Range Mastery**（射程精通）：法术持续/射程 +10%/级（火球系 +15%/级）。
     pub time: u8,
-    /// R000 背包研究：物品栏 +1 格/级（S128，6→8）。
+    /// R000 背包研究：升级 S128，容量 = (L²+L)/2（L = 1 + 购买数）：1→3→6→10→…。
+    /// 098c `alev=3`（上限 6 格）；本作放开到 3 次（L4 = 10 格，突破 war3 限制）。
     pub backpack: u8,
 }
 
@@ -90,8 +91,9 @@ impl Mastery {
     /// 购买价（**w3q `gglb` 实证**：生命 R00D=6 / 范围 R00I=7 / 射程 R00Y=5 / 背包 R000=3）。
     pub const COSTS: [i32; 4] = [6, 7, 5, 3];
     /// 级数上限：三精通各 **6**（w3q tooltip「Life steal Mastery 1..6」+ `glvl=6` 实证；
-    /// R017 合成科技 glvl=20 → 6+6+6=18 ≤ 20 亦相符）；背包 2 级 → 6→8 格。
-    pub const CAPS: [u8; 4] = [6, 6, 6, 2];
+    /// R017 合成科技 glvl=20 → 6+6+6=18 ≤ 20 亦相符）；背包 **3**（098c `alev=3` 为 2 次，
+    /// 本作放开 1 次到 L4 = 10 格，突破 war3 的 6 格上限）。
+    pub const CAPS: [u8; 4] = [6, 6, 6, 3];
 
     /// 三精通总级数（击退减免用；背包不计——098c lf=vi+ei+xi）。
     pub fn levels(&self) -> u8 {
@@ -267,9 +269,11 @@ impl PlayerProfile {
         true
     }
 
-    /// 物品栏格数（098c S128：基础 6 格 + 背包研究每级 +1）。
+    /// 物品栏可用格数（098c `bD` 实证）：容量 = 0.5×(L²+L)，L = S128 等级 = 1 + 背包研究购买数。
+    /// L=1→1、2→3、3→6（war3 上限）、4→10（原生放开，超出 war3 的 6 格限制）。
     pub fn inventory_slots(&self) -> usize {
-        6 + self.mastery.backpack as usize
+        let l = 1 + self.mastery.backpack as usize;
+        (l * l + l) / 2
     }
 
     /// 购买/升级某技能一级。返回是否成功（金币不足则失败）；成功计入累计花费。
@@ -742,6 +746,7 @@ mod tests {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         let pr = &mut ms.profiles[0];
         pr.gold = 20;
+        pr.mastery.backpack = 3; // 容量 10，避免容量影响本测试
         // 买头盔 1（098c 买价 9）
         assert!(pr.buy_item(crate::item::ItemId::Helm1));
         assert_eq!(pr.gold, 11);
@@ -761,6 +766,7 @@ mod tests {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         let pr = &mut ms.profiles[0];
         pr.gold = 100;
+        pr.mastery.backpack = 3; // 容量 10，避免容量影响本测试
         // 三个独立物品（死亡面具/火球法杖/乔丹）应可共存，互不替换
         assert!(pr.buy_item(crate::item::ItemId::FireMask));
         assert!(pr.buy_item(crate::item::ItemId::FireStaff));
@@ -898,35 +904,27 @@ mod tests {
         // 金币不足失败
         pr.gold = 2;
         assert!(!pr.buy_mastery(0), "余 2 金买不起 6 金生命精通");
-        // 上限（w3q glvl/tooltip 实证：生命/范围/射程各 6 级；背包 2）
+        // 上限（w3q glvl/tooltip 实证：生命/范围/射程各 6 级；背包 3）
         pr.gold = 1000;
         assert!(pr.buy_mastery(3), "背包第 2 级");
-        assert!(!pr.buy_mastery(3), "背包达上限 2 应失败");
+        assert!(pr.buy_mastery(3), "背包第 3 级");
+        assert!(!pr.buy_mastery(3), "背包达上限 3 应失败");
         for _ in 0..5 { assert!(pr.buy_mastery(0), "生命升到 6"); }
         assert!(!pr.buy_mastery(0), "生命达上限 6 应失败");
         assert_eq!(pr.mastery.life, 6, "生命精通上限 6");
-        assert_eq!(pr.mastery.backpack, 2, "背包上限 2");
-        // 背包扩容：6→8
-        assert_eq!(pr.inventory_slots(), 8);
-        // 8 个不同家族可共存；第 9 个（standalone 第二件）被拒
-        let eight = [
-            crate::item::ItemId::Boots1,
-            crate::item::ItemId::Amulet1,
-            crate::item::ItemId::Cloak1,
-            crate::item::ItemId::Helm1,
-            crate::item::ItemId::BloodSword1,
-            crate::item::ItemId::GuardianShield1,
-            crate::item::ItemId::LavaBoots1,
-            crate::item::ItemId::PocketWatch1,
-        ];
+        assert_eq!(pr.mastery.backpack, 3, "背包上限 3");
+        // 背包容量（098c bD：L=1+背包级 → 1/3/6/10）
+        assert_eq!(pr.inventory_slots(), 10, "背包 3 级 → L4 → 10 格");
+        pr.mastery.backpack = 1;
+        assert_eq!(pr.inventory_slots(), 3, "背包 1 级 → L2 → 3 格");
+        // 3 格容量：3 件不同家族可共存，第 4 件被拒；同家族升级不受容量限制。
         pr.items.clear();
-        for it in eight {
-            assert!(pr.buy_item(it), "第 {} 件应能买（8 格）", pr.items.len() + 1);
-        }
-        assert!(!pr.buy_item(crate::item::ItemId::FireMask), "9 件应被容量拒绝");
-        // 同家族升级不受容量限制（替换语义）
-        assert!(pr.buy_item(crate::item::ItemId::Boots2));
-        assert_eq!(pr.items.len(), 8);
+        assert!(pr.buy_item(crate::item::ItemId::Boots1));
+        assert!(pr.buy_item(crate::item::ItemId::Amulet1));
+        assert!(pr.buy_item(crate::item::ItemId::Cloak1));
+        assert!(!pr.buy_item(crate::item::ItemId::Helm1), "第 4 件应被容量拒绝");
+        assert!(pr.buy_item(crate::item::ItemId::Boots2), "同家族升级不受容量限制");
+        assert_eq!(pr.items.len(), 3);
         // levels() 只计三精通（life6 + range1 + time1）
         assert_eq!(pr.mastery.levels(), 8);
     }
