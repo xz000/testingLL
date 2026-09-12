@@ -20,9 +20,9 @@
 
 | 项 | 098c（JASS 实证） | Rust 现状（2026-09-12） | 状态 |
 |---|---|---|---|
-| 技能基础等级 | w3a 定义，**8~9 级** | `max_level` 已改为 098c 基础档数（8~9；S000=10） | ✅ |
+| 技能基础等级 | **base = 1 + 升级研究上限 N**（w3q `SetPlayerTechMaxAllowed` 实证：N=6→7、N=5→6、N=4→5） | `max_level` 已改为 base（S002…=7 / 多数=6 / S018=5；S000=10） | ✅ |
 | 升级方式 | 研究事件 `SetUnitAbilityLevel(...,+1)` | `upgrade_skill` 已加 `max_level + skill_cap_bonus` 上限判定 | ✅ |
-| 上限突破 | 乔丹之石解锁 `T000~T006`，对应技能上限 **+2** | `skill_cap_bonus`（购买界面项，每档 +2） | ⚠️ 098c 为**一次性** +2，Rust **可无限买**（待定） |
+| 上限突破 | 乔丹之石解锁 `T000~T006`，对应升级研究 **+2**（`Hf` 实证） | `skill_cap_bonus`（购买界面项，**限购一次** +2） | ✅ |
 | 数值口径 | **原斜率**（如 S016 `750+150×L`） | 已去 camp2，改原斜率 | ✅ |
 
 **✅ 逐档表**：`SkillGrowth` 的 `cooldown_levels` / `damage_levels`（`Option<&'static [f64]>`）存在则优先于线性。
