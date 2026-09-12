@@ -36,6 +36,8 @@ mod keys;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 mod settings_ui;
 /// 版面骨架（四带网格）：把"各界面手工摆坐标"改成"按带填充"，可单测。
+/// 注：`allow(dead_code)` 是**过渡**——第 2 步把建房界面接到骨架上后会移除。
+#[allow(dead_code)]
 mod layout;
 
 /// 机器人数量（不含玩家本人）。当前 Solo/局域网均无本地 AI；保留该常量供将来“带 AI 测试”模式复用。
