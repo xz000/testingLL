@@ -1,3 +1,18 @@
-3518| self.learn_hitboxes.clear();
-5051| return self.draw_menu(ctx);
-6669| fn draw_menu(&self, ctx: &mut Context) -> GameResult {
+6931|             self.steam_create_place_buf.clone(),
+6932|         ];
+6933|         // ── 版面：按 `layout::bands` 四带摆放，不再手工摆坐标 ──
+6934|         // 起因：原先"聚焦字段下方各画一行提示"，第 4 行的提示会压到下一条信息（层次问题）。
+6935|         // 现在：提示统一放**状态带**（只一行），键位说明放**提示带**（屏幕最底）。
+6936|         let b = layout::bands(sw, sh);
+6937|         self.create_hitboxes.clear(); // 绘制即重建命中表（绘制与命中同源）
+6938|         // 顶部/状态带的「房间设置」徽章也可点（等价 `O`）：状态带位置由骨架给出，这里先登记命中。
+6939|         self.create_hitboxes.push((
+6940|             graphics::Rect::new(cx - 150.0, b.status.y - 6.0, 300.0, 24.0),
+6941|             CreateAction::OpenSettings,
+6942|         ));
+6943|         let mpos = ui::mouse_design(ctx);
+6944|         let box_w = 300.0;
+6945|         let box_h = 44.0;
+6946|         let label_w = 140.0;
+6947|         let col_w = label_w + box_w;
+6948|         let gap = 56.0;
