@@ -2184,6 +2184,8 @@ impl DefTable {
                     life: Fix64::from_num(2.0), // 098c OB: ev=2*(1+.1ei)
                     kb_ji: Fix64::from_num(0.8),
                     ignite: None,
+                    // w3a `aare` B 段 = 70（岩浆 AoE）；但本作爆炸结算半径与 aare 语义未完全对应
+                    //（待核），暂保留 200 以维持现有手感与测试。
                     blast: Some(Fix64::from_num(200.0)),
                     count: 1,
                     spread_step: 0.0,
@@ -2324,8 +2326,9 @@ impl DefTable {
                 needs_point: true,
                 effect: W098bUtility { kind: W098bUtilKind::Phoenix, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(770.0) },
                 growth: SkillGrowth {
-                    cooldown_base: 16.5,
-                    cooldown_delta: -1.1875, // 098c: 16.5->7 (9 lv)
+                    cooldown_base: 17.5,
+                    cooldown_delta: -1.1875, // 098c: 17.5->8.0 (9 lv, w3a B 段)
+                    cooldown_levels: Some(&[17.5, 15.0, 13.0, 11.5, 10.0, 9.5, 9.0, 8.5, 8.0]), // w3a acdn B 段
                     max_distance_base: 770.0,
                     max_distance_delta: 55.0,
                     damage_base: 4.0,
@@ -2348,6 +2351,7 @@ impl DefTable {
                     // （"Teleports ... Range: 900 / cd 17.5→8.5" 是 R 槽**另一个**技能，非搬运。）
                     cooldown_base: 14.0,
                     cooldown_delta: -1.4286, // 098c: 14->4 (8 lv)
+                    cooldown_levels: Some(&[14.0, 11.5, 9.5, 8.0, 7.0, 6.0, 5.0, 4.0]), // w3a acdn B 段
                     max_distance_base: 600.0,
                     ..DEF_ZERO
                 },
@@ -2376,6 +2380,7 @@ impl DefTable {
                     // 098c（w3a_strings.txt Disable=silence）：CD 16→12.5（8 级），delta 取原斜率 0.5/级。
                     cooldown_base: 16.0,
                     cooldown_delta: -0.5, // 098c: 16->12.5 (8 lv)
+                    cooldown_levels: Some(&[16.0, 15.5, 15.0, 14.5, 14.0, 13.5, 13.0, 12.5]), // w3a acdn B 段
                     damage_base: 3.0,
                     duration_base: 5.0,
                     ..DEF_ZERO
@@ -2468,6 +2473,7 @@ impl DefTable {
                     // max_level=8，delta 取原斜率：伤害 0.9/级、CD 0.7143/级。
                     cooldown_base: 23.5,
                     cooldown_delta: -0.7143, // 098c: 23.5->18.5 (8 lv)
+                    cooldown_levels: Some(&[23.5, 22.0, 21.0, 20.5, 20.0, 19.5, 19.0, 18.5]), // w3a acdn B 段
                     damage_base: 6.0,
                     damage_delta: 0.9,       // 098c: 6->12.3 (8 lv)
                     ..DEF_ZERO
