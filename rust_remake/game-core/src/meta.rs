@@ -41,8 +41,35 @@ pub struct MatchConfig {
     /// 每轮结束时按名次的额外奖励（索引 = 名次-1，0=冠军；超过数组长度的名次不额外奖励）
     pub place_rewards: Vec<i32>,
     /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
-    /// 房主可设置；098b 默认 So=20（D6）。
+    /// 房主可设置；098c 全局 `Qo=20`。
     pub starting_gold: i32,
+
+    // ───────── 房间设置：玩法项（对应 098c 设置对话框 1-6/9，`war3map_pretty.j` 18768-18813） ─────────
+    /// **伤害倍率**（098c 设置 2 `Gn`）。档位 0.75/1.0/1.25/1.5，也允许自定义。
+    pub damage_mult: f64,
+    /// **击退倍率**（098c 设置 3 `Hn`）。档位同上。
+    pub knockback_mult: f64,
+    /// **岩浆伤害倍率**（098c 设置 1 `To`）。`0.0` = 关闭岩浆伤害
+    /// （098c 该项**无下限校验**，输入 0 即关闭 —— 我们同样允许，UI 标注"不推荐"）。
+    pub lava_damage_mult: f64,
+    /// **第一轮配置期秒数**（098c 设置 5 `Uo` = 40，「Shop Time initial」）。
+    pub first_round_time_secs: f64,
+    /// **局间配置期秒数**（098c 设置 4 `uo` = 30，「Shop Time」）。
+    pub between_rounds_time_secs: f64,
+    /// **收缩延迟秒数**：开局静止期，之后开始连续收缩。
+    pub shrink_delay_secs: f64,
+    /// **收缩基准时长秒数**：**满员**时从开始收缩到缩到 0 的时长；
+    /// 实际时长 = `基准 × √(存活 / 初始)`（098c `wo*SquareRoot(sn)`，`sn` = **本轮存活人数**）。
+    pub shrink_base_secs: f64,
+    /// **柱子**：0=关闭 1=随机 2=每局必有（098c 设置 8 `Po`，0=随机）。
+    pub pillar_mode: u8,
+    /// **冰面**：0=关闭 1=随机 2=每局必有（098c 把"关冰"绑在 `-league` 里，我们独立出来）。
+    pub ice_mode: u8,
+    /// **地图形状**：0=圆形（当前仅支持；后续可扩正方形/六边形）。
+    pub arena_shape: u8,
+    /// **金币奖励总开关**：`false` = 关闭全部金币奖励（等价 098c `-no reward`／`-league` 的奖励部分），
+    /// 点数奖励不受影响。
+    pub gold_rewards_enabled: bool,
     /// 击杀得分（098b lo，默认 1；D6 分数体系）。
     pub score_per_kill: u32,
     /// 助攻得分（098b Lo，默认 1）。
@@ -90,6 +117,18 @@ impl Default for MatchConfig {
             team_count: 1,
             win_score: 10,
             shopping_time_secs: 40.0,
+            // ── 玩法项默认值（098c 设置对话框/全局声明实证） ──
+            damage_mult: 1.0,               // 设置 2
+            knockback_mult: 1.0,            // 设置 3
+            lava_damage_mult: 1.0,          // 设置 1（倍率语义：1.0 = 原版 `To=.9` 的"标准"档）
+            first_round_time_secs: 40.0,    // 设置 5 `Uo`
+            between_rounds_time_secs: 30.0, // 设置 4 `uo`
+            shrink_delay_secs: 10.0,        // 设置 6 `wo`
+            shrink_base_secs: 60.0,         // 我方连续模型：满员时收缩总时长（第 2 步与实现对齐）
+            pillar_mode: 1,                 // 设置 8 `Po=0` → 随机
+            ice_mode: 1,                    // 默认随机
+            arena_shape: 0,                 // 圆形
+            gold_rewards_enabled: true,
         }
     }
 }
@@ -1261,6 +1300,40 @@ mod tests {
         assert_eq!(p.inventory_slots(), 10, "研究 3 级：10 格（我方放开 war3 的 6 格上限）");
         // 已达精通上限，不能再买
         assert!(!p.buy_mastery(3), "背包研究上限 = CAPS[3] = 3");
+    }
+
+    /// 房间设置默认值交叉校验：全部 = 098c 全局声明 / 设置对话框的值
+    /// （`war3map_pretty.j` 205-224 全局、18768-18813 设置项）。
+    #[test]
+    fn room_settings_defaults_match_098c() {
+        use crate::skill::SkillId as _;
+        let c = MatchConfig::default();
+        // 经济（设置 10-17 + 初始金）
+        assert_eq!(c.starting_gold, 20, "初始金 Qo=20");
+        assert_eq!(c.gold_per_round, 10, "设置 17 qo=10");
+        assert_eq!(c.gold_per_kill, 1, "设置 12 lo=1");
+        assert_eq!(c.gold_per_assist, 1, "设置 13 Lo=1");
+        assert_eq!(c.gold_per_round_win, 2, "设置 15 Mo=2");
+        assert_eq!(c.gold_per_most_damage, 1, "设置 16 po=1");
+        assert_eq!(
+            (c.score_per_kill, c.score_per_assist, c.score_per_round_win),
+            (1, 1, 2),
+            "设置 10/11/14 ko/Ko/mo=1/1/2"
+        );
+        assert!(c.gold_rewards_enabled, "默认开启金币奖励（等价未使用 -no reward）");
+        // 玩法（设置 1-6/8/9）
+        assert_eq!(c.damage_mult, 1.0, "设置 2 默认 1.0 倍");
+        assert_eq!(c.knockback_mult, 1.0, "设置 3 默认 1.0 倍");
+        assert_eq!(c.lava_damage_mult, 1.0, "设置 1 标准档（倍率语义 1.0）");
+        assert_eq!(c.first_round_time_secs, 40.0, "设置 5 Uo=40（第一轮配置期）");
+        assert_eq!(c.between_rounds_time_secs, 30.0, "设置 4 uo=30（局间配置期）");
+        assert_eq!(c.shrink_delay_secs, 10.0, "设置 6 wo=10");
+        assert!(c.shrink_base_secs > 0.0, "收缩基准时长须为正");
+        assert_eq!(c.base_regen, 0.5, "设置 9 In=.05/0.1s = 0.5/s");
+        // 柱 / 冰 / 地图
+        assert_eq!(c.pillar_mode, 1, "设置 8 Po=0 → 随机");
+        assert_eq!(c.ice_mode, 1, "冰面默认随机");
+        assert_eq!(c.arena_shape, 0, "当前仅圆形");
     }
 
     #[test]
