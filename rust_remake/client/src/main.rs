@@ -111,6 +111,27 @@ const AVATAR_KILL_REWARD: i32 = 1;
 const AVATAR_SLAY_REWARD: i32 = 1;
 /// 基础生命恢复默认值（HP/s；098c `In=.05`/0.1s）。
 const STEAM_DEFAULT_REGEN: f64 = 0.5;
+/// 单机试验场固定种子（世界生成确定性；与 `--solo` 一致）。
+const SOLO_SEED: u64 = 20260812;
+/// 单机试验场的开局金币：一次给足，便于把技能/物品试个遍。
+const SOLO_STARTING_GOLD: i32 = 9999;
+
+/// 单机试验场（Solo / 主菜单）的 World + MatchState。
+///
+/// **必须由全部入口共用**（`App::new` 启动、菜单「单机试验场」、`reset_to_main_menu` 退回菜单）：
+/// 曾经「退回主菜单」用 `MatchConfig::default()`（`starting_gold = 20`）重建，
+/// 而菜单入口又直接复用它 → **退回菜单再进 Solo 时金币变成 30**（而不是 9999）。
+fn solo_world_and_meta() -> (game_core::world::World, game_core::meta::MatchState) {
+    let mut w = game_core::world::World::new(2, SOLO_SEED); // player0=你, player1=不动靶子
+    w.sandbox = true;
+    let cfg = game_core::meta::MatchConfig {
+        starting_gold: SOLO_STARTING_GOLD,
+        ..Default::default()
+    };
+    let m = game_core::meta::MatchState::new(cfg, &[0], 8);
+    (w, m)
+}
+
 /// R 键可循环的基础回血档位（098c `-C9` 是常量式，故用档位而非输入框）。
 #[cfg(feature = "steam")]
 const STEAM_REGEN_CHOICES: [f64; 6] = [0.5, 0.0, 0.25, 0.75, 1.0, 2.0];
@@ -764,32 +785,23 @@ impl Game {
         let seed = 20260812u64;
         // Solo 试验场（含主菜单入口）：世界含「你 + 1 个不动靶子」→ 不判结束；meta 只记录你。
         // 这样无论从菜单按 1 进 Solo 还是 --solo 直通，世界都已是 sandbox。
-        let mut world = match app {
-            AppState::Solo | AppState::MainMenu => {
-                let mut w = World::new(2, seed); // player0=你, player1=靶子
-                w.sandbox = true;
-                eprintln!("[solo] world players={} sandbox={}", w.players.len(), w.sandbox);
-                w
-            }
-            _ => {
-                let mut w = World::new(player_count.max(1), seed);
-                w.configure_mode(init_mode); // 非Steam 路径：--mode N（B3）
-                w.configure_regen(init_regen); // 非Steam 路径：--regen X
-                w
-            }
-        };
-        let meta_ids: Vec<u32> = match app {
-            AppState::Solo | AppState::MainMenu => vec![0],
-            _ => (0..player_count).collect(),
-        };
-        // 整场对抗：3 小局，所有玩家都纳入档案。Steam 冷启动直通进房时用大厅元数据对齐的金币配置。
-        let mut meta = {
+        // 单机试验场与主菜单共用同一份构造（见 `solo_world_and_meta` 注释：分开写曾导致金币不一致）。
+        let is_solo_app = matches!(app, AppState::Solo | AppState::MainMenu);
+        let (mut world, mut meta) = if is_solo_app {
+            let (w, m) = solo_world_and_meta();
+            eprintln!("[solo] world players={} sandbox={}", w.players.len(), w.sandbox);
+            (w, m)
+        } else {
+            let mut w = World::new(player_count.max(1), seed);
+            w.configure_mode(init_mode); // 非Steam 路径：--mode N（B3）
+            w.configure_regen(init_regen); // 非Steam 路径：--regen X
+            // 整场对抗：所有玩家都纳入档案。Steam 冷启动直通进房时用大厅元数据对齐的金币配置。
             #[cfg(feature = "steam")]
             let cfg = MatchConfig {
                 total_rounds: init_rounds,
                 learn_time_secs: init_learn_secs as f64,
                 gold_per_round: init_gold_per_round,
-                starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { init_starting_gold },
+                starting_gold: init_starting_gold,
                 place_rewards: init_place_rewards.clone(),
                 ..Default::default()
             };
@@ -798,11 +810,10 @@ impl Game {
                 game_mode: init_mode,
                 base_regen: init_regen,
                 team_count: if init_mode == 4 { 2 } else { 1 },
-                // Solo 试验场（AppState::Solo/MainMenu 即 sandbox）：给充裕金币，便于一次性试多套技能/物品。
-                starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { 0 },
                 ..Default::default()
             };
-            MatchState::new(cfg, &meta_ids, 8)
+            let meta_ids: Vec<u32> = (0..player_count).collect();
+            (w, MatchState::new(cfg, &meta_ids, 8))
         };
         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
         if std::env::var("FASTROUND").is_ok() {
@@ -2824,6 +2835,14 @@ impl Game {
         } else {
             format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
         };
+        // 角色标记图例（只在有化身/国王的模式下提示）。
+        let title = if self.match_mode == 3 {
+            format!("{title}     化 = 化身")
+        } else if self.match_mode == 4 {
+            format!("{title}     王 = 国王")
+        } else {
+            title
+        };
         draw_text(
             canvas,
             ctx,
@@ -2869,10 +2888,18 @@ impl Game {
                     } else {
                         Color::from_rgb(215, 225, 240)
                     };
-                    let name = if is_me {
-                        format!("{} (我)", self.player_label(*pid))
+                    // 角色标记（模式 3 化身 / 模式 4 国王）：单字后缀，避免撑爆名字列宽。
+                    let role = if self.world.avatar == Some(*pid) {
+                        "·化"
+                    } else if self.world.kings.contains(pid) {
+                        "·王"
                     } else {
-                        self.player_label(*pid)
+                        ""
+                    };
+                    let name = if is_me {
+                        format!("{}{role} (我)", self.player_label(*pid))
+                    } else {
+                        format!("{}{role}", self.player_label(*pid))
                     };
                     draw_text(canvas, ctx, &name, 18.0, c, Point2 { x: x0 + 70.0, y }, true)?;
                     draw_text(canvas, ctx, &score.to_string(), 18.0, c, Point2 { x: x0 + 185.0, y }, true)?;
@@ -3243,11 +3270,13 @@ impl Game {
                     format!("第 {} / {} 局结束 - 学习阶段", self.meta.round, self.meta.config.total_rounds)
                 };
                 ui::text_center(canvas, ctx, &title, 32.0, ui::theme::accent(), sw / 2.0, sh * 0.055)?;
-                ui::text_right(
-                    canvas, ctx,
-                    &format!("剩余 {:.0}s", self.meta.learn_remaining.max(0.0)),
-                    20.0, ui::theme::ok(), sw - 16.0, sh * 0.055,
-                )?;
+                // 单机试验场不计时 → 不显示倒计时，改提示手动开始方式。
+                let learn_note = if self.world.sandbox {
+                    "自由配置 · 空格 / 回车 开始".to_string()
+                } else {
+                    format!("剩余 {:.0}s", self.meta.learn_remaining.max(0.0))
+                };
+                ui::text_right(canvas, ctx, &learn_note, 20.0, ui::theme::ok(), sw - 16.0, sh * 0.055)?;
 
                 // 我的档案（顶部一行）
                 let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) else {
@@ -3943,9 +3972,14 @@ impl event::EventHandler for Game {
             if let Some(sel) = act {
                 match sel {
                     0 => {
-                        // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
+                        // 单机试验场：**重建**为干净的试验场世界/meta。
+                        // （此前只切 `app` 状态、复用菜单占位的 meta —— 从对局退回菜单后
+                        //  其金币/回合等是残留值，正是「退回主菜单再进 Solo 金币不对」的来源。）
                         eprintln!("[menu] -> Solo");
                         self.menu_hint.clear();
+                        let (w, m) = solo_world_and_meta();
+                        self.world = w;
+                        self.meta = m;
                         self.app = AppState::Solo;
                         self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
                         self.pre_game_config = true;
@@ -4024,14 +4058,15 @@ impl event::EventHandler for Game {
                     self.poll_host_join_phase();
                 }
 
-                // 单机试验场首局：保留手动开始（空格/回车/P），不走倒计时。
-                let solo_first = self.app == AppState::Solo
-                    && self.meta.is_first_config()
-                    && !self.steam_active()
+                // 单机试验场（含主菜单入口）：配置阶段**不计时**——想试多久就试多久，
+                // 只用 空格 / 回车 / P 手动开始（首局配置与局间配置同一条路径）。
+                // 此前首局只靠 `pre_game_timer` 兜底自动开、局间还会走 30s 倒计时 → 试验场会自己跑起来。
+                let solo_config = !self.steam_active()
                     && self.net_link.is_none()
                     && self.net_host.is_none()
-                    && self.net_host_ls.is_none();
-                if solo_first {
+                    && self.net_host_ls.is_none()
+                    && (self.app == AppState::Solo || self.world.sandbox);
+                if solo_config {
                     use ggez::input::keyboard::Key;
                     use winit::keyboard::NamedKey;
                     let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
@@ -4039,12 +4074,13 @@ impl event::EventHandler for Game {
                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()))
                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into()));
-                    // 超时兜底：窗口失焦/按键收不到时仍能开（手动仍是首选，超时仅防卡死）。
-                    self.pre_game_timer -= dt;
-                    let auto_done = self.pre_game_timer <= 0.0;
-                    if done || auto_done {
-                        eprintln!("[solo] first config {}", if auto_done { "timeout -> auto-start" } else { "manual start" });
-                        self.meta.finish_first_round_config();
+                    if done {
+                        eprintln!("[solo] config done -> manual start");
+                        if self.meta.is_first_config() {
+                            self.meta.finish_first_round_config();
+                        } else {
+                            self.meta.start_next_round();
+                        }
                         self.teardown_round_end();
                         self.pre_game_config = false;
                     }
@@ -4796,12 +4832,10 @@ impl Game {
 
     /// 把整场对抗（Finished）退回主菜单：放弃当前网络连接，重建为 MainMenu 的沙盒世界/meta，并清空所有运行状态。
     fn reset_to_main_menu(&mut self) {
-        let seed = 20260812u64;
-        // 主菜单与 Solo 共用“2 玩家 + 靶子 + sandbox”世界（不判结束 / 不缩圈）。
-        let mut w = game_core::world::World::new(2, seed);
-        w.sandbox = true;
+        // 主菜单与 Solo 共用同一份试验场世界/配置（不判结束 / 不缩圈；金币必须是试验场值）。
+        let (w, m) = solo_world_and_meta();
         self.world = w;
-        self.meta = game_core::meta::MatchState::new(game_core::meta::MatchConfig::default(), &[0], 8);
+        self.meta = m;
         // 开局不带默认技能：玩家从零在配置界面选。
         self.app = AppState::MainMenu;
         // 放弃联网连接（UDP socket / 握手 / 帧同步关闭）。

@@ -1,0 +1,88 @@
+fn draw_scoreboard(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        const SCOREBOARD_MAX_ROWS: usize = 8;
+        const ROW_H: f32 = 30.0;
+        // 行： (player_id, score, kills, total_damage, alive)
+        type Row = (u32, u32, u32, f64, bool);
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let me = self.self_index();
+
+        // 分数降序（同分按 id 升序，保证确定性）；存活取自 world（帧内真实状态）。
+        let mut rows: Vec<Row> = self
+            .meta
+            .profiles
+            .iter()
+            .map(|p| {
+                let alive = self
+                    .world
+                    .players
+                    .get(p.player_id as usize)
+                    .map(|w| w.alive)
+                    .unwrap_or(false);
+                (p.player_id, p.score, p.total_kills, p.total_damage, alive)
+            })
+            .collect();
+        rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+
+        // 人多 → 头 3 + 「…」+ 尾 2 + 本人（若未被包含则补在末尾）
+        let shown: Vec<Option<Row>> = if rows.len() <= SCOREBOARD_MAX_ROWS {
+            rows.iter().map(|r| Some(*r)).collect()
+        } else {
+            let tail_start = rows.len() - 2;
+            let mut v: Vec<Option<Row>> = Vec::new();
+            for r in rows.iter().take(3) {
+                v.push(Some(*r));
+            }
+            v.push(None); // 「…」
+            for r in rows.iter().skip(tail_start) {
+                v.push(Some(*r));
+            }
+            let in_head_or_tail = rows
+                .iter()
+                .take(3)
+                .chain(rows.iter().skip(tail_start))
+                .any(|r| r.0 == me);
+            if !in_head_or_tail {
+                if let Some(pos) = rows.iter().position(|r| r.0 == me) {
+                    v.push(None);
+                    v.push(Some(rows[pos]));
+                }
+            }
+            v
+        };
+
+        let w = 500.0;
+        let h = 96.0 + shown.len() as f32 * ROW_H;
+        let x0 = sw / 2.0 - w / 2.0;
+        let y0 = sh / 2.0 - h / 2.0;
+        let panel = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(x0, y0, w, h),
+            Color::from_rgba(10, 12, 18, 228),
+        )?;
+        canvas.draw(&panel, graphics::DrawParam::new());
+        let border = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::stroke(2.0),
+            graphics::Rect::new(x0, y0, w, h),
+            Color::from_rgb(90, 110, 140),
+        )?;
+        canvas.draw(&border, graphics::DrawParam::new());
+
+        // 标题：模式相关（死斗/最后生还无回合概念）
+        let title = if self.match_mode == 2 {
+            format!("死斗  目标 {} 分", self.meta.config.win_score)
+        } else {
+            format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+        };
+        draw_text(
+            canvas,
+            ctx,
+            &title,
+            22.0,
+            Color::from_rgb(255, 220, 120),
+            Point2 { x: sw / 2.0, y: y0 + 14.0 },
+            true,
+        )?;
+
+      

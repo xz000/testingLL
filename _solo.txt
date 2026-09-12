@@ -1,0 +1,153 @@
+===== 3940..3985 =====
+ 3940                 self.menu_selection = 2;
+ 3941                 act = Some(2);
+ 3942             }
+ 3943             if let Some(sel) = act {
+ 3944                 match sel {
+ 3945                     0 => {
+ 3946                         // 单机试验场：world/meta 在构造时已是 1 玩家无 AI，直接切换即可。
+ 3947                         eprintln!("[menu] -> Solo");
+ 3948                         self.menu_hint.clear();
+ 3949                         self.app = AppState::Solo;
+ 3950                         self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
+ 3951                         self.pre_game_config = true;
+ 3952                     }
+ 3953                     1 => {
+ 3954                         // 局域网对战尚未在 GUI 内接通：提示用户改用命令行启动（避免只 eprintln 看不到）。
+ 3955                         eprintln!("[menu] 局域网建设中：需命令行 --host <port> / --join <host:port>");
+ 3956                         self.menu_hint = "局域网对战需命令行启动：--host <port> 创建，或 --join <host:port> 加入（GUI 暂未接入）".to_string();
+ 3957                     }
+ 3958                     2 => {
+ 3959                         // 进入 Steam 大厅选择子菜单（H 创建 / J 加入 / Q 返回）。
+ 3960                         #[cfg(feature = "steam")]
+ 3961                         {
+ 3962                             eprintln!("[menu] -> Steam lobby menu");
+ 3963                             self.menu_hint.clear();
+ 3964                             self.steam_lobby_menu = true;
+ 3965                             self.steam_lobby_create = false;
+ 3966                             self.steam_lobby_list = false;
+ 3967                             // 进入大厅前初始化一次 Steam 会话（读本机昵称；建房/加入复用，避免重复 init 单实例）。
+ 3968                             if self.steam_sess.is_none() {
+ 3969                                 match net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT) {
+ 3970                                     Ok(s) => {
+ 3971                                         self.steam_my_display_name = s.transport.friends()
+ 3972                                             .get_friend(net_steam::steamworks::SteamId::from_raw(s.transport.steam_id()))
+ 3973                                             .name();
+ 3974                                         self.steam_sess = Some(s);
+ 3975                                         eprintln!("[steam] session ready, display name='{}'", self.steam_my_display_name);
+ 3976                                     }
+ 3977                                     Err(e) => {
+ 3978                                         eprintln!("[steam] session init failed: {e:?}");
+ 3979                                         self.steam_sess = None;
+ 3980                                     }
+ 3981                                 }
+ 3982                             }
+ 3983                         }
+ 3984                         #[cfg(not(feature = "steam"))]
+ 3985                         eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
+
+===== 4110..4140 =====
+ 4110                         self.teardown_round_end();
+ 4111                     }
+ 4112                 }
+ 4113                 let _ = now;
+ 4114                 Ok(())
+ 4115             }
+ 4116             MatchPhase::Fighting => {
+ 4117                 // 对局进行中允许随时按 Esc 返回主菜单（含联网）：client 离开=正常掉线由其余端迁移/接管；
+ 4118                 // host 离开=触发现有 drop→迁移路径。与 Q 在 Finished 一致，消除 C1/C2 联网无法退出的死状态。
+ 4119                 use ggez::input::keyboard::Key;
+ 4120                 use winit::keyboard::NamedKey;
+ 4121                 if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+ 4122                     eprintln!("[exit] Esc -> back to main menu");
+ 4123                     self.reset_to_main_menu();
+ 4124                     self.accumulator = 0.0;
+ 4125                     return Ok(());
+ 4126                 }
+ 4127                 // 每帧轮询输入（技能键 / 鼠标）
+ 4128                 self.poll_input(ctx);
+ 4129                 self.accumulator += dt.min(0.25);
+ 4130                 let ticking = Fix64::from_num(TICK);
+ 4131                 #[cfg(feature = "steam")]
+ 4132                 {
+ 4133                     // Rich Presence：对局中 → “对局中（第 N 局）”（带 connect，好友可加入同一房间）。
+ 4134                     self.steam_refresh_presence(ctx.time.time_since_start().as_secs_f64());
+ 4135                     // 对局中也刷新 ping（HUD 显示到对端的延迟，卡顿来源一眼可辨）。
+ 4136                     self.steam_refresh_network_info(ctx);
+ 4137                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
+ 4138                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
+ 4139                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
+ 4140                         if self.net_cfg == NetCfgSync::HostGather {
+
+===== 760..830 =====
+  760                 player_count = total.max(1) as u32;
+  761                 net_host = Some(hs);
+  762             }
+  763         }
+  764         let seed = 20260812u64;
+  765         // Solo 试验场（含主菜单入口）：世界含「你 + 1 个不动靶子」→ 不判结束；meta 只记录你。
+  766         // 这样无论从菜单按 1 进 Solo 还是 --solo 直通，世界都已是 sandbox。
+  767         let mut world = match app {
+  768             AppState::Solo | AppState::MainMenu => {
+  769                 let mut w = World::new(2, seed); // player0=你, player1=靶子
+  770                 w.sandbox = true;
+  771                 eprintln!("[solo] world players={} sandbox={}", w.players.len(), w.sandbox);
+  772                 w
+  773             }
+  774             _ => {
+  775                 let mut w = World::new(player_count.max(1), seed);
+  776                 w.configure_mode(init_mode); // 非Steam 路径：--mode N（B3）
+  777                 w.configure_regen(init_regen); // 非Steam 路径：--regen X
+  778                 w
+  779             }
+  780         };
+  781         let meta_ids: Vec<u32> = match app {
+  782             AppState::Solo | AppState::MainMenu => vec![0],
+  783             _ => (0..player_count).collect(),
+  784         };
+  785         // 整场对抗：3 小局，所有玩家都纳入档案。Steam 冷启动直通进房时用大厅元数据对齐的金币配置。
+  786         let mut meta = {
+  787             #[cfg(feature = "steam")]
+  788             let cfg = MatchConfig {
+  789                 total_rounds: init_rounds,
+  790                 learn_time_secs: init_learn_secs as f64,
+  791                 gold_per_round: init_gold_per_round,
+  792                 starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { init_starting_gold },
+  793                 place_rewards: init_place_rewards.clone(),
+  794                 ..Default::default()
+  795             };
+  796             #[cfg(not(feature = "steam"))]
+  797             let cfg = MatchConfig {
+  798                 game_mode: init_mode,
+  799                 base_regen: init_regen,
+  800                 team_count: if init_mode == 4 { 2 } else { 1 },
+  801                 // Solo 试验场（AppState::Solo/MainMenu 即 sandbox）：给充裕金币，便于一次性试多套技能/物品。
+  802                 starting_gold: if matches!(app, AppState::Solo | AppState::MainMenu) { 9999 } else { 0 },
+  803                 ..Default::default()
+  804             };
+  805             MatchState::new(cfg, &meta_ids, 8)
+  806         };
+  807         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
+  808         if std::env::var("FASTROUND").is_ok() {
+  809             world.arena_radius = game_core::fix::Fix64::from_num(3.0);
+  810             meta.config.learn_time_secs = 3.0; // 给局间配置留 3s，方便手测时从容绑定/升级
+  811             meta.config.shopping_time_secs = 3.0; // 首局购物同样缩短（否则开局要等满 40s）
+  812             meta.config.total_rounds = 4;
+  813         }
+  814         // 局域网（--host/--join）与单机试验场（--solo）首局也要进配置/学习阶段：商店（购买）界面只在 Learning 出现。
+  815         // 世界与 meta 启动时已按 player_count 建好（host=total，client=link.player_count），无需再重建。
+  816         // Learning 分支会在首局配置期间继续 poll_host_join_phase 收 client 加入。
+  817         if matches!(app, AppState::LanHost { .. } | AppState::LanJoin { .. } | AppState::Solo) {
+  818             meta.begin_first_round_config();
+  819             eprintln!("[first-config] 首局进入配置/学习阶段（shopping {}s）", meta.config.shopping_time_secs);
+  820         }
+  821         // 开局不带任何默认技能：完全由玩家在配置/学习界面按字母选树 + 数字绑技能（4.6b/从零选择）。
+  822 
+  823         // 当前所有模式（Solo/Lan）都不带本地 AI 机器人：Solo 无对手，Lan 是真人玩家。
+  824         let bot_rngs: Vec<Rng> = Vec::new();
+  825         let bot_targets: Vec<Option<Vec2>> = Vec::new();
+  826 
+  827         let (w, h) = (ui::UI_W, ui::UI_H);
+  828         Ok(Game {
+  829             world,
+  830             meta,

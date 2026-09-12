@@ -1,0 +1,70 @@
+ 4006                     || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
+ 4007                 if q {
+ 4008                     eprintln!("[meta] finished -> back to main menu");
+ 4009                     self.reset_to_main_menu();
+ 4010                 }
+ 4011                 Ok(())
+ 4012             }
+ 4013             MatchPhase::Learning => {
+ 4014                 // 学习阶段：轮询购买升级输入 + 计时
+ 4015                 self.poll_learning(ctx);
+ 4016                 self.poll_growth_buy(ctx);
+ 4017             self.poll_shop(ctx);
+ 4018                 // 鼠标点击派发（U2）：命中上一帧绘制时记录的元素
+ 4019                 if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
+ 4020                     self.learn_dispatch_click(ctx);
+ 4021                 }
+ 4022                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
+ 4023                 if self.meta.is_first_config() && self.net_host_ls.is_none() {
+ 4024                     self.poll_host_join_phase();
+ 4025                 }
+ 4026 
+ 4027                 // 单机试验场首局：保留手动开始（空格/回车/P），不走倒计时。
+ 4028                 let solo_first = self.app == AppState::Solo
+ 4029                     && self.meta.is_first_config()
+ 4030                     && !self.steam_active()
+ 4031                     && self.net_link.is_none()
+ 4032                     && self.net_host.is_none()
+ 4033                     && self.net_host_ls.is_none();
+ 4034                 if solo_first {
+ 4035                     use ggez::input::keyboard::Key;
+ 4036                     use winit::keyboard::NamedKey;
+ 4037                     let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
+ 4038                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
+ 4039                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()))
+ 4040                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
+ 4041                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into()));
+ 4042                     // 超时兜底：窗口失焦/按键收不到时仍能开（手动仍是首选，超时仅防卡死）。
+ 4043                     self.pre_game_timer -= dt;
+ 4044                     let auto_done = self.pre_game_timer <= 0.0;
+ 4045                     if done || auto_done {
+ 4046                         eprintln!("[solo] first config {}", if auto_done { "timeout -> auto-start" } else { "manual start" });
+ 4047                         self.meta.finish_first_round_config();
+ 4048                         self.teardown_round_end();
+ 4049                         self.pre_game_config = false;
+ 4050                     }
+ 4051                     self.accumulator = 0.0;
+ 4052                     return Ok(());
+ 4053                 }
+ 4054 
+ 4055                 // 局域网 host：client 尚未全部加入（握手未完、net_host_ls 未建）时先暂停倒计时。
+ 4056                 // 否则倒计时归零会因 host_side/client_side 都为 false 而走「单机开局」分支
+ 4057                 // （下面的 teardown_round_end），导致 client 后续加入时两端不同步。
+ 4058                 if matches!(self.app, AppState::LanHost { .. })
+ 4059                     && self.net_host.is_some()
+ 4060                     && self.net_host_ls.is_none()
+ 4061                 {
+ 4062                     self.accumulator = 0.0;
+ 4063                     return Ok(());
+ 4064                 }
+ 4065 
+ 4066                 // 其余（联机首局/局间、单机局间）：倒计时；归零后单机直接下一局、联机进配置同步。
+ 4067                 let now = self.meta.tick_learning(dt.min(0.25));
+ 4068                 if self.meta.phase == MatchPhase::Fighting {
+ 4069                     let client_side = self.net_link.is_some()
+ 4070                         || {
+ 4071                             #[cfg(feature = "steam")]
+ 4072                             {
+ 4073                                 self.steam_cli_ls.is_some()
+ 4074                             }
+ 4075                             #[cfg(not(feature = "steam"))]

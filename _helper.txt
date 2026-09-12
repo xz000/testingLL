@@ -1,0 +1,75 @@
+team")]
+const STEAM_MIN_LEARN_SECS: u32 = 8;
+/// Steam 建房：局间准备时间（秒）的最大值。
+#[cfg(feature = "steam")]
+const STEAM_MAX_LEARN_SECS: u32 = 256;
+/// Steam 建房：局间准备时间（秒）默认值（与 MatchConfig 默认一致）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_LEARN_SECS: u32 = 20;
+/// Steam 建房：金币类字段的单档金额上限（初始金币 / 每轮金币 / 每档名次奖励）。
+#[cfg(feature = "steam")]
+const STEAM_MAX_GOLD: i32 = 99999;
+/// Steam 建房：开局初始金币默认值（第一局开始前一次性发放，与每轮参与奖独立叠加；默认 0）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_STARTING_GOLD: i32 = 0;
+/// Steam 建房：每轮固定金币（参与奖）默认值（与 MatchConfig 默认一致）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 20;
+/// 化身模式：击杀化身的奖励金（098c `AI` nn==3 的 `+lo`；`ed()` 默认 lo=1）。
+const AVATAR_KILL_REWARD: i32 = 1;
+/// 化身模式：化身本人的击杀奖励金（098c `AI` nn==3 的 `+1`）。
+const AVATAR_SLAY_REWARD: i32 = 1;
+/// 基础生命恢复默认值（HP/s；098c `In=.05`/0.1s）。
+/// 单机试验场固定种子（世界生成确定性；与 `--solo` 一致）。
+const SOLO_SEED: u64 = 20260812;
+/// 单机试验场的开局金币：一次给足，便于把技能/物品试个遍。
+const SOLO_STARTING_GOLD: i32 = 9999;
+
+/// 单机试验场（Solo / 主菜单）的 World + MatchState。
+///
+/// **必须由全部入口共用**（`App::new` 启动、菜单「单机试验场」、`reset_to_main_menu` 退回菜单）：
+/// 曾经「退回主菜单」用 `MatchConfig::default()`（`starting_gold = 20`）重建，
+/// 而菜单入口又直接复用它 → **退回菜单再进 Solo 时金币变成 30**（而不是 9999）。
+fn solo_world_and_meta() -> (game_core::world::World, game_core::meta::MatchState) {
+    let mut w = game_core::world::World::new(2, SOLO_SEED); // player0=你, player1=不动靶子
+    w.sandbox = true;
+    let cfg = game_core::meta::MatchConfig {
+        starting_gold: SOLO_STARTING_GOLD,
+        ..Default::default()
+    };
+    let m = game_core::meta::MatchState::new(cfg, &[0], 8);
+    (w, m)
+}
+
+/// R 键可循环的基础回血档位（098c `-C9` 是常量式，故用档位而非输入框）。
+/// R 键可循环的基础回血档位（098c `-C9` 是常量式，故用档位而非输入框）。
+#[cfg(feature = "steam")]
+const STEAM_REGEN_CHOICES: [f64; 6] = [0.5, 0.0, 0.25, 0.75, 1.0, 2.0];
+/// Steam 建房：名次奖励默认输入（单数字 = 第一名奖励，自动按 0.6 比例递减到 0；
+/// 也可输入逗号分隔档位 `30,20,10` 手动精确控制）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_PLACE_REWARD: &str = "30";
+/// Steam 建房：名次奖励默认第一名金额（配合自动递减）。
+#[cfg(feature = "steam")]
+const STEAM_DEFAULT_PLACE_FIRST: i32 = 30;
+
+/// 由「第一名奖励」自动生成名次奖励档位：每降一名奖励 ×0.6（向下取整），直到 ≤0。
+/// 这样只需输一个数字即可覆盖任意玩家数（档位只影响前几名，后几名逐渐归零）。
+#[cfg(feature = "steam")]
+fn auto_place_rewards(first: i32) -> Vec<i32> {
+    let mut out = Vec::new();
+    let mut v = first.max(0);
+    while v > 0 {
+        out.push(v);
+        if out.len() >= 64 {
+            break;
+        }
+        v = (v as f64 * 0.6).floor() as i32;
+    }
+    if out.is_empty() {
+        out.push(0);
+    }
+    out
+}
+/// Steam 房间列表：两次刷新（`request_lobby_list`）之间的最小间隔（秒）。
+/// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽

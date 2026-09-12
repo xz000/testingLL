@@ -1,0 +1,156 @@
+  381 }
+  382 
+  383 impl MatchState {
+  384     pub fn new(config: MatchConfig, player_ids: &[u32], skill_count: usize) -> Self {
+  385         let team_count = config.team_count.max(1);
+  386         let mut m = MatchState {
+  387             round: 1,
+  388             phase: MatchPhase::Fighting,
+  389             learn_remaining: 0.0,
+  390             profiles: player_ids
+  391                 .iter()
+  392                 .map(|&id| PlayerProfile::new(id, skill_count))
+  393                 .collect(),
+  394             round_placements: Vec::new(),
+  395             config,
+  396             pending_first_round: false,
+  397             first_blood_taken: false,
+  398         };
+  399         // 分队（098c kX -mgl 语义，B2）：2 队 = 按 id 序对半分；FFA = 各自一队（cn[i]=i）。
+  400         if team_count >= 2 {
+  401             let mut ids = m.profiles.iter().map(|p| p.player_id).collect::<Vec<_>>();
+  402             ids.sort();
+  403             let half = ids.len().div_ceil(2);
+  404             for (i, &id) in ids.iter().enumerate() {
+  405                 if let Some(pr) = m.profiles.iter_mut().find(|p| p.player_id == id) {
+  406                     pr.team = if i < half { 0 } else { 1 };
+  407                 }
+  408             }
+  409         }
+  410         m.give_starting_gold();
+  411         m.give_round_gold();
+  412         m
+  413     }
+  414 
+  415     /// 开局发放初始金币（第一局开始前一次性发放，独立于每轮参与奖）。
+  416     fn give_starting_gold(&mut self) {
+  417         for p in self.profiles.iter_mut() {
+  418             p.gold += self.config.starting_gold;
+  419         }
+  420     }
+  421 
+  422     fn give_round_gold(&mut self) {
+  423         for p in self.profiles.iter_mut() {
+  424             p.gold += self.config.gold_per_round;
+  425         }
+  426     }
+  427 
+  428     /// 本局结束时结算：传入本局名次（`placement[i]` = 名次为 i+1 的玩家 id）。
+  429     /// 发放存活/名次奖励，记录存活局数与最优名次，退回学习阶段。
+  430     pub fn finish_round(&mut self, placement: Vec<u32>) {
+  431         self.round_placements.push(placement.clone());
+  432         for (rank_idx, &player_id) in placement.iter().enumerate() {
+  433             let rank = (rank_idx + 1) as u32;
+  434             if let Some(p) = self
+  435                 .profiles
+  436                 .iter_mut()
+  437                 .find(|pr| pr.player_id == player_id)
+  438             {
+  439                 // 名次奖励 & 最优名次
+  440                 if let Some(&reward) = self.config.place_rewards.get(rank_idx) {
+  441                     p.gold += reward;
+  442                 }
+  443                 p.best_placement = if p.best_placement == 0 {
+  444                     rank
+  445                 } else {
+  446                     p.best_placement.min(rank)
+  447                 };
+  448                 if rank == 1 {
+  449                     p.rounds_survived += 1; // 冠军视为存活（保留存活局数语义）
+  450                 }
+  451             }
+  452         }
+  453         // 进入学习阶段，或整场结束
+  454         // En2 死亡竞赛：有人达到胜利分 → 提前终局（D6/En 批）。
+  455         let early_win = self.config.game_mode == 2
+  456             && self.profiles.iter().any(|pr| pr.score >= self.config.win_score);
+  457         if early_win || self.round >= self.config.total_rounds {
+  458             self.phase = MatchPhase::Finished;
+  459         } else {
+  460             self.phase = MatchPhase::Learning;
+  461             self.learn_remaining = self.config.learn_time_secs;
+  462         }
+  463     }
+  464 
+  465     /// 终局排名（En 批）：按分数降序、最优名次升序；返回 (player_id, score)。
+  466     /// En1（打满轮数）与 En2（先到胜利分）共用。
+  467     pub fn final_ranking(&self) -> Vec<(u32, u32)> {
+  468         let mut v: Vec<(u32, u32, u32)> = self
+  469             .profiles
+  470             .iter()
+
+  571             9 => Some("接近神了"),
+  572             10..=u32::MAX => Some("超越神了"),
+  573             _ => None,
+  574         }
+  575     }
+  576 
+  577     /// 学习阶段推进；时间用完则进入下一局（回到 Fighting）。
+  578     /// 返回单位：是否需要进入下一局。
+  579     pub fn tick_learning(&mut self, dt: f64) -> bool {
+  580         if self.phase != MatchPhase::Learning {
+  581             return false;
+  582         }
+  583         self.learn_remaining -= dt;
+  584         if self.learn_remaining <= 0.0 {
+  585             if self.pending_first_round {
+  586                 // 首局配置：归零 → 进入第一局（round 保持 1、不重复发参与奖，构造时已发）。
+  587                 self.pending_first_round = false;
+  588                 self.enter_first_round();
+  589             } else {
+  590                 self.advance_round();
+  591             }
+  592             true
+  593         } else {
+  594             false
+  595         }
+  596     }
+  597 
+  598     /// 手动结束学习阶段（例如玩家点了"开始"，且设置学习时长为必点）。
+  599     pub fn start_next_round(&mut self) {
+  600         if self.phase == MatchPhase::Learning {
+  601             self.advance_round();
+  602         }
+  603     }
+  604 
+  605     /// 开局前的配置阶段结束 → 进入第一局（不 +round，参与奖已在构造时发放）。
+  606     pub fn enter_first_round(&mut self) {
+  607         self.phase = MatchPhase::Fighting;
+  608     }
+  609 
+  610     /// 首局进入配置学习（联机用倒计时自动开始）：进入 Learning，倒计时 =
+  611     /// `shopping_time_secs`（098b Wo=40 开局购物，D6/M4；区别于每轮 wo=30 的 learn_time_secs）。
+  612     /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发参与奖）。
+  613     pub fn begin_first_round_config(&mut self) {
+  614         self.phase = MatchPhase::Learning;
+  615         self.learn_remaining = self.config.shopping_time_secs;
+  616         self.pending_first_round = true;
+  617     }
+  618 
+  619     /// 手动结束首局配置（单机试验场用）：直接进入第一局（不 +round、不重复发参与奖）。
+  620     pub fn finish_first_round_config(&mut self) {
+  621         self.pending_first_round = false;
+  622         self.enter_first_round();
+  623     }
+  624 
+  625     /// 当前是否处于「首局配置学习」（未开过战）。client 用来区分单机首局的手动开始。
+  626     pub fn is_first_config(&self) -> bool {
+  627         self.pending_first_round
+  628     }
+  629 
+  630     fn advance_round(&mut self) {
+  631         self.round += 1;
+  632         self.phase = MatchPhase::Fighting;
+  633         self.give_round_gold(); // 新的参与奖
+  634     }
+  635 }

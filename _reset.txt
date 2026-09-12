@@ -1,0 +1,47 @@
+host_ls);
+            } else {
+                self.net_host = Some(hs); // 尚未收齐 client，继续等
+            }
+        }
+    }
+
+    /// 把整场对抗（Finished）退回主菜单：放弃当前网络连接，重建为 MainMenu 的沙盒世界/meta，并清空所有运行状态。
+    fn reset_to_main_menu(&mut self) {
+        let seed = 20260812u64;
+        // 主菜单与 Solo 共用“2 玩家 + 靶子 + sandbox”世界（不判结束 / 不缩圈）。
+        let mut w = game_core::world::World::new(2, seed);
+        w.sandbox = true;
+        self.world = w;
+        self.meta = game_core::meta::MatchState::new(game_core::meta::MatchConfig::default(), &[0], 8);
+        // 开局不带默认技能：玩家从零在配置界面选。
+        self.app = AppState::MainMenu;
+        // 放弃联网连接（UDP socket / 握手 / 帧同步关闭）。
+        self.net_link = None;
+        self.lan_my_index = PLAYER_ID as u8;
+        self.net_host = None;
+        self.net_host_ls = None;
+        self.net_cfg = NetCfgSync::Idle;
+        // 放弃 Steam 会话（P2P 连接 / lockstep / 房间状态），回主菜单后重建。
+        #[cfg(feature = "steam")]
+        {
+            // 先清 Rich Presence：会话还活着（lockstep 仍持有 transport）时才写得到，
+            // 一旦下面把 lockstep 丢掉，Steam Client 就没了，好友会一直看到「加入游戏」。
+            self.steam_clear_presence();
+            // 退出对局时也离开 Steam 大厅，避免后端仍占席位（幽灵成员，要等平台超时才消失）。
+            // 房间阶段的 Q 走 steam_leave_room 已 leave；此处覆盖「Esc/Q 直接退对局」的路径。
+            // 重复 leave 为 no-op（Steam 对未在房内的 leave 调用安全）。
+            if let Some(lid) = self.steam_lobby_id {
+                let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+                if let Some(host) = self.steam_host_ls.as_ref() {
+                    host.transport_ref().matchmaking().leave_lobby(lobby);
+                } else if let Some(cli) = self.steam_cli_ls.as_ref() {
+                    cli.transport_ref().matchmaking().leave_lobby(lobby);
+                }
+            }
+            self.steam_host_ls = None;
+            self.steam_cli_ls = None;
+            self.steam_in_lobby = false;
+            self.steam_active = false;
+            self.steam_local_ready = false;
+            self.steam_was_all_ready = false;
+        
