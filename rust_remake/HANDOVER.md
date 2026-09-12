@@ -6,7 +6,7 @@
 ## 一、怎么跑 / 怎么验
 
 ```bat
-cargo test --workspace                                  :: 基线：308 项
+cargo test --workspace                                  :: 基线：313 项
 cargo clippy --workspace -- -D warnings                 :: 必须干净
 cargo clippy --workspace --features client/steam -- -D warnings
 cargo build -p client                                   :: debug
@@ -32,6 +32,15 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 - **大厅 UI**：四带版面骨架（`layout.rs`）、统一调色板、覆盖层统一入口、鼠标可点（建房/设置）、
   子界面**清屏**、房间面板显示设置信息块（所有端可见）、房间列表显示「自定义 N 项」。
 - **E 键已退休**（房间名/备注并入 `[A]房间`）。
+- **输入路由 + 中文 IME（2026-09-12 大修）**：`TextField` + `Game::text_focus()/text_buffer_mut()` 成为 `Ime::Commit`
+  的**唯一去处** —— 建房名/备注、设置编辑器 `[A]房间` 的房名/备注都能输入中文（此前设置编辑器收不到 IME）。
+  文本态屏蔽字母快捷键（`O`/`M`/`R`/`Q` 不再抢键）；`Ime::Preedit` 组合期间不走 ASCII 白名单（防重复/乱码）；
+  长度按**字符数**（40）而非字节。纯函数 `append_text_limited` 有单测。
+- **client 看房主设置**：`steam_sync_room_meta()` 每帧从大厅元数据回读房名/备注/人数上限；
+  client 按 `O` 可打开**只读**编辑器看到全部 `MatchConfig` 参数，徽章提示 `[O] 查看`。
+- **表现层 P1**：伤害/治疗**飘字**（世界坐标、上飘淡出；自伤红、他伤黄、治疗绿）
+  + 首杀/击杀/连杀**横幅**（连杀用 098c `streak_label`）。纯客户端、由 hp/alive 差分推导，不进快照；
+  世界重建/新一局/复活均正确重置。纯函数 `health_delta_text` 有单测。
 
 ## 三、关键常量与版本
 
@@ -41,16 +50,17 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 312 项（client 34 / game-core 233 / net 36 / net-steam 9） |
+| 测试基线 | 313 项（client 35 / game-core 233 / net 36 / net-steam 9）；steam client 41 |
 
 ## 四、待办（按建议优先级）
 
-1. **表现层 P1**（`PRESENTATION_PLAN.md`）：伤害/治疗**飘字** + 击杀/首杀/连杀**横幅** —— 玩家感知最强的未做项
-2. **输入路由 `InputMode`** + **中文 IME**（`UI_MASTER_PLAN.md` 第十一节）：
-   文本态不触发快捷键、IME 提交写入当前缓冲
-3. **死代码清理**（旧建房界面 `draw_steam_create_lobby`、`CreateAction`、`create_hitboxes`、`steam_create_*` 缓冲）
+1. **表现层 P2**（`PRESENTATION_PLAN.md`）：音效（原生 rodio）—— P1 飘字/横幅已完成
+2. **表现层 P1 扩展**：Hattrick / Vampire / Denied 等事件横幅（需额外战斗信号）
+3. **死代码清理**（旧建房界面 `draw_steam_create_lobby` / `CreateAction` / `create_hitboxes` / `create_step_field`
+   / 旧 `create_dispatch` + 鼠标命中块；旧 `E` 房间信息界面 `steam_room_edit*` / `draw_steam_room_edit`）
    - 现在有 `#[allow(dead_code)]`，**不影响运行**；属整洁性
    - **做法**：一次只删**一个**符号 → `cargo check` → 通过再删下一个（上次一次删一批，改坏过 `draw_menu`，已回滚）
+   - 注意：本次尝试用「行号 + ASCII 断言」脚本删除，因 `read` 行号/CRLF 与脚本不一致而**未改动**（断言失败即未落盘）→ 后改用 `edit` 工具逐块删最稳。
 4. **房间设置与 098c 设置对话框的剩余对齐**：`-league` / `-no reward` 模式开关
 5. `R017` 的小遗漏：`I004` 持有者击退减免按 +3 级计（`JASS_AUDIT_098c.md`）
 
@@ -70,7 +80,8 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 
 ## 六、最近提交（新→旧）
 
-`811ad8d` 商店/成长列表+详情（买卖按钮带快捷键与禁用态） ← `c854027` HANDOVER 刷新 ←
+`2f207cf` 表现层 P1（飘字+横幅） ← `6d9d3f2` client 看房主参数 ← `b21d81f` 输入路由+中文 IME ←
+`f4835c6` 商店升级后保持高亮 ← `811ad8d` 商店/成长列表+详情 ← `c854027` HANDOVER 刷新 ←
 `565728e` 商店退格卖出可用化 ← `7270497` HANDOVER ← `961182d` 商店一行两动作
 ← `065c4ff` 源码扫描测试抗重构 ← `74edf9d` 金币时序 ← `12f1946` 工程坑文档
 ← `31bf70b` 人数/提示 ← `30e6ea5` 非房主只读 ← `5ce9ee1` 开局发钱（初版）
