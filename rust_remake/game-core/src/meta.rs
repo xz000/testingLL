@@ -724,8 +724,6 @@ mod tests {
     /// 模式专属奖励直发（098c 化身模式 `AI` 的 `+lo` / `+1`）。
     /// 乔丹之石（098c `T000`–`T006`）：**按槽** +2、免费、每槽一次、需持戒指。
     #[test]
-    /// 乔丹之石（098c `Hf`）：一颗戒指 = 一次 +2，**可反复买**（每次 5 金），上限随之累加。
-    #[test]
     fn jordan_breaks_cap_repeatable_at_5g_each() {
         use crate::skill::SkillId;
         let mut m = MatchState::new(MatchConfig::default(), &[0], 8);
@@ -800,7 +798,7 @@ mod tests {
         assert_eq!(p.jordan_breaks_for_skill(SkillId::S002), 1);
     }
 
-
+    #[test]
     fn grant_gold_direct_reward() {
         let mut m = MatchState::new(MatchConfig { game_mode: 3, ..Default::default() }, &[0, 1], 8);
         let before = m.profiles[0].gold;

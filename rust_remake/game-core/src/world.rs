@@ -604,8 +604,14 @@ impl World {
                 p.remove_buff(BuffKind::Stealth);
             }
             // 仅在有新移动目标时更新 move_target；None 表示“本帧没有新目标”，不覆盖（让 shift 队列的移动得以保留）。
+            // **施法中不接受新的移动目标**（098c：施法锁定走位）。
+            // 客户端的移动目标是**持续电平量**（每帧重发，防帧同步输入缓存丢指令），
+            // 且它只在「观察到 busy」那一帧才清自己的 `player_target` —— 网络下有 RTT，
+            // 所以 host 侧必须自己丢掉施法期间到达的旧目标，否则角色会一边施法一边继续走。
             if let Some(t) = pi.set_target {
-                p.move_target = Some(t);
+                if !p.caster.is_busy() {
+                    p.move_target = Some(t);
+                }
             }
         }
         for (pid, target) in fake_locs {
@@ -5013,6 +5019,69 @@ mod tests {
             near_d(p.pos.x, 6.0, 0.3),
             "闪烁落地后不应继续走向旧目标，位置应为 ~6，实际 {:?}",
             p.pos
+        );
+    }
+
+    /// 客户端协议的真实形态：**施法与移动都是持续电平量**（每帧同时下发 `set_target` + `cast`）。
+    /// 既有回归测试在施法后就不再下发目标，掩盖了这个组合；这里按真实协议连续下发。
+    ///
+    /// 契约：移动中按技能 → 立刻开始施法；并且**施法中不再接受重发的旧移动目标**
+    /// （客户端只在观察到 busy 那一帧才清自己的 `player_target`，网络下有 RTT，
+    ///   所以 host 侧必须自己保证「施法锁住走位」）。
+    #[test]
+    fn cast_wins_over_continuously_resent_move_target() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let far = Vec2::new(d60(100.0), Fix64::ZERO);
+        let mut w = World::new(1, 33);
+        w.obstacles.clear();
+        w.players[0].pos = Vec2::ZERO;
+        for _ in 0..10 {
+            w.step(vec![PlayerInput { set_target: Some(far), ..Default::default() }], dt);
+        }
+        assert!(w.players[0].pos.x > Fix64::ZERO, "应先开始移动");
+
+        // 移动中按技能：每帧**继续**下发同一个移动目标 + 施法请求。
+        let mut started = false;
+        for _ in 0..20 {
+            w.step(
+                vec![PlayerInput {
+                    set_target: Some(far),
+                    cast: Some((SkillId::Blink, Some(far))),
+                    ..Default::default()
+                }],
+                dt,
+            );
+            if w.players[0].caster.is_busy() {
+                started = true;
+                break;
+            }
+        }
+        assert!(started, "移动中施法应当直接开始（不应要求先停下）");
+        assert!(w.players[0].move_target.is_none(), "施法成功应当清掉移动目标");
+
+        // 后续帧仍然持续下发旧移动目标：**施法进行中**角色必须停住。
+        // （施法结束后重新接受移动是正确的，所以只在 busy 期间断言。）
+        let mut xs = Vec::new();
+        for _ in 0..12 {
+            if !w.players[0].caster.is_busy() {
+                break;
+            }
+            w.step(
+                vec![PlayerInput {
+                    set_target: Some(far),
+                    cast: Some((SkillId::Blink, Some(far))),
+                    ..Default::default()
+                }],
+                dt,
+            );
+            xs.push(w.players[0].pos.x.to_num::<f64>());
+        }
+        assert!(xs.len() >= 2, "施法应至少持续几帧");
+        let total = (xs[xs.len() - 1] - xs[0]).abs();
+        assert!(
+            total < 6.0,
+            "施法进行中不应持续走向旧目标（{} 帧共 {total:.2}）",
+            xs.len()
         );
     }
 
