@@ -157,3 +157,33 @@
 IME 提交只需往它写；否则现在做要再散落一次。
 
 **临时立场**：游戏中房间名/备注建议用英文（用户也可自适应）。
+
+
+## 十二、已定性的设计问题：**开局前就发钱**（2026-09-12，用户发现）
+
+**现象**：房间/就绪阶段（对局还没开始）HUD 与房间面板就已显示金币；
+因此在房内修改「初始金币」看起来"不生效"（钱其实早就发过了）。
+
+**根因**：`MatchState::new` 里直接调用
+`give_starting_gold()` + `give_round_gold()`（`game-core/src/meta.rs` 约 701-702 行），
+而 `enter_first_round()` 的注释还写着"参与奖已在构造时发放" —— 即**发放时机就是构造时**，
+不是开局时。098c 是**开局时才发**。
+
+**正确做法（待实施）**：把这两次发放从 `MatchState::new` 移到 `enter_first_round()`，
+并用 `opening_gold_granted: bool` 保证**幂等**（首局配置期有两条路径会走到 `enter_first_round`：
+`tick_learning` 倒计时结束、以及单机的 `finish_first_round_config`）。
+
+**为什么当时回滚（诚实记录）**：影响面比预估大 —— 直接导致 **8 个测试**失败
+（`round_start_gives_participation_gold` / `starting_gold_granted_once_at_creation_*` /
+`kill_gives_gold` / `finish_round_rewards_placement_and_gold` /
+`learning_then_advance_gives_round_gold_again` / `d6_economy_defaults_match_098b` /
+`upgrade_skill_spends_gold_and_fails_when_poor` /
+`first_round_config_countdown_enters_round_one_without_extra_gold`），
+且需要同时核对客户端"就绪→开始"的调用链；当时剩余精力不足以稳妥完成 + 验证，
+故**按纪律回滚**，记录于此待专门处理。
+
+**实施清单（下次）**：
+1. `MatchState::new` 去掉两次发放；`enter_first_round` 发放（幂等字段）
+2. 核对客户端：`enter_first_round` 在"房主开始 / 倒计时结束 / 单机手动开始"三条路径上都被调用
+3. 更新上述 8 个测试（把断言改为"开局后"）
+4. 顺带：房间面板在**未开局**时金币显示为 0（或显示"—"），避免误解
