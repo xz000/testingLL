@@ -1521,8 +1521,8 @@ impl Game {
             game_core::item::shop_category_entries(self.shop_category, &owned_items)
         };
 
-        // 滚动：↑↓ / PageUp-PageDown。
-        let max_rows = 14usize;
+        // 滚动：↑↓ / PageUp-PageDown。可见行数与绘制一致（= 数字键个数 10）。
+        let max_rows = 10usize;
         let max_scroll = entries.len().saturating_sub(max_rows);
         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::PageDown)) {
             self.shop_scroll = self.shop_scroll.saturating_add(max_rows).min(max_scroll);
@@ -1537,7 +1537,7 @@ impl Game {
             self.shop_scroll = self.shop_scroll.saturating_sub(1);
         }
 
-        let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+        let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
         let visible: Vec<game_core::item::ShopEntry> = entries
             .iter()
             .skip(self.shop_scroll)
@@ -3477,12 +3477,12 @@ impl Game {
                                             if lv >= cap {
                                                 (format!("已满级 Lv{lv}"), false)
                                             } else {
-                                                (format!("升级到 Lv{} ({cost}G)  [=]", lv + 1), true)
+                                                (format!("升级到 Lv{} ({cost}G)  [= / 回车]", lv + 1), true)
                                             }
                                         } else if tree_locked {
                                             ("同树已锁定，不可购买".to_string(), false)
                                         } else if me.gold >= cost {
-                                            (format!("购买 ({cost}G)  [=]"), true)
+                                            (format!("购买 ({cost}G)  [= / 回车]"), true)
                                         } else {
                                             (format!("购买 ({cost}G) — 金币不足"), false)
                                         };
@@ -3567,9 +3567,9 @@ impl Game {
                             if self.shop_sell_mode { ui::theme::accent() } else { ui::theme::text_dim() },
                             item_x, panel_y - 18.0,
                         )?;
-                        let visible = 11usize;
+                        let visible = 10usize;
                         let (start, end) = ui::scroll_window(entries.len(), visible, self.shop_scroll);
-                        let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+                        let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
                         let mut iy = panel_y + 14.0;
                         let mut hover_desc: Option<&'static str> = None;
                         for (vis_i, e) in entries.iter().enumerate().take(end).skip(start) {
@@ -3627,7 +3627,7 @@ impl Game {
                         // 底部操作行（鼠标可点，与键盘 V / = 等价）。
                         for (label, act, dy) in [
                             ("[V] 切换买/卖模式", LearnAction::ShopToggleSell, 0.0f32),
-                            ("[=] 确认购买/卖出选中项", LearnAction::ShopConfirm, ui::theme::ROW_H + 2.0),
+                            ("[= / 回车] 确认购买/卖出选中项", LearnAction::ShopConfirm, ui::theme::ROW_H + 2.0),
                         ] {
                             let r = graphics::Rect::new(item_x, bot_edge - 70.0 + dy, item_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
@@ -3640,14 +3640,14 @@ impl Game {
                         }
                         ui::text_left(
                             canvas, ctx,
-                            &format!("共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· 数字选中、= 确认、V 切换买/卖", entries.len(), start + 1, end),
+                            &format!("共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· 数字选中、= 或回车 确认、V 切换买/卖", entries.len(), start + 1, end),
                             ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 22.0,
                         )?;
                     }
                     _ => {
                         // 成长页：精通 1-4（可点）+ 技能上限突破（可点）
                         let mut ay = panel_y + 14.0;
-                        ui::text_left(canvas, ctx, "精通 / 上限突破（数字或点击选中、= 确认购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ui::text_left(canvas, ctx, "精通 / 上限突破（数字或点击选中，= 或回车 确认购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
                         ay += 22.0;
                         let mm = [
                             ("生命精通", m.life, 0usize),
@@ -3684,7 +3684,11 @@ impl Game {
                             } else {
                                 ui::RowState::Normal
                             };
-                            let label = format!("[U] 技能上限突破 +{} (5G)", me.skill_cap_bonus);
+                            let label = if me.skill_cap_bonus > 0 {
+                                format!("[U] 技能上限突破 已购（上限 +{}）", me.skill_cap_bonus)
+                            } else {
+                                "[U] 技能上限突破 +2（5G）".to_string()
+                            };
                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::SkillCap));
                             ay += ui::theme::ROW_H + 6.0;
@@ -3692,16 +3696,21 @@ impl Game {
                             let cr = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
                             let chover = cr.contains(mouse);
                             let cst = if chover { ui::RowState::Hover } else { ui::RowState::Normal };
-                            ui::row(canvas, ctx, cr, "[=] 确认购买选中项", ui::theme::BODY, cst)?;
+                            ui::row(canvas, ctx, cr, "[= / 回车] 确认购买选中项", ui::theme::BODY, cst)?;
                             self.learn_hitboxes.push((cr, LearnAction::GrowthConfirm));
                         }
                     }
                 }
 
-                // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）
+                // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）：**按当前页给出**，
+                // 否则在商店/成长页会显示技能页的键，造成误导。
+                let hint = match self.learn_page {
+                    0 => "字母选树 · 数字选技能看详情 · = 或回车 购买/升级 · B 切形态 · F1-F3/Tab 翻页",
+                    1 => "B/N/M 选分类 · 数字选中条目 · = 或回车 确认 · V 买/卖 · 滚轮/↑↓ 滚动 · F1-F3/Tab 翻页",
+                    _ => "数字选精通 · U 选上限突破 · = 或回车 确认购买 · F1-F3/Tab 翻页",
+                };
                 ui::text_center(
-                    canvas, ctx,
-                    "字母选树 · 数字选技能看详情 · = 购买/升级 · B 切形态 · Tab 翻页",
+                    canvas, ctx, hint,
                     ui::theme::SMALL, ui::theme::text_dim(), sw / 2.0, sh - 14.0,
                 )?;
             }
