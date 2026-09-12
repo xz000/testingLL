@@ -317,8 +317,17 @@ impl PlayerProfile {
         true
     }
 
-    /// 物品栏可用格数（098c `bD` 实证）：容量 = 0.5×(L²+L)，L = S128 等级 = 1 + 背包研究购买数。
-    /// L=1→1、2→3、3→6（war3 上限）、4→10（原生放开，超出 war3 的 6 格限制）。
+    /// 物品栏可用格数：容量 = `0.5×(L²+L)`，`L = 1 + 背包研究购买数`。
+    ///
+    /// **与 098c 的关系（有意偏离，非 bug）**：
+    /// - 098c 的 w3q `R000`(Inventory) 逐级 tooltip = 基础 1 → +2 → +3 →（Lv4 起 +1），
+    ///   累进为 1 / 3 / 6 / 7 / …；
+    /// - 但 **war3 引擎本身最多 6 格**，所以 098c 在 Lv3（6 格）之后无论如何加不出更多格 ——
+    ///   Lv4 那行 "+1 additional item slot" 是**引擎上限下的死数据**；
+    /// - 我方不受该载体限制：`CAPS[3] = 3` 允许买满 3 级，`L = 4` → **10 格**，
+    ///   让"背包研究"这条线在被截断后仍然有可感知的收益（D13：只复刻功能本质，用原生载体）。
+    ///
+    /// 因此 `L=1/2/3/4 → 1/3/6/10` 中的**前三项与 098c 完全一致**，第四项是我方扩展。
     pub fn inventory_slots(&self) -> usize {
         let l = 1 + self.mastery.backpack as usize;
         (l * l + l) / 2
@@ -1168,6 +1177,24 @@ mod tests {
     /// | `R00I` | Area of Effect mastery 6 | 7 | 6 | COSTS[1] / CAPS[1] |
     /// | `R00Y` | Range Mastery 6 | 5 | 6 | COSTS[2] / CAPS[2] |
     /// | `R000` | Inventory | 3 | 3 | COSTS[3] / CAPS[3] |
+    /// 背包格数：前三级与 098c w3q `R000` 累进一致（1/3/6），第四级是我方对
+    /// "war3 6 格上限"的有意放开（10 格）—— 见 `inventory_slots` 的文档注释。
+    #[test]
+    fn inventory_slots_base_matches_w3q_and_extends_past_war3_cap() {
+        let mut m = MatchState::new(MatchConfig::default(), &[0], 34);
+        let p = &mut m.profiles[0];
+        p.gold = 1000;
+        assert_eq!(p.inventory_slots(), 1, "未研究：1 格（w3q Lv1 基线）");
+        assert!(p.buy_mastery(3));
+        assert_eq!(p.inventory_slots(), 3, "研究 1 级：3 格（w3q Lv2 的 +2）");
+        assert!(p.buy_mastery(3));
+        assert_eq!(p.inventory_slots(), 6, "研究 2 级：6 格（w3q Lv3 的 +3）");
+        assert!(p.buy_mastery(3));
+        assert_eq!(p.inventory_slots(), 10, "研究 3 级：10 格（我方放开 war3 的 6 格上限）");
+        // 已达精通上限，不能再买
+        assert!(!p.buy_mastery(3), "背包研究上限 = CAPS[3] = 3");
+    }
+
     #[test]
     fn mastery_costs_and_caps_match_w3q() {
         // 顺序：0=生命汲取 1=范围 2=射程 3=背包（与 `Mastery::at` 一致）。
