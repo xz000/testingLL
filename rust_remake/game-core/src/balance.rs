@@ -74,7 +74,7 @@ impl Balance {
             max_hp: 100.0,
             hp_regen: 0.0,
             default_radius: 30.0,
-            // 098c 场地半径按人数：start_radius_for(n) = (9+n/2 环)×128 码；此值为缺省（1 人 9 环）。
+            // 098c 场地半径按人数：start_radius_for(n) = (9+n/2 环)×64 码；此值为缺省（1 人 9 环 = 576）。
             start_radius: 576.0,
             ring_width: 64.0,
             shrink_ring_secs: 10.0,

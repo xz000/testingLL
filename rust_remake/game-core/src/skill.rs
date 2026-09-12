@@ -45,7 +45,8 @@ impl SkillTree {
         use SkillId::*;
         match self {
             SkillTree::G => &[S000],
-            SkillTree::D => &[S002, S003, S004, S023],
+            // S023 已移除：098c 无此技能（war3map_pretty.j 全库 `S023` 出现 0 次）。
+            SkillTree::D => &[S002, S003, S004],
             SkillTree::E => &[S008, S009, S010],
             SkillTree::R => &[S011, S012, S013],
             SkillTree::T => &[S014, S015, S016],
@@ -230,11 +231,12 @@ pub enum SkillId {
     /// S021 虔诚（国王山丘模式专属）：替换 S001，伤敌 + 队友回血/加速（需队伍系统 TODO）。
     S021,
     // ---- 未实装名册（显式占位；见 warlock098b_def 注释） ----
-    /// S022（对象名 Mirror）：098c 中实为 **S011 瞬移的 B 形态「二段闪」**（S034 切换键启用），
-    /// 非独立可选技能、也非 098b 推测的「镜像分身」。待改为 S011 的 B 形态（见 AUDIT_098c_vs_rust.md D1）。
+    /// S022（对象名 Mirror）：098c 中 S011 瞬移的**隐藏禁用 B 形态**（`UnitAddAbility` 后立即
+    /// `SetPlayerAbilityAvailable(false)`，见 war3map_pretty.j:25688-25690）；施法分派 `if SC=='S022' then endif`
+    /// 为**空分支**（:16574），即 098c 未实装。非独立可选技能、非 098b 推测的「镜像分身」。
     S022,
-    /// S023 电弧（热键 D，098b 名册 D 栏）：用奥术魔法召唤一道电弧；伤害 6.375–8.5/级，CD 16→10，7 级。
-    /// 行为细节（是否即时射线 / 锁链）098c 未解码，M1 保守建模为 `Warlock098b` 直行电弹（`TODO` 待 098c 校准）。
+    /// S023 电弧：**098c 无此技能**（war3map_pretty.j 全库 `S023` 出现 0 次，2026-09-12 审计确认）。
+    /// 已从学习树移除并停用（`Unimplemented` 占位），保留 id 仅为映射稳定。
     S023,
     S024,
     S025,
@@ -1424,12 +1426,12 @@ impl DefTable {
             S005 => "短时间内可以反弹大部分飞行法术和冲撞。可挣脱锁链。",
             S006 => "时光回到使用法术 3.5 秒前的位置，并恢复当时的血量、动量与击退值；可挣脱锁链和消除减益效果。",
             S007 => "短时间内移速提高，可吸收伤害并转化为自身速度（吸收 50% 伤害，每点伤害转 15 速度）。可挣脱锁链。",
-            S022 => "制造两个非实体镜像，它们会模仿你的移动并施放火球，同时增加 25 移动速度；否决锁链和负面效果。",
+            S022 => "（098c 未实装：S011 瞬移的隐藏 B 形态占位）",
             // D 栏位
             S002 => "召唤一道闪电攻击敌人。",
             S003 => "发射一颗会跟踪敌人的光球。施法者碰撞追踪球会使其爆炸，对周围敌人造成伤害并令自身加速 2.25 秒。",
             S004 => "投掷出一个被魔法强化过的回旋镖，它最终会飞回施法者。",
-            S023 => "用奥术魔法召唤一道电弧。（098b 独有；098c 名册无此技能，去留待定）",
+            S023 => "（非 098c 技能：098c 名册无电弧，已停用）",
             // E 栏位（两种模式）
             S008 => "召唤流星来攻击对手。两种模式：陨石（从天而降砸向对手）/ 滚石（向前滚动，被飞弹击中后变大，命中使术士减速）。",
             S009 => "投掷出一个会分裂为许多小飞弹的光球。两种模式：爆裂（在目标地爆炸后继续向前分裂）/ 散华（飞向目标途中不断分裂散发）。",
@@ -1631,11 +1633,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S009 分裂弹（E 键）——spec：CD 30→20（20 级，步长 -0.526，已校准 098c）；
-            // 伤害：098c 工具提示（w3a_strings.txt）明确随等级成长 **3.0→6.5（8 级，+0.5/级）**，
-            // detailed 的「KI(3,1.4) 伤害恒定」与权威工具提示冲突 → 以工具提示为准，camp2 端点对齐
-            // （Rust L20 = 098c L8 = 6.5）：damage_base 3.0、delta (6.5-3.0)/19 ≈ 0.1842。
-            // radius 50、kb_ji 1.4、speed 900 不变。
+            // S009 分裂弹（E 键）——098c（w3a_strings.txt）：CD 30→20（逐档表见下）、伤害 3.0→6.5（8 级，+0.5/级）。
+            // max_level=8（098c 基础档数）；damage_delta 即原斜率 0.5（曾按 20 级 camp2 写成 0.1842，已废弃）。
+            // radius 50、kb_ji 1.4、speed 700（098c 目标形态 GB）。
             SkillId::S009 => SkillDef {
                 id,
                 tree: SkillTree::E,
@@ -1663,8 +1663,8 @@ impl DefTable {
                 },
             },
             // S014 汲取·减速（A 形态，098c ac/vc）——speed 700 / radius 27；
-            // 命中：伤害(drain) + 目标移速 ×0.5（debuff_dur 近似 4+0.3684L）+ 施法者回血伤害×50%。
-            // 数值见下方 growth（098c Drain camp2 对齐）。
+            // 命中：伤害(drain) + 目标移速 ×0.5（debuff_dur 近似 4+1.0L）+ 施法者回血伤害×50%。
+            // 数值见下方 growth（098c Drain 原斜率）。
             SkillId::S014 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -1683,9 +1683,8 @@ impl DefTable {
                     on_hit: W098bOnHit::DrainSlow,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Drain）：伤害 6→13、持续时间 4→11、CD 22→16.5（均 8 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
-                    // 伤害 delta=(13-6)/19≈0.3684；持续时间 delta=(11-4)/19≈0.3684；CD delta=(16.5-22)/19≈-0.2895。
+                    // 098c（w3a_strings.txt Drain）：伤害 6→13、持续时间 4→11、CD 22→16.5（均 8 级）。
+                    // max_level=8，delta 取原斜率：伤害 1.0/级、持续 1.0/级、CD 逐档表。
                     cooldown_base: 22.0,
                     cooldown_delta: -0.7857, // 098c: 22->16.5 (8 lv)
                     cooldown_levels: Some(&[22.0, 20.0, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]),
@@ -1697,12 +1696,9 @@ impl DefTable {
                 },
             },
             // S015 火焰喷射·流射（T 键形态 A，098c Ac/Xc）——每 0.08s 一发摆射；
-            // detailed：speed 700 / radius 22 / life 0.89s；单发 2.4+0.2L（口径 60% 击退近似 JI .6）。
-            // **098c 校准（w3a_strings.txt Fire Spray）**：L1 单发 2.6、L7 3.8（+0.2/级，共 7 级）；
-            //   `missiles 6→12`、`cooldown 16→10`、`knockback 60%`。
-            // → 单发伤害 2.6+ΔL（Δ 取 camp2 端点对齐：Rust L20 = 098c L7 = 3.8 → delta=(3.8-2.6)/19≈0.0632；
-            //   注：上一版误用 0.3 使 L20≈8.3，远超 098c 上限 3.8）；
-            //   **连发数改随等级成长 6→12（原硬编码 8）**；冷却 16→10（20 级，步长 -0.3158）。
+            // detailed：speed 700 / radius 22 / life 0.89s；单发 2.6+0.2L（口径 60% 击退近似 JI .6）。
+            // **098c（w3a_strings.txt Fire Spray，8 档）**：单发 2.6→4.0（+0.2/级）；
+            //   missiles 6→13、cooldown 16→9（逐档表）、knockback 60%。
             // 连发数走 `extra_base/extra_delta`（SkillGrowth 通用槽，Sweep 原不使用）→ `stats.extra`。
             SkillId::S015 => SkillDef {
                 id,
@@ -1717,9 +1713,8 @@ impl DefTable {
                     turn_step: 0.3,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Fire Spray **完整 8 档**，非 spells.json 采样的 7 档）：
-                    // 单发 2.6→4.0、missiles 6→13、CD 16→9。Rust max_level=20 → camp2 端点对齐：
-                    // 伤害 delta=(4.0-2.6)/19≈0.0737；连发 delta=(13-6)/19≈0.3684；CD delta=(9-16)/19≈-0.3684。
+                    // 098c（w3a_strings.txt Fire Spray 完整 8 档）：单发 2.6→4.0、missiles 6→13、CD 16→9。
+                    // max_level=8，delta 取原斜率：伤害 0.2/级、连发 1.0/级、CD 逐档表。
                     cooldown_base: 16.0,
                     cooldown_delta: -1.0,    // 098c: 16->9 (8 lv)
                     cooldown_levels: Some(&[16.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0, 9.0]),
@@ -1732,11 +1727,10 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S016 弹跳弹（T 键）——spec 曾记 CD 20 恒定，但 **098c 工具提示（w3a_strings.txt Bouncer）确证
-            // CD 随等级 20→13（-1/级，8 级）**，故改为 camp2 端点对齐（Rust L20 = 098c L8 = 13）：
-            // cooldown_delta (13-20)/19 ≈ -0.3684。speed 900 / radius 35 / life 1s；
-            // detailed gc（基础形态）：KI(gv×(5+Xv))（gv 未解码取 1 → gX=5+L，L1=6，与 098c 每级 +1 完全吻合）
-            // → 伤害 delta 维持 1.0（Rust L20=25 系 20 级外推，098c 仅 8 级，沿用 detailed 斜率）。每跳 ×0.8。
+            // S016 弹跳弹（T 键）——098c（w3a_strings.txt Bouncer）：CD 20→13（逐档表）、伤害 6→13（+1/级，8 级）、
+            // range 750+150L（L1=900、L8=1950）。max_level=8，delta 取原斜率。
+            // speed 900 / radius 38（098c Gc） / life 1s；每跳 ×0.8。
+            // detailed gc（基础形态）：KI(gv×(5+Xv))（gv 未解码取 1 → gX=5+L，L1=6，与 098c 每级 +1 完全吻合）。
             SkillId::S016 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -1797,9 +1791,8 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S007 急行（C 键）——098c 校准（w3a_strings.txt absorb，8 档）：**CD 21 恒定**（原按 098b spec
-            // 记「21→13」与 w3a 全档不符，已按 098c 改为恒定）；dur 7.0→12.6（+0.8/级，8 档）→ camp2 至 L20=12.6；
-            // 移速 +35（war3 加法 → 乘数 1+35/210）；攻速 tr 无对应系统（TODO M2 后续）。
+            // S007 急行（C 键）——098c（w3a_strings.txt absorb，8 档）：CD 21 恒定、dur 7.0→12.6（+0.8/级）。
+            // 移速 +35（war3 加法 → 乘数 1+35/210）；攻速 tr 无对应系统（TODO）。
             SkillId::S007 => SkillDef {
                 id,
                 tree: SkillTree::C,
@@ -1819,13 +1812,12 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S010 疾风步（E 键）——spec：CD 30→17（20 级，步长 -0.684，已校准 098c）；dur=3.1*jn（基础形态）；
+            // S010 疾风步（E 键）——098c（w3a_strings.txt WindWalk Charge，8 级，逐档 CD）；dur=3.1*jn（基础形态）；
             // 隐身 +200 移速（乘数 1+200/210）；破隐一击（bA 复合 KI）已在碰撞结算实现：
             // 门控 `xi[id]>0`（xi=远程精通，非蓝量）——有点远程精通时，隐身下接触命中
             // 才追加一笔同级伤害后解除隐身；未点则只有基础单笔伤害。
-            // **098c 校准（w3a_strings.txt WindWalk Charge）**：背刺伤害 **5.4→11（8 级，+0.8/级）**，
-            // detailed 的「4.6+0.8L」基准偏低（L1 应为 5.4）→ 以工具提示为准，camp2 端点对齐
-            // （Rust L20 = 098c L8 = 11）：damage_base 5.4、delta (11-5.4)/19 ≈ 0.2947。
+            // **098c（w3a_strings.txt WindWalk Charge）**：背刺伤害 5.4→11（8 级，+0.8/级）；
+            // detailed 的「4.6+0.8L」基准偏低（L1 应为 5.4）→ 以工具提示为准。max_level=8，delta 取原斜率 0.8。
             SkillId::S010 => SkillDef {
                 id,
                 tree: SkillTree::E,
@@ -1862,10 +1854,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S012 冲撞（R 键）——098c 校准（w3a_strings.txt Thrust）：伤害 5.4→8.6、CD 16.5→7.0、射程 700→1100（均 9 级）。
-            // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L9）：
-            // CD delta=(7.0-16.5)/19≈-0.5；伤害 delta=(8.6-5.4)/19≈0.1684；射程 delta=(1100-700)/19≈21.0526。
-            // 速度 Hr=1300/s 恒定；命中 0.5s 定身。伤害 bA 三段公式 M1 简化为线性 5.4+0.1684L（camp2）。
+            // S012 冲撞（R 键）——098c（w3a_strings.txt Thrust）：伤害 5.4→8.6、CD 16.5→7.0、射程 700→1100（均 9 级）。
+            // max_level=9，delta 取原斜率：CD 逐档表、伤害 0.4/级、射程 50/级。
+            // 速度 Hr=1300/s 恒定；命中 0.5s 定身；伤害 bA 三段公式 M1 简化为线性。
             SkillId::S012 => SkillDef {
                 id,
                 tree: SkillTree::R,
@@ -1883,10 +1874,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S013 移形换位（R 键）——098c 校准（w3a_strings.txt Swap）：CD 16→6（8 级）。
-            // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8 = 6）：cooldown_delta=(6-16)/19≈-0.5263。
-            // 射程 098c 恒定 660（600×(1+.1*oi)），Rust 同 660。
-            // 098b 为弹体命中换位（speed 800/radius 40），M1 简化为即时换位（弹体化 TODO）。
+            // S013 移形换位（R 键）——098c（w3a_strings.txt Swap）：CD 16→6（8 级）、射程 900×(1+0.1ei)（基础 900）。
+            // max_level=8，delta 取原斜率（CD (6-16)/7=-1.4286/级）。098b 为弹体命中换位（speed 800/radius 40），
+            // M1 简化为即时换位（弹体化 TODO）。
             SkillId::S013 => SkillDef {
                 id,
                 tree: SkillTree::R,
@@ -1902,8 +1892,8 @@ impl DefTable {
             },
             // ===== M2 批次C：场/线控制系 =====
             // S017 禁锢·缠绕（Y 键）——098c 缠绕分支（"bind its target to its current position"）：
-            // CD 25→10（8 档）、持续 4.5→6.25（8 档，+0.25/级）。speed 900 / radius 23；
-            // 伤害公式未解码 → 恒 3 占位（TODO）。数值见 growth（camp2 端点对齐）。
+            // CD 25→10（逐档表）、持续 4.5→6.25（+0.25/级，8 档）。speed 1000 / radius 39 / life 1.1（098c rC）；
+            // 伤害公式未解码 → 恒 3 占位（TODO）。数值见 growth（原斜率）。
             // ⚠ 098c 的「沉默」是**另一分支**（CD 16→12.5、5s 恒定），对应 **S017B**，勿与缠绕混淆。
             SkillId::S017 => SkillDef {
                 id,
@@ -1923,9 +1913,8 @@ impl DefTable {
                     on_hit: W098bOnHit::Cripple,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt 缠绕 bind）：CD 25→10（8 档）、持续 4.5→6.25（8 档）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
-                    // CD delta=(10-25)/19≈-0.7895；持续 delta=(6.25-4.5)/19≈0.0921。
+                    // 098c（w3a_strings.txt 缠绕 bind）：CD 25→10（逐档表）、持续 4.5→6.25（+0.25/级，8 档）。
+                    // max_level=8，delta 取原斜率。
                     cooldown_base: 25.0,
                     cooldown_delta: -2.1428, // 098c: 25->10 (8 lv)
                     cooldown_levels: Some(&[25.0, 21.0, 18.0, 16.0, 14.5, 13.0, 11.5, 10.0]),
@@ -1935,7 +1924,7 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S018 引力（Y 键）——098c 校准：CD 25 恒定（camp2）；aoe 200 / 漩涡 5*jn。
+            // S018 引力（Y 键）——098c：CD 25 恒定、黑洞伤害 0.3→1.7、Force 12→19（8 档）；aoe 200 / 漩涡 5s。
             // 复用现有 GravityZone 原型（飞行场沿途吸拉）——speed/radius/duration/range 读 growth（stats）。
             // 吸引力（098c Force 12→19）走 growth.extra_*，由 world.rs 施法分支读入 pull_speed；
             // effect.pull_speed 仅作 L1 兜底（=12）。098b 升级版为「落点原地漩涡」，差异 TODO M2 后续标定。
@@ -1953,16 +1942,13 @@ impl DefTable {
                     range: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Gravity）：CD 25 恒定（8 级）。
+                    // 098c（w3a_strings.txt Gravity）：CD 25 恒定（8 级）。
                     cooldown_base: 25.0,
-                    // 黑洞每秒伤害（098c mc）：0.3→1.7（8 级）。Rust max_level=20 → camp2：
-                    // damage_delta=(1.7-0.3)/19≈0.0737（Rust L20 = 098c L8 = 1.7）。
+                    // 黑洞每秒伤害（098c mc）：0.3→1.7（+0.2/级，8 级）。
                     damage_base: 0.3,
                     damage_delta: 0.2,       // 098c: 0.3->1.7 (8 lv)
-                    // 吸引力（098c Force）：12→19（8 档，+1/级）。Rust max_level=20 → camp2：
-                    // extra_delta=(19-12)/19≈0.3684（Rust L20 = 098c L8 = 19）。
-                    // 走 stats.extra 由 world.rs 读入 pull_speed（effect 的 pull_speed 不随等级成长，
-                    // 仅作 L1 兜底）。单位与 098c Force 一致（随后被 LEGACY_SPEED 缩放为内部速度）。
+                    // 吸引力（098c Force）：12→19（+1/级，8 档）；走 stats.extra 由 world.rs 读入 pull_speed
+                    //（effect 的 pull_speed 不随等级成长，仅作 L1 兜底）。单位与 098c Force 一致。
                     extra_base: 12.0,
                     extra_delta: 1.0,        // 098c: Force 12->19 (8 lv)
                     // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
@@ -1974,8 +1960,8 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S019 锁链（Y 键）——098c Link：CD 17→8 / 伤害 0.2→1.8（camp2 对齐见 growth）；radius 35；
-            // speed 未给（VengeanceMissile 类）→ M1 占位 800；命中落地为持久 Tether，逐帧对
+            // S019 锁链（Y 键）——098c Link（uc）：CD 17→8 / 伤害 0.2→1.8（9 档，原斜率见 growth）；radius 35；
+            // speed 900（098c uc）；命中落地为持久 Tether，逐帧对
             // 绑定目标施加每秒伤害（0.2+0.1×L）+ 按 pull_speed 符号拉拽（见 world.rs step_area_forces）。
             // 蓝链 ChainPull（拉目标→施法者）；红链 RedChain 改拉施法者→目标（文档「红链」）。
             SkillId::S019 => SkillDef {
@@ -1996,9 +1982,8 @@ impl DefTable {
                     on_hit: W098bOnHit::ChainPull,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Link）：CD 17→8（9 级）、伤害 0.2→1.8（9 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L9）：
-                    // CD delta=(8-17)/19≈-0.4737；伤害 delta=(1.8-0.2)/19≈0.0842。
+                    // 098c（w3a_strings.txt Link）：CD 17→8（逐档表，9 级）、伤害 0.2→1.8（+0.2/级，9 级）。
+                    // max_level=9，delta 取原斜率。
                     cooldown_base: 17.0,
                     cooldown_delta: -1.125, // 098c: 17->8 (9 lv)
                     cooldown_levels: Some(&[17.0, 14.5, 12.5, 11.0, 10.0, 9.5, 9.0, 8.5, 8.0]),
@@ -2059,35 +2044,16 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S023 电弧（D 栏，文档 D 树）：「用奥术魔法召唤一道电弧」。
-            // 伤害表格每级为**区间**（L1 6.375–8.5 … L7 10.875–14.5）；区间机制未解码（疑似距离/随机），
-            // 本作为锁步确定性模拟**不可按区间随机**，故 M1 取每级下界：6.375 + 0.75/级 → L1 6.375、L7 10.875。
-            // 行为细节（是即时射线还是飞行弹、是否连锁）098c 未解码，M1 保守建模为 Warlock098b 直行弹
-            // （复用既有弹体/命中/渲染/序列化链路）；上界倍率与真实形态 TODO 待 098c 校准。
+            // S023 电弧（098b 名册的 D 栏技能）——**098c 无此技能**（war3map_pretty.j 全库 `S023` 出现 0 次）。
+            // 2026-09-12 审计：从学习树移除并停用（不可学习/不可施放），仅保留占位以维持 id 映射稳定。
+            // 原实现（直行弹 6.375+0.75L、CD 16→10）系 098b 交接内容，不属 098c 复刻范围。
             SkillId::S023 => SkillDef {
                 id,
                 tree: SkillTree::D,
-                name: "电弧",
-                needs_point: true,
-                effect: Warlock098b {
-                    proj: W098bProjKind::Straight,
-                    speed: Fix64::from_num(900.0),
-                    radius: Fix64::from_num(25.0),
-                    life: Fix64::from_num(1.0),
-                    kb_ji: Fix64::ONE,
-                    ignite: None,
-                    blast: None,
-                    count: 1,
-                    spread_step: 0.0,
-                    on_hit: W098bOnHit::Ki,
-                },
-                growth: SkillGrowth {
-                    cooldown_base: 16.0,
-                    cooldown_delta: -1.0,
-                    damage_base: 6.375,
-                    damage_delta: 0.75,
-                    ..DEF_ZERO
-                },
+                name: "电弧（非 098c·未实装）",
+                needs_point: false,
+                effect: Unimplemented,
+                growth: SkillGrowth { ..DEF_ZERO },
             },
             // ===== 未实装名册（显式占位：UI 可见「未实装」标注，不误认为漏做） =====
             // S022 镜像分身（C 栏，文档 C 树；CE 1.10B S048 同名技能，098c 不含）：
@@ -2176,9 +2142,8 @@ impl DefTable {
                     on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Magma）：Max AoE 伤害 4.5→15、CD 20→16.5（均 8 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
-                    // 伤害 delta=(15-4.5)/19≈0.5526；CD delta=(16.5-20)/19≈-0.1842。
+                    // 098c（w3a_strings.txt Magma）：Max AoE 伤害 4.5→15、CD 20→16.5（均 8 级）。
+                    // max_level=8，delta 取原斜率：伤害 1.5/级、CD 0.5/级。
                     cooldown_base: 20.0,
                     cooldown_delta: -0.5,    // 098c: 20->16.5 (8 lv)
                     damage_base: 4.5,
@@ -2208,8 +2173,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     // 098c 校准（w3a_strings.txt 分裂弹·区域 orb，8 档）：每弹伤害 3.0→6.5、CD 30→20。
                     // 与 A 形态（splitter "splits into minor missiles"）端点完全相同。
-                    // Rust max_level=20 → camp2 端点对齐：
-                    // 伤害 delta=(6.5-3.0)/19≈0.1842；CD delta=(20-30)/19≈-0.5263。
+                    // max_level=8，delta 取原斜率：伤害 0.5/级、CD 逐档表。
                     cooldown_base: 30.0,
                     cooldown_delta: -1.4286, // 098c: 30->20 (8 lv, original slope)
                     cooldown_levels: Some(&[30.0, 27.0, 25.0, 24.0, 23.0, 22.0, 21.0, 20.0]), // 098c 逐档
@@ -2234,7 +2198,7 @@ impl DefTable {
                     max_distance: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
-                    // 形态 B（潜行/隐身）**冷却与 A 共用**（098c IB，见审计文档 §2.3.2）→ base 30 / delta -0.684。
+                    // 形态 B（潜行/隐身）**冷却与 A 共用**（098c IB）→ base 30、逐档同 A（max_level=8）。
                     // 持续：098c 调试输出 S010 两模式分别为「Wind Walk (charge) 3.1*jn」与
                     // 「Wind Walk (invisibility) 4*jn」→ **B 形态取 4.0**（勿套用 A 形态的 3.1）。
                     cooldown_base: 30.0,
@@ -2263,8 +2227,7 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     // 098c 校准（w3a_strings.txt Weaken/oc）：伤害 5→11、持续 7.5→18、CD 22→18.5（均 8 级）。
-                    // Rust max_level=20 → camp2 端点对齐（Rust L20 = 098c L8）：
-                    // 伤害 delta=(11-5)/19≈0.3158；持续 delta=(18-7.5)/19≈0.5526；CD delta=(18.5-22)/19≈-0.1842。
+                    // max_level=8，delta 取原斜率：伤害 0.8571/级、持续 1.5/级、CD 0.5/级。
                     cooldown_base: 22.0,
                     cooldown_delta: -0.5,    // 098c: 22->18.5 (8 lv)
                     damage_base: 5.0,
@@ -2296,8 +2259,7 @@ impl DefTable {
                     // 098c 校准（w3a_strings.txt 簇射 "Fires 5 missiles at once"，8 档）：
                     // 单发 3.0→5.8（+0.4/级）、CD 14→7。
                     // ⚠ 勿用 A 形态 Fire Spray（流射）的 2.6→4.0 / 16→9，那是另一技能。
-                    // Rust max_level=20 → camp2 端点对齐：
-                    // 伤害 delta=(5.8-3.0)/19≈0.1474；CD delta=(7-14)/19≈-0.3684。
+                    // max_level=8，delta 取原斜率：伤害 0.4/级、CD 1.0/级。
                     cooldown_base: 14.0,
                     cooldown_delta: -1.0,    // 098c: 14->7 (8 lv)
                     damage_base: 3.0,
@@ -2306,7 +2268,7 @@ impl DefTable {
                 },
             },
             // S012B 冲撞·凤凰（098c WB 的冲刺升级体）：3.1s 可操向冲刺——移动指令转向并发射凤凰弹（4+0.5L，Rust 自定伤害）。
-            // CD 按 098c Thrust camp2 对齐（base 16.5、delta -0.5）；射程/伤害为 Rust 自定（TODO 待 098c 校准）。
+            // CD 同 098c Thrust（base 16.5、9 级逐档）；射程/伤害为 Rust 自定（TODO 待 098c 校准）。
             SkillId::S012 => SkillDef {
                 id,
                 tree: SkillTree::R,
@@ -2333,7 +2295,7 @@ impl DefTable {
                 effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(600.0) },
                 growth: SkillGrowth {
                     // 098c 校准（w3a_strings.txt 搬运 "Cast a bolt that will transfer you to its location"，8 档）：
-                    // CD 14→4。Rust max_level=20 → camp2 端点对齐：CD delta=(4-14)/19≈-0.5263。
+                    // CD 14→4。max_level=8，delta 取原斜率（1.4286/级）。
                     // 射程：该 tooltip **无射程字段** → 维持 098b 文档口径 600（600×(1+.1ei)）。
                     // （"Teleports ... Range: 900 / cd 17.5→8.5" 是 R 槽**另一个**技能，非搬运。）
                     cooldown_base: 14.0,
@@ -2363,7 +2325,7 @@ impl DefTable {
                     on_hit: W098bOnHit::Silence,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Disable=silence）：CD 16→12.5（8 级）→ camp2 对齐（Rust L20=12.5）。
+                    // 098c（w3a_strings.txt Disable=silence）：CD 16→12.5（8 级），delta 取原斜率 0.5/级。
                     cooldown_base: 16.0,
                     cooldown_delta: -0.5, // 098c: 16->12.5 (8 lv)
                     damage_base: 3.0,
@@ -2386,10 +2348,10 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 26.0,
-                    // 力场每秒伤害（098c Lc/Mc）：2.25→8.0（8 级）→ camp2：damage_delta=(8.0-2.25)/19≈0.3026。
+                    // 力场每秒伤害（098c Lc/Mc）：2.25→8.0（8 级），delta 取原斜率 0.8214/级。
                     damage_base: 2.25,
                     damage_delta: 0.8214, // 098c: 2.25->8.0 (8 lv)
-                    // 每秒生命恢复（098c Lc）：1.0→2.4（8 级）→ camp2：extra_delta=(2.4-1.0)/19≈0.0737。
+                    // 每秒生命恢复（098c Lc）：1.0→2.4（8 级），delta 取原斜率 0.2/级。
                     extra_base: 1.0,
                     extra_delta: 0.2,     // 098c: heal 1.0->2.4 (8 lv)
                     radius_base: 200.0,
@@ -2420,14 +2382,14 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     // 098c 校准（w3a_strings.txt Induction）：CD 16 恒定、伤害 0.2→1.8（9 级）。
-                    // Rust max_level=20 → camp2 端点对齐：CD 恒定 16；伤害 delta=(1.8-0.2)/19≈0.0842。
+                    // max_level=9，delta 取原斜率：CD 恒定 16、伤害 0.2/级。
                     cooldown_base: 16.0,
                     cooldown_delta: 0.0,
                     damage_base: 0.2,
                     damage_delta: 0.2,      // 098c: 0.2->1.8 (9 lv)
                     duration_base: 0.5,
-                    // 098c 红链闪电（目标为友军/柱子时引发）：1.0→3.4（9 级）→ camp2 至 L20=3.4：
-                    // delta=(3.4-1.0)/19≈0.1263。world.rs 读 stats.extra 作为闪电伤害。
+                    // 098c 红链闪电（目标为友军/柱子时引发）：1.0→3.4（9 级），delta 取原斜率 0.3/级。
+                    // world.rs 读 stats.extra 作为闪电伤害。
                     extra_base: 1.0,
                     extra_delta: 0.3,       // 098c: lightning 1.0->3.4 (9 lv)
                     ..DEF_ZERO
@@ -2455,8 +2417,7 @@ impl DefTable {
                     // 098c 校准（w3a_strings.txt 充能 "Cast a missile that will return to you if you hit"，8 档）：
                     // 伤害 6→12.3（+0.9/级）、CD 23.5→18.5、射程恒定 900。
                     // ⚠ 勿用 A 形态 Bouncer（弹跳弹）的 6→13 / 20→13，那是另一技能。
-                    // Rust max_level=20 → camp2 端点对齐：
-                    // 伤害 delta=(12.3-6)/19≈0.3316；CD delta=(18.5-23.5)/19≈-0.2632。
+                    // max_level=8，delta 取原斜率：伤害 0.9/级、CD 0.7143/级。
                     cooldown_base: 23.5,
                     cooldown_delta: -0.7143, // 098c: 23.5->18.5 (8 lv)
                     damage_base: 6.0,
@@ -3333,7 +3294,7 @@ mod tests {
         assert!(near(d.stats_at(9).cooldown, 5.5, 1e-2), "L9 CD 应 5.5，实际 {:?}", d.stats_at(9).cooldown);
         assert!(near(d.stats_at(1).max_distance, 770.0, 1e-3), "L1 距离应 700+70");
         assert!(near(d.stats_at(9).max_distance, 700.0 + 70.0 * 9.0, 1e-3), "L9 距离应 700+70×9");
-        // S012 冲撞：速度 1300 恒定；射程 098c 700→1100（camp2 对齐，L1 700）；伤害 5.4+0.1684L（camp2）。
+        // S012 冲撞：速度 1300 恒定；射程 098c 700→1100（9 级原斜率，L1 700）；伤害 5.4+0.4L。
         let d = DefTable::def(SkillId::S012);
         assert_eq!(d.name, "冲撞·突击");
         assert!(near(d.stats_at(1).max_distance, 700.0, 1e-3));
@@ -3344,7 +3305,7 @@ mod tests {
             }
             ref e => panic!("S012 effect 错：{e:?}"),
         }
-        // S013 换位：CD 16→6（camp2 对齐 098c L8=6）；射程 660。
+        // S013 换位：CD 16→6（098c L8=6，原斜率）；射程 900。
         let d = DefTable::def(SkillId::S013);
         assert_eq!(d.name, "移形换位·置换");
         assert!(near(d.stats_at(1).cooldown, 16.0, 1e-3));
@@ -3354,7 +3315,7 @@ mod tests {
 
     #[test]
     fn s017_s018_s019_match_spec() {
-        // S017 禁锢·缠绕（A 形态）：098c 缠绕分支 CD 25→10、持续 4.5→6.25（camp2 对齐）。
+        // S017 禁锢·缠绕（A 形态）：098c 缠绕分支 CD 25→10、持续 4.5→6.25（原斜率）。
         let d = DefTable::def(SkillId::S017);
         assert_eq!(d.name, "禁锢·缠绕");
         assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
@@ -3375,7 +3336,7 @@ mod tests {
         assert!(near(s8.duration, 5.0, 1e-3), "field should last 5*jn sec");
         assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 Force should be 12");
         assert!(near(s8.extra, 19.0, 1e-1), "L8 Force should be ~19, got {:?}", s8.extra);
-        // S019 锁链·钩引（A 形态）：CD 17→8（camp2 对齐 098c L9=8）；radius 35；拉拽+0.5s 定身。
+        // S019 锁链·钩引（A 形态）：CD 17→8（098c L9=8，原斜率）；radius 35；拉拽+0.5s 定身。
         let d = DefTable::def(SkillId::S019);
         assert_eq!(d.name, "锁链·钩引");
         assert!(near(d.stats_at(1).cooldown, 17.0, 1e-3));
@@ -3450,7 +3411,6 @@ mod tests {
             (SkillId::S019, "锁链·钩引"),
             (SkillId::S020, "灾变"),
             (SkillId::S021, "虔诚"),
-            (SkillId::S023, "电弧"),
         ];
         for (id, name) in expected {
             let d = DefTable::def(*id);
@@ -3459,7 +3419,7 @@ mod tests {
             assert!(!matches!(d.effect, SkillEffect::Unimplemented), "{id:?} 应有真实效果");
         }
         // 未实装占位：名称带「未实装」标记，效果为 Unimplemented，学习界面不可选
-        for id in [SkillId::S024, SkillId::S030, SkillId::S031, SkillId::S032] {
+        for id in [SkillId::S023, SkillId::S024, SkillId::S030, SkillId::S031, SkillId::S032] {
             let d = DefTable::def(id);
             assert!(d.name.contains("未实装"), "{id:?} 占位应标注未实装");
             assert!(matches!(d.effect, SkillEffect::Unimplemented));
@@ -3566,7 +3526,7 @@ mod tests {
             }
             ref e => panic!("S009 effect 错：{e:?}"),
         }
-        // S014 汲取·减速（A 形态）：CD 22→16.5（camp2 对齐 098c L8=16.5）；speed 700 / radius 27；M1 近似 gX=6+0.3684L、合并 JI=0.8。
+        // S014 汲取·减速（A 形态）：CD 22→16.5（098c L8=16.5，原斜率）；speed 700 / radius 27；M1 近似 gX=6+1.0L、合并 JI=0.8。
         let d = DefTable::def(SkillId::S014);
         assert_eq!(d.name, "汲取·减速");
         assert!(matches!(d.effect, SkillEffect::Warlock098b { on_hit: W098bOnHit::DrainSlow, .. }));
@@ -3597,10 +3557,10 @@ mod tests {
             }
             ref e => panic!("S015 effect 错：{e:?}"),
         }
-        // 连发数随等级成长：098c missiles 6→13（8 档）→ L20 应为 13（走 stats.extra，由 Sweep 执行处读取）
+        // 连发数随等级成长：098c missiles 6→13（8 档），走 stats.extra
         let n20 = d.stats_at(8).extra.to_num::<f64>().round() as u32;
         assert_eq!(n20, 13, "L8 missile count should be 13, got {}", n20);
-        // B 形态：簇射 = 锥形 5 道 ±11°，伤害 3.0+0.1474L（camp2 对齐 098c "Fires 5 missiles at once" 3.0→5.8）
+        // B 形态：簇射 = 锥形 5 道 ±11°，伤害 3.0+0.4L（098c "Fires 5 missiles at once" 3.0→5.8，8 档）
         let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
         assert_eq!(alt15.name, "火焰喷射·簇射");
         assert!(near(alt15.stats_at(1).damage, 3.0, 1e-3));
@@ -3612,7 +3572,7 @@ mod tests {
             }
             ref e => panic!("S015 effect 错：{e:?}"),
         }
-        // S016 弹跳弹：CD 20→13（098c 工具提示，camp2 对齐至 L20≈13）；speed 900 / radius 35；gX=5+L → L1=6。
+        // S016 弹跳弹：CD 20→13（098c 工具提示，8 档原斜率）；speed 900 / radius 38；gX=5+L → L1=6。
         let d = DefTable::def(SkillId::S016);
         assert_eq!(d.name, "弹跳弹");
         assert!(near(d.stats_at(1).cooldown, 20.0, 1e-3));
