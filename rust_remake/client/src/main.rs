@@ -6568,6 +6568,9 @@ impl Game {
             #[cfg(feature = "steam")]
             if self.steam_lobby_create {
                 self.draw_steam_create_lobby(&mut canvas, ctx)?;
+                if self.room_cfg_edit {
+                    self.draw_room_cfg_editor(&mut canvas, ctx)?;
+                }
                 canvas.finish(ctx)?;
                 return Ok(());
             }
@@ -6575,6 +6578,9 @@ impl Game {
             #[cfg(feature = "steam")]
             if self.steam_lobby_list {
                 self.draw_steam_lobby_list(&mut canvas, ctx)?;
+                if self.room_cfg_edit {
+                    self.draw_room_cfg_editor(&mut canvas, ctx)?;
+                }
                 canvas.finish(ctx)?;
                 return Ok(());
             }
