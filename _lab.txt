@@ -1,3 +1,0 @@
-3353:                let pages = [("[J]技能", 0u8), ("[K]商店", 1u8), ("[L]成长", 2u8)];
-3578:                                                &format!("切换为 {}  (B)", if on { a } else { b }),
-4676:                                eprintln!("[client] NO frames for {} ticks -> connection dropped, waiting for reconnect (R)",
