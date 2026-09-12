@@ -36,8 +36,6 @@ mod keys;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 mod settings_ui;
 /// 版面骨架（四带网格）：把"各界面手工摆坐标"改成"按带填充"，可单测。
-/// 注：`allow(dead_code)` 是**过渡**——第 2 步把建房界面接到骨架上后会移除。
-#[allow(dead_code)]
 mod layout;
 
 /// 机器人数量（不含玩家本人）。当前 Solo/局域网均无本地 AI；保留该常量供将来“带 AI 测试”模式复用。
@@ -3066,10 +3064,8 @@ impl Game {
             Color::from_rgba(6, 8, 14, 225),
         )?;
         canvas.draw(&dim, graphics::DrawParam::new());
-        let pw = sw * 0.72;
-        let ph = sh * 0.76;
-        let px = (sw - pw) / 2.0;
-        let py = (sh - ph) / 2.0;
+        let panel = layout::centered_panel(sw, sh, 0.72, 0.76);
+        let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
         let panel = Mesh::new_rectangle(
             &ctx.gfx,
             DrawMode::fill(),
@@ -3107,9 +3103,11 @@ impl Game {
 
         // 行列表
         let rows = settings_ui::SettingId::rows(self.room_cfg_group);
-        let mut y = py + 86.0;
         let row_w = pw - 48.0;
+        // 行在"内容区"内等分（内容区 = 面板去掉标题/页签/底部提示）
+        let content = graphics::Rect::new(px + 24.0, py + 80.0, row_w, ph - 80.0 - 76.0);
         for (i, &id) in rows.iter().enumerate() {
+            let y = layout::row_in(content, i, rows.len().max(1)).y;
             let sel = i == self.room_cfg_row;
             let custom = settings_ui::is_custom(&self.match_cfg, id);
             let col = if sel {
@@ -3137,7 +3135,6 @@ impl Game {
                 &val_txt,
                 ui::theme::BODY, col, px + 24.0 + row_w, y,
             )?;
-            y += 24.0;
         }
 
         // 说明 + 操作提示
@@ -6764,25 +6761,7 @@ impl Game {
     fn draw_steam_create_lobby(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "创建房间", 38.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.12 }, true)?;
-        // 房间设置摘要 + 「自定义 N 项」徽章：让玩家一眼看出房主是否开了高级设置。
-        let n = self.match_cfg.non_default_setting_count();
-        let badge = if n == 0 {
-            "默认（原版）".to_string()
-        } else {
-            format!("自定义 {n} 项")
-        };
-        let badge_col = if n == 0 {
-            Color::from_rgb(150, 160, 175)
-        } else {
-            Color::from_rgb(255, 200, 90)
-        };
-        // 放在**底部**：原先紧跟标题，会被下面的字段盖住（层次问题）。
-        ui::text_center(
-            canvas, ctx,
-            &format!("房间设置：{badge}   [O] 编辑"),
-            ui::theme::SMALL, badge_col, cx, sh - 24.0,
-        )?;
+        draw_text(canvas, ctx, "创建房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.075 }, true)?;
 
         let labels = [
             "房间名", "备注", "玩家人数", "总轮数",
@@ -6812,16 +6791,22 @@ impl Game {
             self.steam_create_gold_per_round_buf.clone(),
             self.steam_create_place_buf.clone(),
         ];
-        let box_w = 320.0;
-        let box_h = 46.0;
-        let label_w = 150.0;
+        // ── 版面：按 `layout::bands` 四带摆放，不再手工摆坐标 ──
+        // 起因：原先"聚焦字段下方各画一行提示"，第 4 行的提示会压到下一条信息（层次问题）。
+        // 现在：提示统一放**状态带**（只一行），键位说明放**提示带**（屏幕最底）。
+        let b = layout::bands(sw, sh);
+        let box_w = 300.0;
+        let box_h = 44.0;
+        let label_w = 140.0;
         let col_w = label_w + box_w;
-        let gap = 70.0;
+        let gap = 56.0;
         let total_w = col_w * 2.0 + gap;
         let left_col_left = cx - total_w / 2.0;
         let right_col_left = left_col_left + col_w + gap;
-        let row_h = 68.0;
-        let y0 = sh * 0.26;
+        // 4 行字段均分内容带（留出底部一行给"当前字段说明"）。
+        let rows = 4.0;
+        let row_h = (b.content.h - 34.0) / rows;
+        let y0 = b.content.y;
         // 字段 → 列/行：左列 0..4（房名/备注/人数/轮数），右列 4..8（准备/初始金币/每轮金币/名次奖励）。
         for i in 0..8 {
             let col = i / 4;
@@ -6837,33 +6822,51 @@ impl Game {
                 canvas.draw(&border, graphics::DrawParam::new());
             }
             let label_col = if selected { Color::from_rgb(255, 210, 120) } else { Color::from_rgb(215, 220, 232) };
-            draw_text(canvas, ctx, labels[i], 23.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
+            draw_text(canvas, ctx, labels[i], 22.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 13.0 }, true)?;
             let disp = if vals[i].is_empty() { placeholders[i].to_string() } else { vals[i].clone() };
             let val_col = if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE };
-            draw_text(canvas, ctx, &disp, 20.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 13.0 }, true)?;
-            // 聚焦字段下方：该字段专属操作提示（左对齐到字段输入框左缘，更贴近）。
-            if selected {
-                draw_text(canvas, ctx, &format!("▶ {}", hints[i]), 16.0, Color::from_rgb(150, 200, 255), Point2 { x: total_left + label_w, y: y + box_h + 8.0 }, false)?;
-            }
+            draw_text(canvas, ctx, &disp, 19.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 12.0 }, true)?;
         }
-        // 游戏模式（M 键循环 1-5）：显式一行，避免房主不知可改。
+        // 内容带底：**当前字段**的说明（只一行，替换原先"每字段下方一行"的做法）。
+        let focus = self.steam_create_focus.min(7);
         draw_text(
             canvas, ctx,
-            &format!(
-                "游戏模式（M 键切换）：{}   [1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还]",
-                game_core::meta::MatchState::mode_name(self.steam_create_mode)
-            ),
-            19.0, Color::from_rgb(150, 220, 180), Point2 { x: cx, y: sh * 0.86 }, true,
+            &format!("▶ {}：{}", labels[focus], hints[focus]),
+            16.0, Color::from_rgb(150, 200, 255),
+            Point2 { x: cx, y: b.content.y + b.content.h - 22.0 }, true,
         )?;
-        draw_text(
+        // 状态带：房间设置徽章（点 O 进设置编辑器）+ 模式/回血摘要。
+        let n = self.match_cfg.non_default_setting_count();
+        let badge = if n == 0 {
+            "默认（原版）".to_string()
+        } else {
+            format!("自定义 {n} 项")
+        };
+        let badge_col = if n == 0 {
+            Color::from_rgb(150, 160, 175)
+        } else {
+            Color::from_rgb(255, 200, 90)
+        };
+        ui::text_center(
+            canvas, ctx,
+            &format!("房间设置：{badge}   [O] 编辑"),
+            ui::theme::SMALL, badge_col, cx, b.status.y + 2.0,
+        )?;
+        ui::text_center(
             canvas, ctx,
             &format!(
-                "基础回血（R 键切换）：{} /s   [098c 主机常量 -C9，默认 0.5]",
+                "模式(M)：{}   ·   基础回血(R)：{} /s   ·   人数/轮数见左侧字段",
+                game_core::meta::MatchState::mode_name(self.steam_create_mode),
                 self.steam_create_regen
             ),
-            19.0, Color::from_rgb(150, 220, 180), Point2 { x: cx, y: sh * 0.835 }, true,
+            ui::theme::SMALL, Color::from_rgb(150, 220, 180), cx, b.title.y + b.title.h - 26.0,
         )?;
-        draw_text(canvas, ctx, "↑↓ ←→ 方向键切换字段 · 回车 创建房间 · M 切换模式 · R 回血 · Q 取消", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        // 提示带（屏幕最底，永不与内容重叠）
+        ui::text_center(
+            canvas, ctx,
+            "↑↓←→ 切换字段 · 回车 创建房间 · M 模式 · R 回血 · O 房间设置 · Q 取消",
+            ui::theme::SMALL, Color::from_rgb(160, 200, 255), cx, b.hint.y + 4.0,
+        )?;
         Ok(())
     }
 
