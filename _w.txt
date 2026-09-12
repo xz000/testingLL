@@ -1,62 +1,40 @@
-5377|     fn draw_steam_room_edit(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-5378|         let (sw, sh) = (ui::UI_W, ui::UI_H);
-5379|         let cx = sw / 2.0;
-5380|         draw_text(canvas, ctx, "编辑房间信息", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.26 }, true)?;
-5381|         // 模式（host 数字键 1-5 切换并同步大厅元数据；B3/D13 #1）
-5382|         draw_text(
-5383|             canvas, ctx,
-5384|             &format!(
-5385|                 "模式（host 按 1-5 切换）：{}",
-5386|                 game_core::meta::MatchState::mode_name(self.match_mode)
-5387|             ),
-5388|             22.0,
-5389|             Color::from_rgb(150, 200, 255),
-5390|             Point2 { x: cx, y: sh * 0.26 + 40.0 },
-5391|             true,
-5392|         )?;
-5393|         // 模式图例：1-5 对应玩法名，方便房主不看文档也能选。
-5394|         let legend: [(u8, &str); 5] = [
-5395|             (1, "轮次"),
-5396|             (2, "死亡竞赛"),
-5397|             (3, "化身"),
-5398|             (4, "国王"),
-5399|             (5, "最后生还"),
-5400|         ];
-5401|         let legend_txt = legend
-5402|             .iter()
-5403|             .map(|(m, n)| format!("{m}={n}"))
-5404|             .collect::<Vec<_>>()
-5405|             .join("  ·  ");
-5406|         draw_text(
-5407|             canvas, ctx,
-5408|             &format!("玩法图例：{legend_txt}"),
-5409|             18.0,
-5410|             Color::from_rgb(150, 170, 195),
-5411|             Point2 { x: cx, y: sh * 0.26 + 70.0 },
-5412|             true,
-5413|         )?;
-5414|         let labels = ["房间名", "备注"];
-5415|         let vals = [self.steam_edit_name.clone(), self.steam_edit_note.clone()];
-5416|         let mut y = sh * 0.42;
-5417|         let label_w = 200.0;
-5418|         let box_w = 420.0;
-5419|         let box_h = 56.0;
-5420|         let left = cx - box_w / 2.0 - 40.0;
-5421|         for i in 0..2 {
-5422|             let selected = i == self.steam_room_edit_focus;
-5423|             draw_text(canvas, ctx, labels[i], 24.0, Color::from_rgb(220, 224, 235), Point2 { x: left + (label_w + box_w)
-5424|             let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(30, 34, 44) };
-5425|             let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(left + label_w, y, box_w, box_h
-5426|             canvas.draw(&bg, graphics::DrawParam::new());
-5427|             let disp = if vals[i].is_empty() {
-5428|                 if i == 0 { "（输入房间名）".to_string() } else { "（可选）".to_string() }
-5429|             } else {
-5430|                 format!("  {}", vals[i])
-5431|             };
-5432|             draw_text(canvas, ctx, &disp, 22.0, if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::W
-5433|             y += box_h + 30.0;
-5434|         }
-5435|         let lock_txt = if self.steam_room_locked { "[v] 已锁定（他人不能加入）" } else { "[ ] 未锁定（可加入）" };
-5436|         draw_text(canvas, ctx, &format!("房间锁：{lock_txt}（按 L 切换）"), 22.0, if self.steam_room_locked { Color::from_rgb(235
-5437|         draw_text(canvas, ctx, "人数上限建房时固定（steamworks 限制），用房间锁控制新入", 17.0, Color::from_rgb(150, 160, 178), Point2 { x: cx
-5438|         draw_text(canvas, ctx, "回车 保存    Q 取消    L 锁房", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.
+6651|         self.steam_host_broadcasting_takeover = false;
+6652|         // 邀请面板/好友列表状态复位；进房后立刻上报一次 Rich Presence（好友可一键加入）。
+6653|         self.steam_friend_list = false;
+6654|         self.steam_friends = Vec::new();
+6655|         self.steam_friend_selection = 0;
+6656|         self.steam_friend_hint = String::new();
+6657|         self.steam_presence_text = String::new(); // 强制立即写（不节流）
+6658|         self.steam_presence_last = -999.0;
+6659|         // 会话已被消费（成功），下次回主菜单允许再初始化一次。
+6660|         self.steam_session_tried = false;
+6661|         // 新一场：允许重新上报战绩（进新房间的入口）。
+6662|         self.steam_stats_recorded = false;
+6663|         self.steam_stats_snapshot = None;
+6664|         self.steam_toast = (String::new(), 0.0);
+6665|         self.accumulator = 0.0;
+6666|     }
+6667| 
+6668|         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
+6669|     fn draw_menu(&self, ctx: &mut Context) -> GameResult {
+6670|         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+6671|         ui::set_design_coordinates(&mut canvas, ctx);
+6672|         let (sw, sh) = (ui::UI_W, ui::UI_H);
+6673|         let cx = sw / 2.0;
+6674| 
+6675|         // 标题区
+6676|         let title = "术士之战 Warlock Brawl";
+6677|         draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 
+6678|         draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: s
+6679| 
+6680|         // 卡片通用尺寸
+6681|         let card_w = (sw * 0.62).min(560.0);
+6682|         let card_h = 96.0;
+6683|         let card_x = cx - card_w / 2.0;
+6684|         let y0 = sh * 0.34;
+6685|         let gap = 26.0;
+6686| 
+6687|         #[cfg(feature = "steam")]
+6688|         let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
+6689|         #[cfg(not(feature = "steam"))]
+6690|         let in_lobby_menu = false;
