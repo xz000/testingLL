@@ -63,10 +63,11 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    - 注意：本次尝试用「行号 + ASCII 断言」脚本删除，因 `read` 行号/CRLF 与脚本不一致而**未改动**（断言失败即未落盘）→ 后改用 `edit` 工具逐块删最稳。
 4. **房间设置与 098c 设置对话框的剩余对齐**：`-league` / `-no reward` 模式开关
 5. `R017` 的小遗漏：`I004` 持有者击退减免按 +3 级计（`JASS_AUDIT_098c.md`）
-6. **联机卡顿修复**（`FRAME_SYNC_ANALYSIS.md`，本轮只分析未改码）：
-   ① 周期性快照 >64KiB 与帧包共用同一可靠频道 → 队头阻塞（改独立/不可靠频道，需联机验证）；
-   ② host 产帧被输入到达牵着走（需输入延迟/固定节拍 + 输入 seq）；
-   ③ client 墙钟 accumulator 追赶快进 + 输入突发（低风险：clamp + 单条输入 + 可选渲染插值）。
+6. **联机卡顿修复**（`FRAME_SYNC_ANALYSIS.md`）：
+   - ✅ **快照广播降频**：Steam host 每 30 帧只本地 `set_snapshot`（重连），广播降为每 150 帧（接管）；
+     hash/snapshot 复用一份 `world_to_bytes`；接管取 seq 更新者（`newer_snapshot`）。
+   - ⬜ host 固定节拍产帧 + 输入延迟（需协议改动 + 联机验证）；
+   - ⬜ client 收敛追赶（clamp accumulator + 单条输入 + 可选渲染插值，低风险）。
 
 ## 五、文档索引（读哪个）
 

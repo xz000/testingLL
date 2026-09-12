@@ -729,9 +729,16 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
 /// 两端在相同输入下必须得到同一哈希；不一致即判定 desync。
 /// 纯整数运算，跨平台确定（不含浮点/平台库）。
 pub fn state_hash(w: &World) -> u64 {
-    let bytes = world_to_bytes(w);
+    state_hash_bytes(&world_to_bytes(w))
+}
+
+/// 对**已序列化**的世界字节做 FNV-1a 哈希。
+///
+/// 供「同一帧既要发 hash 又要存/发快照」时复用一次 `world_to_bytes`（避免每 30 帧序列化两遍）。
+/// `state_hash(w)` 即 `state_hash_bytes(&world_to_bytes(w))`（两者必须一致，有单测钉住）。
+pub fn state_hash_bytes(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in &bytes {
+    for &b in bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -1083,6 +1090,8 @@ mod tests {
         assert_eq!(state_hash(&a), state_hash(&b), "相同世界必须同哈希（两端可据此判定一致）");
         let c = World::new(3, 1234);
         assert_ne!(state_hash(&a), state_hash(&c), "不同世界应得不同哈希");
+        // `state_hash` 与「先序列化再 state_hash_bytes」必须一致（host 每帧复用一份字节）。
+        assert_eq!(state_hash(&a), state_hash_bytes(&world_to_bytes(&a)));
     }
 
     #[test]

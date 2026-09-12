@@ -70,24 +70,32 @@
 
 ## 三、修复建议（优先级从高到低）
 
-1. **把“周期性接管快照”挪出主频道**（收益最大、风险也最需要联机验证）
-   - 让 `SteamTransport` 按 `data[0] == TAG_SNAPSHOT(10)` 把快照发到 **独立 channel（如 1）**，接收端同时读 channel 0/1。
-   - ⚠️ 危险点：重连流程依赖「先 Snapshot(10) 后 Resync(11)」的**同频道有序**。若只把快照挪走而 Resync 留在 ch0，
-     会出现 Resync 先到、快照后到 → 基线错乱。**正确做法**：给“周期性接管快照”与“重连快照”用不同 tag，
-     或让重连的 Snapshot+Resync 一起走 ch1，或干脆让周期性接管快照走 **不可靠** 频道（丢一两个无所谓，周期重发）。
-   - 需两台 Steam 实机验证重连/迁移。
-2. **host 固定节拍产帧 + 输入延迟缓冲**（消除 B）
+1. **不再每 30 帧广播快照；本地快照 + 低频广播**（**已实施**，见第四节）
+   - 重连用：host 本地每 30 帧 `set_snapshot`（不发网络）；收到 `ReconnectReq` 时按需单发。
+   - 接管用：广播快照降频到每 150 帧（`SNAPSHOT_BROADCAST_EVERY`，约 2.5s），且接管时取
+     「缓存快照 vs 新 host 自己的 World」中 seq 更新的一份（`newer_snapshot`），故低频不会多回滚。
+   - 这比「分频道」简单得多——局域网本就不广播快照，已证明可行。
+2. **host 固定节拍产帧 + 输入延迟缓冲**（消除 B，**未实施**，需联机验证）
    - 固定 60Hz 产帧，给每个 client 的输入配一个序号/队列，用「上一帧收到的输入」顶替未到的，而不是停摆。
-   - ⚠️ 必须同时给输入加 frame seq，否则“latest wins 复用”会让离散施法重复触发。属行为/协议级改动，需联机验证。
-3. **client 收敛追赶**（低风险、可先做）
+   - ⚠️ 必须同时给输入加 frame seq，否则“latest wins 复用”会让离散施法重复触发。属行为/协议级改动。
+3. **client 收敛追赶**（低风险、可先做，**未实施**）
    - `accumulator` 上限 clamp（如 `≤ 4*TICK`）或限制每次 `update` 最多 step N 帧，避免一帧快进 10+ 步；
    - 输入改为**每次 `update` 只发一条**（移出追赶循环），避免输入突发；
    - 进阶：加 ~1 帧渲染插值（上一帧与当前帧位置 lerp），这是消除抖动观感最有效的手段。
-4. **减小快照本身**：delta 快照 / 只序列化接管必需字段；或提高 `frame_buf_capacity` 后降低快照频率
-   （注意：重连要靠 `frame_buf` 补齐，`SNAPSHOT_EVERY=30` 与容量 60 是配套的，不能只改频率)。
+4. **快照瘦身**：delta 快照 / 压缩。在完成第 1 项后优先级下降（周期大包已基本消失）。
+   注意：重连靠 `frame_buf` 补齐，`SNAPSHOT_EVERY=30` 与容量 60 是配套的，不能只改频率。
 
-## 四、现状与纪律
+## 四、已实施 / 现状
 
-- 本次**只做分析，未改代码**（A/B/1/2 都需要联机验证，盲目改有破坏重连/确定性的风险）。
-- 下一步建议：先做 **C-3 的“节流 + 单条输入”**（纯 client，风险低），再安排一次两台 Steam 实测；
-  实测时打开现有诊断日志（`send_stats`、`steam-cli`/`steam-host` 的 `emit seq`、`frame -> seq`）确认帧到达间隔。
+**已实施（2026-09-13）**，对应第 1/2/3 项（快照相关）：
+1. Steam host 每 30 帧只 **本地** `set_snapshot`（重连用）；**广播**快照降为每 150 帧（`SNAPSHOT_BROADCAST_EVERY`）。
+   局域网 host 本就只 `set_snapshot`（不广播）。
+2. 同一帧的 hash 与 snapshot **复用一份 `world_to_bytes`**：新增 `world_ser::state_hash_bytes(&[u8])`，
+   `state_hash(w)` 改为委托它（单测钉住两者一致）。
+3. 主机迁移取基线改为 **取 seq 更新者**：新增 `net::lockstep::newer_snapshot(a, b)`，
+   `HostLockstep::takeover` 不再无条件优先缓存快照；`steam_do_takeover` 也据此选基线。
+   这样低频广播不会让接管无谓回滚（有单测 `takeover_prefers_newer_baseline_over_stale_cache`）。
+
+**未实施（需联机验证）**：B（host 固定节拍 + 输入延迟）、C（client 收敛追赶/渲染插值）。
+下一步建议：先做 **C**（纯 client、低风险、可单测），再安排两台 Steam 实测；实测时打开现有诊断日志
+（`send_stats`、`steam-cli`/`steam-host` 的 `emit seq`、`frame -> seq`）确认帧到达间隔。

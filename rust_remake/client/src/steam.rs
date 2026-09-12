@@ -198,11 +198,13 @@ impl Game {
         // 取本端缓存的快照重建 world（迁移基线）。
         // S7：若原 host 在首个 `SNAPSHOT_EVERY` 周期前掉线（从未广播过快照），`cached_snapshot()` 为 None，
         // 则用本端已回放的最新 world（self.world）+ 当前期望帧 seq 作为接管基线，保证仍能广播 Takeover + 快照接管。
+        // 本端自己的 World 基线（期望帧 seq）。
+        let own = (game_core::world_ser::world_to_bytes(&self.world), cli.expect_seq());
         let cached = cli.cached_snapshot();
-        let effective_snap: (Vec<u8>, u64) = match &cached {
-            Some(s) => s.clone(),
-            None => (game_core::world_ser::world_to_bytes(&self.world), cli.expect_seq()),
-        };
+        // 取「本端 world」与「缓存快照」中 seq 更新的一份作为接管基线：
+        // 低频/无周期广播快照时，本端自己可能反而更新，用 max 避免无谓回滚到旧缓存。
+        let effective_snap: (Vec<u8>, u64) = net::lockstep::newer_snapshot(cached.clone(), Some(own))
+            .expect("own 基线必然存在");
         // S2：接管前先记下旧 host 的 peer，接管后单发 `Takeover` 通知它已被取缔（防脑裂/孤儿 host 续产帧）。
         let old_host_peer = cli.host_peer();
         let old_host_id = match old_host_peer {
@@ -237,8 +239,8 @@ impl Game {
                 identities.push(Some(self.steam_participants[i]));
             }
         }
-        // S7：无缓存快照时把本端 world 基线作为 fallback 交给 takeover，保证新 host 仍能续打并广播。
-        let fallback = cached.is_none().then(|| effective_snap.clone());
+        // 把选定的基线（已含 max 逻辑）交给 takeover；无缓存时它就是本端 world。
+        let fallback = Some(effective_snap.clone());
         let mut host = net::lockstep::HostLockstep::takeover(
             cli,
             my_index,
