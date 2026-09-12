@@ -1,30 +1,103 @@
-956     /// 之后以 `环宽/(wo×√存活)` 每秒的**连续速率**收缩（人越少越快）。
-957     /// 总吞没时长与按环步进的 098c 完全一致，只是抹平了 war3 地形格的阶梯感（D13）。
-958     fn shrink_arena(&mut self, dt: Fix64) {
-959         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
-960         if self.shrink_timer > Fix64::ZERO {
-961             self.shrink_timer -= dt;
-962             return;
-963         }
-964         let b = Balance::default();
-965         let rate = b.ring_width / (b.shrink_ring_secs * alive.sqrt());
-966         self.arena_radius = (self.arena_radius - Fix64::from_num(rate * dt.to_num::<f64>())).max(Fix64::ZERO);
-967     }
-968 
-969     /// C4 幻象·第二阶段：本体沿 `target` 方向瞬移 2，原位留 2 个假身（约 120° 间隔），
-970     /// 假身持续 `fake_window`（待幻剩余时间）秒。
-971     fn fake_locate(&mut self, pid: u32, target: Vec2) {
-972         let idx = pid as usize;
-973         let Some(p) = self.players.get_mut(idx) else { return };
-974         let center = p.pos;
-975         let dir = (target - center).normalized();
-976         let shift = if dir.length_squared() == Fix64::ZERO {
-977             Vec2::new(Fix64::from_num(2), Fix64::ZERO)
-978         } else {
-979             dir * Fix64::from_num(2)
-980         };
-981         let lifetime = p.fake_active.take().unwrap_or(Fix64::from_num(2.0));
-982         let radius = p.radius;
-983         p.pos = center + shift;
-984         p.move_target = None;
-985         // 两个假身：一个在原位，一个在原位 + 旋转 120° 偏移
+net-steam\src\lib.rs:43:    fn stub_transport_errors_cleanly_not_panics() {
+net-steam\src\lobby.rs:31:    pub fn new(host: SteamID, mut members: Vec<SteamID>) -> LobbyPlayerTable {
+net-steam\src\lobby.rs:43:    pub fn is_host(&self, id: SteamID) -> bool {
+net-steam\src\lobby.rs:48:    pub fn slot_of(&self, id: SteamID) -> Option<u8> {
+net-steam\src\lobby.rs:53:    pub fn total_players(&self) -> usize {
+net-steam\src\lobby.rs:58:    pub fn identities_in_order(&self) -> Vec<(u8, SteamID)> {
+net-steam\src\lobby.rs:68:pub fn format_connect_string(lobby_id: u64) -> String {
+net-steam\src\lobby.rs:73:pub fn parse_connect_string(s: &str) -> Option<u64> {
+net-steam\src\lobby.rs:83:    fn lobby_table_maps_members_to_slots_deterministically() {
+net-steam\src\lobby.rs:107:    fn connect_string_roundtrips_lobby_id() {
+net-steam\src\lobby.rs:116:    fn connect_string_rejects_foreign_or_malformed() {
+net-steam\src\session.rs:72:fn create_lobby_error_hint(e: steamworks::SteamError) -> String {
+net-steam\src\session.rs:90:pub fn list_friends(transport: &SteamTransport, lobby: Option<u64>) -> Vec<FriendInfo> {
+net-steam\src\session.rs:125:pub fn invite_friend(transport: &SteamTransport, lobby: u64, friend_id: u64) {
+net-steam\src\session.rs:135:pub fn open_invite_dialog(transport: &SteamTransport, lobby: u64) {
+net-steam\src\session.rs:155:    pub fn side(self) -> u32 {
+net-steam\src\session.rs:165:pub fn avatar_rgba(transport: &SteamTransport, steam_id: u64, size: AvatarSize) -> Option<(Vec<u8>, u32)> {
+net-steam\src\session.rs:182:pub fn circular_crop_rgba(rgba: &mut [u8], side: u32) {
+net-steam\src\session.rs:205:pub fn ping_to(transport: &SteamTransport, peer: u64) -> Option<i32> {
+net-steam\src\session.rs:257:pub fn shared<T>(v: T) -> Shared<T> {
+net-steam\src\session.rs:262:pub fn stats_snapshot(transport: &SteamTransport) -> StatsSnapshot {
+net-steam\src\session.rs:272:pub fn record_match_result(transport: &SteamTransport, summary: MatchSummary) -> MatchRecordReport {
+net-steam\src\session.rs:315:pub fn request_leaderboard(transport: &SteamTransport, name: &str, slot: &Shared<Option<steamworks::Leaderboard>>) {
+net-steam\src\session.rs:332:pub fn upload_leaderboard_score(transport: &SteamTransport, lb: &steamworks::Leaderboard, score: i32) {
+net-steam\src\session.rs:350:pub fn request_leaderboard_top(
+net-steam\src\session.rs:383:pub fn set_presence(transport: &SteamTransport, status: &str, connect: Option<&str>) {
+net-steam\src\session.rs:390:pub fn clear_presence(transport: &SteamTransport) {
+net-steam\src\session.rs:490:    pub fn init(app_id: u32, virtual_port: i32) -> io::Result<SteamSession> {
+net-steam\src\session.rs:526:    pub fn take_join_request(&self) -> Option<JoinRequest> {
+net-steam\src\session.rs:531:    pub fn run_callbacks(&self) {
+net-steam\src\session.rs:539:    pub fn start_host_create(&mut self, max_members: u32, beats: u32) -> io::Result<()> {
+net-steam\src\session.rs:571:    pub fn host_set_room_info(&self, name: Option<&str>, note: Option<&str>) -> io::Result<()> {
+net-steam\src\session.rs:588:    pub fn host_set_rounds(&self, rounds: u32) -> io::Result<()> {
+net-steam\src\session.rs:599:    pub fn lobby_rounds(&self) -> Option<u32> {
+net-steam\src\session.rs:608:    pub fn host_set_learn(&self, secs: u32) -> io::Result<()> {
+net-steam\src\session.rs:619:    pub fn lobby_learn(&self) -> Option<u32> {
+net-steam\src\session.rs:628:    pub fn host_set_starting_gold(&self, gold: i32) -> io::Result<()> {
+net-steam\src\session.rs:639:    pub fn lobby_starting_gold(&self) -> Option<i32> {
+net-steam\src\session.rs:648:    pub fn host_set_gold_per_round(&self, gold: i32) -> io::Result<()> {
+net-steam\src\session.rs:660:    pub fn host_set_mode(&self, mode: u8) -> io::Result<()> {
+net-steam\src\session.rs:662:            return Err(io::Error::other("host_set_mode: 尚未建厅"));
+net-steam\src\session.rs:671:    pub fn lobby_mode(&self) -> Option<u8> {
+net-steam\src\session.rs:680:    pub fn host_set_version(&self, version: u32) -> io::Result<()> {
+net-steam\src\session.rs:691:    pub fn lobby_version(&self) -> Option<u32> {
+net-steam\src\session.rs:699:    pub fn lobby_gold_per_round(&self) -> Option<i32> {
+net-steam\src\session.rs:708:    pub fn host_set_regen(&self, per_sec: f64) -> io::Result<()> {
+net-steam\src\session.rs:710:            return Err(io::Error::other("host_set_regen: 尚未建厅"));
+net-steam\src\session.rs:719:    pub fn lobby_regen(&self) -> Option<f64> {
+net-steam\src\session.rs:728:    pub fn host_set_place_reward(&self, rewards: &[i32]) -> io::Result<()> {
+net-steam\src\session.rs:744:    pub fn lobby_place_reward(&self) -> Option<Vec<i32>> {
+net-steam\src\session.rs:759:    pub fn list_friends(&self) -> Vec<FriendInfo> {
+net-steam\src\session.rs:764:    pub fn invite_friend(&self, friend_id: u64) -> io::Result<()> {
+net-steam\src\session.rs:773:    pub fn open_invite_dialog(&self) -> io::Result<()> {
+net-steam\src\session.rs:782:    pub fn set_presence(&self, status: &str, connect: Option<&str>) {
+net-steam\src\session.rs:787:    pub fn clear_presence(&self) {
+net-steam\src\session.rs:792:    pub fn start_join_by_id(&mut self, lobby_id: u64, beats: u32) -> io::Result<()> {
+net-steam\src\session.rs:825:    pub fn start_find_and_join(&mut self, beats: u32) -> io::Result<()> {
+net-steam\src\session.rs:860:    pub fn start_list_lobbies(&mut self, beats: u32) -> io::Result<()> {
+net-steam\src\session.rs:880:    pub fn tick_lobby_list(&mut self) -> LobbyListProgress {
+net-steam\src\session.rs:920:    pub fn tick_lobby(&mut self) -> LobbyProgress {
+net-steam\src\session.rs:982:    fn finalize_lobby(&mut self, lobby: steamworks::LobbyId, is_host: bool) {
+net-steam\src\session.rs:1003:    pub fn prepare_transport(&mut self) -> io::Result<()> {
+net-steam\src\session.rs:1008:    pub fn host_steam_id(&self) -> Option<u64> {
+net-steam\src\session.rs:1020:    pub fn my_slot(&self) -> u8 {
+net-steam\src\session.rs:1029:    pub fn identities(&self) -> Vec<(u8, u64)> {
+net-steam\src\session.rs:1037:    pub fn into_transport(self) -> SteamTransport {
+net-steam\src\session.rs:1046:    fn opaque(side: u32) -> Vec<u8> {
+net-steam\src\session.rs:1051:    fn circular_crop_keeps_center_and_clears_corners() {
+net-steam\src\session.rs:1066:    fn circular_crop_is_symmetric() {
+net-steam\src\session.rs:1080:    fn circular_crop_handles_zero_side_without_panic() {
+net-steam\src\stats.rs:52:    pub fn won(&self) -> bool {
+net-steam\src\stats.rs:57:    pub fn flawless(&self) -> bool {
+net-steam\src\stats.rs:63:pub fn achievements_for(s: MatchSummary) -> Vec<&'static str> {
+net-steam\src\stats.rs:81:pub fn achievement_label(key: &str) -> &'static str {
+net-steam\src\stats.rs:93:pub fn leaderboard_score(s: MatchSummary) -> i32 {
+net-steam\src\stats.rs:109:    fn sum(kills: u32, best_placement: u32, players: u32) -> MatchSummary {
+net-steam\src\stats.rs:114:    fn win_requires_at_least_two_players() {
+net-steam\src\stats.rs:122:    fn achievements_unlock_at_thresholds() {
+net-steam\src\stats.rs:135:    fn flawless_needs_every_round_survived() {
+net-steam\src\stats.rs:150:    fn leaderboard_score_rewards_kills_and_placement() {
+net-steam\src\stats.rs:158:    fn achievement_label_falls_back_for_unknown_key() {
+net-steam\src\transport_steam.rs:53:    pub fn init(app_id: u32, _virtual_port: i32) -> io::Result<SteamTransport> {
+net-steam\src\transport_steam.rs:85:    pub fn run_callbacks(&self) {
+net-steam\src\transport_steam.rs:90:    pub fn steam_id(&self) -> u64 {
+net-steam\src\transport_steam.rs:95:    fn send_reliable(&mut self, id: u64, data: &[u8]) -> bool {
+net-steam\src\transport_steam.rs:107:    fn flush_pending(&mut self) {
+net-steam\src\transport_steam.rs:130:    fn push_pending(&mut self, id: u64, bytes: &[u8]) {
+net-steam\src\transport_steam.rs:145:    fn recv_messages_into_queue(&mut self, batch: usize) {
+net-steam\src\transport_steam.rs:157:    pub fn is_established(&self, id: u64) -> bool {
+net-steam\src\transport_steam.rs:165:    pub fn matchmaking(&self) -> steamworks::Matchmaking {
+net-steam\src\transport_steam.rs:170:    pub fn friends(&self) -> steamworks::Friends {
+net-steam\src\transport_steam.rs:175:    pub fn networking_messages(&self) -> steamworks::networking_messages::NetworkingMessages {
+net-steam\src\transport_steam.rs:180:    pub fn user_stats(&self) -> steamworks::UserStats {
+net-steam\src\transport_steam.rs:186:    pub fn register_callback<C, F>(&mut self, f: F)
+net-steam\src\transport_steam.rs:198:    fn send_stats(&self) -> (u64, u64, u64) {
+net-steam\src\transport_steam.rs:203:    fn recv_tag_counts(&self) -> (u64, u64, u64) {
+net-steam\src\transport_steam.rs:207:    fn send_to(&mut self, buf: &[u8], peer: &Peer) -> io::Result<usize> {
+net-steam\src\transport_steam.rs:240:    fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<Option<(usize, Peer)>> {
+net-steam\src\transport_steam.rs:270:    fn local(&self) -> Peer {
+net-steam\src\transport_steam.rs:284:    fn init_and_read_own_steam_id() {
+net-steam\src\transport_stub.rs:19:    fn send_to(&mut self, _buf: &[u8], _peer: &Peer) -> io::Result<usize> {
+net-steam\src\transport_stub.rs:24:    fn recv_from(&mut self, _buf: &mut [u8]) -> io::Result<Option<(usize, Peer)>> {
+net-steam\src\transport_stub.rs:29:    fn local(&self) -> Peer {
