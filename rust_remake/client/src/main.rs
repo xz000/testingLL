@@ -5891,16 +5891,15 @@ impl Game {
                 // 数字 / 小数点 / 负号
                 for c in "0123456789.-".chars() {
                     let cs = c.to_string();
-                    if ctx
+                    let pressed = ctx
                         .keyboard
                         .is_logical_key_just_pressed(&Key::Character(cs.clone().into()))
                         || ctx
                             .keyboard
-                            .is_logical_key_just_pressed(&Key::Character(cs.to_uppercase().into()))
-                    {
-                        if buf.len() < 10 {
-                            buf.push(c);
-                        }                    }
+                            .is_logical_key_just_pressed(&Key::Character(cs.to_uppercase().into()));
+                    if pressed && buf.len() < 10 {
+                        buf.push(c);
+                    }
                 }
                 self.room_cfg_input = Some(buf); // 仍在输入态
                 return true;
