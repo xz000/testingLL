@@ -1317,7 +1317,7 @@ impl Game {
                     self.learn_growth_sel = Some(kind);
                 }
                 LearnAction::JordanBreak(skill) => {
-                    // 乔丹之石：突破该技能**所在槽**的上限（098c `T000`–`T006`，每槽一次、免费）。
+                    // 乔丹之石：突破该技能**所在槽**的上限 +2（098c `Hf`：一颗戒指 5G、用掉即消耗，可反复买）。
                     let me = self.self_index();
                     if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
                         if profile.break_cap_for(skill) {
@@ -1528,7 +1528,7 @@ impl Game {
     }
 
     /// 成长「确认」：购买当前选中的精通（键盘 `=`/回车 与点击按钮共用）。
-    /// 注：技能上限突破**不在**此页——098c 是「乔丹之石戒指（买一次）→ 每个技能槽各可免费突破一次」，
+    /// 注：技能上限突破**不在**成长页（098c 是「乔丹之石戒指」：一颗 5G 只换一次 +2，可反复购买）。
     /// 入口在**技能详情**的「突破上限 +2」按钮（`LearnAction::JordanBreak`）。
     fn growth_confirm(&mut self) {
         let me = self.self_index();
@@ -3569,8 +3569,8 @@ impl Game {
                                             ui::text_left(canvas, ctx, "二形态：无", ui::theme::SMALL, ui::theme::text_dim(), rx, ry)?;
                                             ry += 22.0;
                                         }
-                                        // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=逐级升级。
-                                        // 已到上限时：持**乔丹之石戒指**且该槽未突破过 → 出现「突破上限 +2」（098c：每槽一颗、免费）。
+                                        // 购买 / 升级按钮：未拥有=购买 1 级，已拥有=升级；已满级=乔丹之石突破。
+                                        // 098c `Hf`：一颗戒指（5G）只换一次 +2、用掉即消耗，**想再 +2 必须再花 5 金**（无次数上限）。
                                         let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
                                         let can_break = owned && lv >= cap;
                                         let (label, enabled) = if owned {
@@ -3608,7 +3608,7 @@ impl Game {
                                         };
                                         ui::row(canvas, ctx, br, &label, ui::theme::BODY, bst)?;
                                         if enabled {
-                                            // 满级时的「突破上限」走乔丹分支（免费、每槽一次），其余走购买/升级。
+                                            // 与鼠标共用：点「突破上限」= 乔丹之石支线（每次扣 5G）；否则走购买/升级。
                                             let act = if can_break {
                                                 LearnAction::JordanBreak(skill)
                                             } else {
@@ -6550,7 +6550,7 @@ enum LearnAction {
     ShopConfirm,
     /// 成长：确认购买当前选中项（等价 `=`）
     GrowthConfirm,
-    /// 技能详情：用乔丹之石突破该技能**所在槽**的上限（+2、免费、每槽一次）
+    /// 技能详情：用乔丹之石突破该技能**所在槽**的上限（+2；每次 5G，可反复）。
     JordanBreak(game_core::skill::SkillId),
     /// 购买精通（0=生命 1=范围 2=射程 3=背包）
     Mastery(usize),
