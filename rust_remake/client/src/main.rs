@@ -2689,9 +2689,7 @@ impl Game {
                 self.draw_steam_room_edit(&mut canvas, ctx)?;
             } else {
                 self.draw_steam_ready_overlay(&mut canvas, ctx)?;
-        if self.room_cfg_edit {
-            self.draw_room_cfg_editor(&mut canvas, ctx)?;
-        }
+        self.draw_lobby_overlays(&mut canvas, ctx)?;
             }
         }
 
@@ -3025,6 +3023,18 @@ impl Game {
 
     /// Steam 房间/就绪界面：列出成员昵称 + 就绪状态，按 U 就绪/取消，全就绪倒计时。
     #[cfg(feature = "steam")]
+    /// **大厅覆盖层统一入口**（第 3 步）：所有会盖在大厅界面之上的东西都在这里画。
+    ///
+    /// 为什么要有它：原先每个子界面各自在自己那段代码里画编辑器，**漏一处就"看不见"**
+    /// （本项目已发生 3 次）。今后新增覆盖层只改这里，且各子界面都在 `canvas.finish` 前调用它。
+    #[cfg(feature = "steam")]
+    fn draw_lobby_overlays(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        if self.room_cfg_edit {
+            self.draw_room_cfg_editor(canvas, ctx)?;
+        }
+        Ok(())
+    }
+
     /// 房间面板上的设置徽章：`默认（原版）` / `自定义 N 项`（host 另有 `[O]编辑` 提示）。
     #[cfg(feature = "steam")]
     fn draw_room_cfg_badge(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
@@ -6654,9 +6664,7 @@ impl Game {
             #[cfg(feature = "steam")]
             if self.steam_lobby_create {
                 self.draw_steam_create_lobby(&mut canvas, ctx)?;
-                if self.room_cfg_edit {
-                    self.draw_room_cfg_editor(&mut canvas, ctx)?;
-                }
+                self.draw_lobby_overlays(&mut canvas, ctx)?;
                 canvas.finish(ctx)?;
                 return Ok(());
             }
@@ -6664,9 +6672,7 @@ impl Game {
             #[cfg(feature = "steam")]
             if self.steam_lobby_list {
                 self.draw_steam_lobby_list(&mut canvas, ctx)?;
-                if self.room_cfg_edit {
-                    self.draw_room_cfg_editor(&mut canvas, ctx)?;
-                }
+                self.draw_lobby_overlays(&mut canvas, ctx)?;
                 canvas.finish(ctx)?;
                 return Ok(());
             }
