@@ -58,6 +58,12 @@ const HOST_DROP_TICKS: u32 = 180;
 const HOST_CFG_SETTLE_TICKS: u32 = 15;
 /// host：每隔多少帧保存一次世界快照（供重连）。约 0.5 秒。
 const SNAPSHOT_EVERY: u64 = 30;
+/// host（Steam）：每隔多少帧 **广播** 一次快照给各 client（供主机迁移/接管）。
+/// 快照本地保存仍按 `SNAPSHOT_EVERY`（重连用），广播频率更低以避开「大包挤可靠频道」的卡顿；
+/// 接管时取「缓存快照 vs 新 host 自己的 World」中 seq 更新的一份（`newer_snapshot`），故低频不会多回滚。
+/// 必须为 `SNAPSHOT_EVERY` 的整数倍。约 2.5 秒。
+#[cfg(feature = "steam")]
+const SNAPSHOT_BROADCAST_EVERY: u64 = 150;
 /// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
 const CLIENT_STALE_TICKS: u64 = 180;
 /// Steam（client）：进入迁移后，探测“host 是否还在”的帧数（发 ReconnectReq 等 Snapshot 应答）。约 1 秒。
@@ -4994,12 +5000,20 @@ impl event::EventHandler for Game {
                                 }
                                 self.world.step(inputs, ticking);
                                 self.note_self_cast();
-                                // 周期快照（重连用 + 广播给所有 client，供「host 掉线接管」用）。
+                                // 周期快照：本地每 30 帧保存（重连用）；广播更低频（主机迁移用，见下）。
                                 self.host_frame_count += 1;
                                 if self.host_frame_count % SNAPSHOT_EVERY == 0 {
-                                    // 周期性世界状态哈希：client 推进到同 seq 时比对，判定帧同步分歧。
-                                    host.broadcast_state_hash(seq, game_core::world_ser::state_hash(&self.world));
-                                    host.broadcast_snapshot(game_core::world_ser::world_to_bytes(&self.world), host.next_seq());
+                                    // 周期性世界状态哈希（分歧检测）+ 本地快照（重连用）：
+                                    // 同一帧只序列化一次 World，hash 与 snapshot 复用同一份字节。
+                                    let wb = game_core::world_ser::world_to_bytes(&self.world);
+                                    host.broadcast_state_hash(seq, game_core::world_ser::state_hash_bytes(&wb));
+                                    // 广播快照只为本局「主机迁移/接管」，频率更低（默认 2.5s），
+                                    // 其余帧只本地保存（重连时按需单发），避免每 0.5s 一个大包挤占可靠频道。
+                                    if self.host_frame_count % SNAPSHOT_BROADCAST_EVERY == 0 {
+                                        host.broadcast_snapshot(wb, host.next_seq());
+                                    } else {
+                                        host.set_snapshot(wb, host.next_seq());
+                                    }
                                 }
                                 self.accumulator -= TICK;
                             } else {
@@ -5226,10 +5240,12 @@ impl event::EventHandler for Game {
                             self.note_self_cast();
                             // 周期保存快照（供掉线者重连时拉取当前状态接回）。
                             self.host_frame_count += 1;
+                            // 周期性世界状态哈希（client 推进到同 seq 时比对，判定帧同步分歧）+ 本地快照（重连用）。
+                            // 同一帧只序列化一次 World，hash 与 snapshot 复用同一份字节。
+                            // 局域网无主机迁移，故**不广播**快照（只本地保存，供掉线重连按需单发）。
                             if self.host_frame_count % SNAPSHOT_EVERY == 0 {
-                                // 周期性世界状态哈希：client 推进到同 seq 时比对，判定帧同步分歧。
-                                host.broadcast_state_hash(seq, game_core::world_ser::state_hash(&self.world));
                                 let wb = game_core::world_ser::world_to_bytes(&self.world);
+                                host.broadcast_state_hash(seq, game_core::world_ser::state_hash_bytes(&wb));
                                 host.set_snapshot(wb, host.next_seq());
                             }
                             self.accumulator -= TICK;

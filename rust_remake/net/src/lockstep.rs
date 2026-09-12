@@ -22,6 +22,21 @@ fn default_input_bytes() -> Vec<u8> {
     game_core::netcode::encode_player_input(&game_core::world::PlayerInput::default())
 }
 
+/// 从两份世界基线（`(world_bytes, seq)`）里取 **seq 更大** 的一份；某一侧为 `None` 则取另一侧。
+///
+/// 用于主机迁移：host 周期广播快照（cache）与「新 host 自己的 World（fallback）」二者择新，
+/// 避免低频/无周期广播时新 host 无谓回滚到更旧的缓存快照。纯函数，便于单测。
+pub fn newer_snapshot(
+    a: Option<(Vec<u8>, u64)>,
+    b: Option<(Vec<u8>, u64)>,
+) -> Option<(Vec<u8>, u64)> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(if x.1 >= y.1 { x } else { y }),
+        (Some(x), None) => Some(x),
+        (None, y) => y,
+    }
+}
+
 /// 重连应答限速间隔（S5，单位=host 产帧/tick）：client 每帧发 `ReconnectReq` 时，
 /// host 仅在冷却归零时回整快照+Resync，避免在迁移探测期间被反复广播整快照刷屏。
 const RECONNECT_RESP_INTERVAL: u32 = 30;
@@ -240,8 +255,10 @@ impl<T: Transport> HostLockstep<T> {
         identities: Vec<Option<u64>>,
         fallback_snapshot: Option<(Vec<u8>, u64)>,
     ) -> Self {
-        // 优先用 host 周期广播缓存的快照；没有（开局早期 host 掉线）则退回调用方提供的本端基线。
-        let snapshot = client.cached_snapshot().or(fallback_snapshot);
+        // 优先用 host 周期广播缓存的快照；没有则退回调用方提供的本端基线。
+        // 若两者都有，取 **seq 更新** 的一份：低频/无周期广播时，本端自己的 World 可能反而更新，
+        // 用 max 可避免接管时无谓地回滚到旧快照（旧逻辑无条件优先 cached）。
+        let snapshot = newer_snapshot(client.cached_snapshot(), fallback_snapshot);
         let transport = client.into_transport();
         let mut host = HostLockstep::new(transport, total_players, true); // host 参与（占 my_index）
         host.host_index = my_index;
@@ -1842,6 +1859,37 @@ mod tests {
         }
         assert!(advanced > 0, "重连后应能继续产帧（防假绿）");
         assert_eq!(cli.expect_seq(), seq + 20, "重连后应继续严格按序推进 20 帧");
+    }
+
+    /// `newer_snapshot`：取 seq 更新的一份（顺序无关；任一侧 None 取另一侧）。
+    #[test]
+    fn newer_snapshot_prefers_larger_seq() {
+        let a = Some((vec![1u8], 10));
+        let b = Some((vec![2u8], 20));
+        assert_eq!(newer_snapshot(a.clone(), b.clone()), Some((vec![2u8], 20)));
+        assert_eq!(newer_snapshot(b.clone(), a.clone()), Some((vec![2u8], 20)), "顺序无关");
+        assert_eq!(newer_snapshot(a.clone(), None), a);
+        assert_eq!(newer_snapshot(None, b.clone()), b);
+        assert_eq!(newer_snapshot(None, None), None);
+    }
+
+    /// 回归：接管时缓存快照比本端自己的 World 还旧 → 应取本端（seq 更新），不能无谓回滚。
+    /// （低频/无周期广播快照后，这种情况会变常见。）
+    #[test]
+    fn takeover_prefers_newer_baseline_over_stale_cache() {
+        let (mut ht, ct) = pair();
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+        // 注入一份旧快照（seq=10）让 client 缓存。
+        let snap = Packet::Snapshot { world_bytes: vec![1, 2, 3], seq: 10 };
+        ht.send_to(&snap.encode(), &Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001)))).unwrap();
+        cli.step_frame(&mut rcv).unwrap();
+        assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 10)));
+        // 本端自己的基线更新（seq=20）→ 应选它，而不是回滚到 10。
+        let own = Some((vec![9u8, 9], 20));
+        let mut host = HostLockstep::takeover(cli, 1, 2, vec![0], vec![None], vec![true], vec![None], own.clone());
+        assert_eq!(host.current_snapshot(), Some(&(vec![9u8, 9], 20)), "应取 seq 更新的本端基线");
+        assert_eq!(host.next_seq(), 20, "next_seq 应接在更新基线上");
     }
 
     /// 阶段 3（主机迁移）：`HostLockstep::takeover` 从「原 client」转换，把 `next_seq` 基线设为该 client 缓存快照的 seq。
