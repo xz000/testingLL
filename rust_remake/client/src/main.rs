@@ -1488,8 +1488,9 @@ impl Game {
             if let Some(label) = game_core::meta::MatchState::streak_label(victim_streak.max(3)) {
                 eprintln!("[streak] {} 结束了 {} 的{}!", killer, victim, if victim_streak >= 3 { label } else { "" });
             }
-            let assists = self.world.damage_dealers_of(victim);
-            self.meta.register_assists(victim, killer, &assists);
+            if let Some(a) = self.world.assist_damager_of(victim, killer) {
+                self.meta.register_assists(victim, killer, &[a]);
+            }
             if victim_streak >= 3 {
                 eprintln!("[streak] 玩家{killer} 终结了 {victim_streak} 连杀");
             }
@@ -4413,8 +4414,9 @@ impl event::EventHandler for Game {
                         if victim_streak >= 3 {
                             eprintln!("[streak] 玩家{killer} 终结了 {victim_streak} 连杀");
                         }
-                        let assists = self.world.damage_dealers_of(victim);
-                        self.meta.register_assists(victim, killer, &assists);
+                        if let Some(a) = self.world.assist_damager_of(victim, killer) {
+                            self.meta.register_assists(victim, killer, &[a]);
+                        }
                     }
                     if self.meta.profiles.iter().any(|pr| pr.score >= self.meta.config.win_score) {
                         let placement = self.meta.final_ranking().into_iter().map(|(id, _)| id).collect();

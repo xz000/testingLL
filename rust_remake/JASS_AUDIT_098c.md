@@ -105,9 +105,9 @@
 
 | 项 | 098c | Rust | 状态 |
 |---|---|---|---|
-| 击退公式 | `KI = (100+目标魔法)×gX×**Gn[攻]×hn[守]×Hn**×JI` | `warlock_ki_knockback = (100+目标魔法)×gx×ji`，缺 Gn/hn/Hn | ❌ |
-| 每轮开局 Gn | `Gn = 0.5`（经 XI，含默认 FFA） | `1.0` | ❌ |
-| 助攻判定 | 按 `Jn[受×12+施]` 伤害**占比** | 近似"有过伤害即助攻" | ⚠️ |
+| 击退公式 | `KI = (100+目标魔法)×gX×**Gn[攻]×hn[守]×Hn**×JI` | `warlock_ki_knockback = (100+mana)×gx×ji×Gn×hn`；`Hn` 由 `push_knockback` 的 `effective_kb_reduction` 承担 | ✅（2026-09-12） |
+| 每轮开局 Gn | `Gn = 0.5`（经 XI，含默认 FFA） | `reset_state` 置 `growth = 0.5` | ✅（2026-09-12） |
+| 助攻判定 | `Jn[受×12+施]` 取**伤害最高者**（`>0` 且非凶手）= 唯一助攻 | 新增 `assist_damager_of(victim, killer)` | ✅（2026-09-12） |
 | 模式 | 5 种（-round/-dm/-avatar/-king/-lms） | mode 字段与 `record_death` 分支已有，UI 入口未完整暴露 | 🔍 |
 | 精通上限 | 各 **6** 级（w3q tooltip「…Mastery 1..6」+ `glvl=6`；R017 合成科技 glvl=20） | `Mastery::CAPS=[6,6,6,2]` | ✅ |
 | 精通价格 | 生命6 / 范围7 / 射程5 / 背包3（w3q `gglb`） | `Mastery::COSTS=[6,7,5,3]` | ✅ |
