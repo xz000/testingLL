@@ -3206,7 +3206,7 @@ impl Game {
         let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(0.0, 0.0, sw, sh), Color::from_rgba(8, 10, 16, 225))?;
         canvas.draw(&dim, graphics::DrawParam::new());
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "房间 - 等待所有人就绪", 40.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.18 }, true)?;
+        draw_text(canvas, ctx, "房间 - 等待所有人就绪", 40.0, layout::border_selected(), Point2 { x: cx, y: sh * 0.18 }, true)?;
         // 房间名 + 人数 + 锁状态（host 读 matchmaking，client 用本地记录）。
         let (rname, rnote) = self.steam_current_room_info();
         let n_in = self.steam_roster.len();
@@ -3301,7 +3301,7 @@ impl Game {
                 (r, if r { Color::from_rgb(90, 220, 130) } else { Color::from_rgb(220, 220, 225) })
             };
             // 成员卡片背景（就绪偏绿、未就绪深灰），与主菜单/配置界面卡片视觉一致。
-            let bg_col = if ready { Color::from_rgb(34, 58, 44) } else { Color::from_rgb(30, 34, 44) };
+            let bg_col = if ready { Color::from_rgb(34, 58, 44) } else { layout::bg_normal() };
             let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(card_x, y - 6.0, card_w, 44.0), bg_col)?;
             canvas.draw(&bg, graphics::DrawParam::new());
             let mark = if ready { "[v]" } else { "[ ]" };
@@ -7153,23 +7153,23 @@ impl Game {
     fn draw_steam_lobby_list(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "加入房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.22 }, true)?;
+        draw_text(canvas, ctx, "加入房间", 36.0, layout::border_selected(), Point2 { x: cx, y: sh * 0.22 }, true)?;
         let filter_name = if self.steam_list_mode_filter == 0 {
             "全部".to_string()
         } else {
             game_core::meta::MatchState::mode_name(self.steam_list_mode_filter).to_string()
         };
-        draw_text(canvas, ctx, &format!("↑/↓ 选择，回车加入，R 刷新，F 筛选模式：[{filter_name}]"), 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
+        draw_text(canvas, ctx, &format!("↑/↓ 选择，回车加入，R 刷新，F 筛选模式：[{filter_name}]"), 20.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
         if self.steam_list_lobbies.is_empty() {
             if self.steam_list_searching {
                 draw_text(canvas, ctx, "搜索中…", 28.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.5 }, true)?;
-                draw_text(canvas, ctx, "正在向 Steam 查询公开房间，请稍候", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+                draw_text(canvas, ctx, "正在向 Steam 查询公开房间，请稍候", 18.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
             } else if self.steam_list_mode_filter != 0 && !self.steam_list_all.is_empty() {
                 draw_text(canvas, ctx, &format!("（无 [{filter_name}] 模式的房间）"), 28.0, Color::from_rgb(230, 190, 140), Point2 { x: cx, y: sh * 0.5 }, true)?;
-                draw_text(canvas, ctx, "按 F 切换筛选条件，或 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+                draw_text(canvas, ctx, "按 F 切换筛选条件，或 R 重新搜索", 18.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
             } else {
                 draw_text(canvas, ctx, "（暂无可加入的房间）", 28.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: sh * 0.5 }, true)?;
-                draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+                draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
             }
         } else {
             let mut y = sh * 0.34;
@@ -7210,7 +7210,7 @@ impl Game {
                     meta.push_str(&format!("    [版本不符 {:?}]", l.version));
                 }
                 let selected = i == self.steam_list_selection;
-                let bg_col = if selected { Color::from_rgb(52, 60, 74) } else { Color::from_rgb(28, 31, 38) };
+                let bg_col = if selected { layout::bg_selected() } else { layout::bg_normal() };
                 let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(head_x, y, head_w, 64.0), bg_col)?;
                 canvas.draw(&bg, graphics::DrawParam::new());
                 let mark = if selected { "[v]" } else { "[ ]" };
@@ -7219,9 +7219,9 @@ impl Game {
                 } else if selected {
                     Color::WHITE
                 } else {
-                    Color::from_rgb(210, 214, 225)
+                    layout::text_normal()
                 };
-                let meta_col = if ver_ok { Color::from_rgb(150, 156, 172) } else { Color::from_rgb(220, 150, 140) };
+                let meta_col = if ver_ok { layout::text_dim() } else { Color::from_rgb(220, 150, 140) };
                 draw_text(canvas, ctx, &format!("{mark}{full}"), 24.0, name_col, Point2 { x: cx, y: y + 20.0 }, true)?;
                 draw_text(canvas, ctx, &meta, 16.0, meta_col, Point2 { x: cx, y: y + 44.0 }, true)?;
                 y += 74.0;
