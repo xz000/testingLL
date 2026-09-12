@@ -105,6 +105,10 @@ const STEAM_DEFAULT_STARTING_GOLD: i32 = 0;
 /// Steam 建房：每轮固定金币（参与奖）默认值（与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 20;
+/// 化身模式：击杀化身的奖励金（098c `AI` nn==3 的 `+lo`；`ed()` 默认 lo=1）。
+const AVATAR_KILL_REWARD: i32 = 1;
+/// 化身模式：化身本人的击杀奖励金（098c `AI` nn==3 的 `+1`）。
+const AVATAR_SLAY_REWARD: i32 = 1;
 /// 基础生命恢复默认值（HP/s；098c `In=.05`/0.1s）。
 const STEAM_DEFAULT_REGEN: f64 = 0.5;
 /// R 键可循环的基础回血档位（098c `-C9` 是常量式，故用档位而非输入框）。
@@ -1568,6 +1572,15 @@ impl Game {
         // 击杀结算（D6）：击杀分/金 + 连杀播报 + 死者连杀清零 + 助攻（伤害矩阵）。
         for (killer, victim) in self.world.take_kills() {
             let is_first = self.meta.register_kill(killer);
+            // 化身模式专属奖励（098c `AI` nn==3）：
+            //   杀死化身 → 凶手 +`lo` 金（`ed()` 默认 1）；化身杀人 → 化身 +1 金。
+            if self.world.mode == 3 {
+                if self.world.avatar == Some(victim) {
+                    self.meta.grant_gold(killer, AVATAR_KILL_REWARD);
+                } else if self.world.avatar == Some(killer) {
+                    self.meta.grant_gold(killer, AVATAR_SLAY_REWARD);
+                }
+            }
             if is_first {
                 eprintln!("[blood] 玩家{killer} 发出 First Blood!");
             }
@@ -4613,6 +4626,14 @@ impl event::EventHandler for Game {
                 if self.world.mode == 2 {
                     for (killer, victim) in self.world.take_kills() {
                         let is_first = self.meta.register_kill(killer);
+                        // 化身模式专属奖励（098c `AI` nn==3）：杀化身 +`lo`、化身杀人 +1。
+                        if self.world.mode == 3 {
+                            if self.world.avatar == Some(victim) {
+                                self.meta.grant_gold(killer, AVATAR_KILL_REWARD);
+                            } else if self.world.avatar == Some(killer) {
+                                self.meta.grant_gold(killer, AVATAR_SLAY_REWARD);
+                            }
+                        }
                         if is_first {
                             eprintln!("[blood] 玩家{killer} 发出 First Blood!");
                         }

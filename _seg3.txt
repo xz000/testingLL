@@ -1,0 +1,49 @@
+test]
+    fn round_start_gn_is_half() {
+        let mut world = World::new(2, 996);
+        world.players[0].growth = 3.3;
+        world.players[0].reset_state();
+        assert!((world.players[0].growth - 0.5).abs() < 1e-9, "重生/轮开局 Gn 应为 0.5");
+    }
+
+    /// 化身模式：下一轮化身 = 上一轮伤害最高者。
+    #[test]
+    fn avatar_rolls_to_top_damager() {
+        let mut world = World::new(3, 994);
+        world.configure_mode(3);
+        // 玩家 1 本轮伤害最高（记录进矩阵）
+        world.damage_matrix[1][0] = Fix64::from_num(30.0);
+        world.damage_matrix[1][2] = Fix64::from_num(12.0);
+        world.damage_matrix[0][1] = Fix64::from_num(5.0);
+        assert!((world.round_damage_of(1) - 42.0).abs() < 0.01, "计分读取应可用");
+        world.reset_round();
+        assert_eq!(world.avatar, Some(1), "化身应为上轮伤害最高者（玩家1）");
+        assert!((world.players[1].dmg_taken_mult - 1.0).abs() < 1e-9);
+        assert_eq!(world.f_override[1], Some(SkillId::S020), "化身 F 应替换为灾变");
+        assert_eq!(world.f_override[0], None, "非化身不应有 F 替换");
+    }
+
+    // ===== B4 形态切换（098c sC，D13 #7） =====
+
+    /// S010 双形态：冲锋（A）=移速 buff+接触踢击；隐身（B）=隐身+较慢移速。
+    #[test]
+    fn s010_form_a_charge_vs_b_invisibility() {
+        let mut world = World::new(1, 996);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // B 形态（隐身）：Stealth buff + 100 速
+        world.players[0].forms[SkillId::S010.as_u32() as usize] = true;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
+        ], dt);
+        assert!(world.players[0].has_buff(BuffKind::Stealth), "B 形态应有隐身");
+        // A 形态（冲锋）：098c RB 两形态都挂 'Agho' 隐身（w3a_strings.txt:1265
+        // 「Wind Walk: Charge - Invisibility」；war3map_pretty.j:5781-5804），故冲锋也隐身，同时有踢击窗口。
+        let mut world2 = World::new(1, 996);
+        world2.obstacles.clear();
+        world2.sandbox = true;
+        world2.step(vec![
+            PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
+        ], dt);
+        assert!(world2.players[0].has_buff(BuffKind::Stealth), "A 形态（冲锋）也应有隐身（098c 

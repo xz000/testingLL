@@ -435,6 +435,9 @@ pub struct World {
     /// 本局伤害矩阵：`damage_matrix[攻][受]` = 累计伤害（助攻/最高伤害统计用，D6）；
     /// 随 `reset_round` 清空、随快照同步。
     pub damage_matrix: Vec<Vec<Fix64>>,
+    /// 化身模式的**累计伤害积分**（098c `JV`：`fI` 里 `JV[i] += Rn[i]`，跨轮累加；
+    /// 化身**被杀死**时其 `JV[化身]=0`，使其「当过就重新排队」）。每次加冕取最大者。
+    pub avatar_score: Vec<Fix64>,
     /// 按死亡先后记录的玩家 id（用于本局名次结算）
     pub(crate) eliminated_order: Vec<u32>,
     /// 本局内发生的击杀：(击杀者 id, 被击杀者 id)
@@ -505,6 +508,7 @@ impl World {
             kills_this_round: Vec::new(),
             round_number: 1,
             damage_matrix: vec![vec![Fix64::ZERO; player_count as usize]; player_count as usize],
+            avatar_score: vec![Fix64::ZERO; player_count as usize],
             time: Fix64::ZERO,
             lightning_visual: Vec::new(),
             mode: 1,
@@ -694,6 +698,8 @@ impl World {
 
         // 7) 边界：出界掉血（无自动回收，玩家需自己走位回去）+ 死亡
         let ice_flags: Vec<bool> = self.players.iter().map(|p| self.on_ice(p.pos)).collect();
+        let mut lava_credit: Vec<(u32, u32, Fix64)> = Vec::new();
+        let np = self.players.len();
         for (p, on_ice_now) in self.players.iter_mut().zip(ice_flags) {
             if !p.alive {
                 continue;
@@ -715,6 +721,14 @@ impl World {
                 let round_scale = 1.0;
                 let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult * round_scale) * dt);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
+                // 098c `nA`：岩浆伤把**一半**记到「最后伤害我的人」名下（`Jn[受][An] += To/2`），
+                // 用于助攻统计。注意它**不进** `Rn`（本轮伤害），故不影响化身加冕积分 —— 见上面的
+                // 伤害结算处累加。这里先收集，循环外统一记账（避免与 players 的借用冲突）。
+                if let Some(k) = p.last_hit_by {
+                    if k != p.id && (k as usize) < np {
+                        lava_credit.push((k, p.id, net / Fix64::from_num(2.0)));
+                    }
+                }
             }
             if p.hp <= Fix64::ZERO && p.alive {
                 p.hp = Fix64::ZERO;
@@ -722,6 +736,14 @@ impl World {
                 new_deaths.push(p.id);
                 if let Some(k) = p.last_hit_by {
                     new_kills.push((k, p.id));
+                }
+            }
+        }
+        // 岩浆伤害归属（098c `Jn[受][An] += To/2`）。
+        for (attacker, victim, half) in lava_credit.drain(..) {
+            if let Some(row) = self.damage_matrix.get_mut(attacker as usize) {
+                if let Some(cell) = row.get_mut(victim as usize) {
+                    *cell += half;
                 }
             }
         }
@@ -1129,9 +1151,13 @@ impl World {
                 }
             }
             3 => {
-                // 化身被杀 → 立即结算本轮（098c fI）。
+                // 化身被杀 → 立即结算本轮（098c fI）；
+                // 同时把化身的**累计伤害积分清零**（`set JV[FV]=0`）→ 下一轮改从其他人里选。
                 if self.avatar == Some(victim) {
                     self.round_forced = true;
+                    if let Some(score) = self.avatar_score.get_mut(victim as usize) {
+                        *score = Fix64::ZERO;
+                    }
                 }
             }
             4 => {
@@ -1246,6 +1272,15 @@ impl World {
         if let Some(f) = from {
             if f < self.players.len() as u32 && id < self.players.len() as u32 {
                 self.damage_matrix[f as usize][id as usize] += dealt;
+            }
+        }
+        // 化身模式**累计伤害积分**（098c `fI`：`JV[i] += Rn[i]`）。在伤害结算处累加，
+        // 与 `Rn`（只计实际造成的伤害、不含岩浆等环境伤害）等价；供下一轮加冕取最大。
+        if self.mode == 3 {
+            if let Some(f) = from {
+                if let Some(score) = self.avatar_score.get_mut(f as usize) {
+                    *score += dealt;
+                }
             }
         }
         // 死亡面具/鲜血之剑（M3 2c）+ 生命精通 vi（098c kf，B1）：攻方生命偷取与受伤点恢复。
@@ -2872,6 +2907,9 @@ impl World {
             let n = self.players.len().max(1) as f64;
             for p in self.players.iter_mut() {
                 p.team = 0;
+                // 098c `Bf`：`An[i]=FV` —— 把每个人的「最后伤害者」预设为化身。
+                // 效果：岩浆等**环境伤害**的击杀/助攻记在化身头上（化身自己被环境杀则算自杀）。
+                p.last_hit_by = avatar;
             }
             if let Some(p) = self.players.get_mut(av as usize) {
                 p.team = 1;
@@ -2975,12 +3013,13 @@ impl World {
     fn roll_roles(&mut self) {
         match self.mode {
             3 => {
+                // 098c `fI`：取**累计伤害积分**最大者（`if Xr<JV[i]` → 平局保留最早者 = id 最小）。
+                // 全为 0（首轮或全员未输出）→ 随机（对应 098c `Bf` 的 `FV=HR()` 随机分支）。
                 let mut best: Option<(u32, Fix64)> = None;
-                for (i, row) in self.damage_matrix.iter().enumerate() {
-                    let total: Fix64 = row.iter().copied().sum();
+                for (i, score) in self.avatar_score.iter().enumerate() {
                     if let Some(p) = self.players.get(i) {
-                        if total > Fix64::ZERO && best.map(|(bd, _)| total > bd).unwrap_or(true) {
-                            best = Some((p.id, total));
+                        if *score > Fix64::ZERO && best.map(|(_, b)| *score > b).unwrap_or(true) {
+                            best = Some((p.id, *score));
                         }
                     }
                 }
@@ -7859,23 +7898,67 @@ mod tests {
         assert!((world.players[0].growth - 0.5).abs() < 1e-9, "重生/轮开局 Gn 应为 0.5");
     }
 
-    /// 化身模式：下一轮化身 = 上一轮伤害最高者。
+    /// 化身模式（098c `fI`）：加冕取**累计**伤害积分 `JV` 最大者；化身被杀死时其积分清零。
     #[test]
-    fn avatar_rolls_to_top_damager() {
+    fn avatar_rolls_to_top_cumulative_damager_and_resets_on_death() {
         let mut world = World::new(3, 994);
         world.configure_mode(3);
-        // 玩家 1 本轮伤害最高（记录进矩阵）
-        world.damage_matrix[1][0] = Fix64::from_num(30.0);
-        world.damage_matrix[1][2] = Fix64::from_num(12.0);
-        world.damage_matrix[0][1] = Fix64::from_num(5.0);
-        assert!((world.round_damage_of(1) - 42.0).abs() < 0.01, "计分读取应可用");
+        // 积分在**伤害结算处**累加（见 `damage_player`），此处直接给定累计值：
+        // 玩家 1 累计 42、玩家 0 累计 5、玩家 2 为 0
+        world.avatar_score[1] = Fix64::from_num(42.0);
+        world.avatar_score[0] = Fix64::from_num(5.0);
         world.reset_round();
-        assert_eq!(world.avatar, Some(1), "化身应为上轮伤害最高者（玩家1）");
+        assert_eq!(world.avatar, Some(1), "化身应为累计伤害最高者（玩家1）");
         assert!((world.players[1].dmg_taken_mult - 1.0).abs() < 1e-9);
         assert_eq!(world.f_override[1], Some(SkillId::S020), "化身 F 应替换为灾变");
         assert_eq!(world.f_override[0], None, "非化身不应有 F 替换");
+        // 加冕后把每个人的「最后伤害者」预设为化身（098c `Bf`：`An[i]=FV`）
+        assert_eq!(world.players[0].last_hit_by, Some(1), "环境伤害应记在化身头上");
+        assert_eq!(world.players[1].last_hit_by, Some(1), "化身自身的环境死算自杀");
+
+        // 玩家 2 累计反超 → 下轮由玩家 2 加冕；玩家 1 的累计保留不重置
+        world.avatar_score[2] = Fix64::from_num(50.0);
+        world.reset_round();
+        assert_eq!(world.avatar, Some(2), "累计反超者应加冕");
+        assert!((world.avatar_score[1] - Fix64::from_num(42.0)).abs() < Fix64::from_num(1e-3));
+
+        // 化身（玩家 2）被杀死 → 其累计清零 → 下一轮由次高的玩家 1 加冕
+        world.record_death(2);
+        assert!(world.avatar_score[2].abs() < Fix64::from_num(1e-6), "化身死亡应清零其累计积分");
+        world.reset_round();
+        assert_eq!(world.avatar, Some(1), "化身积分清零后应由次高者加冕");
     }
 
+    /// 累计积分由**实际造成的伤害**驱动（098c `Rn`），环境伤害不计入。
+    #[test]
+    fn avatar_score_accumulates_from_dealt_damage_only() {
+        let mut world = World::new(2, 1004);
+        world.configure_mode(3);
+        world.base_regen = 0.0;
+        world.players[1].hp = Fix64::from_num(100.0);
+        world.damage_player(1, Fix64::from_num(7.0), Some(0));
+        assert!(
+            (world.avatar_score[0] - Fix64::from_num(7.0)).abs() < Fix64::from_num(1e-3),
+            "玩家0 应累计 7，实际 {:?}",
+            world.avatar_score[0]
+        );
+        assert!(world.avatar_score[1].abs() < Fix64::from_num(1e-6), "受害者不应累计");
+        // 出界（岩浆）伤害不计入积分，但会把一半记进归属矩阵
+        world.players[1].pos = Vec2::new(d60(99.0), d60(99.0));
+        world.players[1].last_hit_by = Some(0);
+        let before = world.avatar_score[0];
+        for _ in 0..30 {
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], Fix64::from_num(1.0 / 60.0));
+        }
+        assert!(
+            (world.avatar_score[0] - before).abs() < Fix64::from_num(1e-3),
+            "环境伤害不应计入化身积分"
+        );
+        assert!(
+            world.damage_matrix[0][1] > Fix64::ZERO,
+            "岩浆伤害的一半应记入归属矩阵（098c `Jn[受][An] += To/2`）"
+        );
+    }
     // ===== B4 形态切换（098c sC，D13 #7） =====
 
     /// S010 双形态：冲锋（A）=移速 buff+接触踢击；隐身（B）=隐身+较慢移速。

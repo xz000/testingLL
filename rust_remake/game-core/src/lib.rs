@@ -38,4 +38,4 @@ pub fn version() -> &'static str {
 /// v7（2026-09-12）：删除属性购买系统（`Player` 的 speed_mult/armor/spell/kb 因子从快照移除）。
 /// v8（2026-09-12）：陨石改为 `ProjectileKind::DelayedBlast`（落点定时爆炸，无飞行弹体）。
 /// v9（2026-09-12）：S013A 换位/S013B 搬运改为弹体（`SwapTarget`/`CarrySelf`）；凤凰弹规格对齐 098c。
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;

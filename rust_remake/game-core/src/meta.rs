@@ -492,6 +492,13 @@ impl MatchState {
         first
     }
 
+    /// 直接给某玩家加金（模式专属奖励用；098c 化身模式 `AI` 的 `+lo` / `+1`）。
+    pub fn grant_gold(&mut self, player_id: u32, amount: i32) {
+        if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
+            p.gold += amount;
+        }
+    }
+
     /// 化身模式计分（098c L12055：Ln += 本轮伤害/20，B3）。
     pub fn register_damage_score(&mut self, player_id: u32, damage: f64) {
         if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
@@ -662,6 +669,20 @@ mod tests {
         // 第一局 = 初始金币 50 + 参与奖（默认 so=10）= 60
         assert_eq!(m.profiles[0].gold, 50 + 10);
         assert_eq!(m.profiles[1].gold, 50 + 10);
+    }
+
+    /// 模式专属奖励直发（098c 化身模式 `AI` 的 `+lo` / `+1`）。
+    #[test]
+    fn grant_gold_direct_reward() {
+        let mut m = MatchState::new(MatchConfig { game_mode: 3, ..Default::default() }, &[0, 1], 8);
+        let before = m.profiles[0].gold;
+        m.grant_gold(0, 1);
+        assert_eq!(m.profiles[0].gold, before + 1, "应直接加 1 金");
+        m.grant_gold(0, 0);
+        assert_eq!(m.profiles[0].gold, before + 1, "加 0 不应变化");
+        let unknown = m.profiles[1].gold;
+        m.grant_gold(99, 5); // 不存在的玩家：静默忽略
+        assert_eq!(m.profiles[1].gold, unknown);
     }
 
     #[test]
