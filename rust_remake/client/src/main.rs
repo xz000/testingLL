@@ -5328,9 +5328,24 @@ impl Game {
         // 本界面是**纯文本表单**（房名/备注）：**不绑定任何字母/数字快捷键** ——
         // 否则打字会被快捷键抢走（`L` 会锁房、`1`-`5` 会改模式）。
         // 锁房已移到**就绪界面**（那里没有文本框），模式已移到**设置编辑器**（`O`）。
-        // 字段切换 0=房间名 1=备注（↑/↓ 或 Tab）。
+        // 字段切换 0=房间名 1=备注 2=总轮数（↑/↓ 或 Tab）——与建房界面同构。
         if just_named(NamedKey::ArrowUp) || just_named(NamedKey::ArrowDown) || just_named(NamedKey::Tab) {
-            self.steam_room_edit_focus = (self.steam_room_edit_focus + 1) % 2;
+            self.steam_room_edit_focus = (self.steam_room_edit_focus + 1) % 3;
+        }
+        // 总轮数（字段 2）：数值键，与文本字段互不干扰。
+        if self.steam_room_edit_focus == 2 {
+            let mut delta = 0i32;
+            if just('+') || just_named(NamedKey::ArrowRight) {
+                delta = 1;
+            }
+            if just('-') || just_named(NamedKey::ArrowLeft) {
+                delta = -1;
+            }
+            if delta != 0 {
+                let v = self.match_cfg.total_rounds as i32 + delta;
+                self.match_cfg.total_rounds = v.clamp(1, 50) as u32;
+                eprintln!("[steam-room] 总轮数 -> {}", self.match_cfg.total_rounds);
+            }
         }
         if just('q') || just('Q') {
             self.steam_room_edit = false;
@@ -5352,10 +5367,15 @@ impl Game {
                     eprintln!("[steam-room] saved name='{name}' note='{}'", self.steam_edit_note.trim());
                 }
             }
+            // 轮数在 `match_cfg` 里 → 发布设置串（各端据此取消准备；建房期字段同步见 publish_room_cfg）。
+            self.publish_room_cfg();
             self.steam_room_edit = false;
             return Ok(());
         }
-        // 文本输入：聚焦字段 0=名 1=备注。
+        // 文本输入：**仅**聚焦字段 0=名 1=备注（字段 2 是数值，不接受文本）。
+        if self.steam_room_edit_focus >= 2 {
+            return Ok(());
+        }
         if just_named(NamedKey::Backspace) {
             let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
             buf.pop();
@@ -5417,14 +5437,19 @@ impl Game {
             Point2 { x: cx, y: b.title.y + 82.0 },
             true,
         )?;
-        let labels = ["房间名", "备注"];
-        let vals = [self.steam_edit_name.clone(), self.steam_edit_note.clone()];
+        // 与建房界面同构：房名 / 备注 / **总轮数**（可改）；人数上限只读（Steam 建房时固定）。
+        let labels = ["房间名", "备注", "总轮数"];
+        let vals = [
+            self.steam_edit_name.clone(),
+            self.steam_edit_note.clone(),
+            self.match_cfg.total_rounds.to_string(),
+        ];
         let mut y = b.content.y + 12.0;
         let label_w = 180.0;
         let box_w = 420.0;
         let box_h = 52.0;
         let left = cx - box_w / 2.0 - 40.0;
-        for i in 0..2 {
+        for i in 0..3 {
             let selected = i == self.steam_room_edit_focus;
             draw_text(canvas, ctx, labels[i], 24.0, layout::text_normal(), Point2 { x: left + (label_w + box_w) / 2.0, y: y + box_h / 2.0 - 16.0 }, true)?;
             let bg_col = if selected { layout::bg_selected() } else { layout::bg_normal() };
@@ -5465,10 +5490,10 @@ impl Game {
             &format!("房间设置：{badge}   [O] 编辑"),
             ui::theme::SMALL, badge_col, cx, b.status.y + 2.0,
         )?;
-        // 提示带（屏幕最底）
+        // 提示带（屏幕最底）：**本界面只打字 + 改轮数**，其它设置在 `O`。
         ui::text_center(
             canvas, ctx,
-            "回车 保存 · Q 取消 · L 锁房 · O 房间设置 · ↑↓ 切换字段 · 数字 1-5 选模式",
+            "↑↓/Tab 切换字段 · 回车 保存 · Esc/Q 取消 · 总轮数用 ←→ 或 +/− · 其余设置按 O",
             ui::theme::SMALL, Color::from_rgb(160, 200, 255), cx, b.hint.y + 4.0,
         )?;
         Ok(())
