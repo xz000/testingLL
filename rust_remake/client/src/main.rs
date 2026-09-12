@@ -5872,15 +5872,20 @@ impl Game {
     #[cfg(feature = "steam")]
     fn publish_room_cfg(&mut self) {
         let cfg = self.match_cfg.to_meta_string();
-        if let Some(sess) = self.steam_sess.as_ref() {
-            match sess.host_set_cfg(&cfg) {
-                Ok(()) => eprintln!(
-                    "[cfg] 已发布房间设置（自定义 {} 项，{} 字节）",
-                    self.match_cfg.non_default_setting_count(),
-                    cfg.len()
-                ),
-                Err(e) => eprintln!("[cfg] 发布失败：{e}"),
+        let Some(sess) = self.steam_sess.as_ref() else {
+            return; // 无会话（单机/尚未进 Steam 流程）：设置只存在本地，无需发布
+        };
+        match sess.host_set_cfg(&cfg) {
+            Ok(()) => eprintln!(
+                "[cfg] 已发布房间设置（自定义 {} 项，{} 字节）",
+                self.match_cfg.non_default_setting_count(),
+                cfg.len()
+            ),
+            // **建房界面里还没建厅**，此时发布必然失败且无害 —— 建厅时会再发一次（见 finish_enter_steam_mode）。
+            Err(e) if e.to_string().contains("尚未建厅") => {
+                eprintln!("[cfg] 当前尚未建厅 → 设置先存本地，建厅时自动发布");
             }
+            Err(e) => eprintln!("[cfg] 发布失败：{e}"),
         }
     }
 
@@ -5924,11 +5929,21 @@ impl Game {
                     self.room_cfg_row = (self.room_cfg_row + 1) % rows.len();
                 }
                 let id = rows[self.room_cfg_row.min(rows.len() - 1)];
+                let mut dir = 0;
                 if just_named(NamedKey::ArrowLeft) {
-                    settings_ui::nudge(&mut self.match_cfg, id, -1);
+                    dir = -1;
                 }
                 if just_named(NamedKey::ArrowRight) {
-                    settings_ui::nudge(&mut self.match_cfg, id, 1);
+                    dir = 1;
+                }
+                if dir != 0 {
+                    settings_ui::nudge(&mut self.match_cfg, id, dir);
+                    eprintln!(
+                        "[cfg] {} = {}（自定义 {} 项）",
+                        id.label(),
+                        settings_ui::value_text(&self.match_cfg, id),
+                        self.match_cfg.non_default_setting_count()
+                    );
                 }
             }
             if just_named(NamedKey::Enter) || just('o') {
