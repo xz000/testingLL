@@ -90,6 +90,118 @@ pub struct MatchConfig {
     pub shopping_time_secs: f64,
 }
 
+/// 房间设置串（用于大厅元数据/同步）的**模式版本**：字段顺序或语义变更时必须递增，
+/// 否则不同版本的端会按各自的顺序解析同一串。
+pub const ROOM_SETTINGS_SCHEMA: u32 = 1;
+
+impl MatchConfig {
+    /// 序列化为**紧凑单行**（大厅元数据用；`|` 分隔、`;` 分隔列表）。
+    ///
+    /// 为什么不逐项开 `host_set_*`：设置项已达 20+，逐项接口样板过重，
+    /// 且"整体替换"天然满足"任何改动都要重新同步 + 取消准备"的需求。
+    pub fn to_meta_string(&self) -> String {
+        let f = |v: f64| format!("{v}");
+        let mut parts: Vec<String> = vec![
+            ROOM_SETTINGS_SCHEMA.to_string(),
+            self.total_rounds.to_string(),
+            f(self.learn_time_secs),
+            f(self.shopping_time_secs),
+            f(self.first_round_time_secs),
+            f(self.between_rounds_time_secs),
+            self.starting_gold.to_string(),
+            self.gold_per_round.to_string(),
+            self.gold_per_kill.to_string(),
+            self.gold_per_assist.to_string(),
+            self.gold_per_round_win.to_string(),
+            self.gold_per_most_damage.to_string(),
+            self.score_per_kill.to_string(),
+            self.score_per_assist.to_string(),
+            self.score_per_round_win.to_string(),
+            self.place_rewards
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(";"),
+            f(self.damage_mult),
+            f(self.knockback_mult),
+            f(self.lava_damage_mult),
+            f(self.shrink_delay_secs),
+            f(self.shrink_ring_secs),
+            self.pillar_mode.to_string(),
+            self.ice_mode.to_string(),
+            self.arena_shape.to_string(),
+            if self.gold_rewards_enabled { "1" } else { "0" }.to_string(),
+            f(self.base_regen),
+            self.game_mode.to_string(),
+            self.team_count.to_string(),
+            self.win_score.to_string(),
+        ];
+        parts.join("|")
+    }
+
+    /// 从 [`Self::to_meta_string`] 还原；缺字段/格式不符返回 `None`（由调用方回退默认值）。
+    pub fn from_meta_string(s: &str) -> Option<Self> {
+        let p: Vec<&str> = s.trim().split('|').collect();
+        // schema + 27 个字段
+        if p.len() < 28 {
+            return None;
+        }
+        if p[0].parse::<u32>().ok()? != ROOM_SETTINGS_SCHEMA {
+            return None;
+        }
+        let num = |i: usize| -> Option<f64> { p.get(i)?.parse::<f64>().ok() };
+        let int = |i: usize| -> Option<i32> { p.get(i)?.parse::<i32>().ok() };
+        let uint = |i: usize| -> Option<u32> { p.get(i)?.parse::<u32>().ok() };
+        let byte = |i: usize| -> Option<u8> { p.get(i)?.parse::<u8>().ok() };
+        let place: Vec<i32> = if p[15].is_empty() {
+            Vec::new()
+        } else {
+            p[15].split(';').filter_map(|v| v.parse::<i32>().ok()).collect()
+        };
+        Some(MatchConfig {
+            total_rounds: uint(1)?,
+            learn_time_secs: num(2)?,
+            shopping_time_secs: num(3)?,
+            first_round_time_secs: num(4)?,
+            between_rounds_time_secs: num(5)?,
+            starting_gold: int(6)?,
+            gold_per_round: int(7)?,
+            gold_per_kill: int(8)?,
+            gold_per_assist: int(9)?,
+            gold_per_round_win: int(10)?,
+            gold_per_most_damage: int(11)?,
+            score_per_kill: uint(12)?,
+            score_per_assist: uint(13)?,
+            score_per_round_win: uint(14)?,
+            place_rewards: place,
+            damage_mult: num(16)?,
+            knockback_mult: num(17)?,
+            lava_damage_mult: num(18)?,
+            shrink_delay_secs: num(19)?,
+            shrink_ring_secs: num(20)?,
+            pillar_mode: byte(21)?,
+            ice_mode: byte(22)?,
+            arena_shape: byte(23)?,
+            gold_rewards_enabled: p[24] == "1",
+            base_regen: num(25)?,
+            game_mode: byte(26)?,
+            team_count: byte(27)?,
+            win_score: uint(28)?,
+        })
+    }
+
+    /// 设置的**稳定哈希**（FNV-1a 64）：用于"配置是否变更"的比较（第 5 步：变更即取消全员准备）。
+    /// 直接哈希紧凑串，避免逐字段比较遗漏。
+    pub fn settings_hash(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in self.to_meta_string().as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+        }
+        h
+    }
+}
+
 impl Default for MatchConfig {
     fn default() -> Self {
         // 经济默认值对齐 **098c 全局声明 + 设置对话框**（`war3map_pretty.j` 205-224 / 18799-18813）：
@@ -1305,6 +1417,33 @@ mod tests {
 
     /// 房间设置默认值交叉校验：全部 = 098c 全局声明 / 设置对话框的值
     /// （`war3map_pretty.j` 205-224 全局、18768-18813 设置项）。
+    /// 房间设置串往返：默认值编解码一致、哈希稳定、改动任一字段哈希变化。
+    #[test]
+    fn room_settings_meta_string_roundtrip() {
+        let d = MatchConfig::default();
+        let s = d.to_meta_string();
+        let back = MatchConfig::from_meta_string(&s).expect("应能解析");
+        assert_eq!(back, d, "默认配置往返应完全一致");
+        assert_eq!(back.settings_hash(), d.settings_hash(), "哈希应稳定");
+        // 任一字段变化 → 哈希变化（第 5 步"改设置取消准备"依赖它）
+        let mut m = d.clone();
+        m.gold_per_kill += 1;
+        assert_ne!(m.settings_hash(), d.settings_hash(), "改金价哈希应变化");
+        let mut m2 = d.clone();
+        m2.pillar_mode = 2;
+        assert_ne!(m2.settings_hash(), d.settings_hash(), "改柱子模式哈希应变化");
+        // 畸形串/版本不符 → None（调用方回退默认值）
+        assert!(MatchConfig::from_meta_string("").is_none());
+        assert!(MatchConfig::from_meta_string("9|1|2").is_none());
+        let wrong_schema = s.replacen('1', "999", 1);
+        assert!(MatchConfig::from_meta_string(&wrong_schema).is_none(), "schema 不符应拒绝");
+        // 带非空名次奖励
+        let mut mp = d.clone();
+        mp.place_rewards = vec![3, 2, 1];
+        let sp = mp.to_meta_string();
+        assert_eq!(MatchConfig::from_meta_string(&sp).unwrap(), mp, "名次奖励应往返");
+    }
+
     #[test]
     fn room_settings_defaults_match_098c() {
         use crate::skill::SkillId as _;
