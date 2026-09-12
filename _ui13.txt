@@ -1,0 +1,14 @@
+ 2739         // 视角平移提示（仅对战阶段显示）
+ 2740         if !self.pre_game_config {
+ 2741             let (_, sh) = (ui::UI_W, ui::UI_H);
+ 2742             draw_text(
+ 2743                 &mut canvas,
+ 2744                 ctx,
+ 2745                 "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Home 场地中心 · End 跳到自己",
+ 2746                 15.0,
+ 2747                 Color::from_rgb(150, 165, 185),
+ 2748                 Point2 { x: 12.0, y: sh - 14.0 },
+ 2749                 true,
+ 2750             )?;
+ 2751         }
+ 2752 

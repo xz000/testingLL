@@ -1,0 +1,26 @@
+ 3115                         self.steam_ping_of(host_id)
+ 3116                     } else {
+ 3117                         // host：显示到各 client 里最差的一个（帧同步等最慢的那端）。
+ 3118                         let my_id = self.steam_my_id;
+ 3119                         self.steam_pings
+ 3120                             .iter()
+ 3121                             .filter(|(id, _)| *id != my_id)
+ 3122                             .map(|(_, ms)| *ms)
+ 3123                             .max()
+ 3124                     };
+ 3125                     let txt = match mine {
+ 3126                         Some(ms) => format!("延迟 {ms} ms"),
+ 3127                         None => "延迟 -- ms".to_string(),
+ 3128                     };
+ 3129                     draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh - 116.0 }, true)?;
+ 3130                 }
+ 3131                 // 技能冷却 HUD：底部一排 8 个键位槽，显示绑定技能图标/名称 + 冷却遮罩
+ 3132                 let self_idx = self.self_index();
+ 3133                 if let (Some(me), Some(me_player)) = (
+ 3134                     self.meta.profiles.iter().find(|p| p.player_id == self_idx),
+ 3135                     self.world.players.get(self_idx as usize),
+ 3136                 ) {
+ 3137                     let slot_w = 56.0;
+ 3138                     let slot_h = 56.0;
+ 3139                     let gap = 12.0;
+ 3140                     let n = game_core::skill::CastKey::ALL.len() as f32;

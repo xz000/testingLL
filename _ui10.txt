@@ -1,0 +1,5 @@
+ 2619  x=14.0     y=20.0             |                 draw_text(                     &mut canvas,                     ctx,                     &form
+ 2643  x=14.0     y=66.0             |                     draw_text(                         &mut canvas,                         ctx,              
+ 2659  x=14.0     y=88.0             |                 draw_text(                     &mut canvas,                     ctx,                     &prog
+ 2742  x=12.0     y=sh - 14.0        |             draw_text(                 &mut canvas,                 ctx,                 "??: ???/???? ?? ? ??
+ 3129  x=76.0     y=sh - 116.0       |                     draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh

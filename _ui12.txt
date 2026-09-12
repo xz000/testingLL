@@ -1,0 +1,56 @@
+ 2614         // 对局内 HUD（D9 UI 批次2）：物品栏（容量随背包研究 1~10）+ 金币。仅对战/学习阶段显示。
+ 2615         if !self.world.sandbox || self.meta.phase == game_core::meta::MatchPhase::Fighting {
+ 2616             if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
+ 2617                 let (sw, sh) = (ui::UI_W, ui::UI_H);
+ 2618                 // 左上状态区（U1）：金币/模式/精通纵排，不再散排重叠
+ 2619                 draw_text(
+ 2620                     &mut canvas,
+ 2621                     ctx,
+ 2622                     &format!("金币 {}", pr.gold),
+ 2623                     19.0,
+ 2624                     Color::from_rgb(255, 220, 120),
+ 2625                     Point2 { x: 14.0, y: 20.0 },
+ 2626                     true,
+ 2627                 )?;
+ 2628                 draw_text(
+ 2629                     &mut canvas,
+ 2630                     ctx,
+ 2631                     &format!(
+ 2632                         "模式：{}（{}）",
+ 2633                         game_core::meta::MatchState::mode_name(self.match_mode),
+ 2634                         if self.match_teams >= 2 { "两队" } else { "FFA" }
+ 2635                     ),
+ 2636                     16.0,
+ 2637                     Color::from_rgb(170, 200, 255),
+ 2638                     Point2 { x: 14.0, y: 44.0 },
+ 2639                     true,
+ 2640                 )?;
+ 2641                 let m = pr.mastery;
+ 2642                 if m.life + m.range + m.time + m.backpack > 0 {
+ 2643                     draw_text(
+ 2644                         &mut canvas,
+ 2645                         ctx,
+ 2646                         &format!("精通 命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
+ 2647                         15.0,
+ 2648                         Color::from_rgb(170, 200, 255),
+ 2649                         Point2 { x: 14.0, y: 66.0 },
+ 2650                         true,
+ 2651                     )?;
+ 2652                 }
+ 2653                 // 进度（常驻 HUD）：死斗/最后生还无回合概念，改显示目标分；其余显示当前局 / 总轮数。
+ 2654                 let progress = if self.match_mode == 2 {
+ 2655                     format!("死斗：目标 {} 分", self.meta.config.win_score)
+ 2656                 } else {
+ 2657                     format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+ 2658                 };
+ 2659                 draw_text(
+ 2660                     &mut canvas,
+ 2661                     ctx,
+ 2662                     &progress,
+ 2663                     19.0,
+ 2664                     Color::from_rgb(255, 235, 150),
+ 2665                     Point2 { x: 14.0, y: 88.0 },
+ 2666                     true,
+ 2667                 )?;
+ 2668                 // 物品栏（U1）：技能栏正上方一行（居中对齐；技能栏 y = sh-80、高 56 → 物品栏 y = sh-148）
+ 2669                 let item_slots = pr.inventory_slots() as f32;

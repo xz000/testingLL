@@ -1,0 +1,146 @@
+  155         x
+  156     };
+  157     canvas.draw(&t, graphics::DrawParam::new().dest(Point2 { x, y }));
+  158     Ok(())
+  159 }
+  160 
+  161 /// **左对齐**文本（左上角在 `(x, y)`）——列排版 / 列表项用这个。
+  162 pub fn text_left(
+  163     canvas: &mut Canvas,
+  164     ctx: &Context,
+  165     s: &str,
+  166     size: f32,
+  167     color: Color,
+  168     x: f32,
+  169     y: f32,
+  170 ) -> GameResult {
+  171     draw_text_at(canvas, ctx, s, size, color, x, y, false)
+  172 }
+  173 
+  174 /// 水平居中文本（`x` 为**中心**）——标题 / 居中提示用这个。
+  175 pub fn text_center(
+  176     canvas: &mut Canvas,
+  177     ctx: &Context,
+  178     s: &str,
+  179     size: f32,
+  180     color: Color,
+  181     center_x: f32,
+  182     y: f32,
+  183 ) -> GameResult {
+  184     draw_text_at(canvas, ctx, s, size, color, center_x, y, true)
+  185 }
+  186 
+  187 /// **自动换行的左对齐文本**（技能描述等长文案用）。
+  188 ///
+  189 /// 按显示宽度估算切行：CJK 记 2 单位、ASCII 记 1 单位，`max_w / (size / 2)` 得每行容量。
+  190 /// 逐行调用 `text_left` 绘制，返回**下一行的 y**（调用方直接用它续排后续内容）。
+  191 #[allow(clippy::too_many_arguments)]
+  192 pub fn text_wrapped(
+  193     canvas: &mut Canvas,
+  194     ctx: &Context,
+  195     s: &str,
+  196     size: f32,
+  197     color: Color,
+  198     x: f32,
+  199     y: f32,
+  200     max_w: f32,
+  201 ) -> GameResult<f32> {
+  202     let capacity = ((max_w / (size * 0.5)).max(4.0)) as usize;
+  203     let mut line = String::new();
+  204     let mut width = 0usize;
+  205     let mut yy = y;
+  206     for ch in s.chars() {
+  207         let w = if ch.is_ascii() { 1 } else { 2 };
+  208         if width + w > capacity {
+  209             text_left(canvas, ctx, &line, size, color, x, yy)?;
+  210             yy += size + 4.0;
+  211             line.clear();
+  212             width = 0;
+  213         }
+  214         line.push(ch);
+  215         width += w;
+  216     }
+  217     if !line.is_empty() {
+  218         text_left(canvas, ctx, &line, size, color, x, yy)?;
+  219         yy += size + 4.0;
+  220     }
+  221     Ok(yy)
+  222 }
+  223 
+  224 /// 右对齐文本（**右下角**在 `(right, y)`）——角落信息 / 价格列用这个。
+  225 pub fn text_right(
+  226     canvas: &mut Canvas,
+  227     ctx: &Context,
+  228     s: &str,
+  229     size: f32,
+  230     color: Color,
+  231     right: f32,
+  232     y: f32,
+  233 ) -> GameResult {
+  234     let fragment = TextFragment::new(s).color(color).scale(size).font("cjk".to_string());
+  235     let mut t = Text::new(fragment);
+  236     t.set_bounds(Vector2 { x: 4000.0, y: 200.0 });
+  237     let w = t.measure(&ctx.gfx)?.x;
+  238     // 让 baseline 与其它文本对齐：draw_text_at 的 y 是 baseline。
+  239     canvas.draw(&t, graphics::DrawParam::new().dest(Point2 { x: right - w, y }));
+  240     Ok(())
+  241 }
+  242 
+  243 /// 面板：填充底 + 边框 + 可选标题（标题画在面板顶部内侧）。
+  244 pub fn panel(
+  245     canvas: &mut Canvas,
+  246     ctx: &Context,
+  247     r: graphics::Rect,
+  248     title: Option<&str>,
+  249 ) -> GameResult {
+  250     let fill = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), r, theme::panel_bg())?;
+  251     canvas.draw(&fill, graphics::DrawParam::new());
+  252     let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), r, theme::panel_border())?;
+  253     canvas.draw(&border, graphics::DrawParam::new());
+  254     if let Some(t) = title {
+  255         text_left(canvas, ctx, t, theme::BODY, theme::accent(), r.x + theme::PAD, r.y + 8.0)?;
+  256     }
+  257     Ok(())
+  258 }
+  259 
+  260 /// 可点行：带可见背景与边框（**不再是无形的 hitbox**），文字左对齐内缩 `PAD`。
+  261 ///
+  262 /// 调用方负责在绘制后用 [`HitRegistry::push`] 登记同一矩形。
+  263 pub fn row(
+  264     canvas: &mut Canvas,
+  265     ctx: &Context,
+  266     r: graphics::Rect,
+  267     label: &str,
+  268     size: f32,
+  269     state: RowState,
+  270 ) -> GameResult {
+  271     let fill = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), r, state.bg())?;
+  272     canvas.draw(&fill, graphics::DrawParam::new());
+  273     let border_color = if state == RowState::Selected {
+  274         theme::accent()
+  275     } else if state == RowState::Hover {
+  276         theme::text_dim()
+  277     } else {
+  278         theme::panel_border()
+  279     };
+  280     let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.0), r, border_color)?;
+  281     canvas.draw(&border, graphics::DrawParam::new());
+  282     text_left(
+  283         canvas,
+  284         ctx,
+  285         label,
+  286         size,
+  287         state.text_color(),
+  288         r.x + theme::PAD,
+  289         r.y + (r.h - size) / 2.0 - 2.0,
+  290     )
+  291 }
+  292 
+  293 /// 命中登记（泛型化的 `learn_hitboxes`）：**绘制时 `push` 矩形，`update` 里 `hits_at` 派发**。
+  294 ///
+  295 /// 沿用现有「绘制注册 → update 派发」的立即模式（有 1 帧延迟，实测可忽略）。
+  296 #[derive(Default)]
+  297 pub struct HitRegistry<A> {
+  298     hits: Vec<(graphics::Rect, A)>,
+  299 }
+  300 

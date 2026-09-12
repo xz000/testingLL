@@ -1,0 +1,30 @@
+ 6516 fn draw_text(
+ 6517     canvas: &mut Canvas,
+ 6518     ctx: &Context,
+ 6519     text: &str,
+ 6520     size: f32,
+ 6521     color: Color,
+ 6522     center: Point2<f32>,
+ 6523     _centered: bool,
+ 6524 ) -> GameResult {
+ 6525     use ggez::graphics::{Text, TextFragment};
+ 6526     use ggez::mint::Vector2;
+ 6527     let fragment = TextFragment::new(text).color(color).scale(size).font("cjk".to_string());
+ 6528     let mut t = Text::new(fragment);
+ 6529     t.set_bounds(Vector2 { x: 2000.0, y: 200.0 });
+ 6530     // 手动粗略居中：先量尺寸
+ 6531     let sz = t.measure(&ctx.gfx)?;
+ 6532     let dest = Point2 {
+ 6533         x: center.x - sz.x / 2.0,
+ 6534         y: center.y,
+ 6535     };
+ 6536     canvas.draw(&t, graphics::DrawParam::new().dest(dest));
+ 6537     Ok(())
+ 6538 }
+ 6539 
+ 6540 /// 本局运行模式已并入 `AppState`（主菜单 / Solo / 局域网主机 / 局域网加入）。
+ 6541 /// 解析命令行（可选直通入口）：`--join <host:port>` / `--host <port>` [--players N] / `--solo`；
+ 6542 /// 无匹配选项 → 返回主菜单。抽成纯函数便于回归测试（曾因 `--solo` 分支漏 `i += 1` 导致死循环）。
+ 6543 fn parse_app_from_args(args: &[String]) -> AppState {
+ 6544     let mut app = AppState::MainMenu;
+ 6545     let mut i = 1;
