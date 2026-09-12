@@ -1,2 +1,18 @@
-target\debug\client.exe      ĞÂ(£¬ÒÑÍ»ÆÆ ¡Á)=True  ¾É(Ê×´Î {}G)=False  ¾É(Ãâ·Ñ)=False  ¾É(³ÖÇÇµ¤Ö®Ê¯½äÖ¸¿ÉÔÙ +2)=False
-target\release\client.exe    ĞÂ(£¬ÒÑÍ»ÆÆ ¡Á)=True  ¾É(Ê×´Î {}G)=False  ¾É(Ãâ·Ñ)=False  ¾É(³ÖÇÇµ¤Ö®Ê¯½äÖ¸¿ÉÔÙ +2)=False
+
+running 1 test
+test world::tests::cast_wins_over_continuously_resent_move_target ... FAILED
+
+failures:
+
+---- world::tests::cast_wins_over_continuously_resent_move_target stdout ----
+
+thread 'world::tests::cast_wins_over_continuously_resent_move_target' panicked at game-core\src\world.rs:5079:9:
+æ–½æ³•æœŸé—´ä½ç½®åº”ç¨³å®šï¼Œå 4 å¸§ä»ç§»åŠ¨ 5.47
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    world::tests::cast_wins_over_continuously_resent_move_target
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 223 filtered out; finished in 0.00s
+
