@@ -68,6 +68,7 @@ pub enum SettingId {
     PillarMode,
     IceMode,
     // 模式
+    TotalRounds,
     GameMode,
     GoldRewardsEnabled,
 }
@@ -99,7 +100,7 @@ impl SettingId {
                 ShrinkRingSecs,
             ],
             Group::Map => &[ArenaShape, PillarMode, IceMode],
-            Group::Mode => &[GameMode, GoldRewardsEnabled],
+            Group::Mode => &[TotalRounds, GameMode, GoldRewardsEnabled],
         }
     }
 
@@ -126,6 +127,7 @@ impl SettingId {
             ArenaShape => "地图形状",
             PillarMode => "柱子",
             IceMode => "冰面",
+            TotalRounds => "总轮数",
             GameMode => "游戏模式",
             GoldRewardsEnabled => "金币奖励总开关",
         }
@@ -155,6 +157,7 @@ impl SettingId {
             ArenaShape => "当前仅圆形；后续可扩正方形/六边形。",
             PillarMode => "关闭 / 随机 / 每局必有。",
             IceMode => "关闭 / 随机 / 每局必有。",
+            TotalRounds => "本场打几轮（1~50）。改动会取消全员准备。",
             GameMode => "1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还。改动会取消全员准备。",
             GoldRewardsEnabled => "关闭后所有金币奖励归零（等价 098c `-no reward`）；点数不受影响。",
         }
@@ -204,6 +207,7 @@ impl SettingId {
                 Some((0, 100, 1))
             }
             ScorePerKill | ScorePerAssist | ScorePerRoundWin => Some((0, 20, 1)),
+            TotalRounds => Some((1, 50, 1)),
             _ => None,
         }
     }
@@ -231,6 +235,7 @@ pub fn value(cfg: &MatchConfig, id: SettingId) -> f64 {
         ShrinkRingSecs => cfg.shrink_ring_secs,
         BaseRegen => cfg.base_regen,
         ArenaShape => cfg.arena_shape as f64,
+        TotalRounds => cfg.total_rounds as f64,
         GameMode => cfg.game_mode as f64,
         PillarMode => cfg.pillar_mode as f64,
         IceMode => cfg.ice_mode as f64,
@@ -262,6 +267,7 @@ fn set(cfg: &mut MatchConfig, id: SettingId, v: f64) {
         ShrinkRingSecs => cfg.shrink_ring_secs = v,
         BaseRegen => cfg.base_regen = v,
         ArenaShape => cfg.arena_shape = bv,
+        TotalRounds => cfg.total_rounds = v.round().clamp(1.0, 50.0) as u32,
         GameMode => cfg.game_mode = v.round().clamp(1.0, 5.0) as u8,
         PillarMode => cfg.pillar_mode = bv.min(2),
         IceMode => cfg.ice_mode = bv.min(2),
@@ -459,6 +465,25 @@ mod tests {
             nudge(&mut c, SettingId::StartingGold, -1);
         }
         assert_eq!(c.starting_gold, 0, "不应低于 0");
+    }
+
+    /// 总轮数行：可调、有上下界（1..=50）。
+    #[test]
+    fn total_rounds_row_clamps() {
+        let mut c = fresh();
+        assert_eq!(c.total_rounds, 3, "默认 3 轮");
+        nudge(&mut c, SettingId::TotalRounds, 1);
+        assert_eq!(c.total_rounds, 4);
+        for _ in 0..200 {
+            nudge(&mut c, SettingId::TotalRounds, 1);
+        }
+        assert_eq!(c.total_rounds, 50, "应钳到 50");
+        for _ in 0..200 {
+            nudge(&mut c, SettingId::TotalRounds, -1);
+        }
+        assert_eq!(c.total_rounds, 1, "应钳到 1");
+        assert!(commit_input(&mut c, SettingId::TotalRounds, "7"));
+        assert_eq!(c.total_rounds, 7, "支持自定义输入");
     }
 
     /// 游戏模式行：1..=5 环绕，且写入 `game_mode`（改它会经设置串触发全员取消准备）。
