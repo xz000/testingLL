@@ -1,22 +1,18 @@
-579             p.gold += self.config.gold_per_kill;
-580             p.score += self.config.score_per_kill;
-581             p.current_streak += 1; // 连杀计数（死亡清零在 register_death）
-582         }
-583         first
-584     }
-585 
-586     /// 直接给某玩家加金（模式专属奖励用；098c 化身模式 `AI` 的 `+lo` / `+1`）。
-587     pub fn grant_gold(&mut self, player_id: u32, amount: i32) {
-588         if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
-589             p.gold += amount;
-590         }
-591     }
-592 
-593     /// 化身模式计分（098c L12055：Ln += 本轮伤害/20，B3）。
-594     pub fn register_damage_score(&mut self, player_id: u32, damage: f64) {
-595         if let Some(p) = self.profiles.iter_mut().find(|pr| pr.player_id == player_id) {
-596             p.score += (damage / 20.0) as u32;
-597         }
-598     }
-599 
-600     /// 死亡结算（D6）：受害者连杀清零（连杀播报由调用方在清零前读取）。
+3077     #[cfg(test)]
+3078     pub(crate) fn roll_roles_for_test(&mut self) {
+3079         self.roll_roles();
+3080     }
+3081 
+3082     /// 某玩家本轮造成的总伤害（伤害矩阵行和；化身计分用）。
+3083     pub fn round_damage_of(&self, id: u32) -> f64 {
+3084         self.damage_matrix
+3085             .get(id as usize)
+3086             .map(|row| row.iter().map(|v| v.to_num::<f64>()).sum())
+3087             .unwrap_or(0.0)
+3088     }
+3089 }
+3090 
+3091 /// 用确定性 RNG 布柱子（圆形障碍）：在场地内圈的一个圆环上**基本均匀**分布。
+3092 ///
+3093 /// “每轮不同”来自三处随机：整环随机旋转、环半径小幅波动、每根半径随机；
+3094 /// 但保持等分角距 + 小抖动，因此仍是明显的环状均匀分布。

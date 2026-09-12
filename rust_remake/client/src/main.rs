@@ -1664,12 +1664,13 @@ impl Game {
                 }
             }
         }
-        // 化身模式计分（098c L12055，B3）：每人本轮伤害/20 计入分数。
-        if self.world.mode == 3 {
-            for p in 0..self.world.players.len() {
-                let dmg = self.world.round_damage_of(p as u32);
-                self.meta.register_damage_score(p as u32, dmg);
-            }
+        // 每人本轮伤害上报（098c `Rn[i]`）——**所有模式**都要报：
+        //   · `meta` 端会累计 `damage_this_round`，供回合结算的**伤害金**（设置 16 `po`：最高伤害者得金）
+        //   · 化身模式（mode 3）额外把它折算成化身计分（098c L12055：`本轮伤害/20`）
+        // 此前这里被 `mode == 3` 包住，导致**伤害金在其它模式永远不会触发**（真 bug，已修）。
+        for p in 0..self.world.players.len() {
+            let dmg = self.world.round_damage_of(p as u32);
+            self.meta.register_damage_score(p as u32, dmg);
         }
         // 累计伤害（098c `Rn[12+i]`）：本轮伤害并入总伤害（须在 finish_round 清矩阵前）。
         for p in 0..self.world.players.len() {
