@@ -19,7 +19,9 @@ use crate::skill::SkillId;
 /// v7（B1 精通）：加入 mastery 4 字节（生命/远程/时间/背包）。
 /// v8（B2 队伍）：加入 team 1 字节。
 /// v9（B4 形态）：加入 forms（u16 数量 + 每项 1 字节，按 SkillId 索引）。
-pub const CONFIG_VERSION: u8 = 10;
+/// v10：加入 skill_cap_bonus（u32）。
+/// v11（2026-09-12）：删除属性购买系统（移除 attributes 5×u32 与 growth_points u32）。
+pub const CONFIG_VERSION: u8 = 11;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -48,10 +50,7 @@ pub struct PlayerConfig {
     pub key_slots: [Option<SkillId>; KEY_SLOTS],
     pub gold: i64,
     pub gold_spent: i64,
-    /// 战斗属性（4.6b）。
-    pub attributes: crate::attribute::Attributes,
-    /// 成长点（4.6b）：用于购买属性（可用金币兑换）。
-    pub growth_points: u32,
+    // 战斗属性 / 成长点（4.6b）已删除（2026-09-12，CONFIG_VERSION 11）。
     /// 持有的物品（M3；升级链同家族替换）。
     pub items: Vec<crate::item::ItemId>,
     /// 精通研究等级（v7，098c D12.3）：[生命, 远程, 时间, 背包]。
@@ -76,8 +75,6 @@ impl PlayerConfig {
             key_slots,
             gold: p.gold as i64,
             gold_spent: p.gold_spent as i64,
-            attributes: p.attributes,
-            growth_points: p.growth_points,
             items: p.items.clone(),
             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
             team: p.team,
@@ -98,8 +95,6 @@ impl PlayerConfig {
         }
         p.gold = self.gold as i32;
         p.gold_spent = self.gold_spent as i32;
-        p.attributes = self.attributes;
-        p.growth_points = self.growth_points;
         p.items = self.items.clone();
         p.mastery = crate::meta::Mastery {
             life: self.mastery[0],
@@ -136,14 +131,6 @@ impl PlayerConfig {
         }
         put_i64(&mut out, self.gold);
         put_i64(&mut out, self.gold_spent);
-        // attributes（v5）：固定的 5 个 u32（蓝量属性已移除）。
-        put_u32(&mut out, self.attributes.hp_bonus);
-        put_u32(&mut out, self.attributes.speed_bonus);
-        put_u32(&mut out, self.attributes.armor);
-        put_u32(&mut out, self.attributes.spell_resist);
-        put_u32(&mut out, self.attributes.kb_resist);
-        // growth_points（v4）。
-        put_u32(&mut out, self.growth_points);
         // items（v6）：u8 数量 + 每 item u32。
         out.push(self.items.len() as u8);
         for it in &self.items {
@@ -196,18 +183,9 @@ impl PlayerConfig {
         pos += 8;
         let gold_spent = i64_at(buf, pos)?;
         pos += 8;
-        // attributes（v5）：5 个 u32（蓝量属性已移除）。
-        let attributes = crate::attribute::Attributes {
-            hp_bonus: u32_at(buf, pos)?,
-            speed_bonus: u32_at(buf, pos + 4)?,
-            armor: u32_at(buf, pos + 8)?,
-            spell_resist: u32_at(buf, pos + 12)?,
-            kb_resist: u32_at(buf, pos + 16)?,
-        };
-        let growth_points = u32_at(buf, pos + 20)?;
         // items（v6）。
-        let n_items = *buf.get(pos + 24)? as usize;
-        pos += 25;
+        let n_items = *buf.get(pos)? as usize;
+        pos += 1;
         let mut items = Vec::with_capacity(n_items);
         for _ in 0..n_items {
             let id = u32_at(buf, pos)?;
@@ -230,8 +208,6 @@ impl PlayerConfig {
             key_slots,
             gold,
             gold_spent,
-            attributes,
-            growth_points,
             items,
             mastery,
             team,
@@ -256,17 +232,14 @@ mod tests {
     #[test]
     fn encode_decode_roundtrip_preserves_config() {
         let mut p = profile();
-        // 手动改一点：升一级、绑个键、改金币、加属性（4.6b）。
+        // 手动改一点：升一级、绑个键、改金币、加精通（4.6b→已删属性）。
         p.gold = 12345;
         p.gold_spent = 500;
-        p.attributes = crate::attribute::Attributes { hp_bonus: 3, speed_bonus: 2, ..Default::default() };
         p.mastery = crate::meta::Mastery { life: 2, range: 1, time: 3, backpack: 2 };
         let cfg = PlayerConfig::from_profile(&p);
         let bytes = cfg.encode();
         let dec = PlayerConfig::decode(&bytes).expect("应能解码");
         assert_eq!(dec, cfg, "快照往返应一致");
-        assert_eq!(dec.attributes.hp_bonus, 3, "属性应随快照同步");
-        assert_eq!(dec.attributes.speed_bonus, 2);
         assert_eq!(dec.mastery, [2, 1, 3, 2], "精通应随快照同步（v7）");
     }
 

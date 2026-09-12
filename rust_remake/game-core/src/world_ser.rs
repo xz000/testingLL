@@ -229,10 +229,6 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wfix(o, p.radius);
     wfix(o, p.hp);
     wfix(o, p.max_hp);
-    wf64(o, p.speed_mult);
-    wf64(o, p.armor_factor);
-    wf64(o, p.spell_factor);
-    wf64(o, p.kb_factor);
     // rewind（S006 时光回溯）：开关 + (pos, hp, remaining)
     match p.rewind {
         Some((pos, hp, rem)) => {
@@ -382,10 +378,6 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let radius = fixat(b, p)?;
     let hp = fixat(b, p)?;
     let max_hp = fixat(b, p)?;
-    let speed_mult = f64::from_bits(u64at(b, p)?);
-    let armor_factor = f64::from_bits(u64at(b, p)?);
-    let spell_factor = f64::from_bits(u64at(b, p)?);
-    let kb_factor = f64::from_bits(u64at(b, p)?);
     let rewind = if u8at(b, p)? != 0 {
         Some((vecat(b, p)?, fixat(b, p)?, fixat(b, p)?))
     } else {
@@ -508,10 +500,6 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.radius = radius;
     pl.hp = hp;
     pl.max_hp = max_hp;
-    pl.speed_mult = speed_mult;
-    pl.armor_factor = armor_factor;
-    pl.spell_factor = spell_factor;
-    pl.kb_factor = kb_factor;
     pl.rewind = rewind;
     pl.catastrophe_stage = catastrophe_stage;
     pl.lava_boot_cd = lava_boot_cd;

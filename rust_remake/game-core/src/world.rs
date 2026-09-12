@@ -1117,7 +1117,7 @@ impl World {
             // 4.6b：按目标护甲×法抗折算 × 098c 攻方 Gn。
             // 守护之盾充能窗口（098c HC）：天罚后 5s 内受伤减免（25%/75%）。
             dealt = if from.is_some() {
-                let base = amount * Fix64::from_num(p.armor_factor * p.spell_factor * gn * p.dmg_taken_mult);
+                let base = amount * Fix64::from_num(gn * p.dmg_taken_mult);
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     base * Fix64::from_num(1.0 - p.item_fx.smite_reduction)
                 } else {
@@ -2236,7 +2236,7 @@ impl World {
                         // 098b 衰减模型（D8）：初速缩放（有效击退减免在 push_knockback 内）。
                         p.push_knockback(vel);
                     } else {
-                        p.push(vel, time); // Unity 版恒速：击退抗性按 kb_factor 缩放
+                        p.push(vel, time); // Unity 版恒速：击退时长不再按 kb_factor 缩放（属性系统已删除）
                     }
                 }
             }
@@ -2524,7 +2524,7 @@ impl World {
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
                 }
-                let mut dmg = damage * Fix64::from_num(p.armor_factor * p.spell_factor * owner_gn * p.dmg_taken_mult);
+                let mut dmg = damage * Fix64::from_num(owner_gn * p.dmg_taken_mult);
                 // 守护之盾充能窗口（098c HC 'aegs' buff 5*jn）：受伤减免（I00H 25% / I00I 75%）。
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     dmg *= Fix64::from_num(1.0 - p.item_fx.smite_reduction);
@@ -4355,9 +4355,8 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
                     // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
-                    // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917 / 原版说明），
-                    //   在此缩放冲量大小；碰撞系数 hn = kb_factor，由 push() 按时长缩短。
-                    //   注：Hn 与法抗(spell_factor)无关——此前误用 spell_factor，已在本次修正。
+                    // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917），在此缩放冲量大小。
+                    // （kn 碰撞系数由 push() 时长缩短承担；属性系统删除后不再有 kb_factor。）
                     let imp = kick.push_power
                         * Fix64::from_num(1.0 - players[j].mastery_kb_reduction());
                     players[j].push(dir_b_from_a * imp, kick.push_time.to_num::<f64>());
@@ -5549,78 +5548,8 @@ mod tests {
         assert!(world.projectiles.is_empty(), "吸血链镖必须在有限次链跳后消失（修前会无限往返）");
     }
 
-    /// 4.6b：属性派生确定性 + 应用到 Player（最大生命/移速）+ 序列化往返保留。
-    #[test]
-    fn attributes_derive_and_apply_deterministically() {
-        use crate::attribute::Attributes;
-        let mut world = World::new(2, 11);
-        assert!((world.players[0].speed_mult - 1.0).abs() < 1e-9);
-
-        let attrs = Attributes { hp_bonus: 5, speed_bonus: 4, ..Default::default() };
-        // 5 点 hp → +50%；4 点 speed → +20%。
-        let expected_max = crate::player::MAX_HP * (1.0 + 5.0 * crate::attribute::HP_PER_BONUS);
-        world.players[0].apply_attributes(&attrs);
-        assert!((world.players[0].max_hp - Fix64::from_num(expected_max)).abs() < Fix64::from_num(1e-6), "max_hp 应按属性加成");
-        assert!((world.players[0].speed_mult - 1.2).abs() < 1e-9, "speed_mult 应 +20%");
-        // 掉血后 apply 应保持血比（以当前 max_hp 的一半为准）。
-        world.players[0].hp = world.players[0].max_hp / Fix64::from_num(2);
-        world.players[0].apply_attributes(&attrs);
-        let half = world.players[0].max_hp / Fix64::from_num(2);
-        assert!((world.players[0].hp - half).abs() < Fix64::from_num(1e-6), "apply 应保持当前血比");
-
-        // 序列化往返保留（speed_mult / max_hp 是确定性共享状态，重连快照须一致）。
-        let bytes = crate::world_ser::world_to_bytes(&world);
-        let back = crate::world_ser::world_from_bytes(&bytes).expect("decode");
-        assert_eq!(back.players[0].max_hp, world.players[0].max_hp);
-        assert_eq!(back.players[0].speed_mult, world.players[0].speed_mult);
-        assert_eq!(back.players[0].armor_factor, world.players[0].armor_factor);
-    }
-
-    /// 4.6b 阶段2：护甲/法抗确实减少玩家造成的伤害（目标有防护时掉血更少）；击退抗性减少击退时长。
-    #[test]
-    fn attributes_reduce_damage_and_push() {
-        use crate::attribute::Attributes;
-        let dt = Fix64::from_num(1.0 / 60.0);
-
-        // 用与 rock_damages_victim_after_windup_and_fuse 相同的可靠施放：施法者(0,0) 掷石到受害者旁。
-        let mk = |armor: u32, spell: u32| -> Fix64 {
-            let mut w = crate::world::World::new(2, 900);
-            w.players[0].pos = Vec2::ZERO;
-            w.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
-            if armor > 0 || spell > 0 {
-                w.players[1].apply_attributes(&Attributes {
-                    armor,
-                    spell_resist: spell,
-                    ..Default::default()
-                });
-            }
-            let in0 = vec![
-                PlayerInput {
-                    cast: Some((SkillId::Rock, Some(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO)))),
-                    ..Default::default()
-                },
-                PlayerInput::default(),
-            ];
-            for _ in 0..90 {
-                w.step(in0.clone(), dt);
-            }
-            w.players[1].hp
-        };
-
-        let hp_base = mk(0, 0);
-        let hp_armored = mk(8, 0);
-        let hp_resisted = mk(0, 8);
-        assert!(hp_armored > hp_base, "护甲应减少玩家伤害：base={hp_base} armored={hp_armored}");
-        assert!(hp_resisted > hp_base, "法抗应减少玩家伤害");
-
-        // 击退抗性：给玩家1高 kb，受 push 后 remaining 更短。
-        let mut w = crate::world::World::new(2, 910);
-        w.players[0].pos = Vec2::ZERO;
-        w.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
-        w.players[1].apply_attributes(&Attributes { kb_resist: 5, ..Default::default() });
-        w.players[1].push(Vec2::new(Fix64::from_num(10.0), Fix64::ZERO), 2.0);
-        assert!(w.players[1].control.map(|c| c.remaining.to_num::<f64>()).unwrap() < 2.0, "击退抗性应缩短击退");
-    }
+    // 属性系统测试（attributes_derive_and_apply_deterministically / attributes_reduce_damage_and_push）
+    // 已随属性购买系统删除（2026-09-12，098c 无此机制）。
 
     // mana_drains_gates_and_regens 测试已随无蓝量系统删除（PORT_098B_DECISIONS.md D3）。
 
@@ -6073,10 +6002,10 @@ mod tests {
         // 回复：098c 无基础 + 0.4 斗篷 + 0.1 坠饰 = 0.5
         let regen = crate::balance::Balance::default().hp_regen + p.item_fx.regen_add - p.item_fx.regen_penalty;
         assert!((regen - 0.5).abs() < 1e-6, "回复应 0.5/s，实际 {regen}");
-        // kb：属性 0 → 物品 0.32
+        // kb：098c 无点数属性 → 仅物品（头盔）0.32
         assert!((p.effective_kb_reduction() - 0.32).abs() < 1e-9);
-        // 生命上限：100 属性派生 + 20 + 30 = 150（apply_attributes 落账）
-        p.apply_attributes(&crate::attribute::Attributes::default());
+        // 生命上限：基础 100 + 物品 20 + 30 = 150（refresh_derived 落账）
+        p.refresh_derived();
         assert!(near(p.max_hp, 150.0, 0.01), "生命上限应 150，实际 {:?}", p.max_hp);
     }
 
@@ -6577,7 +6506,7 @@ mod tests {
 
     /// S012 冲撞：接触击退随**受击者精通**缩放（098c mI 的 Hn = 每级 -2.5%）。
     /// 两世界同招同距，仅受击者精通级数不同 → 击退位移按比例递减。
-    /// 注：Hn 是精通减免，与法抗 spell_factor 无关（曾误用 spell_factor，已修正）。
+    /// 注：Hn 是精通减免，与法抗无关（属性系统删除后已无 spell_factor）。
     #[test]
     fn s012_dash_knockback_scales_with_mastery() {
         let setup = |mastery: [u8; 3]| -> Fix64 {

@@ -170,14 +170,8 @@ pub struct Player {
     pub radius: Fix64,
     pub hp: Fix64,
     pub max_hp: Fix64,
-    /// 由属性（speed_bonus）派生的移速倍率（1.0 = 无加成）。确定性状态，随角色序列化。
-    pub speed_mult: f64,
-    /// 属性派生的护甲减伤倍率（0..1，越小越抗）。确定性状态，随角色序列化。
-    pub armor_factor: f64,
-    /// 属性派生的法抗减伤倍率（0..1）。
-    pub spell_factor: f64,
-    /// 属性派生的击退抗性剩余倍率（0..1，越小越抗推）。
-    pub kb_factor: f64,
+    // 属性系统（speed_mult / armor_factor / spell_factor / kb_factor）已删除（2026-09-12）：
+    // 098c 无点数购买属性机制；生命/移速/击退减免只由物品（item_fx）与 buff 决定。
     // 蓝量（mana/max_mana/mana_regen）已移除（PORT_098B_DECISIONS.md D3，无蓝量系统）。
     /// 当前移动目标点；`None` 表示本帧没有移动命令（停下来）。
     pub move_target: Option<Vec2>,
@@ -295,10 +289,6 @@ impl Player {
             radius,
             hp: max_hp,
             max_hp,
-            speed_mult: 1.0,
-            armor_factor: 1.0,
-            spell_factor: 1.0,
-            kb_factor: 1.0,
             move_target: None,
             caster: Caster::new(),
             skill_levels: [1; SKILL_SLOTS],
@@ -355,10 +345,9 @@ impl Player {
     /// 立即进入强制位移：以 `vel` 移动 `time` 秒（覆盖旧状态；原版 `GetPushed`）。
     /// `inf` 用于无限时长（冲刺斩等），用 `true` 表示不设到期。
     pub fn push(&mut self, vel: Vec2, time: f64) {
-        // 4.6b：击退抗性统一在此按 kb_factor 缩短击退时长（所有 push 都过此）。
         self.control = Some(Control {
             vel,
-            remaining: Fix64::from_num(time * self.kb_factor),
+            remaining: Fix64::from_num(time),
             decay: false,
         });
     }
@@ -527,10 +516,10 @@ impl Player {
         0.025 * (self.mastery[0] + self.mastery[1] + self.mastery[2]) as f64
     }
 
-    /// 有效受击退减免：属性与物品（头盔不叠加）取最大后，与精通级数乘法合成
+    /// 有效受击退减免：物品（头盔）与精通级数乘法合成
     /// （098c kf L12917：每级精通 Hn ×(1-0.025×lf)，lf=三精通总级数）。
     pub fn effective_kb_reduction(&self) -> f64 {
-        let base = (1.0 - self.kb_factor).max(self.item_fx.kb_resist_frac);
+        let base = self.item_fx.kb_resist_frac;
         1.0 - (1.0 - base) * (1.0 - self.mastery_kb_reduction())
     }
 
@@ -589,7 +578,7 @@ impl Player {
             0.0
         };
         let flat = self.item_fx.speed_add - self.item_fx.speed_penalty + s007_flat;
-        (Fix64::from_num(BASE_SPEED * self.speed_mult) + Fix64::from_num(flat)) * Fix64::from_num(mult)
+        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat)) * Fix64::from_num(mult)
     }
 
     /// 测试用：当前基础移速（含物品平加）。
@@ -791,32 +780,23 @@ impl Player {
     }
 
     /// 同步持有物品（学习期购买/升级后由档案下发；M3）。
-    /// 只重算聚合效果；生命落账由 [`Self::apply_attributes`] 统一处理（调用顺序：先本函数再 apply_attributes）。
+    /// 只重算聚合效果；生命落账由 [`Self::refresh_derived`] 统一处理（顺序：先本函数再 refresh_derived）。
     pub fn set_items(&mut self, items: &[crate::item::ItemId]) {
         self.items = items.to_vec();
         self.recompute_item_fx();
     }
 
-    pub fn apply_attributes(&mut self, a: &crate::attribute::Attributes) {
+    /// 派生战斗数值：最大生命 = 基础 `MAX_HP` + 物品生命加成（保持当前血比）。
+    /// 098c 无点数购买属性；生命/移速只由物品与 buff 决定。确定性纯函数，跨局/跨端一致。
+    pub fn refresh_derived(&mut self) {
         let ratio = if self.max_hp > Fix64::ZERO {
             self.hp / self.max_hp
         } else {
             Fix64::ONE
         };
-        self.max_hp = Fix64::from_num(a.derived_max_hp(MAX_HP));
+        self.max_hp = (Fix64::from_num(MAX_HP) + Fix64::from_num(self.item_fx.hp_add))
+            .max(Fix64::from_num(1));
         self.hp = (self.max_hp * ratio).max(Fix64::from_num(1));
-        self.speed_mult = a.derived_speed_mult();
-        // 阶段2：护甲/法抗/击退抗性折算到战斗数值（伤害/击退结算点读取）。
-        self.armor_factor = a.armor_factor();
-        self.spell_factor = a.spell_factor();
-        self.kb_factor = a.kb_factor();
-        // 物品生命加成（M3）：派生值之上平加，保持现有血量比例。
-        let bonus = self.item_fx.hp_add;
-        if bonus != 0.0 {
-            let ratio = if self.max_hp > Fix64::ZERO { self.hp / self.max_hp } else { Fix64::ONE };
-            self.max_hp = (self.max_hp + Fix64::from_num(bonus)).max(Fix64::ONE);
-            self.hp = (self.max_hp * ratio).max(Fix64::ONE);
-        }
     }
 
     /// 新一轮开始时重置回合相关状态（保留 id / pos / 技能等级 / 半径）。
