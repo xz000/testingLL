@@ -225,6 +225,10 @@ enum AppState {
 
 /// 进行中的 Steam 大厅操作类型（S12：帧驱动异步，避免在游戏线程 `std::thread::sleep` 忙等）。
 /// 建房界面的可点击动作（键鼠共用；绘制时登记命中、点击时派发）。
+///
+/// **过渡状态（2026-09-12）**：旧建房界面已被"统一设置编辑器（创建模式）"取代，
+/// 本枚举与 `draw_steam_create_lobby` 暂时保留但不再调用，属第 6 步待清理的死代码。
+#[allow(dead_code)]
 #[cfg(feature = "steam")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum CreateAction {
@@ -607,6 +611,10 @@ struct Game {
     /// 只作为大厅展示信息（见 `settings_ui::RoomMeta` 的说明）。
     #[cfg(feature = "steam")]
     room_meta: settings_ui::RoomMeta,
+    /// 设置编辑器处于**创建模式**（建房前，底部显示 `[创建房间]`；人数上限此时可改）。
+    /// 非创建模式即**编辑模式**（建房后，关闭时发布、人数只读）。
+    #[cfg(feature = "steam")]
+    room_cfg_create_mode: bool,
     /// 建房界面的**命中注册表**（绘制时登记、点击时派发；绘制与命中同源）。
     /// 每帧绘制前清空，避免残留旧矩形导致"点到不存在的东西"。
     #[cfg(feature = "steam")]
@@ -1126,6 +1134,8 @@ impl Game {
             room_cfg_input: None,
             #[cfg(feature = "steam")]
             room_meta: settings_ui::RoomMeta::default(),
+            #[cfg(feature = "steam")]
+            room_cfg_create_mode: false,
             #[cfg(feature = "steam")]
             create_hitboxes: Vec::new(),
             #[cfg(feature = "steam")]
@@ -5939,7 +5949,21 @@ impl Game {
                 self.steam_create_gold_per_round_buf = STEAM_DEFAULT_GOLD_PER_ROUND.to_string();
                 self.steam_create_place_buf = STEAM_DEFAULT_PLACE_REWARD.to_string();
                 self.steam_create_place = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
-                self.steam_lobby_create = true;
+                // **统一设置界面**（第 2/3 步）：`H` 不再进"旧建房界面"，而是打开设置编辑器的
+                // **创建模式** —— 与房内 `O` 是同一个界面，只是模式不同。
+                self.steam_lobby_create = true; // 仍标记"处于建房流程"（绘制/输入走创建模式）
+                self.room_cfg_create_mode = true;
+                self.room_cfg_edit = true;
+                self.room_cfg_group = settings_ui::Group::Room;
+                self.room_cfg_row = 0;
+                self.room_meta.name = self.steam_create_name.clone();
+                self.room_meta.note = self.steam_create_note.clone();
+                self.room_meta.player_limit = self
+                    .steam_create_players_buf
+                    .trim()
+                    .parse::<u32>()
+                    .unwrap_or(STEAM_DEFAULT_PLAYERS as u32)
+                    .clamp(2, STEAM_MAX_PLAYERS as u32);
             }
             1 => {
                 eprintln!("[menu] Steam -> join lobby list");
@@ -6158,7 +6182,22 @@ impl Game {
                 return true;
             }
         }
-        // Esc / O：保存并关闭
+        // 创建模式：回车 = **创建房间**（等价旧建房界面的回车）；Esc/O = 取消建房流程。
+        if self.room_cfg_create_mode {
+            if just_named(NamedKey::Enter) {
+                self.create_confirm_pending = true;
+                self.room_cfg_edit = false;
+                return false;
+            }
+            if just_named(NamedKey::Escape) || just("o") {
+                self.room_cfg_edit = false;
+                self.room_cfg_create_mode = false;
+                self.steam_lobby_create = false; // 回到大厅主界面
+                return false;
+            }
+            return true;
+        }
+        // 编辑模式：Esc / O 关闭并发布（关闭即生效）
         if just_named(NamedKey::Escape) || just("o") {
             self.room_cfg_edit = false;
             self.publish_room_cfg();
@@ -6242,6 +6281,10 @@ impl Game {
         }
         if self.room_cfg_edit && !o_pressed {
             self.room_cfg_editor_input(ctx);
+            // 创建模式下，编辑器里的回车 = 建房（延迟到此处执行，避开 ctx 借用冲突）。
+            if std::mem::take(&mut self.create_confirm_pending) {
+                self.steam_create_confirm(ctx);
+            }
             return; // 编辑器打开时不吃建房界面的其它按键
         }
         // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
@@ -6429,13 +6472,13 @@ impl Game {
         {
             let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
             let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
-            let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
+            // 统一模型：人数/轮数取 `room_meta`/`match_cfg`（编辑器里的[房间]分组），
+            // 经济与时长等一律取 `match_cfg` —— 建房界面不再有独立的重复字段。
+            let players = self
+                .room_meta
+                .player_limit
                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
-            // 轮数取本界面字段；其余（准备时间/初始金币/每轮金币/名次奖励）一律取 `match_cfg` ——
-            // 它们已改由设置编辑器（`O`）维护，建房界面不再重复一份。
-            let rounds = parse_num(&self.steam_create_rounds_buf, self.match_cfg.total_rounds)
-                .clamp(1, STEAM_MAX_ROUNDS);
-            self.match_cfg.total_rounds = rounds;
+            let rounds = self.match_cfg.total_rounds.clamp(1, STEAM_MAX_ROUNDS);
             let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
                 .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
             let starting_gold = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD)
@@ -6471,8 +6514,8 @@ impl Game {
             self.steam_create_place = place;
             self.match_regen = self.steam_create_regen;
         self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
-            let name = self.steam_create_name.clone();
-            let note = self.steam_create_note.clone();
+            let name = self.room_meta.name.clone();
+            let note = self.room_meta.note.clone();
             eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_per_round={gold_per_round} place={:?} name='{name}' note='{note}'", self.steam_create_place);
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
@@ -6908,8 +6951,8 @@ impl Game {
             // 建房设置界面。
             #[cfg(feature = "steam")]
             if self.steam_lobby_create {
-                self.draw_steam_create_lobby(&mut canvas, ctx)?;
-                self.draw_lobby_overlays(&mut canvas, ctx)?;
+                // 统一设置界面（创建模式）：与房内 `O` 同一个编辑器。
+                self.draw_room_cfg_editor(&mut canvas, ctx)?;
                 canvas.finish(ctx)?;
                 return Ok(());
             }
@@ -7011,6 +7054,7 @@ impl Game {
 
     /// 绘制「建房设置」界面：房间名 / 备注 / 人数 三字段，当前聚焦字段高亮。
     #[cfg(feature = "steam")]
+    #[allow(dead_code)] // 已被统一编辑器的创建模式取代，待第 6 步删除
     fn draw_steam_create_lobby(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
