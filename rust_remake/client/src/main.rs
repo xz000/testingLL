@@ -5610,18 +5610,8 @@ impl Game {
             self.accumulator = 0.0;
             return Ok(());
         }
-        // host 按 E 进入「编辑房间信息」子界面（改房间名/备注；人数上限建房时固定，走锁房代替）。
-        let e_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("e".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("E".into()));
-        if e_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit && self.steam_host_ls.is_some() {
-            let (cur_name, cur_note) = self.steam_current_room_info();
-            self.steam_edit_name = cur_name;
-            self.steam_edit_note = cur_note;
-            self.steam_room_edit_focus = 0;
-            self.steam_room_edit = true;
-            self.accumulator = 0.0;
-            return Ok(());
-        }
+        // `E` **已退休**：房间名/备注并入设置编辑器的 `[A]房间` 分组（按 `O` 打开）。
+        // 这里不再读取 `E`，该键在本界面为空闲。
         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
         // 锁定窗口内忽略「按 U 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
         // client 端不满员手动倒计时用 host 广播的 manual_ms 判锁定，最后 LOCK 秒内不可按 U 取消（与 host 端一致）。
@@ -5649,11 +5639,12 @@ impl Game {
         let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()));
         if self.steam_host_ls.is_some() && o_pressed {
-            // 从房间信息编辑界面按 O：先退出该界面（两个界面互斥），再进设置编辑器。
-            if self.steam_room_edit {
-                self.steam_room_edit = false;
-            }
             self.room_cfg_edit = !self.room_cfg_edit;
+            // 房主改设置前先**取消自己的准备**：避免"房主已准备、还开着设置面板"的错位状态。
+            if self.room_cfg_edit && self.steam_local_ready {
+                self.steam_local_ready = false;
+                eprintln!("[cfg] 房主打开设置 → 自动取消本端准备");
+            }
             if !self.room_cfg_edit {
                 self.publish_room_cfg();
             }
@@ -6084,8 +6075,15 @@ impl Game {
                 if just_named(NamedKey::Backspace) {
                     buf.pop();
                 }
-                // 数字 / 小数点 / 负号
-                for c in "0123456789.-".chars() {
+                // 文本行（房名/备注，大厅元数据）：接受**完整可打印字符**（字母/空格/标点/中文）。
+                // 数值行：仅数字/小数点/负号。此前一律只收数字 → 房名连字母都打不进去（真 bug）。
+                let is_text_row = id.target() == settings_ui::SettingTarget::Meta;
+                let charset = if is_text_row {
+                    " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/"
+                } else {
+                    "0123456789.-"
+                };
+                for c in charset.chars() {
                     let cs = c.to_string();
                     let pressed = ctx
                         .keyboard
@@ -6093,7 +6091,7 @@ impl Game {
                         || ctx
                             .keyboard
                             .is_logical_key_just_pressed(&Key::Character(cs.to_uppercase().into()));
-                    if pressed && buf.len() < 10 {
+                    if pressed && buf.len() < 60 {
                         buf.push(c);
                     }
                 }
@@ -6104,6 +6102,38 @@ impl Game {
             self.room_cfg_input = None;
             return true;
         }
+        // ── 创建模式下：**回车 = 建房**（文本行例外：回车先用于输入房名/备注）──
+        // 注意必须在"行级回车处理"之前判断，否则回车总被行处理吃掉（此前就是这个 bug：
+        // 建房时回车变成了"自定义输入"，只能连按 Esc 再回车才能建房）。
+        if self.room_cfg_create_mode && just_named(NamedKey::Enter) {
+            let n_rows = settings_ui::SettingId::rows(self.room_cfg_group).len();
+            let id = if n_rows == 0 {
+                None
+            } else {
+                Some(settings_ui::SettingId::rows(self.room_cfg_group)[self.room_cfg_row.min(n_rows - 1)])
+            };
+            let is_text_meta = id
+                .map(|id| {
+                    id.target() == settings_ui::SettingTarget::Meta
+                        && id != settings_ui::SettingId::PlayerLimit
+                })
+                .unwrap_or(false);
+            if !is_text_meta {
+                // 任意非文本行按回车 → 直接建房（底部也会补按钮，见后续步骤）
+                self.create_confirm_pending = true;
+                self.room_cfg_edit = false;
+                return false;
+            }
+            // 文本行：进入输入（预填当前值），下面行处理会接管
+        }
+        // 创建模式下 Esc/O = 取消建房流程（回大厅主界面）
+        if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o")) {
+            self.room_cfg_edit = false;
+            self.room_cfg_create_mode = false;
+            self.steam_lobby_create = false;
+            return false;
+        }
+
         // ── 普通态 ──
         for g in settings_ui::Group::ALL {
             if just(&g.hotkey().to_string()) {
@@ -6182,21 +6212,6 @@ impl Game {
                 return true;
             }
         }
-        // 创建模式：回车 = **创建房间**（等价旧建房界面的回车）；Esc/O = 取消建房流程。
-        if self.room_cfg_create_mode {
-            if just_named(NamedKey::Enter) {
-                self.create_confirm_pending = true;
-                self.room_cfg_edit = false;
-                return false;
-            }
-            if just_named(NamedKey::Escape) || just("o") {
-                self.room_cfg_edit = false;
-                self.room_cfg_create_mode = false;
-                self.steam_lobby_create = false; // 回到大厅主界面
-                return false;
-            }
-            return true;
-        }
         // 编辑模式：Esc / O 关闭并发布（关闭即生效）
         if just_named(NamedKey::Escape) || just("o") {
             self.room_cfg_edit = false;
@@ -6212,9 +6227,17 @@ impl Game {
     #[cfg(feature = "steam")]
     fn publish_room_cfg(&mut self) {
         let cfg = self.match_cfg.to_meta_string();
-        let Some(sess) = self.steam_sess.as_ref() else {
-            return; // 无会话（单机/尚未进 Steam 流程）：设置只存在本地，无需发布
+        // **必须走大厅传输**：进房后 `steam_sess` 已被移交给 `steam_host_ls`
+        //（会话被消费掉），此前用 `steam_sess` 会静默 return → 改了设置既不发布也不通知各端。
+        let Some(lid) = self.steam_lobby_id else {
+            eprintln!("[cfg] 尚未建厅 → 设置先存本地，建厅时自动发布");
+            return;
         };
+        let Some(ls) = self.steam_host_ls.as_ref() else {
+            return; // 非房主（客户端）不应发布设置
+        };
+        let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+        let mm = ls.transport_ref().matchmaking();
         // ── 把 `match_cfg`（唯一真值源）同步到本端建房期字段 ──
         // 不这样做的话，"在房间里按 O 改初始金币/每轮金币/轮数"只改了设置串，
         // 房主这一局用的却仍是**建房那一刻**拷贝出来的 `match_*` → 看起来"改了没用"。
@@ -6230,19 +6253,13 @@ impl Game {
         self.world
             .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
         // 模式另有独立元数据键（房间列表按模式筛选要读它）；设置串是权威来源。
-        let _ = sess.host_set_mode(self.match_cfg.game_mode);
-        match sess.host_set_cfg(&cfg) {
-            Ok(()) => eprintln!(
-                "[cfg] 已发布房间设置（自定义 {} 项，{} 字节）",
-                self.match_cfg.non_default_setting_count(),
-                cfg.len()
-            ),
-            // **建房界面里还没建厅**，此时发布必然失败且无害 —— 建厅时会再发一次（见 finish_enter_steam_mode）。
-            Err(e) if e.to_string().contains("尚未建厅") => {
-                eprintln!("[cfg] 当前尚未建厅 → 设置先存本地，建厅时自动发布");
-            }
-            Err(e) => eprintln!("[cfg] 发布失败：{e}"),
-        }
+        mm.set_lobby_data(lobby, net_steam::session::ROOM_MODE_KEY, &self.match_cfg.game_mode.to_string());
+        mm.set_lobby_data(lobby, net_steam::session::ROOM_SETTINGS_KEY, &cfg);
+        eprintln!(
+            "[cfg] 已发布房间设置（自定义 {} 项，{} 字节）→ 各端应取消准备",
+            self.match_cfg.non_default_setting_count(),
+            cfg.len()
+        );
     }
 
     /// 建房设置界面输入：四个字段（房间名/备注/人数）。
