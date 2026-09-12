@@ -1386,6 +1386,11 @@ impl World {
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
                         pr.alive = false;
+                        // 098c `oB`：回旋镖在飞行计时结束时就地做命中半径 qI 内 AOE 结算
+                        //（**不是**靠「回到施法者附近」——玩家一移动就永远回不来了）。
+                        if *proj == crate::skill::W098bProjKind::Boomerang {
+                            boomerang_settles.push((pr.owner, pr.pos, *gx, *kb_ji));
+                        }
                         if let Some(br) = blast {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
                         }
@@ -1435,11 +1440,6 @@ impl World {
                         crate::skill::W098bProjKind::Boomerang => {
                             // 098c 弧线物理（Ub/ub）：出程 = 前向匀减速 + 横向匀加速（横向从 ±300 到 ∓300），
                             // 前向归零转回程 = 横向加速度反向，沿对称弧线回飞施法者。
-                            let owner_pos = self
-                                .players
-                                .get(pr.owner as usize)
-                                .map(|o| o.pos)
-                                .unwrap_or(pr.pos);
                             let dir = *forward_dir;
                             let perp = Vec2::new(-dir.y, dir.x);
                             // 前向减速度 yb = -speed²/(2·out_dist)；横向加速度 Yb = -speed·lateral/out_dist（098c Ub）。
@@ -1447,18 +1447,15 @@ impl World {
                             let yb_lat = -(*speed * *lateral) / *out_dist;
                             if !*returning {
                                 *vel += (dir * yb + perp * yb_lat) * dt;
-                                if vel.dot(dir) <= Fix64::ZERO {
-                                    *returning = true; // 前向归零 → 回程
+                                // 098c `ub`：回程镜像在飞行结束前 5 帧（0.15s）开始（`gv = ev - 5*.03`），
+                                // 而不是等前向速度归零。
+                                if *remaining <= Fix64::from_num(0.15) {
+                                    *returning = true;
                                 }
                             } else {
                                 // 回程：横向加速度反向（098c ub：U=Y, w=z），前向继续减速朝施法者。
                                 *vel += (dir * yb - perp * yb_lat) * dt;
-                                let d = owner_pos - pr.pos;
-                                if d.length() < Fix64::from_num(60.0) {
-                                    // 098c oB：回程到位 → 记录结算（命中半径 qI 内 AOE，见循环后 2c1.5 段）。
-                                    boomerang_settles.push((pr.owner, pr.pos, *gx, *kb_ji));
-                                    pr.alive = false;
-                                }
+                                // 注：结算由 `remaining` 到期触发（098c `oB`），不依赖与施法者的距离。
                             }
                             pr.pos += *vel * dt;
                         }
@@ -2977,7 +2974,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     let ei = world.players[idx as usize].mastery[2] as f64;
                     let maxd = Fix64::from_num(800.0 * (1.0 + 0.15 * ei));
                     let od = click.clamp(Fix64::from_num(300.0), maxd);
-                    life = od * Fix64::from_num(4.0) / speed + Fix64::from_num(0.4);
+                    // 098c `ev = -wb/yb`：前向减速到 0 的时间 = 2·od/speed（不是往返双倍）；
+                    // 结算在此时刻（`oB`）。+0.05 帧容差。
+                    life = od * Fix64::from_num(2.0) / speed + Fix64::from_num(0.05);
                     od
                 } else {
                     life * speed
