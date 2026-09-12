@@ -41,39 +41,66 @@ def parse(data: bytes):
     unknown = u32(4)
     pos = 8
     objects = []
-    while pos + 12 <= len(data):
-        old_id = data[pos:pos + 4]
-        new_id = data[pos + 4:pos + 8]
-        n_mods = u32(pos + 8)
-        if not _looks_like_id(old_id) or n_mods > 4096:
+    cur = None
+
+    def read_value(typ, ptr):
+        nonlocal pos
+        if typ == 0:
+            v = u32(pos)
+            pos += 4
+            return v
+        if typ in (1, 2):
+            v = struct.unpack_from('<f', data, pos)[0]
+            pos += 4
+            return v
+        if typ == 3 and ptr == 0:
+            end = data.find(b'\x00', pos)
+            v = data[pos:end].decode('latin-1')
+            pos = end + 1
+            return v
+        return None  # string 且 ptr!=0 → 继承原表
+
+    # 第一段：old_id(4) + new_id(4) + n_mods(4) + 记录
+    old_id = data[pos:pos + 4]
+    new_id = data[pos + 4:pos + 8]
+    n_mods = u32(pos + 8)
+    pos += 12
+    fields = []
+    for _ in range(n_mods):
+        fid = data[pos:pos + 4].decode('latin-1')
+        typ, level, ptr = u32(pos + 4), u32(pos + 8), u32(pos + 12)
+        pos += 16
+        fields.append({'field': fid, 'type': typ, 'level': level, 'ptr': ptr, 'value': read_value(typ, ptr)})
+        if pos + 8 <= len(data) and u32(pos) == 0 and data[pos + 4:pos + 5].startswith(b'g'):
+            pos += 4
+    objects.append({'old': old_id.decode('latin-1'), 'new': new_id.decode('latin-1'), 'fields': fields})
+
+    # 第二段（offset 78 起）：无对象头，直接是记录序列。
+    # 硬判定依据（本文件实证）：**字段 id 一律以 'g' 开头**（gnam/gglb/glvl/glmb/grac/gub1/…），
+    # 而对象 id 以 'R' 开头（Rhme/R002/…）—— 因此不必靠位置/type 启发式。
+    while pos + 8 <= len(data):
+        tok = data[pos:pos + 4]
+        if tok[:1] == b'R' and _looks_like_id(tok):
+            cur = {'old': tok.decode('latin-1'), 'new': '', 'fields': []}
+            objects.append(cur)
+            pos += 4
+            continue
+        if tok[:1] != b'g' or not _looks_like_id(tok):
+            pos += 1  # 未知字节：跳过（对齐自愈）
+            continue
+        if pos + 16 > len(data):
             break
-        pos += 12
-        fields = []
-        for _ in range(n_mods):
-            fid = data[pos:pos + 4].decode('latin-1')
-            typ = u32(pos + 4)
-            level = u32(pos + 8)
-            ptr = u32(pos + 12)
-            pos += 16
-            value = None
-            if typ == 0:
-                value = u32(pos)
-                pos += 4
-            elif typ in (1, 2):
-                value = struct.unpack_from('<f', data, pos)[0]
-                pos += 4
-            elif typ == 3:
-                if ptr == 0:
-                    end = data.find(b'\x00', pos)
-                    value = data[pos:end].decode('latin-1')
-                    pos = end + 1
-                # ptr != 0 → 继承原表
-            # 结束标记可选：仅当"4 字节 0 + 后面像字段 id"时才吃掉。
-            # （实证：字符串值之后直接就是下一个条目的 old_id，没有 4 字节 0。）
-            if pos + 8 <= len(data) and u32(pos) == 0 and _looks_like_id(data[pos + 4:pos + 8]):
-                pos += 4
-            fields.append({'field': fid, 'type': typ, 'level': level, 'ptr': ptr, 'value': value})
-        objects.append({'old': old_id.decode('latin-1'), 'new': new_id.decode('latin-1'), 'fields': fields})
+        fid = tok.decode('latin-1')
+        typ, level, ptr = u32(pos + 4), u32(pos + 8), u32(pos + 12)
+        if typ > 3 or level == 0 or level > 64:
+            pos += 1
+            continue
+        pos += 16
+        if cur is None:
+            cur = {'old': '', 'new': '', 'fields': []}
+            objects.append(cur)
+        cur['fields'].append({'field': fid, 'type': typ, 'level': level, 'ptr': ptr,
+                              'value': read_value(typ, ptr)})
     return {'version': version, 'unknown': unknown, 'n': len(objects),
             'objects': objects, 'consumed': pos, 'size': len(data)}
 
