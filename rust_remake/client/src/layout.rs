@@ -6,7 +6,7 @@
 //! 本模块只做纯计算（给屏幕尺寸 → 各带矩形），因此可以**单测**：
 //! 带之间不重叠、提示恒在最底、面板恒在屏内、行在内容带内均匀分布。
 
-use ggez::graphics::Rect;
+use ggez::graphics::{Color, Rect};
 
 /// 屏幕四带（比例固定，随分辨率缩放）。
 ///
@@ -40,6 +40,74 @@ const STATUS_TOP: f32 = 0.85;
 const STATUS_BOTTOM: f32 = 0.89;
 const HINT_TOP: f32 = 0.92;
 const HINT_BOTTOM: f32 = 0.98;
+
+// ═══════════ 统一视觉常量（建房表单与设置列表共用） ═══════════
+//
+// 目的：两个界面的**结构**不同（表单 vs 列表），但**视觉语言**必须一致 ——
+// 行高、标签宽、输入框尺寸、选中/悬停/普通三态配色，全部取自这里。
+// 此前各界面各自写 `Color::from_rgb(56, 66, 84)` 之类的字面量，改一处就会不一致。
+
+/// 列表/表单行高（设置编辑器行、房间列表行）。
+pub const ROW_H: f32 = 28.0;
+/// 表单输入框尺寸与标签宽（建房界面字段）。
+pub const FIELD_BOX_H: f32 = 44.0;
+pub const FIELD_BOX_W: f32 = 300.0;
+pub const FIELD_LABEL_W: f32 = 140.0;
+/// 表单字段的纵向间距（两列布局用）。
+pub const FIELD_GAP_Y: f32 = 34.0;
+
+/// 普通行/输入框底色。
+pub fn bg_normal() -> Color {
+    Color::from_rgb(28, 32, 42)
+}
+/// 悬停底色（鼠标在本行上）。
+pub fn bg_hover() -> Color {
+    Color::from_rgb(38, 44, 56)
+}
+/// 选中底色（键盘焦点在本行）。
+pub fn bg_selected() -> Color {
+    Color::from_rgb(56, 66, 84)
+}
+/// 选中描边（强调色）。
+pub fn border_selected() -> Color {
+    Color::from_rgb(255, 210, 120)
+}
+/// 悬停描边（弱化）。
+pub fn border_hover() -> Color {
+    Color::from_rgb(90, 104, 126)
+}
+/// 主按钮底色（如 [创建房间]）。
+pub fn btn_primary() -> Color {
+    Color::from_rgb(42, 74, 52)
+}
+/// 主按钮悬停。
+pub fn btn_primary_hover() -> Color {
+    Color::from_rgb(70, 120, 80)
+}
+/// 次按钮底色（如 [取消]）。
+pub fn btn_secondary() -> Color {
+    Color::from_rgb(56, 46, 46)
+}
+/// 次按钮悬停。
+pub fn btn_secondary_hover() -> Color {
+    Color::from_rgb(90, 70, 70)
+}
+/// 普通文字。
+pub fn text_normal() -> Color {
+    Color::from_rgb(215, 220, 232)
+}
+/// 强调文字（选中行标签）。
+pub fn text_accent() -> Color {
+    Color::from_rgb(255, 210, 120)
+}
+/// 自定义项/警示文字（徽章为"自定义 N 项"时）。
+pub fn text_custom() -> Color {
+    Color::from_rgb(255, 200, 90)
+}
+/// 提示/禁用文字。
+pub fn text_dim() -> Color {
+    Color::from_rgb(150, 160, 175)
+}
 
 /// 按屏幕尺寸算出四带。
 pub fn bands(width: f32, height: f32) -> Bands {
@@ -95,6 +163,22 @@ mod tests {
             assert!((p.x - (w - p.w) / 2.0).abs() < 0.01, "应水平居中");
             assert!((p.y - (h - p.h) / 2.0).abs() < 0.01, "应垂直居中");
         }
+    }
+
+    /// 统一视觉常量：取值合理、三态配色互不相同（否则"选中/悬停"就看不出来）。
+    #[test]
+    fn shared_visual_constants_are_distinct() {
+        assert!(ROW_H > 0.0 && FIELD_BOX_H >= ROW_H, "输入框不应比行更矮");
+        assert!(FIELD_BOX_W > 0.0 && FIELD_LABEL_W > 0.0);
+        let trio = [bg_normal(), bg_hover(), bg_selected()];
+        for (i, a) in trio.iter().enumerate() {
+            for b in &trio[i + 1..] {
+                assert_ne!(a, b, "普通/悬停/选中底色必须可区分");
+            }
+        }
+        assert_ne!(border_selected(), border_hover(), "选中与悬停描边应不同");
+        assert_ne!(btn_primary(), btn_secondary(), "主/次按钮应可区分");
+        assert_ne!(text_normal(), text_dim(), "正文与次要文字应可区分");
     }
 
     /// 行等分且都在内容带内；`n = 0` 不 panic。
