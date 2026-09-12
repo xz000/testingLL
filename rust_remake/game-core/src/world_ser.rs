@@ -935,7 +935,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         pending_kings.push(k);
     }
-    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
+    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs), shrink_ring_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs), sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?

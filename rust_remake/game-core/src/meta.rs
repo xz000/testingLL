@@ -58,9 +58,10 @@ pub struct MatchConfig {
     pub between_rounds_time_secs: f64,
     /// **收缩延迟秒数**：开局静止期，之后开始连续收缩。
     pub shrink_delay_secs: f64,
-    /// **收缩基准时长秒数**：**满员**时从开始收缩到缩到 0 的时长；
-    /// 实际时长 = `基准 × √(存活 / 初始)`（098c `wo*SquareRoot(sn)`，`sn` = **本轮存活人数**）。
-    pub shrink_base_secs: f64,
+    /// **每环收缩时长**（098c 设置 6 `wo`，默认 10）：越过一环所需秒数。
+    /// 实际速率 = `环宽 / (本值 × √存活人数)`，且**开局延迟**同样为 `本值 × √存活人数`
+    /// —— 与 098c `TimerStart(Sa, wo*SquareRoot(sn), ...)` 同构（`sn` = 本轮存活人数）。
+    pub shrink_ring_secs: f64,
     /// **柱子**：0=关闭 1=随机 2=每局必有（098c 设置 8 `Po`，0=随机）。
     pub pillar_mode: u8,
     /// **冰面**：0=关闭 1=随机 2=每局必有（098c 把"关冰"绑在 `-league` 里，我们独立出来）。
@@ -124,7 +125,7 @@ impl Default for MatchConfig {
             first_round_time_secs: 40.0,    // 设置 5 `Uo`
             between_rounds_time_secs: 30.0, // 设置 4 `uo`
             shrink_delay_secs: 10.0,        // 设置 6 `wo`
-            shrink_base_secs: 60.0,         // 我方连续模型：满员时收缩总时长（第 2 步与实现对齐）
+            shrink_ring_secs: 10.0,         // 设置 6 `wo`（原版 10s/环，且延迟同为 wo×√存活）
             pillar_mode: 1,                 // 设置 8 `Po=0` → 随机
             ice_mode: 1,                    // 默认随机
             arena_shape: 0,                 // 圆形
@@ -1328,7 +1329,7 @@ mod tests {
         assert_eq!(c.first_round_time_secs, 40.0, "设置 5 Uo=40（第一轮配置期）");
         assert_eq!(c.between_rounds_time_secs, 30.0, "设置 4 uo=30（局间配置期）");
         assert_eq!(c.shrink_delay_secs, 10.0, "设置 6 wo=10");
-        assert!(c.shrink_base_secs > 0.0, "收缩基准时长须为正");
+        assert_eq!(c.shrink_ring_secs, 10.0, "设置 6 wo=10（每环时长）");
         assert_eq!(c.base_regen, 0.5, "设置 9 In=.05/0.1s = 0.5/s");
         // 柱 / 冰 / 地图
         assert_eq!(c.pillar_mode, 1, "设置 8 Po=0 → 随机");

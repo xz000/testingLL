@@ -422,6 +422,10 @@ pub struct World {
     /// （`-C9` → `In`，默认 `In=.05` / 0.1s tick = **0.5/s`）；这里做成可覆写字段，
     /// 便于测试隔离与以后接入房间设置（默认 = [`crate::balance::Balance::default`]）。
     pub base_regen: f64,
+    /// 收缩**开局延迟**（秒，基准值；实际 = 本值 × √存活人数）。098c 设置 6 `wo`。
+    pub shrink_delay_secs: Fix64,
+    /// 收缩**每环时长**（秒，基准值；速率 = 环宽 /(本值 × √存活人数)）。098c 设置 6 `wo`。
+    pub shrink_ring_secs: Fix64,
     /// 试验场模式（单机技能试验场）：不缩圈、不出圈掉血、不判对局结束。
     pub sandbox: bool,
     /// 柱子/障碍布局使用的确定性种子。每轮递增，保证各小局地形不同、且两端一致。
@@ -500,6 +504,8 @@ impl World {
             players,
             arena_radius,
             base_regen: crate::balance::Balance::default().hp_regen,
+            shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs),
+            shrink_ring_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs),
             sandbox: false,
             round_seed: seed,
             obstacles,
@@ -962,7 +968,9 @@ impl World {
             return;
         }
         let b = Balance::default();
-        let rate = b.ring_width / (b.shrink_ring_secs * alive.sqrt());
+        // 每环时长来自房间设置（默认 = Balance 的 wo）；速率随存活人数 √ 缩放（098c `wo*√sn`）。
+        let ring_secs = self.shrink_ring_secs.to_num::<f64>().max(0.01);
+        let rate = b.ring_width / (ring_secs * alive.sqrt());
         self.arena_radius = (self.arena_radius - Fix64::from_num(rate * dt.to_num::<f64>())).max(Fix64::ZERO);
     }
 
@@ -2880,6 +2888,16 @@ impl World {
     }
 
     /// 设置基础生命恢复（HP/s）。098c 对应主机常量 `-C9`（`In`，默认 0.5/s）。
+    /// 配置收缩参数（房间设置项，098c 设置 6 `wo`）：
+    /// `delay_secs` = 开局延迟基准（实际 ×√存活），`ring_secs` = 每环时长基准（速率随存活数 √ 缩放）。
+    pub fn configure_shrink(&mut self, delay_secs: f64, ring_secs: f64) {
+        self.shrink_delay_secs = Fix64::from_num(delay_secs.max(0.0));
+        self.shrink_ring_secs = Fix64::from_num(ring_secs.max(0.01));
+        // 立即按新延迟重置计时器（否则设置要等下一轮才生效）；延迟同样 ×√存活（098c `wo*√sn`）。
+        let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
+        self.shrink_timer = self.shrink_delay_secs * Fix64::from_num(alive.sqrt());
+    }
+
     pub fn configure_regen(&mut self, per_sec: f64) {
         self.base_regen = per_sec;
     }
@@ -2988,7 +3006,8 @@ impl World {
         self.time = Fix64::ZERO;
         // 缩圈计时重启（098c XA：回合开始即启动 EA 定时器）
         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
-        self.shrink_timer = Fix64::from_num(Balance::default().shrink_ring_secs * alive.sqrt());
+        // 延迟同样按 √存活 缩放（098c `TimerStart(Sa, wo*SquareRoot(sn), ...)`）。
+        self.shrink_timer = self.shrink_delay_secs * Fix64::from_num(alive.sqrt());
         // 冰面（冰面批）
         self.roll_ice();
         // 每轮推进布局种子 → 下一小局的柱子配置与上一轮不同（联机下两端 world 同步此字段，确定性一致）。
@@ -7332,6 +7351,38 @@ mod tests {
         }
         assert!(world.players[1].hp < hp1, "星域应让范围内的敌人掉血");
         assert!(world.players[0].hp > hp0, "星域应给施法者回血");
+    }
+
+    /// 收缩参数可配（房间设置 6 `wo`）：`configure_shrink` 改变每环时长后，
+    /// **同样的时间**内缩得更多/更少；延迟也按 √存活 缩放（098c `wo*√sn`）。
+    #[test]
+    fn shrink_rate_follows_room_setting() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut fast = World::new(1, 77);
+        let mut slow = World::new(1, 77);
+        fast.obstacles.clear();
+        slow.obstacles.clear();
+        fast.configure_shrink(0.0, 2.0);  // 每环 2s → 快
+        slow.configure_shrink(0.0, 20.0); // 每环 20s → 慢
+
+        let r0 = fast.arena_radius;
+        for _ in 0..120 {
+            fast.step(vec![PlayerInput::default()], dt);
+            slow.step(vec![PlayerInput::default()], dt);
+        }
+        let d_fast = (r0 - fast.arena_radius).to_num::<f64>();
+        let d_slow = (r0 - slow.arena_radius).to_num::<f64>();
+        assert!(d_fast > d_slow * 5.0, "每环 2s 应比 20s 快约 10 倍（{d_fast:.2} vs {d_slow:.2}）");
+
+        // 延迟同样生效：给一个很长延迟 + 长环时长 → 延迟内完全不缩
+        let mut delayed = World::new(1, 77);
+        delayed.obstacles.clear();
+        delayed.configure_shrink(5.0, 10.0);
+        let before = delayed.arena_radius;
+        for _ in 0..60 {
+            delayed.step(vec![PlayerInput::default()], dt);
+        }
+        assert_eq!(delayed.arena_radius, before, "延迟期内不应收缩");
     }
 
     #[test]
