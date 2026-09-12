@@ -1485,6 +1485,13 @@ impl Game {
                         None => format!("[买] {}  {}G", d.name, d.cost),
                     };
                     let label = if me.gold >= d.cost { base } else { format!("{base}（金币不足）") };
+                    // 买不了的原因要**画在行上**：之前只有 eprintln（玩家看不到）。
+                    // 升级同家族的物品是「替换」不占新格；只有首次买某家族才需要空位。
+                    let label = if e.owned.is_none() && me.items.len() >= me.inventory_slots() {
+                        format!("{label}（背包已满）")
+                    } else {
+                        label
+                    };
                     rows.push((label, Some(LearnAction::Item(t)), d.desc));
                 }
                 None => rows.push((format!("[买] {}（已满级）", e.family.name_zh()), None, "")),
@@ -3671,17 +3678,30 @@ impl Game {
                         }
                         let rows = Self::shop_rows(me, self.shop_category);
                         let rows_len = rows.len();
-                        // 物品栏状态行（当前持有 / 容量）——买卖前一眼看清。
-                        let held = if me.items.is_empty() {
-                            "无".to_string()
-                        } else {
-                            me.items.iter().map(|id| id.def().name).collect::<Vec<_>>().join("、")
-                        };
+                        // 物品栏状态区：画在**左侧分类栏下方**（那里是空白）。
+                        // 之前画在 `panel_y - 18.0`（面板上方）会被顶出屏幕/被面板遮住，玩家看不到。
+                        let mut hy = cy + 10.0;
                         ui::text_left(
                             canvas, ctx,
-                            &format!("物品栏 {}/{}：{}", me.items.len(), me.inventory_slots(), held),
-                            ui::theme::SMALL, ui::theme::text_dim(), item_x, panel_y - 18.0,
+                            &format!("物品栏 {}/{}    金币 {}G", me.items.len(), me.inventory_slots(), me.gold),
+                            ui::theme::SMALL, ui::theme::accent(), rx, hy,
                         )?;
+                        hy += 20.0;
+                        ui::text_left(canvas, ctx, "当前持有：", ui::theme::SMALL, ui::theme::text_dim(), rx, hy)?;
+                        hy += 18.0;
+                        if me.items.is_empty() {
+                            ui::text_left(canvas, ctx, "（无）", ui::theme::SMALL, ui::theme::text_dim(), rx, hy)?;
+                        } else {
+                            for id in me.items.iter() {
+                                // 名称自带档位（如「Boots 3」），玩家能直接看出各家族的当前档。
+                                ui::text_left(
+                                    canvas, ctx,
+                                    &format!("· {}（回收 +{}G）", id.def().name, id.def().sell),
+                                    ui::theme::SMALL, ui::theme::text_dim(), rx, hy,
+                                )?;
+                                hy += 18.0;
+                            }
+                        }
                         let visible = 10usize;
                         let (start, end) = ui::scroll_window(rows_len, visible, self.shop_scroll);
                         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
