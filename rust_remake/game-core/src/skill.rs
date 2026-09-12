@@ -908,6 +908,8 @@ pub struct SkillGrowth {
     pub radius_delta: f64,
     pub duration_base: f64,
     pub duration_delta: f64,
+    /// 若提供，则逐级覆盖 duration（真实逐级值，真值源：098c w3a tooltip）。
+    pub duration_levels: Option<&'static [f64]>,
     pub speed_base: f64,
     pub push_power_base: f64,
     pub push_power_delta: f64,
@@ -945,7 +947,11 @@ impl SkillGrowth {
             ),
             range: Fix64::from_num(self.range_base),
             radius: Fix64::from_num(self.radius_base + self.radius_delta * l),
-            duration: Fix64::from_num(self.duration_base + self.duration_delta * l),
+            duration: Fix64::from_num(
+                self.duration_levels
+                    .and_then(|a| a.get(level.max(1) as usize - 1).copied())
+                    .unwrap_or(self.duration_base + self.duration_delta * l),
+            ),
             speed: Fix64::from_num(self.speed_base),
             push_power: Fix64::from_num(self.push_power_base + self.push_power_delta * l),
             push_time: Fix64::from_num(self.push_time_base),
@@ -1823,6 +1829,8 @@ impl DefTable {
                     cooldown_levels: Some(&[25.0, 22.5, 20.5, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0]), // w3a acdn 实证
                     duration_base: 2.8,
                     duration_delta: 0.2,    // 098c JASS (2.6+0.2L)*jn -> L1=2.8
+                    // w3a tooltip 实证：L9 与 L8 同为 4.2（098c 在顶级封顶）。
+                    duration_levels: Some(&[2.8, 3.0, 3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.2]),
                     ..DEF_ZERO
                 },
             },
@@ -2269,6 +2277,8 @@ impl DefTable {
                     // 「Wind Walk (invisibility) 4*jn」→ **B 形态取 4.0**（勿套用 A 形态的 3.1）。
                     cooldown_base: 30.0,
                     cooldown_delta: -1.857, // 098c: 30->17 (8 lv, shared with A)
+                    // w3a `acdn` B 级实证：与 A 形态完全同一条冷却曲线（不是线性斜率）。
+                    cooldown_levels: Some(&[30.0, 26.0, 23.0, 21.0, 20.0, 19.0, 18.0, 17.0]),
                     duration_base: 4.0,
                     ..DEF_ZERO
                 },
@@ -3224,6 +3234,7 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
     radius_delta: 0.0,
     duration_base: 0.0,
     duration_delta: 0.0,
+    duration_levels: None,
     speed_base: 0.0,
     push_power_base: 0.0,
     push_power_delta: 0.0,
@@ -3245,6 +3256,81 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// w3a 逐级冷却交叉校验（真值源：098c `war3map.w3a` 的 `acdn` 与 tooltip「Cooldown」）。
+    ///
+    /// 由脚本从 w3a 导出，只写入**双方已一致**的项；S007B/S011B（我方未实装 B 形态）除外。
+    #[test]
+    fn w3a_cooldown_crosscheck() {
+        let table: &[(SkillId, bool, &[f64])] = &[
+            (SkillId::S000, false, &[4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8, 4.8]),
+            (SkillId::S002, false, &[16.5, 15.5, 15.0, 14.5, 14.0, 13.5, 13.0, 12.5, 12.0]),
+            (SkillId::S003, false, &[15.0, 13.5, 12.5, 12.0, 11.5, 11.0, 10.5, 10.0, 9.5]),
+            (SkillId::S004, false, &[16.0, 13.9, 12.5, 11.7, 11.0, 10.3, 9.6, 8.9, 8.2]),
+            (SkillId::S005, false, &[25.0, 22.5, 20.5, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0]),
+            (SkillId::S006, false, &[22.0, 19.5, 17.5, 16.0, 15.0, 14.0, 13.0, 12.0]),
+            (SkillId::S007, false, &[21.0, 21.0, 21.0, 21.0, 21.0, 21.0, 21.0, 21.0]),
+            (SkillId::S008, false, &[20.0, 19.5, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]),
+            (SkillId::S008, true, &[20.0, 19.5, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]),
+            (SkillId::S009, false, &[30.0, 27.0, 25.0, 24.0, 23.0, 22.0, 21.0, 20.0]),
+            (SkillId::S009, true, &[30.0, 27.0, 25.0, 24.0, 23.0, 22.0, 21.0, 20.0]),
+            (SkillId::S010, false, &[30.0, 26.0, 23.0, 21.0, 20.0, 19.0, 18.0, 17.0]),
+            (SkillId::S010, true, &[30.0, 26.0, 23.0, 21.0, 20.0, 19.0, 18.0, 17.0]),
+            (SkillId::S011, false, &[16.0, 13.5, 11.5, 10.0, 9.0, 8.0, 7.0, 6.0, 5.5]),
+            (SkillId::S012, false, &[16.5, 14.5, 13.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0]),
+            (SkillId::S012, true, &[17.5, 15.0, 13.0, 11.5, 10.0, 9.5, 9.0, 8.5, 8.0]),
+            (SkillId::S013, false, &[16.0, 13.5, 11.5, 10.0, 9.0, 8.0, 7.0, 6.0]),
+            (SkillId::S013, true, &[14.0, 11.5, 9.5, 8.0, 7.0, 6.0, 5.0, 4.0]),
+            (SkillId::S014, false, &[22.0, 20.0, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]),
+            (SkillId::S014, true, &[22.0, 21.5, 21.0, 20.5, 20.0, 19.5, 19.0, 18.5]),
+            (SkillId::S015, false, &[16.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0, 9.0]),
+            (SkillId::S015, true, &[14.0, 13.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0]),
+            (SkillId::S016, false, &[20.0, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0, 13.0]),
+            (SkillId::S016, true, &[23.5, 22.0, 21.0, 20.5, 20.0, 19.5, 19.0, 18.5]),
+            (SkillId::S017, false, &[25.0, 21.0, 18.0, 16.0, 14.5, 13.0, 11.5, 10.0]),
+            (SkillId::S017, true, &[16.0, 15.5, 15.0, 14.5, 14.0, 13.5, 13.0, 12.5]),
+            (SkillId::S018, false, &[26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0]),
+            (SkillId::S018, true, &[26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0]),
+            (SkillId::S019, false, &[17.0, 14.5, 12.5, 11.0, 10.0, 9.5, 9.0, 8.5, 8.0]),
+            (SkillId::S019, true, &[16.0, 16.0, 16.0, 16.0, 16.0, 16.0, 16.0, 16.0, 16.0, 16.0]),
+        ];
+        for (id, alt, cds) in table {
+            let d = DefTable::def_for(*id, *alt);
+            for (i, want) in cds.iter().enumerate() {
+                let got = d.stats_at(i as u32 + 1).cooldown.to_num::<f64>();
+                assert!(
+                    (got - want).abs() < 0.06,
+                    "{id:?} alt={alt} L{}: got {got}, want {want} (098c w3a acdn)",
+                    i + 1
+                );
+            }
+        }
+    }
+
+    /// w3a 逐级持续时间交叉校验（真值源：tooltip「Duration」）。
+    #[test]
+    fn w3a_duration_crosscheck() {
+        let table: &[(SkillId, bool, &[f64])] = &[
+            (SkillId::S005, false, &[2.8, 3.0, 3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.2]),
+            (SkillId::S010, false, &[3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1]),
+            (SkillId::S010, true, &[4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0]),
+            (SkillId::S012, true, &[3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1]),
+            (SkillId::S014, false, &[4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]),
+            (SkillId::S017, false, &[4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0, 6.25]),
+        ];
+        for (id, alt, ds) in table {
+            let d = DefTable::def_for(*id, *alt);
+            for (i, want) in ds.iter().enumerate() {
+                let got = d.stats_at(i as u32 + 1).duration.to_num::<f64>();
+                assert!(
+                    (got - want).abs() < 0.06,
+                    "{id:?} alt={alt} L{}: got {got}, want {want} (098c w3a duration)",
+                    i + 1
+                );
+            }
+        }
+    }
+
 
     fn near(a: Fix64, b: f64, tol: f64) -> bool {
         (a.to_num::<f64>() - b).abs() < tol
