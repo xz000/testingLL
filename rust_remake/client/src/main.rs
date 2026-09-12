@@ -1208,7 +1208,7 @@ impl Game {
         let Some(skill) = profile.bound_skill(key) else { return };
         // 升级上限 = 098c 基础档数 + 技能上限突破（乔丹原生购买项）；upgrade_skill 内部亦校验。
         let lv = profile.skill_level(skill);
-        let cap = game_core::skill::DefTable::max_level(skill) + profile.skill_cap_bonus;
+        let cap = game_core::skill::DefTable::max_level(skill) + profile.cap_bonus_for_skill(skill);
         if lv >= cap {
             return;
         }
@@ -1295,8 +1295,14 @@ impl Game {
                     // 成长页：单击选中；按 `=` 才购买。
                     self.learn_growth_sel = Some(kind);
                 }
-                LearnAction::SkillCap => {
-                    self.learn_growth_sel = Some(4);
+                LearnAction::JordanBreak(skill) => {
+                    // 乔丹之石：突破该技能**所在槽**的上限（098c `T000`–`T006`，每槽一次、免费）。
+                    let me = self.self_index();
+                    if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+                        if profile.break_cap_for(skill) {
+                            eprintln!("[learn] 乔丹之石：{skill:?} 所在槽上限 +2");
+                        }
+                    }
                 }
                 LearnAction::Category(cat) => {
                     self.shop_category = cat;
@@ -1422,9 +1428,6 @@ impl Game {
                 self.learn_growth_sel = Some(i);
             }
         }
-        if Self::char_just(ctx, "u") {
-            self.learn_growth_sel = Some(4); // 4 = 技能上限突破
-        }
         let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter));
         if confirm {
@@ -1503,16 +1506,14 @@ impl Game {
         }
     }
 
-    /// 成长「确认」：购买当前选中的精通/技能上限突破（键盘 `=` 与点击按钮共用）。
+    /// 成长「确认」：购买当前选中的精通（键盘 `=`/回车 与点击按钮共用）。
+    /// 注：技能上限突破**不在**此页——098c 是「乔丹之石戒指（买一次）→ 每个技能槽各可免费突破一次」，
+    /// 入口在**技能详情**的「突破上限 +2」按钮（`LearnAction::JordanBreak`）。
     fn growth_confirm(&mut self) {
         let me = self.self_index();
         let Some(sel) = self.learn_growth_sel else { return };
         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
-        if sel == 4 {
-            if profile.buy_skill_cap_bonus(5) {
-                eprintln!("[learn] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
-            }
-        } else if profile.buy_mastery(sel) {
+        if profile.buy_mastery(sel) {
             eprintln!("[learn] 精通 {sel} 已升级");
             if let Some(wp) = self.world.players.get_mut(me as usize) {
                 wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
@@ -3547,11 +3548,22 @@ impl Game {
                                             ui::text_left(canvas, ctx, "二形态：无", ui::theme::SMALL, ui::theme::text_dim(), rx, ry)?;
                                             ry += 22.0;
                                         }
-                                        // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=升级一级
+                                        // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=逐级升级。
+                                        // 已到上限时：持**乔丹之石戒指**且该槽未突破过 → 出现「突破上限 +2」（098c：每槽一颗、免费）。
+                                        let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
+                                        let can_break = owned
+                                            && lv >= cap
+                                            && me.has_jordan_ring()
+                                            && !me.jordan_used_for_skill(skill);
                                         let (label, enabled) = if owned {
-                                            let cap = game_core::skill::DefTable::max_level(skill) + me.skill_cap_bonus;
                                             if lv >= cap {
-                                                (format!("已满级 Lv{lv}"), false)
+                                                if can_break {
+                                                    ("突破上限 +2（乔丹之石 · 免费）  [= / 回车]".to_string(), true)
+                                                } else if me.has_jordan_ring() {
+                                                    (format!("已满级 Lv{lv}"), false)
+                                                } else {
+                                                    (format!("已满级 Lv{lv}（持乔丹之石戒指可再 +2）"), false)
+                                                }
                                             } else {
                                                 (format!("升级到 Lv{} ({cost}G)  [= / 回车]", lv + 1), true)
                                             }
@@ -3570,7 +3582,13 @@ impl Game {
                                         };
                                         ui::row(canvas, ctx, br, &label, ui::theme::BODY, bst)?;
                                         if enabled {
-                                            self.learn_hitboxes.push((br, LearnAction::BuySelected));
+                                            // 满级时的「突破上限」走乔丹分支（免费、每槽一次），其余走购买/升级。
+                                            let act = if can_break {
+                                                LearnAction::JordanBreak(skill)
+                                            } else {
+                                                LearnAction::BuySelected
+                                            };
+                                            self.learn_hitboxes.push((br, act));
                                         }
                                     }
                                 } else {
@@ -3701,26 +3719,15 @@ impl Game {
                             self.learn_hitboxes.push((r, LearnAction::Mastery(kind)));
                             ay += ui::theme::ROW_H + 4.0;
                         }
-                        // 技能上限突破（098c 乔丹之石原生化为购买项）：每档 +2，价 5G。
+                        // 说明：技能上限突破改由**乔丹之石戒指 + 技能详情**触发（098c 语义），此页不再出售。
+                        ui::text_left(
+                            canvas, ctx,
+                            "（技能上限突破：购买乔丹之石戒指后，在「技能」页详情里按槽突破，每槽一次、免费）",
+                            ui::theme::SMALL, ui::theme::text_dim(), rx, ay,
+                        )?;
+                        ay += 24.0;
                         {
-                            let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
-                            let hover = r.contains(mouse);
-                            let st = if self.learn_growth_sel == Some(4) {
-                                ui::RowState::Selected
-                            } else if hover {
-                                ui::RowState::Hover
-                            } else {
-                                ui::RowState::Normal
-                            };
-                            let label = if me.skill_cap_bonus > 0 {
-                                format!("[U] 技能上限突破 已购（上限 +{}）", me.skill_cap_bonus)
-                            } else {
-                                "[U] 技能上限突破 +2（5G）".to_string()
-                            };
-                            ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
-                            self.learn_hitboxes.push((r, LearnAction::SkillCap));
-                            ay += ui::theme::ROW_H + 6.0;
-                            // 可点的确认按钮（与键盘 `=` 等价）。
+                            // 可点的确认按钮（与键盘 `=`/回车 等价）。
                             let cr = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
                             let chover = cr.contains(mouse);
                             let cst = if chover { ui::RowState::Hover } else { ui::RowState::Normal };
@@ -3735,7 +3742,7 @@ impl Game {
                 let hint = match self.learn_page {
                     0 => "字母选树 · 数字选技能看详情 · = 或回车 购买/升级 · B 切形态 · J/K/L 翻页",
                     1 => "B/N/M 选分类 · 数字选中条目（[买]/[卖] 两区）· = 或回车 执行 · 滚轮/↑↓ 滚动 · J/K/L 翻页",
-                    _ => "数字选精通 · U 选上限突破 · = 或回车 确认购买 · J/K/L 翻页",
+                    _ => "数字选精通 · = 或回车 确认购买（上限突破在「技能」页详情里用乔丹之石）· J/K/L 翻页",
                 };
                 ui::text_center(
                     canvas, ctx, hint,
@@ -6517,10 +6524,10 @@ enum LearnAction {
     ShopConfirm,
     /// 成长：确认购买当前选中项（等价 `=`）
     GrowthConfirm,
+    /// 技能详情：用乔丹之石突破该技能**所在槽**的上限（+2、免费、每槽一次）
+    JordanBreak(game_core::skill::SkillId),
     /// 购买精通（0=生命 1=范围 2=射程 3=背包）
     Mastery(usize),
-    /// 技能上限突破（098c 乔丹原生化为购买项）
-    SkillCap,
     /// 切换到第 i 页
     Page(u8),
     /// 切换商店大类（0=机动 1=防御续航 2=攻击特殊）——补齐鼠标点击（U3）

@@ -6985,6 +6985,27 @@ mod tests {
         );
     }
 
+    /// 移动中施法：应**停止移动并开始施法**（098c 施法前先下 stop order）。
+    #[test]
+    fn cast_while_moving_stops_movement_and_starts_cast() {
+        let mut world = World::new(2, 20260912);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = Some(Vec2::new(d60(10.0), Fix64::ZERO));
+        // 同帧：既有移动目标（电平量重发），又下达施法（S001 天罚为自身 nova，无需点目标）
+        world.step(vec![
+            PlayerInput {
+                set_target: Some(Vec2::new(d60(10.0), Fix64::ZERO)),
+                cast: Some((SkillId::S001, None)),
+                ..Default::default()
+            },
+            PlayerInput::default(),
+        ], dt);
+        assert!(world.players[0].caster.is_busy(), "移动中施法应立即开始施法");
+        assert!(world.players[0].move_target.is_none(), "施法应清除移动目标（停下）");
+    }
+
     /// S002 闪电：瞬发射线立即伤害（无前摇等待弹体），写 lightning_visual，KI 击退。
     #[test]
     fn s002_lightning_bolt_hits_instantly() {

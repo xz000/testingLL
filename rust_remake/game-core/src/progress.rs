@@ -21,7 +21,7 @@ use crate::skill::SkillId;
 /// v9（B4 形态）：加入 forms（u16 数量 + 每项 1 字节，按 SkillId 索引）。
 /// v10：加入 skill_cap_bonus（u32）。
 /// v11（2026-09-12）：删除属性购买系统（移除 attributes 5×u32 与 growth_points u32）。
-pub const CONFIG_VERSION: u8 = 11;
+pub const CONFIG_VERSION: u8 = 12;
 /// 键位槽数量（= CastKey 数量）。
 pub const KEY_SLOTS: usize = 8;
 
@@ -59,8 +59,8 @@ pub struct PlayerConfig {
     pub team: u8,
     /// 形态位（v9，B4）：按 SkillId 索引。
     pub forms: Vec<bool>,
-    /// 技能上限突破（v10）：乔丹原生购买项，每档 +2。
-    pub skill_cap_bonus: u32,
+    /// 乔丹之石突破（v12）：**按槽**记录（8 槽），每槽一次、+2（098c `T000`–`T006`）。
+    pub jordan_used: [bool; 8],
 }
 
 impl PlayerConfig {
@@ -79,7 +79,7 @@ impl PlayerConfig {
             mastery: [p.mastery.life, p.mastery.range, p.mastery.time, p.mastery.backpack],
             team: p.team,
             forms: p.forms.clone(),
-            skill_cap_bonus: p.skill_cap_bonus,
+            jordan_used: p.jordan_used,
         }
     }
 
@@ -103,7 +103,7 @@ impl PlayerConfig {
             backpack: self.mastery[3],
         };
         p.team = self.team;
-        p.skill_cap_bonus = self.skill_cap_bonus;
+        p.jordan_used = self.jordan_used;
         let n = p.forms.len();
         for (i, f) in self.forms.iter().enumerate().take(n) {
             p.forms[i] = *f;
@@ -145,8 +145,10 @@ impl PlayerConfig {
         for f in &self.forms {
             out.push(*f as u8);
         }
-        // skill_cap_bonus（v10）。
-        put_u32(&mut out, self.skill_cap_bonus);
+        // 乔丹之石突破（v12）：8 槽各 1 字节。
+        for used in &self.jordan_used {
+            out.push(*used as u8);
+        }
         out
     }
 
@@ -202,7 +204,11 @@ impl PlayerConfig {
             forms.push(*buf.get(pos)? != 0);
             pos += 1;
         }
-        let skill_cap_bonus = u32_at(buf, pos)?;
+        let mut jordan_used = [false; 8];
+        for slot in jordan_used.iter_mut() {
+            *slot = *buf.get(pos)? != 0;
+            pos += 1;
+        }
         Some(PlayerConfig {
             skill_levels,
             key_slots,
@@ -212,7 +218,7 @@ impl PlayerConfig {
             mastery,
             team,
             forms,
-            skill_cap_bonus,
+            jordan_used,
         })
     }
 }
