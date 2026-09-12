@@ -1245,10 +1245,8 @@ impl Game {
                 .map(|profile| {
                     let lv = profile.skill_level(skill);
                     let cap = game_core::skill::DefTable::max_level(skill) + profile.cap_bonus_for_skill(skill);
-                    if lv >= cap && !profile.jordan_used_for_skill(skill) {
-                        if profile.break_cap_for(skill) {
-                            eprintln!("[learn] 乔丹之石：{skill:?} 所在槽上限 +2（金 {}）", profile.gold);
-                        }
+                    if lv >= cap && profile.break_cap_for(skill) {
+                        eprintln!("[learn] 乔丹之石：{skill:?} 所在槽上限 +2（金 {}）", profile.gold);
                         true
                     } else {
                         false
@@ -3574,17 +3572,21 @@ impl Game {
                                         // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=逐级升级。
                                         // 已到上限时：持**乔丹之石戒指**且该槽未突破过 → 出现「突破上限 +2」（098c：每槽一颗、免费）。
                                         let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
-                                        let can_break = owned && lv >= cap && !me.jordan_used_for_skill(skill);
+                                        let can_break = owned && lv >= cap;
                                         let (label, enabled) = if owned {
                                             if lv >= cap {
                                                 if can_break {
-                                                    // 乔丹之石**不占物品栏**：首次突破时自动扣 5 金解锁，此后各槽免费。
-                                                    let price = if me.has_jordan_ring() {
-                                                        "免费".to_string()
-                                                    } else {
-                                                        format!("首次 {}G", game_core::meta::JORDAN_PRICE)
-                                                    };
-                                                    (format!("突破上限 +2（乔丹之石 · {price}）  [= / 回车]"), true)
+                                                    // 098c `Hf`：一颗戒指（5G）只换一次 +2，用掉即消耗，但**可反复购买**。
+                                                    // 乔丹之石不占物品栏。
+                                                    let n = me.jordan_breaks_for_skill(skill);
+                                                    let extra = if n > 0 { format!("，已突破 ×{n}") } else { String::new() };
+                                                    (
+                                                        format!(
+                                                            "突破上限 +2（乔丹之石 · {}G{extra}）  [= / 回车]",
+                                                            game_core::meta::JORDAN_PRICE
+                                                        ),
+                                                        true,
+                                                    )
                                                 } else {
                                                     (format!("已满级 Lv{lv}"), false)
                                                 }
@@ -3746,7 +3748,7 @@ impl Game {
                         // 说明：技能上限突破改由**乔丹之石戒指 + 技能详情**触发（098c 语义），此页不再出售。
                         ui::text_left(
                             canvas, ctx,
-                            "（技能上限突破：去「技能」页把技能升满后按「突破上限 +2」——首次花 5 金买下乔丹之石，\n之后每个技能槽各可免费突破一次；乔丹之石不占物品栏）",
+                            "（技能上限突破：把技能升满后按「突破上限 +2」。098c：每颗乔丹之石戒指 5 金、\n用掉即消耗，**可反复购买**——即每次 +2 都要 5 金；戒指不占物品栏）",
                             ui::theme::SMALL, ui::theme::text_dim(), rx, ay,
                         )?;
                         ay += 24.0;

@@ -510,3 +510,42 @@ call UnitRemoveAbility(Vn[FV],'A005')
 **同时修掉一个键盘 bug**：突破按钮只挂了鼠标 hitbox，键盘 `=` / 回车 走的是 `buy_or_upgrade_selected()`
 （它只做购买/升级）→ 按 `=` 无反应。现在该函数在「已拥有 + 已满级 + 该槽未突破」时也走突破分支，
 与鼠标点击、详情页按钮三者行为一致。
+
+
+### 附七·再修正（决定性）：乔丹之石 = **每次突破 5 金、可反复**
+
+**此前两轮都错了**，这次回到 `war3map_pretty.j` 逐行实证：
+
+```jass
+function Hf takes integer id,integer jf returns nothing
+    if iV[312+id] then                                   // 是否持戒指
+        if jf=='T000' then
+            call SetPlayerTechMaxAllowed(Player(id),'R002',GetPlayerTechMaxAllowed(Player(id),'R002')+2)
+        else
+        if jf=='T001' then ... R010/R00O/R00P +2 ...     // 该槽当前装备技能的科技上限 +2
+        ... T002..T006 同理（每槽 3 个候选科技，对应该槽可装备的不同技能）...
+        call SetPlayerTechMaxAllowed(Player(id),'T000',0) // ← 7 颗石头全部禁用
+        ... 'T001'..'T006' 全部 0 ...
+        set iV[312+id]=false                              // ← 戒指标记**被清除**
+        call DisplayTextToPlayer(..., "|cffffd700Stone of Jordan Ring has been applied|r")
+    else
+        call DisplayTextToPlayer(..., "|cffffd700Stone of Jordan Ring can only be applied once|r")
+    endif
+endfunction
+```
+
+买戒指（21358–21364）：`UnitAddItemById(Vn[id],'I00E')` + `iV[312+id]=true` + `SetPlayerAbilityAvailable(...,'S027',true)`。
+重生/重建单位（16678–16734）：石头可用 ⇔ `iV[312+ri] && kn[7*ri+slot] != 0`（持戒指 + 该槽已装备技能）。
+
+**真值**：
+- **一颗戒指（5G）= 一次 +2**（给**任意一个**槽的技能），**用掉后戒指标记清除、7 颗石头全部消失** ——
+  提示 "can only be applied once" 指的是**每颗戒指只能用一次**，不是"每个技能只能用一次"。
+- **想再 +2 必须再花 5 金买新的戒指** → **同一个技能可以反复突破、每次 5 金、不设上限**。
+- 戒指物品 `I00E` 本身只是 war3 载体（状态全在 `iV` flag）；我方**不占物品栏**。
+- 石头只对「该槽已装备技能」可用（`kn[7*id+slot] != 0`）。
+
+**我方实现**（本轮修正）：
+`PlayerProfile.jordan_breaks: [u8; 8]`（每槽累计次数）→ `cap_bonus = 2 × 次数`；
+`break_cap_for()` 每次扣 `JORDAN_PRICE = 5` 金、次数 +1（**无上限**）；金币不足则失败不扣钱。
+`CONFIG_VERSION 13→14`、`PROTOCOL_VERSION 11→12`。
+用户最初的直觉（"在对应等级升级技能的时候多收 5 金币"）**正是 098c 的行为**。
