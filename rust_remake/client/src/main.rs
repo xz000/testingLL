@@ -5505,6 +5505,22 @@ impl Game {
             Point2 { x: cx, y: y + 64.0 },
             true,
         )?;
+        // 设置摘要（房内可见，`O` 改完关闭即更新）：轮数/初始金/每轮金/模式，比"只有轮数+金币"信息更全。
+        ui::text_center(
+            canvas, ctx,
+            &format!(
+                "{}  ·  {} 轮  ·  初始金 {}  ·  每轮金 {}  ·  回血 {}",
+                game_core::meta::MatchState::mode_name(self.meta.config.game_mode),
+                self.meta.config.total_rounds,
+                self.meta.config.starting_gold,
+                self.meta.config.gold_per_round,
+                self.meta.config.base_regen
+            ),
+            ui::theme::SMALL,
+            layout::text_dim(),
+            ui::UI_W / 2.0,
+            ui::UI_H * 0.105,
+        )?;
         // 状态带：房间设置徽章（与建房界面一致，`O` 可进设置编辑器）
         let n = self.match_cfg.non_default_setting_count();
         let badge = if n == 0 { "默认（原版）".to_string() } else { format!("自定义 {n} 项") };
@@ -6249,6 +6265,16 @@ impl Game {
         self.world.configure_regen(self.match_cfg.base_regen);
         self.world
             .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+        // **关键**：`meta.config` 是开局时的快照，不更新它 → 进行中的对局与 HUD
+        // 仍旧显示/使用旧值（"改了好像没生效"就是这里）。整份替换即可。
+        self.meta.config = self.match_cfg.clone();
+        eprintln!(
+            "[cfg] 已应用到当前对局：轮数 {} / 初始金 {} / 每轮金 {} / 模式 {}",
+            self.match_cfg.total_rounds,
+            self.match_cfg.starting_gold,
+            self.match_cfg.gold_per_round,
+            game_core::meta::MatchState::mode_name(self.match_cfg.game_mode)
+        );
         // 模式另有独立元数据键（房间列表按模式筛选要读它）；设置串是权威来源。
         mm.set_lobby_data(lobby, net_steam::session::ROOM_MODE_KEY, &self.match_cfg.game_mode.to_string());
         mm.set_lobby_data(lobby, net_steam::session::ROOM_SETTINGS_KEY, &cfg);
