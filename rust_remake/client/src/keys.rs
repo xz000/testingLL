@@ -85,6 +85,7 @@ mod tests {
 // 也就是说：本表的作用是**文档 + 表内一致性守卫**，不是代码与表一致性的强制校验。
 
 /// 界面（与 `UI_MASTER_PLAN.md` 的界面清单一致）。
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Screen {
     MainMenu,
@@ -106,6 +107,10 @@ pub struct Binding {
 }
 
 /// 某界面的键位表。
+///
+/// 运行时**暂未消费**（当前只作声明 + 表内守卫），因此 `allow(dead_code)`；
+/// 后续把各界面的底部提示行改为读这张表时即可去掉。
+#[allow(dead_code)]
 pub fn keymap(screen: Screen) -> &'static [Binding] {
     use Screen::*;
     match screen {
