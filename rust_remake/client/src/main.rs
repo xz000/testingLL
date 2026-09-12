@@ -570,6 +570,9 @@ struct Game {
     /// **完整房间设置**（`MatchConfig`）：建房时经 `host_set_cfg` 写入大厅元数据，
     /// 入房时读出对齐。含经济/玩法/地图全部可配项（见 `ROOM_SETTINGS_PLAN.md`）。
     match_cfg: game_core::meta::MatchConfig,
+    /// 上次见到的**房间设置串**（大厅元数据）——用于检测"房主改了设置"：
+    /// 一旦变化即取消本端准备（第 5 步），并同步应用新设置。
+    steam_cfg_seen: Option<String>,
     /// 本局生效的基础回血（HP/s）。
     #[cfg(feature = "steam")]
     match_regen: f64,
@@ -1065,6 +1068,7 @@ impl Game {
             steam_create_regen: STEAM_DEFAULT_REGEN,
             match_mode: init_mode,
             match_cfg: game_core::meta::MatchConfig { game_mode: init_mode, ..Default::default() },
+            steam_cfg_seen: None,
             #[cfg(feature = "steam")]
             match_regen: init_regen,
             match_teams: 1,
@@ -5358,6 +5362,47 @@ impl Game {
         // client 端不满员手动倒计时用 host 广播的 manual_ms 判锁定，最后 LOCK 秒内不可按 U 取消（与 host 端一致）。
         let locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
             || (self.steam_cli_ls.is_some() && self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STEAM_COUNTDOWN_LOCK_SECS);
+        // ── 房间设置变更 → 取消全员准备（第 5 步）──
+        // 依据：设置整串（`MatchConfig::to_meta_string`）是否变化。host 读自己的配置，
+        // client 读大厅元数据 —— Steam 大厅数据本就对全房共享，因此**无需额外协议**。
+        // 首帧只记录基线（不算变更），之后任何变化都清掉本端的「准备」。
+        {
+            use game_core::meta::MatchConfig;
+            let now = if self.steam_host_ls.is_some() {
+                Some(self.match_cfg.to_meta_string())
+            } else {
+                // client：直接查大厅元数据的「设置串」键（与 host 共用同一键）。
+                self.steam_cli_ls.as_ref().and_then(|cli| {
+                    let lid = self.steam_lobby_id?;
+                    cli.transport_ref().matchmaking().lobby_data(
+                        net_steam::steamworks::LobbyId::from_raw(lid),
+                        net_steam::session::ROOM_SETTINGS_KEY,
+                    )
+                })
+            };
+            if let Some(str_now) = now {
+                if self.steam_cfg_seen.as_deref() != Some(str_now.as_str()) {
+                    let first_seen = self.steam_cfg_seen.is_none();
+                    self.steam_cfg_seen = Some(str_now.clone());
+                    if let Some(cfg) = MatchConfig::from_meta_string(&str_now) {
+                        if cfg != self.match_cfg {
+                            self.match_cfg = cfg;
+                            self.match_mode = self.match_cfg.game_mode;
+                            self.match_regen = self.match_cfg.base_regen;
+                            self.world.configure_regen(self.match_cfg.base_regen);
+                            self.world
+                                .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                        }
+                    }
+                    if !first_seen && self.steam_local_ready {
+                        // 房主改了设置 → 取消本端准备（避免"改了设置但别人还显示已准备"的错位）。
+                        self.steam_local_ready = false;
+                        eprintln!("[cfg] 房间设置已变更 → 取消本端准备");
+                    }
+                }
+            }
+        }
+
         if ready_pressed && !locked && !panel_open {
             self.steam_local_ready = !self.steam_local_ready;
             if !self.steam_local_ready {
