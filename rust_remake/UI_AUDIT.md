@@ -303,3 +303,13 @@ cargo build --release -p client --features client/steam
 - 另附：本轮同时验证了「**移动中施法**」在核心侧正确（`cast_while_moving_stops_movement_and_starts_cast`
   测试通过：`handle_casts` 先跑，`try_cast` 成功后清 `move_target` 且本帧跳过移动）。
   用户此前遇到的"移动中施法没反应"极可能是**旧二进制**（release 9/6）所致。
+
+
+### 5.10 乔丹之石：去物品化 + 键盘 bug（2026-09-12）
+
+- **修 bug**：技能详情页的「突破上限 +2」按钮此前**只有鼠标 hitbox**，键盘 `=`/回车 走的是
+  `buy_or_upgrade_selected()`（只处理购买/升级）→ 按 `=` 无反应。现已让该函数在
+  「已拥有 + 已满级 + 该槽未突破」时走突破分支，键盘/鼠标/按钮三者一致。
+- **乔丹之石不再占物品栏**：移除 `ItemId::Jordan`（商店也不再出售），改为
+  `jordan_unlocked` 一次性解锁；**首次突破自动扣 5 金**，之后每个技能槽各免费突破一次。
+  详情页按钮文案相应变为「突破上限 +2（乔丹之石 · 首次 5G / 免费）」；成长页仅留说明行。

@@ -12,6 +12,10 @@
 
 use crate::skill::{CastKey, SkillId};
 
+/// 乔丹之石价格（098c `bD` h004：戒指 5 金；卖掉**不退**）。
+/// 我方把它做成**一次性解锁**（不占物品栏）：首次突破某槽上限时扣，之后各槽免费。
+pub const JORDAN_PRICE: i32 = 5;
+
 /// 一场完整对抗的总小局数与时长配置。
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatchConfig {
@@ -143,8 +147,11 @@ pub struct PlayerProfile {
     /// 形态位（B4，按 SkillId 索引）：true=B 形态；学习界面 B 键切换。
     pub forms: Vec<bool>,
     /// 技能上限突破（098c 乔丹之石功能的原生购买界面项）：每购买一次 +2。
+    /// 是否已买下乔丹之石（098c：戒指 5G 买一次）。**不占物品栏**——它是一次性升级，
+    /// 由技能详情的「突破上限」按需购买（首次突破时自动扣 5 金）。
+    pub jordan_unlocked: bool,
     /// 乔丹之石：**按技能槽**记录该槽是否已突破上限（098c `T000`–`T006` = 每槽各一颗、**免费**）。
-    /// 索引 = `CastKey::as_u32()`；是否可用另由「是否持有 `ItemId::Jordan` 戒指」决定。
+    /// 索引 = `CastKey::as_u32()`；是否可用另由 [`Self::jordan_unlocked`] 决定。
     pub jordan_used: [bool; 8],
 }
 
@@ -169,7 +176,8 @@ impl PlayerProfile {
             mastery: Mastery::default(),
             team: player_id as u8,
             forms: vec![false; skill_count.max(crate::MAX_SKILL_SLOTS)],
-            jordan_used: [false; 8],
+            jordan_unlocked: false,
+        jordan_used: [false; 8],
         }
     }
 
@@ -339,7 +347,7 @@ impl PlayerProfile {
     /// 是否持有乔丹之石**戒指**（`I00E`）——它是「每槽一次突破上限」的**解锁器**
     /// （098c：戒指 5G 买一次 → 解锁 `S027` 石头商店）。
     pub fn has_jordan_ring(&self) -> bool {
-        self.items.contains(&crate::item::ItemId::Jordan)
+        self.jordan_unlocked
     }
 
     /// 该**槽**是否已用乔丹之石突破过（098c `T000`–`T006`：每槽一颗、用完即止）。
@@ -381,17 +389,23 @@ impl PlayerProfile {
     /// 突破该技能所属槽的上限（098c 乔丹之石：**免费**、每槽限一次）。
     /// 需要：持有戒指 + 该槽当前绑定的正是这个技能 + 该槽未突破过。
     pub fn break_cap_for(&mut self, skill: SkillId) -> bool {
-        if !self.has_jordan_ring() {
-            return false;
-        }
         let Some(key) = Self::key_of_skill(skill) else {
             return false;
         };
-        if self.jordan_used[key.as_u32() as usize] {
+        if self.jordan_used_for(key) {
             return false;
         }
         if self.bound_skill(key) != Some(skill) {
             return false;
+        }
+        // 首次突破时扣 5 金（= 买下乔丹之石；**不占物品栏**），此后各槽免费。
+        if !self.jordan_unlocked {
+            if self.gold < JORDAN_PRICE {
+                return false;
+            }
+            self.gold -= JORDAN_PRICE;
+            self.gold_spent += JORDAN_PRICE;
+            self.jordan_unlocked = true;
         }
         self.jordan_used[key.as_u32() as usize] = true;
         true
@@ -733,28 +747,48 @@ mod tests {
         let p = &mut m.profiles[0];
         let key = PlayerProfile::key_of_skill(SkillId::S000).expect("S000 应有所属槽");
         let base = crate::skill::DefTable::max_level(SkillId::S000);
-        // 未持戒指：无加成、不能突破
+        // 未解锁：无加成；且**该槽未绑定该技能时不能突破**
         assert!(!p.has_jordan_ring());
         assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 0);
-        assert!(!p.break_cap_for(SkillId::S000), "未持戒指不能突破");
-        // 买戒指（I00E）+ 该槽绑定该技能 → 可突破
-        p.items.push(crate::item::ItemId::Jordan);
         assert!(!p.break_cap_for(SkillId::S000), "该槽未绑定该技能时不能突破");
         p.key_slots[key.as_u32() as usize] = Some(SkillId::S000);
         assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 0, "突破前上限不加");
+        // 首次突破：扣 5 金（= 乔丹之石；**不占物品栏**）
+        let gold0 = p.gold;
         assert!(p.break_cap_for(SkillId::S000), "首次突破应成功");
-        assert!(p.jordan_used_for_skill(SkillId::S000));
+        assert_eq!(p.gold, gold0 - JORDAN_PRICE, "首次突破应扣 5 金");
+        assert!(p.items.is_empty(), "乔丹之石不进入物品栏");
+        assert!(p.has_jordan_ring() && p.jordan_used_for_skill(SkillId::S000));
         assert!(!p.break_cap_for(SkillId::S000), "每槽只能突破一次");
-        // 突破后上限 = base + 2（且**永久**，与是否仍持戒指无关）
+        // 突破后上限 = base + 2，且**永久**（与物品栏无关）
         assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 2);
-        p.items.clear();
-        assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 2, "卖掉戒指不回收已突破的上限");
         // 升级校验确实吃到 +2
         let idx = SkillId::S000.as_u32() as usize;
         p.skill_levels[idx] = base + 2;
         assert!(!p.upgrade_skill(SkillId::S000, 0), "base+2 已是上限");
         p.skill_levels[idx] = base + 1;
         assert!(p.upgrade_skill(SkillId::S000, 0), "base+1 仍可升到 base+2");
+    }
+
+    /// 乔丹之石：金币不足不能突破；解锁后**其他槽免费**（不重复收费）。
+    #[test]
+    fn jordan_price_once_and_poor_player_cannot_break() {
+        use crate::skill::SkillId;
+        let mut m = MatchState::new(MatchConfig::default(), &[0, 1], 8);
+        let p = &mut m.profiles[0];
+        p.gold = 0;
+        let k0 = PlayerProfile::key_of_skill(SkillId::S000).unwrap();
+        p.key_slots[k0.as_u32() as usize] = Some(SkillId::S000);
+        assert!(!p.break_cap_for(SkillId::S000), "金币不足不能突破");
+        assert!(!p.has_jordan_ring());
+        p.gold = JORDAN_PRICE;
+        assert!(p.break_cap_for(SkillId::S000));
+        assert_eq!(p.gold, 0, "首次突破恰好扣光 5 金");
+        let k1 = PlayerProfile::key_of_skill(SkillId::S002).unwrap();
+        assert_ne!(k0.as_u32(), k1.as_u32(), "两个技能应在不同槽");
+        p.key_slots[k1.as_u32() as usize] = Some(SkillId::S002);
+        assert!(p.break_cap_for(SkillId::S002), "已解锁后其他槽免费");
+        assert_eq!(p.gold, 0, "第二次突破不再收费");
     }
 
     #[test]
@@ -908,11 +942,11 @@ mod tests {
         let pr = &mut ms.profiles[0];
         pr.gold = 100;
         pr.mastery.backpack = 3; // 容量 10，避免容量影响本测试
-        // 三个独立物品（死亡面具/火球法杖/乔丹）应可共存，互不替换
+        // 独立物品（死亡面具/火球法杖）应可共存，互不替换
+        // （乔丹之石已不占物品栏：它是技能页的一次性突破解锁，见 `jordan_*`）
         assert!(pr.buy_item(crate::item::ItemId::FireMask));
         assert!(pr.buy_item(crate::item::ItemId::FireStaff));
-        assert!(pr.buy_item(crate::item::ItemId::Jordan));
-        assert_eq!(pr.items.len(), 3, "独立物品应共存而非互相删除");
+        assert_eq!(pr.items.len(), 2, "独立物品应共存而非互相删除");
         // 重复购买同一独立物品应失败（不再扣钱）
         let g = pr.gold;
         assert!(!pr.buy_item(crate::item::ItemId::FireMask), "重复持有应被拒绝");

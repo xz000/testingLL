@@ -53,8 +53,6 @@ pub enum ItemId {
     Amulet3,
     /// I00D 火球法杖
     FireStaff,
-    /// I00E 乔丹之石戒指
-    Jordan,
     /// I00F
     BloodSword1,
     /// I00G
@@ -207,10 +205,6 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::Amulet3, family: ItemFamily::Amulet, tier: 3, cost: 5, sell: 12, name: "坠饰 3", desc: "生命 +30 回复 +0.1/s（满级）", fx: ItemEffects { hp_add: 30.0, regen_add: 0.1, ..fx() } },
     // I00D 火球法杖：火球改 5.5+0.5L 直伤 + 3+0.5L 点燃 2.5s；天罚加倍时长/伤害（买 7 @bD 10708）
     ItemDef { id: ItemId::FireStaff, family: ItemFamily::Standalone, tier: 1, cost: 7, sell: 6, name: "火球法杖", desc: "火球附加点燃(3+0.5Lv/2.5s) 直伤降 5.5+0.5Lv；天罚加倍", fx: ItemEffects { fireball_burn: true, ..fx() } },
-    // I00E 乔丹之石戒指：买一次即**解锁**「每个技能槽各一次免费突破上限」（+2）。
-    // 098c 实证：戒指解锁 `S027` 石头商店 → 商店按槽给出 `T000`–`T006`（每槽一颗、**免费**、需该槽有技能）；
-    // 每颗把该槽对应研究上限 +2（`Hf`）。卖掉戒指**不退钱**（`ED` 里 `'I00E'` 分支为空）→ `sell: 0`。
-    ItemDef { id: ItemId::Jordan, family: ItemFamily::Standalone, tier: 1, cost: 5, sell: 0, name: "乔丹之石戒指", desc: "解锁：每个技能槽各一次突破上限（+2）；不可售出", fx: ItemEffects { ..fx() } },
     // I00F 鲜血之剑 1：S001 等级+1（mC cX=10+Zr → +1 伤）；命中每敌回 (Zr+1)=2 血（买 8 @bD 10747）
     ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 8, sell: 7, name: "鲜血之剑 1", desc: "天罚伤害 +1；命中每敌回 2 血；可升 1 次", fx: ItemEffects { smite_bonus: 1.0, on_damage_heal: 2.0, ..fx() } },
     // I00G 鲜血之剑 2：Zr=2 → +2 伤；回 (Zr+1)=3 血/敌（买 8；卖 24 @ED 10498）
@@ -429,14 +423,15 @@ mod tests {
     }
 
     #[test]
-    fn catalog_has_24_items_with_unique_ids() {
-        assert_eq!(ITEMS.len(), 24);
+    fn catalog_has_unique_dense_ids() {
+        // 乔丹之石（I00E）已**不占物品栏**（改为技能页的一次性突破），故表为 23 件。
+        assert_eq!(ITEMS.len(), 23);
         for (i, d) in ITEMS.iter().enumerate() {
             assert_eq!(d.id.as_u32(), i as u32, "密集索引应与表序一致");
             assert!(!d.name.is_empty());
         }
-        assert_eq!(ItemId::from_u32(23), Some(ItemId::PocketWatch2));
-        assert_eq!(ItemId::from_u32(24), None);
+        assert_eq!(ItemId::from_u32(22), Some(ItemId::PocketWatch2));
+        assert_eq!(ItemId::from_u32(23), None);
     }
 
     #[test]
@@ -478,9 +473,9 @@ mod tests {
 
     #[test]
     fn shop_catalog_lists_entry_points() {
-        // 8 个家族入口 + 4 个单体（面具/法杖/乔丹/…）= 12（乔丹已回归商店：它是「每槽一次突破上限」的解锁器）。
+        // 8 个家族入口 + 单体（面具/法杖/…）——乔丹之石已**不占物品栏**（改为技能页的一次性突破），故不在商店。
         let cat = shop_catalog();
-        assert_eq!(cat.len(), 11, "shop entries = 家族 t1 + 单体（含乔丹戒指，它已回归商店）, got {}", cat.len());
+        assert_eq!(cat.len(), 10, "shop entries = 家族 t1 + 单体, got {}", cat.len());
         assert!(cat.iter().all(|d| d.tier == 1));
     }
 
@@ -494,6 +489,5 @@ mod tests {
         assert_eq!(ItemId::Helm3.next_tier(), None);
         // 独立物品无链
         assert_eq!(ItemId::FireMask.next_tier(), None);
-        assert_eq!(ItemId::Jordan.next_tier(), None);
     }
 }

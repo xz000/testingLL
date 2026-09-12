@@ -1234,7 +1234,30 @@ impl Game {
             .and_then(|pr| pr.bound_skill(key))
             == Some(skill);
         if owned {
-            // 已购买 → 升到下一级（上限/金币由 upgrade_skill 判断）
+            // 已满级且该槽尚未用乔丹之石突破 → 走突破（首次扣 5 金、之后各槽免费）；
+            // 否则升到下一级（上限/金币由 upgrade_skill 判断）。
+            // 注：此处是键盘 `=` / 回车 的入口，必须与详情页按钮行为一致（曾漏掉导致按键无反应）。
+            let break_done = self
+                .meta
+                .profiles
+                .iter_mut()
+                .find(|pr| pr.player_id == me)
+                .map(|profile| {
+                    let lv = profile.skill_level(skill);
+                    let cap = game_core::skill::DefTable::max_level(skill) + profile.cap_bonus_for_skill(skill);
+                    if lv >= cap && !profile.jordan_used_for_skill(skill) {
+                        if profile.break_cap_for(skill) {
+                            eprintln!("[learn] 乔丹之石：{skill:?} 所在槽上限 +2（金 {}）", profile.gold);
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            if break_done {
+                return;
+            }
             self.upgrade_selected_skill();
         } else if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
             // 未购买 → 购买（同树已锁或金币不足时内部失败，不扣金）
@@ -3551,18 +3574,19 @@ impl Game {
                                         // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=逐级升级。
                                         // 已到上限时：持**乔丹之石戒指**且该槽未突破过 → 出现「突破上限 +2」（098c：每槽一颗、免费）。
                                         let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
-                                        let can_break = owned
-                                            && lv >= cap
-                                            && me.has_jordan_ring()
-                                            && !me.jordan_used_for_skill(skill);
+                                        let can_break = owned && lv >= cap && !me.jordan_used_for_skill(skill);
                                         let (label, enabled) = if owned {
                                             if lv >= cap {
                                                 if can_break {
-                                                    ("突破上限 +2（乔丹之石 · 免费）  [= / 回车]".to_string(), true)
-                                                } else if me.has_jordan_ring() {
-                                                    (format!("已满级 Lv{lv}"), false)
+                                                    // 乔丹之石**不占物品栏**：首次突破时自动扣 5 金解锁，此后各槽免费。
+                                                    let price = if me.has_jordan_ring() {
+                                                        "免费".to_string()
+                                                    } else {
+                                                        format!("首次 {}G", game_core::meta::JORDAN_PRICE)
+                                                    };
+                                                    (format!("突破上限 +2（乔丹之石 · {price}）  [= / 回车]"), true)
                                                 } else {
-                                                    (format!("已满级 Lv{lv}（持乔丹之石戒指可再 +2）"), false)
+                                                    (format!("已满级 Lv{lv}"), false)
                                                 }
                                             } else {
                                                 (format!("升级到 Lv{} ({cost}G)  [= / 回车]", lv + 1), true)
@@ -3722,7 +3746,7 @@ impl Game {
                         // 说明：技能上限突破改由**乔丹之石戒指 + 技能详情**触发（098c 语义），此页不再出售。
                         ui::text_left(
                             canvas, ctx,
-                            "（技能上限突破：购买乔丹之石戒指后，在「技能」页详情里按槽突破，每槽一次、免费）",
+                            "（技能上限突破：去「技能」页把技能升满后按「突破上限 +2」——首次花 5 金买下乔丹之石，\n之后每个技能槽各可免费突破一次；乔丹之石不占物品栏）",
                             ui::theme::SMALL, ui::theme::text_dim(), rx, ay,
                         )?;
                         ay += 24.0;
