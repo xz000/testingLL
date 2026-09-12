@@ -5515,15 +5515,15 @@ impl Game {
         let locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
             || (self.steam_cli_ls.is_some() && self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STEAM_COUNTDOWN_LOCK_SECS);
         // ── 房间内编辑设置（仅 host）：`O` 打开编辑器；关闭时重新发布 → 触发全员取消准备 ──
-        if self.steam_host_ls.is_some() && (ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into())))
-        {
+        let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()));
+        if self.steam_host_ls.is_some() && o_pressed {
             self.room_cfg_edit = !self.room_cfg_edit;
             if !self.room_cfg_edit {
                 self.publish_room_cfg();
             }
         }
-        if self.room_cfg_edit {
+        if self.room_cfg_edit && !o_pressed {
             let just_named = |n: winit::keyboard::NamedKey| {
                 ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n))
             };
@@ -5557,7 +5557,9 @@ impl Game {
                     settings_ui::nudge(&mut self.match_cfg, id, 1);
                 }
             }
-            if just_named(winit::keyboard::NamedKey::Enter) || just("o") {
+            if just_named(winit::keyboard::NamedKey::Enter)
+                || just_named(winit::keyboard::NamedKey::Escape)
+            {
                 self.room_cfg_edit = false;
                 self.publish_room_cfg();
             }
@@ -5901,13 +5903,16 @@ impl Game {
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
         // ── 房间设置编辑器（`O` 打开）：打开时**独占**输入，回车/Esc/O 关闭并重新发布设置串 ──
-        if just('o') || just('O') {
+        // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
+        // 否则同一帧"开→立刻关"，表现为"按 O 毫无反应"（曾如此）。
+        let o_pressed = just('o') || just('O');
+        if o_pressed {
             self.room_cfg_edit = !self.room_cfg_edit;
             if !self.room_cfg_edit {
                 self.publish_room_cfg();
             }
         }
-        if self.room_cfg_edit {
+        if self.room_cfg_edit && !o_pressed {
             // 分组：Z/X/C/V；行：↑↓；调值：←→；回车/O 关闭并发布。
             for (g, ch) in [
                 (settings_ui::Group::Economy, "z"),
@@ -5946,7 +5951,8 @@ impl Game {
                     );
                 }
             }
-            if just_named(NamedKey::Enter) || just('o') {
+            // 关闭：回车 或 Esc（**不含 `O`**，避免与上面的开关重复处理）。
+            if just_named(NamedKey::Enter) || just_named(NamedKey::Escape) {
                 self.room_cfg_edit = false;
                 self.publish_room_cfg();
             }
@@ -6705,10 +6711,11 @@ impl Game {
         } else {
             Color::from_rgb(255, 200, 90)
         };
+        // 放在**底部**：原先紧跟标题，会被下面的字段盖住（层次问题）。
         ui::text_center(
             canvas, ctx,
-            &format!("房间设置：{badge}   （按 O 编辑）"),
-            ui::theme::BODY, badge_col, cx, sh * 0.12 + 34.0,
+            &format!("房间设置：{badge}   [O] 编辑"),
+            ui::theme::SMALL, badge_col, cx, sh - 24.0,
         )?;
 
         let labels = [
