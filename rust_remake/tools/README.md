@@ -60,3 +60,39 @@ python tools/skill_crosscheck.py
 | S007B / S011B | 我方未实装 B 形态（098c 两形态共用同一 handler，仅引擎冷却不同） |
 | S000 | 098c `alev = 24`，我方 `max_level = 10`（受研究上限约束） |
 | S022 / S023 等 | 非玩家技能 / 已移除 |
+
+
+## 4. `parse_objects.py` — 解析 `war3map.w3t`（物品）/ `w3b` / `w3h`
+
+物品（`w3t`）提供：`unam`（物品名，如 `Boots 3`）、`iabi`（挂载的物品能力，如 `A007`）、
+`igol`（金币价）、`utip`。**所有 `igol` 都是 0** —— 印证 `game-core/src/item.rs` 的说明：
+098c 的物品价格写在 JASS 商店表（`bD`/`ED`）里，不在物体数据。
+
+物品的**属性数值**在 `w3a` 的*物品能力*里（`A000/A004/A005/A007/A009/A00D/A00F/A00H`，字段 `Ilif` 等），
+由 `parse_w3a.py` 解析；本脚本给出「物品 → 能力」映射。
+
+### 布局坑（**与 w3a 不同**）
+
+本存档这些文件**无** `W3T!` 等魔数头，直接以 `version` 开头：
+
+```
+version(4) + n_orig(4) + n_orig×(old(4)+new(4)) + n_custom(4) + records
+记录: old(4) + new(4) + nMods(4) + mods
+```
+
+| 类型 | 布局 | 备注 |
+|---|---|---|
+| 数值 (type 0/1/2) | `field(4)+type(4)+level(4)+value(4)` | 16 字节，**无结束符** |
+| 字符串 (type 3) | `field(4)+type(4)+cstring+4字节` | **无 level**；末尾 4 字节在 w3t 恒为 0，在 w3u 是对象 id |
+
+对比 `w3a`（见 §1）：数值 `field+type+level+**pad**+value+**end**`、字符串 `field+type+level+cstring+end`。
+**两者不能共用同一套 mod 尺寸。**
+
+`w3t`/`w3b`/`w3h` 已通过「精确消费到文件末尾」校验（24/3/2 条记录）。
+`w3u`（单位）头部结构仍未解出（`version` 后的计数语义不同），待后续处理。
+
+## 5. `dump_defs.rs` / 物品对照
+
+- 技能：`cargo run -q -p game-core --example dump_defs > _ours.tsv`
+- 物品：见 `game-core/src/item.rs` 的 `w3t_crosscheck_item_bonuses` 测试
+  （锁定 `Ilif` 生命加成与速度之靴三档；w3t `unam` 实证 I007=Boots 3、I008=Boots 2）。

@@ -86,6 +86,7 @@ for aid, rec in ok_recs.items():
     tip = {str(d['level']): nums(d['value']) for d in f.get('aub1', [])}
     table[aid] = {'old': rec['old'], 'levels': lv, 'acdn': cd, 'tip': tip}
 json.dump({'table': table}, io.open(r'C:\Users\xvzan\Documents\testingLL\098c\out\w3a_table.json', 'w', encoding='utf-8'), ensure_ascii=False)
+json.dump(ok_recs, io.open(r'C:\Users\xvzan\Documents\testingLL\098c\out\w3a_raw.json', 'w', encoding='utf-8'), ensure_ascii=False)
 print('saved w3a_table.json')
 for aid in sorted(table):
     t = table[aid]
