@@ -1160,6 +1160,21 @@ mod tests {
     // 4.6b 成长点测试已随属性系统删除（2026-09-12）。
 }
 
+    /// 精通价格/上限与 098c `war3map.w3q` 交叉校验（真值源：各 mastery 升级条目）。
+    ///
+    /// | 条目 | gnam | `gglb`(金价) | `glvl`(每级) | 对应 |
+    /// |---|---|---|---|---|
+    /// | `R00D` | Life steal Mastery 6 | 6 | 6 | COSTS[0] / CAPS[0] |
+    /// | `R00I` | Area of Effect mastery 6 | 7 | 6 | COSTS[1] / CAPS[1] |
+    /// | `R00Y` | Range Mastery 6 | 5 | 6 | COSTS[2] / CAPS[2] |
+    /// | `R000` | Inventory | 3 | 3 | COSTS[3] / CAPS[3] |
+    #[test]
+    fn mastery_costs_and_caps_match_w3q() {
+        // 顺序：0=生命汲取 1=范围 2=射程 3=背包（与 `Mastery::at` 一致）。
+        assert_eq!(Mastery::COSTS, [6, 7, 5, 3], "w3q gglb：R00D/R00I/R00Y/R000");
+        assert_eq!(Mastery::CAPS, [6, 6, 6, 3], "w3q glvl：R00D/R00I/R00Y/R000");
+    }
+
     #[test]
     fn mastery_buy_costs_caps_and_backpack() {
         let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
