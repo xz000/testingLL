@@ -1,0 +1,54 @@
+6597|         self.net_link = None;
+6598|         self.net_host = None;
+6599|         self.net_host_ls = None;
+6600|         self.conn_dropped = false;
+6601|         self.desync_detected = false;
+6602|         self.reconnect_attempting = false;
+6603|         self.host_frame_count = 0;
+6604|         self.steam_cli_stale_ticks = 0;
+6605|         self.steam_participants = Vec::new();
+6606|         self.steam_online = Vec::new();
+6607|         self.steam_migrating = false;
+6608|         self.steam_migrate_ticks = 0;
+6609|         self.steam_new_host_id = 0;
+6610|         self.steam_host_broadcasting_takeover = false;
+6611|         // 邀请面板/好友列表状态复位；进房后立刻上报一次 Rich Presence（好友可一键加入）。
+6612|         self.steam_friend_list = false;
+6613|         self.steam_friends = Vec::new();
+6614|         self.steam_friend_selection = 0;
+6615|         self.steam_friend_hint = String::new();
+6616|         self.steam_presence_text = String::new(); // 强制立即写（不节流）
+6617|         self.steam_presence_last = -999.0;
+6618|         // 会话已被消费（成功），下次回主菜单允许再初始化一次。
+6619|         self.steam_session_tried = false;
+6620|         // 新一场：允许重新上报战绩（进新房间的入口）。
+6621|         self.steam_stats_recorded = false;
+6622|         self.steam_stats_snapshot = None;
+6623|         self.steam_toast = (String::new(), 0.0);
+6624|         self.accumulator = 0.0;
+6625|     }
+6626| 
+6627|         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
+6628|     fn draw_menu(&self, ctx: &mut Context) -> GameResult {
+6629|         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+6630|         ui::set_design_coordinates(&mut canvas, ctx);
+6631|         let (sw, sh) = (ui::UI_W, ui::UI_H);
+6632|         let cx = sw / 2.0;
+6633| 
+6634|         // 标题区
+6635|         let title = "术士之战 Warlock Brawl";
+6636|         draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: 
+6637|         draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x
+6638| 
+6639|         // 卡片通用尺寸
+6640|         let card_w = (sw * 0.62).min(560.0);
+6641|         let card_h = 96.0;
+6642|         let card_x = cx - card_w / 2.0;
+6643|         let y0 = sh * 0.34;
+6644|         let gap = 26.0;
+6645| 
+6646|         #[cfg(feature = "steam")]
+6647|         let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
+6648|         #[cfg(not(feature = "steam"))]
+6649|         let in_lobby_menu = false;
+6650| 
