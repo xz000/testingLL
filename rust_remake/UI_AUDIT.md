@@ -262,3 +262,31 @@ let dest = Point2 { x: center.x - sz.x / 2.0, y: center.y };  // 与 _centered �
 | **左上信息底衬** | 金币/模式/精通/进度 四行原是纯文字浮在场景上（亮色地板可读性差）→ 加 `236×116` 半透明底 + 细边（与学习界面面板同色系） |
 | **模式专属提示** | 模式 3 化身 / 模式 4 国王时，HUD 追加一行「你是化身 — 独占一队，全场皆是敌人」/「你是国王 — 受伤与岩浆 -10%」（此前只有世界层的红/金环） |
 | **记分板角色列** | 名字列加单字后缀 `·化` / `·王`（缩进 1 字避免撑爆列宽），标题在模式 3/4 下追加图例 `化 = 化身` / `王 = 国王` |
+
+
+### 5.8 「单机仍有购买倒计时」排查结论（2026-09-12）
+
+用户反馈单机试验场**仍有购买倒计时**。排查结果：**代码是对的，跑的是旧二进制**。
+
+证据链：
+1. 代码里游戏内唯一的倒计时显示已按沙盒门控：
+   ```rust
+   let learn_note = if self.world.sandbox { "自由配置 · 空格 / 回车 开始" }
+                    else { format!("剩余 {:.0}s", self.meta.learn_remaining.max(0.0)) };
+   ```
+   且 Learning 分支在沙盒下**提前 return**（不调用 `tick_learning`）→ 既不计时也不倒计时。
+2. **`target/release/client.exe` 时间戳是 9/6**（今天所有 UI 改动都不在其中），而它才是
+   **带 `client/steam` feature** 的那个（`debug` 是裸 `cargo build`，不带 steam）。
+   若以 release 启动，看到的自然是 6 天前的界面（含旧倒计时、旧金币逻辑、旧商店/页签）。
+
+**教训（已修正流程）**：验证"界面是否生效"时先看二进制时间戳与 feature：
+
+```powershell
+dir target\debug\client.exe, target\release\client.exe
+# release 版需带 feature 重建：
+cargo build --release -p client --features client/steam
+```
+
+另外本轮还发现并补回了一个**脚本写入丢失**：早前一次"HUD 底板 + 角色提示行"的批量编辑中，
+脚本在**替换阶段**断言失败（`let name = if is_me` 缩进不符），而写盘在循环之后 → 两处改动**整体未落盘**。
+现已补回，并把脚本改为"全部替换成功后才写文件 + 失败即中止"（避免静默半成品）。
