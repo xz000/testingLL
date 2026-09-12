@@ -632,6 +632,14 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *fire_dmg);
             wfix(o, *remaining);
         }
+        PK::DelayedBlast { radius, damage, kb_ji, falloff_denom, remaining } => {
+            wu8(o, 19);
+            wfix(o, *radius);
+            wfix(o, *damage);
+            wfix(o, *kb_ji);
+            wfix(o, *falloff_denom);
+            wfix(o, *remaining);
+        }
     }
 }
 
@@ -709,6 +717,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             fire_dmg: fixat(b, p)?,
             remaining: fixat(b, p)?,
         },
+        19 => PK::DelayedBlast { radius: fixat(b, p)?, damage: fixat(b, p)?, kb_ji: fixat(b, p)?, falloff_denom: fixat(b, p)?, remaining: fixat(b, p)? },
         _ => return None,
     };
     Some(Projectile { owner, kind, pos, alive })
