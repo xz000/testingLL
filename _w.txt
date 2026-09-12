@@ -1,5 +1,30 @@
-42|    pub place_rewards: Vec<i32>,
-43|    /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
-44|    /// 房主可设置；098b 默认 So=20（D6）。
-45|    pub starting_gold: i32,
-46|    /// 击杀得分（098b lo，默认 1；D6 分数体系）。
+956     /// 之后以 `环宽/(wo×√存活)` 每秒的**连续速率**收缩（人越少越快）。
+957     /// 总吞没时长与按环步进的 098c 完全一致，只是抹平了 war3 地形格的阶梯感（D13）。
+958     fn shrink_arena(&mut self, dt: Fix64) {
+959         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
+960         if self.shrink_timer > Fix64::ZERO {
+961             self.shrink_timer -= dt;
+962             return;
+963         }
+964         let b = Balance::default();
+965         let rate = b.ring_width / (b.shrink_ring_secs * alive.sqrt());
+966         self.arena_radius = (self.arena_radius - Fix64::from_num(rate * dt.to_num::<f64>())).max(Fix64::ZERO);
+967     }
+968 
+969     /// C4 幻象·第二阶段：本体沿 `target` 方向瞬移 2，原位留 2 个假身（约 120° 间隔），
+970     /// 假身持续 `fake_window`（待幻剩余时间）秒。
+971     fn fake_locate(&mut self, pid: u32, target: Vec2) {
+972         let idx = pid as usize;
+973         let Some(p) = self.players.get_mut(idx) else { return };
+974         let center = p.pos;
+975         let dir = (target - center).normalized();
+976         let shift = if dir.length_squared() == Fix64::ZERO {
+977             Vec2::new(Fix64::from_num(2), Fix64::ZERO)
+978         } else {
+979             dir * Fix64::from_num(2)
+980         };
+981         let lifetime = p.fake_active.take().unwrap_or(Fix64::from_num(2.0));
+982         let radius = p.radius;
+983         p.pos = center + shift;
+984         p.move_target = None;
+985         // 两个假身：一个在原位，一个在原位 + 旋转 120° 偏移
