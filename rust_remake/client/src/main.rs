@@ -7134,6 +7134,17 @@ impl Game {
                     game_core::meta::MatchState::mode_name(l.mode),
                     l.note
                 );
+                // 房间设置：解析房主的设置串并显示「自定义 N 项」（加入前就能看出房主开了高级设置）。
+                if let Some(n) = l
+                    .settings
+                    .as_deref()
+                    .and_then(game_core::meta::MatchConfig::from_meta_string)
+                    .map(|c| c.non_default_setting_count())
+                {
+                    if n > 0 {
+                        meta.push_str(&format!("    房间设置：自定义 {n} 项"));
+                    }
+                }
                 if !ver_ok {
                     meta.push_str(&format!("    [版本不符 {:?}]", l.version));
                 }

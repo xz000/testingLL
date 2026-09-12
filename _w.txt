@@ -1,18 +1,47 @@
-6931|             self.steam_create_place_buf.clone(),
-6932|         ];
-6933|         // ── 版面：按 `layout::bands` 四带摆放，不再手工摆坐标 ──
-6934|         // 起因：原先"聚焦字段下方各画一行提示"，第 4 行的提示会压到下一条信息（层次问题）。
-6935|         // 现在：提示统一放**状态带**（只一行），键位说明放**提示带**（屏幕最底）。
-6936|         let b = layout::bands(sw, sh);
-6937|         self.create_hitboxes.clear(); // 绘制即重建命中表（绘制与命中同源）
-6938|         // 顶部/状态带的「房间设置」徽章也可点（等价 `O`）：状态带位置由骨架给出，这里先登记命中。
-6939|         self.create_hitboxes.push((
-6940|             graphics::Rect::new(cx - 150.0, b.status.y - 6.0, 300.0, 24.0),
-6941|             CreateAction::OpenSettings,
-6942|         ));
-6943|         let mpos = ui::mouse_design(ctx);
-6944|         let box_w = 300.0;
-6945|         let box_h = 44.0;
-6946|         let label_w = 140.0;
-6947|         let col_w = label_w + box_w;
-6948|         let gap = 56.0;
+6626|                     self.steam_cli_ls = None;
+6627|                     self.app = AppState::SteamHost { players };
+6628|                 }
+6629|                 SteamLobbyPending::Join { lobby_id: _ } => {
+6630|                     // 版本校验：不同 `PROTOCOL_VERSION` 的房一律拒绝（避免协议/模拟不兼容导致 desync）。
+6631|                     // 旧房未写版本 = None → 视为不兼容（改前构建没有该元数据）。
+6632|                     let host_ver = sess.lobby_version();
+6633|                     if host_ver != Some(game_core::PROTOCOL_VERSION) {
+6634|                         let msg = format!(
+6635|                             "房间版本不兼容（房主 {:?}，本端 {}），已拒绝加入",
+6636|                             host_ver,
+6637|                             game_core::PROTOCOL_VERSION
+6638|                         );
+6639|                         eprintln!("[steam-join] {msg}");
+6640|                         // 退房，避免以不兼容版本留在房里。
+6641|                         sess.transport.matchmaking().leave_lobby(lobby);
+6642|                         return Err(std::io::Error::other(msg));
+6643|                     }
+6644|                     sess.prepare_transport()?;
+6645|                     self.steam_my_id = sess.transport.steam_id();
+6646|                     let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
+6647|                     self.match_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
+6648|                     self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
+6649|                     self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
+6650|                     self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
+6651|                     self.match_mode = sess.lobby_mode().unwrap_or(1);
+6652|                     self.match_regen = sess.lobby_regen().unwrap_or(STEAM_DEFAULT_REGEN);
+6653|                     // 完整房间设置：优先用 host 的整串设置；缺失/格式不符则回退默认值。
+6654|                     if let Some(cfg) = sess.lobby_cfg().and_then(|t| game_core::meta::MatchConfig::from_meta_string(&t))
+6655|                         self.match_cfg = cfg;
+6656|                         self.match_mode = self.match_cfg.game_mode;
+6657|                         self.match_regen = self.match_cfg.base_regen;
+6658|                         self.world.configure_regen(self.match_cfg.base_regen);
+6659|                         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+6660|                         eprintln!("[cfg] 已对齐 host 房间设置（{} 字节）", self.match_cfg.to_meta_string().len());
+6661|                     } else {
+6662|                         eprintln!("[cfg] host 未提供房间设置串，使用默认值");
+6663|                     }
+6664|                     self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFA
+6665|                     let host_id = sess.host_steam_id().unwrap_or(0);
+6666|                     let my_slot = sess.my_slot();
+6667|                     self.steam_my_index = my_slot;
+6668|                     let fr = sess.transport.friends();
+6669|                     let mut roster = Vec::new();
+6670|                     for (slot, id) in sess.identities() {
+6671|                         let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
+6672|                         roster.push((slot, name, id));
