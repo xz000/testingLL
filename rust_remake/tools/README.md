@@ -89,7 +89,34 @@ version(4) + n_orig(4) + n_orig×(old(4)+new(4)) + n_custom(4) + records
 **两者不能共用同一套 mod 尺寸。**
 
 `w3t`/`w3b`/`w3h` 已通过「精确消费到文件末尾」校验（24/3/2 条记录）。
-`w3u`（单位）头部结构仍未解出（`version` 后的计数语义不同），待后续处理。
+
+### `w3u`（单位）：头部语义不同 → 用「候选头扫描 + 精确闭合」
+
+`w3u` 的 `version` 之后那个计数**不是**普通的 `n_orig`（按 `n_orig` 解析会立刻崩），
+但记录头 `old(4)+new(4)+nMods(4)` 与 mod 尺寸与 w3t 一致。做法：
+
+1. 扫描所有可能是记录头的偏移（`old`/`new` 可打印或全 0、`nMods` ∈ 1..400、
+   紧随其后是合法字段名、再后面 `type` ∈ 0..3）；
+2. 逐个解析 `nMods` 个 mod，只有**恰好闭合到另一个候选头或文件末尾**的才保留。
+
+结果：**50/51 条精确闭合** ✅（唯一未闭合的是记录内部的假阳性头）。
+
+**数值位置差异**：w3u 把值放在 **`+8`**（不是 w3t/w3a 的 `+12`/`+16`）：
+
+```
+field(4) + type(4) + value(4)   + trailer(4)   # 数值，16 字节
+field(4) + type(4) + cstring    + trailer(4)   # 字符串
+```
+
+### w3u 交叉校验结论
+
+| 项 | 结果 |
+|---|---|
+| Warlock 英雄（`hpea→h000`） | `umvs`=**210**、`uhpm`=**100** → 与 `balance.rs` 的 `base_speed`/`max_hp` **完全一致** ✅ |
+| 障碍物单位（`obs0..obs6` / `obt0..obt6`） | 单位 `uhpm`=1000 但**未使用**；JASS `constant real nx=40` 才是可摧毁 HP（配 `gv[]` 计数 + "40/40" 飘字）→ 我方 40 ✅ |
+| 商店/UI 单位 | `u000`(Merchant)/`u001`(Spells 1)/`u002`(Spells 2)/`u003`(Items)/`u004`(Stone of Jordan)/`u005`(Sell)，`uabi` 指向 `S024`-`S028` 等 |
+| Warlock 技能槽 | `uabi = W001,W003,W007,W004,W005,W006,W002,W000`（8 个形态切换按钮） |
+
 
 ## 5. `dump_defs.rs` / 物品对照
 

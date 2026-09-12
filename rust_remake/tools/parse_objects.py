@@ -98,6 +98,98 @@ def main():
                          str(g('iabi'))[:8], g('igol')))
 
 
+
+
+# ---------------------------------------------------------------------------
+# w3u（单位）专用：头部计数语义与 w3t 不同，改用「候选记录头扫描 + 精确闭合」。
+#
+# 另注意：w3u 的数值 mod 把**值放在 +8**（w3t/w3a 在更后面），即
+#   field(4) + type(4) + value(4) + trailer(4)   —— 16 字节
+#   field(4) + type(4) + cstring   + trailer(4)
+# 例：Warlock 英雄（hpea→h000）`umvs`=210、`uhpm`=100（与我方 balance.rs 一致）。
+# ---------------------------------------------------------------------------
+
+
+def _candidates(b):
+    def printable(bs):
+        return all(32 <= c < 127 for c in bs)
+
+    def fieldname(bs):
+        return all(97 <= c <= 122 or 48 <= c <= 57 for c in bs)
+
+    cand = set()
+    for p in range(0, len(b) - 16):
+        if not printable(b[p:p + 4]):
+            continue
+        if not (printable(b[p + 4:p + 8]) or b[p + 4:p + 8] == b'\0\0\0\0'):
+            continue
+        nmod = struct.unpack_from('<i', b, p + 8)[0]
+        if not (0 < nmod <= 400):
+            continue
+        if not fieldname(b[p + 12:p + 16]):
+            continue
+        if struct.unpack_from('<i', b, p + 16)[0] not in (0, 1, 2, 3):
+            continue
+        cand.add(p)
+    return cand
+
+
+def _rec(b, start):
+    def i32(o):
+        return struct.unpack_from('<i', b, o)[0]
+
+    old = b[start:start + 4].decode('latin1')
+    new = b[start + 4:start + 8].decode('latin1')
+    nmod = i32(start + 8)
+    p = start + 12
+    fields = {}
+    for _ in range(nmod):
+        f = b[p:p + 4].decode('latin1')
+        typ = i32(p + 4)
+        if typ == 3:
+            e = b.find(b'\0', p + 8)
+            val = b[p + 8:e].decode('utf-8', 'replace')
+            q = e + 1 + 4
+        elif typ in (0, 1, 2):
+            q = p + 8
+            val = i32(q) if typ == 0 else struct.unpack_from('<f', b, q)[0]
+            q += 8
+        else:
+            raise ValueError('type %d' % typ)
+        p = q
+        fields.setdefault(f, []).append({'level': 0, 'value': val})
+    return {'old': old, 'new': new, 'fields': fields, 'end': p}
+
+
+def parse_units(path):
+    b = open(path, 'rb').read()
+    cand = _candidates(b)
+    recs = {}
+    for start in sorted(cand):
+        try:
+            r = _rec(b, start)
+        except Exception:
+            continue
+        if r['end'] in cand or r['end'] == len(b):
+            recs['%s->%s' % (r['old'], r['new'])] = {'start': start, **r}
+    return {'recs': recs, 'candidates': len(cand), 'size': len(b)}
+
+
+def dump_units():
+    r = parse_units(OUT + r'\war3map.w3u')
+    print('war3map.w3u     closed=%d/%d' % (len(r['recs']), r['candidates']))
+    json.dump(r, io.open(OUT + r'\war3map.w3u.json', 'w', encoding='utf-8'), ensure_ascii=False)
+    keys = ['unam', 'umvs', 'uhpm', 'uabi', 'umdl']
+    for k in sorted(r['recs'], key=lambda x: r['recs'][x]['start']):
+        f = r['recs'][k]['fields']
+        parts = []
+        for kk in keys:
+            if kk in f:
+                parts.append('%s=%s' % (kk, str(f[kk][0]['value'])[:26]))
+        print('  %-14s %s' % (k, ' | '.join(parts)))
+
+
 if __name__ == '__main__':
     sys.stdout.reconfigure(errors='replace')
     main()
+    dump_units()

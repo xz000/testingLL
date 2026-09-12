@@ -100,6 +100,8 @@ mod tests {
         let b = a; // Copy
         assert_eq!(a, b);
         // war3 尺度（PORT_098B_DECISIONS.md D2 来源表）
+        // 2026-09-12 交叉校验：`war3map.w3u` 中 Warlock 英雄单位（hpea→h000）
+        // `umvs`=210（移速）与 `uhpm`=100（最大生命）与此完全一致。
         assert_eq!(a.base_speed, 210.0);
         assert_eq!(a.max_hp, 100.0);
         assert_eq!(a.default_radius, 30.0);
