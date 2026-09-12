@@ -481,6 +481,9 @@ pub struct LobbyInfo {
     pub name: String,
     /// 房间备注（元数据 `room_note`，可空）。
     pub note: String,
+    /// **房间设置串**（元数据 `room_cfg`，`MatchConfig::to_meta_string()` 的格式）。
+    /// 由客户端解析并显示「自定义 N 项」——net-steam 不依赖 game-core，故只透传原始串。
+    pub settings: Option<String>,
     /// 游戏模式（元数据 `room_mode`；缺省 1=轮次）。
     pub mode: u8,
     /// 联机兼容版本（元数据 `room_version`；旧房/缺省为 `None`）。
@@ -920,6 +923,7 @@ impl SteamSession {
             let note = mm.lobby_data(l, ROOM_NOTE_KEY).unwrap_or_default();
             let mode = mm.lobby_data(l, ROOM_MODE_KEY).and_then(|s| s.parse().ok()).unwrap_or(1);
             let version = mm.lobby_data(l, ROOM_VERSION_KEY).and_then(|s| s.parse().ok());
+            let settings = mm.lobby_data(l, ROOM_SETTINGS_KEY);
             out.push(LobbyInfo {
                 id: l.raw(),
                 owner,
@@ -929,6 +933,7 @@ impl SteamSession {
                 note,
                 mode,
                 version,
+                settings,
             });
         }
         LobbyListProgress::Done(Ok(out))
