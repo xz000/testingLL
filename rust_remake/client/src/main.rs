@@ -224,6 +224,18 @@ enum AppState {
 }
 
 /// 进行中的 Steam 大厅操作类型（S12：帧驱动异步，避免在游戏线程 `std::thread::sleep` 忙等）。
+/// 建房界面的可点击动作（键鼠共用；绘制时登记命中、点击时派发）。
+#[cfg(feature = "steam")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum CreateAction {
+    /// 点击字段 → 聚焦。
+    Focus(u8),
+    /// 点击字段右侧 `−`/`+` → 步进（`dir = -1/+1`）。
+    Step(u8, i32),
+    /// 点击「房间设置」徽章 → 打开设置编辑器（等价 `O`）。
+    OpenSettings,
+}
+
 /// `enter_steam_mode` / CLI 启动只发起操作（`start_*`）并记下类型，真正「进房」由 `update` 每帧
 /// `run_callbacks` 后 `tick_lobby` 完成、再调用 `finish_enter_steam_mode` 落地（建 lockstep/世界/战绩）。
 #[cfg(feature = "steam")]
@@ -587,10 +599,10 @@ struct Game {
     /// 自定义数值输入缓冲（编辑器内按回车开始输入；回车提交、Esc 取消）。
     #[cfg(feature = "steam")]
     room_cfg_input: Option<String>,
-    /// 建房界面字段的**命中注册表**（绘制时登记、点击时派发；绘制与命中同源）。
+    /// 建房界面的**命中注册表**（绘制时登记、点击时派发；绘制与命中同源）。
     /// 每帧绘制前清空，避免残留旧矩形导致"点到不存在的东西"。
     #[cfg(feature = "steam")]
-    create_hitboxes: Vec<(graphics::Rect, u8)>,
+    create_hitboxes: Vec<(graphics::Rect, CreateAction)>,
     /// 上次见到的**房间设置串**（大厅元数据）——用于检测"房主改了设置"：
     /// 一旦变化即取消本端准备（第 5 步），并同步应用新设置。
     #[cfg(feature = "steam")]
@@ -5896,6 +5908,62 @@ impl Game {
         }
     }
 
+    /// 建房界面**字段步进**（`dir = -1/+1`）：鼠标 `−/+` 与键盘 `+/-` 共用同一套边界，
+    /// 避免两处各写一份边界而慢慢分叉（原先键盘就是这么写的）。
+    #[cfg(feature = "steam")]
+    fn create_step_field(&mut self, i: usize, dir: i32) {
+        let step = |buf: &mut String, fallback: i64, lo: i64, hi: i64| {
+            let v: i64 = buf.trim().parse().unwrap_or(fallback);
+            *buf = (v + dir as i64).clamp(lo, hi).to_string();
+        };
+        match i {
+            2 => step(
+                &mut self.steam_create_players_buf,
+                STEAM_DEFAULT_PLAYERS as i64,
+                2,
+                STEAM_MAX_PLAYERS as i64,
+            ),
+            3 => step(
+                &mut self.steam_create_rounds_buf,
+                STEAM_DEFAULT_ROUNDS as i64,
+                1,
+                STEAM_MAX_ROUNDS as i64,
+            ),
+            4 => step(
+                &mut self.steam_create_learn_buf,
+                STEAM_DEFAULT_LEARN_SECS as i64,
+                STEAM_MIN_LEARN_SECS as i64,
+                STEAM_MAX_LEARN_SECS as i64,
+            ),
+            5 => step(
+                &mut self.steam_create_starting_gold_buf,
+                STEAM_DEFAULT_STARTING_GOLD as i64,
+                0,
+                STEAM_MAX_GOLD as i64,
+            ),
+            6 => step(
+                &mut self.steam_create_gold_per_round_buf,
+                STEAM_DEFAULT_GOLD_PER_ROUND as i64,
+                0,
+                STEAM_MAX_GOLD as i64,
+            ),
+            _ => {} // 0/1 文本字段、7 名次奖励（逗号档位，不适合 +/-）
+        }
+    }
+
+    /// 建房界面**点击派发**（键鼠共用同一动作表）。
+    #[cfg(feature = "steam")]
+    fn create_dispatch(&mut self, act: CreateAction) {
+        match act {
+            CreateAction::Focus(i) => self.steam_create_focus = i as usize,
+            CreateAction::Step(i, dir) => {
+                self.create_step_field(i as usize, dir);
+                self.steam_create_focus = i as usize;
+            }
+            CreateAction::OpenSettings => self.room_cfg_edit = true,
+        }
+    }
+
     /// 设置编辑器按键处理（建房界面与房间内**共用**）。
     ///
     /// 键位：
@@ -6060,14 +6128,14 @@ impl Game {
         // 鼠标：左键点击字段 → 聚焦该字段（键鼠都支持；命中表由绘制阶段登记）。
         if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
             let m = ui::mouse_design(ctx);
-            if let Some((_, idx)) = self
+            if let Some((_, act)) = self
                 .create_hitboxes
                 .iter()
                 .find(|(r, _)| r.contains(m))
                 .copied()
             {
-                self.steam_create_focus = idx as usize;
-                eprintln!("[menu] 鼠标选择字段 #{idx}");
+                eprintln!("[menu] 鼠标动作 {act:?}");
+                self.create_dispatch(act);
             }
         }
         // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
@@ -6867,6 +6935,11 @@ impl Game {
         // 现在：提示统一放**状态带**（只一行），键位说明放**提示带**（屏幕最底）。
         let b = layout::bands(sw, sh);
         self.create_hitboxes.clear(); // 绘制即重建命中表（绘制与命中同源）
+        // 顶部/状态带的「房间设置」徽章也可点（等价 `O`）：状态带位置由骨架给出，这里先登记命中。
+        self.create_hitboxes.push((
+            graphics::Rect::new(cx - 150.0, b.status.y - 6.0, 300.0, 24.0),
+            CreateAction::OpenSettings,
+        ));
         let mpos = ui::mouse_design(ctx);
         let box_w = 300.0;
         let box_h = 44.0;
@@ -6889,7 +6962,8 @@ impl Game {
             let selected = i == self.steam_create_focus;
             // 鼠标：字段框登记命中 + 悬停高亮（键鼠都支持）。
             let field_rect = graphics::Rect::new(total_left + label_w, y, box_w, box_h);
-            self.create_hitboxes.push((field_rect, i as u8));
+            self.create_hitboxes
+                .push((field_rect, CreateAction::Focus(i as u8)));
             let hover = field_rect.contains(mpos);
             let bg_col = if selected {
                 Color::from_rgb(56, 66, 84)
@@ -6910,6 +6984,25 @@ impl Game {
             let disp = if vals[i].is_empty() { placeholders[i].to_string() } else { vals[i].clone() };
             let val_col = if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE };
             draw_text(canvas, ctx, &disp, 19.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 12.0 }, true)?;
+            // 数值字段（2..=6）右侧加 `−`/`+` 小按钮（鼠标调值；与键盘 +/- 共用 create_step_field 的边界）。
+            if (2..=6).contains(&i) {
+                let btn = 26.0;
+                for (k, (sym, dir)) in [("-", -1i32), ("+", 1i32)].iter().enumerate() {
+                    let br = graphics::Rect::new(
+                        field_rect.x + box_w + 6.0 + k as f32 * (btn + 4.0),
+                        y + (box_h - btn) / 2.0,
+                        btn,
+                        btn,
+                    );
+                    let on = br.contains(mpos);
+                    let bc = if on { Color::from_rgb(70, 84, 106) } else { Color::from_rgb(38, 44, 56) };
+                    let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), br, bc)?;
+                    canvas.draw(&bg, graphics::DrawParam::new());
+                    draw_text(canvas, ctx, sym, 22.0, Color::from_rgb(220, 226, 238), Point2 { x: br.x + btn / 2.0, y: br.y + 1.0 }, true)?;
+                    self.create_hitboxes
+                        .push((br, CreateAction::Step(i as u8, *dir)));
+                }
+            }
         }
         // 内容带底：**当前字段**的说明（只一行，替换原先"每字段下方一行"的做法）。
         let focus = self.steam_create_focus.min(7);
