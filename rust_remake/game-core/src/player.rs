@@ -235,6 +235,9 @@ pub struct Player {
     pub forms: [bool; crate::MAX_SKILL_SLOTS],
     /// 冲撞·凤凰（B4-R）：凤凰冲刺剩余时长（>0 = 凤凰态，移动指令可转向）。
     pub phoenix_remaining: Fix64,
+    /// 疾风步状态剩余时长（098c `Fr[unit]`，含 A 冲锋 / B 隐身两形态）：
+    /// 凤凰态下若 `>0`，移动指令会额外发射凤凰弹（098c `UB` 的 `Fr[gX]` 分支）。
+    pub windwalk_state: Fix64,
     /// 是否站在冰面上（冰面批：世界每帧写入；滑行 + 免岩浆）。
     pub on_ice: bool,
     /// 队伍号（098c cn[]，B2）：默认 = 自己 id（FFA，各为一队）；分队模式由开局配置覆写。
@@ -279,6 +282,7 @@ impl Player {
             forms: [false; crate::MAX_SKILL_SLOTS],
             on_ice: false,
             phoenix_remaining: Fix64::ZERO,
+            windwalk_state: Fix64::ZERO,
             team: id as u8,
             respawn_at: None,
             doom: 0.0,
@@ -837,6 +841,7 @@ impl Player {
         // （熔岩靴激活 CD / 凤凰态 / 潜行吸血 CD / 守护充能 / 复活调度 / 冰面标记）。
         self.lava_boot_cd = Fix64::ZERO;
         self.phoenix_remaining = Fix64::ZERO;
+        self.windwalk_state = Fix64::ZERO;
         self.windwalk_cd = Fix64::ZERO;
         self.aegis_charged = false;
         self.respawn_at = None;
