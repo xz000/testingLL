@@ -568,18 +568,22 @@ impl World {
                 continue;
             }
             // R2b 冲刺斩：给新的移动目标 → 解除冲刺并现身（原版 `IdoDSWL`）。
-            // B4-R 凤凰态：移动指令 → 转向冲刺并发射凤凰弹（4+0.5×(Wr+wr) 近似 stats.damage）。
+            // B4-R 凤凰态（098c `WB`/`UB`）：
+            //   - 普通移动指令 → `bO(gX, 18×0.5^(v/20))` **转向冲刺**（v 为每 tick 速度，单位/帧）；
+            //   - 疾风步状态中（`Fr[gX]`）→ 额外发射凤凰弹（`tB`，速度 1000、半径 44）。
             if pi.set_target.is_some() && p.phoenix_remaining > Fix64::ZERO && p.control.is_some() {
                 let t = pi.set_target.unwrap();
                 let d = t - p.pos;
                 if d.length() > Fix64::ZERO {
                     let nd = d.normalized();
-                    let cur = p.control.as_ref().unwrap().vel;
-                    let changed = cur.length_squared() == Fix64::ZERO || cur.normalized().dot(nd) < Fix64::from_num(0.99);
-                    if changed {
-                        let spd = cur.length();
-                        p.control.as_mut().unwrap().vel = nd * spd;
+                    if p.windwalk_state > Fix64::ZERO {
                         phoenix_shots.push((i as u32, p.pos, nd));
+                    } else {
+                        // 098c `bO`：每 tick 冲量，18×0.5^(v/20)（v 单位/帧）。v=0 → 18/tick≈600/s；v=20/tick→9/tick。
+                        let v_tick = p.control.as_ref().unwrap().vel.length() * Fix64::from_num(0.03);
+                        let imp = Fix64::from_num(18.0)
+                            * Fix64::from_num(0.5_f64.powf((v_tick / Fix64::from_num(20.0)).to_num::<f64>()));
+                        p.control.as_mut().unwrap().vel = nd * (imp / Fix64::from_num(0.03));
                     }
                 }
                 continue;
@@ -619,6 +623,10 @@ impl World {
                 p.lava_boot_cd = (p.lava_boot_cd - dt).max(Fix64::ZERO);
             }
             // 凤凰态倒计时（B4-R）：到期解除冲刺。
+            // 098c `Fr[unit]`：疾风步状态（A 冲锋 / B 隐身两形态都置位）。
+            if p.windwalk_state > Fix64::ZERO {
+                p.windwalk_state = (p.windwalk_state - dt).max(Fix64::ZERO);
+            }
             if p.phoenix_remaining > Fix64::ZERO {
                 p.phoenix_remaining = (p.phoenix_remaining - dt).max(Fix64::ZERO);
                 if p.phoenix_remaining == Fix64::ZERO && p.dash_active {
@@ -706,9 +714,18 @@ impl World {
         for (owner, pos, dir) in phoenix_shots.drain(..) {
             // 098c `tB` 实证：凤凰弹速度 **1000**、半径 **44**、寿命 `1.4×(1+.1ei)`；
             // 伤害因子 `Xv = Wr+wr`（R 槽等级，handler `ea/xa` 未解码）→ 用 S012 当前等级伤害代替。
-            let ei = self.players.get(owner as usize).map(|p| p.mastery[2] as f64).unwrap_or(0.0);
-            let lv = self.players.get(owner as usize).map(|p| p.skill_level(crate::skill::SkillId::S012)).unwrap_or(1);
-            let dmg = crate::skill::DefTable::def(crate::skill::SkillId::S012).stats_at(lv).damage;
+            // 098c `sB` 实证：弹体伤害 = `4 + 0.5×Xv`，`Xv = Wr[id]+wr[id]`
+            // = 槽 3（S012 本身，即 R 槽）+ 槽 2（S008/S009/S010，即 E 槽）的**等级之和**。
+            // 这也是 098c 把凤凰与**疾风步**设计成连携（`UB` 的 `Fr[gX]` 分支）的根据。
+            let (ei, lv_r, lv_e) = self.players.get(owner as usize).map(|p| {
+                let lv_e = [crate::skill::SkillId::S008, crate::skill::SkillId::S009, crate::skill::SkillId::S010]
+                    .iter()
+                    .map(|s| p.skill_level(*s))
+                    .max()
+                    .unwrap_or(0);
+                (p.mastery[2] as f64, p.skill_level(crate::skill::SkillId::S012), lv_e)
+            }).unwrap_or((0.0, 1, 0));
+            let dmg = Fix64::from_num(4.0 + 0.5 * (lv_e + lv_r) as f64);
             let speed = Fix64::from_num(1000.0);
             let life = Fix64::from_num(1.4 * (1.0 + 0.1 * ei));
             self.projectiles.push(Projectile {
@@ -1607,6 +1624,13 @@ impl World {
                         if self.obstacles[oi].hp == 0 {
                             // 098c：柱子被摧毁移除（每轮 re-layout 即重生成）；掉落 Shard 待拾取系统
                             self.obstacles.remove(oi);
+                        }
+                        // S013B 搬运（098c `pB` tooltip）：「若碰到任何非术士障碍物，你会与它互换位置」
+                        // —— 弹体撞柱时就地传送施法者（否则施法者永远到不了）。
+                        if matches!(&pr.kind, ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::CarrySelf, .. }) {
+                            if let Some(owner) = self.players.get_mut(pr.owner as usize) {
+                                owner.pos = pr.pos;
+                            }
                         }
                         pr.alive = false; // 被柱子挡下：直接消失
                     }
@@ -3364,6 +3388,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
                             p.add_buff(BuffKind::Windwalk(lifesteal.to_num::<f64>()), dur);
+                            p.windwalk_state = Fix64::from_num(dur);
                         }
                     }
                     crate::skill::W098bUtilKind::Phoenix => {
@@ -3392,6 +3417,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                            p.windwalk_state = Fix64::from_num(dur);
                             p.kick = Some(Kick {
                                 push_power: Fix64::from_num(150.0),
                                 push_time: Fix64::from_num(0.3),
@@ -4615,6 +4641,40 @@ mod tests {
 
     fn near(a: Fix64, b: f64, tol: f64) -> bool {
         (a.to_num::<f64>() - b).abs() < tol
+    }
+
+    /// S012B 凤凰（098c `UB` 普通分支）：**非**疾风步状态时，移动指令只把冲刺转向
+    /// （`bO(gX, 18×0.5^(v/20))`），不发射凤凰弹。
+    #[test]
+    fn s012b_phoenix_redirect_without_windwalk_steers_only() {
+        let mut world = World::new(2, 1010);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S012.as_u32() as usize] = true;
+        world.players[1].pos = Vec2::new(d60(20.0), d60(20.0));
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let before = world.players[0].pos;
+        world.step(vec![
+            PlayerInput { set_target: Some(Vec2::new(Fix64::ZERO, d60(8.0))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..10 {
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(
+            !world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { .. })),
+            "非疾风步状态不应发弹"
+        );
+        // 冲刺应转向 +y（原为 +x）。
+        assert!(world.players[0].pos.y > before.y, "转向后应向 +y 移动");
     }
 
     // ===== 测试尺度换算辅助（098b 过渡，PORT_098B_DECISIONS.md D4） =====
@@ -8186,6 +8246,35 @@ mod tests {
         // 对照 A 形态（置换）：点空地时也是自己瞬移，但点敌人时换位——本测试验证 B 后不互换
     }
 
+    /// S013B 搬运（098c `pB` tooltip）：弹体撞到**非术士障碍物**时，施法者与该障碍物互换位置
+    /// （否则弹体被柱子挡下，施法者永远到不了）。
+    #[test]
+    fn s013b_relocate_bolt_hitting_obstacle_carries_caster() {
+        let mut world = World::new(2, 1011);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S013.as_u32() as usize] = true; // B=搬运
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(30.0), d60(30.0));
+        world.players[1].move_target = None;
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(5.0), Fix64::ZERO), 24.0));
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..40 {
+            world.step(none.clone(), dt);
+        }
+        let d = world.players[0].pos.length().to_num::<f64>();
+        // 弹体在「柱半径 24 + 弹半径 40」处就被判定撞柱 → 施法者落在柱子前沿（≈240）。
+        assert!((200.0..=340.0).contains(&d), "撞柱应把施法者搬到柱子处（≈240~300），实际 {d}");
+    }
+
     /// S012B 凤凰：冲刺中转向 → 转向处发射凤凰弹。
     #[test]
     fn s012b_phoenix_redirect_spawns_missile() {
@@ -8205,6 +8294,8 @@ mod tests {
             PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
+        // 098c `UB`：只有**疾风步状态**（`Fr[gX]`）中移动指令才会发射凤凰弹。
+        world.players[0].windwalk_state = Fix64::from_num(3.0);
         world.step(vec![
             PlayerInput { set_target: Some(Vec2::new(d60(6.0), d60(3.0))), ..Default::default() },
             PlayerInput::default(),

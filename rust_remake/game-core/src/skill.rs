@@ -2340,7 +2340,7 @@ impl DefTable {
                 tree: SkillTree::R,
                 name: "冲撞·凤凰",
                 needs_point: true,
-                effect: W098bUtility { kind: W098bUtilKind::Phoenix, speed: Fix64::from_num(1300.0), max_distance: Fix64::from_num(770.0) },
+                effect: W098bUtility { kind: W098bUtilKind::Phoenix, speed: Fix64::from_num(667.0), max_distance: Fix64::from_num(770.0) },
                 growth: SkillGrowth {
                     cooldown_base: 17.5,
                     cooldown_delta: -1.1875, // 098c: 17.5->8.0 (9 lv, w3a B 段)

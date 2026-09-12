@@ -1,0 +1,60 @@
+function IB takes nothing returns nothing
+if Fr[ii]then
+return
+endif
+
+set gr[ii]=true
+set Fr[ii]=true
+call gR(ii,hR(ii)+Dr/ 2.)
+set hv[ii]=ni
+set Rv[ii]=Do
+call UnitAddAbility(F[ii],'Agho')
+call LO((
+function AA),((4*jn[ri])*1.),(ii),($539),(ne),0,0,0)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\ReplenishMana\\SpiritTouchTarget.mdl",K[ii],L[ii]))
+endfunction
+---
+function RB takes nothing returns nothing
+if fr[ii]then
+return
+endif
+
+set fr[ii]=true
+call gR(ii,hR(ii)+Dr)
+set hv[ii]=ni
+set Rv[ii]=Do
+call UnitAddAbility(F[ii],'Agho')
+call LO((
+function DR),((3.1*jn[ri])*1.),(ii),($539),(ne),0,0,0)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\ReplenishMana\\SpiritTouchTarget.mdl",K[ii],L[ii]))
+endfunction
+---
+function DR takes nothing returns nothing
+if fr[Yv]then
+set fr[Yv]=false
+if not Hr[Yv]then
+set hv[Yv]=null
+set Rv[Yv]=do
+endif
+
+call UnitRemoveAbility(F[Yv],'Agho')
+call gR(Yv,hR(Yv)-Dr)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\ReplenishMana\\SpiritTouchTarget.mdl",K[Yv],L[Yv]))
+endif
+endfunction
+---
+function AA takes nothing returns nothing
+if Fr[Yv]then
+set gr[Yv]=false
+set Fr[Yv]=false
+if not Hr[Yv]then
+set hv[Yv]=null
+set Rv[Yv]=do
+endif
+
+call UnitRemoveAbility(F[Yv],'Agho')
+call gR(Yv,hR(Yv)-Dr/ 2.)
+call DestroyEffect(AddSpecialEffect("Abilities\\Spells\\Undead\\ReplenishMana\\SpiritTouchTarget.mdl",K[nr],L[nr]))
+endif
+endfunction
+---
