@@ -22,12 +22,13 @@ cargo build --release -p client --features client/steam  :: release（联机用�
   房主改设置后**各端自动取消准备**（走大厅设置串 `room_cfg`，无需额外协议）。
 - **金币时序（已按 098c 校准）**：首次进配置/商店时发 `初始金+首轮参与奖`；**每轮参与奖在回合结算时发**（进商店前到账）；
   两者都**幂等**；对局未开始时金币为 0。
-- **商店（一行两动作）**：
-  - `=`/回车 = 购买或升级该家族；**`退格`/`Delete` = 卖出**当前持有的该家族物品；
-  - 行标签**同时标出两个动作**：`[= 操作 · 退格 卖出 +NG]`；满级家族行为 `[= 或 退格 卖出]`；
-  - **未选中任何行时，退格也能卖**（回退到第一件可卖物）并打日志 —— 不会"按了没反应"；
-  - 已无冗余的"已持有（可卖）"独立区（同一物品不再占两行）。
-  - 逻辑核心是纯函数 `Game::shop_sell_target`，有单测 `shop_sell_target_resolution` 钉住三种情形。
+- **商店/成长（列表 + 详情，2026-09-12 重塑）**：
+  - 选中行 → 详情区显示**描述**，下方是**「购买」「卖出」两个按钮**，各带快捷键与**禁用态**
+    （不可用时置灰并写明原因：已满级 / 金币不足 / 背包已满 / 未持有）；
+  - 行标签**不再有 `[买]`/`[卖]` 前缀**（动作只在按钮上）；`=`/回车 只购买/升级，`退格`/`Delete` 卖出；
+  - 纯函数 `shop_rows`（`ShopRow` 行模型）、`shop_buy_block`、`shop_sell_target`、`mastery_block` 均有单测；
+  - 成长页同构（无卖出），选中精通看描述 + 购买按钮禁用态；
+  - `keys::CONFIRM_HINT` / `keys::SELL_HINT` + `keys::confirm_just` / `keys::sell_just` 统一提示与判定。
 - **大厅 UI**：四带版面骨架（`layout.rs`）、统一调色板、覆盖层统一入口、鼠标可点（建房/设置）、
   子界面**清屏**、房间面板显示设置信息块（所有端可见）、房间列表显示「自定义 N 项」。
 - **E 键已退休**（房间名/备注并入 `[A]房间`）。
@@ -40,7 +41,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 308 项（client 30 / game-core 233 / net 36 / net-steam 9） |
+| 测试基线 | 311 项（client 33 / game-core 233 / net 36 / net-steam 9） |
 
 ## 四、待办（按建议优先级）
 
@@ -69,6 +70,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 
 ## 六、最近提交（新→旧）
 
+`811ad8d` 商店/成长列表+详情（买卖按钮带快捷键与禁用态） ← `c854027` HANDOVER 刷新 ←
 `565728e` 商店退格卖出可用化 ← `7270497` HANDOVER ← `961182d` 商店一行两动作
 ← `065c4ff` 源码扫描测试抗重构 ← `74edf9d` 金币时序 ← `12f1946` 工程坑文档
 ← `31bf70b` 人数/提示 ← `30e6ea5` 非房主只读 ← `5ce9ee1` 开局发钱（初版）
