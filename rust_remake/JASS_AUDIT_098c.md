@@ -613,3 +613,22 @@ endfunction
 
 **下一步（不变）**：写 w3q walker（`field(4)+type(4)+level(4)+value/cstring`，条目边界 = 两个 4 字符 id），
 产出 `R0xx → 各级 gglb/glvl/glmb`，再实装 `spell_buys` + 三次跳档。
+
+
+### B 轮：w3q 尾部块定性（第 4 次尝试，2026-09-12）
+
+在解析完 2 条"原表修改"条目后（offset 78），后续内容**不是另一种数据块**，而是
+**同一种记录格式继续排列**，只是**没有 old_id/new_id/n_mods 头**：
+
+```
+@78  01 00 00 00 | gub1 03 00 00 00 01 00 00 00 00 00 00 00 "|cffff0000Player commands:..."
+@731 ... 00 00 00 | gnam 03 … "Inventory" | gbpx … | gglb … | glmb … | grac … "commoner" | ...
+```
+
+`gnam="Inventory"` / `grac="commoner"` 是**游戏原生升级**的名字 → 这块是「原表升级表」，
+形态为：**每对象 = `id(4)` + 一串 `field(4)+type(4)+level(4)+data_ptr(4)+value` 记录**，
+一直排到文件尾（`gglb`/`glvl`/`glmb` 就是这些对象里的字段）。
+
+**下一步**：把这个尾部块按「`id(4)` 开头 + 记录序列」的规则 walk 一遍，
+产出 `升级 id → 逐级 gglb/glvl/glmb` 全表；然后确认 `R002` 是否在其中
+（若不在，说明 Warlock 的 R0xx 走的是另一条路径——需要再回溯 JASS 里这些科技的实际注册处）。
