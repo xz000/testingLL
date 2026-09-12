@@ -70,7 +70,7 @@
 | **S010B 隐身** | 时长 `4×jn` | 4.0 | ✅ |
 | **S011 瞬移** | 射程 `700+70×Wr`（L1=770）；CD 16→5.5 | 770+70/级 | ✅ |
 | **S012A 冲撞** | 速度 1300；射程 `(650+50L)×1.1`；半径 **60**；CD 16.5→7 | 1300；射程 700+50/级；逐档 CD；命中判定用双方半径之和（≈30+30=60，等价） | ✅（半径等价） |
-| **S012B 凤凰** | `WB`：3.1s 冲刺 + 移动指令触发凤凰弹（`UB`→`tB`：速度 **1000**、半径 **44**、寿命 `1.4×(1+.1ei)`） | 冲刺+转向发弹已实现；弹体规格已对齐 098c（伤害用 S012 等级近似，`Xv=Wr+wr` handler 未解码） | ✅（近似伤害） |
+| **S012B 凤凰** | `WB`/`UB`/`tB`：3.1s 冲刺（冲量 20/帧 ⇒ 667/s）；移动指令转向 `bO(gX, 18×0.5^(v/20))`；**仅疾风步状态（`Fr`）中**才发凤凰弹（速度 1000、半径 44、寿命 `1.4×(1+.1ei)`、伤害 `4+0.5×(Wr+wr)`） | 已按实证实现 | ✅（2026-09-12 深挖） |
 | **S013A 换位** | `MB`：**弹体** 速度 1700、半径 40、射程 `900×(1+.1ei)`；命中敌人 → 互换位置，弹体销毁 | 已改：弹体（`on_hit=SwapTarget`），命中互换 | ✅（2026-09-12） |
 | **S013B 搬运** | `pB`：**弹体** 速度 800、半径 40、射程 `600×(1+.1ei)`；到达后把施法者传送到该处 | 已改：弹体（`on_hit=CarrySelf`，到期传送施法者） | ✅（2026-09-12） |
 
@@ -161,3 +161,34 @@
 
 > 历史（已解决）：`JASS_AUDIT` 早先将 S008/S009/S010/S012/S013/S016/S017/S018/S019/S020 标 ❌，后经 `653a00d` 等提交修正；
 > 原实现保留的 "camp2 端点对齐（Rust L20 = 098c L8）" 注释已在等级机制改为 8~9 档后**全部清理**（2026-09-12）。
+
+
+## 附：S012「Thrust」/ S013「Swap」深挖（2026-09-12，tooltip + JASS 双向验证）
+
+### 1. 形态与文案（`w3a_strings.txt`，R 键 = S034 树）
+`Take` 菜单 `sC('S034')` 的六个形态名 + 实证 tooltip：
+
+| 形态 | 名称 | tooltip（原文） | JASS |
+|---|---|---|---|
+| S013A | Swap **Displacement** | “Shoot a missile that instantly will swap you to its location on impact while swapping the target to your current location.” | `MB`（换位弹体）✅ |
+| S013B | Swap **Relocate** | “Cast a bolt that will transfer you to its location. **If any non-warlock obstacle is encountered, you will swap position with that.**” | `pB`（搬运弹体 + **撞柱换位**）✅ |
+| S012A | Thrust **Strike** | “Accelerates toward target point dealing damage to the first warlock in your way” | `AB`（range `650+50×Wr`）✅ |
+| S012B | Thrust **Phoenix** | （tooltip 未单独导出） | `WB`+`UB`+`tB` |
+
+### 2. 槽位解密（`war3map_pretty.j` 研究/升级分支）
+| 槽 | 数组 | 树（技能） | 我方对应 |
+|---|---|---|---|
+| 0 | `ur` | S000 | G |
+| 1 | `Ur` | S004 组 | D |
+| 2 (`wr`) | S032 树 | S009/S008/S010 | **E** |
+| 3 (`Wr`) | S034 树 | S013/S012/S011 | **R** |
+| 4 (`yr`) | S033 树 | S014/S015/S016 | T |
+| 5 (`Yr`) | S035 树 | S017/S018/S019 | Y |
+| 6 (`zr`) | — | — | C |
+
+### 3. 凤凰 = **疾风步连携**（关键发现）
+- `UB`（凤凰态下的移动指令 handler）：`if Fr[gX]` → `tB` 发弹；`else` → `bO(gX, 18*Pow(.5, v/20))` 只转向。
+- `Fr[unit]`（大小写不敏感，= `fr`）由 **S010 疾风步两形态**置位：`IB`（B 隐身，4×jn）与 `RB`（A 冲锋，3.1×jn）都 `set Fr=true` + `UnitAddAbility('Agho')`；`DR`/`AA` 到期清除。
+- 弹体伤害 `sB`：`ZO = 4 + .5*Xv`，而 `tB` 写 `Xv = Wr[id] + wr[id]` = **槽 3（R=S012）+ 槽 2（E=S008/09/10）**的等级和 —— 与「需要疾风步状态」的连携设计吻合。
+- 故我方实现：`Player.windwalk_state`（098c `Fr`）由 S010 两形态置位；凤凰态下移动指令 → 无 `windwalk_state` 只转向（`18×0.5^(v/20)`），有则额外发弹；伤害 `4 + 0.5×(E 槽等级 + S012 等级)`。
+- 注：仍存疑处 —— `Fr` 在 098c 是「疾风步」状态，若玩家槽 2 选的是 Splitter/Meteor（同属 `wr` 计数）则无法进入 `Fr` → 永远不发弹。这可能是 098c 自身的设计缺陷；我们按实证复刻。
