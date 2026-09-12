@@ -732,31 +732,50 @@ mod tests {
         let p = &mut m.profiles[0];
         let key = PlayerProfile::key_of_skill(SkillId::S000).expect("S000 应有所属槽");
         let base = crate::skill::DefTable::max_level(SkillId::S000);
+        let cost = SkillId::S000.upgrade_cost();
         // 未装备该技能 → 不能突破（098c `kn[7*id+slot] != 0`）
         assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 0);
         assert!(!p.break_cap_for(SkillId::S000), "该槽未绑定该技能时不能突破");
         p.key_slots[key.as_u32() as usize] = Some(SkillId::S000);
-        // 第一次突破：扣 5 金
-        p.gold = 20;
+        p.gold = 200;
+
+        // ---- 第 1 轮：升满 → 突破（-5G）→ 上限 base+2 ----
+        while p.upgrade_skill(SkillId::S000, cost) {} // 一路升到当前上限
+        assert_eq!(p.skill_level(SkillId::S000), base, "应先升到基础上限");
+        let g0 = p.gold;
         assert!(p.break_cap_for(SkillId::S000), "首次突破应成功");
-        assert_eq!(p.gold, 15, "每次突破扣 5 金");
+        assert_eq!(p.gold, g0 - JORDAN_PRICE, "每次突破扣 5 金");
         assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 2);
         assert!(p.items.is_empty(), "乔丹之石不进入物品栏");
-        // 突破后上限 = base + 2 生效
-        let idx = SkillId::S000.as_u32() as usize;
-        p.skill_levels[idx] = base + 2;
-        assert!(!p.upgrade_skill(SkillId::S000, 0), "base+2 已是上限");
-        // **可再买一颗**（098c：戒指用掉即消耗，但商店可再买）→ 上限继续 +2
-        p.skill_levels[idx] = base;
-        assert!(p.break_cap_for(SkillId::S000), "同一槽可反复突破");
-        assert_eq!(p.gold, 10, "每次突破都扣 5 金");
+        // 突破后**还能继续升级**到新上限（这就是 UI 上「升级到 Lv{n+1}」按钮）
+        let mut up = 0;
+        while p.upgrade_skill(SkillId::S000, cost) {
+            up += 1;
+        }
+        assert_eq!(up, 2, "突破后应能再升 2 级");
+        assert_eq!(p.skill_level(SkillId::S000), base + 2, "新上限 = base+2");
+
+        // ---- 第 2 轮：再次满级 → **再次突破**（再 -5G）→ 上限 base+4 ----
+        let g1 = p.gold;
+        assert!(
+            p.break_cap_for(SkillId::S000),
+            "同一槽可反复突破（这正是 UI 上再次出现的「突破上限 +2」按钮）"
+        );
+        assert_eq!(p.gold, g1 - JORDAN_PRICE, "第二次突破也要 5 金，不是免费");
         assert_eq!(p.cap_bonus_for_skill(SkillId::S000), 4, "两次突破 = +4");
-        p.skill_levels[idx] = base + 4;
-        assert!(!p.upgrade_skill(SkillId::S000, 0), "base+4 已是新上限");
+        let mut up2 = 0;
+        while p.upgrade_skill(SkillId::S000, cost) {
+            up2 += 1;
+        }
+        assert_eq!(up2, 2, "第二次突破后又能再升 2 级");
+        assert_eq!(p.skill_level(SkillId::S000), base + 4, "上限随每次突破累加");
+        assert!(!p.upgrade_skill(SkillId::S000, cost), "base+4 到顶");
+        assert_eq!(p.jordan_breaks_for_skill(SkillId::S000), 2);
+
         // 金币不足 → 失败且不扣钱
-        p.gold = 4;
+        p.gold = JORDAN_PRICE - 1;
         assert!(!p.break_cap_for(SkillId::S000), "金币不足不能突破");
-        assert_eq!(p.gold, 4, "失败不应扣钱");
+        assert_eq!(p.gold, JORDAN_PRICE - 1, "失败不应扣钱");
     }
 
     /// 乔丹之石在不同槽之间各自累计、互不影响。

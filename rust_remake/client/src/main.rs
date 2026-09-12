@@ -1397,8 +1397,15 @@ impl Game {
         }
 
         // `=` 键：购买/升级当前选中的技能（第一次=购买，之后=升级）
-        if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into())) {
-            eprintln!("[learn] '=' pressed, learn_tree_key={learn_key:?} idx={:?}", self.learn_skill_index);
+        // `=` 键 / 回车：购买/升级当前选中的技能（第一次=购买，之后=升级，满级=乔丹之石突破）。
+        // 三个页签（技能/商店/成长）的确认键必须一致——按钮文案写的是 `[= / 回车]`，
+        // 此前技能页只接了 `=`，回车无反应（与文案不符）。
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
+            || ctx
+                .keyboard
+                .is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter))
+        {
+            eprintln!("[learn] confirm (='/'Enter'), learn_tree_key={learn_key:?} idx={:?}", self.learn_skill_index);
             self.buy_or_upgrade_selected();
         }
 
@@ -3510,12 +3517,20 @@ impl Game {
                                         let owned = me.bound_skill(key) == Some(skill);
                                         let lv = if owned { me.skill_level(skill) } else { 1 };
                                         let cost = skill.learn_cost();
+                                        // 当前等级上限 = 基础上限 + 乔丹之石突破（2 × 次数）；
+                                        // 直接写进标题，玩家能一眼看到上限随突破增长（base → +2 → +4 …）。
+                                        let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
                                         // 标题用中性基础名（去掉 ·形态 后缀）；当前形态见下方「二形态」区
                                         let on = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
                                         let name = game_core::skill::DefTable::neutral_name(skill);
-                                        // 标题：名称 + 已购等级 / 价格
+                                        // 标题：名称 + 已购等级/上限 / 价格
                                         let head = if owned {
-                                            format!("{name}  Lv{lv}  （已购买）")
+                                            let jb = me.jordan_breaks_for_skill(skill);
+                                            if jb > 0 {
+                                                format!("{name}  Lv{lv} / {cap}  （已购买，乔丹 +{}）", 2 * jb)
+                                            } else {
+                                                format!("{name}  Lv{lv} / {cap}  （已购买）")
+                                            }
                                         } else {
                                             format!("{name}  {cost}G")
                                         };
@@ -3532,7 +3547,7 @@ impl Game {
                                         ui::text_left(
                                             canvas, ctx,
                                             &format!(
-                                                "Lv{lv}  伤害 {:.1}  冷却 {:.1}s  射程 {:.0}",
+                                                "Lv{lv} / 上限{cap}  伤害 {:.1}  冷却 {:.1}s  射程 {:.0}",
                                                 st.damage.to_num::<f32>(),
                                                 st.cooldown.to_num::<f32>(),
                                                 st.range.to_num::<f32>()
@@ -3571,7 +3586,6 @@ impl Game {
                                         }
                                         // 购买 / 升级按钮：未拥有=购买 1 级，已拥有=升级；已满级=乔丹之石突破。
                                         // 098c `Hf`：一颗戒指（5G）只换一次 +2、用掉即消耗，**想再 +2 必须再花 5 金**（无次数上限）。
-                                        let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
                                         let can_break = owned && lv >= cap;
                                         let (label, enabled) = if owned {
                                             if lv >= cap {
