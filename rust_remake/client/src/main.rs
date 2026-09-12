@@ -5377,7 +5377,9 @@ impl Game {
     fn draw_steam_room_edit(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "编辑房间信息", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.26 }, true)?;
+        // 按 `layout::bands` 四带摆放（此前是手工摆坐标 → 文字重叠，2026-09-12 重排）。
+        let b = layout::bands(sw, sh);
+        draw_text(canvas, ctx, "编辑房间信息", 34.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: b.title.y + 12.0 }, true)?;
         // 模式（host 数字键 1-5 切换并同步大厅元数据；B3/D13 #1）
         draw_text(
             canvas, ctx,
@@ -5385,9 +5387,9 @@ impl Game {
                 "模式（host 按 1-5 切换）：{}",
                 game_core::meta::MatchState::mode_name(self.match_mode)
             ),
-            22.0,
+            20.0,
             Color::from_rgb(150, 200, 255),
-            Point2 { x: cx, y: sh * 0.26 + 40.0 },
+            Point2 { x: cx, y: b.title.y + 54.0 },
             true,
         )?;
         // 模式图例：1-5 对应玩法名，方便房主不看文档也能选。
@@ -5406,17 +5408,17 @@ impl Game {
         draw_text(
             canvas, ctx,
             &format!("玩法图例：{legend_txt}"),
-            18.0,
+            16.0,
             Color::from_rgb(150, 170, 195),
-            Point2 { x: cx, y: sh * 0.26 + 70.0 },
+            Point2 { x: cx, y: b.title.y + 82.0 },
             true,
         )?;
         let labels = ["房间名", "备注"];
         let vals = [self.steam_edit_name.clone(), self.steam_edit_note.clone()];
-        let mut y = sh * 0.42;
-        let label_w = 200.0;
+        let mut y = b.content.y + 12.0;
+        let label_w = 180.0;
         let box_w = 420.0;
-        let box_h = 56.0;
+        let box_h = 52.0;
         let left = cx - box_w / 2.0 - 40.0;
         for i in 0..2 {
             let selected = i == self.steam_room_edit_focus;
@@ -5430,12 +5432,41 @@ impl Game {
                 format!("  {}", vals[i])
             };
             draw_text(canvas, ctx, &disp, 22.0, if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE }, Point2 { x: left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 14.0 }, true)?;
-            y += box_h + 30.0;
+            y += box_h + 34.0;
         }
+        // 房间锁（内容带内、两字段之下，留足行距避免与字段重叠）
         let lock_txt = if self.steam_room_locked { "[v] 已锁定（他人不能加入）" } else { "[ ] 未锁定（可加入）" };
-        draw_text(canvas, ctx, &format!("房间锁：{lock_txt}（按 L 切换）"), 22.0, if self.steam_room_locked { Color::from_rgb(235, 150, 90) } else { Color::from_rgb(140, 200, 160) }, Point2 { x: cx, y: y + 30.0 }, true)?;
-        draw_text(canvas, ctx, "人数上限建房时固定（steamworks 限制），用房间锁控制新入", 17.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: y + 62.0 }, true)?;
-        draw_text(canvas, ctx, "回车 保存    Q 取消    L 锁房", 20.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+        draw_text(
+            canvas, ctx,
+            &format!("房间锁：{lock_txt}（按 L 切换）"),
+            20.0,
+            if self.steam_room_locked { Color::from_rgb(235, 150, 90) } else { Color::from_rgb(140, 200, 160) },
+            Point2 { x: cx, y: y + 34.0 },
+            true,
+        )?;
+        draw_text(
+            canvas, ctx,
+            "人数上限建房时固定（steamworks 限制），用房间锁控制新入",
+            16.0,
+            Color::from_rgb(150, 160, 178),
+            Point2 { x: cx, y: y + 64.0 },
+            true,
+        )?;
+        // 状态带：房间设置徽章（与建房界面一致，`O` 可进设置编辑器）
+        let n = self.match_cfg.non_default_setting_count();
+        let badge = if n == 0 { "默认（原版）".to_string() } else { format!("自定义 {n} 项") };
+        let badge_col = if n == 0 { Color::from_rgb(150, 160, 175) } else { Color::from_rgb(255, 200, 90) };
+        ui::text_center(
+            canvas, ctx,
+            &format!("房间设置：{badge}   [O] 编辑"),
+            ui::theme::SMALL, badge_col, cx, b.status.y + 2.0,
+        )?;
+        // 提示带（屏幕最底）
+        ui::text_center(
+            canvas, ctx,
+            "回车 保存 · Q 取消 · L 锁房 · O 房间设置 · ↑↓ 切换字段 · 数字 1-5 选模式",
+            ui::theme::SMALL, Color::from_rgb(160, 200, 255), cx, b.hint.y + 4.0,
+        )?;
         Ok(())
     }
 
