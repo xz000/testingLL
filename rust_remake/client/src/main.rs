@@ -31,6 +31,8 @@ mod ui;
 
 // Steam 联机逻辑（feature 门控，独立模块便于阅读维护；字段与方法均属 `Game`，纯逻辑分组）。
 mod steam;
+/// 界面按键契约（确认键等）：文案与判定放一起，单测钉住两者一致。
+mod keys;
 
 /// 机器人数量（不含玩家本人）。当前 Solo/局域网均无本地 AI；保留该常量供将来“带 AI 测试”模式复用。
 #[allow(dead_code)]
@@ -1400,11 +1402,7 @@ impl Game {
         // `=` 键 / 回车：购买/升级当前选中的技能（第一次=购买，之后=升级，满级=乔丹之石突破）。
         // 三个页签（技能/商店/成长）的确认键必须一致——按钮文案写的是 `[= / 回车]`，
         // 此前技能页只接了 `=`，回车无反应（与文案不符）。
-        if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
-            || ctx
-                .keyboard
-                .is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter))
-        {
+        if keys::confirm_just(ctx) {
             eprintln!("[learn] confirm (='/'Enter'), learn_tree_key={learn_key:?} idx={:?}", self.learn_skill_index);
             self.buy_or_upgrade_selected();
         }
@@ -1456,8 +1454,7 @@ impl Game {
                 self.learn_growth_sel = Some(i);
             }
         }
-        let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter));
+        let confirm = keys::confirm_just(ctx);
         if confirm {
             self.growth_confirm();
         }
@@ -1616,8 +1613,7 @@ impl Game {
             }
         }
         // `=`/回车：确认执行当前选中行（买或卖由行决定）。
-        let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter));
+        let confirm = keys::confirm_just(ctx);
         if confirm {
             self.shop_confirm();
         }
@@ -3596,8 +3592,9 @@ impl Game {
                                                     let extra = if n > 0 { format!("，已突破 ×{n}") } else { String::new() };
                                                     (
                                                         format!(
-                                                            "突破上限 +2（乔丹之石 · {}G{extra}）  [= / 回车]",
-                                                            game_core::meta::JORDAN_PRICE
+                                                            "突破上限 +2（乔丹之石 · {}G{extra}）  {}",
+                                                            game_core::meta::JORDAN_PRICE,
+                                                            keys::CONFIRM_HINT
                                                         ),
                                                         true,
                                                     )
