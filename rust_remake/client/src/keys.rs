@@ -353,8 +353,8 @@ mod source_scan_tests {
             clear > title,
             "清屏必须在菜单内容（标题等）之后，否则等于没清（回归④）"
         );
-        // 子界面绘制应在清屏之后
-        let create = idx("self.draw_steam_create_lobby(&mut canvas, ctx)?;");
-        assert!(create > clear, "建房界面绘制应在清屏之后");
+        // 子界面绘制应在清屏之后（第 2/3 步后，建房流程改画统一编辑器 `draw_room_cfg_editor`）
+        let create = idx("self.draw_room_cfg_editor(&mut canvas, ctx)?;");
+        assert!(create > clear, "统一编辑器绘制应在清屏之后");
     }
 }
