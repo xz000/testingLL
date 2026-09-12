@@ -463,6 +463,7 @@ struct PendingListOp {
 }
 
 /// 房间列表里一间公开大厅的展示信息（加入前即可读取；房主昵称由调用方用 Friends 补）。
+#[derive(Clone, Debug)]
 pub struct LobbyInfo {
     pub id: u64,
     /// 房主 SteamID（房间列表显示“谁建的房”）。
