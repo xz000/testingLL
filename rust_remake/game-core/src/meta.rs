@@ -190,6 +190,47 @@ impl MatchConfig {
         })
     }
 
+    /// **与默认值不同的"高级设置"项数**（大厅/房间面板的「自定义 N 项」徽章用）。
+    ///
+    /// 只统计**高级设置**：经济 8 项 + 初始金、玩法倍率/时长/收缩/柱/冰/地图、金币奖励开关。
+    /// **不计**基础赛制（`game_mode`/`total_rounds`/`team_count`/`win_score`/`learn_time_secs`）——
+    /// 这些在房间里一直是可见的常规参数，不属于"房主开了高级设置"。
+    pub fn non_default_setting_count(&self) -> usize {
+        let d = MatchConfig::default();
+        let mut n = 0;
+        macro_rules! cmp {
+            ($($f:ident),* $(,)?) => { $( if self.$f != d.$f { n += 1; } )* };
+        }
+        cmp!(
+            damage_mult,
+            knockback_mult,
+            lava_damage_mult,
+            first_round_time_secs,
+            between_rounds_time_secs,
+            shrink_delay_secs,
+            shrink_ring_secs,
+            pillar_mode,
+            ice_mode,
+            arena_shape,
+            gold_rewards_enabled,
+            starting_gold,
+            gold_per_round,
+            gold_per_kill,
+            gold_per_assist,
+            gold_per_round_win,
+            gold_per_most_damage,
+            score_per_kill,
+            score_per_assist,
+            score_per_round_win,
+            base_regen,
+            shopping_time_secs,
+        );
+        if self.place_rewards != d.place_rewards {
+            n += 1;
+        }
+        n
+    }
+
     /// 设置的**稳定哈希**（FNV-1a 64）：用于"配置是否变更"的比较（第 5 步：变更即取消全员准备）。
     /// 直接哈希紧凑串，避免逐字段比较遗漏。
     pub fn settings_hash(&self) -> u64 {
@@ -1442,6 +1483,31 @@ mod tests {
         mp.place_rewards = vec![3, 2, 1];
         let sp = mp.to_meta_string();
         assert_eq!(MatchConfig::from_meta_string(&sp).unwrap(), mp, "名次奖励应往返");
+    }
+
+    /// 「自定义 N 项」徽章计数：默认配置为 0；改任一高级设置即 +1；基础赛制项不计。
+    #[test]
+    fn non_default_setting_count_for_badge() {
+        let mut c = MatchConfig::default();
+        assert_eq!(c.non_default_setting_count(), 0, "默认应为 0 项");
+        // 基础赛制不算「高级设置」
+        c.total_rounds += 1;
+        c.game_mode = 3;
+        c.team_count = 2;
+        c.win_score += 5;
+        assert_eq!(c.non_default_setting_count(), 0, "基础赛制项不计入徽章");
+        // 高级设置逐项计入
+        c.gold_per_kill = 7;
+        assert_eq!(c.non_default_setting_count(), 1);
+        c.lava_damage_mult = 0.0;
+        assert_eq!(c.non_default_setting_count(), 2, "岩浆可关也应计入");
+        c.pillar_mode = 0;
+        assert_eq!(c.non_default_setting_count(), 3);
+        c.place_rewards = vec![3, 2, 1];
+        assert_eq!(c.non_default_setting_count(), 4);
+        // 改回默认值 → 计数回落
+        c.gold_per_kill = MatchConfig::default().gold_per_kill;
+        assert_eq!(c.non_default_setting_count(), 3);
     }
 
     #[test]
