@@ -1502,8 +1502,8 @@ impl DefTable {
     /// 未列入的（Unity 版遗留技能）沿用统一上限 20。
     pub fn max_level(id: SkillId) -> u32 {
         // 098c **基础上限** = 1（购买时授予）+ 升级研究上限 N（w3q/JASS `SetPlayerTechMaxAllowed` 实证）。
-        // 乔丹之石（T000–T006，`Hf`）再给对应升级研究 +2 → `+skill_cap_bonus` 后达「含乔丹」上限。
-        // 例：S002 研究上限 6 → base 7，+乔丹 = 9（buy tooltip 亦列 Level 1..7）。
+        // 乔丹之石（`T000`–`T006`，`Hf`）每次给对应槽研究上限 +2；由 `PlayerProfile.cap_bonus_for_skill`
+        // 追加到 base 之上（`cap_bonus = 2 × jordan_breaks[slot]`）。
         match id {
             // 火球：R002 研究上限 9（+乔丹 T000 +2）→ base 10。
             SkillId::S000 => 10,
