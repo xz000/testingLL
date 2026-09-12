@@ -1,0 +1,71 @@
+===== 1274..1302 =====
+ 1274                     self.learn_shop_sel = Some(id);
+ 1275                 }
+ 1276                 LearnAction::Sell(id) => {
+ 1277                     // 卖出模式：单击选中；按 `=` 才卖出。
+ 1278                     self.learn_shop_sel = Some(id);
+ 1279                 }
+ 1280                 LearnAction::ShopToggleSell => {
+ 1281                     self.shop_sell_mode = !self.shop_sell_mode;
+ 1282                     self.shop_scroll = 0;
+ 1283                 }
+ 1284                 LearnAction::ShopConfirm => {
+ 1285                     self.shop_confirm();
+ 1286                 }
+ 1287                 LearnAction::GrowthConfirm => {
+ 1288                     self.growth_confirm();
+ 1289                 }
+ 1290                 LearnAction::Mastery(kind) => {
+ 1291                     // 成长页：单击选中；按 `=` 才购买。
+ 1292                     self.learn_growth_sel = Some(kind);
+ 1293                 }
+ 1294                 LearnAction::SkillCap => {
+ 1295                     self.learn_growth_sel = Some(4);
+ 1296                 }
+ 1297                 LearnAction::Category(cat) => {
+ 1298                     self.shop_category = cat;
+ 1299                     self.shop_scroll = 0;
+ 1300                 }
+ 1301                 LearnAction::BuySelected => {
+ 1302                     self.buy_or_upgrade_selected();
+
+===== 6486..6500 =====
+ 6486     BuySelected,
+ 6487     /// 切换技能 A/B 形态
+ 6488     Form(game_core::skill::SkillId),
+ 6489     /// 购买物品
+ 6490     Item(game_core::item::ItemId),
+ 6491     /// 卖出物品（098c `-sell` 原生化为界面操作）
+ 6492     Sell(game_core::item::ItemId),
+ 6493     /// 商店：切换买/卖模式（等价 V 键）
+ 6494     ShopToggleSell,
+ 6495     /// 商店：确认购买/卖出当前选中项（等价 `=`）
+ 6496     ShopConfirm,
+ 6497     /// 成长：确认购买当前选中项（等价 `=`）
+ 6498     GrowthConfirm,
+ 6499     /// 购买精通（0=生命 1=范围 2=射程 3=背包）
+ 6500     Mastery(usize),
+
+===== 242..252 =====
+  242     learn_page: u8,
+  243     /// 商店页当前选中大类（§3）：0=机动 1=防御续航 2=攻击特殊（B/N/M 切换）。
+  244     shop_category: u8,
+  245     /// 商店页右栏滚动偏移（§3）：防御续航类 13 项会超屏，用滚轮/↑↓ 滚动。
+  246     shop_scroll: usize,
+  247     /// 商店页是否处于「卖出」模式（V 切换）：数字键变为卖出对应持有物品。
+  248     shop_sell_mode: bool,
+  249     /// 学习界面鼠标命中盒（U2）：绘制时写入，update 里左键命中派发（1 帧延迟可忽略）。
+  250     /// 学习界面命中登记（U3：泛型原语 `ui::HitRegistry`，替代裸 `Vec<(Rect, Action)>`）。
+  251     learn_hitboxes: ui::HitRegistry<LearnAction>,
+  252     /// 机器人的当前目标点
+
+===== 845..853 =====
+  845             learn_shop_sel: None,
+  846             learn_growth_sel: None,
+  847             learn_page: 0,
+  848             shop_category: 0,
+  849             shop_scroll: 0,
+  850             shop_sell_mode: false,
+  851             learn_hitboxes: ui::HitRegistry::new(),
+  852             bot_targets,
+  853             bot_rngs,

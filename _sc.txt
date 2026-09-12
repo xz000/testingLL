@@ -1,0 +1,40 @@
+fn shop_confirm(&mut self) {
+        let me = self.self_index();
+        let Some(id) = self.learn_shop_sel else { return };
+        let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
+        let mut changed = false;
+        if self.shop_sell_mode {
+            if profile.items.contains(&id) && profile.sell_item(id) {
+                eprintln!("[shop] 卖出 {}（+{} 金，余 {}）", id.def().name, id.def().sell, profile.gold);
+                changed = true;
+            }
+        } else {
+            let slots = profile.inventory_slots();
+            let owned = profile.items.iter().any(|it| it.def().family == id.def().family);
+            if !owned && profile.items.len() >= slots {
+                eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
+            } else if profile.buy_item(id) {
+                eprintln!("[shop] 购买 {}（-{} 金，余 {}）", id.def().name, id.def().cost, profile.gold);
+                changed = true;
+            } else {
+                eprintln!("[shop] {} 不可购买（需 {} 金，现有 {}）", id.def().name, id.def().cost, profile.gold);
+            }
+        }
+        if changed {
+            if let Some(p) = self.world.players.get_mut(me as usize) {
+                p.set_items(&profile.items);
+                p.refresh_derived();
+            }
+        }
+    }
+
+    /// 成长「确认」：购买当前选中的精通/技能上限突破（键盘 `=` 与点击按钮共用）。
+    fn growth_confirm(&mut self) {
+        let me = self.self_index();
+        let Some(sel) = self.learn_growth_sel else { return };
+        let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
+        if sel == 4 {
+            if profile.buy_skill_cap_bonus(5) {
+                eprintln!("[learn] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
+            }
+        } else if profil
