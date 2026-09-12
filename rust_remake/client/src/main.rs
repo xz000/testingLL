@@ -1350,7 +1350,7 @@ impl Game {
             use ggez::input::keyboard::Key;
             let me = self.self_index();
             const MASTERY: [(&str, usize); 4] =
-                [("生命精通", 0), ("远程精通", 1), ("时间精通", 2), ("背包研究", 3)];
+                [("生命精通", 0), ("范围精通", 1), ("射程精通", 2), ("背包研究", 3)];
             for (i, (name, kind)) in MASTERY.iter().enumerate() {
                 let digit = char::from(b'1' + i as u8).to_string();
                 if ctx.keyboard.is_logical_key_just_pressed(&Key::Character(digit.into())) {
@@ -3111,7 +3111,7 @@ impl Game {
 
                 // 页签（顶部居中一行，当前页高亮，可点击）
                 let tab_y = sh * 0.145;
-                let pages = [("[1]技能", 0u8), ("[2]商店", 1u8), ("[3]精通属性", 2u8)];
+                let pages = [("[1]技能", 0u8), ("[2]商店", 1u8), ("[3]成长", 2u8)];
                 let tab_w = 150.0;
                 let total_w = tab_w * pages.len() as f32;
                 let mut tx = sw / 2.0 - total_w / 2.0 + tab_w / 2.0;
@@ -3443,14 +3443,14 @@ impl Game {
                         }
                     }
                     _ => {
-                        // 属性页：精通 1-4（可点）+ 成长属性 5 项（可点）
+                        // 成长页：精通 1-4（可点）+ 技能上限突破（可点）
                         let mut ay = panel_y + 14.0;
-                        ui::text_left(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+                        ui::text_left(canvas, ctx, "精通（数字 1-4 购买，不涨价、跨回合保留；上限各 3 级）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
                         ay += 22.0;
                         let mm = [
                             ("生命精通", m.life, 0usize),
-                            ("远程精通", m.range, 1),
-                            ("时间精通", m.time, 2),
+                            ("范围精通", m.range, 1),
+                            ("射程精通", m.time, 2),
                             ("背包研究", m.backpack, 3),
                         ];
                         for (name, lv, kind) in mm {
