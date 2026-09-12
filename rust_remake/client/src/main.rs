@@ -1590,6 +1590,13 @@ impl Game {
         None
     }
 
+    /// 列表高亮 / 详情选中的**同一判定**：选中值命中该行买或卖任一动作即算选中。
+    ///
+    /// 必须与 `ShopRow::contains` 一致，否则会出现「升级后同一行不再高亮」（只比买入目标才会）。
+    fn shop_row_selected(row: &ShopRow, sel: Option<game_core::item::ItemId>) -> bool {
+        sel.is_some_and(|id| row.contains(id))
+    }
+
     /// 由商店行模型解析"退格/Delete 该卖出哪件物品"（**纯函数**，便于单测）。
     ///
     /// - 选中行有可卖物 → 卖该家族**当前持有**的那件；
@@ -4013,7 +4020,9 @@ impl Game {
                             let key = keys.get(ni - start).copied().unwrap_or("");
                             let r = graphics::Rect::new(rx, iy, content_w, ui::theme::ROW_H);
                             let hover = r.contains(mouse);
-                            let selected = row.select_id() == self.learn_shop_sel;
+                            // 高亮与详情区用**同一判定**（`shop_row_selected`）：升级后选中值变成
+                            // “已持有”那件，只比买入目标会让同一行不再高亮（视觉上像丢了选中）。
+                            let selected = Self::shop_row_selected(row, self.learn_shop_sel);
                             let st = if selected {
                                 ui::RowState::Selected
                             } else if hover {
@@ -8091,6 +8100,26 @@ mod tests {
             before,
             "同一家族不应因购买而多出一行（一行两动作）"
         );
+    }
+
+    /// 回归：升级后“选中值”会从买入目标变成已持有那件，列表高亮必须仍命中同一行。
+    #[test]
+    fn shop_row_selection_matches_buy_or_sell() {
+        use game_core::item::ItemId;
+        // 买入 Boots1 后重算的行：买入目标 Boots2、持有 Boots1。
+        let row = super::ShopRow {
+            label: "Boots1 → Boots2".to_string(),
+            buy: Some(ItemId::Boots2),
+            sell: Some(ItemId::Boots1),
+            desc: "",
+        };
+        assert!(Game::shop_row_selected(&row, Some(ItemId::Boots2)), "命中买入目标应高亮");
+        assert!(
+            Game::shop_row_selected(&row, Some(ItemId::Boots1)),
+            "升级后选中值变为已持有那件，同一行仍应高亮（回归）"
+        );
+        assert!(!Game::shop_row_selected(&row, Some(ItemId::Cloak1)), "不相干的 id 不应高亮");
+        assert!(!Game::shop_row_selected(&row, None), "未选中不应高亮");
     }
 
     /// 商店「购买」按钮的禁用原因：金币不足 / 背包已满 / 已满级。
