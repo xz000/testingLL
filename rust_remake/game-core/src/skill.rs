@@ -2517,6 +2517,26 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
+            // S011B 瞬间移动·镜像（098c S034 树的 B 形态，**可达**）：
+            // JASS 中 S011 只调 `HB()`，**没有 `Fa` 形态分支** → 效果与 A 完全相同
+            //（范围同样 `700+70×Wr`）；B 形态唯一的差别是**引擎冷却表**（w3a `acdn` B 段）。
+            // 注：该形态 tooltip 写 `Range: 900`（固定），与 JASS 的 `700+70×Wr` 冲突 —— 按
+            //「JASS 为准」取后者，tooltip 判为 098c 自身的文案不一致。
+            SkillId::S011 => SkillDef {
+                id,
+                tree: SkillTree::R,
+                name: "瞬间移动·镜像",
+                needs_point: true,
+                effect: W098bUtility { kind: W098bUtilKind::Blink, speed: Fix64::ZERO, max_distance: Fix64::from_num(770.0) },
+                growth: SkillGrowth {
+                    cooldown_base: 17.5,
+                    cooldown_delta: -1.375, // 098c: 17.5->6.5 (9 lv)
+                    cooldown_levels: Some(&[17.5, 15.0, 13.0, 11.5, 10.5, 9.5, 8.5, 7.5, 6.5]), // w3a acdn B 段
+                    max_distance_base: 770.0,
+                    max_distance_delta: 70.0,
+                    ..DEF_ZERO
+                },
+            },
             _ => return None,
         };
         Some(def)
@@ -3277,6 +3297,7 @@ mod tests {
             (SkillId::S010, false, &[30.0, 26.0, 23.0, 21.0, 20.0, 19.0, 18.0, 17.0]),
             (SkillId::S010, true, &[30.0, 26.0, 23.0, 21.0, 20.0, 19.0, 18.0, 17.0]),
             (SkillId::S011, false, &[16.0, 13.5, 11.5, 10.0, 9.0, 8.0, 7.0, 6.0, 5.5]),
+            (SkillId::S011, true, &[17.5, 15.0, 13.0, 11.5, 10.5, 9.5, 8.5, 7.5, 6.5]),
             (SkillId::S012, false, &[16.5, 14.5, 13.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0]),
             (SkillId::S012, true, &[17.5, 15.0, 13.0, 11.5, 10.0, 9.5, 9.0, 8.5, 8.0]),
             (SkillId::S013, false, &[16.0, 13.5, 11.5, 10.0, 9.0, 8.0, 7.0, 6.0]),
@@ -3330,6 +3351,7 @@ mod tests {
             }
         }
     }
+
 
 
     fn near(a: Fix64, b: f64, tol: f64) -> bool {
