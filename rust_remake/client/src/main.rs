@@ -2616,38 +2616,25 @@ impl Game {
             if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
                 let (sw, sh) = (ui::UI_W, ui::UI_H);
                 // 左上状态区（U1）：金币/模式/精通纵排，不再散排重叠
-                draw_text(
-                    &mut canvas,
-                    ctx,
-                    &format!("金币 {}", pr.gold),
-                    19.0,
-                    Color::from_rgb(255, 220, 120),
-                    Point2 { x: 14.0, y: 20.0 },
-                    true,
-                )?;
-                draw_text(
-                    &mut canvas,
-                    ctx,
+                // 注意：本文件的 `draw_text` 是**居中**绘制（`_centered` 参数被忽略），
+                // 左对齐必须用 `ui::text_left` —— 否则 x 会被当作中心，文字左半边出屏。
+                let hud_x = 14.0;
+                ui::text_left(&mut canvas, ctx, &format!("金币 {}", pr.gold), 19.0, Color::from_rgb(255, 220, 120), hud_x, 20.0)?;
+                ui::text_left(
+                    &mut canvas, ctx,
                     &format!(
                         "模式：{}（{}）",
                         game_core::meta::MatchState::mode_name(self.match_mode),
                         if self.match_teams >= 2 { "两队" } else { "FFA" }
                     ),
-                    16.0,
-                    Color::from_rgb(170, 200, 255),
-                    Point2 { x: 14.0, y: 44.0 },
-                    true,
+                    16.0, Color::from_rgb(170, 200, 255), hud_x, 44.0,
                 )?;
                 let m = pr.mastery;
                 if m.life + m.range + m.time + m.backpack > 0 {
-                    draw_text(
-                        &mut canvas,
-                        ctx,
+                    ui::text_left(
+                        &mut canvas, ctx,
                         &format!("精通 命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
-                        15.0,
-                        Color::from_rgb(170, 200, 255),
-                        Point2 { x: 14.0, y: 66.0 },
-                        true,
+                        15.0, Color::from_rgb(170, 200, 255), hud_x, 66.0,
                     )?;
                 }
                 // 进度（常驻 HUD）：死斗/最后生还无回合概念，改显示目标分；其余显示当前局 / 总轮数。
@@ -2656,15 +2643,7 @@ impl Game {
                 } else {
                     format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
                 };
-                draw_text(
-                    &mut canvas,
-                    ctx,
-                    &progress,
-                    19.0,
-                    Color::from_rgb(255, 235, 150),
-                    Point2 { x: 14.0, y: 88.0 },
-                    true,
-                )?;
+                ui::text_left(&mut canvas, ctx, &progress, 19.0, Color::from_rgb(255, 235, 150), hud_x, 88.0)?;
                 // 物品栏（U1）：技能栏正上方一行（居中对齐；技能栏 y = sh-80、高 56 → 物品栏 y = sh-148）
                 let item_slots = pr.inventory_slots() as f32;
                 let slot_w = 52.0;
@@ -2739,14 +2718,10 @@ impl Game {
         // 视角平移提示（仅对战阶段显示）
         if !self.pre_game_config {
             let (_, sh) = (ui::UI_W, ui::UI_H);
-            draw_text(
-                &mut canvas,
-                ctx,
+            ui::text_left(
+                &mut canvas, ctx,
                 "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Home 场地中心 · End 跳到自己",
-                15.0,
-                Color::from_rgb(150, 165, 185),
-                Point2 { x: 12.0, y: sh - 14.0 },
-                true,
+                15.0, Color::from_rgb(150, 165, 185), 12.0, sh - 14.0,
             )?;
         }
 
@@ -6513,6 +6488,11 @@ enum LearnAction {
 }
 
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
+/// **居中**绘制文本（`center` 是**中心点**）。
+///
+/// ⚠️ 末位 `_centered` 参数**被忽略**（历史遗留）：本函数**始终居中**。
+/// 需要左对齐请用 [`ui::text_left`]，右对齐用 [`ui::text_right`]，
+/// 否则把 `x` 当中心会让文字左半边出屏（HUD 左上角曾因此被截断）。
 fn draw_text(
     canvas: &mut Canvas,
     ctx: &Context,
