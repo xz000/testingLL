@@ -574,3 +574,23 @@ endfunction
 
 **待办**：用 `war3map.w3q` 的升级价格表（`tools/parse_objects.py` 已能读出 `gglb`=金价 / `glvl`=级上限）
 标定「升级科技等级 → 该技能升级单价」的映射，再实装 `oi` 计数与 3 次跳档。
+
+
+### B 轮：涨价校准的**障碍记录**（下次从这里继续）
+
+实装「技能升级涨价」需要「升级科技等级 → 该技能升级单价」的映射，尝试从 `war3map.w3q` 取，但**没有直接取到**：
+
+- 该文件 190497 字节，含 60 个 `R***` 升级 id、53 个 `gglb`（Gold Cost）字段、44 个 `glvl`（Gold Cost per Level）字段。
+- 但按「字段名 + 固定偏移」硬读（+8 / +12）取到的值**全是 0**，说明 w3q 的记录布局不是这个形状：
+  - `gnam`/`gub1` 处 `field(4)+type(4)+…` 后面跟着**逐级（level=1,2,3…）**的连续记录 → w3q 数值字段是**带 level 的**，
+    与 w3a 同族（`field(4)+type(4)+level(4)+[pad(4)]+value`），而非 w3u 的 `field+type+value`。
+- 我方 `learn_cost` / `upgrade_cost` 现行数值的来源需要一并复核确认（可能来自 w3a 的 ability 数据，而非 w3q 的升级数据）。
+
+**下一步**：
+1. 按 w3a 的「候选头扫描 + 精确闭合」法给 w3q 写一个正式 walker（参考 `tools/parse_w3a.py`，产出一条升级 → 各级金价/上限 的表）。
+2. 用该表标定 `R002`(=S000 的科技) 等，验证「科技已研究等级 → 下次研究单价」的增量。
+3. 再实装 `PlayerProfile::spell_buys: u8`（购买新法术 +1）与三次跳档：
+   `jf = spell_buys.saturating_sub(2).min(3)`，升级单价 = `基础 + 增量 × (已有等级 - 1 + jf)`。
+   （`oi==6` 时不再触发；`oi` 在 `war3map_pretty.j` 25849 自增、20376 初始化。）
+
+**在拿到可信单价前不实装数值**（遵守"以实证为准、不猜"）。
