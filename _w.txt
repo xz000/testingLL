@@ -1,47 +1,56 @@
-6626|                     self.steam_cli_ls = None;
-6627|                     self.app = AppState::SteamHost { players };
-6628|                 }
-6629|                 SteamLobbyPending::Join { lobby_id: _ } => {
-6630|                     // 版本校验：不同 `PROTOCOL_VERSION` 的房一律拒绝（避免协议/模拟不兼容导致 desync）。
-6631|                     // 旧房未写版本 = None → 视为不兼容（改前构建没有该元数据）。
-6632|                     let host_ver = sess.lobby_version();
-6633|                     if host_ver != Some(game_core::PROTOCOL_VERSION) {
-6634|                         let msg = format!(
-6635|                             "房间版本不兼容（房主 {:?}，本端 {}），已拒绝加入",
-6636|                             host_ver,
-6637|                             game_core::PROTOCOL_VERSION
-6638|                         );
-6639|                         eprintln!("[steam-join] {msg}");
-6640|                         // 退房，避免以不兼容版本留在房里。
-6641|                         sess.transport.matchmaking().leave_lobby(lobby);
-6642|                         return Err(std::io::Error::other(msg));
-6643|                     }
-6644|                     sess.prepare_transport()?;
-6645|                     self.steam_my_id = sess.transport.steam_id();
-6646|                     let total = sess.table.as_ref().map(|t| t.total_players()).unwrap_or(2);
-6647|                     self.match_rounds = sess.lobby_rounds().unwrap_or(STEAM_DEFAULT_ROUNDS);
-6648|                     self.match_learn_secs = sess.lobby_learn().unwrap_or(STEAM_DEFAULT_LEARN_SECS);
-6649|                     self.match_starting_gold = sess.lobby_starting_gold().unwrap_or(STEAM_DEFAULT_STARTING_GOLD);
-6650|                     self.match_gold_per_round = sess.lobby_gold_per_round().unwrap_or(STEAM_DEFAULT_GOLD_PER_ROUND);
-6651|                     self.match_mode = sess.lobby_mode().unwrap_or(1);
-6652|                     self.match_regen = sess.lobby_regen().unwrap_or(STEAM_DEFAULT_REGEN);
-6653|                     // 完整房间设置：优先用 host 的整串设置；缺失/格式不符则回退默认值。
-6654|                     if let Some(cfg) = sess.lobby_cfg().and_then(|t| game_core::meta::MatchConfig::from_meta_string(&t))
-6655|                         self.match_cfg = cfg;
-6656|                         self.match_mode = self.match_cfg.game_mode;
-6657|                         self.match_regen = self.match_cfg.base_regen;
-6658|                         self.world.configure_regen(self.match_cfg.base_regen);
-6659|                         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
-6660|                         eprintln!("[cfg] 已对齐 host 房间设置（{} 字节）", self.match_cfg.to_meta_string().len());
-6661|                     } else {
-6662|                         eprintln!("[cfg] host 未提供房间设置串，使用默认值");
-6663|                     }
-6664|                     self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFA
-6665|                     let host_id = sess.host_steam_id().unwrap_or(0);
-6666|                     let my_slot = sess.my_slot();
-6667|                     self.steam_my_index = my_slot;
-6668|                     let fr = sess.transport.friends();
-6669|                     let mut roster = Vec::new();
-6670|                     for (slot, id) in sess.identities() {
-6671|                         let name = fr.get_friend(net_steam::steamworks::SteamId::from_raw(id)).name();
-6672|                         roster.push((slot, name, id));
+6321|         if just_named(NamedKey::Enter) || just('\r') {
+6322|             let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
+6323|                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
+6324|             let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
+6325|             let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
+6326|                 .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
+6327|             let starting_gold = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD)
+6328|                 .clamp(0, STEAM_MAX_GOLD);
+6329|             let gold_per_round = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND)
+6330|                 .clamp(0, STEAM_MAX_GOLD);
+6331|             // 名次奖励：单个数字=第一名，自动按 0.6 递减生成全部档位；逗号分隔=手动精确档位。
+6332|             let place: Vec<i32> = {
+6333|                 let raw = self.steam_create_place_buf.trim();
+6334|                 if raw.is_empty() {
+6335|                     auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
+6336|                 } else if raw.contains(',') {
+6337|                     let out: Vec<i32> = raw
+6338|                         .split(',')
+6339|                         .filter_map(|s| s.trim().parse::<i32>().ok())
+6340|                         .map(|v| v.clamp(0, STEAM_MAX_GOLD))
+6341|                         .take(64)
+6342|                         .collect();
+6343|                     if out.is_empty() {
+6344|                         auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
+6345|                     } else {
+6346|                         out
+6347|                     }
+6348|                 } else {
+6349|                     let first = parse_i32(raw, STEAM_DEFAULT_PLACE_FIRST).clamp(0, STEAM_MAX_GOLD);
+6350|                     auto_place_rewards(first)
+6351|                 }
+6352|             };
+6353|             self.steam_create_rounds = rounds;
+6354|             self.steam_create_learn = learn;
+6355|             self.steam_create_starting_gold = starting_gold;
+6356|             self.steam_create_gold_per_round = gold_per_round;
+6357|             self.steam_create_place = place;
+6358|             self.match_regen = self.steam_create_regen;
+6359|         self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
+6360|             let name = self.steam_create_name.clone();
+6361|             let note = self.steam_create_note.clone();
+6362|             eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_p
+6363|             self.steam_lobby_create = false;
+6364|             self.steam_lobby_menu = true;
+6365|             self.steam_list_requested = false;
+6366|             self.steam_list_lobbies = Vec::new();
+6367|             self.steam_list_selection = 0;
+6368|             self.enter_steam_mode(ctx, true, players, Some(&name), Some(&note));
+6369|         }
+6370|     }
+6371| 
+6372|     /// 房间列表界面输入：首次进入拉一次公开大厅列表，供浏览选房加入。
+6373|     /// 按当前模式筛选重算可见房间列表（0=全部）；原始列表保存在 `steam_list_all`。
+6374|     #[cfg(feature = "steam")]
+6375|     fn steam_apply_list_filter(&mut self) {
+6376|         let f = self.steam_list_mode_filter;

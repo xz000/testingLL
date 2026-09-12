@@ -234,6 +234,10 @@ enum CreateAction {
     Step(u8, i32),
     /// 点击「房间设置」徽章 → 打开设置编辑器（等价 `O`）。
     OpenSettings,
+    /// 点击「创建房间」（等价回车）。
+    Create,
+    /// 点击「取消」（等价 `Q`）。
+    Cancel,
 }
 
 /// `enter_steam_mode` / CLI 启动只发起操作（`start_*`）并记下类型，真正「进房」由 `update` 每帧
@@ -603,6 +607,10 @@ struct Game {
     /// 每帧绘制前清空，避免残留旧矩形导致"点到不存在的东西"。
     #[cfg(feature = "steam")]
     create_hitboxes: Vec<(graphics::Rect, CreateAction)>,
+    /// 鼠标点了「创建房间」——延迟到本帧输入处理末尾再执行
+    /// （`steam_create_confirm` 需要 `&mut ctx`，而按键闭包此刻还借着 `ctx`）。
+    #[cfg(feature = "steam")]
+    create_confirm_pending: bool,
     /// 上次见到的**房间设置串**（大厅元数据）——用于检测"房主改了设置"：
     /// 一旦变化即取消本端准备（第 5 步），并同步应用新设置。
     #[cfg(feature = "steam")]
@@ -1114,6 +1122,8 @@ impl Game {
             room_cfg_input: None,
             #[cfg(feature = "steam")]
             create_hitboxes: Vec::new(),
+            #[cfg(feature = "steam")]
+            create_confirm_pending: false,
             #[cfg(feature = "steam")]
             match_regen: init_regen,
             match_teams: 1,
@@ -5961,6 +5971,10 @@ impl Game {
                 self.steam_create_focus = i as usize;
             }
             CreateAction::OpenSettings => self.room_cfg_edit = true,
+            CreateAction::Create => self.create_confirm_pending = true,
+            CreateAction::Cancel => {
+                self.steam_lobby_create = false; // 回大厅主界面
+            }
         }
     }
 
@@ -6319,6 +6333,23 @@ impl Game {
         }
         // 回车=创建房间（从编辑缓冲解析出最终值；空缓冲回退默认）。
         if just_named(NamedKey::Enter) || just('\r') {
+            self.create_confirm_pending = true;
+        }
+        // 鼠标「创建房间」与本帧回车：都在这里执行（`ctx` 的按键闭包借用已结束）。
+        if std::mem::take(&mut self.create_confirm_pending) {
+            self.steam_create_confirm(ctx);
+        }
+    }
+
+    /// **创建房间**（回车 / `[创建房间]` 按钮共用）。
+    ///
+    /// 原先这段逻辑内联在 `steam_lobby_create_update` 里，导致鼠标按钮无法复用；
+    /// 抽出后键盘与鼠标走同一条路径（也便于单测/复用）。
+    #[cfg(feature = "steam")]
+    fn steam_create_confirm(&mut self, ctx: &mut Context) {
+        {
+            let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
+            let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
             let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
             let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
@@ -7038,6 +7069,35 @@ impl Game {
             ),
             ui::theme::SMALL, Color::from_rgb(150, 220, 180), cx, b.title.y + b.title.h - 26.0,
         )?;
+        // 状态带：右侧按钮 [创建房间] / [取消]（鼠标可点；键盘仍是回车/Q）。
+        {
+            let bw = 150.0;
+            let bh = 30.0;
+            let by = b.status.y - 9.0;
+            let bx = cx + 170.0;
+            for (k, (label, act)) in [
+                ("[创建房间]", CreateAction::Create),
+                ("[取消]", CreateAction::Cancel),
+            ]
+            .iter()
+            .enumerate()
+            {
+                let br = graphics::Rect::new(bx + k as f32 * (bw + 12.0), by, bw, bh);
+                let on = br.contains(mpos);
+                let primary = k == 0;
+                let bc = if on {
+                    if primary { Color::from_rgb(70, 120, 80) } else { Color::from_rgb(90, 70, 70) }
+                } else if primary {
+                    Color::from_rgb(42, 74, 52)
+                } else {
+                    Color::from_rgb(56, 46, 46)
+                };
+                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), br, bc)?;
+                canvas.draw(&bg, graphics::DrawParam::new());
+                ui::text_center(canvas, ctx, label, ui::theme::SMALL, Color::from_rgb(230, 236, 245), br.x + bw / 2.0, br.y + 6.0)?;
+                self.create_hitboxes.push((br, *act));
+            }
+        }
         // 提示带（屏幕最底，永不与内容重叠）
         ui::text_center(
             canvas, ctx,
