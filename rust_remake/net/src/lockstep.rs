@@ -1887,7 +1887,7 @@ mod tests {
         assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 10)));
         // 本端自己的基线更新（seq=20）→ 应选它，而不是回滚到 10。
         let own = Some((vec![9u8, 9], 20));
-        let mut host = HostLockstep::takeover(cli, 1, 2, vec![0], vec![None], vec![true], vec![None], own.clone());
+        let host = HostLockstep::takeover(cli, 1, 2, vec![0], vec![None], vec![true], vec![None], own.clone());
         assert_eq!(host.current_snapshot(), Some(&(vec![9u8, 9], 20)), "应取 seq 更新的本端基线");
         assert_eq!(host.next_seq(), 20, "next_seq 应接在更新基线上");
     }
