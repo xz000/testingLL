@@ -1,0 +1,40 @@
+5605|         // Q：退出房间（leave_lobby + 回主菜单）。面板展开时 Q 只收起面板（由面板处理），避免误退出。
+5606|         let q_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
+5607|             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
+5608|         if q_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit {
+5609|             self.steam_leave_room();
+5610|             self.accumulator = 0.0;
+5611|             return Ok(());
+5612|         }
+5613|         // host 按 E 进入「编辑房间信息」子界面（改房间名/备注；人数上限建房时固定，走锁房代替）。
+5614|         let e_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("e".into()))
+5615|             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("E".into()));
+5616|         // `E` 已退休：房间信息（房名/备注）并入设置编辑器的 `[A]房间` 分组，按 `O` 打开。
+5617|         // 保留 e_pressed 变量以免误触发（下面不再使用）。
+5618|         let _ = e_pressed;
+5619|         if false && !panel_open && !self.room_cfg_edit && self.steam_host_ls.is_some() {
+5620|             let (cur_name, cur_note) = self.steam_current_room_info();
+5621|             self.steam_edit_name = cur_name;
+5622|             self.steam_edit_note = cur_note;
+5623|             self.steam_room_edit_focus = 0;
+5624|             self.steam_room_edit = true;
+5625|             self.accumulator = 0.0;
+5626|             return Ok(());
+5627|         }
+5628|         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
+5629|         // 锁定窗口内忽略「按 U 取消就绪」（防止有人卡在最后两秒取消导致不同步）。
+5630|         // client 端不满员手动倒计时用 host 广播的 manual_ms 判锁定，最后 LOCK 秒内不可按 U 取消（与 host 端一致）。
+5631|         let locked = (self.steam_was_all_ready && self.steam_countdown <= STEAM_COUNTDOWN_LOCK_SECS)
+5632|             || (self.steam_cli_ls.is_some() && self.steam_manual_ms > 0 && (self.steam_manual_ms as f32) / 1000.0 <= STE
+5633|         // 锁房：`L`（就绪界面没有文本框，不会与输入冲突；原在房间信息界面，因抢键而搬来）。
+5634|         if self.steam_host_ls.is_some()
+5635|             && !self.steam_room_edit
+5636|             && !self.room_cfg_edit
+5637|             && (ctx.keyboard.is_logical_key_just_pressed(&Key::Character("l".into()))
+5638|                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("L".into())))
+5639|         {
+5640|             if let Some(lid) = self.steam_lobby_id {
+5641|                 if let Some(ls) = self.steam_host_ls.as_ref() {
+5642|                     let mm = ls.transport_ref().matchmaking();
+5643|                     let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+5644|                     self.steam_room_locked = !self.steam_room_locked;
