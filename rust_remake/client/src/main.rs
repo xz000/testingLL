@@ -580,6 +580,9 @@ struct Game {
     room_cfg_group: settings_ui::Group,
     #[cfg(feature = "steam")]
     room_cfg_row: usize,
+    /// 自定义数值输入缓冲（编辑器内按回车开始输入；回车提交、Esc 取消）。
+    #[cfg(feature = "steam")]
+    room_cfg_input: Option<String>,
     /// 上次见到的**房间设置串**（大厅元数据）——用于检测"房主改了设置"：
     /// 一旦变化即取消本端准备（第 5 步），并同步应用新设置。
     #[cfg(feature = "steam")]
@@ -1087,6 +1090,8 @@ impl Game {
             room_cfg_group: settings_ui::Group::Economy,
             #[cfg(feature = "steam")]
             room_cfg_row: 0,
+            #[cfg(feature = "steam")]
+            room_cfg_input: None,
             #[cfg(feature = "steam")]
             match_regen: init_regen,
             match_teams: 1,
@@ -3115,9 +3120,17 @@ impl Game {
                 &format!("{}{}", if sel { "▶ " } else { "  " }, id.label()),
                 ui::theme::BODY, col, px + 24.0, y,
             )?;
+            let val_txt = if sel {
+                match &self.room_cfg_input {
+                    Some(buf) => format!("[输入 {buf}_]"),
+                    None => settings_ui::value_text(&self.match_cfg, id),
+                }
+            } else {
+                settings_ui::value_text(&self.match_cfg, id)
+            };
             ui::text_right(
                 canvas, ctx,
-                &settings_ui::value_text(&self.match_cfg, id),
+                &val_txt,
                 ui::theme::BODY, col, px + 24.0 + row_w, y,
             )?;
             y += 24.0;
@@ -3136,7 +3149,7 @@ impl Game {
         }
         ui::text_center(
             canvas, ctx,
-            "Z/X/C/V 分组 · ↑↓ 选择 · ←→ 调整 · 回车/O 保存并关闭（改动会取消全员准备）",
+            "Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车=自定义输入/切换 · Esc 保存关闭（改动会取消全员准备）",
             ui::theme::SMALL,
             Color::from_rgb(160, 200, 255),
             sw / 2.0,
@@ -4104,8 +4117,11 @@ impl event::EventHandler for Game {
         // Steam 房间/就绪/编辑阶段：房主按 E 进「编辑房间信息」界面；否则进房间就绪界面。
         #[cfg(feature = "steam")]
         if self.steam_in_lobby {
+            // 子界面（房间信息编辑）只**额外**处理输入；大厅心跳/上行/就绪**每帧都要跑** ——
+            // 曾用 `return steam_room_edit_update(...)` 取代它，导致房主改房间信息时
+            // 其余端收不到心跳而判「房主已离开」（真 bug，2026-09-12 修）。
             if self.steam_room_edit {
-                return self.steam_room_edit_update(ctx, dt);
+                self.steam_room_edit_update(ctx, dt)?;
             }
             return self.steam_lobby_update(ctx, dt);
         }
@@ -5475,7 +5491,7 @@ impl Game {
         // I：展开/收起「邀请好友」面板（展开时拉一次好友列表）。
         let i_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("i".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("I".into()));
-        if i_pressed && !panel_open {
+        if i_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit {
             self.steam_friend_list = true;
             self.steam_friend_hint = String::new();
             self.steam_refresh_friends();
@@ -5492,7 +5508,7 @@ impl Game {
         // Q：退出房间（leave_lobby + 回主菜单）。面板展开时 Q 只收起面板（由面板处理），避免误退出。
         let q_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
-        if q_pressed && !panel_open {
+        if q_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit {
             self.steam_leave_room();
             self.accumulator = 0.0;
             return Ok(());
@@ -5500,7 +5516,7 @@ impl Game {
         // host 按 E 进入「编辑房间信息」子界面（改房间名/备注；人数上限建房时固定，走锁房代替）。
         let e_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("e".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("E".into()));
-        if e_pressed && !panel_open && self.steam_host_ls.is_some() {
+        if e_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit && self.steam_host_ls.is_some() {
             let (cur_name, cur_note) = self.steam_current_room_info();
             self.steam_edit_name = cur_name;
             self.steam_edit_note = cur_note;
@@ -5517,52 +5533,14 @@ impl Game {
         // ── 房间内编辑设置（仅 host）：`O` 打开编辑器；关闭时重新发布 → 触发全员取消准备 ──
         let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()));
-        if self.steam_host_ls.is_some() && o_pressed {
+        if self.steam_host_ls.is_some() && o_pressed && !self.steam_room_edit {
             self.room_cfg_edit = !self.room_cfg_edit;
             if !self.room_cfg_edit {
                 self.publish_room_cfg();
             }
         }
         if self.room_cfg_edit && !o_pressed {
-            let just_named = |n: winit::keyboard::NamedKey| {
-                ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n))
-            };
-            let just = |c: &str| {
-                ctx.keyboard
-                    .is_logical_key_just_pressed(&Key::Character(c.to_lowercase().into()))
-                    || ctx
-                        .keyboard
-                        .is_logical_key_just_pressed(&Key::Character(c.to_uppercase().into()))
-            };
-            for g in settings_ui::Group::ALL {
-                if just(&g.hotkey().to_string()) {
-                    self.room_cfg_group = g;
-                    self.room_cfg_row = 0;
-                }
-            }
-            let n_rows = settings_ui::SettingId::rows(self.room_cfg_group).len();
-            if n_rows > 0 {
-                if just_named(winit::keyboard::NamedKey::ArrowUp) {
-                    self.room_cfg_row = (self.room_cfg_row + n_rows - 1) % n_rows;
-                }
-                if just_named(winit::keyboard::NamedKey::ArrowDown) {
-                    self.room_cfg_row = (self.room_cfg_row + 1) % n_rows;
-                }
-                let id = settings_ui::SettingId::rows(self.room_cfg_group)
-                    [self.room_cfg_row.min(n_rows - 1)];
-                if just_named(winit::keyboard::NamedKey::ArrowLeft) {
-                    settings_ui::nudge(&mut self.match_cfg, id, -1);
-                }
-                if just_named(winit::keyboard::NamedKey::ArrowRight) {
-                    settings_ui::nudge(&mut self.match_cfg, id, 1);
-                }
-            }
-            if just_named(winit::keyboard::NamedKey::Enter)
-                || just_named(winit::keyboard::NamedKey::Escape)
-            {
-                self.room_cfg_edit = false;
-                self.publish_room_cfg();
-            }
+            self.room_cfg_editor_input(ctx);
             // 注意：**不能**在此提前 return —— 下面的网络上行/心跳每帧都要跑，
             // 否则房主打开编辑器时其余端会因收不到心跳而判定「房主已离开」。
         }
@@ -5608,7 +5586,7 @@ impl Game {
             }
         }
 
-        if ready_pressed && !locked && !panel_open && !self.room_cfg_edit {
+        if ready_pressed && !locked && !panel_open && !self.room_cfg_edit && !self.steam_room_edit {
             self.steam_local_ready = !self.steam_local_ready;
             if !self.steam_local_ready {
                 // 本端取消就绪：立即重置本地倒计时（不依赖 host 快照回传，避免“取消后重准备不重新数 5 秒”）。
@@ -5868,6 +5846,133 @@ impl Game {
         }
     }
 
+    /// 设置编辑器按键处理（建房界面与房间内**共用**）。
+    ///
+    /// 键位：
+    /// - `Z/X/C/V` 切分组；`↑↓` 选行；`←→` 调值（档位跳变 / 微调）
+    /// - **回车**：数值行 → 进入自定义输入；枚举/开关行 → 切换；非输入态再次回车 = 保存并关闭
+    /// - 输入态：数字/`.`/`-` 键入、Backspace 删除、**回车提交**、`Esc` 取消
+    /// - `Esc`（非输入态）= 保存并关闭
+    ///
+    /// 返回 `true` = 编辑器仍打开（调用方应据此吃掉本帧其它按键）。
+    #[cfg(feature = "steam")]
+    fn room_cfg_editor_input(&mut self, ctx: &Context) -> bool {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        let just = |c: &str| {
+            ctx.keyboard
+                .is_logical_key_just_pressed(&Key::Character(c.to_lowercase().into()))
+                || ctx
+                    .keyboard
+                    .is_logical_key_just_pressed(&Key::Character(c.to_uppercase().into()))
+        };
+        // ── 自定义输入态：只处理文本键 ──
+        if let Some(mut buf) = self.room_cfg_input.take() {
+            let rows = settings_ui::SettingId::rows(self.room_cfg_group);
+            let id = rows[self.room_cfg_row.min(rows.len().saturating_sub(1))];
+            if just_named(NamedKey::Enter) {
+                if settings_ui::commit_input(&mut self.match_cfg, id, &buf) {
+                    eprintln!(
+                        "[cfg] {} = {}（自定义输入，共自定义 {} 项）",
+                        id.label(),
+                        settings_ui::value_text(&self.match_cfg, id),
+                        self.match_cfg.non_default_setting_count()
+                    );
+                } else {
+                    eprintln!("[cfg] 输入「{buf}」非法，保留原值");
+                }
+            } else if just_named(NamedKey::Escape) || just("o") {
+                eprintln!("[cfg] 已取消输入");
+            } else {
+                if just_named(NamedKey::Backspace) {
+                    buf.pop();
+                }
+                // 数字 / 小数点 / 负号
+                for c in "0123456789.-".chars() {
+                    let cs = c.to_string();
+                    if ctx
+                        .keyboard
+                        .is_logical_key_just_pressed(&Key::Character(cs.clone().into()))
+                        || ctx
+                            .keyboard
+                            .is_logical_key_just_pressed(&Key::Character(cs.to_uppercase().into()))
+                    {
+                        if buf.len() < 10 {
+                            buf.push(c);
+                        }                    }
+                }
+                self.room_cfg_input = Some(buf); // 仍在输入态
+                return true;
+            }
+            // 提交/取消后回到普通态
+            self.room_cfg_input = None;
+            return true;
+        }
+        // ── 普通态 ──
+        for g in settings_ui::Group::ALL {
+            if just(&g.hotkey().to_string()) {
+                self.room_cfg_group = g;
+                self.room_cfg_row = 0;
+            }
+        }
+        let n_rows = settings_ui::SettingId::rows(self.room_cfg_group).len();
+        if n_rows > 0 {
+            if just_named(NamedKey::ArrowUp) {
+                self.room_cfg_row = (self.room_cfg_row + n_rows - 1) % n_rows;
+            }
+            if just_named(NamedKey::ArrowDown) {
+                self.room_cfg_row = (self.room_cfg_row + 1) % n_rows;
+            }
+            let id = settings_ui::SettingId::rows(self.room_cfg_group)[self.room_cfg_row.min(n_rows - 1)];
+            let mut dir = 0;
+            if just_named(NamedKey::ArrowLeft) {
+                dir = -1;
+            }
+            if just_named(NamedKey::ArrowRight) {
+                dir = 1;
+            }
+            if dir != 0 {
+                settings_ui::nudge(&mut self.match_cfg, id, dir);
+                eprintln!(
+                    "[cfg] {} = {}（自定义 {} 项）",
+                    id.label(),
+                    settings_ui::value_text(&self.match_cfg, id),
+                    self.match_cfg.non_default_setting_count()
+                );
+            }
+            // 回车：数值行 → 进入输入态（预填当前值）；枚举/开关 → 直接切换。
+            if just_named(NamedKey::Enter) {
+                if id.num_range().is_some() || id.int_range().is_some() {
+                    let v = settings_ui::value(&self.match_cfg, id);
+                    let init = if (v.fract()).abs() < 1e-9 {
+                        format!("{}", v.round() as i64)
+                    } else {
+                        format!("{v}")
+                    };
+                    self.room_cfg_input = Some(init);
+                    eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
+                } else {
+                    settings_ui::nudge(&mut self.match_cfg, id, 1);
+                    eprintln!(
+                        "[cfg] {} = {}（自定义 {} 项）",
+                        id.label(),
+                        settings_ui::value_text(&self.match_cfg, id),
+                        self.match_cfg.non_default_setting_count()
+                    );
+                }
+                return true;
+            }
+        }
+        // Esc / O：保存并关闭
+        if just_named(NamedKey::Escape) || just("o") {
+            self.room_cfg_edit = false;
+            self.publish_room_cfg();
+            return false;
+        }
+        true
+    }
+
     /// 把当前房间设置**重新发布**到大厅元数据（`host` 改设置后调用）。
     /// 各端检测到设置串变化即清空自己的「准备」（见 `steam_lobby_update`），
     /// 因此这里只负责写入；不加锁、不弹窗。
@@ -5913,49 +6018,7 @@ impl Game {
             }
         }
         if self.room_cfg_edit && !o_pressed {
-            // 分组：Z/X/C/V；行：↑↓；调值：←→；回车/O 关闭并发布。
-            for (g, ch) in [
-                (settings_ui::Group::Economy, "z"),
-                (settings_ui::Group::Gameplay, "x"),
-                (settings_ui::Group::Map, "c"),
-                (settings_ui::Group::Mode, "v"),
-            ] {
-                if just(ch.chars().next().unwrap()) || just(ch.to_uppercase().chars().next().unwrap()) {
-                    self.room_cfg_group = g;
-                    self.room_cfg_row = 0;
-                }
-            }
-            let rows = settings_ui::SettingId::rows(self.room_cfg_group);
-            if !rows.is_empty() {
-                if just_named(NamedKey::ArrowUp) {
-                    self.room_cfg_row = (self.room_cfg_row + rows.len() - 1) % rows.len();
-                }
-                if just_named(NamedKey::ArrowDown) {
-                    self.room_cfg_row = (self.room_cfg_row + 1) % rows.len();
-                }
-                let id = rows[self.room_cfg_row.min(rows.len() - 1)];
-                let mut dir = 0;
-                if just_named(NamedKey::ArrowLeft) {
-                    dir = -1;
-                }
-                if just_named(NamedKey::ArrowRight) {
-                    dir = 1;
-                }
-                if dir != 0 {
-                    settings_ui::nudge(&mut self.match_cfg, id, dir);
-                    eprintln!(
-                        "[cfg] {} = {}（自定义 {} 项）",
-                        id.label(),
-                        settings_ui::value_text(&self.match_cfg, id),
-                        self.match_cfg.non_default_setting_count()
-                    );
-                }
-            }
-            // 关闭：回车 或 Esc（**不含 `O`**，避免与上面的开关重复处理）。
-            if just_named(NamedKey::Enter) || just_named(NamedKey::Escape) {
-                self.room_cfg_edit = false;
-                self.publish_room_cfg();
-            }
+            self.room_cfg_editor_input(ctx);
             return; // 编辑器打开时不吃建房界面的其它按键
         }
         // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
