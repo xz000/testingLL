@@ -245,14 +245,24 @@ pub struct Player {
     pub team: u8,
     /// 复活调度（模式 2 DM 4s / 模式 5 LMS 受害者 3s，B3）。
     pub respawn_at: Option<Fix64>,
-    /// Doom（098c 国王模式：弑王者全队永久回血 -1/s，B3b）。
+    /// Doom（098c 国王模式：弑王者所在队伍 −**10** HP/s，B3b）。
+    /// 098c `In[i] = In[i] - 1.`（`In` 单位 = 每 0.1s，×10 = /s ⇒ −10 HP/s），
+    /// 持续 **50 s** 后由 `II` 恢复（`In[i] = In[i] + 1.`）。
     pub doom: f64,
+    /// Doom 剩余时长（098c `LO(function II, 50, ...)`）。
+    pub doom_remaining: Fix64,
     /// 时长标量（098c jn：化身 ×1.2；B3）。
     pub dur_mult: f64,
     /// 受伤倍率（098c hn：国王 ×0.9，B3b）。
     pub dmg_taken_mult: f64,
     /// 岩浆受伤倍率（098c To：国王 ×0.9，B3b）。
     pub lava_taken_mult: f64,
+    /// 角色击退系数（098c `Hn` 中**角色施加**的那一份，默认 1.0 = 受 100% 击退）：
+    /// 化身 `Hn /= (n/1.5)` → `role_kb_mult = 1.5/n`（少受击退）。
+    /// 与物品/精通减免乘法合成，见 [`Self::effective_kb_reduction`]。
+    pub role_kb_mult: f64,
+    /// 角色生命恢复倍率（098c `In`：化身 `In *= (1 + n/2)`，默认 1.0）。
+    pub role_regen_mult: f64,
     /// 持有的物品（098b 6 格；随快照/配置同步）。
     pub items: Vec<crate::item::ItemId>,
     /// 物品聚合效果（items 变更时由 [`Self::recompute_item_fx`] 重算）。
@@ -286,9 +296,12 @@ impl Player {
             team: id as u8,
             respawn_at: None,
             doom: 0.0,
+            doom_remaining: Fix64::ZERO,
             dur_mult: 1.0,
             dmg_taken_mult: 1.0,
             lava_taken_mult: 1.0,
+            role_kb_mult: 1.0,
+            role_regen_mult: 1.0,
             pos,
             radius,
             hp: max_hp,
@@ -524,7 +537,7 @@ impl Player {
     /// （098c kf L12917：每级精通 Hn ×(1-0.025×lf)，lf=三精通总级数）。
     pub fn effective_kb_reduction(&self) -> f64 {
         let base = self.item_fx.kb_resist_frac;
-        1.0 - (1.0 - base) * (1.0 - self.mastery_kb_reduction())
+        1.0 - (1.0 - base) * (1.0 - self.mastery_kb_reduction()) * self.role_kb_mult
     }
 
     /// 攻击方伤害输出系数（098c Gn，D9）：= 伤害成长 × 灼烧惩罚。
@@ -842,6 +855,8 @@ impl Player {
         self.lava_boot_cd = Fix64::ZERO;
         self.phoenix_remaining = Fix64::ZERO;
         self.windwalk_state = Fix64::ZERO;
+        self.role_kb_mult = 1.0;
+        self.role_regen_mult = 1.0;
         self.windwalk_cd = Fix64::ZERO;
         self.aegis_charged = false;
         self.respawn_at = None;
