@@ -603,6 +603,10 @@ struct Game {
     /// 自定义数值输入缓冲（编辑器内按回车开始输入；回车提交、Esc 取消）。
     #[cfg(feature = "steam")]
     room_cfg_input: Option<String>,
+    /// **房间元数据**（房名/备注/人数上限）：与 `match_cfg` 分开 —— 它不进设置串、不影响模拟，
+    /// 只作为大厅展示信息（见 `settings_ui::RoomMeta` 的说明）。
+    #[cfg(feature = "steam")]
+    room_meta: settings_ui::RoomMeta,
     /// 建房界面的**命中注册表**（绘制时登记、点击时派发；绘制与命中同源）。
     /// 每帧绘制前清空，避免残留旧矩形导致"点到不存在的东西"。
     #[cfg(feature = "steam")]
@@ -1120,6 +1124,8 @@ impl Game {
             room_cfg_row: 0,
             #[cfg(feature = "steam")]
             room_cfg_input: None,
+            #[cfg(feature = "steam")]
+            room_meta: settings_ui::RoomMeta::default(),
             #[cfg(feature = "steam")]
             create_hitboxes: Vec::new(),
             #[cfg(feature = "steam")]
@@ -3150,7 +3156,9 @@ impl Game {
             let y = layout::row_in(content, i, rows.len().max(1)).y;
             let sel = i == self.room_cfg_row;
             let custom = settings_ui::is_custom(&self.match_cfg, id);
-            let col = if sel {
+            let col = if id.is_readonly() {
+                layout::text_dim() // 只读项（如人数上限）:醒目度降低
+            } else if sel {
                 layout::text_accent()
             } else if custom {
                 layout::text_custom()
@@ -3162,13 +3170,19 @@ impl Game {
                 &format!("{}{}", if sel { "▶ " } else { "  " }, id.label()),
                 ui::theme::BODY, col, px + 24.0, y,
             )?;
+            // 值文本：按数据源取（MatchConfig → value_text；大厅元数据 → meta_value）
+            let base_txt = if id.target() == settings_ui::SettingTarget::Meta {
+                settings_ui::meta_value(&self.room_meta, id)
+            } else {
+                settings_ui::value_text(&self.match_cfg, id)
+            };
             let val_txt = if sel {
                 match &self.room_cfg_input {
                     Some(buf) => format!("[输入 {buf}_]"),
-                    None => settings_ui::value_text(&self.match_cfg, id),
+                    None => base_txt,
                 }
             } else {
-                settings_ui::value_text(&self.match_cfg, id)
+                base_txt
             };
             ui::text_right(
                 canvas, ctx,
@@ -6027,7 +6041,10 @@ impl Game {
             let rows = settings_ui::SettingId::rows(self.room_cfg_group);
             let id = rows[self.room_cfg_row.min(rows.len().saturating_sub(1))];
             if just_named(NamedKey::Enter) {
-                if settings_ui::commit_input(&mut self.match_cfg, id, &buf) {
+                if id.target() == settings_ui::SettingTarget::Meta {
+                    settings_ui::meta_set(&mut self.room_meta, id, &buf);
+                    eprintln!("[cfg] {} = {}（大厅元数据）", id.label(), settings_ui::meta_value(&self.room_meta, id));
+                } else if settings_ui::commit_input(&mut self.match_cfg, id, &buf) {
                     eprintln!(
                         "[cfg] {} = {}（自定义输入，共自定义 {} 项）",
                         id.label(),
@@ -6079,6 +6096,29 @@ impl Game {
                 self.room_cfg_row = (self.room_cfg_row + 1) % n_rows;
             }
             let id = settings_ui::SettingId::rows(self.room_cfg_group)[self.room_cfg_row.min(n_rows - 1)];
+            // 只读项（人数上限）：不接受调整/输入。
+            if id.is_readonly() {
+                if just("o") || just_named(NamedKey::Escape) {
+                    self.room_cfg_edit = false;
+                    self.publish_room_cfg();
+                    return false;
+                }
+                return true;
+            }
+            // 大厅元数据项（房名/备注）：回车进入**文本输入**（预填当前值）。
+            if id.target() == settings_ui::SettingTarget::Meta {
+                if just_named(NamedKey::Enter) {
+                    self.room_cfg_input = Some(settings_ui::meta_value(&self.room_meta, id));
+                    eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
+                    return true;
+                }
+                if just("o") || just_named(NamedKey::Escape) {
+                    self.room_cfg_edit = false;
+                    self.publish_room_cfg();
+                    return false;
+                }
+                return true;
+            }
             let mut dir = 0;
             if just_named(NamedKey::ArrowLeft) {
                 dir = -1;

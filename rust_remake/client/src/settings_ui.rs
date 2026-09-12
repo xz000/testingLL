@@ -12,6 +12,7 @@ use game_core::meta::MatchConfig;
 /// 设置分组（房间 UI 的四个页签）。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Group {
+    Room,
     Economy,
     Gameplay,
     Map,
@@ -19,10 +20,17 @@ pub enum Group {
 }
 
 impl Group {
-    pub const ALL: [Group; 4] = [Group::Economy, Group::Gameplay, Group::Map, Group::Mode];
+    pub const ALL: [Group; 5] = [
+        Group::Room,
+        Group::Economy,
+        Group::Gameplay,
+        Group::Map,
+        Group::Mode,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
+            Group::Room => "房间",
             Group::Economy => "经济",
             Group::Gameplay => "玩法",
             Group::Map => "地图",
@@ -33,6 +41,7 @@ impl Group {
     /// 页签快捷键字母（`J/K/L` 已用于技能/商店/成长页，这里用 `Z/X/C/V`）。
     pub fn hotkey(self) -> char {
         match self {
+            Group::Room => 'a',
             Group::Economy => 'z',
             Group::Gameplay => 'x',
             Group::Map => 'c',
@@ -44,6 +53,11 @@ impl Group {
 /// 一个可编辑设置项。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SettingId {
+    // 房间（房名/备注属大厅元数据；轮数属 MatchConfig；人数只读）
+    RoomName,
+    RoomNote,
+    TotalRounds,
+    PlayerLimit,
     // 经济
     StartingGold,
     GoldPerRound,
@@ -68,7 +82,6 @@ pub enum SettingId {
     PillarMode,
     IceMode,
     // 模式
-    TotalRounds,
     GameMode,
     GoldRewardsEnabled,
 }
@@ -78,6 +91,7 @@ impl SettingId {
     pub fn rows(g: Group) -> &'static [SettingId] {
         use SettingId::*;
         match g {
+            Group::Room => &[RoomName, RoomNote, TotalRounds, PlayerLimit],
             Group::Economy => &[
                 StartingGold,
                 GoldPerRound,
@@ -100,13 +114,16 @@ impl SettingId {
                 ShrinkRingSecs,
             ],
             Group::Map => &[ArenaShape, PillarMode, IceMode],
-            Group::Mode => &[TotalRounds, GameMode, GoldRewardsEnabled],
+            Group::Mode => &[GameMode, GoldRewardsEnabled],
         }
     }
 
     pub fn label(self) -> &'static str {
         use SettingId::*;
         match self {
+            RoomName => "房间名",
+            RoomNote => "备注",
+            PlayerLimit => "人数上限（只读）",
             StartingGold => "初始金币",
             GoldPerRound => "每轮金币",
             GoldPerKill => "击杀金币",
@@ -137,6 +154,10 @@ impl SettingId {
     pub fn hint(self) -> &'static str {
         use SettingId::*;
         match self {
+            RoomName => "大厅里显示的房间名（改完关闭编辑器即生效）。",
+            RoomNote => "大厅备注，可留空。",
+            TotalRounds => "本场打几轮（1~50）。",
+            PlayerLimit => "Steam 建房时固定，之后不可改；想关门用「锁房」（就绪界面 L）。",
             StartingGold => "098c `Qo`=20。开局一次性发放。",
             GoldPerRound => "098c 设置 17 `qo`=10。每轮结算时发放。",
             GoldPerKill => "098c 设置 12 `lo`=1。",
@@ -157,7 +178,6 @@ impl SettingId {
             ArenaShape => "当前仅圆形；后续可扩正方形/六边形。",
             PillarMode => "关闭 / 随机 / 每局必有。",
             IceMode => "关闭 / 随机 / 每局必有。",
-            TotalRounds => "本场打几轮（1~50）。改动会取消全员准备。",
             GameMode => "1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还。改动会取消全员准备。",
             GoldRewardsEnabled => "关闭后所有金币奖励归零（等价 098c `-no reward`）；点数不受影响。",
         }
@@ -213,6 +233,63 @@ impl SettingId {
     }
 }
 
+/// **房间元数据**（存于大厅元数据，不属于对局规则）：房名 / 备注 / 人数上限（只读）。
+///
+/// 为什么要与 `MatchConfig` 分开：`MatchConfig` 会经"设置串"同步给各端并影响模拟；
+/// 房名/备注只是大厅展示信息，人数上限更是 Steam 建房时固定的。把它们塞进 `MatchConfig`
+/// 会让"设置串"混入非规则数据（也会让默认值比较/徽章计数失真）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RoomMeta {
+    pub name: String,
+    pub note: String,
+    /// 人数上限：**只读**（Steam 建房时固定）。
+    pub player_limit: u32,
+}
+
+/// 一个设置项的数据源。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SettingTarget {
+    /// 对局规则（`MatchConfig`，进设置串同步）。
+    Cfg,
+    /// 大厅元数据（`RoomMeta`，房名/备注/只读人数）。
+    Meta,
+}
+
+impl SettingId {
+    /// 该项读写哪个数据源。
+    pub fn target(self) -> SettingTarget {
+        use SettingId::*;
+        match self {
+            RoomName | RoomNote | PlayerLimit => SettingTarget::Meta,
+            _ => SettingTarget::Cfg,
+        }
+    }
+
+    /// 是否**只读**（编辑器应拒绝调整/输入）。
+    pub fn is_readonly(self) -> bool {
+        self == SettingId::PlayerLimit
+    }
+}
+
+/// 读取 `RoomMeta` 的显示值。
+pub fn meta_value(meta: &RoomMeta, id: SettingId) -> String {
+    match id {
+        SettingId::RoomName => meta.name.clone(),
+        SettingId::RoomNote => meta.note.clone(),
+        SettingId::PlayerLimit => format!("{} 人", meta.player_limit),
+        _ => String::new(),
+    }
+}
+
+/// 写入 `RoomMeta`（仅文本类；只读项忽略）。
+pub fn meta_set(meta: &mut RoomMeta, id: SettingId, text: &str) {
+    match id {
+        SettingId::RoomName => meta.name = text.chars().take(60).collect(),
+        SettingId::RoomNote => meta.note = text.chars().take(60).collect(),
+        _ => {} // PlayerLimit 只读
+    }
+}
+
 /// 读取当前值（用于显示与默认值比较）。
 pub fn value(cfg: &MatchConfig, id: SettingId) -> f64 {
     use SettingId::*;
@@ -236,6 +313,8 @@ pub fn value(cfg: &MatchConfig, id: SettingId) -> f64 {
         BaseRegen => cfg.base_regen,
         ArenaShape => cfg.arena_shape as f64,
         TotalRounds => cfg.total_rounds as f64,
+        // 大厅元数据项不走数值通道（由 `meta_value`/`meta_set` 负责）
+        RoomName | RoomNote | PlayerLimit => 0.0,
         GameMode => cfg.game_mode as f64,
         PillarMode => cfg.pillar_mode as f64,
         IceMode => cfg.ice_mode as f64,
@@ -268,6 +347,7 @@ fn set(cfg: &mut MatchConfig, id: SettingId, v: f64) {
         BaseRegen => cfg.base_regen = v,
         ArenaShape => cfg.arena_shape = bv,
         TotalRounds => cfg.total_rounds = v.round().clamp(1.0, 50.0) as u32,
+        RoomName | RoomNote | PlayerLimit => {} // 大厅元数据项：见 `meta_set`
         GameMode => cfg.game_mode = v.round().clamp(1.0, 5.0) as u8,
         PillarMode => cfg.pillar_mode = bv.min(2),
         IceMode => cfg.ice_mode = bv.min(2),
@@ -465,6 +545,42 @@ mod tests {
             nudge(&mut c, SettingId::StartingGold, -1);
         }
         assert_eq!(c.starting_gold, 0, "不应低于 0");
+    }
+
+    /// 房间分组：数据源分派正确、人数只读、房名/备注可写。
+    #[test]
+    fn room_group_targets_and_readonly() {
+        // 房间组的行构成
+        assert_eq!(
+            SettingId::rows(Group::Room),
+            &[
+                SettingId::RoomName,
+                SettingId::RoomNote,
+                SettingId::TotalRounds,
+                SettingId::PlayerLimit
+            ]
+        );
+        // 数据源分派
+        assert_eq!(SettingId::RoomName.target(), SettingTarget::Meta);
+        assert_eq!(SettingId::RoomNote.target(), SettingTarget::Meta);
+        assert_eq!(SettingId::PlayerLimit.target(), SettingTarget::Meta);
+        assert_eq!(SettingId::TotalRounds.target(), SettingTarget::Cfg);
+        assert_eq!(SettingId::StartingGold.target(), SettingTarget::Cfg);
+        // 只读项
+        assert!(SettingId::PlayerLimit.is_readonly());
+        assert!(!SettingId::RoomName.is_readonly());
+        assert!(!SettingId::TotalRounds.is_readonly());
+        // 元数据读写
+        let mut m = RoomMeta::default();
+        meta_set(&mut m, SettingId::RoomName, "我的房间");
+        meta_set(&mut m, SettingId::RoomNote, "晚上八点");
+        meta_set(&mut m, SettingId::PlayerLimit, "8"); // 只读 → 应忽略
+        assert_eq!(meta_value(&m, SettingId::RoomName), "我的房间");
+        assert_eq!(meta_value(&m, SettingId::RoomNote), "晚上八点");
+        assert_eq!(meta_value(&m, SettingId::PlayerLimit), "0 人", "人数只读不应被写");
+        // 长文本截断
+        meta_set(&mut m, SettingId::RoomName, &"x".repeat(100));
+        assert_eq!(m.name.chars().count(), 60);
     }
 
     /// 总轮数行：可调、有上下界（1..=50）。
