@@ -225,15 +225,16 @@ impl PlayerProfile {
         self.key_slots[key.as_u32() as usize].is_some()
     }
 
-    /// 购买/升级物品（M3）：金币不足失败；同家族持有低档则替换（098b 升级链语义）。
-    /// 独立物品（Standalone：死亡面具/火球法杖/乔丹）各自独立，可共存、不可重复持有。
+    /// 购买/升级物品（M3）：金币不足失败；**同家族只能按档位逐级进化**
+    /// （098c `bD`：无→1档；持1→买2；持2→买3；持3→退款/拒绝）。每步同价。
+    /// 独立物品（Standalone：死亡面具/法杖等）各自独立，可共存、不可重复持有。
     pub fn buy_item(&mut self, id: crate::item::ItemId) -> bool {
-        let cost = id.def().cost;
+        let def = id.def();
+        let cost = def.cost;
         if self.gold < cost {
             return false;
         }
-        // 独立物品：与其它独立物品共存，但不可重复持有同一 id（098c 中 I004/I00D/I00E 互异）。
-        if id.def().family == crate::item::ItemFamily::Standalone {
+        if def.family == crate::item::ItemFamily::Standalone {
             if self.items.contains(&id) {
                 return false;
             }
@@ -244,15 +245,43 @@ impl PlayerProfile {
             self.items.push(id);
             return true;
         }
-        let family = id.def().family;
-        let is_upgrade = self.items.iter().any(|&it| it.def().family == family);
-        // 背包容量（098c S128 背包研究 6→8）；同家族升级是替换，不受容量限制。
-        if !is_upgrade && self.items.len() >= self.inventory_slots() {
+        // 链式物品：只接受「下一档」（无持有=最低档；已满级=拒绝）。
+        let family = def.family;
+        let owned = self.items.iter().copied().find(|it| it.def().family == family);
+        let expected = match owned {
+            None => match crate::item::ItemDef::chain(family).first() {
+                Some(first) => first.id,
+                None => return false,
+            },
+            Some(cur) => match cur.next_tier() {
+                Some(next) => next,
+                None => return false, // 已满级
+            },
+        };
+        if id != expected {
+            return false; // 不能跳档购买
+        }
+        // 首次入包受容量限制；升级是替换，不受限。
+        if owned.is_none() && self.items.len() >= self.inventory_slots() {
             return false;
         }
         self.gold -= cost;
-        self.items.retain(|&it| it.def().family != family);
+        if owned.is_some() {
+            self.items.retain(|it| it.def().family != family);
+        }
         self.items.push(id);
+        true
+    }
+
+    /// 卖出物品（098c `-sell #` 原生化为界面操作）：按 `ItemDef.sell` 返还金币并移除。
+    /// 影响物品集合的聚合效果（调用方需 `world` 侧重算 `item_fx`）。
+    pub fn sell_item(&mut self, id: crate::item::ItemId) -> bool {
+        let Some(pos) = self.items.iter().position(|&it| it == id) else {
+            return false;
+        };
+        let price = id.def().sell;
+        self.items.remove(pos);
+        self.gold += price;
         true
     }
 
@@ -779,6 +808,44 @@ mod tests {
         let g = pr.gold;
         assert!(!pr.buy_item(crate::item::ItemId::FireMask), "重复持有应被拒绝");
         assert_eq!(pr.gold, g, "重复购买不应扣钱");
+    }
+
+    #[test]
+    fn buy_item_requires_stepwise_tier_upgrade() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 100;
+        pr.mastery.backpack = 3; // 容量充足
+        // 不能跳档：直接买三级靴应失败。
+        assert!(!pr.buy_item(crate::item::ItemId::Boots3), "不能跳档直接买三级");
+        assert!(!pr.buy_item(crate::item::ItemId::Boots2), "首件不能直接买二级");
+        // 逐级进化：1 → 2 → 3，同族只保留一件。
+        assert!(pr.buy_item(crate::item::ItemId::Boots1));
+        assert_eq!(pr.items, vec![crate::item::ItemId::Boots1]);
+        assert!(pr.buy_item(crate::item::ItemId::Boots2));
+        assert_eq!(pr.items, vec![crate::item::ItemId::Boots2], "升级应替换低档");
+        assert!(pr.buy_item(crate::item::ItemId::Boots3));
+        assert_eq!(pr.items, vec![crate::item::ItemId::Boots3]);
+        // 满级后再买应失败。
+        assert!(!pr.buy_item(crate::item::ItemId::Boots3), "满级应拒绝");
+    }
+
+    #[test]
+    fn sell_item_refunds_sell_price_and_removes() {
+        let mut ms = MatchState::new(MatchConfig::default(), &[0, 1], 34);
+        let pr = &mut ms.profiles[0];
+        pr.gold = 100;
+        pr.mastery.backpack = 3;
+        assert!(pr.buy_item(crate::item::ItemId::Helm1));
+        let gold_after_buy = pr.gold;
+        let price = crate::item::ItemId::Helm1.def().sell;
+        assert!(pr.sell_item(crate::item::ItemId::Helm1));
+        assert!(pr.items.is_empty());
+        assert_eq!(pr.gold, gold_after_buy + price, "卖出应返还 sell 价");
+        // 未持有则卖出失败、不加钱。
+        let g = pr.gold;
+        assert!(!pr.sell_item(crate::item::ItemId::Helm1));
+        assert_eq!(pr.gold, g);
     }
 
     #[test]
