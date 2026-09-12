@@ -2642,7 +2642,22 @@ impl Game {
         if !self.world.sandbox || self.meta.phase == game_core::meta::MatchPhase::Fighting {
             if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
                 let (sw, sh) = (ui::UI_W, ui::UI_H);
-                // 左上状态区（U1）：金币/模式/精通纵排，不再散排重叠
+                // 左上状态区（U1）：金币/模式/精通/进度纵排。加**半透明底衬**，
+                // 否则纯文字浮在亮色地板/特效上可读性差（与学习界面面板同色系）。
+                let backdrop = Mesh::new_rectangle(
+                    &ctx.gfx,
+                    DrawMode::fill(),
+                    graphics::Rect::new(6.0, 8.0, 236.0, 116.0),
+                    Color::from_rgba(10, 12, 18, 130),
+                )?;
+                canvas.draw(&backdrop, graphics::DrawParam::new());
+                let backdrop_edge = Mesh::new_rectangle(
+                    &ctx.gfx,
+                    DrawMode::stroke(1.0),
+                    graphics::Rect::new(6.0, 8.0, 236.0, 116.0),
+                    Color::from_rgba(90, 110, 140, 90),
+                )?;
+                canvas.draw(&backdrop_edge, graphics::DrawParam::new());
                 // 注意：本文件的 `draw_text` 是**居中**绘制（`_centered` 参数被忽略），
                 // 左对齐必须用 `ui::text_left` —— 否则 x 会被当作中心，文字左半边出屏。
                 let hud_x = 14.0;
@@ -2671,6 +2686,21 @@ impl Game {
                     format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
                 };
                 ui::text_left(&mut canvas, ctx, &progress, 19.0, Color::from_rgb(255, 235, 150), hud_x, 88.0)?;
+                // 角色提示（模式 3 化身 / 模式 4 国王）：世界层虽有环，但 HUD 应直接说明「你是谁」。
+                let me_id = self.self_index();
+                if self.world.avatar == Some(me_id) {
+                    ui::text_left(
+                        &mut canvas, ctx,
+                        "你是化身 — 独占一队，全场皆是敌人",
+                        15.0, Color::from_rgb(255, 120, 110), hud_x, 110.0,
+                    )?;
+                } else if self.world.kings.contains(&me_id) {
+                    ui::text_left(
+                        &mut canvas, ctx,
+                        "你是国王 — 受伤与岩浆 -10%",
+                        15.0, Color::from_rgb(255, 205, 90), hud_x, 110.0,
+                    )?;
+                }
                 // 物品栏（U1）：技能栏正上方一行（居中对齐；技能栏 y = sh-80、高 56 → 物品栏 y = sh-148）
                 let item_slots = pr.inventory_slots() as f32;
                 let slot_w = 52.0;
