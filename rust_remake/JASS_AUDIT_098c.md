@@ -549,3 +549,28 @@ endfunction
 `break_cap_for()` 每次扣 `JORDAN_PRICE = 5` 金、次数 +1（**无上限**）；金币不足则失败不扣钱。
 `CONFIG_VERSION 13→14`、`PROTOCOL_VERSION 11→12`。
 用户最初的直觉（"在对应等级升级技能的时候多收 5 金币"）**正是 098c 的行为**。
+
+
+## B 轮复核（进行中）：技能购买 / 升级涨价
+
+**实证（`war3map_pretty.j`）**：
+
+```
+25847  DisplayTextToPlayer(..., "Spell purchased")
+25849  set oi[id]=oi[id]+1                  // oi = 该玩家已购买法术数（20376 处 oi[i]=0 初始化）
+25851  if oi[id]==6 then (不涨价)
+25854  else if oi[id]>2 then                // 第 3 个法术之后
+25856     DisplayTextToPlayer(..., "Purchase cost of spells has increased")
+25858     call Jf(Kf,id)
+25493  function Jf: 对 R001..R013 共 18 个升级科技各 AddPlayerTechResearched(+1)
+```
+
+即：**购买第 3、4、5 个法术时**，每买一个就把「所有技能升级科技」的已研究等级 +1；
+在 war3 里科技等级越高升级越贵 → **第 3 个技能之后，后续每次技能升级都涨价**
+（共 3 次跳档；`oi==6` 时法术位已满、不再触发）。
+
+**我方现状（不符）**：`PlayerProfile::purchase_skill` 不涨价；`learn_cost`/`upgrade_cost` 是固定表
+（测试 `purchase_skill_spends_gold_locks_slot_no_escalation` 明确断言「不涨价」）。
+
+**待办**：用 `war3map.w3q` 的升级价格表（`tools/parse_objects.py` 已能读出 `gglb`=金价 / `glvl`=级上限）
+标定「升级科技等级 → 该技能升级单价」的映射，再实装 `oi` 计数与 3 次跳档。
