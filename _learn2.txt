@@ -1,0 +1,140 @@
+ 1301                 LearnAction::BuySelected => {
+ 1302                     self.buy_or_upgrade_selected();
+ 1303                 }
+ 1304             }
+ 1305         }
+ 1306     }
+ 1307 
+ 1308     fn poll_learning(&mut self, ctx: &Context) {
+ 1309         use ggez::input::keyboard::Key;
+ 1310         let me = self.self_index();
+ 1311 
+ 1312         // F1/F2/F3：直接跳到 技能/商店/属性 三页（§3，保留 Tab 循环 + 鼠标点击）。
+ 1313         for (lp, named) in [
+ 1314             (0u8, winit::keyboard::NamedKey::F1),
+ 1315             (1u8, winit::keyboard::NamedKey::F2),
+ 1316             (2u8, winit::keyboard::NamedKey::F3),
+ 1317         ] {
+ 1318             if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(named)) {
+ 1319                 self.learn_page = lp;
+ 1320             }
+ 1321         }
+ 1322 
+ 1323         // Tab：切换 技能页/商店页/属性页（数字键只在当前页生效，U0）
+ 1324         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Tab)) {
+ 1325             self.learn_page = (self.learn_page + 1) % 3;
+ 1326         }
+ 1327 
+ 1328         if self.learn_page != 0 {
+ 1329             return;
+ 1330         }
+ 1331 
+ 1332         // 字母键：选中技能树
+ 1333         for (letter, key) in KEY_LETTERS {
+ 1334             if Self::char_just(ctx, letter) {
+ 1335                 eprintln!("[learn] select tree '{letter}' (key=Key::Character)");
+ 1336                 self.learn_tree_key = Some(key);
+ 1337                 self.learn_skill_index = None;
+ 1338             }
+ 1339         }
+ 1340 
+ 1341         let learn_key = self.learn_tree_key;
+ 1342 
+ 1343         // 数字键：选中树里的第 N 个技能查看详情（不直接购买，与鼠标点击行为一致）
+ 1344         if let Some(key) = learn_key {
+ 1345             for (i, skill) in key.tree().skills_in_tree().iter().enumerate() {
+ 1346                 let digit = char::from(b'1' + i as u8); // '1','2',...
+ 1347                 if ctx
+ 1348                     .keyboard
+ 1349                     .is_logical_key_just_pressed(&Key::Character(digit.to_string().into()))
+ 1350                 {
+ 1351                     self.learn_skill_index = Some(i);
+ 1352                     eprintln!("[learn] select tree={} digit='{}' -> {}", key.letter(), digit, game_core::skill::DefTable::def(*skill).name);
+ 1353                 }
+ 1354             }
+ 1355         }
+ 1356 
+ 1357         // `=` 键：购买/升级当前选中的技能（第一次=购买，之后=升级）
+ 1358         if ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into())) {
+ 1359             eprintln!("[learn] '=' pressed, learn_tree_key={learn_key:?} idx={:?}", self.learn_skill_index);
+ 1360             self.buy_or_upgrade_selected();
+ 1361         }
+ 1362 
+ 1363         // 形态切换（098c sC，B4/D13 #7）：B 键 = 把「当前选中」技能切到另一形态（免费、配置期）。
+ 1364         // 跟随数字键选中的技能（learn_skill_index），不再只看已绑定技能——这样选中但未购买的技能也能切形态。
+ 1365         if Self::char_just(ctx, "b") {
+ 1366             if let Some(key) = learn_key {
+ 1367                 if let Some(i) = self.learn_skill_index {
+ 1368                     if let Some(&skill) = key.tree().skills_in_tree().get(i) {
+ 1369                         if game_core::skill::DefTable::has_alt(skill) {
+ 1370                             let idx = skill.as_u32() as usize;
+ 1371                             if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+ 1372                                 if let Some(f) = profile.forms.get_mut(idx) {
+ 1373                                     *f = !*f;
+ 1374                                 }
+ 1375                                 let new_name = game_core::skill::DefTable::def_for(skill, profile.forms[idx]).name;
+ 1376                                 eprintln!("[learn] 形态切换 -> {new_name}");
+ 1377                                 if let Some(wp) = self.world.players.get_mut(me as usize) {
+ 1378                                     if let Some(f) = wp.forms.get_mut(idx) {
+ 1379                                         *f = profile.forms[idx];
+ 1380                                     }
+ 1381                                 }
+ 1382                             }
+ 1383                         } else {
+ 1384                             eprintln!("[learn] {} 无第二形态", game_core::skill::DefTable::def(skill).name);
+ 1385                         }
+ 1386                     }
+ 1387                 }
+ 1388             }
+ 1389         }
+ 1390     }
+ 1391 
+ 1392     /// 4.6b 成长点/属性购买输入：
+ 1393     /// - `Z`：用金币换 1 成长点。
+ 1394     /// - `H`=Hp、`J`=Speed、`K`=Armor、`L`=法抗、`;`=击退。（U/I 蓝量键已随无蓝量系统移除）
+ 1395     fn poll_growth_buy(&mut self, ctx: &Context) {
+ 1396         // 成长页：数字 1-4 / U **只选中**（看详情）；`=`/回车 才确认购买（与技能页一致）。
+ 1397         if self.learn_page != 2 {
+ 1398             return;
+ 1399         }
+ 1400         use ggez::input::keyboard::Key;
+ 1401         let me = self.self_index();
+ 1402         const MASTERY: [(&str, usize); 4] =
+ 1403             [("生命精通", 0), ("范围精通", 1), ("射程精通", 2), ("背包研究", 3)];
+ 1404         for (i, _) in MASTERY.iter().enumerate() {
+ 1405             let digit = char::from(b'1' + i as u8).to_string();
+ 1406             if ctx.keyboard.is_logical_key_just_pressed(&Key::Character(digit.into())) {
+ 1407                 self.learn_growth_sel = Some(i);
+ 1408             }
+ 1409         }
+ 1410         if Self::char_just(ctx, "u") {
+ 1411             self.learn_growth_sel = Some(4); // 4 = 技能上限突破
+ 1412         }
+ 1413         let confirm = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("=".into()))
+ 1414             || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Enter));
+ 1415         if confirm {
+ 1416             self.growth_confirm();
+ 1417         }
+ 1418         let _ = (me, MASTERY);
+ 1419     }
+ 1420 
+ 1421     /// 商店「确认」：购买/卖出当前选中项（键盘 `=` 与点击按钮共用）。
+ 1422     fn shop_confirm(&mut self) {
+ 1423         let me = self.self_index();
+ 1424         let Some(id) = self.learn_shop_sel else { return };
+ 1425         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
+ 1426         let mut changed = false;
+ 1427         if self.shop_sell_mode {
+ 1428             if profile.items.contains(&id) && profile.sell_item(id) {
+ 1429                 eprintln!("[shop] 卖出 {}（+{} 金，余 {}）", id.def().name, id.def().sell, profile.gold);
+ 1430                 changed = true;
+ 1431             }
+ 1432         } else {
+ 1433             let slots = profile.inventory_slots();
+ 1434             let owned = profile.items.iter().any(|it| it.def().family == id.def().family);
+ 1435             if !owned && profile.items.len() >= slots {
+ 1436                 eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
+ 1437             } else if profile.buy_item(id) {
+ 1438                 eprintln!("[shop] 购买 {}（-{} 金，余 {}）", id.def().name, id.def().cost, profile.gold);
+ 1439                 changed = true;
+ 1440             } else {

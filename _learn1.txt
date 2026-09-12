@@ -1,0 +1,427 @@
+ 3282                 // ============ 左栏：配装总览 ============
+ 3283                 let mut ly = panel_y + 42.0;
+ 3284                 ui::text_left(canvas, ctx, "技能槽", ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly)?;
+ 3285                 ly += 22.0;
+ 3286                 for key in game_core::skill::CastKey::ALL {
+ 3287                     let bound = me.bound_skill(key);
+ 3288                     let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
+ 3289                     let txt = match bound {
+ 3290                         Some(s) => format!("[{}] {} Lv{}", key.letter(), game_core::skill::DefTable::neutral_name(s), lv),
+ 3291                         None => format!("[{}] 未绑定", key.letter()),
+ 3292                     };
+ 3293                     let sel = self.learn_tree_key == Some(key);
+ 3294                     let r = graphics::Rect::new(left_x + 4.0, ly, left_w - 8.0, ui::theme::ROW_H);
+ 3295                     let hover = r.contains(mouse);
+ 3296                     let st = if sel {
+ 3297                         ui::RowState::Selected
+ 3298                     } else if hover {
+ 3299                         ui::RowState::Hover
+ 3300                     } else {
+ 3301                         ui::RowState::Normal
+ 3302                     };
+ 3303                     ui::row(canvas, ctx, r, &txt, ui::theme::BODY, st)?;
+ 3304                     self.learn_hitboxes.push((r, LearnAction::Tree(key)));
+ 3305                     ly += ui::theme::ROW_H + 4.0;
+ 3306                 }
+ 3307                 ly += 8.0;
+ 3308                 ui::text_left(
+ 3309                     canvas, ctx,
+ 3310                     &format!("持有物品 ({}/{})", me.items.len(), me.inventory_slots()),
+ 3311                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3312                 )?;
+ 3313                 ly += 22.0;
+ 3314                 if me.items.is_empty() {
+ 3315                     ui::text_left(
+ 3316                         canvas, ctx, "（空）",
+ 3317                         ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3318                     )?;
+ 3319                     ly += 20.0;
+ 3320                 } else {
+ 3321                     for &id in me.items.iter() {
+ 3322                         let d = id.def();
+ 3323                         ui::text_left(
+ 3324                             canvas, ctx, &format!("· {}", d.name),
+ 3325                             ui::theme::SMALL, ui::theme::text(), left_x + pad, ly,
+ 3326                         )?;
+ 3327                         ly += 18.0;
+ 3328                         match id.next_tier() {
+ 3329                             Some(next) => {
+ 3330                                 let nd = next.def();
+ 3331                                 ui::text_left(
+ 3332                                     canvas, ctx,
+ 3333                                     &format!("  ↑ 升 {} · {}G", nd.name, nd.cost),
+ 3334                                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3335                                 )?;
+ 3336                                 ly += 18.0;
+ 3337                             }
+ 3338                             None => {
+ 3339                                 ui::text_left(
+ 3340                                     canvas, ctx, "  (满级)",
+ 3341                                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3342                                 )?;
+ 3343                                 ly += 18.0;
+ 3344                             }
+ 3345                         }
+ 3346                     }
+ 3347                 }
+ 3348                 ly += 6.0;
+ 3349                 let m = me.mastery;
+ 3350                 ui::text_left(
+ 3351                     canvas, ctx,
+ 3352                     &format!("精通  命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
+ 3353                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3354                 )?;
+ 3355                 ly += 26.0;
+ 3356                 ui::text_left(
+ 3357                     canvas, ctx,
+ 3358                     "（技能整场锁定，购买后同树其余技能不可再选）",
+ 3359                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
+ 3360                 )?;
+ 3361 
+ 3362                 // ============ 右栏：当前页内容 ============
+ 3363                 let rx = right_x + pad;
+ 3364                 let content_w = right_w - pad * 2.0;
+ 3365                 match self.learn_page {
+ 3366                     0 => {
+ 3367                         // 技能页：点技能查看详情（描述/二形态/数值）→ 再点「购买/升级」按钮
+ 3368                         match self.learn_tree_key {
+ 3369                             Some(key) => {
+ 3370                                 ui::text_left(
+ 3371                                     canvas, ctx,
+ 3372                                     &format!("{} 树 — 点技能查看详情，再购买 / 升级", key.tree().name_zh()),
+ 3373                                     ui::theme::BODY, ui::theme::accent(), rx, panel_y + 14.0,
+ 3374                                 )?;
+ 3375                                 let mut ry = panel_y + 46.0;
+ 3376                                 let tree_locked = me.slot_locked(key);
+ 3377                                 for (i, skill) in key.tree().skills_in_tree().iter().enumerate() {
+ 3378                                     let bound_here = me.bound_skill(key) == Some(*skill);
+ 3379                                     let selected = self.learn_skill_index == Some(i);
+ 3380                                     let r = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
+ 3381                                     let hover = r.contains(mouse);
+ 3382                                     let cost = skill.learn_cost();
+ 3383                                     let affordable = me.gold >= cost;
+ 3384                                     // 行用中性基础名（去掉 ·形态 后缀；形态见详情面板）
+ 3385                                     let form_name = game_core::skill::DefTable::neutral_name(*skill);
+ 3386                                     // 行状态仅表达"当前选中/悬停/普通"，不可用程度由文案说明——因为任何技能都可点开详情
+ 3387                                     let st = if selected {
+ 3388                                         ui::RowState::Selected
+ 3389                                     } else if hover {
+ 3390                                         ui::RowState::Hover
+ 3391                                     } else {
+ 3392                                         ui::RowState::Normal
+ 3393                                     };
+ 3394                                     let label = if bound_here {
+ 3395                                         format!("{} {}  ✓已购", i + 1, form_name)
+ 3396                                     } else if tree_locked {
+ 3397                                         format!("{} {}  （同树已锁定）", i + 1, form_name)
+ 3398                                     } else if affordable {
+ 3399                                         format!("{} {}  ({}G)", i + 1, form_name, cost)
+ 3400                                     } else {
+ 3401                                         format!("{} {}  ({}G 金币不足)", i + 1, form_name, cost)
+ 3402                                     };
+ 3403                                     ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+ 3404                                     // 任何技能（含已锁定/金币不足）都可点击查看详情，只是买不了
+ 3405                                     self.learn_hitboxes.push((r, LearnAction::Skill(i)));
+ 3406                                     ry += ui::theme::ROW_H + 4.0;
+ 3407                                 }
+ 3408                                 ry += 8.0;
+ 3409                                 // ---- 详情面板：名称 / 描述 / 数值 / 二形态 / 购买-升级按钮 ----
+ 3410                                 if let Some(i) = self.learn_skill_index {
+ 3411                                     if let Some(&skill) = key.tree().skills_in_tree().get(i) {
+ 3412                                         let owned = me.bound_skill(key) == Some(skill);
+ 3413                                         let lv = if owned { me.skill_level(skill) } else { 1 };
+ 3414                                         let cost = skill.learn_cost();
+ 3415                                         // 标题用中性基础名（去掉 ·形态 后缀）；当前形态见下方「二形态」区
+ 3416                                         let on = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
+ 3417                                         let name = game_core::skill::DefTable::neutral_name(skill);
+ 3418                                         // 标题：名称 + 已购等级 / 价格
+ 3419                                         let head = if owned {
+ 3420                                             format!("{name}  Lv{lv}  （已购买）")
+ 3421                                         } else {
+ 3422                                             format!("{name}  {cost}G")
+ 3423                                         };
+ 3424                                         ui::text_left(canvas, ctx, &head, ui::theme::BODY, ui::theme::accent(), rx, ry)?;
+ 3425                                         ry += 22.0;
+ 3426                                         // 技能描述（长文案自动换行，返回下一行 y）
+ 3427                                         ry = ui::text_wrapped(
+ 3428                                             canvas, ctx, game_core::skill::DefTable::desc(skill),
+ 3429                                             ui::theme::SMALL, ui::theme::text_dim(), rx, ry, content_w,
+ 3430                                         )?;
+ 3431                                         ry += 2.0;
+ 3432                                         // 关键数值（未购按 1 级预览）
+ 3433                                         let st = game_core::skill::DefTable::def(skill).stats_at(lv);
+ 3434                                         ui::text_left(
+ 3435                                             canvas, ctx,
+ 3436                                             &format!(
+ 3437                                                 "Lv{lv}  伤害 {:.1}  冷却 {:.1}s  射程 {:.0}",
+ 3438                                                 st.damage.to_num::<f32>(),
+ 3439                                                 st.cooldown.to_num::<f32>(),
+ 3440                                                 st.range.to_num::<f32>()
+ 3441                                             ),
+ 3442                                             ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
+ 3443                                         )?;
+ 3444                                         ry += 22.0;
+ 3445                                         // 二形态：同时列出两种形态名 + 当前出战形态 + 一键切换（按钮直接写出目标形态名，不再用「开/关」）
+ 3446                                         if game_core::skill::DefTable::has_alt(skill) {
+ 3447                                             let a = game_core::skill::DefTable::def_for(skill, false).name;
+ 3448                                             let b = game_core::skill::DefTable::def_for(skill, true).name;
+ 3449                                             ui::text_left(
+ 3450                                                 canvas, ctx,
+ 3451                                                 &format!("二形态  形态A：{a}   ⇄   形态B：{b}"),
+ 3452                                                 ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
+ 3453                                             )?;
+ 3454                                             ry += 22.0;
+ 3455                                             ui::text_left(
+ 3456                                                 canvas, ctx,
+ 3457                                                 &format!("当前出战：{}", if on { b } else { a }),
+ 3458                                                 ui::theme::SMALL, ui::theme::accent(), rx, ry,
+ 3459                                             )?;
+ 3460                                             ry += 22.0;
+ 3461                                             let fr = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
+ 3462                                             let fst = if fr.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal };
+ 3463                                             ui::row(
+ 3464                                                 canvas, ctx, fr,
+ 3465                                                 &format!("切换为 {}  (B)", if on { a } else { b }),
+ 3466                                                 ui::theme::BODY, fst,
+ 3467                                             )?;
+ 3468                                             self.learn_hitboxes.push((fr, LearnAction::Form(skill)));
+ 3469                                             ry += ui::theme::ROW_H + 6.0;
+ 3470                                         } else {
+ 3471                                             ui::text_left(canvas, ctx, "二形态：无", ui::theme::SMALL, ui::theme::text_dim(), rx, ry)?;
+ 3472                                             ry += 22.0;
+ 3473                                         }
+ 3474                                         // 购买 / 升级按钮：未购买=购买（置 1 级），已购买=升级一级
+ 3475                                         let (label, enabled) = if owned {
+ 3476                                             let cap = game_core::skill::DefTable::max_level(skill) + me.skill_cap_bonus;
+ 3477                                             if lv >= cap {
+ 3478                                                 (format!("已满级 Lv{lv}"), false)
+ 3479                                             } else {
+ 3480                                                 (format!("升级到 Lv{} ({cost}G)  [=]", lv + 1), true)
+ 3481                                             }
+ 3482                                         } else if tree_locked {
+ 3483                                             ("同树已锁定，不可购买".to_string(), false)
+ 3484                                         } else if me.gold >= cost {
+ 3485                                             (format!("购买 ({cost}G)  [=]"), true)
+ 3486                                         } else {
+ 3487                                             (format!("购买 ({cost}G) — 金币不足"), false)
+ 3488                                         };
+ 3489                                         let br = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
+ 3490                                         let bst = if enabled {
+ 3491                                             if br.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal }
+ 3492                                         } else {
+ 3493                                             ui::RowState::Disabled
+ 3494                                         };
+ 3495                                         ui::row(canvas, ctx, br, &label, ui::theme::BODY, bst)?;
+ 3496                                         if enabled {
+ 3497                                             self.learn_hitboxes.push((br, LearnAction::BuySelected));
+ 3498                                         }
+ 3499                                     }
+ 3500                                 } else {
+ 3501                                     ui::text_left(
+ 3502                                         canvas, ctx, "← 点击上方技能查看详情 / 购买 / 切形态",
+ 3503                                         ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
+ 3504                                     )?;
+ 3505                                 }
+ 3506                             }
+ 3507                             None => {
+ 3508                                 ui::text_left(
+ 3509                                     canvas, ctx,
+ 3510                                     "← 在左侧「配装总览」里点一个技能槽来配置",
+ 3511                                     ui::theme::BODY, ui::theme::text_dim(), rx, panel_y + 14.0,
+ 3512                                 )?;
+ 3513                             }
+ 3514                         }
+ 3515                     }
+ 3516                     1 => {
+ 3517                         // 商店页：左小栏三大类（可点）+ 右明细（clamp 11 行，滚轮/↑↓ 滚动）
+ 3518                         let cat_w = content_w * 0.34;
+ 3519                         let item_x = rx + cat_w + 12.0;
+ 3520                         let item_w = right_edge - item_x - pad;
+ 3521                         let mut cy = panel_y + 14.0;
+ 3522                         for (ci, name) in game_core::item::SHOP_CATEGORIES.iter().enumerate() {
+ 3523                             let sel = ci as u8 == self.shop_category;
+ 3524                             let r = graphics::Rect::new(rx, cy, cat_w, ui::theme::ROW_H);
+ 3525                             let hover = r.contains(mouse);
+ 3526                             let st = if sel {
+ 3527                                 ui::RowState::Selected
+ 3528                             } else if hover {
+ 3529                                 ui::RowState::Hover
+ 3530                             } else {
+ 3531                                 ui::RowState::Normal
+ 3532                             };
+ 3533                             ui::row(canvas, ctx, r, &format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], name), ui::theme::BODY, st)?;
+ 3534                             self.learn_hitboxes.push((r, LearnAction::Category(ci as u8)));
+ 3535                             cy += ui::theme::ROW_H + 4.0;
+ 3536                         }
+ 3537                         // 条目：购买=每家族一条（自动进化，不可跳档）；卖出=持有物品逐条（V 切换）。
+ 3538                         let owned_items: Vec<game_core::item::ItemId> = me.items.clone();
+ 3539                         let entries: Vec<game_core::item::ShopEntry> = if self.shop_sell_mode {
+ 3540                             owned_items
+ 3541                                 .iter()
+ 3542                                 .map(|&id| game_core::item::ShopEntry {
+ 3543                                     family: id.def().family,
+ 3544                                     owned: Some(id),
+ 3545                                     target: None,
+ 3546                                 })
+ 3547                                 .collect()
+ 3548                         } else {
+ 3549                             game_core::item::shop_category_entries(self.shop_category, &owned_items)
+ 3550                         };
+ 3551                         // 物品栏状态行（当前持有 / 容量）——购买前一眼看清。
+ 3552                         let held = if owned_items.is_empty() {
+ 3553                             "无".to_string()
+ 3554                         } else {
+ 3555                             owned_items.iter().map(|id| id.def().name).collect::<Vec<_>>().join("、")
+ 3556                         };
+ 3557                         ui::text_left(
+ 3558                             canvas, ctx,
+ 3559                             &format!(
+ 3560                                 "{}物品栏 {}/{}：{}",
+ 3561                                 if self.shop_sell_mode { "【卖出模式 V】" } else { "" },
+ 3562                                 owned_items.len(),
+ 3563                                 me.inventory_slots(),
+ 3564                                 held
+ 3565                             ),
+ 3566                             ui::theme::SMALL,
+ 3567                             if self.shop_sell_mode { ui::theme::accent() } else { ui::theme::text_dim() },
+ 3568                             item_x, panel_y - 18.0,
+ 3569                         )?;
+ 3570                         let visible = 11usize;
+ 3571                         let (start, end) = ui::scroll_window(entries.len(), visible, self.shop_scroll);
+ 3572                         let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"];
+ 3573                         let mut iy = panel_y + 14.0;
+ 3574                         let mut hover_desc: Option<&'static str> = None;
+ 3575                         for (vis_i, e) in entries.iter().enumerate().take(end).skip(start) {
+ 3576                             let num = vis_i - start;
+ 3577                             let key = keys.get(num).copied().unwrap_or("");
+ 3578                             let r = graphics::Rect::new(item_x, iy, item_w, ui::theme::ROW_H);
+ 3579                             let hover = r.contains(mouse);
+ 3580                             // (标签, 是否禁用, 点击动作, 悬停描述)
+ 3581                             let (label, disabled, action, desc): (String, bool, Option<LearnAction>, &'static str) =
+ 3582                                 if self.shop_sell_mode {
+ 3583                                     match e.owned {
+ 3584                                         Some(id) => (
+ 3585                                             format!("[{key}] 卖出 {}  +{}G", id.def().name, id.def().sell),
+ 3586                                             false,
+ 3587                                             Some(LearnAction::Sell(id)),
+ 3588                                             id.def().desc,
+ 3589                                         ),
+ 3590                                         None => (String::new(), true, None, ""),
+ 3591                                     }
+ 3592                                 } else {
+ 3593                                     match e.target {
+ 3594                                         Some(t) => {
+ 3595                                             let label = match e.owned {
+ 3596                                                 Some(cur) => format!("[{key}] {} → {}  {}G", cur.def().name, t.def().name, t.def().cost),
+ 3597                                                 None => format!("[{key}] {}  {}G", t.def().name, t.def().cost),
+ 3598                                             };
+ 3599                                             (label, false, Some(LearnAction::Item(t)), t.def().desc)
+ 3600                                         }
+ 3601                                         None => (format!("[{key}] {} 已满级", e.family.name_zh()), true, None, ""),
+ 3602                                     }
+ 3603                                 };
+ 3604                             let row_id = match action {
+ 3605                                 Some(LearnAction::Item(id)) | Some(LearnAction::Sell(id)) => Some(id),
+ 3606                                 _ => None,
+ 3607                             };
+ 3608                             let selected = row_id.is_some() && row_id == self.learn_shop_sel;
+ 3609                             let st = if selected {
+ 3610                                 ui::RowState::Selected
+ 3611                             } else if disabled {
+ 3612                                 ui::RowState::Normal
+ 3613                             } else if hover {
+ 3614                                 ui::RowState::Hover
+ 3615                             } else {
+ 3616                                 ui::RowState::Normal
+ 3617                             };
+ 3618                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+ 3619                             if let Some(a) = action {
+ 3620                                 self.learn_hitboxes.push((r, a));
+ 3621                             }
+ 3622                             if hover && !desc.is_empty() {
+ 3623                                 hover_desc = Some(desc);
+ 3624                             }
+ 3625                             iy += ui::theme::ROW_H + 2.0;
+ 3626                         }
+ 3627                         // 底部操作行（鼠标可点，与键盘 V / = 等价）。
+ 3628                         for (label, act, dy) in [
+ 3629                             ("[V] 切换买/卖模式", LearnAction::ShopToggleSell, 0.0f32),
+ 3630                             ("[=] 确认购买/卖出选中项", LearnAction::ShopConfirm, ui::theme::ROW_H + 2.0),
+ 3631                         ] {
+ 3632                             let r = graphics::Rect::new(item_x, bot_edge - 70.0 + dy, item_w, ui::theme::ROW_H);
+ 3633                             let hover = r.contains(mouse);
+ 3634                             let st = if hover { ui::RowState::Hover } else { ui::RowState::Normal };
+ 3635                             ui::row(canvas, ctx, r, label, ui::theme::BODY, st)?;
+ 3636                             self.learn_hitboxes.push((r, act));
+ 3637                         }
+ 3638                         if let Some(desc) = hover_desc {
+ 3639                             ui::text_left(canvas, ctx, desc, ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 44.0)?;
+ 3640                         }
+ 3641                         ui::text_left(
+ 3642                             canvas, ctx,
+ 3643                             &format!("共 {} 条 · 滚轮/↑↓ 滚动（{}-{}）· 数字选中、= 确认、V 切换买/卖", entries.len(), start + 1, end),
+ 3644                             ui::theme::SMALL, ui::theme::text_dim(), item_x, bot_edge - 22.0,
+ 3645                         )?;
+ 3646                     }
+ 3647                     _ => {
+ 3648                         // 成长页：精通 1-4（可点）+ 技能上限突破（可点）
+ 3649                         let mut ay = panel_y + 14.0;
+ 3650                         ui::text_left(canvas, ctx, "精通 / 上限突破（数字或点击选中、= 确认购买）", ui::theme::SMALL, ui::theme::text_dim(), rx, ay)?;
+ 3651                         ay += 22.0;
+ 3652                         let mm = [
+ 3653                             ("生命精通", m.life, 0usize),
+ 3654                             ("范围精通", m.range, 1),
+ 3655                             ("射程精通", m.time, 2),
+ 3656                             ("背包研究", m.backpack, 3),
+ 3657                         ];
+ 3658                         for (name, lv, kind) in mm {
+ 3659                             let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+ 3660                             let hover = r.contains(mouse);
+ 3661                             let st = if self.learn_growth_sel == Some(kind) {
+ 3662                                 ui::RowState::Selected
+ 3663                             } else if hover {
+ 3664                                 ui::RowState::Hover
+ 3665                             } else {
+ 3666                                 ui::RowState::Normal
+ 3667                             };
+ 3668                             let label = format!(
+ 3669                                 "[{}] {} Lv{}/{} ({}G)",
+ 3670                                 kind + 1, name, lv, game_core::meta::Mastery::CAPS[kind], game_core::meta::Mastery::COSTS[kind]
+ 3671                             );
+ 3672                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+ 3673                             self.learn_hitboxes.push((r, LearnAction::Mastery(kind)));
+ 3674                             ay += ui::theme::ROW_H + 4.0;
+ 3675                         }
+ 3676                         // 技能上限突破（098c 乔丹之石原生化为购买项）：每档 +2，价 5G。
+ 3677                         {
+ 3678                             let r = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+ 3679                             let hover = r.contains(mouse);
+ 3680                             let st = if self.learn_growth_sel == Some(4) {
+ 3681                                 ui::RowState::Selected
+ 3682                             } else if hover {
+ 3683                                 ui::RowState::Hover
+ 3684                             } else {
+ 3685                                 ui::RowState::Normal
+ 3686                             };
+ 3687                             let label = format!("[U] 技能上限突破 +{} (5G)", me.skill_cap_bonus);
+ 3688                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+ 3689                             self.learn_hitboxes.push((r, LearnAction::SkillCap));
+ 3690                             ay += ui::theme::ROW_H + 6.0;
+ 3691                             // 可点的确认按钮（与键盘 `=` 等价）。
+ 3692                             let cr = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
+ 3693                             let chover = cr.contains(mouse);
+ 3694                             let cst = if chover { ui::RowState::Hover } else { ui::RowState::Normal };
+ 3695                             ui::row(canvas, ctx, cr, "[=] 确认购买选中项", ui::theme::BODY, cst)?;
+ 3696                             self.learn_hitboxes.push((cr, LearnAction::GrowthConfirm));
+ 3697                         }
+ 3698                     }
+ 3699                 }
+ 3700 
+ 3701                 // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）
+ 3702                 ui::text_center(
+ 3703                     canvas, ctx,
+ 3704                     "字母选树 · 数字选技能看详情 · = 购买/升级 · B 切形态 · Tab 翻页",
+ 3705                     ui::theme::SMALL, ui::theme::text_dim(), sw / 2.0, sh - 14.0,
+ 3706                 )?;
+ 3707             }
+ 3708             MatchPhase::Finished => {

@@ -1,0 +1,84 @@
+ 1453     fn growth_confirm(&mut self) {
+ 1454         let me = self.self_index();
+ 1455         let Some(sel) = self.learn_growth_sel else { return };
+ 1456         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
+ 1457         if sel == 4 {
+ 1458             if profile.buy_skill_cap_bonus(5) {
+ 1459                 eprintln!("[learn] skill cap bonus +2 -> +{}", profile.skill_cap_bonus);
+ 1460             }
+ 1461         } else if profile.buy_mastery(sel) {
+ 1462             eprintln!("[learn] 精通 {sel} 已升级");
+ 1463             if let Some(wp) = self.world.players.get_mut(me as usize) {
+ 1464                 wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
+ 1465             }
+ 1466         } else {
+ 1467             eprintln!(
+ 1468                 "[learn] 精通 {sel} 需要 {} 金或已达上限 {}",
+ 1469                 game_core::meta::Mastery::COSTS[sel],
+ 1470                 game_core::meta::Mastery::CAPS[sel]
+ 1471             );
+ 1472         }
+ 1473     }
+ 1474 
+ 1475     /// M3 商店（学习期，§3 改造）：左栏三大类，B/N/M 切换；右栏当前类明细，
+ 1476     /// 数字键 1..9/0/- 购买可见窗口条目；持有同家族低档时为「升级」（buy_item 内替换）。
+ 1477     fn poll_shop(&mut self, ctx: &Context) {
+ 1478         use ggez::input::keyboard::Key;
+ 1479         if self.learn_page != 1 {
+ 1480             return;
+ 1481         }
+ 1482         let me = self.self_index();
+ 1483 
+ 1484         // B/N/M：切换三大类（§3），切换时重置滚动。
+ 1485         if Self::char_just(ctx, "b") {
+ 1486             self.shop_category = 0;
+ 1487             self.shop_scroll = 0;
+ 1488         } else if Self::char_just(ctx, "n") {
+ 1489             self.shop_category = 1;
+ 1490             self.shop_scroll = 0;
+ 1491         } else if Self::char_just(ctx, "m") {
+ 1492             self.shop_category = 2;
+ 1493             self.shop_scroll = 0;
+ 1494         }
+ 1495 
+ 1496         // V：在「购买」与「卖出」模式间切换。
+ 1497         if Self::char_just(ctx, "v") {
+ 1498             self.shop_sell_mode = !self.shop_sell_mode;
+ 1499             self.shop_scroll = 0;
+ 1500         }
+ 1501 
+ 1502         // 条目：购买模式 = 每家族一条（无→1档/持低→下一档/满级=不可买）；卖出模式 = 持有物品逐条。
+ 1503         // 098c `bD` 实证：家族式进化，不允许跳档。
+ 1504         let owned_items: Vec<game_core::item::ItemId> = self
+ 1505             .meta
+ 1506             .profiles
+ 1507             .iter()
+ 1508             .find(|p| p.player_id == me)
+ 1509             .map(|p| p.items.clone())
+ 1510             .unwrap_or_default();
+ 1511         let entries: Vec<game_core::item::ShopEntry> = if self.shop_sell_mode {
+ 1512             owned_items
+ 1513                 .iter()
+ 1514                 .map(|&id| game_core::item::ShopEntry {
+ 1515                     family: id.def().family,
+ 1516                     owned: Some(id),
+ 1517                     target: None,
+ 1518                 })
+ 1519                 .collect()
+ 1520         } else {
+ 1521             game_core::item::shop_category_entries(self.shop_category, &owned_items)
+ 1522         };
+ 1523 
+ 1524         // 滚动：↑↓ / PageUp-PageDown。
+ 1525         let max_rows = 14usize;
+ 1526         let max_scroll = entries.len().saturating_sub(max_rows);
+ 1527         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::PageDown)) {
+ 1528             self.shop_scroll = self.shop_scroll.saturating_add(max_rows).min(max_scroll);
+ 1529         }
+ 1530         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::PageUp)) {
+ 1531             self.shop_scroll = self.shop_scroll.saturating_sub(max_rows);
+ 1532         }
+ 1533         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowDown)) {
+ 1534             self.shop_scroll = self.shop_scroll.saturating_add(1).min(max_scroll);
+ 1535         }
+ 1536         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowUp)) {

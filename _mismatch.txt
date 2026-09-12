@@ -1,0 +1,14 @@
+S008 A=陨石 B=岩浆 | desc_has_A=True desc_has_B=True
+S009 A=分裂弹·目标 B=分裂弹·区域 | desc_has_A=True desc_has_B=True
+S010 A=疾风步·冲锋 B=疾风步·隐身 | desc_has_A=True desc_has_B=True
+S011 A=瞬间移动 B=瞬间移动·镜像 | desc_has_A=True desc_has_B=True
+S012 A=冲撞·突击 B=冲撞·凤凰 | desc_has_A=True desc_has_B=True
+S013 A=移形换位·置换 B=移形换位·搬运 | desc_has_A=True desc_has_B=True
+S014 A=汲取·减速 B=汲取·削弱 | desc_has_A=True desc_has_B=True
+S015 A=火焰喷射·流射 B=火焰喷射·簇射 | desc_has_A=True desc_has_B=True
+S016 A=弹跳弹 B=弹跳弹·充能 | desc_has_A=True desc_has_B=True
+S017 A=禁锢·缠绕 B=禁锢·沉默 | desc_has_A=False desc_has_B=False
+    MISS: 禁锢·缠绕 / 禁锢·沉默
+    desc: 禁锢对手，使其无法移动或释放法术。两种模式：缠绕（拟态能量化作蔓藤束缚敌人）/ 沉默（沉默对手法术并驱散增益减益）。
+S018 A=引力·暗物质 B=引力·力场 | desc_has_A=True desc_has_B=True
+S019 A=锁链·钩引 B=锁链·红链 | desc_has_A=True desc_has_B=True
