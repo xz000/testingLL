@@ -362,6 +362,12 @@ struct Game {
     /// Steam：房间列表（缓存的公开大厅信息，供浏览选房）。
     #[cfg(feature = "steam")]
     steam_list_lobbies: Vec<net_steam::session::LobbyInfo>,
+    /// Steam：房间列表**未筛选**的全量（供模式筛选重新过滤）。
+    #[cfg(feature = "steam")]
+    steam_list_all: Vec<net_steam::session::LobbyInfo>,
+    /// Steam：房间列表模式筛选（0=全部，1..5=对应模式）。
+    #[cfg(feature = "steam")]
+    steam_list_mode_filter: u8,
     /// Steam：房间列表当前选中项。
     #[cfg(feature = "steam")]
     steam_list_selection: usize,
@@ -886,6 +892,10 @@ impl Game {
             steam_create_focus: 0,
             #[cfg(feature = "steam")]
             steam_list_lobbies: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_list_all: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_list_mode_filter: 0,
             #[cfg(feature = "steam")]
             steam_list_selection: 0,
             #[cfg(feature = "steam")]
@@ -5465,6 +5475,20 @@ impl Game {
     }
 
     /// 房间列表界面输入：首次进入拉一次公开大厅列表，供浏览选房加入。
+    /// 按当前模式筛选重算可见房间列表（0=全部）；原始列表保存在 `steam_list_all`。
+    #[cfg(feature = "steam")]
+    fn steam_apply_list_filter(&mut self) {
+        let f = self.steam_list_mode_filter;
+        self.steam_list_lobbies = if f == 0 {
+            self.steam_list_all.clone()
+        } else {
+            self.steam_list_all.iter().filter(|l| l.mode == f).cloned().collect()
+        };
+        if self.steam_list_selection >= self.steam_list_lobbies.len() {
+            self.steam_list_selection = self.steam_list_lobbies.len().saturating_sub(1);
+        }
+    }
+
     /// 列表拉取是帧驱动异步（S12）：`start_list_lobbies` 注册回调后立即返回，每帧 `tick_lobby_list` 推进后落地。
     /// - ↑/↓ 选择；回车=加入选中的大厅；R=重新刷新；Q=返回大厅主界面。
     #[cfg(feature = "steam")]
@@ -5498,15 +5522,14 @@ impl Game {
                     self.steam_list_searching = false;
                     // 人数已满的大厅仍显示但不可选（steamworks 加入会失败）；这里仅排序展示。
                     list.sort_by_key(|l| (l.members >= l.limit, l.members));
-                    self.steam_list_lobbies = list;
-                    if self.steam_list_selection >= self.steam_list_lobbies.len() {
-                        self.steam_list_selection = self.steam_list_lobbies.len().saturating_sub(1);
-                    }
+                    self.steam_list_all = list;
+                    self.steam_apply_list_filter();
                     eprintln!("[steam-list] {} lobbies found", self.steam_list_lobbies.len());
                 }
                 net_steam::session::LobbyListProgress::Done(Err(e)) => {
                     self.steam_list_searching = false;
                     eprintln!("[steam-list] list failed: {e:?}");
+                    self.steam_list_all = Vec::new();
                     self.steam_list_lobbies = Vec::new();
                 }
                 net_steam::session::LobbyListProgress::Pending | net_steam::session::LobbyListProgress::Idle => {}
@@ -5515,6 +5538,13 @@ impl Game {
         if just('q') || just('Q') {
             self.steam_lobby_list = false;
             return;
+        }
+        // F：循环切换模式筛选（0=全部 → 1..5 → 0），用于只看想要的玩法。
+        if just('f') || just('F') {
+            self.steam_list_mode_filter = if self.steam_list_mode_filter >= 5 { 0 } else { self.steam_list_mode_filter + 1 };
+            self.steam_apply_list_filter();
+            self.steam_list_selection = 0;
+            eprintln!("[steam-list] 模式筛选 -> {}", if self.steam_list_mode_filter == 0 { "全部".to_string() } else { game_core::meta::MatchState::mode_name(self.steam_list_mode_filter).to_string() });
         }
         if self.steam_list_lobbies.is_empty() {
             return; // 没有可加入房间（或加载中），等待/提示。
@@ -6052,11 +6082,19 @@ impl Game {
         let (sw, sh) = ctx.gfx.drawable_size();
         let cx = sw / 2.0;
         draw_text(canvas, ctx, "加入房间", 36.0, Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.22 }, true)?;
-        draw_text(canvas, ctx, "↑/↓ 选择，回车加入，R 刷新", 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
+        let filter_name = if self.steam_list_mode_filter == 0 {
+            "全部".to_string()
+        } else {
+            game_core::meta::MatchState::mode_name(self.steam_list_mode_filter).to_string()
+        };
+        draw_text(canvas, ctx, &format!("↑/↓ 选择，回车加入，R 刷新，F 筛选模式：[{filter_name}]"), 20.0, Color::from_rgb(180, 190, 205), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
         if self.steam_list_lobbies.is_empty() {
             if self.steam_list_searching {
                 draw_text(canvas, ctx, "搜索中…", 28.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.5 }, true)?;
                 draw_text(canvas, ctx, "正在向 Steam 查询公开房间，请稍候", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
+            } else if self.steam_list_mode_filter != 0 && !self.steam_list_all.is_empty() {
+                draw_text(canvas, ctx, &format!("（无 [{filter_name}] 模式的房间）"), 28.0, Color::from_rgb(230, 190, 140), Point2 { x: cx, y: sh * 0.5 }, true)?;
+                draw_text(canvas, ctx, "按 F 切换筛选条件，或 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
             } else {
                 draw_text(canvas, ctx, "（暂无可加入的房间）", 28.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: sh * 0.5 }, true)?;
                 draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, Color::from_rgb(150, 160, 178), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
