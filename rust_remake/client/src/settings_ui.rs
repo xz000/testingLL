@@ -311,6 +311,30 @@ pub fn nudge(cfg: &mut MatchConfig, id: SettingId, dir: i32) {
     }
 }
 
+/// 提交**自定义输入**（编辑器里按回车后键入的数字）。
+///
+/// 返回 `true` 表示输入被接受（已写入并按类型钳制）；`false` = 格式非法（保留原值）。
+/// 支持 `12`、`12.5`、`-3`；枚举/开关类不接受数值输入（由方向键调整）。
+pub fn commit_input(cfg: &mut MatchConfig, id: SettingId, text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let v: f64 = match t.parse() {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    if let Some((min, max, _)) = id.num_range() {
+        set(cfg, id, v.clamp(min, max));
+        return true;
+    }
+    if let Some((min, max, _)) = id.int_range() {
+        set(cfg, id, (v.round() as i32).clamp(min, max) as f64);
+        return true;
+    }
+    false // 枚举 / 开关：不接数值输入
+}
+
 /// 显示文本（含单位与"自定义"标记）。
 pub fn value_text(cfg: &MatchConfig, id: SettingId) -> String {
     let v = value(cfg, id);
@@ -425,6 +449,37 @@ mod tests {
             nudge(&mut c, SettingId::StartingGold, -1);
         }
         assert_eq!(c.starting_gold, 0, "不应低于 0");
+    }
+
+    /// 自定义输入：合法值写入并钳制；非法值保留原值；枚举/开关拒绝输入。
+    #[test]
+    fn custom_input_commits_and_clamps() {
+        let mut c = fresh();
+        // 数值：接受自定义（非档位）值
+        assert!(commit_input(&mut c, SettingId::DamageMult, "1.37"));
+        assert!((c.damage_mult - 1.37).abs() < 1e-9);
+        assert!(value_text(&c, SettingId::DamageMult).contains("自定义"));
+        // 超范围 → 钳制
+        assert!(commit_input(&mut c, SettingId::DamageMult, "9"));
+        assert!((c.damage_mult - 3.0).abs() < 1e-9, "应钳到 max 3.0");
+        // 整数项
+        assert!(commit_input(&mut c, SettingId::GoldPerKill, "42"));
+        assert_eq!(c.gold_per_kill, 42);
+        assert!(commit_input(&mut c, SettingId::GoldPerKill, "99999"));
+        assert_eq!(c.gold_per_kill, 100, "应钳到 max 100");
+        // 非法输入 → 不改值
+        c.gold_per_kill = 5;
+        assert!(!commit_input(&mut c, SettingId::GoldPerKill, "abc"));
+        assert!(!commit_input(&mut c, SettingId::GoldPerKill, ""));
+        assert_eq!(c.gold_per_kill, 5, "非法输入应保留原值");
+        // 枚举/开关拒绝
+        assert!(!commit_input(&mut c, SettingId::PillarMode, "2"));
+        assert!(!commit_input(&mut c, SettingId::GoldRewardsEnabled, "1"));
+        // 岩浆可以输入 0（= 关闭）+ 负数被钳到 0
+        assert!(commit_input(&mut c, SettingId::LavaDamageMult, "0"));
+        assert_eq!(c.lava_damage_mult, 0.0);
+        assert!(commit_input(&mut c, SettingId::LavaDamageMult, "-5"));
+        assert_eq!(c.lava_damage_mult, 0.0, "负值应钳到 0");
     }
 
     #[test]
