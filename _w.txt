@@ -1,0 +1,11 @@
+4038 |                             };
+4039 |                             let selected = row_id.is_some() && row_id == self.learn_shop_sel;
+4040 |                             let label = if sell_alt.is_some() {
+4041 |                                 format!("{label}   [ÍË¸ñ Âô³ö]")
+4042 |                             } else {
+4043 |                                 label
+4044 |                             };
+4045 |                             let st = if selected {
+4046 |                                 ui::RowState::Selected
+4047 |                             } else if hover {
+4048 |                                 ui::RowState::Hover

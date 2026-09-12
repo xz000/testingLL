@@ -1592,6 +1592,38 @@ impl Game {
         rows
     }
 
+    /// 由商店行模型解析"退格/Delete 该卖出哪件物品"（**纯函数**，便于单测）。
+    ///
+    /// - 选中行的主动作对应该家族 → 卖该家族**当前持有**的那件（行模型的次动作）；
+    /// - 选中行本身是卖出行（满级家族）→ 卖它自己；
+    /// - **未选中**时回退到第一件可卖物品（退格不必先选择）。
+    fn shop_sell_target(
+        rows: &[(String, Option<LearnAction>, Option<LearnAction>, &'static str)],
+        sel: Option<game_core::item::ItemId>,
+    ) -> Option<game_core::item::ItemId> {
+        let action_id = |a: &Option<LearnAction>| match a {
+            Some(LearnAction::Item(id)) | Some(LearnAction::Sell(id)) => Some(*id),
+            _ => None,
+        };
+        if let Some(sel) = sel {
+            for (_, act, alt, _) in rows {
+                if action_id(act) == Some(sel) {
+                    if let Some(LearnAction::Sell(sid)) = alt {
+                        return Some(*sid);
+                    }
+                    if let Some(LearnAction::Sell(sid)) = act {
+                        return Some(*sid);
+                    }
+                }
+            }
+        }
+        rows.iter().find_map(|(_, act, alt, _)| match (act, alt) {
+            (_, Some(LearnAction::Sell(sid))) => Some(*sid),
+            (Some(LearnAction::Sell(sid)), _) => Some(*sid),
+            _ => None,
+        })
+    }
+
     fn shop_confirm(&mut self) {
         let me = self.self_index();
         let Some(id) = self.learn_shop_sel else { return };
@@ -1714,24 +1746,14 @@ impl Game {
                 .keyboard
                 .is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Delete));
         if sell_key {
-            if let Some(sel) = self.learn_shop_sel {
-                let sell_target = rows.iter().find_map(|(_, act, alt, _)| {
-                    let id = match act {
-                        Some(LearnAction::Item(id)) | Some(LearnAction::Sell(id)) => Some(*id),
-                        _ => None,
-                    };
-                    if id == Some(sel) {
-                        match alt {
-                            Some(LearnAction::Sell(sid)) => Some(*sid),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    }
-                });
-                if let Some(sid) = sell_target {
+            match Self::shop_sell_target(&rows, self.learn_shop_sel) {
+                Some(sid) => {
+                    eprintln!("[shop] 退格：卖出 {}", sid.def().name);
                     self.learn_shop_sel = Some(sid);
                     self.shop_confirm(); // 持有该物品 → 走卖出分支
+                }
+                None => {
+                    eprintln!("[shop] 退格：当前无可卖物品（先买一件，或用数字键选中该行）")
                 }
             }
         }
@@ -4015,8 +4037,12 @@ impl Game {
                                 _ => None,
                             };
                             let selected = row_id.is_some() && row_id == self.learn_shop_sel;
-                            let label = if sell_alt.is_some() {
-                                format!("{label}   [退格 卖出]")
+                            // 把**两个动作**都标在行上，避免"看起来都靠等号"：
+                            //   `=`/回车 = 购买或升级；`退格`/`Delete` = 卖出当前持有物（标注回收金）。
+                            let label = if let Some(LearnAction::Sell(sid)) = sell_alt {
+                                format!("{label}   [= 操作 · 退格 卖出 +{}G]", sid.def().sell)
+                            } else if matches!(action, Some(LearnAction::Sell(_))) {
+                                format!("{label}   [= 或 退格 卖出]")
                             } else {
                                 label
                             };
@@ -7910,6 +7936,64 @@ fn main() -> GameResult {
 
 #[cfg(test)]
 mod tests {
+    /// 退格卖出的**目标解析**（纯函数）：三种情形都要对 ——
+    /// ① 未选中 → 回退到第一件可卖物；② 选中"已持有家族的购买行" → 卖**当前持有**那件；
+    /// ③ 选中"满级卖出行" → 卖它自己。
+    #[test]
+    fn shop_sell_target_resolution() {
+        use game_core::item::ItemId;
+        type Row = (String, Option<super::LearnAction>, Option<super::LearnAction>, &'static str);
+
+        // ① 空行 + 未选中 → None
+        let empty: Vec<Row> = Vec::new();
+        assert_eq!(super::Game::shop_sell_target(&empty, None), None);
+
+        // ② 持有 Boots1、可升 Boots2：选中购买行(Boots2) 应解析出**卖 Boots1**
+        let rows: Vec<Row> = vec![
+            (
+                "[buy] Boots1 -> Boots2".to_string(),
+                Some(super::LearnAction::Item(ItemId::Boots2)),
+                Some(super::LearnAction::Sell(ItemId::Boots1)),
+                "",
+            ),
+            ("[buy] Cloak".to_string(), Some(super::LearnAction::Item(ItemId::Cloak1)), None, ""),
+        ];
+        assert_eq!(
+            super::Game::shop_sell_target(&rows, Some(ItemId::Boots2)),
+            Some(ItemId::Boots1),
+            "选中购买行应卖当前持有那件"
+        );
+        // 未选中 → 回退到第一件可卖物
+        assert_eq!(
+            super::Game::shop_sell_target(&rows, None),
+            Some(ItemId::Boots1),
+            "未选中时应回退到第一件可卖物"
+        );
+        // 选中一行没有卖出动作（未持有）→ 回退仍然给出可卖物（而不是 None）
+        assert_eq!(
+            super::Game::shop_sell_target(&rows, Some(ItemId::Cloak1)),
+            Some(ItemId::Boots1)
+        );
+
+        // ③ 满级行：主动作就是卖出
+        let maxed: Vec<Row> = vec![(
+            "[sell] Boots3 maxed".to_string(),
+            Some(super::LearnAction::Sell(ItemId::Boots3)),
+            None,
+            "",
+        )];
+        assert_eq!(
+            super::Game::shop_sell_target(&maxed, Some(ItemId::Boots3)),
+            Some(ItemId::Boots3),
+            "满级行的主动作即卖出"
+        );
+        assert_eq!(
+            super::Game::shop_sell_target(&maxed, None),
+            Some(ItemId::Boots3),
+            "满级行未选中也应能卖（回退）"
+        );
+    }
+
     /// 商店"一行两动作"（用户建议）：同一家族只有一行 ——
     /// 已购买时该行带**卖出次动作**（退格键），满级家族则该行的主动作就是卖出。
     #[test]
