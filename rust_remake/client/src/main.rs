@@ -3194,9 +3194,9 @@ impl Game {
             Color::from_rgb(255, 200, 90)
         };
         let edit_hint = if self.steam_host_ls.is_some() {
-            "   [O] 编辑"
+            "   [O] 编辑/查看"
         } else {
-            ""
+            "   [O] 查看"
         };
         ui::text_center(
             canvas, ctx,
@@ -3325,7 +3325,9 @@ impl Game {
                 py + ph - 52.0,
             )?;
         }
-        let hint_line = if self.room_cfg_create_mode {
+        let hint_line = if read_only {
+            "[只读] A/Z/X/C/V 分组 · ↑↓ 选择 · Esc 或 O 关闭"
+        } else if self.room_cfg_create_mode {
             "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 输入 · 回车 创建房间 · Esc 取消"
         } else {
             "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车=切换/保存关闭"
@@ -5882,6 +5884,9 @@ impl Game {
             // 注意：**不能**在此提前 return —— 下面的网络上行/心跳每帧都要跑，
             // 否则房主打开编辑器时其余端会因收不到心跳而判定「房主已离开」。
         }
+
+        // client：每帧从大厅元数据回读房名/备注/人数上限，供只读设置编辑器（`O`）显示房主设置。
+        self.steam_sync_room_meta();
 
         // ── 房间设置变更 → 取消全员准备（第 5 步）──
         // 依据：设置整串（`MatchConfig::to_meta_string`）是否变化。host 读自己的配置，

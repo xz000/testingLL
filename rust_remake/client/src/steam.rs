@@ -308,6 +308,38 @@ impl Game {
         (name, note)
     }
 
+    /// 客户端：从大厅元数据回读房名/备注/人数上限到 `room_meta`，供只读设置编辑器显示房主设置。
+    ///
+    /// 房主自持权威 `room_meta`（`publish_room_cfg` 写入），此处**不覆盖房主**；
+    /// 不在房间 / 没有 client 传输时不动。`MatchConfig` 部分由 `room_cfg` 串单独同步，不在此处。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_sync_room_meta(&mut self) {
+        if self.steam_host_ls.is_some() {
+            return;
+        }
+        let info = (|| {
+            let t = self.steam_cli_ls.as_ref()?.transport_ref();
+            let lid = self.steam_lobby_id?;
+            let mm = t.matchmaking();
+            let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+            Some((
+                mm.lobby_data(lobby, net_steam::session::ROOM_NAME_KEY),
+                mm.lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY),
+                mm.lobby_member_limit(lobby),
+            ))
+        })();
+        let Some((name, note, limit)) = info else { return };
+        if let Some(name) = name {
+            self.room_meta.name = name;
+        }
+        if let Some(note) = note {
+            self.room_meta.note = note;
+        }
+        if let Some(limit) = limit {
+            self.room_meta.player_limit = limit.clamp(2, STEAM_MAX_PLAYERS as usize) as u32;
+        }
+    }
+
     /// 当前可用的 Steam 传输：进房后归 lockstep 持有（`into_transport`），进房前在 `steam_sess` 里。
     /// 好友邀请 / Rich Presence 只需 `&SteamTransport`（它持有唯一的 `steamworks::Client`）。
     #[cfg(feature = "steam")]
