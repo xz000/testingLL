@@ -790,6 +790,10 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
             wfix(&mut o, *v);
         }
     }
+    // 化身累计伤害积分（模式 3）：n 个 Fix64
+    for v in w.avatar_score.iter().take(n) {
+        wfix(&mut o, *v);
+    }
     wu32(&mut o, w.obstacles.len() as u32);
     for ob in &w.obstacles {
         wvec(&mut o, ob.pos);
@@ -873,6 +877,11 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
             *v = fixat(b, &mut p)?;
         }
     }
+    // 化身累计伤害积分（模式 3）：n 个 Fix64
+    let mut avatar_score = vec![Fix64::ZERO; np];
+    for v in avatar_score.iter_mut() {
+        *v = fixat(b, &mut p)?;
+    }
     let no = count_at(b, &mut p, MAX_DECODE_OBSTACLES)?;
     let mut obstacles = Vec::with_capacity(no);
     for _ in 0..no {
@@ -926,7 +935,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         pending_kings.push(k);
     }
-    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
+    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
 }
 
 /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
