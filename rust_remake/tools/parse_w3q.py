@@ -92,7 +92,7 @@ def parse(data: bytes):
             break
         fid = tok.decode('latin-1')
         typ, level, ptr = u32(pos + 4), u32(pos + 8), u32(pos + 12)
-        if typ > 3 or level == 0 or level > 64:
+        if typ > 3 or level > 64:  # level==0 合法：gglb/glmb 等非逐级字段
             pos += 1
             continue
         pos += 16
