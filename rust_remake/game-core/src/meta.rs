@@ -115,6 +115,8 @@ pub struct PlayerProfile {
     pub rounds_survived: u32,
     /// 累计得分（击杀/助攻/轮胜，098b lo/Lo/po；En1 按总分定胜负，D6）。
     pub score: u32,
+    /// 累计伤害（098c `Rn[12+i]`：跨轮累计的造成伤害，记分板/排名用；仅统计展示）。
+    pub total_damage: f64,
     /// 当前连杀数（死亡清零；>=3 触发连杀播报，098b Mn[3..10]）。
     pub current_streak: u32,
     /// 本场已出 First Blood（098c：全场第一杀播报）。
@@ -150,6 +152,7 @@ impl PlayerProfile {
             gold: 0,
             total_kills: 0,
             score: 0,
+            total_damage: 0.0,
             current_streak: 0,
             first_blood_taken: false,
             rounds_survived: 0,
