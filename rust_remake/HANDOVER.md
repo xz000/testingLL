@@ -50,7 +50,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 313 项（client 35 / game-core 233 / net 36 / net-steam 9）；steam client 41 |
+| 测试基线 | 315 项（client 35 / game-core 233 / net 38 / net-steam 9）；steam client 41 |
 
 ## 四、待办（按建议优先级）
 
@@ -86,8 +86,10 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 
 ## 六、最近提交（新→旧）
 
-`2f207cf` 表现层 P1（飘字+横幅） ← `6d9d3f2` client 看房主参数 ← `b21d81f` 输入路由+中文 IME ←
-`f4835c6` 商店升级后保持高亮 ← `811ad8d` 商店/成长列表+详情 ← `c854027` HANDOVER 刷新 ←
+`6dbcede` net 测试警告清理 ← `7cd4cbe` 快照广播降频/复用 hash/取新基线 ←
+`ca25399` 快照体积更正 ← `58e31db` 帧同步卡顿分析 ← `2f207cf` 表现层 P1 ←
+`6d9d3f2` client 看房主参数 ← `b21d81f` 输入路由+中文 IME ← `f4835c6` 商店升级后保持高亮 ←
+`811ad8d` 商店/成长列表+详情 ← `c854027` HANDOVER 刷新 ←
 `565728e` 商店退格卖出可用化 ← `7270497` HANDOVER ← `961182d` 商店一行两动作
 ← `065c4ff` 源码扫描测试抗重构 ← `74edf9d` 金币时序 ← `12f1946` 工程坑文档
 ← `31bf70b` 人数/提示 ← `30e6ea5` 非房主只读 ← `5ce9ee1` 开局发钱（初版）
