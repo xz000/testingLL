@@ -3225,9 +3225,14 @@ impl Game {
                 py + ph - 52.0,
             )?;
         }
+        let hint_line = if self.room_cfg_create_mode {
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 输入 · 回车 创建房间 · Esc 取消"
+        } else {
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车=切换/保存关闭"
+        };
         ui::text_center(
             canvas, ctx,
-            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车=切换/保存关闭",
+            hint_line,
             ui::theme::SMALL,
             Color::from_rgb(160, 200, 255),
             sw / 2.0,
@@ -6215,7 +6220,29 @@ impl Game {
                 self.room_cfg_row = (self.room_cfg_row + 1) % n_rows;
             }
             let id = settings_ui::SettingId::rows(self.room_cfg_group)[self.room_cfg_row.min(n_rows - 1)];
-            // 只读项（人数上限）：不接受调整/输入。
+            // 人数上限：**创建模式下可改**（正是选人数的时候）；编辑模式下只读。
+            if id == settings_ui::SettingId::PlayerLimit && self.room_cfg_create_mode {
+                let mut dir = 0;
+                if just_named(NamedKey::ArrowLeft) {
+                    dir = -1;
+                }
+                if just_named(NamedKey::ArrowRight) {
+                    dir = 1;
+                }
+                if dir != 0 {
+                    let v = self.room_meta.player_limit as i32 + dir;
+                    self.room_meta.player_limit = v.clamp(2, STEAM_MAX_PLAYERS as i32) as u32;
+                    eprintln!("[cfg] 人数上限 -> {}（2~{}）", self.room_meta.player_limit, STEAM_MAX_PLAYERS);
+                }
+                if just("o") || just_named(NamedKey::Escape) {
+                    self.room_cfg_edit = false;
+                    self.room_cfg_create_mode = false;
+                    self.steam_lobby_create = false;
+                    return false;
+                }
+                return true;
+            }
+            // 只读项（人数上限，编辑模式）：不接受调整/输入。
             if id.is_readonly() {
                 if just("o") || just_named(NamedKey::Escape) {
                     self.room_cfg_edit = false;
