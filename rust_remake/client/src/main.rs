@@ -2649,11 +2649,13 @@ impl Game {
     fn draw_scoreboard(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         const SCOREBOARD_MAX_ROWS: usize = 8;
         const ROW_H: f32 = 30.0;
+        // 行： (player_id, score, kills, total_damage, alive)
+        type Row = (u32, u32, u32, f64, bool);
         let (sw, sh) = ctx.gfx.drawable_size();
         let me = self.self_index();
 
         // 分数降序（同分按 id 升序，保证确定性）；存活取自 world（帧内真实状态）。
-        let mut rows: Vec<(u32, u32, u32, bool)> = self
+        let mut rows: Vec<Row> = self
             .meta
             .profiles
             .iter()
@@ -2664,17 +2666,17 @@ impl Game {
                     .get(p.player_id as usize)
                     .map(|w| w.alive)
                     .unwrap_or(false);
-                (p.player_id, p.score, p.total_kills, alive)
+                (p.player_id, p.score, p.total_kills, p.total_damage, alive)
             })
             .collect();
         rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
 
         // 人多 → 头 3 + 「…」+ 尾 2 + 本人（若未被包含则补在末尾）
-        let shown: Vec<Option<(u32, u32, u32, bool)>> = if rows.len() <= SCOREBOARD_MAX_ROWS {
+        let shown: Vec<Option<Row>> = if rows.len() <= SCOREBOARD_MAX_ROWS {
             rows.iter().map(|r| Some(*r)).collect()
         } else {
             let tail_start = rows.len() - 2;
-            let mut v: Vec<Option<(u32, u32, u32, bool)>> = Vec::new();
+            let mut v: Vec<Option<Row>> = Vec::new();
             for r in rows.iter().take(3) {
                 v.push(Some(*r));
             }
@@ -2696,7 +2698,7 @@ impl Game {
             v
         };
 
-        let w = 400.0;
+        let w = 500.0;
         let h = 96.0 + shown.len() as f32 * ROW_H;
         let x0 = sw / 2.0 - w / 2.0;
         let y0 = sh / 2.0 - h / 2.0;
@@ -2715,15 +2717,16 @@ impl Game {
         )?;
         canvas.draw(&border, graphics::DrawParam::new());
 
-        // 标题：第 N / M 局
+        // 标题：模式相关（死斗/最后生还无回合概念）
+        let title = if self.match_mode == 2 {
+            format!("死斗  目标 {} 分", self.meta.config.win_score)
+        } else {
+            format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+        };
         draw_text(
             canvas,
             ctx,
-            &format!(
-                "第 {} / {} 局",
-                self.meta.round,
-                self.meta.config.total_rounds
-            ),
+            &title,
             22.0,
             Color::from_rgb(255, 220, 120),
             Point2 { x: sw / 2.0, y: y0 + 14.0 },
@@ -2735,9 +2738,10 @@ impl Game {
         let head_c = Color::from_rgb(150, 170, 200);
         for (label, cx) in [
             ("玩家", x0 + 70.0),
-            ("分数", x0 + 190.0),
-            ("击杀", x0 + 270.0),
-            ("存活", x0 + 350.0),
+            ("分数", x0 + 185.0),
+            ("击杀", x0 + 250.0),
+            ("伤害", x0 + 325.0),
+            ("存活", x0 + 430.0),
         ] {
             draw_text(canvas, ctx, label, 16.0, head_c, Point2 { x: cx, y: head_y }, true)?;
         }
@@ -2757,7 +2761,7 @@ impl Game {
                         true,
                     )?;
                 }
-                Some((pid, score, kills, alive)) => {
+                Some((pid, score, kills, dmg, alive)) => {
                     let is_me = *pid == me;
                     let c = if is_me {
                         Color::from_rgb(255, 230, 140)
@@ -2770,14 +2774,15 @@ impl Game {
                         self.player_label(*pid)
                     };
                     draw_text(canvas, ctx, &name, 18.0, c, Point2 { x: x0 + 70.0, y }, true)?;
-                    draw_text(canvas, ctx, &score.to_string(), 18.0, c, Point2 { x: x0 + 190.0, y }, true)?;
-                    draw_text(canvas, ctx, &kills.to_string(), 18.0, c, Point2 { x: x0 + 270.0, y }, true)?;
+                    draw_text(canvas, ctx, &score.to_string(), 18.0, c, Point2 { x: x0 + 185.0, y }, true)?;
+                    draw_text(canvas, ctx, &kills.to_string(), 18.0, c, Point2 { x: x0 + 250.0, y }, true)?;
+                    draw_text(canvas, ctx, &format!("{dmg:.0}"), 18.0, c, Point2 { x: x0 + 325.0, y }, true)?;
                     let (s, ac) = if *alive {
                         ("存活", Color::from_rgb(130, 230, 150))
                     } else {
                         ("出局", Color::from_rgb(210, 120, 120))
                     };
-                    draw_text(canvas, ctx, s, 18.0, ac, Point2 { x: x0 + 350.0, y }, true)?;
+                    draw_text(canvas, ctx, s, 18.0, ac, Point2 { x: x0 + 430.0, y }, true)?;
                 }
             }
         }
@@ -6400,6 +6405,17 @@ impl winit::application::ApplicationHandler for GameApp {
             WindowEvent::Ime(_) => {}
 
             WindowEvent::Resized(size) => {
+                // 界面按 1280×720 基线排版；用户把窗口拖得比 1024×720 更小时强制回弹（否则会重叠/溢出）。
+                const MIN_W: u32 = 1024;
+                const MIN_H: u32 = 720;
+                if size.width < MIN_W || size.height < MIN_H {
+                    let target = winit::dpi::LogicalSize::new(
+                        size.width.max(MIN_W) as f64,
+                        size.height.max(MIN_H) as f64,
+                    );
+                    let _ = self.ctx.gfx.window().request_inner_size(target);
+                    return; // 等待下一次 Resized（已是合法尺寸）再接常规处理
+                }
                 let _ = self
                     .game
                     .resize_event(&mut self.ctx, size.width as f32, size.height as f32);
