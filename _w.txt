@@ -1,56 +1,32 @@
-6321|         if just_named(NamedKey::Enter) || just('\r') {
-6322|             let players = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32)
-6323|                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
-6324|             let rounds = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS).clamp(1, STEAM_MAX_ROUNDS);
-6325|             let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
-6326|                 .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
-6327|             let starting_gold = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD)
-6328|                 .clamp(0, STEAM_MAX_GOLD);
-6329|             let gold_per_round = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND)
-6330|                 .clamp(0, STEAM_MAX_GOLD);
-6331|             // 名次奖励：单个数字=第一名，自动按 0.6 递减生成全部档位；逗号分隔=手动精确档位。
-6332|             let place: Vec<i32> = {
-6333|                 let raw = self.steam_create_place_buf.trim();
-6334|                 if raw.is_empty() {
-6335|                     auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
-6336|                 } else if raw.contains(',') {
-6337|                     let out: Vec<i32> = raw
-6338|                         .split(',')
-6339|                         .filter_map(|s| s.trim().parse::<i32>().ok())
-6340|                         .map(|v| v.clamp(0, STEAM_MAX_GOLD))
-6341|                         .take(64)
-6342|                         .collect();
-6343|                     if out.is_empty() {
-6344|                         auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
-6345|                     } else {
-6346|                         out
-6347|                     }
-6348|                 } else {
-6349|                     let first = parse_i32(raw, STEAM_DEFAULT_PLACE_FIRST).clamp(0, STEAM_MAX_GOLD);
-6350|                     auto_place_rewards(first)
-6351|                 }
-6352|             };
-6353|             self.steam_create_rounds = rounds;
-6354|             self.steam_create_learn = learn;
-6355|             self.steam_create_starting_gold = starting_gold;
-6356|             self.steam_create_gold_per_round = gold_per_round;
-6357|             self.steam_create_place = place;
-6358|             self.match_regen = self.steam_create_regen;
-6359|         self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
-6360|             let name = self.steam_create_name.clone();
-6361|             let note = self.steam_create_note.clone();
-6362|             eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_p
-6363|             self.steam_lobby_create = false;
-6364|             self.steam_lobby_menu = true;
-6365|             self.steam_list_requested = false;
-6366|             self.steam_list_lobbies = Vec::new();
-6367|             self.steam_list_selection = 0;
-6368|             self.enter_steam_mode(ctx, true, players, Some(&name), Some(&note));
-6369|         }
-6370|     }
-6371| 
-6372|     /// 房间列表界面输入：首次进入拉一次公开大厅列表，供浏览选房加入。
-6373|     /// 按当前模式筛选重算可见房间列表（0=全部）；原始列表保存在 `steam_list_all`。
-6374|     #[cfg(feature = "steam")]
-6375|     fn steam_apply_list_filter(&mut self) {
-6376|         let f = self.steam_list_mode_filter;
+5323|     fn steam_room_edit_update(&mut self, ctx: &Context, _dt: f64) -> GameResult {
+5324|         use ggez::input::keyboard::Key;
+5325|         use winit::keyboard::NamedKey;
+5326|         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
+5327|         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+5328|         // 本界面是**纯文本表单**（房名/备注）：**不绑定任何字母/数字快捷键** ——
+5329|         // 否则打字会被快捷键抢走（`L` 会锁房、`1`-`5` 会改模式）。
+5330|         // 锁房已移到**就绪界面**（那里没有文本框），模式已移到**设置编辑器**（`O`）。
+5331|         // 字段切换 0=房间名 1=备注（↑/↓ 或 Tab）。
+5332|         if just_named(NamedKey::ArrowUp) || just_named(NamedKey::ArrowDown) || just_named(NamedKey::Tab) {
+5333|             self.steam_room_edit_focus = (self.steam_room_edit_focus + 1) % 2;
+5334|         }
+5335|         if just('q') || just('Q') {
+5336|             self.steam_room_edit = false;
+5337|             return Ok(());
+5338|         }
+5339|         if just_named(NamedKey::Enter) || just('\r') {
+5340|             // 保存：写回房间名/备注。
+5341|             if let Some(ls) = self.steam_host_ls.as_ref() {
+5342|                 if let Some(lid) = self.steam_lobby_id {
+5343|                     let mm = ls.transport_ref().matchmaking();
+5344|                     let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+5345|                     let name = if self.steam_edit_name.trim().is_empty() {
+5346|                         "未命名房间"
+5347|                     } else {
+5348|                         self.steam_edit_name.trim()
+5349|                     };
+5350|                     mm.set_lobby_data(lobby, net_steam::session::ROOM_NAME_KEY, name);
+5351|                     mm.set_lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY, self.steam_edit_note.trim());
+5352|                     eprintln!("[steam-room] saved name='{name}' note='{}'", self.steam_edit_note.trim());
+5353|                 }
+5354|             }
