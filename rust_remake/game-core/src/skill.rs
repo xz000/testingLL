@@ -1587,6 +1587,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 15.0,
                     cooldown_delta: -0.6875,
+                    cooldown_levels: Some(&[15.0, 13.5, 12.5, 12.0, 11.5, 11.0, 10.5, 10.0, 9.5]), // w3a acdn 实证
                     // 伤害（098c JASS function Lb: `7 + 1*Ur`）：Ur 为 D 槽法术等级计数，解锁科技（R005）即 +1、
                     // 每次升级再 +1 → Ur = 等级 L（L1 时 Ur=1）。因三 D 槽技能互斥，Ur≡本技能等级，
                     // per-level 即 `7 + 1×L` → L1=8 / L9=16（base 8.0 / delta 1.0）。
@@ -1620,6 +1621,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
                     cooldown_delta: -0.975,
+                    cooldown_levels: Some(&[16.0, 13.9, 12.5, 11.7, 11.0, 10.3, 9.6, 8.9, 8.2]), // w3a acdn 实证
                     // gX = 6.4+0.8×L → L1=7.2。
                     damage_base: 7.2,
                     damage_delta: 0.8,
@@ -1637,6 +1639,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 16.5,
                     cooldown_delta: -0.5625,
+                    cooldown_levels: Some(&[16.5, 15.5, 15.0, 14.5, 14.0, 13.5, 13.0, 12.5, 12.0]), // w3a acdn 实证
                     damage_base: 7.0,
                     damage_delta: 1.0,
                     ..DEF_ZERO
@@ -1666,6 +1669,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 20.0,
                     cooldown_delta: -0.5, // 098c: 20->16.5 (8 lv)
+                    cooldown_levels: Some(&[20.0, 19.5, 19.0, 18.5, 18.0, 17.5, 17.0, 16.5]), // w3a acdn 实证
                     damage_base: 12.0,
                     damage_delta: 2.0,   // 098c: gX=10+2L (L1=12)
                     // 灼烧时长 4*jn（durations S008）→ debuff 与灼烧场共用。
@@ -1812,6 +1816,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 25.0,
                     cooldown_delta: -1.375, // 098c: 25->14 (9 lv)
+                    cooldown_levels: Some(&[25.0, 22.5, 20.5, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0]), // w3a acdn 实证
                     duration_base: 2.8,
                     duration_delta: 0.2,    // 098c JASS (2.6+0.2L)*jn -> L1=2.8
                     ..DEF_ZERO
@@ -1827,6 +1832,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 22.0,
                     cooldown_delta: -1.4286,
+                    cooldown_levels: Some(&[22.0, 19.5, 17.5, 16.0, 15.0, 14.0, 13.0, 12.0]), // w3a acdn 实证
                     duration_base: 3.6,
                     ..DEF_ZERO
                 },
@@ -1889,6 +1895,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
                     cooldown_delta: -1.3125,
+                    cooldown_levels: Some(&[16.0, 13.5, 11.5, 10.0, 9.0, 8.0, 7.0, 6.0, 5.5]), // w3a acdn 实证
                     max_distance_base: 770.0,
                     max_distance_delta: 70.0,
                     ..DEF_ZERO
@@ -1926,6 +1933,7 @@ impl DefTable {
                 growth: SkillGrowth {
                     cooldown_base: 16.0,
                     cooldown_delta: -1.4286, // 098c: 16->6 (8 lv)
+                    cooldown_levels: Some(&[16.0, 13.5, 11.5, 10.0, 9.0, 8.0, 7.0, 6.0]), // w3a acdn 实证
                     max_distance_base: 900.0, // 098c MB: range 900 (was 660)
                     ..DEF_ZERO
                 },
@@ -1982,8 +1990,8 @@ impl DefTable {
                     range: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
-                    // 098c（w3a_strings.txt Gravity）：CD 25 恒定（8 级）。
-                    cooldown_base: 25.0,
+                    // 098c（w3a_strings.txt Gravity）：CD 26 恒定（w3a acdn 实证，20 档均 26）。
+                    cooldown_base: 26.0,
                     // 黑洞每秒伤害（098c mc）：0.3→1.7（+0.2/级，8 级）。
                     damage_base: 0.3,
                     damage_delta: 0.2,       // 098c: 0.3->1.7 (8 lv)
@@ -3367,15 +3375,15 @@ mod tests {
             }
             ref e => panic!("S017 effect 错：{e:?}"),
         }
-        // S018 引力·暗物质（A 形态）：CD 25 恒定（098c Gravity）；漩涡半径 200 / 5s。
+        // S018 引力·暗物质（A 形态）：CD 26 恒定（w3a Gravity acdn）；漩涡半径 200 / 5s。
         let d = DefTable::def(SkillId::S018);
         assert_eq!(d.name, "引力·暗物质");
-        assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3) && near(d.stats_at(8).cooldown, 25.0, 1e-3));
-        let s8 = d.stats_at(8);
-        assert!(near(s8.speed, 400.0, 1e-3) && near(s8.radius, 200.0, 1e-3), "flying field speed 400, radius 200");
-        assert!(near(s8.duration, 5.0, 1e-3), "field should last 5*jn sec");
+        assert!(near(d.stats_at(1).cooldown, 26.0, 1e-3) && near(d.stats_at(5).cooldown, 26.0, 1e-3));
+        let s5 = d.stats_at(5);
+        assert!(near(s5.speed, 400.0, 1e-3) && near(s5.radius, 200.0, 1e-3), "flying field speed 400, radius 200");
+        assert!(near(s5.duration, 5.0, 1e-3), "field should last 5*jn sec");
         assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 Force should be 12");
-        assert!(near(s8.extra, 19.0, 1e-1), "L8 Force should be ~19, got {:?}", s8.extra);
+        assert!(near(s5.extra, 16.0, 1e-1), "L5 Force should be ~16, got {:?}", s5.extra);
         // S019 锁链·钩引（A 形态）：CD 17→8（098c L9=8，原斜率）；radius 35；拉拽+0.5s 定身。
         let d = DefTable::def(SkillId::S019);
         assert_eq!(d.name, "锁链·钩引");
@@ -3633,6 +3641,27 @@ mod tests {
         assert!(near(d.stats_at(1).cooldown, 30.0, 1e-3));
         assert!(near(d.stats_at(4).cooldown, 24.0, 1e-3), "L4 should be 24 (098c), got {:?}", d.stats_at(4).cooldown);
         assert!(near(d.stats_at(8).cooldown, 20.0, 1e-3));
+        // w3a `acdn` 实证的逐档表（非线性，线性近似会错）：
+        let s2 = DefTable::def(SkillId::S002);
+        assert!(near(s2.stats_at(2).cooldown, 15.5, 1e-3), "S002 L2=15.5");
+        assert!(near(s2.stats_at(9).cooldown, 12.0, 1e-3), "S002 L9=12.0");
+        let s5 = DefTable::def(SkillId::S005);
+        assert!(near(s5.stats_at(2).cooldown, 22.5, 1e-3), "S005 L2=22.5");
+        assert!(near(s5.stats_at(9).cooldown, 14.0, 1e-3), "S005 L9=14.0");
+        let s3 = DefTable::def(SkillId::S003);
+        assert!(near(s3.stats_at(2).cooldown, 13.5, 1e-3), "S003 L2=13.5");
+        let s4 = DefTable::def(SkillId::S004);
+        assert!(near(s4.stats_at(2).cooldown, 13.9, 1e-3), "S004 L2=13.9");
+        let s6 = DefTable::def(SkillId::S006);
+        assert!(near(s6.stats_at(2).cooldown, 19.5, 1e-3), "S006 L2=19.5");
+        let s8 = DefTable::def(SkillId::S008);
+        assert!(near(s8.stats_at(2).cooldown, 19.5, 1e-3), "S008 L2=19.5");
+        let s11 = DefTable::def(SkillId::S011);
+        assert!(near(s11.stats_at(2).cooldown, 13.5, 1e-3), "S011 L2=13.5");
+        let s13 = DefTable::def(SkillId::S013);
+        assert!(near(s13.stats_at(2).cooldown, 13.5, 1e-3), "S013 L2=13.5");
+        let s18 = DefTable::def(SkillId::S018);
+        assert!(near(s18.stats_at(1).cooldown, 26.0, 1e-3), "S018 CD=26（w3a，非 25）");
     }
 
     #[test]
