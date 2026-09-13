@@ -484,6 +484,8 @@ struct Game {
     present_hit_cooldown: f32,
     /// 表现层音效：本场是否已播「胜利」。
     present_victory_played: bool,
+    /// 表现层音效：本场是否已播「开局」（098c `Vo` GameFound，首局开始时）。
+    present_match_started: bool,
     /// 表现层：本场累计表现时钟（秒），用于多重击杀窗口判定。
     present_clock: f32,
     /// 表现层：各玩家上次击杀时刻（098c `Cn`；窗口 = `Wn` = 9s）。
@@ -1084,6 +1086,7 @@ impl Game {
             present_streak: Vec::new(),
             present_hit_cooldown: 0.0,
             present_victory_played: false,
+            present_match_started: false,
             present_clock: 0.0,
             present_last_kill_at: Vec::new(),
             present_multikill: Vec::new(),
@@ -4569,6 +4572,7 @@ impl Game {
             // 新一场（回到第 1 局）：重置胜利标记，使下一场终局能再播；跨局清空多重击杀窗口。
             if self.world.round_number <= 1 {
                 self.present_victory_played = false;
+                self.present_match_started = false;
             }
             self.present_last_kill_at = vec![-1e9; self.world.players.len()];
             self.present_multikill = vec![0; self.world.players.len()];
@@ -4585,6 +4589,11 @@ impl Game {
                 self.present_prev_oob[i] = self.world.players[i].pos.length() > self.world.arena_radius;
             }
             return;
+        }
+        // 098c `Vo`（GameFound）：首局开局时播一次「开局」。
+        if self.world.round_number == 1 && !self.present_match_started {
+            self.present_match_started = true;
+            self.audio.play(audio::AudioCue::AnnGameStart);
         }
         // 战斗事件播报（098c：Hattrick/Vampire/Silencer/Pancake 音效 + 头顶漂字）。
         for ev in combat_events {
@@ -4735,6 +4744,7 @@ impl Game {
         self.present_round = self.world.round_number;
         self.present_first_blood = false;
         self.present_victory_played = false;
+        self.present_match_started = false;
         self.present_hit_cooldown = 0.0;
         self.present_clock = 0.0;
         self.present_last_kill_at = vec![-1e9; self.world.players.len()];
@@ -5090,6 +5100,8 @@ impl event::EventHandler for Game {
                     || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
                 if q {
                     eprintln!("[meta] finished -> back to main menu");
+                    // 098c `yx`（Rescue）是终局过场的第二音；我们在离开结算画面时播一次。
+                    self.audio.play(audio::AudioCue::AnnFinish);
                     self.reset_to_main_menu();
                 }
                 Ok(())
