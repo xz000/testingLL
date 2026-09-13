@@ -310,8 +310,14 @@ enum RoomCfgAction {
     Group(settings_ui::Group),
     /// 点击第 `i` 行：选中并激活（等同该行的回车/T 操作）。
     Row(usize),
-    /// 点击底部「关闭」按钮（同 Esc/O）。
-    Close,
+    /// 保存并关闭（房内：发布设置；同 `O`）。
+    Save,
+    /// 不保存并关闭（房内：回滚到打开时的快照；同 `Esc`）。
+    Discard,
+    /// 建房模式下确认建房（同裸回车）。
+    Build,
+    /// 建房模式下取消建房（同 `Esc`）。
+    Cancel,
 }
 
 /// 文本输入焦点（`InputMode::TextInput` 的具体字段）。
@@ -391,6 +397,9 @@ struct Game {
     /// 房间设置编辑器的鼠标命中盒（绘制时登记，输入时派发）。
     #[cfg(feature = "steam")]
     room_cfg_hitboxes: ui::HitRegistry<RoomCfgAction>,
+    /// 打开编辑器时的 `(match_cfg, room_meta)` 快照：房内「不保存」时回滚。
+    #[cfg(feature = "steam")]
+    room_cfg_snapshot: Option<(game_core::meta::MatchConfig, settings_ui::RoomMeta)>,
     /// 机器人的当前目标点
     bot_targets: Vec<Option<Vec2>>,
     /// 机器人的确定性随机源
@@ -984,6 +993,8 @@ impl Game {
             lobby_hitboxes: ui::HitRegistry::new(),
             #[cfg(feature = "steam")]
             room_cfg_hitboxes: ui::HitRegistry::new(),
+            #[cfg(feature = "steam")]
+            room_cfg_snapshot: None,
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
@@ -3436,9 +3447,9 @@ impl Game {
         } else if self.room_cfg_input.is_some() {
             "输入中：回车 提交 · Esc 取消本次输入（提交/取消后再按 Esc/O 关闭）"
         } else if self.room_cfg_create_mode {
-            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车 创建房间 · Esc 取消"
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车/右下按钮 创建房间 · Esc 取消"
         } else {
-            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车/T 编辑当前行 · Esc/O 保存并关闭"
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车/T 编辑当前行 · O 保存并关闭 · Esc 不保存"
         };
         // `room_cfg_hint` 非空（如“只读”）时覆盖键位提示，给出一行反馈。
         let (shown, col) = if self.room_cfg_hint.is_empty() {
@@ -3454,18 +3465,40 @@ impl Game {
             sw / 2.0,
             py + ph - 26.0,
         )?;
-        // 右下角「关闭」按钮（鼠标）：与 Esc/O 同义（保存并关闭；创建模式为取消）。
-        let close_w = 92.0;
-        let close_rect = graphics::Rect::new(px + pw - close_w - 24.0, py + ph - 44.0, close_w, 28.0);
-        let chover = close_rect.contains(mouse);
-        ui::paint_row(canvas, ctx, close_rect, false, chover)?;
-        ui::text_center(
-            canvas, ctx, "关闭",
-            ui::theme::BODY,
-            if chover { ui::theme::text() } else { ui::theme::text_dim() },
-            close_rect.x + close_w / 2.0, close_rect.y + 5.0,
-        )?;
-        self.room_cfg_hitboxes.push((close_rect, RoomCfgAction::Close));
+        // 右下角操作按钮（按模式不同）：
+        // - 建房：创建房间 / 取消；- 房内（房主）：保存 / 不保存；- 只读（客户端）：关闭。
+        let buttons: Vec<(&str, RoomCfgAction, bool)> = if self.room_cfg_create_mode {
+            vec![
+                ("创建房间", RoomCfgAction::Build, true),
+                ("取消", RoomCfgAction::Cancel, false),
+            ]
+        } else if read_only {
+            vec![("关闭", RoomCfgAction::Save, false)]
+        } else {
+            vec![
+                ("保存", RoomCfgAction::Save, true),
+                ("不保存", RoomCfgAction::Discard, false),
+            ]
+        };
+        let bw = 116.0;
+        let bh = 30.0;
+        let by = py + ph - 46.0;
+        let mut bx = px + pw - 24.0 - bw;
+        for (label, act, primary) in buttons.iter() {
+            let r = graphics::Rect::new(bx, by, bw, bh);
+            let hover = r.contains(mouse);
+            ui::paint_row(canvas, ctx, r, false, hover)?;
+            let col = if hover {
+                ui::theme::text()
+            } else if *primary {
+                ui::theme::accent()
+            } else {
+                ui::theme::text_dim()
+            };
+            ui::text_center(canvas, ctx, label, ui::theme::BODY, col, r.x + bw / 2.0, by + 5.0)?;
+            self.room_cfg_hitboxes.push((r, *act));
+            bx -= bw + 10.0;
+        }
         Ok(())
     }
 
@@ -5987,6 +6020,8 @@ impl Game {
             self.room_cfg_edit = !self.room_cfg_edit;
             self.room_cfg_hint.clear();
             if self.room_cfg_edit {
+                // 打开：记录快照，「不保存」时回滚。
+                self.room_cfg_snapshot = Some((self.match_cfg.clone(), self.room_meta.clone()));
                 // 房间内的编辑器**永远不是**“创建模式”：清掉可能残留的建房标志，
                 // 否则回车会被当成“建房”直接关闭编辑器（真 bug）。
                 self.room_cfg_create_mode = false;
@@ -5997,6 +6032,7 @@ impl Game {
                 eprintln!("[cfg] 房主打开设置 → 自动取消本端准备");
             }
             if !self.room_cfg_edit {
+                self.room_cfg_snapshot = None;
                 self.publish_room_cfg();
             }
         }
@@ -6300,6 +6336,7 @@ impl Game {
                 self.steam_lobby_create = true; // 仍标记"处于建房流程"（绘制/输入走创建模式）
                 self.room_cfg_create_mode = true;
                 self.room_cfg_edit = true;
+                self.room_cfg_snapshot = None; // 建房不做“不保存”回滚（取消仅放弃建房）
                 self.room_cfg_hint.clear();
                 self.room_cfg_group = settings_ui::Group::Room;
                 self.room_cfg_row = 0;
@@ -6349,10 +6386,13 @@ impl Game {
         let read_only = self.steam_lobby_id.is_some()
             && self.steam_host_ls.is_none()
             && !self.room_cfg_create_mode;
-        // ── 鼠标：派发上一帧绘制时登记的命中盒（分组页签 / 行 / 关闭）──
+        // ── 鼠标：派发上一帧绘制时登记的命中盒（分组页签 / 行 / 保存 / 不保存 / 建房）──
         // `mouse_activate` = “点行”的行级语义（切换/输入），**不**等同建房回车（避免在创建模式点行就建房）。
         let mut mouse_activate = false;
-        let mut mouse_close = false;
+        let mut mouse_save = false;
+        let mut mouse_discard = false;
+        let mut mouse_build = false;
+        let mut mouse_cancel = false;
         if self.room_cfg_input.is_none() && ctx.mouse.button_just_pressed(MouseButton::Left) {
             let m = ui::mouse_design(ctx);
             for act in self.room_cfg_hitboxes.hits_at(m) {
@@ -6366,7 +6406,10 @@ impl Game {
                         self.room_cfg_row = i;
                         mouse_activate = true;
                     }
-                    RoomCfgAction::Close => mouse_close = true,
+                    RoomCfgAction::Save => mouse_save = true,
+                    RoomCfgAction::Discard => mouse_discard = true,
+                    RoomCfgAction::Build => mouse_build = true,
+                    RoomCfgAction::Cancel => mouse_cancel = true,
                 }
             }
         }
@@ -6433,8 +6476,7 @@ impl Game {
         // 建房时回车变成了"自定义输入"，只能连按 Esc 再回车才能建房）。
         // Shift+回车不算“建房”（它是编辑当前行的组合键，见下）；仅**裸回车**建房。
         if self.room_cfg_create_mode
-            && just_named(NamedKey::Enter)
-            && !ctx.keyboard.active_modifiers.shift_key()
+            && ((just_named(NamedKey::Enter) && !ctx.keyboard.active_modifiers.shift_key()) || mouse_build)
         {
             // **创建模式下回车恒等于"建房"**（不分行类型）。
             // 曾经对"文本行"放行、期望它去进输入，结果默认停在房间名那一行时回车毫无反应
@@ -6445,7 +6487,7 @@ impl Game {
             return false;
         }
         // 创建模式下 Esc/O = 取消建房流程（回大厅主界面）
-        if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o") || mouse_close) {
+        if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o") || mouse_cancel) {
             self.room_cfg_edit = false;
             self.room_cfg_hint.clear();
             self.room_cfg_create_mode = false;
@@ -6552,15 +6594,33 @@ impl Game {
                 }
             }
         }
-        // 关闭编辑器统一用 **O / Esc**（保存并发布）。
+        // 关闭编辑器：**O/保存按钮 = 保存并发布**；**Esc/不保存按钮 = 回滚（不发布）**。
         // 注意：**回车不再关闭** —— 它只“操作当前行”（方案 B），避免“有时关闭、有时切换”的二义。
-        if just_named(NamedKey::Escape) || just("o") || mouse_close {
+        if just("o") || mouse_save {
             self.room_cfg_edit = false;
             self.room_cfg_hint.clear();
             self.publish_room_cfg();
             return false;
         }
+        if just_named(NamedKey::Escape) || mouse_discard {
+            self.discard_room_cfg();
+            return false;
+        }
         true
+    }
+
+    /// 放弃本次修改（`Esc` / 「不保存」按钮）：回滚到打开编辑器时的快照，不发布。
+    #[cfg(feature = "steam")]
+    fn discard_room_cfg(&mut self) {
+        if let Some((cfg, meta)) = self.room_cfg_snapshot.take() {
+            self.match_cfg = cfg;
+            self.room_meta = meta;
+            eprintln!("[cfg] 已放弃本次修改（回滚到打开编辑器时）");
+        } else {
+            eprintln!("[cfg] 无快照可回滚，仅关闭");
+        }
+        self.room_cfg_edit = false;
+        self.room_cfg_hint.clear();
     }
 
     /// 把当前房间设置**重新发布**到大厅元数据（`host` 改设置后调用）。

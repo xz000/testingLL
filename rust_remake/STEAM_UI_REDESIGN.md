@@ -74,3 +74,9 @@
   （`RoomCfgAction::{Group,Row,Close}`，行/页签有 hover），`room_cfg_editor_input` 派发；点行=`mouse_activate`
   （行级激活，**不**等同建房回车），点「关闭」= Esc/O；房内顶部「房间设置」徐章也可点击打开。
   新增源码级回归测试 `settings_editor_supports_mouse`。
+- 2026-09-13：**编辑器两模式关闭语义区分**（重要修正）：
+  - 建房模式：右下 `[创建房间]` / `[取消]` 按钮可鼠标（此前鼠标无法建房）；`RoomCfgAction::Build`。
+  - 房内模式：`[保存]`（同 `O`，发布）与 `[不保存]`（同 `Esc`，**回滚**新增的 `room_cfg_snapshot`，不发布）；只读客户端只有 `[关闭]`。
+  - 修复源码扫描测试在 **CRLF** 文件上 `find("\n    }")` 永不匹配 → `unwrap_or(剩余全文)` 导致的**假通过**：
+    新增 `fn_body()`（兼容 CRLF/LF + 找不到闭合则 panic），修正全部 7 处函数体提取。
+  - 新增回归测试 `editor_offers_save_and_discard`。
