@@ -112,6 +112,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `HANDOVER.md` | ← 本文件：状态 / 命令 / 待办 |
 | `WORKFLOW_NOTES.md` | **工程坑**（脚本锚点只用 ASCII、探针落文件、验二进制） |
 | `JASS_AUDIT_098c.md` | **098c 数值真值台账**（唯一权威，含 JASS 行号证据） |
+| `SKILL_STATE_AUDIT.md` | **技能/单位副状态对齐审计**（Hr 燃烧、Fv 链索等缺口 + 工具） |
 | `UI_MASTER_PLAN.md` | UI 总规划 + 迁移步骤 + IME 待办 + "开局前发钱"修正记录 |
 | `ROOM_SETTINGS_PLAN.md` | 房间设置 17 项与 098c 对照、档位/自定义设计 |
 | `LOBBY_UI_PLAN.md` | 大厅重构动机（已被 UI_MASTER_PLAN 取代，保留来龙去脉） |
