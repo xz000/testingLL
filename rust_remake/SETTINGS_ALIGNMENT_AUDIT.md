@@ -192,7 +192,8 @@
   - `[test]` 更新往返/默认值断言（`wrong_schema` 改用当前 schema 构造）。
 - [ ] **B2b（可选）** `match_learn_secs`/`host_set_learn`/大厅键 `learn` → between-rounds 命名。
 - [x] **B3** `ROOM_SETTINGS_SCHEMA`：B2 1→2、B1 2→3（已升到 **3**）。
-- [ ] **B4** 全量 `settings_ui` 文案/hint 复查（删已不存在项、修正时长行名）。
+- [x] **B4 文案复查 ✅ 已完成**：`ArenaShape` hint 标明“仅圆形（暂锁定，置灰）”；
+  时长/金币/A3 等 hint 已在前面各步同步； `settings_ui` 无已删项残留。
 
 ### 阶段 C — 把 098c 有、但我们没接的旋钮接进对局（每项都要动 UI）
 - [ ] **C1 `damage_mult`（设置 2）**：`[core]` 伤害结算乘它；`[UI]` 保留行；`[test]` 倍率。
@@ -223,7 +224,7 @@
 1. **S1（阶段 A1）✅ 已完成**：`match_config()` 直接用完整 `match_cfg`（`authored_match_cfg`），
    国王模式强制两队派生保留。（core 无改；UI 无改，但此后 UI 各行真正生效。）
 2. **S4 + A3 ✅ 已完成**：参与奖时点（只发初始金）+ `-no reward` 语义（只清击杀/胜利/伤害金）。
-3. **B2 → B1**（含 UI 文案 + schema bump）：B2 ✅、B1 ✅（schema 已到 3）；B4（文案复查）待做。
+3. **B2 → B1**（含 UI 文案 + schema bump）：B2 ✅、B1 ✅、B4 ✅（schema 已到 3）。**阶段 B 完成**。
 4. **C1~C3**：伤害/击退/岩浆倍率接进结算（core + UI 保留行）。
 5. **C5~C7 + D2~D4**：柱子/冰面 + 地图形状（`arena_shape` 行保留但**置灰**只显示“圆形”，不接线；远期再扩）。
 
@@ -248,4 +249,5 @@
 - 2026-09-13：**B2 已完成**（时长字段合并：删 `shopping_time_secs`/`learn_time_secs`，meta 直接读 `first_round_time_secs`/`between_rounds_time_secs`；
   `ROOM_SETTINGS_SCHEMA` 1→2；不兼容旧串）。B1（删 `place_rewards`）待做。
 - 2026-09-13：**B1 已完成**（删 `place_rewards` 全链路 + net-steam 大厅键/接口；schema 2→3）；
-  game-core 235 + client+steam 47 测试绿。阶段 B 主体完成（仅 B4 文案复查待做）。
+  game-core 235 + client+steam 47 测试绿。
+- 2026-09-13：**B4 已完成**（`ArenaShape` hint 改为“仅圆形（暂锁定，置灰）”）——**阶段 B 全部完成**。
