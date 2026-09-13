@@ -2727,6 +2727,27 @@ impl Game {
             )?;
             canvas.draw(&bg, graphics::DrawParam::new());
             canvas.draw(&fg, graphics::DrawParam::new());
+
+            // P4-3 状态图标行：HP 条上方一排小方块（每个状态一个，纯客户端只读）。
+            let icons = active_status_icons(p);
+            if !icons.is_empty() {
+                let n = icons.len() as f32;
+                let sz = 14.0;
+                let gap = 3.0;
+                let total = n * sz + (n - 1.0) * gap;
+                let ix0 = fx - total / 2.0;
+                let iy = y_bar - sz - 3.0;
+                for (k, ic) in icons.iter().enumerate() {
+                    let rx = ix0 + k as f32 * (sz + gap);
+                    let cell = graphics::Rect::new(rx, iy, sz, sz);
+                    let cell_bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), cell, Color::from_rgba(12, 14, 20, 210))?;
+                    canvas.draw(&cell_bg, graphics::DrawParam::new());
+                    let c = Color::from_rgb(ic.color[0], ic.color[1], ic.color[2]);
+                    let cell_bd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), cell, c)?;
+                    canvas.draw(&cell_bd, graphics::DrawParam::new());
+                    draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy + sz / 2.0 }, true)?;
+                }
+            }
         }
 
         // 闪电（D1）射线可视化：从起点到命中点/终点画一条亮蓝线（Unity 原版 LineRenderer·Drawline）。
@@ -4663,6 +4684,42 @@ impl Game {
                 CombatEvent::Denied { pos, .. } => {
                     self.audio.play(audio::AudioCue::AnnDenied);
                     self.push_float(pos, "Denied".to_string(), Color::from_rgb(255, 80, 80));
+                }
+                CombatEvent::PillarBreak { pos } => {
+                    // P3-3 柱子碎裂：碎片向四周飞散 + 尘环（纯客户端）。
+                    let px = pos.x.to_num::<f32>();
+                    let py = pos.y.to_num::<f32>();
+                    for k in 0..6 {
+                        let ang = k as f32 * std::f32::consts::FRAC_PI_3 + 0.4;
+                        let d = 7.0 + k as f32 * 2.0;
+                        self.fx.spawn(fx::Fx {
+                            kind: fx::FxKind::Debris,
+                            pos: [px + ang.cos() * d, py + ang.sin() * d],
+                            color: [0.72, 0.72, 0.78, 0.9],
+                            life: PILLAR_DEBRIS_LIFE,
+                            max_life: PILLAR_DEBRIS_LIFE,
+                            radius: 4.0,
+                        });
+                    }
+                    self.fx.spawn(fx::Fx {
+                        kind: fx::FxKind::Ring,
+                        pos: [px, py],
+                        color: [0.8, 0.78, 0.75, 0.7],
+                        life: PILLAR_DEBRIS_LIFE,
+                        max_life: PILLAR_DEBRIS_LIFE,
+                        radius: 12.0,
+                    });
+                }
+                CombatEvent::Explode { pos, radius } => {
+                    // P3-3 爆炸：扩散圆环（半径 = AoE 半径）。
+                    self.fx.spawn(fx::Fx {
+                        kind: fx::FxKind::Ring,
+                        pos: [pos.x.to_num::<f32>(), pos.y.to_num::<f32>()],
+                        color: [1.0, 0.6, 0.3, 0.85],
+                        life: EXPLODE_RING_LIFE,
+                        max_life: EXPLODE_RING_LIFE,
+                        radius: radius.to_num::<f32>(),
+                    });
                 }
             }
         }
@@ -8216,6 +8273,74 @@ const DEATH_RING_LIFE: f32 = 0.6;
 const DEATH_AFTERIMAGE_LIFE: f32 = 0.4;
 /// P4-1 技能就绪脉冲高亮存活秒数。
 const SKILL_READY_PULSE_LIFE: f32 = 0.5;
+/// P3-3 柱子碎裂碎片存活秒数。
+const PILLAR_DEBRIS_LIFE: f32 = 0.6;
+/// P3-3 爆炸扩散圆环存活秒数。
+const EXPLODE_RING_LIFE: f32 = 0.45;
+
+/// P4-3 状态图标：一个 buff/状态对应一个小方块（单字 + 颜色）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StatusIcon {
+    label: &'static str,
+    color: [u8; 3],
+}
+
+/// P4-3：玩家当前状态的图标序列（按优先级）。纯函数，便于单测。
+fn active_status_icons(p: &game_core::player::Player) -> Vec<StatusIcon> {
+    use game_core::player::BuffKind;
+    let mut v = Vec::new();
+    // 关键窗口 / 增益
+    if p.parry_ready {
+        v.push(StatusIcon { label: "格", color: [120, 230, 220] });
+    }
+    if p.burning {
+        v.push(StatusIcon { label: "燃", color: [255, 140, 60] });
+    }
+    if p.has_buff(BuffKind::Boost) {
+        v.push(StatusIcon { label: "疾", color: [130, 230, 130] });
+    }
+    if p.has_buff(BuffKind::Haste) {
+        v.push(StatusIcon { label: "迅", color: [160, 240, 160] });
+    }
+    if p.stealth() {
+        v.push(StatusIcon { label: "隐", color: [180, 180, 200] });
+    }
+    if p.shield() {
+        v.push(StatusIcon { label: "盾", color: [120, 210, 255] });
+    }
+    if p.has_buff(BuffKind::Reflect) {
+        v.push(StatusIcon { label: "反", color: [140, 230, 240] });
+    }
+    if p.has_buff(BuffKind::LavaShield) {
+        v.push(StatusIcon { label: "岩", color: [255, 130, 40] });
+    }
+    if p.has_buff(BuffKind::Aegis) {
+        v.push(StatusIcon { label: "守", color: [255, 210, 90] });
+    }
+    if p.has_buff(BuffKind::Mirror) {
+        v.push(StatusIcon { label: "镜", color: [200, 150, 240] });
+    }
+    // 减益
+    if p.has_buff(BuffKind::Scorched) {
+        v.push(StatusIcon { label: "灼", color: [255, 110, 70] });
+    }
+    if p.tied() {
+        v.push(StatusIcon { label: "束", color: [190, 140, 220] });
+    }
+    if p.silenced() {
+        v.push(StatusIcon { label: "默", color: [210, 120, 210] });
+    }
+    if p.has_buff(BuffKind::Pancake) {
+        v.push(StatusIcon { label: "饼", color: [220, 190, 140] });
+    }
+    if p.has_buff(BuffKind::Slow(0.5)) {
+        v.push(StatusIcon { label: "慢", color: [150, 200, 240] });
+    }
+    if p.has_buff(BuffKind::Weakened) {
+        v.push(StatusIcon { label: "弱", color: [180, 180, 180] });
+    }
+    v
+}
 
 /// 把一次血量变化转成飘字文本：负=伤害（`-N`）、正=治疗（`+N`）、微小变化忽略。
 /// 纯函数，便于单测（与绘制/世界无关）。
@@ -8867,6 +8992,19 @@ mod tests {
         assert!(!ready_pulse_edge(Some(7), false, Some(9), true));
         // 仍冷却：不闪。
         assert!(!ready_pulse_edge(Some(7), true, Some(7), false));
+    }
+
+    /// P4-3：无状态时无图标；关键状态（招架就绪 / 燃烧）出现对应图标。
+    #[test]
+    fn active_status_icons_reflects_player_state() {
+        use game_core::fix::{Fix64, Vec2};
+        let mut p = game_core::player::Player::new(0, Vec2::ZERO, Fix64::from_num(12.0));
+        assert!(super::active_status_icons(&p).is_empty(), "默认无状态图标");
+        p.parry_ready = true;
+        p.burning = true;
+        let icons = super::active_status_icons(&p);
+        assert!(icons.iter().any(|i| i.label == "格"), "招架就绪应有格");
+        assert!(icons.iter().any(|i| i.label == "燃"), "燃烧应有燃");
     }
 
     /// 连杀音效按 098c 断点（3..10 与 >10）映射。

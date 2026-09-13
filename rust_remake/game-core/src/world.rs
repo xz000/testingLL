@@ -437,6 +437,10 @@ pub enum CombatEvent {
     Denied { owner: u32, pos: Vec2 },
     /// 燃烧冲刺（S012 A，`Hr`）撞到队友 → 熄灭（098c `lb`「Burn out」）。
     Burnout { owner: u32, pos: Vec2 },
+    /// 柱子被摧毁（HP 归零移除）：纯表现，客户端播放碎裂粒子。
+    PillarBreak { pos: Vec2 },
+    /// AoE 爆炸（新星/陨石/弹体爆炸）：纯表现，客户端播放扩散圆环。
+    Explode { pos: Vec2, radius: Fix64 },
 }
 
 /// 确定性对局核心。
@@ -1765,6 +1769,8 @@ impl World {
                             o.hp = o.hp.saturating_sub(dmg.ceil() as u32);
                         }
                         if self.obstacles[oi].hp == 0 {
+                            let ppos = self.obstacles[oi].pos;
+                            self.combat_events.push(CombatEvent::PillarBreak { pos: ppos });
                             self.obstacles.remove(oi);
                         }
                     } else {
@@ -1781,6 +1787,8 @@ impl World {
                         }
                         if self.obstacles[oi].hp == 0 {
                             // 098c：柱子被摧毁移除（每轮 re-layout 即重生成）；掉落 Shard 待拾取系统
+                            let ppos = self.obstacles[oi].pos;
+                            self.combat_events.push(CombatEvent::PillarBreak { pos: ppos });
                             self.obstacles.remove(oi);
                         }
                         // S013B 搬运（098c `pB` tooltip）：「若碰到任何非术士障碍物，你会与它互换位置」
@@ -2851,6 +2859,8 @@ impl World {
     #[allow(clippy::too_many_arguments)]
     /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
     fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: DmgFalloff) -> u32 {
+        // 纯表现：记录一次爆炸（客户端画扩散圆环）。不参与快照/哈希。
+        self.combat_events.push(CombatEvent::Explode { pos, radius });
         let r_sq = radius * radius;
         // 攻方 Gn 系数（灼烧 ×0.1，D7）：循环前取出，避免 iter_mut 借用冲突。
         let owner_gn = self
@@ -6545,6 +6555,7 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
         world.players[1].move_target = None;
         // 对柱子连发火球（每发直伤 gx≈7 → 6 发摧毁 40HP）
+        let mut saw_break = false;
         for _ in 0..10 {
             if world.obstacles.is_empty() {
                 break;
@@ -6557,9 +6568,13 @@ mod tests {
             let none = vec![PlayerInput::default(), PlayerInput::default()];
             for _ in 0..40 {
                 world.step(none.clone(), dt);
+                if world.combat_events.iter().any(|e| matches!(e, CombatEvent::PillarBreak { .. })) {
+                    saw_break = true;
+                }
             }
         }
         assert!(world.obstacles.is_empty(), "柱子 HP 40 应被火球连发摧毁");
+        assert!(saw_break, "柱子被摧毁应产生 PillarBreak 表现事件");
     }
 
     /// 术士之战「火球击中柱子能够反弹」：火球（S000）撞柱**镜向反弹**继续飞行，
@@ -6760,6 +6775,10 @@ mod tests {
             true, false, DmgFalloff::None,
         );
         assert_eq!(n, 3, "应命中 3 个敌人");
+        assert!(
+            w.combat_events.iter().any(|e| matches!(e, CombatEvent::Explode { .. })),
+            "AoE 爆炸应产生 Explode 表现事件"
+        );
         assert!(
             w.combat_events.iter().any(|e| matches!(e, CombatEvent::MultiHit { vampire: false, .. })),
             "≥3 命中应产生 Hattrick（非吸血鬼）事件"

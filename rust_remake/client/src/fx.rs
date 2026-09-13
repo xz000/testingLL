@@ -21,6 +21,8 @@ pub enum FxKind {
     Ring,
     /// 残影：原位置的半透明实心圆（死亡瞬间）。
     Afterimage,
+    /// 碎片：向外飞散的实心小方块（柱子被摧毁）。
+    Debris,
 }
 
 /// 一个特效实例。`life`/`max_life` 决定进度；`radius` 为世界单位基准半径。
@@ -111,6 +113,13 @@ impl FxSystem {
                     let r = (f.radius * (0.6 + t * 0.4) * scale).max(1.0);
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x, y }, r, 0.5, c)?;
                     canvas.draw(&dot, DrawParam::new());
+                }
+                FxKind::Debris => {
+                    // 小方块随进度缩小并淡出。
+                    let s = (f.radius * (0.5 + t * 0.5) * scale).max(1.0);
+                    let rect = ggez::graphics::Rect::new(x - s / 2.0, y - s / 2.0, s, s);
+                    let sq = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, c)?;
+                    canvas.draw(&sq, DrawParam::new());
                 }
             }
         }
