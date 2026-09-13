@@ -4550,6 +4550,8 @@ impl Game {
         });
         self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
         self.present_clock += dt;
+        // 098c 播报事件（由确定性模拟产生，纯表现消费）：每帧取走，避免重复播放。
+        let combat_events: Vec<game_core::world::CombatEvent> = self.world.combat_events.drain(..).collect();
 
         let n = self.world.players.len();
         // 世界重建（人数变化）→ 重新采样，不产生事件。
@@ -4578,6 +4580,29 @@ impl Game {
                 self.present_prev_alive[i] = self.world.players[i].alive;
             }
             return;
+        }
+        // 战斗事件播报（098c：Hattrick/Vampire/Silencer/Pancake 音效 + 头顶漂字）。
+        for ev in combat_events {
+            use game_core::world::CombatEvent;
+            match ev {
+                CombatEvent::MultiHit { pos, vampire, .. } => {
+                    if vampire {
+                        self.audio.play(audio::AudioCue::AnnVampire);
+                        self.push_float(pos, "Vampire".to_string(), Color::from_rgb(120, 255, 255));
+                    } else {
+                        self.audio.play(audio::AudioCue::AnnHattrick);
+                        self.push_float(pos, "Hattrick".to_string(), Color::from_rgb(120, 255, 255));
+                    }
+                }
+                CombatEvent::Pancake { pos, .. } => {
+                    self.audio.play(audio::AudioCue::AnnPancake);
+                    self.push_float(pos, "Pancake".to_string(), Color::from_rgb(255, 255, 120));
+                }
+                CombatEvent::Silencer { pos, .. } => {
+                    self.audio.play(audio::AudioCue::AnnSilencer);
+                    self.push_float(pos, "Silencer".to_string(), Color::from_rgb(255, 120, 120));
+                }
+            }
         }
         let me = self.self_index();
         for i in 0..n {

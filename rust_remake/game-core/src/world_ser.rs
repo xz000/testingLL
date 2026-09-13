@@ -943,7 +943,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         pending_kings.push(k);
     }
     // 倍率（房间设置）不是世界状态，快照不含；重建后用 `configure_mults` 重新对齐（默认 1.0）。
-    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_delay_secs), shrink_total_secs: Fix64::from_num(crate::world::DEFAULT_SHRINK_TOTAL_SECS), shrink_ref_radius: arena_radius, damage_mult: Fix64::ONE, knockback_mult: Fix64::ONE, lava_damage_mult: Fix64::ONE, pillar_mode: 1, ice_mode: 1, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
+    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_delay_secs), shrink_total_secs: Fix64::from_num(crate::world::DEFAULT_SHRINK_TOTAL_SECS), shrink_ref_radius: arena_radius, damage_mult: Fix64::ONE, knockback_mult: Fix64::ONE, lava_damage_mult: Fix64::ONE, pillar_mode: 1, ice_mode: 1, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice, combat_events: Vec::new() })
 }
 
 /// 序列化用的便捷接口：`World::to_bytes` / `from_bytes`（依赖本模块）。

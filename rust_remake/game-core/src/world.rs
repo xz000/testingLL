@@ -420,6 +420,21 @@ impl Obstacle {
     }
 }
 
+/// 纯表现用战斗事件（**不进快照、不进 `state_hash`**）。
+///
+/// 由**确定性模拟**产生（各端同样推演，各自得到相同事件），但表现层**不依赖**这个一致性：
+/// 客户端只把它当作「本 tick 发生过什么」的日志，用于播报/飘字，**绝不回写模拟状态**。
+/// 对应 098c 的自定义音效/漂字事件（见 `AUDIO_PLAN.md` §1）。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CombatEvent {
+    /// 一次 AoE 命中 ≥ 3 个敌人（098c `n>=3`）：`vampire` = 施法者戴死亡面具（`scourge_double`）。
+    MultiHit { owner: u32, pos: Vec2, vampire: bool },
+    /// 岩浆滚石把敌人拍扁（098c `Pancake`）。
+    Pancake { victim: u32, pos: Vec2 },
+    /// 一次沉默 ≥ 3 个目标（098c `Silencer`）。
+    Silencer { owner: u32, pos: Vec2 },
+}
+
 /// 确定性对局核心。
 #[derive(Clone, Debug)]
 pub struct World {
@@ -490,6 +505,9 @@ pub struct World {
     /// 冰面区域（U4 圆圈化：中心+半径的圆列表，可重叠拼形；空=本轮无冰面）。
     /// 冰面不被岩浆侵蚀。
     pub ice: Vec<(Vec2, Fix64)>,
+    /// 纯表现用战斗事件（见 [`CombatEvent`]）：每 `step` 开头清空、结算点写入；
+    /// **不序列化、不进 `state_hash`**。仅在 push 后到下次 `step` 前有效。
+    pub combat_events: Vec<CombatEvent>,
 }
 
 /// `explode_at` 的伤害距离衰减方式（098c 实证）。
@@ -554,6 +572,7 @@ impl World {
                 Balance::default().shrink_delay_secs * (player_count.max(1) as f64).sqrt(),
             ),
             ice: Vec::new(),
+            combat_events: Vec::new(),
         }
     }
 
@@ -566,6 +585,8 @@ impl World {
         debug_assert_eq!(input.len(), self.players.len(), "input 必须覆盖每位玩家");
         self.time += dt;
         // 瞬态渲染痕迹：每帧递减剩余显示时间，归零后清空（由本帧施放的闪电效果重新设置并计时）。
+        // 纯表现事件每 tick 重建（见 `CombatEvent`）；不参与确定性/快照。
+        self.combat_events.clear();
         let mut expire = false;
         for (_, _, rem) in self.lightning_visual.iter_mut() {
             *rem -= dt;
@@ -1779,6 +1800,8 @@ impl World {
         let mut slows: Vec<(u32, f64)> = Vec::new(); // 汲取·减速（B4-T）
         let mut weakens: Vec<(u32, f64)> = Vec::new(); // 汲取·削弱（B4-T）
         let mut silences: Vec<(u32, f64)> = Vec::new(); // 禁锢·沉默（B4-Y）
+        // 沉默来源：(施法者 owner, 受害者)，用于「一次沉默 ≥3 目标」播报（098c Silencer）。
+        let mut silence_src: Vec<(u32, u32)> = Vec::new();
         let mut magma_absorb: Vec<(usize, u32, Fix64)> = Vec::new(); // (滚石索引, owner, 半径)
 
         for (pi, pr) in ps.iter_mut().enumerate() {
@@ -2272,6 +2295,7 @@ impl World {
                             crate::skill::W098bOnHit::Silence => {
                                 // 禁锢·沉默（098c CC，B4-Y）：禁施法（可移动）。
                                 silences.push((victim, debuff_dur.to_num::<f64>()));
+                                silence_src.push((pr.owner, victim));
                             }
                             crate::skill::W098bOnHit::SwapTarget => {
                                 // S013A 换位（098c `MB`）：命中敌人 → 施法者与该敌人**互换位置**，弹体销毁。
@@ -2549,7 +2573,11 @@ impl World {
         }
         // 4d-0) 098b AoE 爆炸（陨石命中/到期）：复用 explode_at（中心伤害+距离衰减+连线击退），
         // 伤害=gx（explode_at 内部做护甲折算），击退力=KI 公式 warlock_ki_knockback。
-        // 「肉饼」减速（B4 岩浆滚石）：Speed ×0.1 buff
+        // 「肉饼」减速（B4 岩浆滚石）：Speed ×0.1 buff；同时发 Pancake 表现事件（098c 播报）。
+        let pancake_events: Vec<CombatEvent> = pancakes
+            .iter()
+            .filter_map(|(v, _)| self.players.get(*v as usize).map(|p| CombatEvent::Pancake { victim: *v, pos: p.pos }))
+            .collect();
         for (victim, dur) in pancakes.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
@@ -2557,6 +2585,7 @@ impl World {
                 }
             }
         }
+        self.combat_events.extend(pancake_events);
         // 汲取·减速/削弱（B4-T）
         for (victim, dur) in slows.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
@@ -2577,6 +2606,26 @@ impl World {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive && !p.mirror_immune() {
                     p.add_buff(BuffKind::Silenced, dur);
+                }
+            }
+        }
+        // 098c 播报：同一施法者本 tick 沉默 ≥ 3 个目标（Silencer）。
+        {
+            let mut counts: Vec<(u32, u32)> = Vec::new();
+            for (owner, _) in silence_src.drain(..) {
+                match counts.iter_mut().find(|(o, _)| *o == owner) {
+                    Some((_, n)) => *n += 1,
+                    None => counts.push((owner, 1)),
+                }
+            }
+            for (owner, n) in counts {
+                if n >= 3 {
+                    let pos = self
+                        .players
+                        .get(owner as usize)
+                        .map(|p| p.pos)
+                        .unwrap_or(Vec2::new(Fix64::ZERO, Fix64::ZERO));
+                    self.combat_events.push(CombatEvent::Silencer { owner, pos });
                 }
             }
         }
@@ -2860,6 +2909,15 @@ impl World {
         // 循环外记账，避免在 iter_mut 借用期间再借 self。
         for victim in deaths {
             self.record_death(victim);
+        }
+        // 098c 播报：一次 AoE 命中 ≥ 3 敌人（Hattrick；戴死亡面具则 Vampire）。
+        if hit_enemies >= 3 {
+            let (pos, vampire) = self
+                .players
+                .get(owner as usize)
+                .map(|p| (p.pos, p.item_fx.scourge_double))
+                .unwrap_or((pos, false));
+            self.combat_events.push(CombatEvent::MultiHit { owner, pos, vampire });
         }
         hit_enemies
     }
@@ -6507,6 +6565,50 @@ mod tests {
     }
 
     /// `configure_regen`：房间设置可调基础回血（098c 主机常量 `-C9`）。
+    #[test]
+    fn explode_multi_hit_emits_hattrick_or_vampire() {
+        // 一次 AoE 命中 ≥3 敌人 → 098c 播报事件（Hattrick；戴死亡面具则 Vampire）。
+        let setup = |w: &mut World| {
+            w.obstacles.clear();
+            w.players[0].pos = Vec2::new(Fix64::from_num(20.0), Fix64::ZERO);
+            w.players[0].team = 0;
+            for p in w.players.iter_mut().skip(1) {
+                p.team = 1;
+            }
+            w.players[1].pos = Vec2::new(Fix64::from_num(1.0), Fix64::ZERO);
+            w.players[2].pos = Vec2::new(Fix64::ZERO, Fix64::from_num(1.0));
+            w.players[3].pos = Vec2::new(-Fix64::from_num(1.0), Fix64::ZERO);
+        };
+        let mut w = World::new(4, 7);
+        setup(&mut w);
+        let n = w.explode_at(
+            Vec2::ZERO, 0, Fix64::from_num(3.0), Fix64::from_num(5.0), Fix64::ZERO,
+            true, false, DmgFalloff::None,
+        );
+        assert_eq!(n, 3, "应命中 3 个敌人");
+        assert!(
+            w.combat_events.iter().any(|e| matches!(e, CombatEvent::MultiHit { vampire: false, .. })),
+            "≥3 命中应产生 Hattrick（非吸血鬼）事件"
+        );
+
+        let mut v = World::new(4, 7);
+        setup(&mut v);
+        v.players[0].set_items(&[crate::item::ItemId::FireMask]);
+        let _ = v.explode_at(
+            Vec2::ZERO, 0, Fix64::from_num(3.0), Fix64::from_num(5.0), Fix64::ZERO,
+            true, false, DmgFalloff::None,
+        );
+        assert!(
+            v.combat_events.iter().any(|e| matches!(e, CombatEvent::MultiHit { vampire: true, .. })),
+            "戴死亡面具应产生 Vampire 事件"
+        );
+
+        // 事件不进模拟：`step` 开头清空上一帧表现事件。
+        let none = vec![PlayerInput::default(); 4];
+        v.step(none, Fix64::from_num(1.0 / 60.0));
+        assert!(v.combat_events.is_empty(), "step 应清空上一帧表现事件");
+    }
+
     #[test]
     fn explode_at_scales_with_damage_mult() {
         // AoE（陨石/新星等经 explode_at）也应乘全局伤害倍率（098c 在 hI 入口乘 Gn）。
