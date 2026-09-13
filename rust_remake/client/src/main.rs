@@ -4649,6 +4649,29 @@ impl Game {
                 // 阵亡 → 击杀横幅（含首杀 / 连杀）；本人连杀清零。
                 // 098c：单位死亡由 War3 引擎发声；此处用自制音等效。
                 self.audio.play(audio::AudioCue::CombatDeath);
+                // P3-2 死亡视觉：残影 + 扩散圆环（世界坐标特效，纯客户端）。
+                {
+                    let dp = self.world.players[i].pos;
+                    let dr = self.world.players[i].radius.to_num::<f32>();
+                    let dpx = dp.x.to_num::<f32>();
+                    let dpy = dp.y.to_num::<f32>();
+                    self.fx.spawn(fx::Fx {
+                        kind: fx::FxKind::Afterimage,
+                        pos: [dpx, dpy],
+                        color: [0.85, 0.85, 0.9, 0.45],
+                        life: DEATH_AFTERIMAGE_LIFE,
+                        max_life: DEATH_AFTERIMAGE_LIFE,
+                        radius: dr,
+                    });
+                    self.fx.spawn(fx::Fx {
+                        kind: fx::FxKind::Ring,
+                        pos: [dpx, dpy],
+                        color: [1.0, 0.55, 0.4, 0.85],
+                        life: DEATH_RING_LIFE,
+                        max_life: DEATH_RING_LIFE,
+                        radius: dr,
+                    });
+                }
                 let victim = self.world.players[i].id;
                 if let Some(slot) = self.present_streak.get_mut(i) {
                     *slot = 0;
@@ -8129,6 +8152,10 @@ const PRESENTATION_MAX_BANNERS: usize = 5;
 const HIT_FLASH_LIFE: f32 = 0.18;
 /// 命中火花存活秒数（P3-1）。
 const HIT_SPARK_LIFE: f32 = 0.22;
+/// 死亡扩散圆环存活秒数（P3-2）。
+const DEATH_RING_LIFE: f32 = 0.6;
+/// 死亡残影存活秒数（P3-2）。
+const DEATH_AFTERIMAGE_LIFE: f32 = 0.4;
 
 /// 把一次血量变化转成飘字文本：负=伤害（`-N`）、正=治疗（`+N`）、微小变化忽略。
 /// 纯函数，便于单测（与绘制/世界无关）。
