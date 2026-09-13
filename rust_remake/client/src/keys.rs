@@ -107,7 +107,6 @@ pub enum Screen {
     LobbyList,
     CreateLobby,
     Room,
-    RoomEdit,
     SettingsEditor,
     Play,
     LearnConfig,
@@ -167,22 +166,8 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
         Room => &[
             Binding { key: "u", action: "切换准备" },
             Binding { key: "q", action: "退出房间" },
-            Binding { key: "e", action: "编辑房间信息（仅房主）" },
             Binding { key: "i", action: "好友邀请面板" },
             Binding { key: "o", action: "房间设置编辑器（仅房主）" },
-        ],
-        RoomEdit => &[
-            Binding { key: "up", action: "字段上移" },
-            Binding { key: "down", action: "字段下移" },
-            Binding { key: "tab", action: "字段上移" },
-            Binding { key: "l", action: "切换房间锁" },
-            Binding { key: "1", action: "模式 1" },
-            Binding { key: "2", action: "模式 2" },
-            Binding { key: "3", action: "模式 3" },
-            Binding { key: "4", action: "模式 4" },
-            Binding { key: "5", action: "模式 5" },
-            Binding { key: "enter", action: "保存" },
-            Binding { key: "q", action: "取消" },
         ],
         SettingsEditor => &[
             Binding { key: "z", action: "分组：经济" },
@@ -225,13 +210,12 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
 mod keymap_tests {
     use super::*;
 
-    const ALL: [Screen; 9] = [
+    const ALL: [Screen; 8] = [
         Screen::MainMenu,
         Screen::SteamMenu,
         Screen::LobbyList,
         Screen::CreateLobby,
         Screen::Room,
-        Screen::RoomEdit,
         Screen::SettingsEditor,
         Screen::Play,
         Screen::LearnConfig,
@@ -271,7 +255,6 @@ mod keymap_tests {
             Screen::LobbyList,
             Screen::CreateLobby,
             Screen::Room,
-            Screen::RoomEdit,
             Screen::SettingsEditor,
             Screen::Play,
             Screen::LearnConfig,
@@ -324,35 +307,17 @@ mod source_scan_tests {
         }
     }
 
-    /// 回归②（房主改房间信息 → 客户端判"房主已离开"）：编辑子界面**不得取代**大厅更新。
-    ///
-    /// 曾写成 `return self.steam_room_edit_update(...)`，导致心跳/上行停止。
-    /// 现在应当是"先处理编辑输入，再 return 大厅更新"。
-    #[test]
-    fn room_edit_does_not_replace_lobby_heartbeat() {
-        assert!(
-            !SRC.contains("return self.steam_room_edit_update"),
-            "房间信息编辑不得取代 steam_lobby_update（会停掉心跳，客户端会判房主离开）"
-        );
-        let i = idx("self.steam_room_edit_update(ctx, dt)?;");
-        let after = &SRC[i..];
-        let j = after
-            .find("return self.steam_lobby_update(ctx, dt);")
-            .expect("编辑输入之后必须仍然调用大厅更新（心跳/上行）");
-        assert!(j > 0 && j < 400, "大厅更新应紧跟在编辑输入之后");
-    }
-
-    /// 回归③（一键两用：`Q` 想关编辑却退了房）：子界面打开时大厅按键必须被守卫。
+    /// 回归③（一键两用：`Q` 关编辑器却退了房）：子界面打开时大厅按键必须被守卫。
     #[test]
     fn lobby_keys_are_guarded_while_a_subscreen_is_open() {
-        let n = SRC.matches("!self.steam_room_edit").count();
+        let n = SRC.matches("!self.room_cfg_edit").count();
         assert!(
             n >= 4,
-            "大厅按键（I/Q/E/O/U）应在子界面打开时被 `!self.steam_room_edit` 守卫，当前只有 {n} 处"
+            "大厅按键（I/Q/L/U）应在编辑器打开时被 `!self.room_cfg_edit` 守卫，当前只有 {n} 处"
         );
         assert!(
-            SRC.contains("&& !self.steam_room_edit && !self.room_cfg_edit"),
-            "至少应有一处同时守卫编辑器与房间信息编辑"
+            SRC.contains("&& !self.room_cfg_edit"),
+            "至少应有一处把编辑器守卫作为组合条件的一部分"
         );
     }
 

@@ -12,8 +12,8 @@
 //!
 //! **剩余仍在 `main.rs`**（多为 UI/大厅流程/渲染长方法，暂不迁移）：`steam_lobby_update` · `steam_lobby_act` ·
 //! `steam_lobby_create_update` · `steam_lobby_list_update` · `enter_steam_mode` · `steam_config_update` ·
-//! `steam_friend_list_update` · `steam_room_edit_update` · `steam_refresh_roster` · `steam_leave_room` ·
-//! `draw_steam_ready_overlay` · `draw_steam_friend_panel` · `draw_steam_room_edit` · `draw_steam_lobby_list`。
+//! `steam_friend_list_update` · `steam_refresh_roster` · `steam_leave_room` ·
+//! `draw_steam_ready_overlay` · `draw_steam_friend_panel` · `draw_steam_lobby_list`。
 //!
 //! 编译说明：默认构建（不启用 `steam` feature）时本模块所有方法都不编译，
 //! `main.rs` 的调用点（如 `update` 里的 steam 分支）同样被 `#[cfg(feature = "steam")]` 门控，
@@ -404,9 +404,7 @@ impl Game {
             return;
         }
         let connect = net_steam::lobby::format_connect_string(self.steam_lobby_id.unwrap_or(0));
-        let status = if self.steam_room_edit {
-            "正在设置房间".to_string()
-        } else if self.steam_in_lobby {
+        let status = if self.steam_in_lobby {
             let (name, _) = self.steam_current_room_info();
             let n = self.steam_roster.len();
             let limit = self.world.players.len().max(n);
