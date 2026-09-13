@@ -148,6 +148,10 @@ impl SteamTransport {
         for m in msgs {
             self.recv_msgs += 1;
             if let Some(sid) = m.identity_peer().steam_id() {
+                // 诊断（本轮加）：快照到达时机/大小 —— 用于判定“~1s 一卡”是否与快照包相关。
+                if m.data().first() == Some(&10) {
+                    eprintln!("[steam-p2p] recv Snapshot {} bytes from {}", m.data().len(), sid.raw());
+                }
                 self.recv_queue.push_back((sid.raw(), m.data().to_vec()));
             }
         }
