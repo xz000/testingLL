@@ -104,6 +104,12 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    - ✅ **冲撞撞柱与 098c 不一致**：JASS 实证（`war3map_pretty.j` 8640-8730）是**逐轴**响应；`resolve_obstacles`
      已改为“只清指向障碍的那一轴、保留切向 → 沿墙滑行”，不再接触即清 `control`；测试已替换/新增。
      遗留：`xv>0` 的 mover 反弹（弹体类）与场地边界 ×0.5 反弹未做。
+8. **平局加赛机制缺失**（待做）：098c 平局时**加赛一轮**（`rI` war3map_pretty.j:22488-22492：
+   `AV=AV+1; StartSound(Vo)` + 广播 `"Draw! One more round to decide the battle"`）。
+   我们目前只有固定 `total_rounds`，**无平局判定、无追加轮**。
+   待定义：平局条件（如同分/并列第一）→ 追加一轮 → 结算；暂已用 `Vo` 音效（`ann_game_start`/`ann_finish`）。
+9. **S010 `gr` 招架 + `CA` 接触伤害分支**（低优先级，见 `SKILL_STATE_AUDIT.md` §2.2b）：
+   不影响播报；实现需引入「被攻击」概念 + `gr` 一次性字段（→ bump 协议），暂缓。
 
 ## 五、文档索引（读哪个）
 
