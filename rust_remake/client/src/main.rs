@@ -492,6 +492,8 @@ struct Game {
     present_slot_ready: [bool; 8],
     /// P4-1 就绪边沿检测：上一帧各槽绑定技能 id（换绑不触发脉冲）。
     present_slot_bound: [Option<u32>; 8],
+    /// P4-2 施法条：本机当前前摇的（技能 id, 总时长秒）。
+    present_cast: Option<(u32, f32)>,
     /// 表现层音效：本场是否已播「胜利」。
     present_victory_played: bool,
     /// 表现层音效：本场是否已播「开局」（098c `Vo` GameFound，首局开始时）。
@@ -1101,6 +1103,7 @@ impl Game {
             present_ready_pulse: [0.0; 8],
             present_slot_ready: [true; 8],
             present_slot_bound: [None; 8],
+            present_cast: None,
             present_victory_played: false,
             present_match_started: false,
             present_total_rounds: 0,
@@ -2631,6 +2634,11 @@ impl Game {
             canvas.draw(&ball, graphics::DrawParam::new());
 
             // B6 多圆环状态（用户设计：外圈环带表达 buff；内圈头像）
+            // P4-4 自机环：本人脚下细白环，便于辨认自己（纯客户端）。
+            if p.id == me_idx {
+                let self_ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(1.5), Point2 { x: fx, y: fy }, r + 2.0, 0.5, Color::from_rgba(255, 255, 255, 180))?;
+                canvas.draw(&self_ring, graphics::DrawParam::new());
+            }
             let mut ring = r + 5.0;
             macro_rules! draw_ring {
                 ($radius:expr, $col:expr) => {{
@@ -2747,6 +2755,20 @@ impl Game {
                     canvas.draw(&cell_bd, graphics::DrawParam::new());
                     draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy + sz / 2.0 }, true)?;
                 }
+            }
+        }
+
+        // P4-4 移动目标标记（仅本机）：右键目的点画一个小十字（纯客户端）。
+        if let Some(mp) = self.world.players.get(me_idx as usize) {
+            if let Some(mt) = mp.move_target {
+                let mx = mt.x.to_num::<f32>() * self.scale + self.offset.x;
+                let my = mt.y.to_num::<f32>() * self.scale + self.offset.y;
+                let s = 6.0;
+                let col = Color::from_rgba(140, 230, 160, 210);
+                let h = Mesh::new_line(&ctx.gfx, &[Point2 { x: mx - s, y: my }, Point2 { x: mx + s, y: my }], 2.0, col)?;
+                let v = Mesh::new_line(&ctx.gfx, &[Point2 { x: mx, y: my - s }, Point2 { x: mx, y: my + s }], 2.0, col)?;
+                canvas.draw(&h, graphics::DrawParam::new());
+                canvas.draw(&v, graphics::DrawParam::new());
             }
         }
 
@@ -3959,6 +3981,23 @@ impl Game {
                             }
                         }
                     }
+                    // P4-2 施法条：本机前摇进度（技能栏上方，纯客户端）。
+                    if let (Some((cid, total)), game_core::skill::CastPhase::Windup { id, remaining, .. }) =
+                        (self.present_cast, me_player.caster.phase())
+                    {
+                        if cid == id.as_u32() && total > 0.0 {
+                            let frac = 1.0 - (remaining.to_num::<f32>() / total).clamp(0.0, 1.0);
+                            let by = y0 - 14.0;
+                            let track = graphics::Rect::new(x0, by, total_w, 8.0);
+                            let cbg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), track, Color::from_rgba(12, 14, 20, 210))?;
+                            canvas.draw(&cbg, graphics::DrawParam::new());
+                            let fill = graphics::Rect::new(x0, by, total_w * frac, 8.0);
+                            let cfg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), fill, Color::from_rgb(255, 180, 80))?;
+                            canvas.draw(&cfg, graphics::DrawParam::new());
+                            let cbd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), track, Color::from_rgba(255, 200, 140, 220))?;
+                            canvas.draw(&cbd, graphics::DrawParam::new());
+                        }
+                    }
                 }
                 // 操作提示：shift 连招队列
                 draw_text(
@@ -4628,6 +4667,7 @@ impl Game {
             self.present_ready_pulse = [0.0; 8];
             self.present_slot_ready = [true; 8];
             self.present_slot_bound = [None; 8];
+            self.present_cast = None;
             return;
         }
         let in_fight = self.meta.phase == game_core::meta::MatchPhase::Fighting;
@@ -4751,6 +4791,17 @@ impl Game {
                 self.present_slot_bound[slot] = slot_bound[slot];
                 self.present_slot_ready[slot] = slot_ready[slot];
             }
+        }
+        // P4-2 施法条：记录本机当前前摇技能与总时长（首个观察帧的 remaining 作总数）。
+        match self.world.players.get(me as usize).map(|p| p.caster.phase()) {
+            Some(game_core::skill::CastPhase::Windup { id, remaining, .. }) => {
+                let idv = id.as_u32();
+                match self.present_cast {
+                    Some((cid, _)) if cid == idv => {}
+                    _ => self.present_cast = Some((idv, remaining.to_num::<f32>().max(0.001))),
+                }
+            }
+            _ => self.present_cast = None,
         }
         for i in 0..n {
             let hp = self.world.players[i].hp.to_num::<f32>();
@@ -4927,6 +4978,7 @@ impl Game {
         self.present_ready_pulse = [0.0; 8];
         self.present_slot_ready = [true; 8];
         self.present_slot_bound = [None; 8];
+        self.present_cast = None;
         self.present_clock = 0.0;
         self.present_last_kill_at = vec![-1e9; self.world.players.len()];
         self.present_multikill = vec![0; self.world.players.len()];
