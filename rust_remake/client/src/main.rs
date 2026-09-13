@@ -157,7 +157,7 @@ const STEAM_MAX_ROUNDS: u32 = 256;
 /// Steam 建房：默认总轮数（创建房间界面的初始值，与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_ROUNDS: u32 = 3;
-/// Steam 建房：局间准备时间（秒）默认值。**必须与 `MatchConfig::default().learn_time_secs` 一致**（098c uo/wo=30）。
+/// Steam 建房：局间准备时间（秒）默认值。**必须与 `MatchConfig::default().between_rounds_time_secs` 一致**（098c uo=30）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_LEARN_SECS: u32 = 30;
 /// Steam 建房：金币类字段的单档金额上限（初始金币 / 每轮金币 / 每档名次奖励）。
@@ -838,8 +838,6 @@ impl Game {
             .and_then(|v| v.parse().ok())
             .unwrap_or(STEAM_DEFAULT_REGEN);
         #[cfg(feature = "steam")]
-        let init_learn_secs: u32 = STEAM_DEFAULT_LEARN_SECS;
-        #[cfg(feature = "steam")]
         let init_starting_gold: i32 = STEAM_DEFAULT_STARTING_GOLD;
         #[cfg(feature = "steam")]
         let init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
@@ -912,7 +910,6 @@ impl Game {
             #[cfg(feature = "steam")]
             let cfg = MatchConfig {
                 total_rounds: init_rounds,
-                learn_time_secs: init_learn_secs as f64,
                 gold_per_round: init_gold_per_round,
                 starting_gold: init_starting_gold,
                 place_rewards: init_place_rewards.clone(),
@@ -931,8 +928,8 @@ impl Game {
         // 观察/调试 `FASTROUND=1`：缩小场地加速局终、缩短学习时间、多开几局，便于用 netlogs 看多局循环。
         if std::env::var("FASTROUND").is_ok() {
             world.arena_radius = game_core::fix::Fix64::from_num(3.0);
-            meta.config.learn_time_secs = 3.0; // 给局间配置留 3s，方便手测时从容绑定/升级
-            meta.config.shopping_time_secs = 3.0; // 首局购物同样缩短（否则开局要等满 40s）
+            meta.config.between_rounds_time_secs = 3.0; // 给局间配置留 3s，方便手测时从容绑定/升级
+            meta.config.first_round_time_secs = 3.0; // 首局购物同样缩短（否则开局要等满 40s）
             meta.config.total_rounds = 4;
         }
         // 局域网（--host/--join）与单机试验场（--solo）首局也要进配置/学习阶段：商店（购买）界面只在 Learning 出现。
@@ -940,7 +937,7 @@ impl Game {
         // Learning 分支会在首局配置期间继续 poll_host_join_phase 收 client 加入。
         if matches!(app, AppState::LanHost { .. } | AppState::LanJoin { .. } | AppState::Solo) {
             meta.begin_first_round_config();
-            eprintln!("[first-config] 首局进入配置/学习阶段（shopping {}s）", meta.config.shopping_time_secs);
+            eprintln!("[first-config] 首局进入配置/学习阶段（first round {}s）", meta.config.first_round_time_secs);
         }
         // 开局不带任何默认技能：完全由玩家在配置/学习界面按字母选树 + 数字绑技能（4.6b/从零选择）。
 
@@ -1157,7 +1154,6 @@ impl Game {
                 base_regen: init_regen,
                 team_count: if init_mode == 4 { 2 } else { 1 },
                 total_rounds: init_rounds,
-                learn_time_secs: init_learn_secs as f64,
                 gold_per_round: init_gold_per_round,
                 starting_gold: init_starting_gold,
                 place_rewards: init_place_rewards.clone(),
@@ -1189,7 +1185,7 @@ impl Game {
             #[cfg(feature = "steam")]
             match_rounds: init_rounds,
             #[cfg(feature = "steam")]
-            match_learn_secs: init_learn_secs,
+            match_learn_secs: STEAM_DEFAULT_LEARN_SECS,
             #[cfg(feature = "steam")]
             match_starting_gold: init_starting_gold,
             #[cfg(feature = "steam")]
@@ -7864,7 +7860,7 @@ mod tests {
     fn steam_defaults_match_matchconfig_default() {
         let d = game_core::meta::MatchConfig::default();
         assert_eq!(super::STEAM_DEFAULT_ROUNDS, d.total_rounds, "总轮数");
-        assert_eq!(super::STEAM_DEFAULT_LEARN_SECS as f64, d.learn_time_secs, "学习/局间时长");
+        assert_eq!(super::STEAM_DEFAULT_LEARN_SECS as f64, d.between_rounds_time_secs, "局间时长 uo");
         assert_eq!(super::STEAM_DEFAULT_STARTING_GOLD, d.starting_gold, "初始金币 Qo");
         assert_eq!(super::STEAM_DEFAULT_GOLD_PER_ROUND, d.gold_per_round, "每轮金币 qo");
     }

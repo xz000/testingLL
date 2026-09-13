@@ -31,7 +31,7 @@ pub const ROOM_NOTE_KEY: &str = "room_note";
 pub const ROOM_MODE_KEY: &str = "room_mode";
 /// 大厅元数据：房间总轮数（host 建房时写入；加入者据此对齐 MatchConfig.total_rounds）。
 pub const ROOM_ROUNDS_KEY: &str = "room_rounds";
-/// 大厅元数据：局与局之间的准备时间（秒，host 建房时写入；加入者据此对齐 MatchConfig.learn_time_secs）。
+/// 大厅元数据：局与局之间的准备时间（秒，host 建房时写入；加入者据此对齐 MatchConfig.between_rounds_time_secs）。
 pub const ROOM_LEARN_KEY: &str = "room_learn";
 /// 大厅元数据：开局初始金币（host 建房时写入；加入者据此对齐 MatchConfig.starting_gold）。
 pub const ROOM_STARTING_GOLD_KEY: &str = "room_starting_gold";

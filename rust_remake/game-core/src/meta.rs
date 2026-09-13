@@ -23,8 +23,6 @@ pub struct MatchConfig {
     pub base_regen: f64,
     /// 总小局数
     pub total_rounds: u32,
-    /// 学习阶段时长（秒）；0 用 0 表示"无学习阶段，自动进入下一局"
-    pub learn_time_secs: f64,
     /// 每轮为每位玩家固定发放的金币（参与奖）
     pub gold_per_round: i32,
     /// 击杀金币（098c `lo`，全局默认 **1** —— `war3map_pretty.j` 209）。
@@ -84,15 +82,11 @@ pub struct MatchConfig {
     pub team_count: u8,
     /// 死亡竞赛（En2）的胜利得分（098b `-+胜利得分` 开局设置）。
     pub win_score: u32,
-    /// 开局购物时长（098b Wo=40；独立于每轮 wo=30 的 `learn_time_secs`）。
-    /// 进局耦合已通过 `begin_first_round_config` / `enter_first_round` 实现（倒计时归零进入第一局，
-    /// 不重复发参与奖、round 保持 1）。
-    pub shopping_time_secs: f64,
 }
 
 /// 房间设置串（用于大厅元数据/同步）的**模式版本**：字段顺序或语义变更时必须递增，
 /// 否则不同版本的端会按各自的顺序解析同一串。
-pub const ROOM_SETTINGS_SCHEMA: u32 = 1;
+pub const ROOM_SETTINGS_SCHEMA: u32 = 2;
 
 impl MatchConfig {
     /// 序列化为**紧凑单行**（大厅元数据用；`|` 分隔、`;` 分隔列表）。
@@ -104,8 +98,6 @@ impl MatchConfig {
         let parts: Vec<String> = vec![
             ROOM_SETTINGS_SCHEMA.to_string(),
             self.total_rounds.to_string(),
-            f(self.learn_time_secs),
-            f(self.shopping_time_secs),
             f(self.first_round_time_secs),
             f(self.between_rounds_time_secs),
             self.starting_gold.to_string(),
@@ -142,8 +134,8 @@ impl MatchConfig {
     /// 从 [`Self::to_meta_string`] 还原；缺字段/格式不符返回 `None`（由调用方回退默认值）。
     pub fn from_meta_string(s: &str) -> Option<Self> {
         let p: Vec<&str> = s.trim().split('|').collect();
-        // schema + 27 个字段
-        if p.len() < 28 {
+        // schema + 26 个字段
+        if p.len() < 27 {
             return None;
         }
         if p[0].parse::<u32>().ok()? != ROOM_SETTINGS_SCHEMA {
@@ -153,47 +145,45 @@ impl MatchConfig {
         let int = |i: usize| -> Option<i32> { p.get(i)?.parse::<i32>().ok() };
         let uint = |i: usize| -> Option<u32> { p.get(i)?.parse::<u32>().ok() };
         let byte = |i: usize| -> Option<u8> { p.get(i)?.parse::<u8>().ok() };
-        let place: Vec<i32> = if p[15].is_empty() {
+        let place: Vec<i32> = if p[13].is_empty() {
             Vec::new()
         } else {
-            p[15].split(';').filter_map(|v| v.parse::<i32>().ok()).collect()
+            p[13].split(';').filter_map(|v| v.parse::<i32>().ok()).collect()
         };
         Some(MatchConfig {
             total_rounds: uint(1)?,
-            learn_time_secs: num(2)?,
-            shopping_time_secs: num(3)?,
-            first_round_time_secs: num(4)?,
-            between_rounds_time_secs: num(5)?,
-            starting_gold: int(6)?,
-            gold_per_round: int(7)?,
-            gold_per_kill: int(8)?,
-            gold_per_assist: int(9)?,
-            gold_per_round_win: int(10)?,
-            gold_per_most_damage: int(11)?,
-            score_per_kill: uint(12)?,
-            score_per_assist: uint(13)?,
-            score_per_round_win: uint(14)?,
+            first_round_time_secs: num(2)?,
+            between_rounds_time_secs: num(3)?,
+            starting_gold: int(4)?,
+            gold_per_round: int(5)?,
+            gold_per_kill: int(6)?,
+            gold_per_assist: int(7)?,
+            gold_per_round_win: int(8)?,
+            gold_per_most_damage: int(9)?,
+            score_per_kill: uint(10)?,
+            score_per_assist: uint(11)?,
+            score_per_round_win: uint(12)?,
             place_rewards: place,
-            damage_mult: num(16)?,
-            knockback_mult: num(17)?,
-            lava_damage_mult: num(18)?,
-            shrink_delay_secs: num(19)?,
-            shrink_ring_secs: num(20)?,
-            pillar_mode: byte(21)?,
-            ice_mode: byte(22)?,
-            arena_shape: byte(23)?,
-            gold_rewards_enabled: p[24] == "1",
-            base_regen: num(25)?,
-            game_mode: byte(26)?,
-            team_count: byte(27)?,
-            win_score: uint(28)?,
+            damage_mult: num(14)?,
+            knockback_mult: num(15)?,
+            lava_damage_mult: num(16)?,
+            shrink_delay_secs: num(17)?,
+            shrink_ring_secs: num(18)?,
+            pillar_mode: byte(19)?,
+            ice_mode: byte(20)?,
+            arena_shape: byte(21)?,
+            gold_rewards_enabled: p[22] == "1",
+            base_regen: num(23)?,
+            game_mode: byte(24)?,
+            team_count: byte(25)?,
+            win_score: uint(26)?,
         })
     }
 
     /// **与默认值不同的"高级设置"项数**（大厅/房间面板的「自定义 N 项」徽章用）。
     ///
     /// 只统计**高级设置**：经济 8 项 + 初始金、玩法倍率/时长/收缩/柱/冰/地图、金币奖励开关。
-    /// **不计**基础赛制（`game_mode`/`total_rounds`/`team_count`/`win_score`/`learn_time_secs`）——
+    /// **不计**基础赛制（`game_mode`/`total_rounds`/`team_count`/`win_score`）——
     /// 这些在房间里一直是可见的常规参数，不属于"房主开了高级设置"。
     pub fn non_default_setting_count(&self) -> usize {
         let d = MatchConfig::default();
@@ -223,7 +213,6 @@ impl MatchConfig {
             score_per_assist,
             score_per_round_win,
             base_regen,
-            shopping_time_secs,
         );
         if self.place_rewards != d.place_rewards {
             n += 1;
@@ -266,7 +255,6 @@ impl Default for MatchConfig {
         //   Qo=20（初始金币）
         MatchConfig {
             total_rounds: 3,
-            learn_time_secs: 30.0, // 098b wo=30
             gold_per_round: 10, // 设置 17 `qo`（此前误按 `po=1` 改成 1，已改回）
             gold_per_assist: 1,
             gold_per_round_win: 2,
@@ -283,7 +271,6 @@ impl Default for MatchConfig {
             base_regen: 0.5,
             team_count: 1,
             win_score: 10,
-            shopping_time_secs: 40.0,
             // ── 玩法项默认值（098c 设置对话框/全局声明实证） ──
             damage_mult: 1.0,               // 设置 2
             knockback_mult: 1.0,            // 设置 3
@@ -790,7 +777,7 @@ impl MatchState {
             self.phase = MatchPhase::Finished;
         } else {
             self.phase = MatchPhase::Learning;
-            self.learn_remaining = self.config.learn_time_secs;
+            self.learn_remaining = self.config.between_rounds_time_secs;
         }
     }
 
@@ -961,14 +948,14 @@ impl MatchState {
     }
 
     /// 首局进入配置学习（联机用倒计时自动开始）：进入 Learning，倒计时 =
-    /// `shopping_time_secs`（098b Wo=40 开局购物，D6/M4；区别于每轮 wo=30 的 learn_time_secs）。
+    /// `first_round_time_secs`（098c 设置 5 `Uo`=40，「Shop Time initial」）。
     /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发初始金）。
     pub fn begin_first_round_config(&mut self) {
         self.phase = MatchPhase::Learning;
         // **第一次进配置（商店）时就发钱**：否则玩家在配置期无钱可买
         //（单机试验场曾因此"进商店没钱买东西"）。
         self.grant_opening_gold();
-        self.learn_remaining = self.config.shopping_time_secs;
+        self.learn_remaining = self.config.first_round_time_secs;
         self.pending_first_round = true;
     }
 
@@ -1281,9 +1268,9 @@ mod tests {
         assert!(config.place_rewards.is_empty(), "098c 无名次金（奖励走 lo/Lo/Mo/po + ko/Ko/mo）");
         // 098c 计分（JASS 实证 globals ko=1/Ko=1/mo=2）：胜 2 / 杀 1 / 助 1
         assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 2));
-        // 开局购物 Wo=40 / 每轮 wo=30（D6/M4 En 批）
-        assert_eq!(config.shopping_time_secs, 40.0);
-        assert_eq!(config.learn_time_secs, 30.0);
+        // 首轮商店 Uo=40 / 局间 uo=30（D6/M4 En 批）
+        assert_eq!(config.first_round_time_secs, 40.0);
+        assert_eq!(config.between_rounds_time_secs, 30.0);
         assert_eq!(config.game_mode, 1);
         let mut m = MatchState::new(config, &[0, 1], 8);
         assert_eq!(m.profiles[0].gold, 0, "构造时尚未开局，不应发钱");
@@ -1495,8 +1482,8 @@ mod tests {
         m.begin_first_round_config();
         assert_eq!(m.phase, MatchPhase::Learning);
         assert_eq!(m.round, 1);
-        // 首局购物时长用 Wo=40（shopping_time_secs），不是每轮 wo=30
-        assert_eq!(m.learn_remaining, 40.0, "首局购物应为 Wo=40");
+        // 首局购物时长用 `first_round_time_secs`（Uo=40），不是局间 uo=30
+        assert_eq!(m.learn_remaining, 40.0, "首局购物应为 Uo=40");
         // 时间到 → enter_first_round（round 不变、发放开局金一次；不同于 advance_round：+round 并发参与奖）
         let advanced = m.tick_learning(m.learn_remaining + 0.1);
         assert!(advanced);
@@ -1565,7 +1552,7 @@ mod tests {
         // 畸形串/版本不符 → None（调用方回退默认值）
         assert!(MatchConfig::from_meta_string("").is_none());
         assert!(MatchConfig::from_meta_string("9|1|2").is_none());
-        let wrong_schema = s.replacen('1', "999", 1);
+        let wrong_schema = s.replacen(&format!("{ROOM_SETTINGS_SCHEMA}|"), "999|", 1);
         assert!(MatchConfig::from_meta_string(&wrong_schema).is_none(), "schema 不符应拒绝");
         // 带非空名次奖励
         let mut mp = d.clone();
