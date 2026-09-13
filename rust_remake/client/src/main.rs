@@ -486,6 +486,12 @@ struct Game {
     present_streak: Vec<u32>,
     /// 表现层音效：命中音最小间隔（避免 DoT / 多目标同帧刷屏）。
     present_hit_cooldown: f32,
+    /// P4-1 技能就绪脉冲：各槽（`CastKey::ALL` 下标）剩余高亮秒数。
+    present_ready_pulse: [f32; 8],
+    /// P4-1 就绪边沿检测：上一帧各槽是否就绪。
+    present_slot_ready: [bool; 8],
+    /// P4-1 就绪边沿检测：上一帧各槽绑定技能 id（换绑不触发脉冲）。
+    present_slot_bound: [Option<u32>; 8],
     /// 表现层音效：本场是否已播「胜利」。
     present_victory_played: bool,
     /// 表现层音效：本场是否已播「开局」（098c `Vo` GameFound，首局开始时）。
@@ -1092,6 +1098,9 @@ impl Game {
             present_first_blood: false,
             present_streak: Vec::new(),
             present_hit_cooldown: 0.0,
+            present_ready_pulse: [0.0; 8],
+            present_slot_ready: [true; 8],
+            present_slot_bound: [None; 8],
             present_victory_played: false,
             present_match_started: false,
             present_total_rounds: 0,
@@ -3842,6 +3851,18 @@ impl Game {
                         canvas.draw(&bg, graphics::DrawParam::new());
                         let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), rect, Color::from_rgba(90, 100, 120, 230))?;
                         canvas.draw(&border, graphics::DrawParam::new());
+                        // P4-1 就绪脉冲：冷却归零瞬间金色描边闪现（纯客户端）。
+                        let pulse = self.present_ready_pulse[i];
+                        if pulse > 0.0 {
+                            let a = (pulse / SKILL_READY_PULSE_LIFE).clamp(0.0, 1.0);
+                            let flash = Mesh::new_rectangle(
+                                &ctx.gfx,
+                                DrawMode::stroke(3.0),
+                                rect,
+                                Color::from_rgba(255, 220, 120, (230.0 * a) as u8),
+                            )?;
+                            canvas.draw(&flash, graphics::DrawParam::new());
+                        }
 
                         let skill = me.bound_skill(*key);
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
@@ -4555,6 +4576,9 @@ impl Game {
         });
         self.fx.update(dt);
         self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
+        for p in &mut self.present_ready_pulse {
+            *p = (*p - dt).max(0.0);
+        }
         self.present_clock += dt;
         // 098c 播报事件（由确定性模拟产生，纯表现消费）：每帧取走，避免重复播放。
         let combat_events: Vec<game_core::world::CombatEvent> = self.world.combat_events.drain(..).collect();
@@ -4580,6 +4604,9 @@ impl Game {
             self.present_prev_oob = vec![false; self.world.players.len()];
             self.float_texts.clear();
             self.fx.clear();
+            self.present_ready_pulse = [0.0; 8];
+            self.present_slot_ready = [true; 8];
+            self.present_slot_bound = [None; 8];
             return;
         }
         let in_fight = self.meta.phase == game_core::meta::MatchPhase::Fighting;
@@ -4640,6 +4667,34 @@ impl Game {
             }
         }
         let me = self.self_index();
+        // P4-1 技能就绪脉冲：本机各技能槽冷却从 >0 跳到 0（且绑定未变）时，槽位高亮一闪。
+        {
+            let mut slot_ready = [false; 8];
+            let mut slot_bound: [Option<u32>; 8] = [None; 8];
+            if let (Some(profile), Some(me_player)) = (
+                self.meta.profiles.iter().find(|p| p.player_id == me),
+                self.world.players.get(me as usize),
+            ) {
+                for (slot, key) in game_core::skill::CastKey::ALL.iter().enumerate() {
+                    if let Some(s) = profile.bound_skill(*key) {
+                        slot_bound[slot] = Some(s.as_u32());
+                        slot_ready[slot] = me_player.caster.cooldown_remaining(s) <= Fix64::ZERO;
+                    }
+                }
+            }
+            for slot in 0..8 {
+                if ready_pulse_edge(
+                    self.present_slot_bound[slot],
+                    self.present_slot_ready[slot],
+                    slot_bound[slot],
+                    slot_ready[slot],
+                ) {
+                    self.present_ready_pulse[slot] = SKILL_READY_PULSE_LIFE;
+                }
+                self.present_slot_bound[slot] = slot_bound[slot];
+                self.present_slot_ready[slot] = slot_ready[slot];
+            }
+        }
         for i in 0..n {
             let hp = self.world.players[i].hp.to_num::<f32>();
             let alive = self.world.players[i].alive;
@@ -4812,6 +4867,9 @@ impl Game {
         self.present_match_started = false;
         self.present_total_rounds = 0;
         self.present_hit_cooldown = 0.0;
+        self.present_ready_pulse = [0.0; 8];
+        self.present_slot_ready = [true; 8];
+        self.present_slot_bound = [None; 8];
         self.present_clock = 0.0;
         self.present_last_kill_at = vec![-1e9; self.world.players.len()];
         self.present_multikill = vec![0; self.world.players.len()];
@@ -8156,6 +8214,8 @@ const HIT_SPARK_LIFE: f32 = 0.22;
 const DEATH_RING_LIFE: f32 = 0.6;
 /// 死亡残影存活秒数（P3-2）。
 const DEATH_AFTERIMAGE_LIFE: f32 = 0.4;
+/// P4-1 技能就绪脉冲高亮存活秒数。
+const SKILL_READY_PULSE_LIFE: f32 = 0.5;
 
 /// 把一次血量变化转成飘字文本：负=伤害（`-N`）、正=治疗（`+N`）、微小变化忽略。
 /// 纯函数，便于单测（与绘制/世界无关）。
@@ -8168,6 +8228,11 @@ fn health_delta_text(prev: f32, cur: f32) -> Option<String> {
     } else {
         None
     }
+}
+
+/// P4-1 就绪脉冲边沿：绑定同一技能、由「未就绪」变为「就绪」时才闪。纯函数，便于单测。
+fn ready_pulse_edge(prev_bound: Option<u32>, prev_ready: bool, bound: Option<u32>, ready: bool) -> bool {
+    bound.is_some() && prev_bound == bound && ready && !prev_ready
 }
 
 /// 连杀计数 → 098c 播报音（3..10 与 >10）二。纯函数，便于单测。
@@ -8789,10 +8854,24 @@ mod tests {
         assert_eq!(super::health_delta_text(50.0, 49.2), None);
     }
 
+    /// P4-1 就绪脉冲只在「同绑定 + 由未就绪→就绪」时触发。
+    #[test]
+    fn ready_pulse_edge_only_on_ready_transition() {
+        use super::ready_pulse_edge;
+        // 由未就绪→就绪：闪。
+        assert!(ready_pulse_edge(Some(7), false, Some(7), true));
+        // 已就绪（无变化）：不闪。
+        assert!(!ready_pulse_edge(Some(7), true, Some(7), true));
+        // 空槽 / 换绑：不闪。
+        assert!(!ready_pulse_edge(None, false, None, false));
+        assert!(!ready_pulse_edge(Some(7), false, Some(9), true));
+        // 仍冷却：不闪。
+        assert!(!ready_pulse_edge(Some(7), true, Some(7), false));
+    }
+
     /// 连杀音效按 098c 断点（3..10 与 >10）映射。
     #[test]
-    fn spree_cue_matches_098c_breakpoints() {
-        use super::spree_cue;
+    fn spree_cue_matches_098c_breakpoints() {        use super::spree_cue;
         assert_eq!(spree_cue(0), None);
         assert_eq!(spree_cue(2), None, "1–2 杀无播报音");
         assert_eq!(spree_cue(3), Some(audio::AudioCue::AnnSpree3));
