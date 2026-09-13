@@ -317,8 +317,7 @@ const PROJ_HIT_RADIUS_FALLBACK: f64 = 0.5;
 // ===== 098b KI/FI 结算参数（PORT_098B_DECISIONS.md D3/M1） =====
 /// 098b 击退近似时长（秒）：098b 本体是逐帧衰减（每帧 ×~0.96）的速度累积，
 /// M1 以恒速 push 近似；此值与速度封顶共同标定总位移，TODO M2 对齐衰减模型。
-const W098B_KB_TIME: f64 = 0.35;
-/// 098c 击退初速封顶（war3 单位/s）：`(100+魔法)×gx×JI` 在高张力下可达数千，
+const W098B_KB_TIME: f64 = 0.35;/// 098c 击退初速封顶（war3 单位/s）：`(100+魔法)×gx×JI` 在高张力下可达数千，
 /// 与移速 210 相比已是 10 倍级——封顶防极端等级把人推出半张图。
 const W098B_KB_MAX_SPEED: f64 = 2000.0;
 /// 098b 火球点燃时长（秒）：consolidated S000「点燃 2.5×jn」。
@@ -433,6 +432,8 @@ pub enum CombatEvent {
     Pancake { victim: u32, pos: Vec2 },
     /// 一次沉默 ≥ 3 个目标（098c `Silencer`）。
     Silencer { owner: u32, pos: Vec2 },
+    /// 天罚命中「被链接 + 特殊状态」的目标 → 断链（098c `Denied`/`aR`）。
+    Denied { owner: u32, pos: Vec2 },
     /// 燃烧冲刺（S012 A，`Hr`）撞到队友 → 熄灭（098c `lb`「Burn out」）。
     Burnout { owner: u32, pos: Vec2 },
 }
@@ -2860,6 +2861,7 @@ impl World {
         let mut deaths: Vec<u32> = Vec::new();
         let mut hit_non_owner = false;
         let mut hit_enemies: u32 = 0;
+        let mut hits: Vec<u32> = Vec::new();
         for p in self.players.iter_mut() {
             if !p.alive || (exclude_owner && p.id == owner) || Some(p.team) == owner_team {
                 continue;
@@ -2894,6 +2896,7 @@ impl World {
                 if p.id != owner {
                     hit_non_owner = true;
                     hit_enemies += 1;
+                    hits.push(p.id);
                 }
                 if p.hp == Fix64::ZERO {
                     p.alive = false;
@@ -2937,7 +2940,40 @@ impl World {
                 .unwrap_or((pos, false));
             self.combat_events.push(CombatEvent::MultiHit { owner, pos, vampire });
         }
+        // 098c `Denied`：天罚命中「被链接（`Fv`）+ 特殊状态（出界/凤凰/风步）」的目标 → 断链 + 播报。
+        if is_smite {
+            let arena = self.arena_radius;
+            for &v in &hits {
+                let info = self.players.get(v as usize).map(|p| {
+                    (
+                        p.alive,
+                        p.pos.length() > arena,
+                        p.phoenix_remaining > Fix64::ZERO,
+                        p.windwalk_state > Fix64::ZERO,
+                        p.pos,
+                    )
+                });
+                let Some((alive, oob, phoenix, windwalk, vpos)) = info else { continue };
+                if !alive || !(oob || phoenix || windwalk) {
+                    continue;
+                }
+                if self.sever_links_to(v) > 0 {
+                    self.combat_events.push(CombatEvent::Denied { owner, pos: vpos });
+                }
+            }
+        }
         hit_enemies
+    }
+
+    /// 098c `aR`：断开**指向 `victim` 的链接弹体**（束缚/链索/束缚线），返回断开数量。
+    fn sever_links_to(&mut self, victim: u32) -> usize {
+        let before = self.projectiles.len();
+        self.projectiles.retain(|pr| match &pr.kind {
+            ProjectileKind::Tether { target, .. } => *target != victim,
+            ProjectileKind::Chain { last_target, .. } => *last_target != victim,
+            _ => true,
+        });
+        before - self.projectiles.len()
     }
 
     /// 死亡判定辅助：场上还存活多少玩家。
@@ -2976,7 +3012,7 @@ impl World {
                 (self.players[i].windwalk_state + Fix64::from_num(1.5)).min(Fix64::from_num(5.0));
             self.players[i].parry_ready = false;
             self.players[i].parry_cd = Fix64::from_num(0.5);
-            // 互相击退（`MI`）：把攻击者推开 4.5、自己推开 2.25，均乘 `100/(100+gn)`。
+            // 互相击退（`MI`）：把攻击者推开、自己推开，均乘 `100/(100+gn)`。
             let gn = self.players[ai].gn_factor();
             let scale = Fix64::from_num(100.0 / (100.0 + gn));
             let d = self.players[i].pos - self.players[ai].pos;
@@ -2985,8 +3021,8 @@ impl World {
             } else {
                 Vec2::new(Fix64::ONE, Fix64::ZERO)
             };
-            self.players[ai].push_knockback(dir * Fix64::from_num(4.5) * scale);
-            self.players[i].push_knockback(-dir * Fix64::from_num(2.25) * scale);
+            self.players[ai].push_knockback(dir * Fix64::from_num(PARRY_KB_ATTACKER) * scale);
+            self.players[i].push_knockback(-dir * Fix64::from_num(PARRY_KB_SELF) * scale);
         }
         // 清瞬态（本 tick 的接触记录）。
         for p in self.players.iter_mut() {
@@ -4754,6 +4790,12 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
     let proj = a + ab * t;
     (p - proj).length_squared() <= width * width
 }
+
+/// 098c 招架 `MI` 的冲量幅度（`MI(nr,Vr,4.5,..)` / `MI(Vr,nr,2.25,..)`）。
+/// 098c 里 `MI` 把 `HX` 经 `(100+gn)*HX*Gn*hn*.03*Hn` 转成每帧速度；我们换算到自有的冲量尺度
+/// （参考 kick `push_power=150` 对应伤害 5.4）→ 4.5→125、2.25→62.5（保持 2:1）。
+const PARRY_KB_ATTACKER: f64 = 125.0;
+const PARRY_KB_SELF: f64 = 62.5;
 
 /// 098c `SI`/`pI` 的基础 AoE 半径（`pe = 0xA0 = 160`）；实际 = 本值 × (1 + 0.12 × 范围精通)。
 const SI_RADIUS_BASE: f64 = 160.0;
@@ -6757,6 +6799,51 @@ mod tests {
         let none = vec![PlayerInput::default(); 4];
         v.step(none, Fix64::from_num(1.0 / 60.0));
         assert!(v.combat_events.is_empty(), "step 应清空上一帧表现事件");
+    }
+
+    #[test]
+    fn smite_denied_breaks_link_on_special_target() {
+        let tether = || Projectile {
+            owner: 0,
+            kind: ProjectileKind::Tether {
+                owner: 0,
+                target: 1,
+                damage_per_sec: Fix64::ZERO,
+                pull_speed: Fix64::ZERO,
+                remaining: Fix64::from_num(1.0),
+                beam: false,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        };
+        // 目标处于风步（特殊状态）→ 天罚命中应断链 + Denied。
+        let mut w = World::new(2, 4242);
+        w.obstacles.clear();
+        w.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        w.players[1].windwalk_state = Fix64::from_num(1.0);
+        w.projectiles.push(tether());
+        let n = w.explode_at(
+            w.players[1].pos, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
+            true, true, DmgFalloff::None,
+        );
+        assert_eq!(n, 1);
+        assert!(
+            w.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })),
+            "被链接 + 特殊状态的天罚应触发 Denied"
+        );
+        assert!(!w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "应断链");
+
+        // 非特殊状态 → 不断链、不 Denied。
+        let mut w2 = World::new(2, 4242);
+        w2.obstacles.clear();
+        w2.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        w2.projectiles.push(tether());
+        let _ = w2.explode_at(
+            w2.players[1].pos, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
+            true, true, DmgFalloff::None,
+        );
+        assert!(!w2.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })));
+        assert!(w2.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
     }
 
     #[test]
