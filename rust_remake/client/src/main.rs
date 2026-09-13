@@ -1918,6 +1918,7 @@ impl Game {
         self.world.configure_mode(self.match_mode);
         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
         self.world.configure_regen(self.match_regen);
+        self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
         self.meta = game_core::meta::MatchState::new(
             self.match_config(),
             &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -4676,6 +4677,7 @@ impl event::EventHandler for Game {
                         // 单机路径同样应用房间设置（与建房/入房共用同一份 `MatchConfig`）。
                         w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
                         w.configure_regen(self.match_cfg.base_regen);
+                        w.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
                         self.world = w;
                         self.meta = m;
                         self.app = AppState::Solo;
@@ -5942,6 +5944,7 @@ impl Game {
                             self.world.configure_regen(self.match_cfg.base_regen);
                             self.world
                                 .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                            self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
                             // **客户端也要更新 meta.config**：否则房间面板/对局信息读的是旧快照，
                             // 表现为"客户端看不到房主的设置"（房主那边 publish 时会整份替换）。
                             self.meta.config = self.match_cfg.clone();
@@ -6468,6 +6471,7 @@ impl Game {
         self.world.configure_regen(self.match_cfg.base_regen);
         self.world
             .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+        self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
         // **关键**：`meta.config` 是开局时的快照，不更新它 → 进行中的对局与 HUD
         // 仍旧显示/使用旧值（"改了好像没生效"就是这里）。整份替换即可。
         self.meta.config = self.match_cfg.clone();
@@ -6835,6 +6839,7 @@ impl Game {
                         self.match_regen = self.match_cfg.base_regen;
                         self.world.configure_regen(self.match_cfg.base_regen);
                         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                        self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
                         eprintln!("[cfg] 已对齐 host 房间设置（{} 字节）", self.match_cfg.to_meta_string().len());
                     } else {
                         eprintln!("[cfg] host 未提供房间设置串，使用默认值");
@@ -6864,6 +6869,7 @@ impl Game {
             self.world.configure_mode(self.match_mode);
         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
             self.world.configure_regen(self.match_regen);
+            self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
             self.meta = game_core::meta::MatchState::new(
                 self.match_config(),
                 &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),

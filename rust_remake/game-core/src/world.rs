@@ -432,6 +432,12 @@ pub struct World {
     pub shrink_delay_secs: Fix64,
     /// 收缩**每环时长**（秒，基准值；速率 = 环宽 /(本值 × √存活人数)）。098c 设置 6 `wo`。
     pub shrink_ring_secs: Fix64,
+    /// 全局伤害倍率（098c 设置 2 `Gn`，默认 1.0）：所有技能/接触伤害乘它。
+    pub damage_mult: Fix64,
+    /// 全局击退倍率（098c 设置 3 `Hn`，默认 1.0）：KI/接触踢击的击退冲量乘它。
+    pub knockback_mult: Fix64,
+    /// 出界（岩浆）伤害倍率（098c 设置 1 `To`，默认 1.0 = 标准 9/s；`0` = 关闭岩浆）。
+    pub lava_damage_mult: Fix64,
     /// 试验场模式（单机技能试验场）：不缩圈、不出圈掉血、不判对局结束。
     pub sandbox: bool,
     /// 柱子/障碍布局使用的确定性种子。每轮递增，保证各小局地形不同、且两端一致。
@@ -512,6 +518,9 @@ impl World {
             base_regen: crate::balance::Balance::default().hp_regen,
             shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs),
             shrink_ring_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs),
+            damage_mult: Fix64::ONE,
+            knockback_mult: Fix64::ONE,
+            lava_damage_mult: Fix64::ONE,
             sandbox: false,
             round_seed: seed,
             obstacles,
@@ -707,7 +716,7 @@ impl World {
         }
 
         // 5) 玩家之间的碰撞
-        resolve_player_collisions(&mut self.players, dt);
+        resolve_player_collisions(&mut self.players, dt, self.damage_mult, self.knockback_mult);
         // 5b) 玩家与障碍（圆形柱子）的分离
         self.resolve_obstacles(dt);
 
@@ -737,7 +746,11 @@ impl World {
                 // MECHANICS.md「To[0] 随回合数成长」是文档误差；「拖延越久越痛」实际来自**缩圈导致暴露更多**，
                 // 已由 shrink_arena 实现。故此处不用 round_scale，固定 1.0。
                 let round_scale = 1.0;
-                let net = p.soak_boost(Fix64::from_num(OUT_HURT * lava_mult * round_scale) * dt);
+                let net = p.soak_boost(
+                    Fix64::from_num(OUT_HURT * lava_mult * round_scale)
+                        * self.lava_damage_mult
+                        * dt,
+                );
                 p.hp = (p.hp - net).max(Fix64::ZERO);
                 // 098c `nA`：岩浆伤把**一半**记到「最后伤害我的人」名下（`Jn[受][An] += To/2`），
                 // 用于助攻统计。注意它**不进** `Rn`（本轮伤害），故不影响化身加冕积分 —— 见上面的
@@ -1258,6 +1271,7 @@ impl World {
             .and_then(|f| self.players.get(f as usize))
             .map(|a| a.gn_factor())
             .unwrap_or(1.0);
+        let world_dmg_mult = self.damage_mult;
         // 折算后伤害提出外层：矩阵记账（D6）/回魔（D9）统一用最终值。
         let dealt;
         let died = {
@@ -1268,7 +1282,7 @@ impl World {
             // 4.6b：按目标护甲×法抗折算 × 098c 攻方 Gn。
             // 守护之盾充能窗口（098c HC）：天罚后 5s 内受伤减免（25%/75%）。
             dealt = if from.is_some() {
-                let base = amount * Fix64::from_num(gn * p.dmg_taken_mult);
+                let base = amount * Fix64::from_num(gn * p.dmg_taken_mult) * world_dmg_mult;
                 if p.has_buff(BuffKind::Aegis) && p.item_fx.smite_reduction > 0.0 {
                     base * Fix64::from_num(1.0 - p.item_fx.smite_reduction)
                 } else {
@@ -2475,6 +2489,7 @@ impl World {
             }
         }
         for (victim, vel, time, decay) in pushes {
+            let vel = vel * self.knockback_mult;
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
                     if decay {
@@ -2814,7 +2829,7 @@ impl World {
                     if p.has_buff(BuffKind::Aegis) && p.item_fx.aegis_kb_reduction > 0.0 {
                         dyn_force *= 1.0 - p.item_fx.aegis_kb_reduction;
                     }
-                    p.push_knockback(dir * Fix64::from_num(dyn_force * falloff.to_num::<f64>()));
+                    p.push_knockback(dir * Fix64::from_num(dyn_force * falloff.to_num::<f64>()) * self.knockback_mult);
                 }
             }
         }
@@ -2922,6 +2937,14 @@ impl World {
 
     pub fn configure_regen(&mut self, per_sec: f64) {
         self.base_regen = per_sec;
+    }
+
+    /// 配置全局倍率（房间设置）：伤害（098c 设置 2 `Gn`）、击退（设置 3 `Hn`）、
+    /// 岩浆伤害（设置 1 `To`，`0` = 关闭）。三者默认均 1.0，不影响原行为。
+    pub fn configure_mults(&mut self, damage: f64, knockback: f64, lava: f64) {
+        self.damage_mult = Fix64::from_num(damage.max(0.0));
+        self.knockback_mult = Fix64::from_num(knockback.max(0.0));
+        self.lava_damage_mult = Fix64::from_num(lava.max(0.0));
     }
 
     /// 每轮角色设置（B3）：化身（模式 3）与国王（模式 4）的 F 槽替换与增益。
@@ -3670,7 +3693,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         if let Some(p) = world.players.get_mut(pid as usize) {
                             if p.alive {
                                 let kb = warlock_ki_knockback(vmana, gx, kb_ji, atk_gn, vic_hn);
-                                p.push_knockback(dir * kb);
+                                p.push_knockback(dir * kb * world.knockback_mult);
                             }
                         }
                         hit_any = true;
@@ -4601,7 +4624,7 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
 ///
 /// 伤害处理：若两球重叠较深（被挤压）则双方各受一定伤害，鼓励拉开距离。
 /// 位置修正按半径反比分配（更小的球退得更多），保证确定性与顺序无关地一致。
-fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
+fn resolve_player_collisions(players: &mut [Player], dt: Fix64, damage_mult: Fix64, knockback_mult: Fix64) {
     let n = players.len();
     for i in 0..n {
         for j in (i + 1)..n {
@@ -4693,18 +4716,19 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                     // 隐身下接触命中才在基础伤害之外追加一笔同级伤害（`SI(... 4.6+.8*wr ...)`）。
                     // 这同时解释了两份资料：技能说明的「单笔伤害」是未点精通时的基础值，
                     // 098c 的额外一笔是精通带来的加成（决策记录见 SKILL_AUDIT §7.6）。
-                    let dmg = if players[i].has_buff(BuffKind::Stealth) && players[i].mastery[1] > 0 {
+                    let dmg = (if players[i].has_buff(BuffKind::Stealth) && players[i].mastery[1] > 0 {
                         kick.push_damage * Fix64::from_num(2.0)
                     } else {
                         kick.push_damage
-                    };
+                    }) * damage_mult;
                     players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
                     // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
                     // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917），在此缩放冲量大小。
                     // （kn 碰撞系数由 push() 时长缩短承担；属性系统删除后不再有 kb_factor。）
                     let imp = kick.push_power
-                        * Fix64::from_num(1.0 - players[j].mastery_kb_reduction());
+                        * Fix64::from_num(1.0 - players[j].mastery_kb_reduction())
+                        * knockback_mult;
                     players[j].push(dir_b_from_a * imp, kick.push_time.to_num::<f64>());
                     players[i].remove_buff(BuffKind::Stealth);
                     // 098c BA（war3map_pretty.j:3771/3724-3735）：冲撞命中后施法者急停（Q=S=U=w=0），
@@ -4717,15 +4741,16 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64) {
                 }
                 if let Some(kick) = players[j].kick.take() {
                     // 同上：破隐一击（098c bA）—— 需施法者具备远程精通（xi>0）才追加。
-                    let dmg = if players[j].has_buff(BuffKind::Stealth) && players[j].mastery[1] > 0 {
+                    let dmg = (if players[j].has_buff(BuffKind::Stealth) && players[j].mastery[1] > 0 {
                         kick.push_damage * Fix64::from_num(2.0)
                     } else {
                         kick.push_damage
-                    };
+                    }) * damage_mult;
                     players[i].hp = (players[i].hp - players[i].soak_boost(dmg)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
                     let imp = kick.push_power
-                        * Fix64::from_num(1.0 - players[i].mastery_kb_reduction());
+                        * Fix64::from_num(1.0 - players[i].mastery_kb_reduction())
+                        * knockback_mult;
                     players[i].push(-dir_b_from_a * imp, kick.push_time.to_num::<f64>());
                     players[j].remove_buff(BuffKind::Stealth);
                     if kick.stop_on_hit {
@@ -6489,6 +6514,41 @@ mod tests {
     }
 
     /// `configure_regen`：房间设置可调基础回血（098c 主机常量 `-C9`）。
+    #[test]
+    fn configure_mults_scales_damage_and_lava() {
+        // configure_mults 存储三倍率
+        let mut w0 = World::new(1, 1);
+        w0.configure_mults(1.5, 0.5, 0.0);
+        assert_eq!(w0.damage_mult, Fix64::from_num(1.5));
+        assert_eq!(w0.knockback_mult, Fix64::from_num(0.5));
+        assert_eq!(w0.lava_damage_mult, Fix64::ZERO);
+
+        // 伤害倍率：同一伤害，damage_mult=2 → 掉血翻倍
+        let mut a = World::new(2, 123);
+        a.obstacles.clear();
+        let mut b = World::new(2, 123);
+        b.obstacles.clear();
+        b.damage_mult = Fix64::from_num(2.0);
+        a.damage_player(1, Fix64::from_num(10.0), Some(0));
+        b.damage_player(1, Fix64::from_num(10.0), Some(0));
+        let da = (a.players[1].max_hp - a.players[1].hp).to_num::<f64>();
+        let db = (b.players[1].max_hp - b.players[1].hp).to_num::<f64>();
+        assert!(da > 0.0, "基础伤害应 > 0");
+        assert!((db - 2.0 * da).abs() < 1e-6, "damage_mult=2 应双倍，da={da} db={db}");
+
+        // 岩浆倍率：0 = 关闭出界伤害
+        let mut w = World::new(1, 123);
+        w.obstacles.clear();
+        w.players[0].pos = Vec2::new(w.arena_radius + Fix64::from_num(10.0), Fix64::ZERO);
+        w.lava_damage_mult = Fix64::ZERO;
+        let hp0 = w.players[0].hp;
+        let none = vec![PlayerInput::default()];
+        for _ in 0..30 {
+            w.step(none.clone(), Fix64::from_num(1.0 / 60.0));
+        }
+        assert_eq!(w.players[0].hp, hp0, "lava_damage_mult=0 应关闭岩浆伤害");
+    }
+
     #[test]
     fn configure_regen_overrides_base_regen() {
         let mut world = World::new(1, 1003);
