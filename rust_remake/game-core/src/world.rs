@@ -696,6 +696,11 @@ impl World {
             // 098c `Fr[unit]`：疾风步状态（A 冲锋 / B 隐身两形态都置位）。
             if p.windwalk_state > Fix64::ZERO {
                 p.windwalk_state = (p.windwalk_state - dt).max(Fix64::ZERO);
+                // 风步结束 → 清招架就绪（098c `AA`：`gr=false`）。
+                if p.windwalk_state == Fix64::ZERO {
+                    p.parry_ready = false;
+                    p.parry_cd = Fix64::ZERO;
+                }
             }
             if p.phoenix_remaining > Fix64::ZERO {
                 p.phoenix_remaining = (p.phoenix_remaining - dt).max(Fix64::ZERO);
@@ -753,6 +758,8 @@ impl World {
         let collision_events =
             resolve_player_collisions(&mut self.players, dt, self.damage_mult, self.knockback_mult);
         self.combat_events.extend(collision_events);
+        // 招架（098c `CA`）：在处理完本 tick 伤害后统一判定。
+        self.process_parry(dt);
         // 燃烧冲刺熄灭/结束（自然结束或被打断）时清 `burning`。
         for p in self.players.iter_mut() {
             if p.burning && p.control.is_none() && p.kick.is_none() {
@@ -1337,6 +1344,7 @@ impl World {
             };
             if let Some(hitter) = from {
                 p.last_hit_by = Some(hitter);
+                p.damage_taken_by = from; // 瞬态：本 tick 攻击者（供招架判定）
             }
             // C1 疾跑：boost 期间返还一半伤害回血（soak_boost 返回净扣血）
             let net = p.soak_boost(dealt);
@@ -2862,6 +2870,7 @@ impl World {
                 // 受伤（记录击杀者）；boost 期间返还一半回血；护甲/法抗折算 + 098c 攻方 Gn（D9）。
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
+                    p.damage_taken_by = Some(owner);
                 }
                 let mut dmg = {
                     // 距离衰减（098c）：陨石为乘法 `×(1-d/k)`；灾变为加法 `dmg - d/k`。
@@ -2935,6 +2944,55 @@ impl World {
     /// 死亡判定辅助：场上还存活多少玩家。
     pub fn alive_count(&self) -> usize {
         self.players.iter().filter(|p| p.alive).count()
+    }
+
+    /// 098c `CA` 招架（S010 B / `gr`）：风步中的单位**被敌人伤害**时，
+    /// 刷新风步（`Xr = 剩余 + 1.5×jn`，封顶 5s）、`gr` 进入 0.5s 冷却（`NA` 恢复），
+    /// 并与攻击者**互相击退**（`MI`：攻击者 4.5、自己 2.25，× `100/(100+gn)`）。
+    fn process_parry(&mut self, dt: Fix64) {
+        let n = self.players.len();
+        // `NA`：招架后 0.5s 恢复 `gr`（仅当仍在风步）。
+        for i in 0..n {
+            if self.players[i].parry_cd > Fix64::ZERO {
+                self.players[i].parry_cd = (self.players[i].parry_cd - dt).max(Fix64::ZERO);
+                if self.players[i].parry_cd == Fix64::ZERO && self.players[i].windwalk_state > Fix64::ZERO {
+                    self.players[i].parry_ready = true;
+                }
+            }
+        }
+        for i in 0..n {
+            let Some(att) = self.players[i].damage_taken_by else { continue };
+            let ai = att as usize;
+            if ai >= n || ai == i {
+                continue;
+            }
+            if self.players[i].windwalk_state <= Fix64::ZERO || !self.players[i].parry_ready {
+                continue;
+            }
+            if self.players[ai].team == self.players[i].team {
+                continue;
+            }
+            // 刷新风步（098c `Xr`，封顶 5s）。
+            self.players[i].windwalk_state =
+                (self.players[i].windwalk_state + Fix64::from_num(1.5)).min(Fix64::from_num(5.0));
+            self.players[i].parry_ready = false;
+            self.players[i].parry_cd = Fix64::from_num(0.5);
+            // 互相击退（`MI`）：把攻击者推开 4.5、自己推开 2.25，均乘 `100/(100+gn)`。
+            let gn = self.players[ai].gn_factor();
+            let scale = Fix64::from_num(100.0 / (100.0 + gn));
+            let d = self.players[i].pos - self.players[ai].pos;
+            let dir = if d.length_squared() > Fix64::ZERO {
+                d.normalized()
+            } else {
+                Vec2::new(Fix64::ONE, Fix64::ZERO)
+            };
+            self.players[ai].push_knockback(dir * Fix64::from_num(4.5) * scale);
+            self.players[i].push_knockback(-dir * Fix64::from_num(2.25) * scale);
+        }
+        // 清瞬态（本 tick 的伤害记录）。
+        for p in self.players.iter_mut() {
+            p.damage_taken_by = None;
+        }
     }
 
     /// 本局结束后的名次：`placement[i]` = 名次 i+1 的玩家 id（1=冠军）。
@@ -3646,6 +3704,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
                             p.add_buff(BuffKind::Windwalk(lifesteal.to_num::<f64>()), dur);
                             p.windwalk_state = Fix64::from_num(dur);
+                            // 098c `IB`：进入风步 B 形态即获得一次招架就绪（`gr=true`）。
+                            // （注：吸血是我们保留的 098b 行为，098c 无，见 SKILL_STATE_AUDIT §2.2c。）
+                            p.parry_ready = true;
+                            p.parry_cd = Fix64::ZERO;
                         }
                     }
                     crate::skill::W098bUtilKind::Phoenix => {
@@ -4792,6 +4854,7 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                         + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
                     players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
+                    players[j].damage_taken_by = Some(players[i].id);
                     // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
                     // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917），在此缩放冲量大小。
                     // （kn 碰撞系数由 push() 时长缩短承担；属性系统删除后不再有 kb_factor。）
@@ -4817,6 +4880,7 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                         + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
                     players[i].hp = (players[i].hp - players[i].soak_boost(dmg)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
+                    players[i].damage_taken_by = Some(players[j].id);
                     let imp = kick.push_power
                         * Fix64::from_num(1.0 - players[i].mastery_kb_reduction())
                         * knockback_mult;
@@ -6658,6 +6722,52 @@ mod tests {
         );
         assert!(w.players[1].hp < hp1, "队友应受到 Burnout 伤害");
         assert!(!w.players[0].burning, "Burnout 应熄灭燃烧状态");
+    }
+
+    #[test]
+    fn windwalk_parry_refreshes_and_knocks_back() {
+        // 098c `CA` 招架：风步 B（`windwalk_state>0`）+ `gr` 就绪，被敌人伤害 →
+        // 刷新风步、`gr` 进入 0.5s 冷却、双方互相击退。
+        let mut w = World::new(2, 42);
+        w.obstacles.clear();
+        w.players[0].team = 0;
+        w.players[1].team = 1;
+        w.players[0].windwalk_state = Fix64::from_num(1.0);
+        w.players[0].parry_ready = true;
+        w.players[0].damage_taken_by = Some(1);
+        let before_ww = w.players[0].windwalk_state;
+        w.process_parry(Fix64::from_num(1.0 / 60.0));
+        assert!(w.players[0].windwalk_state > before_ww, "招架应刷新风步");
+        assert!(!w.players[0].parry_ready, "招架后 gr 应进入冷却");
+        assert!(w.players[0].parry_cd > Fix64::ZERO);
+        assert!(w.players[1].control.is_some(), "攻击者应被击退");
+        assert!(w.players[0].control.is_some(), "风步者自己应被击退");
+        assert!(w.players[0].damage_taken_by.is_none(), "瞬态应被清除");
+
+        // `NA`：0.5s 后 `gr` 恢复（仍在风步）。
+        w.process_parry(Fix64::from_num(0.6));
+        assert!(w.players[0].parry_ready, "0.5s 后应恢复招架就绪");
+    }
+
+    #[test]
+    fn windwalk_parry_ignores_allies_and_non_windwalkers() {
+        let mut w = World::new(2, 42);
+        w.obstacles.clear();
+        // 同队伤害 → 不招架。
+        w.players[0].team = 0;
+        w.players[1].team = 0;
+        w.players[0].windwalk_state = Fix64::from_num(1.0);
+        w.players[0].parry_ready = true;
+        w.players[0].damage_taken_by = Some(1);
+        w.process_parry(Fix64::from_num(1.0 / 60.0));
+        assert!(w.players[0].parry_ready, "同队伤害不应触发招架");
+        assert!(w.players[0].control.is_none());
+        // 非风步 → 不招架。
+        w.players[1].team = 1;
+        w.players[0].windwalk_state = Fix64::ZERO;
+        w.players[0].damage_taken_by = Some(1);
+        w.process_parry(Fix64::from_num(1.0 / 60.0));
+        assert!(w.players[1].control.is_none(), "非风步不应触发招架");
     }
 
     #[test]

@@ -51,11 +51,11 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 
 | 项 | 值 |
 |---|---|
-| `PROTOCOL_VERSION` | 14 |
+| `PROTOCOL_VERSION` | 15 |
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 54 / game-core 237 / net 39 / net-steam 9；steam client 61 |
+| 测试基线 | client 54 / game-core 239 / net 39 / net-steam 9；steam client 61 |
 
 ## 四、待办（按建议优先级）
 
@@ -108,8 +108,9 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    `AV=AV+1; StartSound(Vo)` + 广播 `"Draw! One more round to decide the battle"`）。
    我们目前只有固定 `total_rounds`，**无平局判定、无追加轮**。
    待定义：平局条件（如同分/并列第一）→ 追加一轮 → 结算；暂已用 `Vo` 音效（`ann_game_start`/`ann_finish`）。
-9. **S010 `gr` 招架 + `CA` 接触伤害分支**（低优先级，见 `SKILL_STATE_AUDIT.md` §2.2b）：
-   不影响播报；实现需引入「被攻击」概念 + `gr` 一次性字段（→ bump 协议），暂缓。
+9. **S010 B 招架已实现（含差异）**（2026-09-13）：`gr` 招架（刷新风步 + 互相击退，0.5s CD）已加；
+   **有意保留 098c 没有的风步吸血**（098b 遗留）——差异记于 `SKILL_STATE_AUDIT.md` §2.2c。
+   剩余：`CA` 对 `fr`/`Hr` 的接触伤害分支（见 §2.2b）仍未对齐。
 
 ## 五、文档索引（读哪个）
 
