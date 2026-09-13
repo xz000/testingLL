@@ -42,8 +42,6 @@ pub const ROOM_GOLD_PER_ROUND_KEY: &str = "room_gold_per_round";
 pub const ROOM_REGEN_KEY: &str = "room_regen";
 /// 房间设置（`MatchConfig::to_meta_string()` 的紧凑串）——单键承载全部设置，便于整体替换与变更检测。
 pub const ROOM_SETTINGS_KEY: &str = "room_cfg";
-/// 大厅元数据：单轮名次奖励（逗号分隔的档位，host 建房时写入；加入者据此对齐 MatchConfig.place_rewards）。
-pub const ROOM_PLACE_REWARD_KEY: &str = "room_place_reward";
 /// 大厅元数据：联机兼容版本（`game_core::PROTOCOL_VERSION`）。host 建房时写入，
 /// 加入者/列表据此过滤不同版本的游戏（避免改前/改后构建联机导致 desync）。
 pub const ROOM_VERSION_KEY: &str = "room_version";
@@ -745,37 +743,6 @@ impl SteamSession {
     pub fn lobby_cfg(&self) -> Option<String> {
         let l = self.lobby?;
         self.transport.matchmaking().lobby_data(l, ROOM_SETTINGS_KEY)
-    }
-
-    /// 设置单轮名次奖励档位（写进大厅元数据，逗号分隔；供加入者读取对齐）。
-    pub fn host_set_place_reward(&self, rewards: &[i32]) -> io::Result<()> {
-        let Some(l) = self.lobby else {
-            return Err(io::Error::other("host_set_place_reward: 尚未建厅"));
-        };
-        let joined = rewards
-            .iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        self.transport
-            .matchmaking()
-            .set_lobby_data(l, ROOM_PLACE_REWARD_KEY, &joined);
-        Ok(())
-    }
-
-    /// 读取单轮名次奖励档位（加入者用；host 未设置/格式非法时回退 None，由调用方给默认值）。
-    pub fn lobby_place_reward(&self) -> Option<Vec<i32>> {
-        let l = self.lobby?;
-        let raw = self.transport.matchmaking().lobby_data(l, ROOM_PLACE_REWARD_KEY)?;
-        let out: Vec<i32> = raw
-            .split(',')
-            .filter_map(|s| s.trim().parse::<i32>().ok())
-            .collect();
-        if out.is_empty() {
-            None
-        } else {
-            Some(out)
-        }
     }
 
     /// 列出 Steam 好友（供「邀请好友」界面）。见 [`list_friends`]。

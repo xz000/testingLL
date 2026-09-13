@@ -196,28 +196,7 @@ fn solo_world_and_meta() -> (game_core::world::World, game_core::meta::MatchStat
     (w, m)
 }
 
-/// 由「第一名奖励」自动生成名次奖励档位：每降一名奖励 ×0.6（向下取整），直到 ≤0。
-/// 这样只需输一个数字即可覆盖任意玩家数（档位只影响前几名，后几名逐渐归零）。
-///
-/// 注：098c 默认**没有**名次奖励（奖励走 `lo/Lo/Mo/po`+`ko/Ko/mo`），UI 也不再有该项；
-/// 本函数仅供单测/后续若重新暴露名次金时复用，故 `allow(dead_code)`。
-#[allow(dead_code)]
-#[cfg(feature = "steam")]
-fn auto_place_rewards(first: i32) -> Vec<i32> {
-    let mut out = Vec::new();
-    let mut v = first.max(0);
-    while v > 0 {
-        out.push(v);
-        if out.len() >= 64 {
-            break;
-        }
-        v = (v as f64 * 0.6).floor() as i32;
-    }
-    if out.is_empty() {
-        out.push(0);
-    }
-    out
-}
+
 /// 由房间设置（`match_cfg`，**唯一真值源**）派生「本局使用的 `MatchConfig`」。
 ///
 /// 唯一额外派生：国王模式（`game_mode==4`）强制两队（098c `kX`）；其余字段原样沿用房间设置，
@@ -634,9 +613,6 @@ struct Game {
     /// 当前场次每轮固定金币（参与奖；host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_gold_per_round: i32,
-    /// 当前场次单轮名次奖励档位（host 建房设定 / client 从大厅元数据读取，两端一致）。
-    #[cfg(feature = "steam")]
-    match_place_rewards: Vec<i32>,
     /// 当前场次的总轮数（host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_rounds: u32,
@@ -841,9 +817,6 @@ impl Game {
         let init_starting_gold: i32 = STEAM_DEFAULT_STARTING_GOLD;
         #[cfg(feature = "steam")]
         let init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
-        // 098c 默认**没有**名次奖励（奖励走 lo/Lo/Mo/po + ko/Ko/mo）；名次金为空。
-        #[cfg(feature = "steam")]
-        let init_place_rewards: Vec<i32> = Vec::new();
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
@@ -912,7 +885,6 @@ impl Game {
                 total_rounds: init_rounds,
                 gold_per_round: init_gold_per_round,
                 starting_gold: init_starting_gold,
-                place_rewards: init_place_rewards.clone(),
                 ..Default::default()
             };
             #[cfg(not(feature = "steam"))]
@@ -1156,7 +1128,6 @@ impl Game {
                 total_rounds: init_rounds,
                 gold_per_round: init_gold_per_round,
                 starting_gold: init_starting_gold,
-                place_rewards: init_place_rewards.clone(),
                 ..Default::default()
             },
             #[cfg(not(feature = "steam"))]
@@ -1190,8 +1161,6 @@ impl Game {
             match_starting_gold: init_starting_gold,
             #[cfg(feature = "steam")]
             match_gold_per_round: init_gold_per_round,
-            #[cfg(feature = "steam")]
-            match_place_rewards: init_place_rewards.clone(),
         })
     }
 
@@ -6495,7 +6464,6 @@ impl Game {
         self.match_learn_secs = self.match_cfg.between_rounds_time_secs as u32;
         self.match_starting_gold = self.match_cfg.starting_gold;
         self.match_gold_per_round = self.match_cfg.gold_per_round;
-        self.match_place_rewards = self.match_cfg.place_rewards.clone();
         // 世界层同样立即生效（回血/收缩）。
         self.world.configure_regen(self.match_cfg.base_regen);
         self.world
@@ -6559,16 +6527,14 @@ impl Game {
             self.match_learn_secs = self.match_cfg.between_rounds_time_secs.round() as u32;
             self.match_starting_gold = self.match_cfg.starting_gold.clamp(0, STEAM_MAX_GOLD);
             self.match_gold_per_round = self.match_cfg.gold_per_round.clamp(0, STEAM_MAX_GOLD);
-            self.match_place_rewards = self.match_cfg.place_rewards.clone();
             let name = self.room_meta.name.clone();
             let note = self.room_meta.note.clone();
             eprintln!(
-                "[steam] create lobby: players={players} rounds={} learn={}s starting_gold={} gold_per_round={} place={:?} name='{name}' note='{note}'",
+                "[steam] create lobby: players={players} rounds={} learn={}s starting_gold={} gold_per_round={} name='{name}' note='{note}'",
                 self.match_rounds,
                 self.match_learn_secs,
                 self.match_starting_gold,
-                self.match_gold_per_round,
-                self.match_place_rewards
+                self.match_gold_per_round
             );
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
@@ -6812,7 +6778,6 @@ impl Game {
                     sess.host_set_learn(self.match_learn_secs)?;
                     sess.host_set_starting_gold(self.match_starting_gold)?;
                     sess.host_set_gold_per_round(self.match_gold_per_round)?;
-                    sess.host_set_place_reward(&self.match_place_rewards)?;
                     sess.host_set_mode(self.match_mode)?;
                     sess.host_set_regen(self.match_regen)?;
                     // 房间设置整体写入（单键）；任何改动都会替换该键，供加入者整体对齐。
@@ -6874,8 +6839,6 @@ impl Game {
                     } else {
                         eprintln!("[cfg] host 未提供房间设置串，使用默认值");
                     }
-                    // 098c 无名次金；host 未提供时用空（不再用 auto_place_rewards 的 30…）。
-                    self.match_place_rewards = sess.lobby_place_reward().unwrap_or_default();
                     let host_id = sess.host_steam_id().unwrap_or(0);
                     let my_slot = sess.my_slot();
                     self.steam_my_index = my_slot;
@@ -8013,20 +7976,6 @@ mod tests {
             !ime_commit_suppresses_ascii(frame, last),
             "跨帧(≥2帧)双发不被当前方案抑制——残留风险边界"
         );
-    }
-
-    #[cfg(feature = "steam")]
-    #[test]
-    fn auto_place_rewards_decays_to_zero() {
-        // 30 → 30, 18, 10, 6, 3, 1（每名 ×0.6 向下取整，直到 ≤0）
-        assert_eq!(auto_place_rewards(30), vec![30, 18, 10, 6, 3, 1]);
-        assert_eq!(auto_place_rewards(0), vec![0], "0 名次奖励至少 1 档");
-        assert_eq!(auto_place_rewards(1), vec![1]);
-        // 大额也应收敛到 0（不无限增长），且覆盖多个名次。
-        let big = auto_place_rewards(99999);
-        assert!(*big.last().unwrap() >= 1);
-        assert!(big.len() > 5 && big.len() <= 64);
-        assert!(big.windows(2).all(|w| w[0] >= w[1]), "奖励应单调不增");
     }
 
     #[test]

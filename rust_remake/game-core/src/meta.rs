@@ -36,8 +36,6 @@ pub struct MatchConfig {
     /// （并列者都发）。实证 `war3map_pretty.j` 5364-5379：`if Rn[i] >= ZR then ... + po`，
     /// 并播报 "X has dealt the most damage in this round (N)."。**与伤害量无关**，是"最高者独占"奖。
     pub gold_per_most_damage: i32,
-    /// 每轮结束时按名次的额外奖励（索引 = 名次-1，0=冠军；超过数组长度的名次不额外奖励）
-    pub place_rewards: Vec<i32>,
     /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
     /// 房主可设置；098c 全局 `Qo=20`。
     pub starting_gold: i32,
@@ -86,7 +84,7 @@ pub struct MatchConfig {
 
 /// 房间设置串（用于大厅元数据/同步）的**模式版本**：字段顺序或语义变更时必须递增，
 /// 否则不同版本的端会按各自的顺序解析同一串。
-pub const ROOM_SETTINGS_SCHEMA: u32 = 2;
+pub const ROOM_SETTINGS_SCHEMA: u32 = 3;
 
 impl MatchConfig {
     /// 序列化为**紧凑单行**（大厅元数据用；`|` 分隔、`;` 分隔列表）。
@@ -109,11 +107,6 @@ impl MatchConfig {
             self.score_per_kill.to_string(),
             self.score_per_assist.to_string(),
             self.score_per_round_win.to_string(),
-            self.place_rewards
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>()
-                .join(";"),
             f(self.damage_mult),
             f(self.knockback_mult),
             f(self.lava_damage_mult),
@@ -134,8 +127,8 @@ impl MatchConfig {
     /// 从 [`Self::to_meta_string`] 还原；缺字段/格式不符返回 `None`（由调用方回退默认值）。
     pub fn from_meta_string(s: &str) -> Option<Self> {
         let p: Vec<&str> = s.trim().split('|').collect();
-        // schema + 26 个字段
-        if p.len() < 27 {
+        // schema + 25 个字段
+        if p.len() < 26 {
             return None;
         }
         if p[0].parse::<u32>().ok()? != ROOM_SETTINGS_SCHEMA {
@@ -145,11 +138,6 @@ impl MatchConfig {
         let int = |i: usize| -> Option<i32> { p.get(i)?.parse::<i32>().ok() };
         let uint = |i: usize| -> Option<u32> { p.get(i)?.parse::<u32>().ok() };
         let byte = |i: usize| -> Option<u8> { p.get(i)?.parse::<u8>().ok() };
-        let place: Vec<i32> = if p[13].is_empty() {
-            Vec::new()
-        } else {
-            p[13].split(';').filter_map(|v| v.parse::<i32>().ok()).collect()
-        };
         Some(MatchConfig {
             total_rounds: uint(1)?,
             first_round_time_secs: num(2)?,
@@ -163,20 +151,19 @@ impl MatchConfig {
             score_per_kill: uint(10)?,
             score_per_assist: uint(11)?,
             score_per_round_win: uint(12)?,
-            place_rewards: place,
-            damage_mult: num(14)?,
-            knockback_mult: num(15)?,
-            lava_damage_mult: num(16)?,
-            shrink_delay_secs: num(17)?,
-            shrink_ring_secs: num(18)?,
-            pillar_mode: byte(19)?,
-            ice_mode: byte(20)?,
-            arena_shape: byte(21)?,
-            gold_rewards_enabled: p[22] == "1",
-            base_regen: num(23)?,
-            game_mode: byte(24)?,
-            team_count: byte(25)?,
-            win_score: uint(26)?,
+            damage_mult: num(13)?,
+            knockback_mult: num(14)?,
+            lava_damage_mult: num(15)?,
+            shrink_delay_secs: num(16)?,
+            shrink_ring_secs: num(17)?,
+            pillar_mode: byte(18)?,
+            ice_mode: byte(19)?,
+            arena_shape: byte(20)?,
+            gold_rewards_enabled: p[21] == "1",
+            base_regen: num(22)?,
+            game_mode: byte(23)?,
+            team_count: byte(24)?,
+            win_score: uint(25)?,
         })
     }
 
@@ -214,9 +201,6 @@ impl MatchConfig {
             score_per_round_win,
             base_regen,
         );
-        if self.place_rewards != d.place_rewards {
-            n += 1;
-        }
         n
     }
 
@@ -260,7 +244,6 @@ impl Default for MatchConfig {
             gold_per_round_win: 2,
             gold_per_kill: 1,
             gold_per_most_damage: 1, // 098c 设置 16 `po`
-            place_rewards: Vec::new(),
             starting_gold: 20,
             // 098c 计分（JASS 实证；globals ko=1/Ko=1/mo=2）：胜利 2 分、击杀 1 分、助攻 1 分。
             // 注：MECHANICS.md §5「击杀 2 分」是笔误，实际 ko=1（war3map_pretty.j:2 / :9028 / :10292）。
@@ -731,10 +714,7 @@ impl MatchState {
                 .iter_mut()
                 .find(|pr| pr.player_id == player_id)
             {
-                // 名次奖励 & 最优名次
-                if let Some(&reward) = self.config.place_rewards.get(rank_idx) {
-                    p.gold += reward;
-                }
+                // 最优名次（无金钱奖励；098c 无名次金）
                 p.best_placement = if p.best_placement == 0 {
                     rank
                 } else {
@@ -987,7 +967,6 @@ mod tests {
             MatchConfig {
                 gold_per_round: 20,
                 gold_per_kill: 15,
-                place_rewards: vec![30, 20, 10],
                 ..MatchConfig::default()
             },
             &[0, 1, 2],
@@ -1182,14 +1161,14 @@ mod tests {
     }
 
     #[test]
-    fn finish_round_rewards_placement_and_gold() {
+    fn finish_round_gives_participation_gold_no_place() {
         let mut m = sample();
         m.enter_first_round(); // 开局只发初始金 20
-        // 名次：0=冠军（+30+存活），1=第二（+20），2=第三（+10）
+        // 098c 无名次金：结算只发参与奖 qo=20（sample 口径）
         m.finish_round(vec![0, 1, 2]);
-        assert_eq!(m.profiles[0].gold, 20 + 30 + 20, "初始 20 + 名次 30 + 结算参与奖 20");
-        assert_eq!(m.profiles[1].gold, 20 + 20 + 20);
-        assert_eq!(m.profiles[2].gold, 20 + 10 + 20);
+        assert_eq!(m.profiles[0].gold, 20 + 20, "初始 20 + 结算参与奖 20");
+        assert_eq!(m.profiles[1].gold, 20 + 20);
+        assert_eq!(m.profiles[2].gold, 20 + 20);
         assert_eq!(m.profiles[0].best_placement, 1);
         assert_eq!(m.profiles[1].best_placement, 2);
         assert_eq!(m.round_placements.len(), 1);
@@ -1207,7 +1186,7 @@ mod tests {
         assert_eq!(m.round, 2);
         assert_eq!(m.phase, MatchPhase::Fighting);
         // 第二局参与奖已发放
-        assert_eq!(m.profiles[0].gold, 20 + 30 + 20);
+        assert_eq!(m.profiles[0].gold, 20 + 20);
     }
 
     #[test]
@@ -1265,7 +1244,7 @@ mod tests {
         assert_eq!(config.gold_per_kill, 1, "击杀金 lo");
         assert_eq!(config.gold_per_assist, 1, "助攻金 Lo");
         assert_eq!(config.gold_per_round_win, 2, "胜利金 Mo");
-        assert!(config.place_rewards.is_empty(), "098c 无名次金（奖励走 lo/Lo/Mo/po + ko/Ko/mo）");
+        // 098c 无名次金（奖励走 lo/Lo/Mo/po + ko/Ko/mo）
         // 098c 计分（JASS 实证 globals ko=1/Ko=1/mo=2）：胜 2 / 杀 1 / 助 1
         assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 2));
         // 首轮商店 Uo=40 / 局间 uo=30（D6/M4 En 批）
@@ -1554,11 +1533,6 @@ mod tests {
         assert!(MatchConfig::from_meta_string("9|1|2").is_none());
         let wrong_schema = s.replacen(&format!("{ROOM_SETTINGS_SCHEMA}|"), "999|", 1);
         assert!(MatchConfig::from_meta_string(&wrong_schema).is_none(), "schema 不符应拒绝");
-        // 带非空名次奖励
-        let mut mp = d.clone();
-        mp.place_rewards = vec![3, 2, 1];
-        let sp = mp.to_meta_string();
-        assert_eq!(MatchConfig::from_meta_string(&sp).unwrap(), mp, "名次奖励应往返");
     }
 
     /// 「自定义 N 项」徽章计数：默认配置为 0；改任一高级设置即 +1；基础赛制项不计。
@@ -1579,7 +1553,7 @@ mod tests {
         assert_eq!(c.non_default_setting_count(), 2, "岩浆可关也应计入");
         c.pillar_mode = 0;
         assert_eq!(c.non_default_setting_count(), 3);
-        c.place_rewards = vec![3, 2, 1];
+        c.ice_mode = 0;
         assert_eq!(c.non_default_setting_count(), 4);
         // 改回默认值 → 计数回落
         c.gold_per_kill = MatchConfig::default().gold_per_kill;
