@@ -157,12 +157,6 @@ const STEAM_MAX_ROUNDS: u32 = 256;
 /// Steam 建房：默认总轮数（创建房间界面的初始值，与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_ROUNDS: u32 = 3;
-/// Steam 建房：局间准备时间（秒）的最小值。
-#[cfg(feature = "steam")]
-const STEAM_MIN_LEARN_SECS: u32 = 8;
-/// Steam 建房：局间准备时间（秒）的最大值。
-#[cfg(feature = "steam")]
-const STEAM_MAX_LEARN_SECS: u32 = 256;
 /// Steam 建房：局间准备时间（秒）默认值（与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_LEARN_SECS: u32 = 20;
@@ -202,13 +196,6 @@ fn solo_world_and_meta() -> (game_core::world::World, game_core::meta::MatchStat
     (w, m)
 }
 
-/// R 键可循环的基础回血档位（098c `-C9` 是常量式，故用档位而非输入框）。
-#[cfg(feature = "steam")]
-const STEAM_REGEN_CHOICES: [f64; 6] = [0.5, 0.0, 0.25, 0.75, 1.0, 2.0];
-/// Steam 建房：名次奖励默认输入（单数字 = 第一名奖励，自动按 0.6 比例递减到 0；
-/// 也可输入逗号分隔档位 `30,20,10` 手动精确控制）。
-#[cfg(feature = "steam")]
-const STEAM_DEFAULT_PLACE_REWARD: &str = "30";
 /// Steam 建房：名次奖励默认第一名金额（配合自动递减）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_PLACE_FIRST: i32 = 30;
@@ -304,10 +291,6 @@ enum SteamLobbyPending {
 #[cfg(feature = "steam")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum TextField {
-    /// 建房界面：房间名。
-    CreateName,
-    /// 建房界面：备注。
-    CreateNote,
     /// 房间设置编辑器（`O`）：当前行的自定义输入（房名/备注/数值）。
     CfgCustom,
 }
@@ -521,15 +504,6 @@ struct Game {
     /// Steam：是否处于「房间列表」界面（浏览公开大厅，方向键选中+回车加入 / R 刷新 / Q 返回）。
     #[cfg(feature = "steam")]
     steam_lobby_list: bool,
-    /// Steam 建房设置：房间名当前输入。
-    #[cfg(feature = "steam")]
-    steam_create_name: String,
-    /// Steam 建房设置：备注当前输入（可空）。
-    #[cfg(feature = "steam")]
-    steam_create_note: String,
-    /// Steam 建房设置：当前聚焦字段（0=房间名，1=备注，2=人数）。
-    #[cfg(feature = "steam")]
-    steam_create_focus: usize,
     /// Steam：房间列表（缓存的公开大厅信息，供浏览选房）。
     #[cfg(feature = "steam")]
     steam_list_lobbies: Vec<net_steam::session::LobbyInfo>,
@@ -631,46 +605,6 @@ struct Game {
     menu_selection: usize,
     /// 主菜单底部提示行（如「局域网需命令行启动」），拾取局域网项后显示，避免只 eprintln 用户看不到。
     menu_hint: String,
-    /// Steam 建房设置：总轮数（1..=STEAM_MAX_ROUNDS）。
-    #[cfg(feature = "steam")]
-    steam_create_rounds: u32,
-    /// Steam 建房设置：玩家人数输入缓冲（字符串编辑，支持 Backspace 逐位删）。
-    #[cfg(feature = "steam")]
-    steam_create_players_buf: String,
-    /// Steam 建房设置：总轮数输入缓冲（字符串编辑，支持 Backspace 逐位删）。
-    #[cfg(feature = "steam")]
-    steam_create_rounds_buf: String,
-    /// Steam 建房设置：局间准备时间（秒，STEAM_MIN_LEARN_SECS..=STEAM_MAX_LEARN_SECS）。
-    #[cfg(feature = "steam")]
-    steam_create_learn: u32,
-    /// Steam 建房设置：局间准备时间输入缓冲（字符串编辑，支持 Backspace 逐位删）。
-    #[cfg(feature = "steam")]
-    steam_create_learn_buf: String,
-    /// Steam 建房设置：开局初始金币（0..=STEAM_MAX_GOLD）。
-    #[cfg(feature = "steam")]
-    steam_create_starting_gold: i32,
-    /// Steam 建房设置：开局初始金币输入缓冲。
-    #[cfg(feature = "steam")]
-    steam_create_starting_gold_buf: String,
-    /// Steam 建房设置：每轮固定金币（参与奖，0..=STEAM_MAX_GOLD）。
-    #[cfg(feature = "steam")]
-    steam_create_gold_per_round: i32,
-    /// Steam 建房设置：每轮固定金币输入缓冲。
-    #[cfg(feature = "steam")]
-    steam_create_gold_per_round_buf: String,
-    /// Steam 建房设置：名次奖励输入（单个数字 = 第一名，自动按 0.6 递减到 0；
-    /// 或逗号分隔手动档位，如 "30,20,10"）。
-    #[cfg(feature = "steam")]
-    steam_create_place_buf: String,
-    /// Steam 建房设置：解析后的名次奖励档位（索引 = 名次-1）。
-    #[cfg(feature = "steam")]
-    steam_create_place: Vec<i32>,
-    /// Steam 建房设置：游戏模式（098c nn：1 轮次/2 死亡竞赛/3 化身/4 国王/5 最后生还）。
-    #[cfg(feature = "steam")]
-    steam_create_mode: u8,
-    /// 建房时选择的基础回血（HP/s）。
-    #[cfg(feature = "steam")]
-    steam_create_regen: f64,
     /// 当前场次局间准备时间（秒；host 建房设定 / client 从大厅元数据读取，两端一致）。
     #[cfg(feature = "steam")]
     match_learn_secs: u32,
@@ -1103,12 +1037,6 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_lobby_list: false,
             #[cfg(feature = "steam")]
-            steam_create_name: "我的房间".to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_note: String::new(),
-            #[cfg(feature = "steam")]
-            steam_create_focus: 0,
-            #[cfg(feature = "steam")]
             steam_list_lobbies: Vec::new(),
             #[cfg(feature = "steam")]
             steam_list_all: Vec::new(),
@@ -1196,33 +1124,22 @@ impl Game {
             pre_game_timer: PRE_GAME_TIMEOUT_SECS,
             menu_selection: 0,
             menu_hint: String::new(),
-            #[cfg(feature = "steam")]
-            steam_create_rounds: STEAM_DEFAULT_ROUNDS,
-            #[cfg(feature = "steam")]
-            steam_create_players_buf: STEAM_DEFAULT_PLAYERS.to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_rounds_buf: STEAM_DEFAULT_ROUNDS.to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_learn: STEAM_DEFAULT_LEARN_SECS,
-            #[cfg(feature = "steam")]
-            steam_create_learn_buf: STEAM_DEFAULT_LEARN_SECS.to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_starting_gold: STEAM_DEFAULT_STARTING_GOLD,
-            #[cfg(feature = "steam")]
-            steam_create_starting_gold_buf: STEAM_DEFAULT_STARTING_GOLD.to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_gold_per_round: STEAM_DEFAULT_GOLD_PER_ROUND,
-            #[cfg(feature = "steam")]
-            steam_create_gold_per_round_buf: STEAM_DEFAULT_GOLD_PER_ROUND.to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_place_buf: STEAM_DEFAULT_PLACE_REWARD.to_string(),
-            #[cfg(feature = "steam")]
-            steam_create_place: auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST),
-            #[cfg(feature = "steam")]
-            steam_create_mode: init_mode.max(1),
-            #[cfg(feature = "steam")]
-            steam_create_regen: STEAM_DEFAULT_REGEN,
             match_mode: init_mode,
+            // Steam 建房/对局统一真值源：初始化时带上命令行设定（`--mode`/`--regen` 等），
+            // 建房时 `steam_create_confirm` 直接采用本配置。
+            #[cfg(feature = "steam")]
+            match_cfg: game_core::meta::MatchConfig {
+                game_mode: init_mode,
+                base_regen: init_regen,
+                team_count: if init_mode == 4 { 2 } else { 1 },
+                total_rounds: init_rounds,
+                learn_time_secs: init_learn_secs as f64,
+                gold_per_round: init_gold_per_round,
+                starting_gold: init_starting_gold,
+                place_rewards: init_place_rewards.clone(),
+                ..Default::default()
+            },
+            #[cfg(not(feature = "steam"))]
             match_cfg: game_core::meta::MatchConfig { game_mode: init_mode, ..Default::default() },
             #[cfg(feature = "steam")]
             steam_cfg_seen: None,
@@ -5638,13 +5555,6 @@ impl Game {
                 None
             };
         }
-        if self.steam_lobby_create {
-            return match self.steam_create_focus {
-                0 => Some(TextField::CreateName),
-                1 => Some(TextField::CreateNote),
-                _ => None,
-            };
-        }
         None
     }
 
@@ -5652,8 +5562,6 @@ impl Game {
     #[cfg(feature = "steam")]
     fn text_buffer_mut(&mut self, f: TextField) -> Option<&mut String> {
         match f {
-            TextField::CreateName => Some(&mut self.steam_create_name),
-            TextField::CreateNote => Some(&mut self.steam_create_note),
             TextField::CfgCustom => self.room_cfg_input.as_mut(),
         }
     }
@@ -6272,27 +6180,16 @@ impl Game {
         match sel {
             0 => {
                 eprintln!("[menu] Steam -> create-lobby setup");
-                // 进入建房设置：重置字段；默认房间名用「昵称的房间」（若昵称已知）。
+                // 进入建房设置：默认房间名用「昵称的房间」（若昵称已知）。所有可改项都在
+                // 统一设置编辑器里改（`match_cfg` + `room_meta`），这里只初始化默认值。
                 let disp = self.steam_my_display_name.clone();
-                self.steam_create_name = if disp.is_empty() {
+                self.room_meta.name = if disp.is_empty() {
                     "我的房间".to_string()
                 } else {
                     format!("{disp}的房间")
                 };
-                self.steam_create_note = String::new();
-                self.steam_create_focus = 0;
-                self.steam_create_regen = STEAM_DEFAULT_REGEN;
-                self.steam_create_rounds = STEAM_DEFAULT_ROUNDS;
-                self.steam_create_players_buf = STEAM_DEFAULT_PLAYERS.to_string();
-                self.steam_create_rounds_buf = STEAM_DEFAULT_ROUNDS.to_string();
-                self.steam_create_learn = STEAM_DEFAULT_LEARN_SECS;
-                self.steam_create_learn_buf = STEAM_DEFAULT_LEARN_SECS.to_string();
-                self.steam_create_starting_gold = STEAM_DEFAULT_STARTING_GOLD;
-                self.steam_create_starting_gold_buf = STEAM_DEFAULT_STARTING_GOLD.to_string();
-                self.steam_create_gold_per_round = STEAM_DEFAULT_GOLD_PER_ROUND;
-                self.steam_create_gold_per_round_buf = STEAM_DEFAULT_GOLD_PER_ROUND.to_string();
-                self.steam_create_place_buf = STEAM_DEFAULT_PLACE_REWARD.to_string();
-                self.steam_create_place = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
+                self.room_meta.note = String::new();
+                self.room_meta.player_limit = STEAM_DEFAULT_PLAYERS as u32;
                 // **统一设置界面**（第 2/3 步）：`H` 不再进"旧建房界面"，而是打开设置编辑器的
                 // **创建模式** —— 与房内 `O` 是同一个界面，只是模式不同。
                 self.steam_lobby_create = true; // 仍标记"处于建房流程"（绘制/输入走创建模式）
@@ -6300,14 +6197,6 @@ impl Game {
                 self.room_cfg_edit = true;
                 self.room_cfg_group = settings_ui::Group::Room;
                 self.room_cfg_row = 0;
-                self.room_meta.name = self.steam_create_name.clone();
-                self.room_meta.note = self.steam_create_note.clone();
-                self.room_meta.player_limit = self
-                    .steam_create_players_buf
-                    .trim()
-                    .parse::<u32>()
-                    .unwrap_or(STEAM_DEFAULT_PLAYERS as u32)
-                    .clamp(2, STEAM_MAX_PLAYERS as u32);
             }
             1 => {
                 eprintln!("[menu] Steam -> join lobby list");
@@ -6610,211 +6499,13 @@ impl Game {
         );
     }
 
-    /// 建房设置界面输入：四个字段（房间名/备注/人数）。
-    /// - ↑/↓ 或 Tab 切换字段；在文本字段可输入 ascii+空格+常用标点、Backspace 删末字符；人数字段 `+`/`-` 或直接输数字（2..=STEAM_MAX_PLAYERS）。
-    /// - 回车=创建房间（用现有 steam_sess 建厅+写房间元数据）；Q=放弃返回大厅主界面。
+    /// 创建模式输入：**统一设置编辑器独占输入**。
+    ///
+    /// 编辑器里的回车 = 建房（延迟到此处执行，避开 `ctx` 借用冲突）；Esc/O = 取消建房
+    /// （由 `room_cfg_editor_input` 处理）。旧的两列键盘表单已删除，见 `DEAD_CODE_CLEANUP.md` 段 3。
     #[cfg(feature = "steam")]
     fn steam_lobby_create_update(&mut self, ctx: &mut Context) {
-        use ggez::input::keyboard::Key;
-        use winit::keyboard::NamedKey;
-        let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
-        let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
-        let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
-        let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
-        // ── 房间设置编辑器（`O` 打开）：打开时**独占**输入，回车/Esc/O 关闭并重新发布设置串 ──
-        // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
-        // 否则同一帧"开→立刻关"，表现为"按 O 毫无反应"（曾如此）。
-        // 文本态（正在输入房名/备注）下 `O` 是普通字符，不打开编辑器。
-        let text_mode = self.text_focus().is_some();
-        let o_pressed = !text_mode && (just('o') || just('O'));
-        if o_pressed {
-            self.room_cfg_edit = !self.room_cfg_edit;
-            if !self.room_cfg_edit {
-                self.publish_room_cfg();
-            }
-        }
-        if self.room_cfg_edit && !o_pressed {
-            self.room_cfg_editor_input(ctx);
-            // 创建模式下，编辑器里的回车 = 建房（延迟到此处执行，避开 ctx 借用冲突）。
-            if std::mem::take(&mut self.create_confirm_pending) {
-                self.steam_create_confirm(ctx);
-            }
-            return; // 编辑器打开时不吃建房界面的其它按键
-        }
-        // M：循环切换游戏模式（1-5），建房时写入大厅元数据（与房间编辑界面 1-5 等价的前置入口）。
-        // 文本态下 M/R/Q 都是普通字符，让 `on_text_input` / ASCII 白名单处理，不触发快捷键。
-        if !text_mode && (just('m') || just('M')) {
-            self.steam_create_mode = if self.steam_create_mode >= 5 { 1 } else { self.steam_create_mode + 1 };
-        }
-        // R：循环切换基础回血档位（098c 主机常量 `-C9`）。
-        if !text_mode && (just('r') || just('R')) {
-            let i = STEAM_REGEN_CHOICES
-                .iter()
-                .position(|v| (v - self.steam_create_regen).abs() < 1e-9)
-                .map(|i| (i + 1) % STEAM_REGEN_CHOICES.len())
-                .unwrap_or(0);
-            self.steam_create_regen = STEAM_REGEN_CHOICES[i];
-        }
-        // 字段编号与两列布局：左列=0..3（房名/备注/人数/轮数），右列=4..7（准备/初始金币/每轮金币/名次奖励）。
-        // 二维方向键导航：↑↓ 同列上下移动，←→ 左右换列，Tab=↑（回退一格）。
-        const NUM_COLS: usize = 2;
-        const ROWS_PER_COL: usize = 4;
-        let cur_col = self.steam_create_focus / ROWS_PER_COL;
-        let cur_row = self.steam_create_focus % ROWS_PER_COL;
-        let (nc, nr) = if just_named(NamedKey::ArrowUp) || just_named(NamedKey::Tab) {
-            (cur_col, (cur_row + ROWS_PER_COL - 1) % ROWS_PER_COL)
-        } else if just_named(NamedKey::ArrowDown) {
-            (cur_col, (cur_row + 1) % ROWS_PER_COL)
-        } else if just_named(NamedKey::ArrowLeft) {
-            ((cur_col + NUM_COLS - 1) % NUM_COLS, cur_row)
-        } else if just_named(NamedKey::ArrowRight) {
-            ((cur_col + 1) % NUM_COLS, cur_row)
-        } else {
-            (cur_col, cur_row)
-        };
-        self.steam_create_focus = nc * ROWS_PER_COL + nr;
-        if !text_mode && (just('q') || just('Q')) {
-            self.steam_lobby_create = false; // 返回大厅主界面
-            return;
-        }
-        match self.steam_create_focus {
-            0 | 1 => {
-                // 文本字段：房名 / 备注。
-                if just_named(NamedKey::Backspace) {
-                    let buf = if self.steam_create_focus == 0 { &mut self.steam_create_name } else { &mut self.steam_create_note };
-                    buf.pop();
-                    return;
-                }
-                let buf = if self.steam_create_focus == 0 { &mut self.steam_create_name } else { &mut self.steam_create_note };
-                if buf.chars().count() >= TEXT_FIELD_MAX_CHARS {
-                    return;
-                }
-                // 可打印 ascii 字符（字母大小写/数字/空格/常用标点）。
-                // 本帧已由 IME 提交文本时不走 ASCII 白名单，避免同一物理键重复插入（C8）。
-                if !self.ime_composing
-                    && !ime_commit_suppresses_ascii(self.frame, self.last_ime_commit_frame)
-                {
-                    const CHARS: &str = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.(),;:!?'\"-_#@%&*+=/";
-                    for c in CHARS.chars() {
-                        if just(c) {
-                            buf.push(c);
-                            return;
-                        }
-                    }
-                }
-            }
-            2 => {
-                // 人数字段：数字输入 + Backspace 逐位删 + +/- 步进（2..=STEAM_MAX_PLAYERS）。
-                if just('+') {
-                    let v = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32);
-                    self.steam_create_players_buf = (v as i64 + 1).clamp(2, STEAM_MAX_PLAYERS as i64).to_string();
-                } else if just('-') {
-                    let v = parse_num(&self.steam_create_players_buf, STEAM_DEFAULT_PLAYERS as u32);
-                    self.steam_create_players_buf = (v as i64 - 1).max(2).to_string();
-                } else if just_named(NamedKey::Backspace) {
-                    self.steam_create_players_buf.pop();
-                } else {
-                    for d in '0'..='9' {
-                        if just(d) && self.steam_create_players_buf.len() < 3 {
-                            self.steam_create_players_buf.push(d);
-                        }
-                    }
-                }
-            }
-            3 => {
-                // 轮数字段：数字输入 + Backspace 逐位删 + +/- 步进（1..=STEAM_MAX_ROUNDS）。
-                if just('+') {
-                    let v = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS);
-                    self.steam_create_rounds_buf = (v as i64 + 1).clamp(1, STEAM_MAX_ROUNDS as i64).to_string();
-                } else if just('-') {
-                    let v = parse_num(&self.steam_create_rounds_buf, STEAM_DEFAULT_ROUNDS);
-                    self.steam_create_rounds_buf = (v as i64 - 1).max(1).to_string();
-                } else if just_named(NamedKey::Backspace) {
-                    self.steam_create_rounds_buf.pop();
-                } else {
-                    for d in '0'..='9' {
-                        if just(d) && self.steam_create_rounds_buf.len() < 4 {
-                            self.steam_create_rounds_buf.push(d);
-                        }
-                    }
-                }
-            }
-            4 => {
-                // 局间准备时间字段：数字输入 + Backspace 逐位删 + +/- 步进（STEAM_MIN_LEARN_SECS..=STEAM_MAX_LEARN_SECS）。
-                if just('+') {
-                    let v = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS);
-                    self.steam_create_learn_buf = (v as i64 + 1).clamp(STEAM_MIN_LEARN_SECS as i64, STEAM_MAX_LEARN_SECS as i64).to_string();
-                } else if just('-') {
-                    let v = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS);
-                    self.steam_create_learn_buf = (v as i64 - 1).max(STEAM_MIN_LEARN_SECS as i64).to_string();
-                } else if just_named(NamedKey::Backspace) {
-                    self.steam_create_learn_buf.pop();
-                } else {
-                    for d in '0'..='9' {
-                        if just(d) && self.steam_create_learn_buf.len() < 4 {
-                            self.steam_create_learn_buf.push(d);
-                        }
-                    }
-                }
-            }
-            5 | 6 => {
-                // 金币数字字段：初始金币(5) / 每轮金币(6)。0..=STEAM_MAX_GOLD。
-                let target = if self.steam_create_focus == 5 { "start" } else { "round" };
-                let clamp_gold = |v: i32| v.clamp(0, STEAM_MAX_GOLD);
-                let set = |buf: &mut String, v: i32| { *buf = clamp_gold(v).to_string(); };
-                if just('+') {
-                    if target == "start" {
-                        let v = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD);
-                        set(&mut self.steam_create_starting_gold_buf, v + 10);
-                    } else {
-                        let v = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND);
-                        set(&mut self.steam_create_gold_per_round_buf, v + 10);
-                    }
-                } else if just('-') {
-                    if target == "start" {
-                        let v = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD);
-                        set(&mut self.steam_create_starting_gold_buf, v - 10);
-                    } else {
-                        let v = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND);
-                        set(&mut self.steam_create_gold_per_round_buf, v - 10);
-                    }
-                } else if just_named(NamedKey::Backspace) {
-                    let buf = if target == "start" { &mut self.steam_create_starting_gold_buf } else { &mut self.steam_create_gold_per_round_buf };
-                    buf.pop();
-                } else {
-                    let buf = if target == "start" { &mut self.steam_create_starting_gold_buf } else { &mut self.steam_create_gold_per_round_buf };
-                    if buf.len() < 5 {
-                        for d in '0'..='9' {
-                            if just(d) {
-                                buf.push(d);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            7 => {
-                // 名次奖励字段：输单个数字（第一名，自动递减）或逗号分隔手动档位（如 30,20,10）。数字 + 逗号输入。
-                if just_named(NamedKey::Backspace) {
-                    self.steam_create_place_buf.pop();
-                    return;
-                }
-                if self.steam_create_place_buf.len() < 64 {
-                    for c in [',', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] {
-                        if just(c) {
-                            self.steam_create_place_buf.push(c);
-                            return;
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-        // 回车=创建房间（从编辑缓冲解析出最终值；空缓冲回退默认）。
-        if just_named(NamedKey::Enter) || just('\r') {
-            self.create_confirm_pending = true;
-        }
-        // 鼠标「创建房间」与本帧回车：都在这里执行（`ctx` 的按键闭包借用已结束）。
+        self.room_cfg_editor_input(ctx);
         if std::mem::take(&mut self.create_confirm_pending) {
             self.steam_create_confirm(ctx);
         }
@@ -6828,31 +6519,29 @@ impl Game {
     fn steam_create_confirm(&mut self, ctx: &mut Context) {
         {
             // 统一模型：建房只认 `room_meta`（房名/备注/人数）与 `match_cfg`（其余全部设置）——
-            // 它们由统一编辑器与 `publish_room_cfg` 维护，是唯一真值源。这里**不再**读旧的
-            // `steam_create_*` 文本缓冲（那会让编辑器里的改动被建房默认值覆盖）。
+            // 它们由统一编辑器与 `publish_room_cfg` 维护，是唯一真值源。
             let players = self
                 .room_meta
                 .player_limit
                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
-            let rounds = self.match_cfg.total_rounds.clamp(1, STEAM_MAX_ROUNDS);
-            let learn = (self.match_cfg.between_rounds_time_secs.round() as i64)
-                .clamp(STEAM_MIN_LEARN_SECS as i64, STEAM_MAX_LEARN_SECS as i64)
-                as u32;
-            let starting_gold = self.match_cfg.starting_gold.clamp(0, STEAM_MAX_GOLD);
-            let gold_per_round = self.match_cfg.gold_per_round.clamp(0, STEAM_MAX_GOLD);
-            // 回写建房流程使用的标量字段（`finish_enter_steam_mode` 仍读这些）。
-            self.steam_create_name = self.room_meta.name.clone();
-            self.steam_create_note = self.room_meta.note.clone();
-            self.steam_create_rounds = rounds;
-            self.steam_create_learn = learn;
-            self.steam_create_starting_gold = starting_gold;
-            self.steam_create_gold_per_round = gold_per_round;
-            self.steam_create_place = self.match_cfg.place_rewards.clone();
+            // 把 `match_cfg` 同步到本端建房期标量（`finish_enter_steam_mode` 读这些）。
+            self.match_mode = self.match_cfg.game_mode;
             self.match_regen = self.match_cfg.base_regen;
-            self.match_mode = self.match_cfg.game_mode; // 建房时把模式写入 host_set_mode
+            self.match_rounds = self.match_cfg.total_rounds.clamp(1, STEAM_MAX_ROUNDS);
+            self.match_learn_secs = self.match_cfg.between_rounds_time_secs.round() as u32;
+            self.match_starting_gold = self.match_cfg.starting_gold.clamp(0, STEAM_MAX_GOLD);
+            self.match_gold_per_round = self.match_cfg.gold_per_round.clamp(0, STEAM_MAX_GOLD);
+            self.match_place_rewards = self.match_cfg.place_rewards.clone();
             let name = self.room_meta.name.clone();
             let note = self.room_meta.note.clone();
-            eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_per_round={gold_per_round} place={:?} name='{name}' note='{note}'", self.steam_create_place);
+            eprintln!(
+                "[steam] create lobby: players={players} rounds={} learn={}s starting_gold={} gold_per_round={} place={:?} name='{name}' note='{note}'",
+                self.match_rounds,
+                self.match_learn_secs,
+                self.match_starting_gold,
+                self.match_gold_per_round,
+                self.match_place_rewards
+            );
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
             self.steam_list_requested = false;
@@ -6974,7 +6663,7 @@ impl Game {
     /// 从主菜单进入 Steam 大厅模式（S12 异步）：只发起建厅/加入（`start_*`），
     /// 真正「进房」由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 完成、再调 `finish_enter_steam_mode` 落地
     /// （建 lockstep / 世界 / 战绩）。`is_host`=创建大厅，否则加入；`players` 仅 host 用；
-    /// `room_name`/`room_note` 现为兼容保留（落地时改读 `self.steam_create_*`）。
+    /// `room_name`/`room_note` 参数已废弃（落地时改读 `self.room_meta`，见 `finish_enter_steam_mode`）。
     #[cfg(feature = "steam")]
     fn enter_steam_mode(&mut self, ctx: &mut Context, is_host: bool, players: u8, _room_name: Option<&str>, _room_note: Option<&str>) {
         let kind = if is_host {
@@ -7080,25 +6769,23 @@ impl Game {
             let n: usize;
             match kind {
                 SteamLobbyPending::Host { players } => {
-                    sess.host_set_room_info(Some(self.steam_create_name.as_str()), Some(self.steam_create_note.as_str()))?;
+                    sess.host_set_room_info(
+                        Some(self.room_meta.name.as_str()),
+                        Some(self.room_meta.note.as_str()),
+                    )?;
                     // 写入联机兼容版本：加入者/房间列表据此过滤不同版本的游戏（避免 desync）。
                     sess.host_set_version(game_core::PROTOCOL_VERSION)?;
-                    sess.host_set_rounds(self.steam_create_rounds)?;
-                    sess.host_set_learn(self.steam_create_learn)?;
-                    sess.host_set_starting_gold(self.steam_create_starting_gold)?;
-                    sess.host_set_gold_per_round(self.steam_create_gold_per_round)?;
-                    sess.host_set_place_reward(&self.steam_create_place)?;
+                    sess.host_set_rounds(self.match_rounds)?;
+                    sess.host_set_learn(self.match_learn_secs)?;
+                    sess.host_set_starting_gold(self.match_starting_gold)?;
+                    sess.host_set_gold_per_round(self.match_gold_per_round)?;
+                    sess.host_set_place_reward(&self.match_place_rewards)?;
                     sess.host_set_mode(self.match_mode)?;
-                    sess.host_set_regen(self.steam_create_regen)?;
+                    sess.host_set_regen(self.match_regen)?;
                     // 房间设置整体写入（单键）；任何改动都会替换该键，供加入者整体对齐。
                     self.match_cfg.game_mode = self.match_mode;
-                    self.match_cfg.base_regen = self.steam_create_regen;
+                    self.match_cfg.base_regen = self.match_regen;
                     sess.host_set_cfg(&self.match_cfg.to_meta_string())?;
-                    self.match_rounds = self.steam_create_rounds;
-                    self.match_learn_secs = self.steam_create_learn;
-                    self.match_starting_gold = self.steam_create_starting_gold;
-                    self.match_gold_per_round = self.steam_create_gold_per_round;
-                    self.match_place_rewards = self.steam_create_place.clone();
                     sess.prepare_transport()?;
                     self.steam_my_index = sess.my_slot();
                     self.steam_my_id = sess.transport.steam_id();

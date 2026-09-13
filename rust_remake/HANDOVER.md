@@ -61,8 +61,9 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      / `create_dispatch` + 鼠标命中块（净 −207 行）。`layout.rs` 遗留表单项暂 `#[allow(dead_code)]`，待段 2 删。
    - ⬜ **段 2**：✅ 已完成（删 `steam_room_edit*` / `draw_steam_room_edit` / `steam_edit_*`、`Screen::RoomEdit`；
      同步改 `on_text_input`/`keys.rs`/`source_scan_tests`；顺手修 `world_ser.rs` mojibake 注释）。
-   - ⬜ **段 3（已评估/部分实施）**：S3-1 已完成（建房改读 `room_meta`+`match_cfg`，修好编辑器设置被旧缓冲覆盖）；
-     S3-2/3/4（瘦身 `steam_lobby_create_update`、删 `steam_create_*` 字段/缓冲）待做；计划见 `DEAD_CODE_CLEANUP.md`。
+   - ☑ **段 3 完成**（S3-1~S3-4）：旧建房键盘表单 + `steam_create_*` 字段全部删除，创建模式改为统一设置编辑器独占输入；
+     `steam_create_confirm`/`finish_enter_steam_mode` 只读 `room_meta`+`match_cfg`/`match_*`（修好了编辑器设置被旧缓冲覆盖）。
+     ⚠️ 待双机实测“建房后客户端收到的大厅参数一致”。详见 `DEAD_CODE_CLEANUP.md`。
    - **做法**：一次一个可编译单元；`edit` 工具按精确文本删（不再用行号脚本）；每段跑门禁 + 记录。
 4. **房间设置与 098c 设置对话框的剩余对齐**：`-league` / `-no reward` 模式开关
 5. `R017` 的小遗漏：`I004` 持有者击退减免按 +3 级计（`JASS_AUDIT_098c.md`）

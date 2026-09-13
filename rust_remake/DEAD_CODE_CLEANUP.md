@@ -88,22 +88,24 @@
   `starting_gold`/`gold_per_round`/`place_rewards`/`game_mode`/`base_regen`）；不再读任何 `steam_create_*_buf`。
   同时把房名/备注与上述标量回写 `steam_create_name/note/rounds/learn/starting_gold/gold_per_round/place`，
   使 `finish_enter_steam_mode`（仍读这些）自然拿到编辑器后的值——**本步不删字段**，风险可控。
-- **S3-2**：删 `steam_lobby_create_update` 的 O toggle + focus 表单 + M/R/Q/Enter 分支（改为上面的 4 行）。
-- **S3-3**：删 `steam_create_*` 字段+初始化、`steam_lobby_act(0)` 里对应赋值（改为 `room_meta`/`match_cfg` 默认）、
-  `TextField::CreateName/CreateNote` + 两处分支；逐个确认 `STEAM_DEFAULT_*`/`STEAM_MIN_*` 是否还有其他使用者（若无则一并删）。
-- **S3-4**：清注释/`#[cfg]`，更新 `HANDOVER.md`/本文档。
+- **S3-2 ✅ 已完成**：`steam_lobby_create_update` 瘦身为「委托 `room_cfg_editor_input` + 处理 `create_confirm_pending`」；
+  去掉 O toggle、focus 0..7 表单、M/R/Q/Enter 分支（取消建房交给编辑器的 Esc/O）。源码扫描测试 `create_screen_delegates_only_to_the_editor` 守护。
+- **S3-3 ✅ 已完成**：删 `steam_create_*` 全部字段/初始化、`TextField::CreateName/CreateNote` 及 `text_focus`/`text_buffer_mut` 分支；
+  `finish_enter_steam_mode` 改读 `room_meta` + `match_*`；`steam_lobby_act(0)` 只设 `room_meta` 默认；
+  `match_cfg` 初始化带上命令行设定（`--mode/--regen` 等，cfg 分 Steam/非 Steam）；删除 4 个无用常量
+  （`STEAM_MIN/MAX_LEARN_SECS`、`STEAM_REGEN_CHOICES`、`STEAM_DEFAULT_PLACE_REWARD`）。
+- **S3-4 ✅ 已完成**：更新 `HANDOVER.md`/本文档。
 
-#### 风险与验证
+#### 风险与验证（待执行）
 - **必须双机实测**：`H` 建房 → 编辑器里改经济/时长/名次/模式/回血 → 回车建房 → 看客户端收到的大厅元数据/`room_cfg` 是否一致。
 - 建议抽一个**纯函数**（如 `build_match_cfg(room_meta, match_cfg) -> (u8, MatchConfig)`）并加单测，把“建房只读这两处”变成可测契约。
 - 关注 `create_confirm_pending` 与 `steam_lobby_create` 的时序（编辑器回车置 pending → 回调 confirm）。
 - 回归：`cargo test --workspace` + 两套 clippy；源码扫描测试（CREATE-BRANCH 仍应画 `draw_room_cfg_editor`，不受影响）。
 
 #### 状态
-- ☑ **S3-1 已完成**：`steam_create_confirm` 只读 `room_meta`+`match_cfg`（编译/测试绿）。
-- ⬜ **S3-2 待做**：瘦身 `steam_lobby_create_update`（去 O toggle + focus 表单）。
-- ⬜ **S3-3 待做**：删 `steam_create_*` 字段/缓冲 + `TextField::CreateName/CreateNote`。
-- ⬜ **S3-4 待做**：清注释/`#[cfg]` + 更新文档。
+- ☑ **S3-1~S3-4 全部完成**：段 3 结束。创建模式输入完全收编到统一设置编辑器；
+  `steam_create_*` 字段/缓冲已全部删除；`steam_create_confirm`/`finish_enter_steam_mode` 只认 `room_meta`+`match_cfg`/`match_*`。
+- ⚠️ **仍待双机实测**：`H` 建房 → 编辑器里改设置 → 回车建房 → 客户端收到的大厅参数应一致。
 
 ### 不予清理（有意保留）
 - `keys::Screen` / `keymap()`：文档 + 表内守护。
@@ -116,4 +118,7 @@
 - 段 2 完成（2026-09-13）：见上；并顺手修了 `world_ser.rs` 的 mojibake 注释。
 - 段 3 评估完成（2026-09-13）：见上；**含一个真 bug（编辑器设置被旧缓冲覆盖）**。
 - 段 3 **S3-1 完成**（2026-09-13）：`steam_create_confirm` 改读 `room_meta`+`match_cfg`，并把房名/备注与标量回写，
-  修好了“编辑器改的经济/时长/名次/模式/回血/房名被建房默认值覆盖”。S3-2/3/4 待下轮。
+  修好了“编辑器改的经济/时长/名次/模式/回血/房名被建房默认值覆盖”。
+- 段 3 **S3-2/S3-3/S3-4 完成**（2026-09-13）：旧建房键盘表单/`steam_create_*` 字段/`TextField::CreateName/CreateNote` 全部删除；
+  `finish_enter_steam_mode` 改读 `room_meta`+`match_*`；删 4 个无用常量。段 3 结束。
+  ⚠️ 待双机实测。

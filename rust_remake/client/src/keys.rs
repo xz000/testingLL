@@ -283,26 +283,30 @@ mod source_scan_tests {
             .unwrap_or_else(|| panic!("源码中找不到 {needle:?}（可能被重构改名，请同步本测试）"))
     }
 
-    /// 回归①（`O` 开→立刻关）：建房界面里，编辑器分支**内部不得再判 `O`**。
+    /// 回归①（`O` 开→立刻关）+ 段 3：创建模式输入已收编到统一编辑器。
     ///
-    /// 曾因"外层 `O` 切换开 → 内层又判 `O` 关闭"导致编辑器永远打不开。
-    /// 现在的结构：外层用 `o_pressed` 切换一次；进入编辑器分支的条件里带 `!o_pressed`，
-    /// 且该分支内不再出现 `'o'` / `"o"` 的按键判定。
+    /// 旧的两列键盘表单与"外层 `O` 切换"已删除；`steam_lobby_create_update` 只做
+    /// 「委托 `room_cfg_editor_input` + 处理 `create_confirm_pending`」，
+    /// 不得再出现独立的 O/方向键/字段缓冲判定（否则会与编辑器抢输入）。
     #[test]
-    fn create_screen_does_not_handle_o_twice() {
+    fn create_screen_delegates_only_to_the_editor() {
         let start = idx("fn steam_lobby_create_update");
         let after = &SRC[start..];
-        let guard = after
-            .find("if self.room_cfg_edit && !o_pressed")
-            .expect("建房界面的编辑器分支应带 `!o_pressed` 守卫（防止同帧开→关）");
-        let tail = &after[guard..];
-        // 该分支（到函数末尾）内不应再有 O 键判定。
-        let body_end = tail.find("\n    }\n").unwrap_or(tail.len());
-        let body = &tail[..body_end];
-        for pat in ["just('o')", "just(\"o\")", "just(\"O\")"] {
+        let body_end = after.find("\n    }\n").unwrap_or(after.len());
+        let body = &after[..body_end];
+        assert!(
+            body.contains("self.room_cfg_editor_input(ctx)"),
+            "创建模式必须委托统一编辑器处理输入（room_cfg_editor_input）"
+        );
+        for pat in [
+            "steam_create_focus",
+            "just('o')",
+            "steam_create_players_buf",
+            "just('m')",
+        ] {
             assert!(
                 !body.contains(pat),
-                "编辑器分支内又出现了 `{pat}` —— 会与外面的开关重复处理（回归①）"
+                "旧建房表单残留 `{pat}`，会与统一编辑器抢输入（段 3 回归）"
             );
         }
     }
