@@ -3378,10 +3378,12 @@ impl Game {
         }
         let hint_line = if read_only {
             "[只读] A/Z/X/C/V 分组 · ↑↓ 选择 · Esc 或 O 关闭"
+        } else if self.room_cfg_input.is_some() {
+            "输入中：回车 提交 · Esc 取消本次输入（提交/取消后再按 Esc/O 关闭）"
         } else if self.room_cfg_create_mode {
             "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车 创建房间 · Esc 取消"
         } else {
-            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车/T 编辑当前行 · Esc 或 O 关闭"
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车/T 编辑当前行 · Esc/O 保存并关闭"
         };
         // `room_cfg_hint` 非空（如“只读”）时覆盖键位提示，给出一行反馈。
         let (shown, col) = if self.room_cfg_hint.is_empty() {
@@ -6496,6 +6498,13 @@ impl Game {
         // 模式另有独立元数据键（房间列表按模式筛选要读它）；设置串是权威来源。
         mm.set_lobby_data(lobby, net_steam::session::ROOM_MODE_KEY, &self.match_cfg.game_mode.to_string());
         mm.set_lobby_data(lobby, net_steam::session::ROOM_SETTINGS_KEY, &cfg);
+        // **房名/备注属大厅元数据，不在设置串里**：必须单独写同名键。
+        // 否则“在房间里改房名/备注”只改了本端 `room_meta`，客户端/房间列表读到的仍是建房那一刻的旧值（真 bug）。
+        // 与 `SteamSession::host_set_room_info` 保持同样修正：空白房名回退为“未命名房间”。
+        let rname = self.room_meta.name.trim();
+        let rname = if rname.is_empty() { "未命名房间" } else { rname };
+        mm.set_lobby_data(lobby, net_steam::session::ROOM_NAME_KEY, rname);
+        mm.set_lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY, self.room_meta.note.trim());
         eprintln!(
             "[cfg] 已发布房间设置（自定义 {} 项，{} 字节）→ 各端应取消准备",
             self.match_cfg.non_default_setting_count(),
