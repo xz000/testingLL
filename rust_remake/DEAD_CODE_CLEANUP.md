@@ -44,11 +44,63 @@
   - **顺手修乱码**：`game-core/src/world_ser.rs` 头部注释等 **5 行**是 GBK 误存的 mojibake（另有 1 行），已还原为正确中文。
   - 门禁：全绿（client 36 / game-core 234 / net 39 / net-steam 9；steam client 42）。
 
-### 段 3：旧建房键盘表单（高风险，待评估）
-`steam_lobby_create_update` 中 focus 0..7 的字段输入分支（房名/备注/人数/轮数/…），
-正常情况下 `room_cfg_edit` 恒为真、该分支不可达；但与 `steam_create_confirm` 读的缓冲耦合。
-- **建议**：先做段 1/2，段 3 单独评估后再动（或干脆保留）。
-- **状态**：⬜ 未评估
+### 段 3：旧建房键盘表单 + `steam_create_*` 缓冲（高风险）——**已评估，待下轮实施**
+
+#### 目标
+把「建房」彻底收编到**统一设置编辑器**：删掉不可达的旧表单、`steam_create_*` 镜像字段/缓冲，
+让建房只读 `room_meta` + `match_cfg`。
+
+#### 现状事实（已核实）
+1. **进入建房**：`steam_lobby_act(0)` 设 `steam_lobby_create=true`、`room_cfg_create_mode=true`、`room_cfg_edit=true`，
+   并把 `steam_create_*` 全部填默认，再从 `steam_create_name/note` 写 `room_meta`。
+2. **绘制**：`draw_menu` 的 CREATE-BRANCH 只要 `steam_lobby_create` 就画 `draw_room_cfg_editor`（与 `room_cfg_edit` 无关）。
+3. **输入**：`steam_lobby_create_update` 顶部用 `O` **切换** `room_cfg_edit`；仅当 `room_cfg_edit && !o_pressed`
+   才调 `room_cfg_editor_input`；否则落入 **focus 0..7 的旧表单**（房名/备注/人数/轮数/准备/初始金/每轮金/名次）。
+4. **确认**：`steam_create_confirm` 目前：`players/rounds` 取 `room_meta/match_cfg`；但
+   `learn/starting_gold/gold_per_round/place` 仍取 **`steam_create_*` 缓冲**，再写回 `steam_create_*` 标量；
+   且 `match_regen = steam_create_regen`、`match_mode = steam_create_mode`。
+5. **host 建厅**：`finish_enter_steam_mode` Host 分支用 `steam_create_name/note/rounds/learn/starting_gold/
+   gold_per_round/place/regen` 写大厅元数据，并把它们回写 `match_*`。
+
+#### 已发现的问题（这一步不只是清死码，还要修 bug）
+- **编辑器设置被旧缓冲覆盖**：在创建模式里改「经济/时长/名次/模式/回血」是改 `match_cfg`，
+  但建房时 `steam_create_confirm` / `finish_enter_steam_mode` 又用 **`steam_create_*` 默认缓冲**覆写
+  `match_mode/match_regen` 与大厅元数据 → **编辑器里改的这些可能不生效**（与注释“一律取 match_cfg”相矛盾）。
+- **创建模式按 `O` 会把编辑器卡死**：顶部 O 切换把 `room_cfg_edit` 置 false，但 CREATE-BRANCH 仍画编辑器，
+  而 `room_cfg_editor_input` 又因 `!o_pressed` 不被调用 → 屏幕有编辑器但不吃键（旧表单接键，但它已无绘制）。
+
+#### 目标终态
+- `steam_lobby_create_update` 缩为：
+  ```rust
+  fn steam_lobby_create_update(&mut self, ctx: &mut Context) {
+      self.room_cfg_editor_input(ctx);   // 统一编辑器独占输入；其回车=建房
+      if std::mem::take(&mut self.create_confirm_pending) { self.steam_create_confirm(ctx); }
+  }
+  ```
+  （**去掉**顶层 O toggle 与 M/R/Q/焦点/字段表单；取消建房交给编辑器的 `Esc`/`O`，已在 `room_cfg_editor_input` 中实现。）
+- `steam_create_confirm` 只读 `room_meta` + `match_cfg`，不读任何 `steam_create_*`。
+- `finish_enter_steam_mode` Host 分支只读 `room_meta` + `match_cfg`（不再读 `steam_create_*`）。
+- 删除 `steam_create_*` 字段/缓冲/标量、`Text::CreateName/CreateNote` 变体与 `text_focus`/`text_buffer_mut` 分支。
+
+#### 迁移步骤（每步可独立编译/提交）
+- **S3-1（修 bug，先做）**：`steam_create_confirm` 改为：
+  `players=room_meta.player_limit`、其余全部取 `match_cfg`（`total_rounds`/`between_rounds_time_secs` 或 `learn_time_secs` 按语义定、
+  `starting_gold`/`gold_per_round`/`place_rewards`/`game_mode`/`base_regen`）；`match_mode=match_cfg.game_mode`、
+  `match_regen=match_cfg.base_regen`。同步把 `finish_enter_steam_mode` Host 分支改为读 `room_meta`+`match_cfg`（或已回写的 `match_*`）。
+  > 这一步就修好了“编辑器设置被覆盖”，且**不删**任何字段，风险可控，可先上。
+- **S3-2**：删 `steam_lobby_create_update` 的 O toggle + focus 表单 + M/R/Q/Enter 分支（改为上面的 4 行）。
+- **S3-3**：删 `steam_create_*` 字段+初始化、`steam_lobby_act(0)` 里对应赋值（改为 `room_meta`/`match_cfg` 默认）、
+  `TextField::CreateName/CreateNote` + 两处分支；逐个确认 `STEAM_DEFAULT_*`/`STEAM_MIN_*` 是否还有其他使用者（若无则一并删）。
+- **S3-4**：清注释/`#[cfg]`，更新 `HANDOVER.md`/本文档。
+
+#### 风险与验证
+- **必须双机实测**：`H` 建房 → 编辑器里改经济/时长/名次/模式/回血 → 回车建房 → 看客户端收到的大厅元数据/`room_cfg` 是否一致。
+- 建议抽一个**纯函数**（如 `build_match_cfg(room_meta, match_cfg) -> (u8, MatchConfig)`）并加单测，把“建房只读这两处”变成可测契约。
+- 关注 `create_confirm_pending` 与 `steam_lobby_create` 的时序（编辑器回车置 pending → 回调 confirm）。
+- 回归：`cargo test --workspace` + 两套 clippy；源码扫描测试（CREATE-BRANCH 仍应画 `draw_room_cfg_editor`，不受影响）。
+
+#### 状态
+- ⬜ **已评估，下轮实施**（建议先单独做 S3-1，因为它是**真 bug** 且不删字段）。
 
 ### 不予清理（有意保留）
 - `keys::Screen` / `keymap()`：文档 + 表内守护。
@@ -59,4 +111,4 @@
 ## 记录
 - 段 1 完成（2026-09-13）：见上。
 - 段 2 完成（2026-09-13）：见上；并顺手修了 `world_ser.rs` 的 mojibake 注释。
-- 下一步：段 3（旧建房键盘表单）待评估；或其他主线待办。
+- 段 3 评估完成（2026-09-13）：见上；**含一个真 bug（编辑器设置被旧缓冲覆盖）**，建议下轮先做 S3-1。
