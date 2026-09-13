@@ -17,6 +17,10 @@ pub enum FxKind {
     HitFlash,
     /// 命中火花：从命中点散开的实心小点。
     Spark,
+    /// 扩张圆环（死亡 / 爆炸）。
+    Ring,
+    /// 残影：原位置的半透明实心圆（死亡瞬间）。
+    Afterimage,
 }
 
 /// 一个特效实例。`life`/`max_life` 决定进度；`radius` 为世界单位基准半径。
@@ -91,6 +95,20 @@ impl FxSystem {
                 FxKind::Spark => {
                     // 小点随进度收缩并淡出。
                     let r = (f.radius * t * scale).max(0.5);
+                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x, y }, r, 0.5, c)?;
+                    canvas.draw(&dot, DrawParam::new());
+                }
+                FxKind::Ring => {
+                    // 半径向外扩张，线宽渐细。
+                    let grow = f.radius * (0.5 + (1.0 - t) * 1.5);
+                    let w = (1.0 + t * 3.0).max(1.0);
+                    let ring =
+                        Mesh::new_circle(&ctx.gfx, DrawMode::stroke(w), Point2 { x, y }, (grow * scale).max(2.0), 0.5, c)?;
+                    canvas.draw(&ring, DrawParam::new());
+                }
+                FxKind::Afterimage => {
+                    // 实心圆随进度微缩。
+                    let r = (f.radius * (0.6 + t * 0.4) * scale).max(1.0);
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x, y }, r, 0.5, c)?;
                     canvas.draw(&dot, DrawParam::new());
                 }
