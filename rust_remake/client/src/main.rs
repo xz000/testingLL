@@ -285,26 +285,6 @@ enum AppState {
     SteamJoin { lobby_id: Option<u64> },
 }
 
-/// 进行中的 Steam 大厅操作类型（S12：帧驱动异步，避免在游戏线程 `std::thread::sleep` 忙等）。
-/// 建房界面的可点击动作（键鼠共用；绘制时登记命中、点击时派发）。
-///
-/// **过渡状态（2026-09-12）**：旧建房界面已被"统一设置编辑器（创建模式）"取代，
-/// 本枚举与 `draw_steam_create_lobby` 暂时保留但不再调用，属第 6 步待清理的死代码。
-#[allow(dead_code)]
-#[cfg(feature = "steam")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum CreateAction {
-    /// 点击字段 → 聚焦。
-    Focus(u8),
-    /// 点击字段右侧 `−`/`+` → 步进（`dir = -1/+1`）。
-    Step(u8, i32),
-    /// 点击「房间设置」徽章 → 打开设置编辑器（等价 `O`）。
-    OpenSettings,
-    /// 点击「创建房间」（等价回车）。
-    Create,
-    /// 点击「取消」（等价 `Q`）。
-    Cancel,
-}
 
 /// `enter_steam_mode` / CLI 启动只发起操作（`start_*`）并记下类型，真正「进房」由 `update` 每帧
 /// `run_callbacks` 后 `tick_lobby` 完成、再调用 `finish_enter_steam_mode` 落地（建 lockstep/世界/战绩）。
@@ -747,10 +727,6 @@ struct Game {
     /// 非创建模式即**编辑模式**（建房后，关闭时发布、人数只读）。
     #[cfg(feature = "steam")]
     room_cfg_create_mode: bool,
-    /// 建房界面的**命中注册表**（绘制时登记、点击时派发；绘制与命中同源）。
-    /// 每帧绘制前清空，避免残留旧矩形导致"点到不存在的东西"。
-    #[cfg(feature = "steam")]
-    create_hitboxes: Vec<(graphics::Rect, CreateAction)>,
     /// 鼠标点了「创建房间」——延迟到本帧输入处理末尾再执行
     /// （`steam_create_confirm` 需要 `&mut ctx`，而按键闭包此刻还借着 `ctx`）。
     #[cfg(feature = "steam")]
@@ -1286,8 +1262,6 @@ impl Game {
             room_meta: settings_ui::RoomMeta::default(),
             #[cfg(feature = "steam")]
             room_cfg_create_mode: false,
-            #[cfg(feature = "steam")]
-            create_hitboxes: Vec::new(),
             #[cfg(feature = "steam")]
             create_confirm_pending: false,
             #[cfg(feature = "steam")]
@@ -6629,66 +6603,6 @@ impl Game {
         }
     }
 
-    /// 建房界面**字段步进**（`dir = -1/+1`）：鼠标 `−/+` 与键盘 `+/-` 共用同一套边界，
-    /// 避免两处各写一份边界而慢慢分叉（原先键盘就是这么写的）。
-    #[cfg(feature = "steam")]
-    fn create_step_field(&mut self, i: usize, dir: i32) {
-        let step = |buf: &mut String, fallback: i64, lo: i64, hi: i64| {
-            let v: i64 = buf.trim().parse().unwrap_or(fallback);
-            *buf = (v + dir as i64).clamp(lo, hi).to_string();
-        };
-        match i {
-            2 => step(
-                &mut self.steam_create_players_buf,
-                STEAM_DEFAULT_PLAYERS as i64,
-                2,
-                STEAM_MAX_PLAYERS as i64,
-            ),
-            3 => step(
-                &mut self.steam_create_rounds_buf,
-                STEAM_DEFAULT_ROUNDS as i64,
-                1,
-                STEAM_MAX_ROUNDS as i64,
-            ),
-            4 => step(
-                &mut self.steam_create_learn_buf,
-                STEAM_DEFAULT_LEARN_SECS as i64,
-                STEAM_MIN_LEARN_SECS as i64,
-                STEAM_MAX_LEARN_SECS as i64,
-            ),
-            5 => step(
-                &mut self.steam_create_starting_gold_buf,
-                STEAM_DEFAULT_STARTING_GOLD as i64,
-                0,
-                STEAM_MAX_GOLD as i64,
-            ),
-            6 => step(
-                &mut self.steam_create_gold_per_round_buf,
-                STEAM_DEFAULT_GOLD_PER_ROUND as i64,
-                0,
-                STEAM_MAX_GOLD as i64,
-            ),
-            _ => {} // 0/1 文本字段、7 名次奖励（逗号档位，不适合 +/-）
-        }
-    }
-
-    /// 建房界面**点击派发**（键鼠共用同一动作表）。
-    #[cfg(feature = "steam")]
-    fn create_dispatch(&mut self, act: CreateAction) {
-        match act {
-            CreateAction::Focus(i) => self.steam_create_focus = i as usize,
-            CreateAction::Step(i, dir) => {
-                self.create_step_field(i as usize, dir);
-                self.steam_create_focus = i as usize;
-            }
-            CreateAction::OpenSettings => self.room_cfg_edit = true,
-            CreateAction::Create => self.create_confirm_pending = true,
-            CreateAction::Cancel => {
-                self.steam_lobby_create = false; // 回大厅主界面
-            }
-        }
-    }
-
     /// 设置编辑器按键处理（建房界面与房间内**共用**）。
     ///
     /// 键位：
@@ -6988,19 +6902,6 @@ impl Game {
         let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
         let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
         // ── 房间设置编辑器（`O` 打开）：打开时**独占**输入，回车/Esc/O 关闭并重新发布设置串 ──
-        // 鼠标：左键点击字段 → 聚焦该字段（键鼠都支持；命中表由绘制阶段登记）。
-        if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
-            let m = ui::mouse_design(ctx);
-            if let Some((_, act)) = self
-                .create_hitboxes
-                .iter()
-                .find(|(r, _)| r.contains(m))
-                .copied()
-            {
-                eprintln!("[menu] 鼠标动作 {act:?}");
-                self.create_dispatch(act);
-            }
-        }
         // `O` **每帧只处理一次**：打开/关闭都由它切换。注意下面编辑器分支里**不能再判 `O`** ——
         // 否则同一帧"开→立刻关"，表现为"按 O 毫无反应"（曾如此）。
         // 文本态（正在输入房名/备注）下 `O` 是普通字符，不打开编辑器。
@@ -7787,177 +7688,6 @@ impl Game {
             draw_text(&mut canvas, ctx, &self.menu_hint, 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh * 0.85 }, true)?;
         }
         canvas.finish(ctx)?;
-        Ok(())
-    }
-
-    /// 绘制「建房设置」界面：房间名 / 备注 / 人数 三字段，当前聚焦字段高亮。
-    #[cfg(feature = "steam")]
-    #[allow(dead_code)] // 已被统一编辑器的创建模式取代，待第 6 步删除
-    fn draw_steam_create_lobby(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
-        let cx = sw / 2.0;
-        draw_text(canvas, ctx, "创建房间", 36.0, layout::border_selected(), Point2 { x: cx, y: sh * 0.075 }, true)?;
-
-        // 只留**房间身份**类字段；经济/时长/名次奖励等一律由 `match_cfg`（按 `O` 编辑）负责 ——
-        // 之前这里重复了一份（准备时间/初始金币/每轮金币/名次奖励），两处设置同一件事容易不一致。
-        let labels = ["房间名", "备注", "玩家人数", "总轮数"];
-        let hints = [
-            "直接输入文字，Backspace 删除（支持中文输入法）",
-            "可留空；直接输入文字",
-            "+/− 步进，或直接输数字（2 ~ 64）",
-            "本场打几轮（1 ~ 50）；也可在 `O` 设置里改",
-        ];
-        let placeholders = ["（输入房间名）", "（可留空）", "（默认 2）", "（默认 3）"];
-        let vals = [
-            self.steam_create_name.clone(),
-            self.steam_create_note.clone(),
-            self.steam_create_players_buf.clone(),
-            self.steam_create_rounds_buf.clone(),
-        ];
-        // ── 版面：按 `layout::bands` 四带摆放，不再手工摆坐标 ──
-        // 起因：原先"聚焦字段下方各画一行提示"，第 4 行的提示会压到下一条信息（层次问题）。
-        // 现在：提示统一放**状态带**（只一行），键位说明放**提示带**（屏幕最底）。
-        let b = layout::bands(sw, sh);
-        self.create_hitboxes.clear(); // 绘制即重建命中表（绘制与命中同源）
-        // 顶部/状态带的「房间设置」徽章也可点（等价 `O`）：状态带位置由骨架给出，这里先登记命中。
-        self.create_hitboxes.push((
-            graphics::Rect::new(cx - 150.0, b.status.y - 6.0, 300.0, 24.0),
-            CreateAction::OpenSettings,
-        ));
-        let mpos = ui::mouse_design(ctx);
-        // 尺寸取共享常量（与设置编辑器同一套视觉语言）。
-        let box_w = layout::FIELD_BOX_W;
-        let box_h = layout::FIELD_BOX_H;
-        let label_w = layout::FIELD_LABEL_W;
-        let col_w = label_w + box_w;
-        let gap = 56.0;
-        let total_w = col_w * 2.0 + gap;
-        let left_col_left = cx - total_w / 2.0;
-        let right_col_left = left_col_left + col_w + gap;
-        // 4 行字段均分内容带（留出底部一行给"当前字段说明"）。
-        let rows = 2.0;
-        let row_h = (b.content.h - 34.0) / rows;
-        let y0 = b.content.y;
-        // 字段 → 列/行：左列 0..4（房名/备注/人数/轮数），右列 4..8（准备/初始金币/每轮金币/名次奖励）。
-        for i in 0..4 {
-            let col = i / 2;
-            let row = i % 2;
-            let total_left = if col == 0 { left_col_left } else { right_col_left };
-            let y = y0 + row as f32 * row_h;
-            let selected = i == self.steam_create_focus;
-            // 鼠标：字段框登记命中 + 悬停高亮（键鼠都支持）。
-            let field_rect = graphics::Rect::new(total_left + label_w, y, box_w, box_h);
-            self.create_hitboxes
-                .push((field_rect, CreateAction::Focus(i as u8)));
-            let hover = field_rect.contains(mpos);
-            let bg_col = if selected {
-                layout::bg_selected()
-            } else if hover {
-                layout::bg_hover()
-            } else {
-                layout::bg_normal()
-            };
-            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), field_rect, bg_col)?;
-            canvas.draw(&bg, graphics::DrawParam::new());
-            if selected || hover {
-                let bc = if selected { layout::border_selected() } else { layout::border_hover() };
-                let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(2.0), field_rect, bc)?;
-                canvas.draw(&border, graphics::DrawParam::new());
-            }
-            let label_col = if selected { layout::border_selected() } else { layout::text_normal() };
-            draw_text(canvas, ctx, labels[i], 22.0, label_col, Point2 { x: total_left + label_w / 2.0, y: y + box_h / 2.0 - 13.0 }, true)?;
-            let disp = if vals[i].is_empty() { placeholders[i].to_string() } else { vals[i].clone() };
-            let val_col = if vals[i].is_empty() { Color::from_rgb(120, 130, 150) } else { Color::WHITE };
-            draw_text(canvas, ctx, &disp, 19.0, val_col, Point2 { x: total_left + label_w + box_w / 2.0, y: y + box_h / 2.0 - 12.0 }, true)?;
-            // 数值字段（2..=6）右侧加 `−`/`+` 小按钮（鼠标调值；与键盘 +/- 共用 create_step_field 的边界）。
-            if (2..=6).contains(&i) {
-                let btn = 26.0;
-                for (k, (sym, dir)) in [("-", -1i32), ("+", 1i32)].iter().enumerate() {
-                    let br = graphics::Rect::new(
-                        field_rect.x + box_w + 6.0 + k as f32 * (btn + 4.0),
-                        y + (box_h - btn) / 2.0,
-                        btn,
-                        btn,
-                    );
-                    let on = br.contains(mpos);
-                    let bc = if on { layout::border_hover() } else { layout::bg_hover() };
-                    let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), br, bc)?;
-                    canvas.draw(&bg, graphics::DrawParam::new());
-                    draw_text(canvas, ctx, sym, 22.0, Color::from_rgb(220, 226, 238), Point2 { x: br.x + btn / 2.0, y: br.y + 1.0 }, true)?;
-                    self.create_hitboxes
-                        .push((br, CreateAction::Step(i as u8, *dir)));
-                }
-            }
-        }
-        // 内容带底：**当前字段**的说明（只一行，替换原先"每字段下方一行"的做法）。
-        let focus = self.steam_create_focus.min(3);
-        draw_text(
-            canvas, ctx,
-            &format!("▶ {}：{}", labels[focus], hints[focus]),
-            16.0, Color::from_rgb(150, 200, 255),
-            Point2 { x: cx, y: b.content.y + b.content.h - 22.0 }, true,
-        )?;
-        // 状态带：房间设置徽章（点 O 进设置编辑器）+ 模式/回血摘要。
-        let n = self.match_cfg.non_default_setting_count();
-        let badge = if n == 0 {
-            "默认（原版）".to_string()
-        } else {
-            format!("自定义 {n} 项")
-        };
-        let badge_col = if n == 0 {
-            layout::text_dim()
-        } else {
-            layout::text_custom()
-        };
-        ui::text_center(
-            canvas, ctx,
-            &format!("房间设置：{badge}   [O] 编辑"),
-            ui::theme::SMALL, badge_col, cx, b.status.y + 2.0,
-        )?;
-        ui::text_center(
-            canvas, ctx,
-            &format!(
-                "模式(M)：{}   ·   基础回血(R)：{} /s   ·   人数/轮数见左侧字段",
-                game_core::meta::MatchState::mode_name(self.steam_create_mode),
-                self.steam_create_regen
-            ),
-            ui::theme::SMALL, Color::from_rgb(150, 220, 180), cx, b.title.y + b.title.h - 26.0,
-        )?;
-        // 状态带：右侧按钮 [创建房间] / [取消]（鼠标可点；键盘仍是回车/Q）。
-        {
-            let bw = 150.0;
-            let bh = layout::ROW_H + 2.0;
-            let by = b.status.y - 9.0;
-            let bx = cx + 170.0;
-            for (k, (label, act)) in [
-                ("[创建房间]", CreateAction::Create),
-                ("[取消]", CreateAction::Cancel),
-            ]
-            .iter()
-            .enumerate()
-            {
-                let br = graphics::Rect::new(bx + k as f32 * (bw + 12.0), by, bw, bh);
-                let on = br.contains(mpos);
-                let primary = k == 0;
-                let bc = if on {
-                    if primary { layout::btn_primary_hover() } else { layout::btn_secondary_hover() }
-                } else if primary {
-                    layout::btn_primary()
-                } else {
-                    layout::btn_secondary()
-                };
-                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), br, bc)?;
-                canvas.draw(&bg, graphics::DrawParam::new());
-                ui::text_center(canvas, ctx, label, ui::theme::SMALL, Color::from_rgb(230, 236, 245), br.x + bw / 2.0, br.y + 6.0)?;
-                self.create_hitboxes.push((br, *act));
-            }
-        }
-        // 提示带（屏幕最底，永不与内容重叠）
-        ui::text_center(
-            canvas, ctx,
-            "↑↓←→ 切换字段 · 回车 创建房间 · M 模式 · R 回血 · O 房间设置 · Q 取消",
-            ui::theme::SMALL, Color::from_rgb(160, 200, 255), cx, b.hint.y + 4.0,
-        )?;
         Ok(())
     }
 

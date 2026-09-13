@@ -48,10 +48,15 @@ const HINT_BOTTOM: f32 = 0.98;
 // 此前各界面各自写 `Color::from_rgb(56, 66, 84)` 之类的字面量，改一处就会不一致。
 
 /// 列表/表单行高（设置编辑器行、房间列表行）。
+/// 注：旧建房/房间信息表单遗留；段 2 删掉最后一个表单界面后再一并移除。
+#[allow(dead_code)]
 pub const ROW_H: f32 = 28.0;
 /// 表单输入框尺寸与标签宽（建房界面字段）。
+#[allow(dead_code)]
 pub const FIELD_BOX_H: f32 = 44.0;
+#[allow(dead_code)]
 pub const FIELD_BOX_W: f32 = 300.0;
+#[allow(dead_code)]
 pub const FIELD_LABEL_W: f32 = 140.0;
 /// 表单字段的纵向间距（两列布局用）。
 pub const FIELD_GAP_Y: f32 = 34.0;
@@ -61,6 +66,7 @@ pub fn bg_normal() -> Color {
     Color::from_rgb(28, 32, 42)
 }
 /// 悬停底色（鼠标在本行上）。
+#[allow(dead_code)]
 pub fn bg_hover() -> Color {
     Color::from_rgb(38, 44, 56)
 }
@@ -73,22 +79,27 @@ pub fn border_selected() -> Color {
     Color::from_rgb(255, 210, 120)
 }
 /// 悬停描边（弱化）。
+#[allow(dead_code)]
 pub fn border_hover() -> Color {
     Color::from_rgb(90, 104, 126)
 }
 /// 主按钮底色（如 [创建房间]）。
+#[allow(dead_code)]
 pub fn btn_primary() -> Color {
     Color::from_rgb(42, 74, 52)
 }
 /// 主按钮悬停。
+#[allow(dead_code)]
 pub fn btn_primary_hover() -> Color {
     Color::from_rgb(70, 120, 80)
 }
 /// 次按钮底色（如 [取消]）。
+#[allow(dead_code)]
 pub fn btn_secondary() -> Color {
     Color::from_rgb(56, 46, 46)
 }
 /// 次按钮悬停。
+#[allow(dead_code)]
 pub fn btn_secondary_hover() -> Color {
     Color::from_rgb(90, 70, 70)
 }
