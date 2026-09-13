@@ -324,6 +324,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     }
     wu8(o, p.dash_active as u8);
     wvec(o, p.dash_vel);
+    wu8(o, p.burning as u8);
     match p.ricochet_pending {
         Some(v) => {
             wu8(o, 1);
@@ -453,6 +454,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let blink2_window = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
     let dash_active = u8at(b, p)? != 0;
     let dash_vel = vecat(b, p)?;
+    let burning = u8at(b, p)? != 0;
     let ricochet_pending = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
     let ricochet_kick = if u8at(b, p)? != 0 {
         Some(Kick {
@@ -531,6 +533,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.blink2_window = blink2_window;
     pl.dash_active = dash_active;
     pl.dash_vel = dash_vel;
+    pl.burning = burning;
     pl.ricochet_pending = ricochet_pending;
     pl.ricochet_kick = ricochet_kick;
     pl.ricochet_window = ricochet_window;

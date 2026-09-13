@@ -433,6 +433,8 @@ pub enum CombatEvent {
     Pancake { victim: u32, pos: Vec2 },
     /// 一次沉默 ≥ 3 个目标（098c `Silencer`）。
     Silencer { owner: u32, pos: Vec2 },
+    /// 燃烧冲刺（S012 A，`Hr`）撞到队友 → 熄灭（098c `lb`「Burn out」）。
+    Burnout { owner: u32, pos: Vec2 },
 }
 
 /// 确定性对局核心。
@@ -748,7 +750,15 @@ impl World {
         }
 
         // 5) 玩家之间的碰撞
-        resolve_player_collisions(&mut self.players, dt, self.damage_mult, self.knockback_mult);
+        let collision_events =
+            resolve_player_collisions(&mut self.players, dt, self.damage_mult, self.knockback_mult);
+        self.combat_events.extend(collision_events);
+        // 燃烧冲刺熄灭/结束（自然结束或被打断）时清 `burning`。
+        for p in self.players.iter_mut() {
+            if p.burning && p.control.is_none() && p.kick.is_none() {
+                p.burning = false;
+            }
+        }
         // 5b) 玩家与障碍（圆形柱子）的分离
         self.resolve_obstacles(dt);
 
@@ -3707,6 +3717,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 remaining: Fix64::from_num(dur_s),
                                 stop_on_hit: true, // 098c BA：命中即停（Q=S=U=w=0）
                             });
+                            // 098c `Hr`：S012 A 冲刺期间处于燃烧状态（撞队友 → Burnout）。
+                            p.burning = true;
                         }
                     }
                     crate::skill::W098bUtilKind::Swap => {
@@ -4684,7 +4696,8 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
 ///
 /// 伤害处理：若两球重叠较深（被挤压）则双方各受一定伤害，鼓励拉开距离。
 /// 位置修正按半径反比分配（更小的球退得更多），保证确定性与顺序无关地一致。
-fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fix64, knockback_mult: Fix64) {
+fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fix64, knockback_mult: Fix64) -> Vec<CombatEvent> {
+    let mut events: Vec<CombatEvent> = Vec::new();
     let n = players.len();
     for i in 0..n {
         for j in (i + 1)..n {
@@ -4793,6 +4806,7 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     if kick.stop_on_hit {
                         players[i].control = None;
                         players[i].cur_vel = Vec2::ZERO;
+                        players[i].burning = false;
                     }
                 }
                 if let Some(kick) = players[j].kick.take() {
@@ -4811,6 +4825,7 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     if kick.stop_on_hit {
                         players[j].control = None;
                         players[j].cur_vel = Vec2::ZERO;
+                        players[j].burning = false;
                     }
                 }
                 // 疾风步·隐身（B 形态）接触偷取生命：带 Windwalk buff 的一方撞到敌人，
@@ -4834,9 +4849,26 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                         players[j].windwalk_cd = Fix64::from_num(0.5);
                     }
                 }
+            } else {
+                // 同队接触：燃烧冲刺（S012 A，098c `Hr`）撞队友 → 「Burn out」（098c `lb`）：
+                // 对队友造成 `0.45×√(7+范围精通)` 伤害（`xi`=范围精通）；冲刺者熄火（清 Hr、停位移）。
+                for (burner, ally) in [(i, j), (j, i)] {
+                    if players[burner].burning && players[burner].alive && players[ally].alive {
+                        let xi = players[ally].mastery[1] as f64;
+                        let dmg = Fix64::from_num(0.45 * (7.0 + xi).sqrt());
+                        players[ally].hp = (players[ally].hp - players[ally].soak_boost(dmg)).max(Fix64::ZERO);
+                        players[ally].last_hit_by = Some(players[burner].id);
+                        players[burner].burning = false;
+                        players[burner].control = None;
+                        players[burner].cur_vel = Vec2::ZERO;
+                        events.push(CombatEvent::Burnout { owner: players[burner].id, pos: players[burner].pos });
+                        break;
+                    }
+                }
             }
         }
     }
+    events
 }
 
 #[cfg(test)]
@@ -6607,6 +6639,25 @@ mod tests {
         let none = vec![PlayerInput::default(); 4];
         v.step(none, Fix64::from_num(1.0 / 60.0));
         assert!(v.combat_events.is_empty(), "step 应清空上一帧表现事件");
+    }
+
+    #[test]
+    fn burnout_triggers_on_ally_contact_while_burning() {
+        // 098c `lb`：燃烧冲刺（Hr）撞到**同队**单位 → Burnout（熄火 + 对队友造成伤害）。
+        let mut w = World::new(2, 5);
+        w.players[0].team = 0;
+        w.players[1].team = 0;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].pos = Vec2::new(Fix64::from_num(1.0), Fix64::ZERO);
+        w.players[0].burning = true;
+        let hp1 = w.players[1].hp;
+        let evs = resolve_player_collisions(&mut w.players, Fix64::from_num(1.0 / 60.0), Fix64::ONE, Fix64::ONE);
+        assert!(
+            evs.iter().any(|e| matches!(e, CombatEvent::Burnout { .. })),
+            "同队接触应触发 Burnout 事件"
+        );
+        assert!(w.players[1].hp < hp1, "队友应受到 Burnout 伤害");
+        assert!(!w.players[0].burning, "Burnout 应熄灭燃烧状态");
     }
 
     #[test]
