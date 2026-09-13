@@ -32,13 +32,23 @@ pub struct Bands {
     pub hint: Rect,
 }
 
+// 注：四带骨架与表单间距属于「共享版面模型」；当前无生产者界面使用（旧建房/房间信息表单已删），
+// 保留供 UI_MASTER_PLAN 的统一版面 + 单测守卫。接入新界面时去掉 `#[allow(dead_code)]`。
+#[allow(dead_code)]
 const TITLE_TOP: f32 = 0.06;
+#[allow(dead_code)]
 const TITLE_BOTTOM: f32 = 0.20;
+#[allow(dead_code)]
 const CONTENT_TOP: f32 = 0.22;
+#[allow(dead_code)]
 const CONTENT_BOTTOM: f32 = 0.84;
+#[allow(dead_code)]
 const STATUS_TOP: f32 = 0.85;
+#[allow(dead_code)]
 const STATUS_BOTTOM: f32 = 0.89;
+#[allow(dead_code)]
 const HINT_TOP: f32 = 0.92;
+#[allow(dead_code)]
 const HINT_BOTTOM: f32 = 0.98;
 
 // ═══════════ 统一视觉常量（建房表单与设置列表共用） ═══════════
@@ -59,6 +69,7 @@ pub const FIELD_BOX_W: f32 = 300.0;
 #[allow(dead_code)]
 pub const FIELD_LABEL_W: f32 = 140.0;
 /// 表单字段的纵向间距（两列布局用）。
+#[allow(dead_code)]
 pub const FIELD_GAP_Y: f32 = 34.0;
 
 /// 普通行/输入框底色。
@@ -121,6 +132,7 @@ pub fn text_dim() -> Color {
 }
 
 /// 按屏幕尺寸算出四带。
+#[allow(dead_code)]
 pub fn bands(width: f32, height: f32) -> Bands {
     let r = |t: f32, b: f32| Rect::new(0.0, height * t, width, height * (b - t));
     Bands {

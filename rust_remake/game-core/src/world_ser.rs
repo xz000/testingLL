@@ -1,7 +1,7 @@
-﻿//! 纭畾鎬?World 搴忓垪鍖栵紙閲嶈繛蹇収 / 瀛樻。鐢級銆?
+﻿//! 确定性 World 序列化（重连快照 / 存档用）。
 //!
-//! 绾墜鍐欍€佸ぇ绔€侀暱搴﹀墠缂€锛岄€愬瓧娈佃鐩?World锛堝惈 Player / Caster / Projectile / Obstacle 绛夛級锛?
-//! 淇濊瘉 `to_bytes` 鈫?`from_bytes` 鍚庨€愪綅涓€鑷达紝渚涢噸杩炵閲嶅缓鏁村満 World 鍚庣户缁?lockstep銆?
+//! 纯手写、大端、长度前缀，逐字段覆盖 World（含 Player / Caster / Projectile / Obstacle 等）。
+//! 保证 `to_bytes` ↔ `from_bytes` 后逐位一致，供重连端重建整场 World 后继续 lockstep。
 
 use crate::fix::{Fix64, Vec2};
 use crate::player::{Buff, BuffKind, Cmd, Control, Kick, Player, SweepState, MAX_CMDS};
@@ -745,7 +745,7 @@ pub fn state_hash_bytes(bytes: &[u8]) -> u64 {
     h
 }
 
-/// World 搴忓垪鍖?鍙嶅簭鍒楄寲銆?
+/// World 序列化 / 反序列化。
 pub fn world_to_bytes(w: &World) -> Vec<u8> {
     let mut o = Vec::new();
     wfix(&mut o, w.arena_radius);
@@ -945,7 +945,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs), shrink_ring_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs), sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice })
 }
 
-/// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
+/// 序列化用的便捷接口：`World::to_bytes` / `from_bytes`（依赖本模块）。
 pub struct SerializeWorld;
 impl SerializeWorld {
     pub fn encode(w: &World) -> Vec<u8> {

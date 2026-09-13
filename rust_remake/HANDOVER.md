@@ -50,7 +50,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 319 项（client 37 / game-core 234 / net 39 / net-steam 9）；steam client 43 |
+| 测试基线 | 318 项（client 36 / game-core 234 / net 39 / net-steam 9）；steam client 42 |
 
 ## 四、待办（按建议优先级）
 
@@ -59,8 +59,8 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 3. **死代码清理**（详细分段见 `DEAD_CODE_CLEANUP.md`）：
    - ✅ **段 1**：已删旧建房界面 `draw_steam_create_lobby` / `CreateAction` / `create_hitboxes` / `create_step_field`
      / `create_dispatch` + 鼠标命中块（净 −207 行）。`layout.rs` 遗留表单项暂 `#[allow(dead_code)]`，待段 2 删。
-   - ⬜ **段 2**：旧 `E` 房间信息界面（`steam_room_edit*` / `draw_steam_room_edit` / `steam_edit_*`）——
-     需同步改 `on_text_input`/`keys.rs`:`Screen::RoomEdit`/`source_scan_tests` 两条测试。
+   - ⬜ **段 2**：✅ 已完成（删 `steam_room_edit*` / `draw_steam_room_edit` / `steam_edit_*`、`Screen::RoomEdit`；
+     同步改 `on_text_input`/`keys.rs`/`source_scan_tests`；顺手修 `world_ser.rs` mojibake 注释）。
    - ⬜ **段 3（待评估）**：旧建房键盘表单（与 `steam_create_confirm` 有耦合）。
    - **做法**：一次一个可编译单元；`edit` 工具按精确文本删（不再用行号脚本）；每段跑门禁 + 记录。
 4. **房间设置与 098c 设置对话框的剩余对齐**：`-league` / `-no reward` 模式开关
