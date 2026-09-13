@@ -50,7 +50,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 315 项（client 35 / game-core 233 / net 38 / net-steam 9）；steam client 41 |
+| 测试基线 | 316 项（client 36 / game-core 233 / net 38 / net-steam 9）；steam client 42 |
 
 ## 四、待办（按建议优先级）
 
@@ -67,7 +67,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    - ✅ **快照广播降频**：Steam host 每 30 帧只本地 `set_snapshot`（重连），广播降为每 150 帧（接管）；
      hash/snapshot 复用一份 `world_to_bytes`；接管取 seq 更新者（`newer_snapshot`）。
    - ⬜ host 固定节拍产帧 + 输入延迟（需协议改动 + 联机验证）；
-   - ⬜ client 收敛追赶（clamp accumulator + 单条输入 + 可选渲染插值，低风险）。
+   - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步；输入每次 update 至多一条（渲染插值未做，待联机实测后再定）。
 
 ## 五、文档索引（读哪个）
 
