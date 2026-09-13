@@ -80,3 +80,7 @@
   - 修复源码扫描测试在 **CRLF** 文件上 `find("\n    }")` 永不匹配 → `unwrap_or(剩余全文)` 导致的**假通过**：
     新增 `fn_body()`（兼容 CRLF/LF + 找不到闭合则 panic），修正全部 7 处函数体提取。
   - 新增回归测试 `editor_offers_save_and_discard`。
+- 2026-09-13：**按钮按键提示 + 房间列表两步式**：
+  - 编辑器按钮标出快捷键（`[创建房间 回车]`/`[取消 Esc]`/`[保存 O]`/`[不保存 Esc]`/`[关闭 Esc]`）。
+  - 房间列表：**点行=仅选中**（不再直接加入）；新增 `LobbyListAction::Join`，底部 `[回车 加入]`（主操作高亮）
+    或回车才加入。新增回归测试 `room_list_click_selects_not_joins`。

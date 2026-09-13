@@ -463,4 +463,28 @@ mod source_scan_tests {
             "打开编辑器时应记录 (match_cfg, room_meta) 快照"
         );
     }
+
+    /// 回归：房间列表「点行」必须是**仅选中**，加入要走「加入」按钮 / 回车（两步式）。
+    #[test]
+    fn room_list_click_selects_not_joins() {
+        let body = fn_body("fn steam_lobby_list_update");
+        assert!(
+            body.contains("LobbyListAction::Row(i) => m_select"),
+            "点行应只选中（m_select），不应直接加入"
+        );
+        assert!(
+            body.contains("LobbyListAction::Join => m_join"),
+            "应有独立的「加入」动作"
+        );
+        assert!(
+            body.contains("|| m_join") && body.contains("try_join_selected_lobby"),
+            "回车/加入按钮才调用 try_join_selected_lobby"
+        );
+        // 绘制：底部应有可点的「加入」按钮。
+        let draw = fn_body("fn draw_steam_lobby_list");
+        assert!(
+            draw.contains("LobbyListAction::Join"),
+            "房间列表应绘制可点的「加入」按钮"
+        );
+    }
 }
