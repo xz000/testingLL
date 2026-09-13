@@ -4830,10 +4830,6 @@ mod tests {
     fn d60(x: f64) -> Fix64 {
         Fix64::from_num(x * 60.0)
     }
-    /// 旧尺度半径 → war3 尺度（×16 = 16/1）。
-    fn r16(x: f64) -> Fix64 {
-        Fix64::from_num(x * 16.0)
-    }
     /// 距离语义的 near：期望与容差同为旧尺度，×60 后比较。
     fn near_d(a: Fix64, b: f64, tol: f64) -> bool {
         near(a, b * 60.0, tol * 60.0)
