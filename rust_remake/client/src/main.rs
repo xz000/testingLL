@@ -1792,22 +1792,30 @@ impl Game {
         let Some(id) = self.learn_shop_sel else { return };
         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
         let mut changed = false;
+        let mut cue: Option<audio::AudioCue> = None;
         if profile.items.contains(&id) {
             if profile.items.contains(&id) && profile.sell_item(id) {
                 eprintln!("[shop] 卖出 {}（+{} 金，余 {}）", id.def().name, id.def().sell, profile.gold);
                 changed = true;
+                cue = Some(audio::AudioCue::ShopSell);
             }
         } else {
             let slots = profile.inventory_slots();
             let owned = profile.items.iter().any(|it| it.def().family == id.def().family);
             if !owned && profile.items.len() >= slots {
                 eprintln!("[shop] 物品格已满（{slots}，背包研究可扩容）");
+                cue = Some(audio::AudioCue::UiError);
             } else if profile.buy_item(id) {
                 eprintln!("[shop] 购买 {}（-{} 金，余 {}）", id.def().name, id.def().cost, profile.gold);
                 changed = true;
+                cue = Some(audio::AudioCue::ShopBuy);
             } else {
                 eprintln!("[shop] {} 不可购买（需 {} 金，现有 {}）", id.def().name, id.def().cost, profile.gold);
+                cue = Some(audio::AudioCue::UiError);
             }
+        }
+        if let Some(c) = cue {
+            self.audio.play(c);
         }
         if changed {
             if let Some(p) = self.world.players.get_mut(me as usize) {
@@ -1824,7 +1832,8 @@ impl Game {
         let me = self.self_index();
         let Some(sel) = self.learn_growth_sel else { return };
         let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) else { return };
-        if profile.buy_mastery(sel) {
+        let ok = profile.buy_mastery(sel);
+        if ok {
             eprintln!("[learn] 精通 {sel} 已升级");
             if let Some(wp) = self.world.players.get_mut(me as usize) {
                 wp.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
@@ -1836,6 +1845,7 @@ impl Game {
                 game_core::meta::Mastery::CAPS[sel]
             );
         }
+        self.audio.play(if ok { audio::AudioCue::ShopUpgrade } else { audio::AudioCue::UiError });
     }
 
     /// 成长页：某精通当前等级。
@@ -2753,7 +2763,7 @@ impl Game {
                     let c = Color::from_rgb(ic.color[0], ic.color[1], ic.color[2]);
                     let cell_bd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), cell, c)?;
                     canvas.draw(&cell_bd, graphics::DrawParam::new());
-                    draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy + sz / 2.0 }, true)?;
+                    draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy - 2.0 }, true)?;
                 }
             }
         }
@@ -2769,6 +2779,25 @@ impl Game {
                 let v = Mesh::new_line(&ctx.gfx, &[Point2 { x: mx, y: my - s }, Point2 { x: mx, y: my + s }], 2.0, col)?;
                 canvas.draw(&h, graphics::DrawParam::new());
                 canvas.draw(&v, graphics::DrawParam::new());
+            }
+        }
+
+        // Shift 指令队列：为每个排队指令画编号标记（移动=绿环，施法=橙环）。
+        {
+            use game_core::player::Cmd;
+            for (idx, cmd) in self.queued_cmds.iter().enumerate() {
+                let (target, col) = match cmd {
+                    Cmd::Move(p) => (Some(*p), Color::from_rgba(140, 230, 160, 210)),
+                    Cmd::Cast(_, Some(p)) => (Some(*p), Color::from_rgba(255, 180, 90, 220)),
+                    Cmd::Cast(_, None) => (None, Color::from_rgba(255, 180, 90, 220)),
+                    Cmd::Stop => (None, Color::from_rgba(180, 180, 190, 200)),
+                };
+                let Some(t) = target else { continue };
+                let mx = t.x.to_num::<f32>() * self.scale + self.offset.x;
+                let my = t.y.to_num::<f32>() * self.scale + self.offset.y;
+                let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: mx, y: my }, 5.0, 0.5, col)?;
+                canvas.draw(&ring, graphics::DrawParam::new());
+                draw_text(&mut canvas, ctx, &format!("{}", idx + 1), 13.0, col, Point2 { x: mx, y: my - 20.0 }, true)?;
             }
         }
 
@@ -3873,6 +3902,8 @@ impl Game {
                     };
                     draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh - 116.0 }, true)?;
                 }
+                // 自身状态面板（Dota2 风格，左下）：生命 / 状态 / 施法
+                self.draw_self_status(canvas, ctx)?;
                 // 技能冷却 HUD：底部一排 8 个键位槽，显示绑定技能图标/名称 + 冷却遮罩
                 let self_idx = self.self_index();
                 if let (Some(me), Some(me_player)) = (
@@ -5036,6 +5067,66 @@ impl Game {
             draw_text(canvas, ctx, &b.text, 26.0, c, Point2 { x: sw / 2.0, y }, true)?;
             y += 34.0;
         }
+        Ok(())
+    }
+
+    /// HUD 自身状态面板（Dota2 风格，左下）：生命 + 状态图标 + 施法状态。
+    fn draw_self_status(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        use game_core::skill::{CastPhase, DefTable};
+        let me = self.self_index();
+        let Some(p) = self.world.players.get(me as usize) else { return Ok(()) };
+        if !p.alive {
+            return Ok(());
+        }
+        let (_, sh) = (ui::UI_W, ui::UI_H);
+        let x = 10.0;
+        let w = 250.0;
+        let h = 104.0;
+        let y = sh - h - 12.0;
+        let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(x, y, w, h), Color::from_rgba(10, 12, 18, 200))?;
+        canvas.draw(&bg, graphics::DrawParam::new());
+        let bd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), graphics::Rect::new(x, y, w, h), Color::from_rgba(90, 110, 140, 160))?;
+        canvas.draw(&bd, graphics::DrawParam::new());
+
+        // 生命条 + 数值
+        let ratio = (p.hp / p.max_hp).to_num::<f32>().clamp(0.0, 1.0);
+        let bar = graphics::Rect::new(x + 10.0, y + 26.0, w - 20.0, 14.0);
+        let bar_bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), bar, Color::from_rgba(28, 18, 22, 220))?;
+        canvas.draw(&bar_bg, graphics::DrawParam::new());
+        let bar_fg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(bar.x, bar.y, bar.w * ratio, bar.h), hp_color(ratio))?;
+        canvas.draw(&bar_fg, graphics::DrawParam::new());
+        ui::text_left(canvas, ctx, &format!("生命 {:.0} / {:.0}", p.hp.to_num::<f32>(), p.max_hp.to_num::<f32>()), 15.0, Color::WHITE, x + 12.0, y + 6.0)?;
+
+        // 状态图标行
+        ui::text_left(canvas, ctx, "状态", 14.0, Color::from_rgb(150, 165, 190), x + 10.0, y + 47.0)?;
+        let icons = active_status_icons(p);
+        let mut ix = x + 48.0;
+        let iy = y + 44.0;
+        for ic in &icons {
+            let cell = graphics::Rect::new(ix, iy, 20.0, 20.0);
+            let cb = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), cell, Color::from_rgba(12, 14, 20, 220))?;
+            canvas.draw(&cb, graphics::DrawParam::new());
+            let c = Color::from_rgb(ic.color[0], ic.color[1], ic.color[2]);
+            let cbd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), cell, c)?;
+            canvas.draw(&cbd, graphics::DrawParam::new());
+            draw_text(canvas, ctx, ic.label, 16.0, c, Point2 { x: ix + 10.0, y: iy + 1.0 }, true)?;
+            ix += 23.0;
+        }
+        if icons.is_empty() {
+            ui::text_left(canvas, ctx, "—", 14.0, Color::from_rgb(130, 140, 160), x + 48.0, y + 47.0)?;
+        }
+
+        // 施法状态（前摇/后摇）
+        let cast = match p.caster.phase() {
+            CastPhase::Windup { id, remaining, .. } => {
+                (format!("施法中 · {} {:.1}s", DefTable::neutral_name(id), remaining.to_num::<f32>()), Color::from_rgb(255, 200, 110))
+            }
+            CastPhase::Recovery { id, remaining } => {
+                (format!("收招 · {} {:.1}s", DefTable::neutral_name(id), remaining.to_num::<f32>()), Color::from_rgb(160, 200, 255))
+            }
+            CastPhase::Idle => ("待命".to_string(), Color::from_rgb(140, 150, 170)),
+        };
+        ui::text_left(canvas, ctx, &cast.0, 15.0, cast.1, x + 10.0, y + 75.0)?;
         Ok(())
     }
 }
