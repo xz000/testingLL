@@ -67,6 +67,29 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
 
 ---
 
+#### 0.5 基础模型：**098c 无普通攻击**；`hv[unit]` = 碰撞（接触）条件
+
+**重要结论**（2026-09-13 实证）：098c **没有自动/普通攻击**设定。技能状态之间的交互靠**单位碰撞**驱动：
+- 物理积分函数 `DA`（~8000+）在**两单位相碰**时，以 `nr`/`Vr` 为配对去
+  `TriggerClearConditions(Ge); TriggerAddCondition(Ge, hv[gX]); TriggerEvaluate(Ge)`（`8467-8545`）。
+- 各技能进入特殊状态时把**碰撞条件**写入 `hv[单位]`（例：`hv=ni`(`CA`) 由 S010A(`RB`)/S010B(`IB`)/S012A(`AB`) 设置，
+  `11877/11903/11962`；`hv=Ci`(`lb` Burnout) 在 `11263`）。
+- 另有自定义伤害类型（`wR(gX,45)` / `TI(...)`），再次说明「伤害」是自建碰撞系统，不是 War3 武器攻击。
+
+→ 所以我们把「技能状态交互」映射为**接触结算**是**正确基础**；此前把 `CA` 误写为「被攻击」已纠正。
+
+**受此影响的交互清单（都应归入「接触」）**：
+| 098c | 触发 | 我们 |
+|---|---|---|
+| `CA`（`ni`）`fr`/`Hr`/`Fr`+`gr` 分支 | 单位碰撞 | 招架已做 / `stealth_extra` 已做；`fr`/`Hr` 额外伤害分支未做（§2.2） |
+| `bA`（破隐一击） | 由 `CA` 调用（碰撞） | `stealth_extra`（碰撞内） |
+| `BA`（燃烧熄灭） | 由 `lb`/`CA`（碰撞） | Burnout（碰撞内） |
+| `lb`（Burnout） | `hv=Ci`（碰撞） | 已实现 |
+| 各技能 `hv=xx`（`9086/9462/10572/…`） | 单位碰撞的「命中回调」 | 以 `Projectile` 命中 / `resolve_player_collisions` 表达 |
+
+> 排查结论：我们的「无普通攻击 + 接触/弹体命中」框架与 098c 一致；
+> **未发现其它因“攻击”误设的地方**，唯一遗留是 `CA` 里 `fr`/`Hr` 的**接触额外伤害**（不影响播报）。
+
 ## 2. 真·副状态明细（缺口清单）
 
 ### 2.1 `Hr` — S012 A 燃烧冲刺（✅ **已实现 2026-09-13**）
@@ -82,7 +105,7 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
 - **已对齐**：`Fr` = 风步/隐身状态 ≈ `Player.windwalk_state` + `BuffKind::Stealth`；
   `fr` = S010 A 冲锋的同名隐身（我们 A 形态也挂 `Stealth` + 踢击窗口，测试 `s010_form_a_charge_vs_b_invisibility`）。
 - **未对齐**：
-  - `gr` = 「被击中时**刷新风步（招架）**」一次性标志。098c `CA`(7847)：`Fr[nr] and (not Fr[Vr]) and gr[nr]` → 重算 `Xr≤5`、刷新 `Fr`、`gr=false`、
+  - `gr` = 「与敌人接触时**刷新风步（招架）**」一次性标志。098c `CA`(7847)：`Fr[nr] and (not Fr[Vr]) and gr[nr]` → 重算 `Xr≤5`、刷新 `Fr`、`gr=false`、
     重排 `AA`(Xr) + `NA`(0.5s 格挡特效)。**我们未建**。
   - `CA`(7847) 接触伤害分支：`fr[nr]` → `4.6+.8*wr`；`Hr[nr]` → `5+.4*Wr`。
     我们 `resolve_player_collisions` 只做了 `stealth_extra`（远程精通门控追加一笔），**公式与 098c 分支不完全一致**。
@@ -96,7 +119,7 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
 | B | `IB` → `Fr`+`gr`（隐身，4×jn） | `W098bUtilKind::Windwalk`（`windwalk_state`/`Stealth`） |
 
 但 **B 形态机制不同**：
-- **098c B = 隐身 + 被攻击时「招架」**（`CA` 7847）：
+- **098c B = 隐身 + 与敌人接触时「招架」**（`CA` 7847）：
   `Fr[nr] and not Fr[Vr] and gr[nr]` → 刷新风步（`Xr≤5s`）、`gr=false`、调度 `NA`（**0.5s 后 `gr=true`**；`AA` 到时清 `Fr/gr`），
   并造成**互相击退**（`MI` 是击退非伤害，也不回血）：把攻击者推开 4.5、自己推开 2.25，均乘 `100/(100+gn)`；+ 0.5s 格挡特效。
 - **我们 B = 隐身 + 接触「吸血」**：`BuffKind::Windwalk(0.6+0.1L)`（`world.rs:3638`），
@@ -104,7 +127,7 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
   全文也搜不到 `0.6+0.1L` 这个值 → **应为 098b 遗留**，应删。
 - 结论：**招架（`gr`）已补**；**吸血保留**（有意差异，098c 无）。
 - **已实现**：`Player.parry_ready`/`parry_cd`（入快照）——触发点在我们这里取**与敌人接触**
-  （098c `CA` 是近战/接触命中处理，`hv[unit]=ni` 由 `RB/IB/AB` 设置；我们无自动攻击，故用「接触」等效），
+  （098c `CA` 是单位碰撞条件 `hv=ni`，见 §0.5；我们无自动攻击，故用「接触」等效），
   风步 B 接触敌人且 `parry_ready` 时：刷新风步（≤5s）、`parry_cd=0.5s`（到时恢复，即 `NA`）、
   双方互相击退（`push_knockback`：（攻击者 4.5、自己 2.25）×`100/(100+gn)`）。
   单测 `windwalk_parry_refreshes_and_knocks_back` / `windwalk_parry_ignores_allies_and_non_windwalkers` /
