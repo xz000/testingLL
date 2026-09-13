@@ -70,3 +70,7 @@
 - 2026-09-13：**U1 房间列表已完成**（主题化 + 滚动 + 悬停 + 右详情 + 鼠标可点；`LobbyListAction`/`lobby_hitboxes`/`steam_list_scroll`）。
   `layout::bg_selected`/`text_normal` 暂无人用 → 标 `#[allow(dead_code)]`（与同文件其他共享项一致）。
 - 2026-09-13：**U2/U3/U4 已完成**（大厅主界面行列表 + 鼠标；连接中面板；共享 `ui::paint_row`）。
+- 2026-09-13：**设置编辑器鼠标支持**（此前只能键盘）：`draw_room_cfg_editor` 登记 `room_cfg_hitboxes`
+  （`RoomCfgAction::{Group,Row,Close}`，行/页签有 hover），`room_cfg_editor_input` 派发；点行=`mouse_activate`
+  （行级激活，**不**等同建房回车），点「关闭」= Esc/O；房内顶部「房间设置」徐章也可点击打开。
+  新增源码级回归测试 `settings_editor_supports_mouse`。
