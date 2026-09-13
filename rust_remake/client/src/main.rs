@@ -2782,7 +2782,7 @@ impl Game {
             }
         }
 
-        // Shift 指令队列（从**模拟侧权威队列**读）：为每条待执行指令画编号标记（移动=绿环，施法=橙环）。
+        // Shift 指令队列（从**模拟侧权威队列**读）：为每条待执行指令画编号标记（移动=青环，施法=橙环）。
         {
             use game_core::player::Cmd;
             let me_idx = self.self_index() as usize;
@@ -2790,7 +2790,7 @@ impl Game {
                 for idx in 0..qp.cmd_len {
                     let Some(cmd) = qp.cmd_at(idx) else { continue };
                     let (target, col) = match cmd {
-                        Cmd::Move(p) => (Some(p), Color::from_rgba(140, 230, 160, 210)),
+                        Cmd::Move(p) => (Some(p), Color::from_rgba(120, 220, 240, 220)),
                         Cmd::Cast(_, Some(p)) => (Some(p), Color::from_rgba(255, 180, 90, 220)),
                         Cmd::Cast(_, None) => (None, Color::from_rgba(255, 180, 90, 220)),
                         Cmd::Stop => (None, Color::from_rgba(180, 180, 190, 200)),
