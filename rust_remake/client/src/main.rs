@@ -1916,7 +1916,7 @@ impl Game {
     fn stage_world_for_participants(&mut self, p: usize, seed: u64) {
         self.world = game_core::world::World::new(p.max(1) as u32, seed);
         self.world.configure_mode(self.match_mode);
-        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
         self.world.configure_regen(self.match_regen);
         self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
         self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
@@ -4676,7 +4676,7 @@ impl event::EventHandler for Game {
                         self.menu_hint.clear();
                         let (mut w, m) = solo_world_and_meta();
                         // 单机路径同样应用房间设置（与建房/入房共用同一份 `MatchConfig`）。
-                        w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                        w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
                         w.configure_regen(self.match_cfg.base_regen);
                         w.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
                         w.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
@@ -5945,7 +5945,7 @@ impl Game {
                             self.match_regen = self.match_cfg.base_regen;
                             self.world.configure_regen(self.match_cfg.base_regen);
                             self.world
-                                .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                                .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
                             self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
                             self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
                             // **客户端也要更新 meta.config**：否则房间面板/对局信息读的是旧快照，
@@ -6477,7 +6477,7 @@ impl Game {
         // 世界层同样立即生效（回血/收缩）。
         self.world.configure_regen(self.match_cfg.base_regen);
         self.world
-            .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+            .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
         self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
         self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
         // **关键**：`meta.config` 是开局时的快照，不更新它 → 进行中的对局与 HUD
@@ -6846,7 +6846,7 @@ impl Game {
                         self.match_mode = self.match_cfg.game_mode;
                         self.match_regen = self.match_cfg.base_regen;
                         self.world.configure_regen(self.match_cfg.base_regen);
-                        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+                        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
                         self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
                         self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
                         eprintln!("[cfg] 已对齐 host 房间设置（{} 字节）", self.match_cfg.to_meta_string().len());
@@ -6876,7 +6876,7 @@ impl Game {
             }
             self.world = game_core::world::World::new(n.max(1) as u32, seed);
             self.world.configure_mode(self.match_mode);
-        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
+        self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
             self.world.configure_regen(self.match_regen);
             self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
             self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);

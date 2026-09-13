@@ -45,8 +45,9 @@ pub struct Balance {
     pub start_radius: f64,
     /// 每环宽度（098c 地形格 128 码；U3 修正：SetTerrainType area=直径格数 → 半径 64 码/环）。
     pub ring_width: f64,
-    /// 每环缩圈时长基数（098c wo=10s，-C 6；实际间隔 = wo×√存活数）。
-    pub shrink_ring_secs: f64,
+    /// 098c `wo`（「Shrink Time per player」，默认 10，`-C 6`）：**收缩开局延迟**默认基准（实际 ×√存活）。
+    /// 注：我已改为连续总时长模型（`shrink_total_secs`）；此值仅作延迟默认。
+    pub shrink_delay_secs: f64,
     /// 缩圈速度（半径减少/秒）。比例口径与原占位一致（1.75%/s × 640）；
     /// 098b 受 war3 地形限制只能整块消失，连续缩圈为本重制版刻意设计（用户确认）。
     pub shrink_speed: f64,
@@ -81,7 +82,7 @@ impl Balance {
             // 098c 场地半径按人数：start_radius_for(n) = (9+n/2 环)×64 码；此值为缺省（1 人 9 环 = 576）。
             start_radius: 576.0,
             ring_width: 64.0,
-            shrink_ring_secs: 10.0,
+            shrink_delay_secs: 10.0,
             shrink_speed: 11.2,
             out_hurt: 9.0,
             overlap_damage: 2.0,
@@ -110,7 +111,7 @@ mod tests {
         assert_eq!(a.max_hp, 100.0);
         assert_eq!(a.default_radius, 30.0);
         assert_eq!(a.start_radius, 576.0, "缺省（1 人）应为 9 环×64（U3 半径修正）");
-        assert_eq!((a.ring_width, a.shrink_ring_secs), (64.0, 10.0), "098c EA：64 码/环、wo=10s");
+        assert_eq!((a.ring_width, a.shrink_delay_secs), (64.0, 10.0), "098c EA：64 码/环、wo=10s（我们仅作延迟默认）");
         assert_eq!(a.shrink_speed, 11.2);
         assert_eq!(a.out_hurt, 9.0);
     }

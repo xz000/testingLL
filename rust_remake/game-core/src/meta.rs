@@ -54,10 +54,9 @@ pub struct MatchConfig {
     pub between_rounds_time_secs: f64,
     /// **收缩延迟秒数**：开局静止期，之后开始连续收缩。
     pub shrink_delay_secs: f64,
-    /// **每环收缩时长**（098c 设置 6 `wo`，默认 10）：越过一环所需秒数。
-    /// 实际速率 = `环宽 / (本值 × √存活人数)`，且**开局延迟**同样为 `本值 × √存活人数`
-    /// —— 与 098c `TimerStart(Sa, wo*SquareRoot(sn), ...)` 同构（`sn` = 本轮存活人数）。
-    pub shrink_ring_secs: f64,
+    /// **收缩总时长（秒）**：满员（本轮初始存活）时从开始收缩到缩到 0 的总时长（**连续收缩，非按环**）。
+    /// 实际总时长 = `本值 × √(存活 / 初始)`；默认 90（≈098c 1 人局 9 环 × `wo`=10s）。
+    pub shrink_total_secs: f64,
     /// **柱子**：0=关闭 1=随机 2=每局必有（098c 设置 8 `Po`，0=随机）。
     pub pillar_mode: u8,
     /// **冰面**：0=关闭 1=随机 2=每局必有（098c 把"关冰"绑在 `-league` 里，我们独立出来）。
@@ -84,7 +83,7 @@ pub struct MatchConfig {
 
 /// 房间设置串（用于大厅元数据/同步）的**模式版本**：字段顺序或语义变更时必须递增，
 /// 否则不同版本的端会按各自的顺序解析同一串。
-pub const ROOM_SETTINGS_SCHEMA: u32 = 3;
+pub const ROOM_SETTINGS_SCHEMA: u32 = 4;
 
 impl MatchConfig {
     /// 序列化为**紧凑单行**（大厅元数据用；`|` 分隔、`;` 分隔列表）。
@@ -111,7 +110,7 @@ impl MatchConfig {
             f(self.knockback_mult),
             f(self.lava_damage_mult),
             f(self.shrink_delay_secs),
-            f(self.shrink_ring_secs),
+            f(self.shrink_total_secs),
             self.pillar_mode.to_string(),
             self.ice_mode.to_string(),
             self.arena_shape.to_string(),
@@ -155,7 +154,7 @@ impl MatchConfig {
             knockback_mult: num(14)?,
             lava_damage_mult: num(15)?,
             shrink_delay_secs: num(16)?,
-            shrink_ring_secs: num(17)?,
+            shrink_total_secs: num(17)?,
             pillar_mode: byte(18)?,
             ice_mode: byte(19)?,
             arena_shape: byte(20)?,
@@ -185,7 +184,7 @@ impl MatchConfig {
             first_round_time_secs,
             between_rounds_time_secs,
             shrink_delay_secs,
-            shrink_ring_secs,
+            shrink_total_secs,
             pillar_mode,
             ice_mode,
             arena_shape,
@@ -261,7 +260,7 @@ impl Default for MatchConfig {
             first_round_time_secs: 40.0,    // 设置 5 `Uo`
             between_rounds_time_secs: 30.0, // 设置 4 `uo`
             shrink_delay_secs: 10.0,        // 设置 6 `wo`
-            shrink_ring_secs: 10.0,         // 设置 6 `wo`（原版 10s/环，且延迟同为 wo×√存活）
+            shrink_total_secs: 90.0,       // 连续模型：满员总时长（≈ 098c 1 人局 9 环 × wo=10s）
             pillar_mode: 1,                 // 设置 8 `Po=0` → 随机
             ice_mode: 1,                    // 默认随机
             arena_shape: 0,                 // 圆形
@@ -1583,7 +1582,7 @@ mod tests {
         assert_eq!(c.first_round_time_secs, 40.0, "设置 5 Uo=40（第一轮配置期）");
         assert_eq!(c.between_rounds_time_secs, 30.0, "设置 4 uo=30（局间配置期）");
         assert_eq!(c.shrink_delay_secs, 10.0, "设置 6 wo=10");
-        assert_eq!(c.shrink_ring_secs, 10.0, "设置 6 wo=10（每环时长）");
+        assert_eq!(c.shrink_total_secs, 90.0, "收缩总时长默认 90s（连续模型）");
         assert_eq!(c.base_regen, 0.5, "设置 9 In=.05/0.1s = 0.5/s");
         // 柱 / 冰 / 地图
         assert_eq!(c.pillar_mode, 1, "设置 8 Po=0 → 随机");

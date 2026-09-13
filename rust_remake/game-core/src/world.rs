@@ -41,6 +41,9 @@ pub struct PlayerInput {
 /// 一整帧里所有玩家的输入。
 pub type InputSlice = Vec<PlayerInput>;
 
+/// 收缩默认总时长（秒）：满员时从开始收缩到缩到 0。90 ≈ 098c 1 人局 9 环 × `wo`=10s。
+pub(crate) const DEFAULT_SHRINK_TOTAL_SECS: f64 = 90.0;
+
 /// 场上一个飞行物 / 延时区域（石头、弹体、导弹、激光线、幻象假身）。
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Projectile {
@@ -430,8 +433,11 @@ pub struct World {
     pub base_regen: f64,
     /// 收缩**开局延迟**（秒，基准值；实际 = 本值 × √存活人数）。098c 设置 6 `wo`。
     pub shrink_delay_secs: Fix64,
-    /// 收缩**每环时长**（秒，基准值；速率 = 环宽 /(本值 × √存活人数)）。098c 设置 6 `wo`。
-    pub shrink_ring_secs: Fix64,
+    /// 收缩**总时长**（秒；满员从开始收缩到 0）。**连续收缩，非按环**；
+    /// 实际总时长 = 本值 × √(存活/初始)，速率由「参考半径 / 实际总时长」反推。
+    pub shrink_total_secs: Fix64,
+    /// 本轮参考半径（开局/重设时的场地半径）：用于按“总时长”反推收缩速率。
+    pub shrink_ref_radius: Fix64,
     /// 全局伤害倍率（098c 设置 2 `Gn`，默认 1.0）：所有技能/接触伤害乘它。
     pub damage_mult: Fix64,
     /// 全局击退倍率（098c 设置 3 `Hn`，默认 1.0）：KI/接触踢击的击退冲量乘它。
@@ -520,8 +526,9 @@ impl World {
             players,
             arena_radius,
             base_regen: crate::balance::Balance::default().hp_regen,
-            shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs),
-            shrink_ring_secs: Fix64::from_num(crate::balance::Balance::default().shrink_ring_secs),
+            shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_delay_secs),
+            shrink_total_secs: Fix64::from_num(DEFAULT_SHRINK_TOTAL_SECS),
+            shrink_ref_radius: arena_radius,
             damage_mult: Fix64::ONE,
             knockback_mult: Fix64::ONE,
             lava_damage_mult: Fix64::ONE,
@@ -546,7 +553,7 @@ impl World {
             pending_avatar: None,
             pending_kings: Vec::new(),
             shrink_timer: Fix64::from_num(
-                Balance::default().shrink_ring_secs * (player_count.max(1) as f64).sqrt(),
+                Balance::default().shrink_delay_secs * (player_count.max(1) as f64).sqrt(),
             ),
             ice: Vec::new(),
         }
@@ -992,10 +999,12 @@ impl World {
             self.shrink_timer -= dt;
             return;
         }
-        let b = Balance::default();
-        // 每环时长来自房间设置（默认 = Balance 的 wo）；速率随存活人数 √ 缩放（098c `wo*√sn`）。
-        let ring_secs = self.shrink_ring_secs.to_num::<f64>().max(0.01);
-        let rate = b.ring_width / (ring_secs * alive.sqrt());
+        // 连续收缩（我方模型）：满员总时长 `shrink_total_secs`；实际总时长 = 本值 × √(存活/初始)。
+        // 速率由「本轮参考半径 / 实际总时长」给出（参考半径开局固定 → 线性缩到 0）。
+        let alive0 = self.players.len().max(1) as f64;
+        let total = self.shrink_total_secs.to_num::<f64>().max(0.01);
+        let scale = (alive0 / alive.max(1.0)).sqrt();
+        let rate = self.shrink_ref_radius.to_num::<f64>() / total * scale;
         self.arena_radius = (self.arena_radius - Fix64::from_num(rate * dt.to_num::<f64>())).max(Fix64::ZERO);
     }
 
@@ -2936,11 +2945,13 @@ impl World {
     }
 
     /// 设置基础生命恢复（HP/s）。098c 对应主机常量 `-C9`（`In`，默认 0.5/s）。
-    /// 配置收缩参数（房间设置项，098c 设置 6 `wo`）：
-    /// `delay_secs` = 开局延迟基准（实际 ×√存活），`ring_secs` = 每环时长基准（速率随存活数 √ 缩放）。
-    pub fn configure_shrink(&mut self, delay_secs: f64, ring_secs: f64) {
+    /// 配置收缩参数（房间设置）：
+    /// `delay_secs` = 开局延迟基准（实际 ×√存活）；`total_secs` = 满员总时长基准（实际 ×√(存活/初始)）。
+    pub fn configure_shrink(&mut self, delay_secs: f64, total_secs: f64) {
         self.shrink_delay_secs = Fix64::from_num(delay_secs.max(0.0));
-        self.shrink_ring_secs = Fix64::from_num(ring_secs.max(0.01));
+        self.shrink_total_secs = Fix64::from_num(total_secs.max(0.01));
+        // 参考半径取当前半径：设置立即生效，总时长从此刻起算。
+        self.shrink_ref_radius = self.arena_radius;
         // 立即按新延迟重置计时器（否则设置要等下一轮才生效）；延迟同样 ×√存活（098c `wo*√sn`）。
         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
         self.shrink_timer = self.shrink_delay_secs * Fix64::from_num(alive.sqrt());
@@ -3070,6 +3081,7 @@ impl World {
         }
         self.projectiles.clear(); // 清掉上轮遗留的飞行物/延时区域
         self.arena_radius = Fix64::from_num(Balance::start_radius_for(self.players.len() as u32));
+        self.shrink_ref_radius = self.arena_radius;
         self.time = Fix64::ZERO;
         // 缩圈计时重启（098c XA：回合开始即启动 EA 定时器）
         let alive = self.players.iter().filter(|p| p.alive).count().max(1) as f64;
@@ -7540,8 +7552,8 @@ mod tests {
         let mut slow = World::new(1, 77);
         fast.obstacles.clear();
         slow.obstacles.clear();
-        fast.configure_shrink(0.0, 2.0);  // 每环 2s → 快
-        slow.configure_shrink(0.0, 20.0); // 每环 20s → 慢
+        fast.configure_shrink(0.0, 9.0); // 总时长 9s → 快
+        slow.configure_shrink(0.0, 90.0); // 总时长 90s → 慢
 
         let r0 = fast.arena_radius;
         for _ in 0..120 {
@@ -7550,12 +7562,12 @@ mod tests {
         }
         let d_fast = (r0 - fast.arena_radius).to_num::<f64>();
         let d_slow = (r0 - slow.arena_radius).to_num::<f64>();
-        assert!(d_fast > d_slow * 5.0, "每环 2s 应比 20s 快约 10 倍（{d_fast:.2} vs {d_slow:.2}）");
+        assert!(d_fast > d_slow * 5.0, "总时长 9s 应比 90s 快约 10 倍（{d_fast:.2} vs {d_slow:.2}）");
 
         // 延迟同样生效：给一个很长延迟 + 长环时长 → 延迟内完全不缩
         let mut delayed = World::new(1, 77);
         delayed.obstacles.clear();
-        delayed.configure_shrink(5.0, 10.0);
+        delayed.configure_shrink(5.0, 90.0);
         let before = delayed.arena_radius;
         for _ in 0..60 {
             delayed.step(vec![PlayerInput::default()], dt);
@@ -7589,12 +7601,12 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert_eq!(world.arena_radius.to_num::<f64>(), r0, "首延迟内不收缩");
-        // 之后连续收缩：任意 1s 窗口半径减少 ≈ 64/(10√2) ≈ 4.5 码
+        // 之后连续收缩：2 人局总时长 90s、参考半径 640 → 速率 ≈ 640/90 ≈ 7.1 码/s
         for _ in 0..60 {
             world.step(none.clone(), dt);
         }
         let dropped = r0 - world.arena_radius.to_num::<f64>();
-        assert!(dropped > 2.0 && dropped < 8.0, "连续收缩每秒 ≈4.5 码，实际 {dropped}");
+        assert!(dropped > 5.0 && dropped < 10.0, "连续收缩每秒 ≈7.1 码，实际 {dropped}");
     }
 
 
