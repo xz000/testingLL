@@ -91,8 +91,12 @@
 | 终局胜负 | `no` EpicVictory | ✅ 接 `ann_victory`（Finished 一次性） |
 | 多重击杀 Double/Multi/Mega/Ultra/Monster | `Qx/tx/sx/Tx/Sx` | ✅ 接（9s 窗口 `Wn`，阈值 2/3/4/5/6，`multikill_cue()`） |
 | Ludicrous Kill | `Io` | ✅ 接：击杀**本轮 0 伤害**的对手（`Rn[NI]==0`） |
-| Hattrick / Vampire | `Ux` / `Oo` | ⬜ 待战斗信号（单次命中 ≥3） |
-| Silencer / Pancake / Burnout / Denied / Last Second Save | `Eo`/`ao`/`Xo`/`Wx`/`wx` | ⬜ 待战斗信号（P1 扩展共用） |
+| Hattrick / Vampire | `Ux` / `Oo` | ✅ 接：一次 AoE 命中 ≥3 敌人（`World::explode_at` 返回命中数）→ `CombatEvent::MultiHit`；戴死亡面具（`FireMask`/`scourge_double`）为 Vampire |
+| Silencer | `Eo` | ✅ 接：同一施法者本 tick 沉默 ≥3 目标 → `CombatEvent::Silencer` |
+| Pancake | `ao` | ✅ 接：地震法球拍扁 → `CombatEvent::Pancake` |
+| Burnout | `Xo` | ⏸ 搁置：我们无通用友伤反噬机制（需再挖 098c） |
+| Denied | `Wx` | ⏸ 搁置：无「击杀阻止」概念（需再挖 098c） |
+| Last Second Save | `wx` | ⏸ 搁置：需新增「危险区极限逃生」判定（需再挖 098c） |
 | 学习 / 升级完成 | `Ro` ResearchComplete | ✅ 接 `ann_research`（仅本机，仅技能购买/升级成功） |
 | 开局 / 平局加赛 | `Vo` GameFound | ⬜ 待接 |
 | 终局过场 | `yx` Rescue | ⬜ 待接 |
@@ -238,7 +242,8 @@
 - [x] **P2-2 主菜单「设置」界面**：第 4 卡片 + 设置界面（行列表 + 滑条 + 键鼠 + 提示）+ 持久化 + `F10` 全局静音。
 - [~] **P2-3 战斗音效**：已接 命中/治疗/死亡/击杀（引擎反馈）；施法/爆炸/反弹等暂缓（无可可靠映射）。
 - [ ] **P2-4 流程音效**：**098c 无回合/倒计时/缩圈/出界音** → 不接；仅剩 开局 `Vo` / 终局过场 `yx` 待接。
-- [~] **P2-5 播报语音**：已接 首杀 / 连杀 3..10/>10 / 多重击杀 2..6 / Ludicrous / 胜利；Hattrick·Vampire·Denied 等需先补信号。
+- [~] **P2-5 播报语音**：已接 首杀 / 连杀 3..10/>10 / 多重击杀 2..6 / Ludicrous / 胜利 / **Hattrick / Vampire / Silencer / Pancake**；
+  搁置 Burnout / Denied / Last-Second-Save（需再挖 098c）。
 - [~] **P2-6 UI/商店音效**：已接 主菜单/设置导航 + 学习/升级完成（`Ro`，仅本机）；买/卖 098c 无 → 不接。
 - [ ] **P2-7（可选）BGM**。
 
@@ -265,3 +270,5 @@
   **明确不接** 缩圈/出界/倒计时/回合流程/商店买卖（098c 无）。
 - 2026-09-13：**多重击杀窗口**（098c `Wn=9s` + `dn[VI+$C]`）：2/3/4/5/6 → Double..Monster（音效 + 横幅）。
 - 2026-09-13：**Ludicrous Kill**（`Io`，击杀本轮 0 伤害对手）+ **学习/升级完成**（`Ro` ResearchComplete，仅本机）。
+- 2026-09-13：**战斗事件通道**（`World.combat_events`，不进快照/`state_hash`）：
+  接 Hattrick / Vampire / Silencer / Pancake（音效 + 头顶漂字）；Burnout / Denied / LastSecondSave 搁置。
