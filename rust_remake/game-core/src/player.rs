@@ -898,6 +898,15 @@ impl Player {
         self.cmd_len = 0;
     }
 
+    /// 第 `i` 条待执行指令（0 = 队头）；不存在返回 `None`。表现层绘制 shift 队列标记用。
+    pub fn cmd_at(&self, i: usize) -> Option<Cmd> {
+        if i >= self.cmd_len {
+            None
+        } else {
+            Some(self.cmd_buf[(self.cmd_head + i) % MAX_CMDS])
+        }
+    }
+
     /// C1 疾跑：受击时若在 Boost buff 内，返回**实际应扣到 HP 上的净伤害**（返回一半作为回血，
     /// 并把待结算的移速成长量累进 [`Self::boost_soaked`]）。原版：`hp -= damage; hp += boostvalue`。
     pub fn soak_boost(&mut self, damage: Fix64) -> Fix64 {
