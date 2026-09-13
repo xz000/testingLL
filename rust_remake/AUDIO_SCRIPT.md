@@ -60,51 +60,54 @@
 | `shop_upgrade.wav` | 升级技能 / 精通 | 音效 |
 | `shop_sell.wav` | 卖出物品 | 音效 |
 
-## E. 播报（Announcer）—— **需要台词**
-> 这些对应 098c 的自定义播报（`AUDIO_PLAN.md §1`）；屏幕同时有对应文本横幅/漂字。
-> 建议：与屏幕文本一致；中文可稍口语化以适配语音时长。
+## E. 播报（Announcer）—— 部分为台词
+> 对照 098c 原声（`AUDIO_PLAN.md §1`）：**「人声」= 098c 原声即为语音台词**；
+> **「器乐」= 098c 原声是器乐/提示音（无人声）**，我们若录人声属于**新增**。
+> 证据：098c 原文件名（`war3mapImported\A*/B*/C*/Denied/Pancake.mp3`）+ 与之同步的**屏幕文本**（如 `Hattrick`、`Burn out`）。
+> 中文台词为建议译文；English 台词基本沿用 098c 原文。
 
-### E1. 击杀 / 连杀 / 多重击杀
-| 文件 | 触发 | English 台词 | 中文台词（建议） |
-|---|---|---|---|
-| `ann_first_blood.wav` | 全场首个击杀 | First Blood | 首杀！ |
-| `ann_double_kill.wav` | 9s 内第 2 杀 | Double Kill | 双杀！ |
-| `ann_multi_kill.wav` | 第 3 杀 | Multi Kill | 三杀！ |
-| `ann_mega_kill.wav` | 第 4 杀 | Mega Kill | 四杀！ |
-| `ann_ultra_kill.wav` | 第 5 杀 | Ultra Kill | 五杀！ |
-| `ann_monster_kill.wav` | 第 6 杀及以后 | Monster Kill | 疯狂杀戮！ |
-| `ann_ludicrous_kill.wav` | 击杀「本轮 0 伤害」的对手 | Ludicrous Kill! | 荒谬击杀！ |
-| `ann_spree3.wav` | 连杀 3 | Killing Spree | 杀戮开始！ |
-| `ann_spree4.wav` | 连杀 4 | Dominating | 主宰比赛！ |
-| `ann_spree5.wav` | 连杀 5 | Ownage | 无人能挡！ |
-| `ann_spree6.wav` | 连杀 6 | Rampage | 暴走！ |
-| `ann_spree7.wav` | 连杀 7 | Unstoppable | 势不可挡！ |
-| `ann_spree8.wav` | 连杀 8 | Wicked Sick | 骇人听闻！ |
-| `ann_spree9.wav` | 连杀 9 | Godlike | 如同神明！ |
-| `ann_spree10.wav` | 连杀 10 | Holy Shit | 天哪！ |
-| `ann_spree_holy.wav` | 连杀 >10 | Holy Shit!!! | 神迹降临！ |
+### E1. 击杀 / 连杀 / 多重击杀（098c 均为**人声**）
+| 文件 | 触发 | 098c 原声 | English 台词 | 中文台词（建议） |
+|---|---|---|---|---|
+| `ann_first_blood.wav` | 全场首个击杀 | 人声（`CFirstBlood.mp3`） | First Blood | 首杀！ |
+| `ann_double_kill.wav` | 9s 内第 2 杀 | 人声（`BDoubleKill2.mp3`） | Double Kill | 双杀！ |
+| `ann_multi_kill.wav` | 第 3 杀 | 人声（`BMultiKill3.mp3`） | Multi Kill | 三杀！ |
+| `ann_mega_kill.wav` | 第 4 杀 | 人声（`BMegaKill4.mp3`） | Mega Kill | 四杀！ |
+| `ann_ultra_kill.wav` | 第 5 杀 | 人声（`BUltraKill5.mp3`） | Ultra Kill | 五杀！ |
+| `ann_monster_kill.wav` | 第 6 杀及以后 | 人声（`BMonsterKill6.mp3`） | Monster Kill | 疯狂杀戮！ |
+| `ann_ludicrous_kill.wav` | 击杀「本轮 0 伤害」的对手 | 人声（`CLudicrousKill.mp3`） | Ludicrous Kill! | 荒谬击杀！ |
+| `ann_spree3.wav` | 连杀 3 | 人声（`AAKillingSpree3.mp3`） | Killing Spree | 杀戮开始！ |
+| `ann_spree4.wav` | 连杀 4 | 人声（`AADominating4.mp3`） | Dominating | 主宰比赛！ |
+| `ann_spree5.wav` | 连杀 5 | 人声（`AAOwnage5.mp3`） | Ownage | 无人能挡！ |
+| `ann_spree6.wav` | 连杀 6 | 人声（`AARampage6.mp3`） | Rampage | 暴走！ |
+| `ann_spree7.wav` | 连杀 7 | 人声（`AAUnstoppable7.mp3`） | Unstoppable | 势不可挡！ |
+| `ann_spree8.wav` | 连杀 8 | 人声（`AAWhickedSick8.mp3`） | Wicked Sick | 骇人听闻！ |
+| `ann_spree9.wav` | 连杀 9 | 人声（`AAGodLike9.mp3`） | Godlike | 如同神明！ |
+| `ann_spree10.wav` | 连杀 10 | 人声（`AAHolyShit10.mp3`） | Holy Shit | 天哪！ |
+| `ann_spree_holy.wav` | 连杀 >10 | 人声（`AAHoly.mp3`） | Holy Shit!!! | 神迹降临！ |
 
 ### E2. 战斗事件播报
-| 文件 | 触发 | English 台词 | 中文台词（建议） |
-|---|---|---|---|
-| `ann_hattrick.wav` | 一次 AoE 命中 ≥3 敌人（无面具） | Hattrick | 帽子戏法！ |
-| `ann_vampire.wav` | 同上但戴死亡面具 | Vampire | 吸血鬼！ |
-| `ann_denied.wav` | 天罚打断「被链接 + 特殊状态」目标 | Denied | 拒绝！ |
-| `ann_burnout.wav` | 燃烧冲刺撞到队友熄火 | Burn out | 燃尽！ |
-| `ann_silencer.wav` | 一次沉默 ≥3 目标 | Silencer | 沉默！ |
-| `ann_pancake.wav` | 岩浆滚石拍扁敌人 | Pancake | 肉饼！ |
-| `ann_last_second_save.wav` | 出界→回场且残血极低 | Last Second Save | 极限逃生！ |
+| 文件 | 触发 | 098c 原声 | English 台词 | 中文台词（建议） |
+|---|---|---|---|---|
+| `ann_hattrick.wav` | 一次 AoE 命中 ≥3 敌人（无面具） | 人声（`CHattrick.mp3`） | Hattrick | 帽子戏法！ |
+| `ann_vampire.wav` | 同上但戴死亡面具 | 人声（`CVampire.mp3`） | Vampire | 吸血鬼！ |
+| `ann_denied.wav` | 天罚打断「被链接 + 特殊状态」目标 | 人声（`Denied.mp3`） | Denied | 拒绝！ |
+| `ann_burnout.wav` | 燃烧冲刺撞到队友熄火 | 人声（`CBurnout.mp3`） | Burn out | 燃尽！ |
+| `ann_silencer.wav` | 一次沉默 ≥3 目标 | 人声（`CSilencer.mp3`） | Silencer | 沉默！ |
+| `ann_pancake.wav` | 岩浆滚石拍扁敌人 | 人声?（`Pancake.mp3`，也可能为音效） | Pancake | 肉饼！ |
+| `ann_last_second_save.wav` | 出界→回场且残血极低 | 人声（`CLastSecondSave.mp3`） | Last Second Save | 极限逃生！ |
 
-### E3. 流程 / 其它播报
-| 文件 | 触发 | English 台词 | 中文台词（建议） |
-|---|---|---|---|
-| `ann_victory.wav` | 整场结束 | Victory | 胜利！ |
-| `ann_game_start.wav` | 首局开局 / **平局加赛**（`Vo`） | The battle begins / Draw! One more round | 战斗开始！/ 平局！再战一轮！ |
-| `ann_finish.wav` | 终局过场（离开结算画面） | （过场音，可人声或器乐） | 战斗结束 |
-| `ann_research.wav` | 学习 / 升级完成（仅本机） | Research complete | 升级完成！ |
+### E3. 流程 / 其它播报（098c 多为**器乐**）
+| 文件 | 触发 | 098c 原声 | English 台词 | 中文台词（建议） |
+|---|---|---|---|---|
+| `ann_victory.wav` | 整场结束 | **器乐**（`EpicVictory.mp3`） | Victory | 胜利！ |
+| `ann_game_start.wav` | 首局开局 / **平局加赛**（`Vo`） | **器乐**（`GameFound.wav`） | The battle begins / Draw! One more round | 战斗开始！/ 平局！再战一轮！ |
+| `ann_finish.wav` | 终局过场（离开结算画面） | **器乐**（`Rescue.wav`） | 战斗结束 | 战斗结束 |
+| `ann_research.wav` | 学习 / 升级完成（仅本机） | **人声**（`ResearchCompleteGeneric.mp3`，War3 顾问） | Research complete | 升级完成！ |
 
-> `ann_victory` / `ann_game_start` / `ann_finish` 在 098c 里是**短器乐/提示音**（`no`/`Vo`/`yx`），
-> 录成**纯音效**也可；若用人声，参考上面的台词。
+> 对照小结：098c 自有播报里**人声台词**为 `A*/B*/C*` 系列 + `Denied` + `Pancake`（共 ~23 条）；
+> `EpicVictory` / `GameFound` / `Rescue` 是**器乐/提示音**（无人声）；`ResearchCompleteGeneric` 是 **War3 顾问语音**。
+> 因此 E1/E2 基本应录**人声**；E3 的 victory/game_start/finish 录**器乐**更贴原版（人声属新增）。
 
 ---
 
@@ -115,8 +118,8 @@
 | B 流程 | 6 | 否 |
 | C UI | 10 | 否 |
 | D 商店 | 3 | 否 |
-| E 播报 | 27 | **是（E1–E3）** |
-| **合计** | **59** | 27 条播报可录台词，其余为音效 |
+| E 播报 | 27 | **大部分需台词**：098c 人声 ~23–24（E1/E2 + research）；器乐 3（victory/game_start/finish，098c 原声为器乐） |
+| **合计** | **59** | 战斗/流程/UI/商店 32 条为音效；播报 27 条中 **23–24 条录人声**、3 条器乐 |
 
 > 录制建议：播报单条 0.4–1.2s；命中/UI 短促 0.05–0.2s；爆炸/胜负 0.3–1.0s。
 > 采样率 44.1kHz、单声道或立体声 `.wav` 均可（`ggez::audio`/rodio 解码 WAV）。
