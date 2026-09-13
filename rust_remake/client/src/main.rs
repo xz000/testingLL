@@ -48,6 +48,9 @@ const TICK: f64 = 1.0 / 60.0;
 /// 单次 `update` 最多追赶的模拟步数：卡顿后排空 accumulator 时，避免一帧内连续 step 十几步
 /// （呈现为“卡一下 → 快进一下”）。超出部分直接丢弃；推进仍严格按收到的权威帧，不影响确定性。
 const MAX_CATCHUP_STEPS: usize = 4;
+/// 「右键移动目标」的到达判定半径（世界单位）：世界清掉 `move_target` 后，角色距目标在此半径内才视为“到达”，
+/// 据此停止每帧重发。取值覆盖一帧最大位移（含冰面不吸附的滑行落点）。
+const PLAYER_TARGET_ARRIVE_EPS: f64 = 12.0;
 
 /// 固定步长累加器：加入本帧时间（上限 0.25s）并夹到 [`MAX_CATCHUP_STEPS`] 步以内。
 /// 纯函数，便于单测。
@@ -2216,6 +2219,28 @@ impl Game {
         }
     }
 
+    /// 「右键目标是否应清除（停止每帧重发）」的纯判定。
+    ///
+    /// 仅当：已接受过该目标（`accepted`）、**当前未处于强制位移/冲刺**（`in_control`/`dashing` 均为假）、
+    /// 且角色已到达目标附近时，才返回 true。
+    ///
+    /// 关键：世界把 `move_target` 置 `None` 的原因不止“到达”（还有定身/施法/位移/停止），
+    /// **不能仅凭 `move_target==None` 就清**——否则击退/位移会把玩家的移动指令永久清掉。
+    /// 098c 语义：被击退后应继续走向原目标。
+    fn should_clear_player_target(
+        accepted: bool,
+        in_control: bool,
+        dashing: bool,
+        pos: Vec2,
+        target: Vec2,
+    ) -> bool {
+        if !accepted || in_control || dashing {
+            return false;
+        }
+        let eps = Fix64::from_num(PLAYER_TARGET_ARRIVE_EPS);
+        (target - pos).length_squared() <= eps * eps
+    }
+
     /// 每次世界推进后调用一次：若本机角色**刚进入**施法（前摇/后摇开始），清除待发送的移动目标。
     ///
     /// 这是"精确版"实现：`player_target` 保持电平量（每帧重发，不会在帧同步输入缓存下丢失），
@@ -2237,16 +2262,21 @@ impl Game {
         }
         self.self_was_busy = busy;
         // 到达清除（回归修复）：`player_target` 是电平量（每帧重发，防帧同步输入缓存丢指令），
-        // 但「移动到位即清除移动目标」这一原有语义必须保留——否则到位后仍每帧重发，
-        // 一旦被击退/位移，角色会自己走回旧目标。冰面同理（世界到达时也会清 move_target）。
-        // 判定：世界先接受该目标（曾见 `move_target`），随后又清掉它（到达/被定身/停止）→ 本端也停止重发。
-        // `accepted` 守卫避免「刚下达目标、世界尚未应用（client 有 RTT）」时误清而丢指令；
-        // `p.pos == t` 兜底「一帧内即到」不吸附的即时到达。
+        // 到位后若仍每帧重发，一旦被击退/位移，角色会自己走回旧目标 → 到位即停发。
+        // **但不能只看「世界 `move_target` 变 None」**：世界清目标还有定身/施法/位移/停止等原因，
+        // 一律当到达会把“移动指令”误清（尤其击退后）；故改用 `should_clear_player_target`：
+        // 只在「已接受过 + 未处于强制位移/冲刺 + 已到达目标附近」时才清。
         if let Some(t) = self.player_target {
             if let Some(p) = self.world.players.get(me as usize) {
                 if p.move_target.is_some() {
                     self.player_target_accepted = true;
-                } else if self.player_target_accepted || p.pos == t {
+                } else if Self::should_clear_player_target(
+                    self.player_target_accepted,
+                    p.control.is_some(),
+                    p.dash_active,
+                    p.pos,
+                    t,
+                ) {
                     self.player_target = None;
                     self.player_target_accepted = false;
                 }
@@ -8538,6 +8568,29 @@ mod tests {
         assert!((super::accumulate_tick(0.0, 100.0) - cap).abs() < 1e-12, "单帧 dt 上限也应封顶");
         let near = cap - 1e-6;
         assert!((super::accumulate_tick(near, 1.0) - cap).abs() < 1e-12);
+    }
+
+    /// 回归：击退/冲刺期间不得清除右键移动目标；只有到位才清。
+    #[test]
+    fn player_target_clear_requires_arrival_and_no_displacement() {
+        use game_core::fix::{Fix64, Vec2};
+        let v = |x: f64| Vec2::new(Fix64::from_num(x), Fix64::ZERO);
+        let far = v(50.0);
+        let near = v(5.0);
+        let target = v(0.0);
+        let f = super::Game::should_clear_player_target;
+        // 未被世界接受过 → 不清（避免刚下目标、world 尚未应用时丢指令）
+        assert!(!f(false, false, false, near, target));
+        // 到达附近且未处于位移/冲刺 → 清
+        assert!(f(true, false, false, near, target));
+        // 远离目标 → 不清
+        assert!(!f(true, false, false, far, target));
+        // **击退中**（control）即便在目标附近也不清（核心回归）
+        assert!(!f(true, true, false, near, target));
+        // **冲刺中**同样不清
+        assert!(!f(true, false, true, near, target));
+        // 精确到达 → 清
+        assert!(f(true, false, false, target, target));
     }
 
     /// 飘字的血量变化归类：伤害为负、治疗为正、微小变化忽略。

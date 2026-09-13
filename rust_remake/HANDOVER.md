@@ -50,7 +50,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 316 项（client 36 / game-core 233 / net 38 / net-steam 9）；steam client 42 |
+| 测试基线 | 317 项（client 37 / game-core 234 / net 38 / net-steam 9）；steam client 43 |
 
 ## 四、待办（按建议优先级）
 
@@ -71,10 +71,11 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步。输入发送**每模拟 tick 一条**（曾改为“每次 update 一条”，
      实测导致 host 缺输入、sim 掉到 20–30Hz，**已回退**；渲染插值未做）。
 7. **玩法修复**（`GAMEPLAY_FIX_PLAN.md`）：
-   - **击退清掉移动目标**：世界层已排除（实测保留）；嫌疑是客户端 `note_self_cast` 的「到达清除」启发式
-     （无法区分“到达”与“被位移”）。方案：仅在 `control.is_none() && !dash_active` 且临近目标时清除。
-   - **冲撞撞柱与 098c 不一致**：JASS 实证（`war3map_pretty.j` 8640-8730）是**分轴**响应（保留切向 → 沿墙滑行；
-     `xv>0` 时反射），而非我们现在的“整体清 control 停死”。方案：`resolve_obstacles` 改为分轴；替换相应测试。
+   - ✅ **击退清掉移动目标**：改为 `Game::should_clear_player_target`（仅“已接受 + 未位移/冲刺 + 临近目标”才清，
+     击退/冲刺中绝不清）；单测 `player_target_clear_requires_arrival_and_no_displacement`。
+   - ✅ **冲撞撞柱与 098c 不一致**：JASS 实证（`war3map_pretty.j` 8640-8730）是**逐轴**响应；`resolve_obstacles`
+     已改为“只清指向障碍的那一轴、保留切向 → 沿墙滑行”，不再接触即清 `control`；测试已替换/新增。
+     遗留：`xv>0` 的 mover 反弹（弹体类）与场地边界 ×0.5 反弹未做。
 
 ## 五、文档索引（读哪个）
 
