@@ -441,6 +441,10 @@ pub enum CombatEvent {
     PillarBreak { pos: Vec2 },
     /// AoE 爆炸（新星/陨石/弹体爆炸）：纯表现，客户端播放扩散圆环。
     Explode { pos: Vec2, radius: Fix64 },
+    /// 接触 AoE（098c `bA`/`SI`：冲锋/燃烧撞人）：纯表现，客户端画一圈。
+    Splash { pos: Vec2, radius: Fix64 },
+    /// 治疗脉冲（098c 虔诚：队友回血范围）：纯表现，客户端画绿圈。
+    HealPulse { pos: Vec2, radius: Fix64 },
 }
 
 /// 确定性对局核心。
@@ -3673,6 +3677,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
                         world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::None);
                         let caster_team = world.players[idx as usize].team;
+                        let mut healed_any = false;
                         let allies: Vec<u32> = world
                             .players
                             .iter()
@@ -3684,7 +3689,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             if (p.pos - ppos).length_squared() <= Fix64::from_num(500.0 * 500.0) {
                                 p.hp = (p.hp + gx * Fix64::from_num(0.5)).min(p.max_hp);
                                 p.add_buff(BuffKind::Speed(1.0 + 60.0 / 210.0), 4.0);
+                                healed_any = true;
                             }
+                        }
+                        if healed_any {
+                            world.combat_events.push(CombatEvent::HealPulse { pos: ppos, radius: Fix64::from_num(500.0) });
                         }
                     }
                 }
@@ -4822,7 +4831,8 @@ fn splash_damage(
     radius: Fix64,
     qi: f64,
     damage_mult: Fix64,
-) {
+) -> u32 {
+    let mut hits: u32 = 0;
     let owner_team = players.get(owner as usize).map(|p| p.team);
     for p in players.iter_mut() {
         if !p.alive || p.id == owner || Some(p.team) == owner_team {
@@ -4841,7 +4851,9 @@ fn splash_damage(
         let dmg = base * Fix64::from_num(factor) * damage_mult;
         p.hp = (p.hp - p.soak_boost(dmg)).max(Fix64::ZERO);
         p.last_hit_by = Some(owner);
+        hits += 1;
     }
+    hits
 }
 
 /// 成对解析玩家圆球碰撞：把重叠的两球沿中心连线推开，避免相互穿透。
@@ -4955,13 +4967,13 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
                     let qi = 0.15 * xi;
                     if charging {
-                        if xi > 0.0 {
-                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        if xi > 0.0 && splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult) > 0 {
+                            events.push(CombatEvent::Splash { pos: apos, radius });
                         }
                     } else if burning {
                         players[i].hp = (players[i].hp - kick.push_damage).max(Fix64::ZERO);
-                        if xi > 0.0 {
-                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        if xi > 0.0 && splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult) > 0 {
+                            events.push(CombatEvent::Splash { pos: apos, radius });
                         }
                     }
                     players[i].remove_buff(BuffKind::Stealth);
@@ -4985,13 +4997,13 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
                     let qi = 0.15 * xi;
                     if charging {
-                        if xi > 0.0 {
-                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        if xi > 0.0 && splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult) > 0 {
+                            events.push(CombatEvent::Splash { pos: apos, radius });
                         }
                     } else if burning {
                         players[j].hp = (players[j].hp - kick.push_damage).max(Fix64::ZERO);
-                        if xi > 0.0 {
-                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        if xi > 0.0 && splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult) > 0 {
+                            events.push(CombatEvent::Splash { pos: apos, radius });
                         }
                     }
                     players[j].remove_buff(BuffKind::Stealth);
@@ -6800,6 +6812,31 @@ mod tests {
         let none = vec![PlayerInput::default(); 4];
         v.step(none, Fix64::from_num(1.0 / 60.0));
         assert!(v.combat_events.is_empty(), "step 应清空上一帧表现事件");
+    }
+
+    /// 接触 AoE（`bA`/`SI`）：`splash_damage` 返回命中数（供表现事件决定是否画圈）。
+    #[test]
+    fn splash_damage_reports_hit_count() {
+        let mut w = World::new(3, 11);
+        for p in w.players.iter_mut() {
+            p.alive = true;
+        }
+        w.players[0].team = 0;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].team = 1;
+        w.players[1].pos = Vec2::new(Fix64::from_num(30.0), Fix64::ZERO);
+        w.players[2].team = 1;
+        w.players[2].pos = Vec2::new(Fix64::from_num(300.0), Fix64::ZERO); // 半径外
+        let hits = splash_damage(
+            &mut w.players,
+            Vec2::ZERO,
+            0,
+            Fix64::from_num(5.0),
+            Fix64::from_num(50.0),
+            0.0,
+            Fix64::ONE,
+        );
+        assert_eq!(hits, 1, "仅半径内的敌人被命中");
     }
 
     #[test]
