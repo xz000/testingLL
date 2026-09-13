@@ -72,7 +72,7 @@
 | 冰面 `-ice` | `ice_mode`(0关/1随机/2必有) | 1 | ✅ **我们自己的设置**，已接入 `roll_ice`（C7） |
 | 地图形状 `to` | `arena_shape` | 0 | ✅ **我们自己的设置**：仅圆形，行**已置灰/锁定**（C6） |
 | 冰面 `-ice` | `ice_mode`（0/1/2） | 1 | ⚪ **我们自己的设置**（非 098c）；按我们语义接入（C7） |
-| 收缩 `wo` | `shrink_delay_secs`(10) + `shrink_ring_secs`(10) | 10/10 | ✅ **有意不同**：098c 的单 `wo` 是 War3 限制下的做法；我们用延迟+每环两个旋钮的连续收缩，**不按 098c 调整** |
+| 收缩 `wo` | `shrink_delay_secs`(10) + `shrink_total_secs`(90) | 10/90 | ✅ **有意不同**：098c 的单 `wo` 是 War3 限制下的做法；我们用「**总时长 + 延迟**」两个旋钮的**连续收缩**（非按环） |
 | 回血 `In` | `base_regen` | 0.5 | ✅ 生效 |
 | `-no reward` | `gold_rewards_enabled` | true | ✅ **已接入**（A3：只清 `Mo/po/lo`） |
 | — | ~~`place_rewards`~~ | — | ✅ **已移除**（098c 无名次金） |
@@ -105,11 +105,14 @@
 
 ### 概念 C：场地收缩 —— **有意不同，不调整**
 
-098c 只有 `wo` 一个旋钮（延迟 = wo×√存活）。这是 **War3 引擎限制下的实现**；我们采用「收缩延迟 + 每环时长」
-两个旋钮的**连续收缩**模型，**不向 098c 看齐**（用户已裁定）。
+098c 只有 `wo` 一个旋钮（每环/延迟同值）。这是 **War3 引擎限制下的实现**；我们采用**连续收缩**模型，
+两个旋钮：
 
-- `shrink_delay_secs`（延迟，`world.rs:2920/3032`）
-- `shrink_ring_secs`（每环时长，`world.rs:978`）
+- `shrink_delay_secs`（**开局延迟**基准；实际 = 本值 × √存活）。
+- `shrink_total_secs`（**收缩总时长**：满员时从开始收缩到 0 的时长；实际 = 本值 × √(存活/初始)；默认 **90**）。
+
+> 历史：曾在 `2b24d46` 短暂改为 098c 的「每环 `wo`」语义（`shrink_ring_secs=10`）；现已**改回连续总时长**并去掉“每环”
+> （2026-09-13；默认 90 ≈ 1 人局 9 环 × `wo`=10s）。`Balance.shrink_ring_secs` 随之改名 `shrink_delay_secs`（仅作延迟默认）。
 
 → **保留两个旋钮，本审计不涉及收缩。**
 
@@ -190,7 +193,7 @@ UI 不再有“改了没效果”的行。
   - `[schema]` 设置串去 2 槽（learn/shopping），`ROOM_SETTINGS_SCHEMA` **1 → 2**；不兼容旧串（已确认）。
   - `[test]` 更新往返/默认值断言（`wrong_schema` 改用当前 schema 构造）。
 - [ ] **B2b（可选）** `match_learn_secs`/`host_set_learn`/大厅键 `learn` → between-rounds 命名。
-- [x] **B3** `ROOM_SETTINGS_SCHEMA`：B2 1→2、B1 2→3（已升到 **3**）。
+- [x] **B3** `ROOM_SETTINGS_SCHEMA`：B2 1→2、B1 2→3、收缩语义变更 3→4（现为 **4**）。
 - [x] **B4 文案复查 ✅ 已完成**：`ArenaShape` hint 标明“仅圆形（暂锁定，置灰）”；
   时长/金币/A3 等 hint 已在前面各步同步； `settings_ui` 无已删项残留。
 
@@ -256,7 +259,10 @@ UI 不再有“改了没效果”的行。
   `ROOM_SETTINGS_SCHEMA` 1→2；不兼容旧串）。B1（删 `place_rewards`）待做。
 - 2026-09-13：**B1 已完成**（删 `place_rewards` 全链路 + net-steam 大厅键/接口；schema 2→3）；
   game-core 235 + client+steam 47 测试绿。
-- 2026-09-13：**B4 已完成**（`ArenaShape` hint 改为“仅圆形（暂锁定，置灰）”）——**阶段 B 全部完成**。
+- 2026-09-13：**B4 已完成**（`ArenaShape` hint 标明“仅圆形（暂锁定，置灰）”；`settings_ui` 无已删项残留）。
+- 2026-09-13：**收缩改回连续总时长**：`shrink_ring_secs`(每环 10) → `shrink_total_secs`(满员总时长，默认 **90**)；
+  UI「收缩每环(秒)」→「收缩总时长(秒)」；`Balance.shrink_ring_secs` → `shrink_delay_secs`（仅延迟默认）；
+  `ROOM_SETTINGS_SCHEMA` 3→4。game-core 237 + client+steam 48 测试绿。
 - 2026-09-13：**D2 已定**：C5/C6/C7（柱子/地图/冰面）是**我们自己的设置**，不追求 098c 对齐；未接线的按我们语义接入。
 - 2026-09-13：**C1/C2/C3 已完成**（`World::configure_mults` + 伤害/击退/岩浆接入；客户端各处同步）；game-core 236 测试绿。
 - 2026-09-13：**C5/C6/C7 已完成**（`configure_terrain`：柱子/冰面三档接入；ArenaShape 行置灰锁定）；

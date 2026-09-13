@@ -75,7 +75,7 @@ pub enum SettingId {
     FirstRoundSecs,
     BetweenRoundsSecs,
     ShrinkDelaySecs,
-    ShrinkRingSecs,
+    ShrinkTotalSecs,
     BaseRegen,
     // 地图
     ArenaShape,
@@ -111,7 +111,7 @@ impl SettingId {
                 FirstRoundSecs,
                 BetweenRoundsSecs,
                 ShrinkDelaySecs,
-                ShrinkRingSecs,
+                ShrinkTotalSecs,
             ],
             Group::Map => &[ArenaShape, PillarMode, IceMode],
             Group::Mode => &[GameMode, GoldRewardsEnabled],
@@ -139,7 +139,7 @@ impl SettingId {
             FirstRoundSecs => "首轮配置期(秒)",
             BetweenRoundsSecs => "局间配置期(秒)",
             ShrinkDelaySecs => "收缩延迟(秒)",
-            ShrinkRingSecs => "收缩每环(秒)",
+            ShrinkTotalSecs => "收缩总时长(秒)",
             BaseRegen => "基础回血(HP/s)",
             ArenaShape => "地图形状",
             PillarMode => "柱子",
@@ -173,7 +173,7 @@ impl SettingId {
             FirstRoundSecs => "098c 设置 5 `Uo`=40：第一轮的配置期时长。",
             BetweenRoundsSecs => "098c 设置 4 `uo`=30：局间配置期时长。",
             ShrinkDelaySecs => "开局静止期；实际延迟 = 本值 × √存活人数（098c `wo*√sn`）。",
-            ShrinkRingSecs => "每越一环所需秒数；速率随存活人数 √ 缩放（我方连续收缩模型）。",
+            ShrinkTotalSecs => "满员时从开始收缩到缩到 0 的总时长；实际 = 本值 × √(存活/初始)，连续收缩（非按环）。",
             BaseRegen => "098c 设置 9 `In`=.05/0.1s = 0.5。档位 0.5/0/0.25/0.75/1.0/2.0。",
             ArenaShape => "**仅圆形**（暂锁定，置灰）；后续版本再扩正方形/六边形。",
             PillarMode => "关闭 / 随机 / 每局必有。",
@@ -213,7 +213,7 @@ impl SettingId {
             BaseRegen => Some((0.0, 5.0, 0.05)),
             FirstRoundSecs | BetweenRoundsSecs => Some((5.0, 180.0, 5.0)),
             ShrinkDelaySecs => Some((0.0, 120.0, 1.0)),
-            ShrinkRingSecs => Some((1.0, 60.0, 1.0)),
+            ShrinkTotalSecs => Some((10.0, 600.0, 5.0)),
             _ => None,
         }
     }
@@ -315,7 +315,7 @@ pub fn value(cfg: &MatchConfig, id: SettingId) -> f64 {
         FirstRoundSecs => cfg.first_round_time_secs,
         BetweenRoundsSecs => cfg.between_rounds_time_secs,
         ShrinkDelaySecs => cfg.shrink_delay_secs,
-        ShrinkRingSecs => cfg.shrink_ring_secs,
+        ShrinkTotalSecs => cfg.shrink_total_secs,
         BaseRegen => cfg.base_regen,
         ArenaShape => cfg.arena_shape as f64,
         TotalRounds => cfg.total_rounds as f64,
@@ -349,7 +349,7 @@ fn set(cfg: &mut MatchConfig, id: SettingId, v: f64) {
         FirstRoundSecs => cfg.first_round_time_secs = v,
         BetweenRoundsSecs => cfg.between_rounds_time_secs = v,
         ShrinkDelaySecs => cfg.shrink_delay_secs = v,
-        ShrinkRingSecs => cfg.shrink_ring_secs = v,
+        ShrinkTotalSecs => cfg.shrink_total_secs = v,
         BaseRegen => cfg.base_regen = v,
         ArenaShape => cfg.arena_shape = bv,
         TotalRounds => cfg.total_rounds = v.round().clamp(1.0, 50.0) as u32,
@@ -462,7 +462,7 @@ pub fn value_text(cfg: &MatchConfig, id: SettingId) -> String {
                     format!("{:.0}%{tag}", v * 100.0)
                 }
             }
-            SettingId::ShrinkRingSecs | SettingId::ShrinkDelaySecs | SettingId::FirstRoundSecs
+            SettingId::ShrinkTotalSecs | SettingId::ShrinkDelaySecs | SettingId::FirstRoundSecs
             | SettingId::BetweenRoundsSecs => format!("{v:.0}s{tag}"),
             _ => format!("{v:.2}{tag}"),
         };
