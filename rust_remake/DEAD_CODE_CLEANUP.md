@@ -83,11 +83,11 @@
 - 删除 `steam_create_*` 字段/缓冲/标量、`Text::CreateName/CreateNote` 变体与 `text_focus`/`text_buffer_mut` 分支。
 
 #### 迁移步骤（每步可独立编译/提交）
-- **S3-1（修 bug，先做）**：`steam_create_confirm` 改为：
-  `players=room_meta.player_limit`、其余全部取 `match_cfg`（`total_rounds`/`between_rounds_time_secs` 或 `learn_time_secs` 按语义定、
-  `starting_gold`/`gold_per_round`/`place_rewards`/`game_mode`/`base_regen`）；`match_mode=match_cfg.game_mode`、
-  `match_regen=match_cfg.base_regen`。同步把 `finish_enter_steam_mode` Host 分支改为读 `room_meta`+`match_cfg`（或已回写的 `match_*`）。
-  > 这一步就修好了“编辑器设置被覆盖”，且**不删**任何字段，风险可控，可先上。
+- **S3-1（修 bug，先做）✅ 已完成**：`steam_create_confirm` 改为：
+  `players=room_meta.player_limit`、其余全部取 `match_cfg`（`total_rounds`/`between_rounds_time_secs`→learn、
+  `starting_gold`/`gold_per_round`/`place_rewards`/`game_mode`/`base_regen`）；不再读任何 `steam_create_*_buf`。
+  同时把房名/备注与上述标量回写 `steam_create_name/note/rounds/learn/starting_gold/gold_per_round/place`，
+  使 `finish_enter_steam_mode`（仍读这些）自然拿到编辑器后的值——**本步不删字段**，风险可控。
 - **S3-2**：删 `steam_lobby_create_update` 的 O toggle + focus 表单 + M/R/Q/Enter 分支（改为上面的 4 行）。
 - **S3-3**：删 `steam_create_*` 字段+初始化、`steam_lobby_act(0)` 里对应赋值（改为 `room_meta`/`match_cfg` 默认）、
   `TextField::CreateName/CreateNote` + 两处分支；逐个确认 `STEAM_DEFAULT_*`/`STEAM_MIN_*` 是否还有其他使用者（若无则一并删）。
@@ -100,7 +100,10 @@
 - 回归：`cargo test --workspace` + 两套 clippy；源码扫描测试（CREATE-BRANCH 仍应画 `draw_room_cfg_editor`，不受影响）。
 
 #### 状态
-- ⬜ **已评估，下轮实施**（建议先单独做 S3-1，因为它是**真 bug** 且不删字段）。
+- ☑ **S3-1 已完成**：`steam_create_confirm` 只读 `room_meta`+`match_cfg`（编译/测试绿）。
+- ⬜ **S3-2 待做**：瘦身 `steam_lobby_create_update`（去 O toggle + focus 表单）。
+- ⬜ **S3-3 待做**：删 `steam_create_*` 字段/缓冲 + `TextField::CreateName/CreateNote`。
+- ⬜ **S3-4 待做**：清注释/`#[cfg]` + 更新文档。
 
 ### 不予清理（有意保留）
 - `keys::Screen` / `keymap()`：文档 + 表内守护。
@@ -111,4 +114,6 @@
 ## 记录
 - 段 1 完成（2026-09-13）：见上。
 - 段 2 完成（2026-09-13）：见上；并顺手修了 `world_ser.rs` 的 mojibake 注释。
-- 段 3 评估完成（2026-09-13）：见上；**含一个真 bug（编辑器设置被旧缓冲覆盖）**，建议下轮先做 S3-1。
+- 段 3 评估完成（2026-09-13）：见上；**含一个真 bug（编辑器设置被旧缓冲覆盖）**。
+- 段 3 **S3-1 完成**（2026-09-13）：`steam_create_confirm` 改读 `room_meta`+`match_cfg`，并把房名/备注与标量回写，
+  修好了“编辑器改的经济/时长/名次/模式/回血/房名被建房默认值覆盖”。S3-2/3/4 待下轮。

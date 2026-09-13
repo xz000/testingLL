@@ -6827,50 +6827,29 @@ impl Game {
     #[cfg(feature = "steam")]
     fn steam_create_confirm(&mut self, ctx: &mut Context) {
         {
-            let parse_num = |s: &str, fallback: u32| s.parse::<u32>().unwrap_or(fallback);
-            let parse_i32 = |s: &str, fallback: i32| s.trim().parse::<i32>().unwrap_or(fallback);
-            // 统一模型：人数/轮数取 `room_meta`/`match_cfg`（编辑器里的[房间]分组），
-            // 经济与时长等一律取 `match_cfg` —— 建房界面不再有独立的重复字段。
+            // 统一模型：建房只认 `room_meta`（房名/备注/人数）与 `match_cfg`（其余全部设置）——
+            // 它们由统一编辑器与 `publish_room_cfg` 维护，是唯一真值源。这里**不再**读旧的
+            // `steam_create_*` 文本缓冲（那会让编辑器里的改动被建房默认值覆盖）。
             let players = self
                 .room_meta
                 .player_limit
                 .clamp(2, STEAM_MAX_PLAYERS as u32) as u8;
             let rounds = self.match_cfg.total_rounds.clamp(1, STEAM_MAX_ROUNDS);
-            let learn = parse_num(&self.steam_create_learn_buf, STEAM_DEFAULT_LEARN_SECS)
-                .clamp(STEAM_MIN_LEARN_SECS, STEAM_MAX_LEARN_SECS);
-            let starting_gold = parse_i32(&self.steam_create_starting_gold_buf, STEAM_DEFAULT_STARTING_GOLD)
-                .clamp(0, STEAM_MAX_GOLD);
-            let gold_per_round = parse_i32(&self.steam_create_gold_per_round_buf, STEAM_DEFAULT_GOLD_PER_ROUND)
-                .clamp(0, STEAM_MAX_GOLD);
-            // 名次奖励：单个数字=第一名，自动按 0.6 递减生成全部档位；逗号分隔=手动精确档位。
-            let place: Vec<i32> = {
-                let raw = self.steam_create_place_buf.trim();
-                if raw.is_empty() {
-                    auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
-                } else if raw.contains(',') {
-                    let out: Vec<i32> = raw
-                        .split(',')
-                        .filter_map(|s| s.trim().parse::<i32>().ok())
-                        .map(|v| v.clamp(0, STEAM_MAX_GOLD))
-                        .take(64)
-                        .collect();
-                    if out.is_empty() {
-                        auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST)
-                    } else {
-                        out
-                    }
-                } else {
-                    let first = parse_i32(raw, STEAM_DEFAULT_PLACE_FIRST).clamp(0, STEAM_MAX_GOLD);
-                    auto_place_rewards(first)
-                }
-            };
+            let learn = (self.match_cfg.between_rounds_time_secs.round() as i64)
+                .clamp(STEAM_MIN_LEARN_SECS as i64, STEAM_MAX_LEARN_SECS as i64)
+                as u32;
+            let starting_gold = self.match_cfg.starting_gold.clamp(0, STEAM_MAX_GOLD);
+            let gold_per_round = self.match_cfg.gold_per_round.clamp(0, STEAM_MAX_GOLD);
+            // 回写建房流程使用的标量字段（`finish_enter_steam_mode` 仍读这些）。
+            self.steam_create_name = self.room_meta.name.clone();
+            self.steam_create_note = self.room_meta.note.clone();
             self.steam_create_rounds = rounds;
             self.steam_create_learn = learn;
             self.steam_create_starting_gold = starting_gold;
             self.steam_create_gold_per_round = gold_per_round;
-            self.steam_create_place = place;
-            self.match_regen = self.steam_create_regen;
-        self.match_mode = self.steam_create_mode; // 建房时把模式写入 host_set_mode
+            self.steam_create_place = self.match_cfg.place_rewards.clone();
+            self.match_regen = self.match_cfg.base_regen;
+            self.match_mode = self.match_cfg.game_mode; // 建房时把模式写入 host_set_mode
             let name = self.room_meta.name.clone();
             let note = self.room_meta.note.clone();
             eprintln!("[steam] create lobby: players={players} rounds={rounds} learn={learn}s starting_gold={starting_gold} gold_per_round={gold_per_round} place={:?} name='{name}' note='{note}'", self.steam_create_place);

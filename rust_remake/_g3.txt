@@ -1,0 +1,65 @@
+===== room-edit references =====
+client/src/main.rs:312: RoomEditName,
+client/src/main.rs:314: RoomEditNote,
+client/src/main.rs:582: steam_room_edit: bool,
+client/src/main.rs:585: steam_room_edit_focus: usize,
+client/src/main.rs:588: steam_edit_name: String,
+client/src/main.rs:591: steam_edit_note: String,
+client/src/main.rs:1156: steam_room_edit: false,
+client/src/main.rs:1158: steam_room_edit_focus: 0,
+client/src/main.rs:1160: steam_edit_name: String::new(),
+client/src/main.rs:1162: steam_edit_note: String::new(),
+client/src/main.rs:2980: if self.steam_room_edit {
+client/src/main.rs:2981: self.draw_steam_room_edit(&mut canvas, ctx)?;
+client/src/main.rs:4654: // 曾用 `return steam_room_edit_update(...)` 取代它，导致房主改房间信息时
+client/src/main.rs:4656: if self.steam_room_edit {
+client/src/main.rs:4657: self.steam_room_edit_update(ctx, dt)?;
+client/src/main.rs:5675: if self.steam_room_edit {
+client/src/main.rs:5676: return match self.steam_room_edit_focus {
+client/src/main.rs:5677: 0 => Some(TextField::RoomEditName),
+client/src/main.rs:5678: 1 => Some(TextField::RoomEditNote),
+client/src/main.rs:5698: TextField::RoomEditName => Some(&mut self.steam_edit_name),
+client/src/main.rs:5699: TextField::RoomEditNote => Some(&mut self.steam_edit_note),
+client/src/main.rs:5799: self.steam_room_edit = false;
+client/src/main.rs:5801: self.steam_room_edit_focus = 0;
+client/src/main.rs:5802: self.steam_edit_name = String::new();
+client/src/main.rs:5803: self.steam_edit_note = String::new();
+client/src/main.rs:5918: fn steam_room_edit_update(&mut self, ctx: &Context, _dt: f64) -> GameResult {
+client/src/main.rs:5928: self.steam_room_edit_focus = (self.steam_room_edit_focus + 1) % 3;
+client/src/main.rs:5931: if self.steam_room_edit_focus == 2 {
+client/src/main.rs:5947: self.steam_room_edit = false;
+client/src/main.rs:5956: let name = if self.steam_edit_name.trim().is_empty() {
+client/src/main.rs:5959: self.steam_edit_name.trim()
+client/src/main.rs:5962: mm.set_lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY, self.steam_edit_note.trim());
+client/src/main.rs:5963: eprintln!("[steam-room] saved name='{name}' note='{}'", self.steam_edit_note.trim());
+client/src/main.rs:5968: self.steam_room_edit = false;
+client/src/main.rs:5972: if self.steam_room_edit_focus >= 2 {
+client/src/main.rs:5976: let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
+client/src/main.rs:5980: let buf = if self.steam_room_edit_focus == 0 { &mut self.steam_edit_name } else { &mut self.steam_edit_note };
+client/src/main.rs:6000: fn draw_steam_room_edit(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+client/src/main.rs:6042: self.steam_edit_name.clone(),
+client/src/main.rs:6043: self.steam_edit_note.clone(),
+client/src/main.rs:6052: let selected = i == self.steam_room_edit_focus;
+client/src/main.rs:6191: self.steam_room_edit = false;
+client/src/main.rs:6198: /// 房主按 E 进入编辑房间信息界面（见 `steam_room_edit_update`）。
+client/src/main.rs:6210: if i_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit {
+client/src/main.rs:6227: if q_pressed && !panel_open && !self.steam_room_edit && !self.room_cfg_edit {
+client/src/main.rs:6241: && !self.steam_room_edit
+client/src/main.rs:6332: if ready_pressed && !locked && !panel_open && !self.room_cfg_edit && !self.steam_room_edit {
+client/src/steam.rs:15: //! `steam_friend_list_update` · `steam_room_edit_update` · `steam_refresh_roster` · `steam_leave_room` ·
+client/src/steam.rs:16: //! `draw_steam_ready_overlay` · `draw_steam_friend_panel` · `draw_steam_room_edit` · `draw_steam_lobby_list`。
+client/src/steam.rs:407: let status = if self.steam_room_edit {
+client/src/keys.rs:110: RoomEdit,
+client/src/keys.rs:174: RoomEdit => &[
+client/src/keys.rs:234: Screen::RoomEdit,
+client/src/keys.rs:274: Screen::RoomEdit,
+client/src/keys.rs:329: /// 曾写成 `return self.steam_room_edit_update(...)`，导致心跳/上行停止。
+client/src/keys.rs:332: fn room_edit_does_not_replace_lobby_heartbeat() {
+client/src/keys.rs:334: !SRC.contains("return self.steam_room_edit_update"),
+client/src/keys.rs:337: let i = idx("self.steam_room_edit_update(ctx, dt)?;");
+client/src/keys.rs:347: fn lobby_keys_are_guarded_while_a_subscreen_is_open() {
+client/src/keys.rs:348: let n = SRC.matches("!self.steam_room_edit").count();
+client/src/keys.rs:351: "大厅按键（I/Q/E/O/U）应在子界面打开时被 `!self.steam_room_edit` 守卫，当前只有 {n} 处"
+client/src/keys.rs:354: SRC.contains("&& !self.steam_room_edit && !self.room_cfg_edit"),
+
+===== files containing U+FFFD (corrupted) =====
