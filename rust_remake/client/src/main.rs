@@ -2522,16 +2522,6 @@ impl Game {
 
         // 场地绳圈（逐渐收缩）
         let ar = self.world.arena_radius.to_num::<f32>();
-        // B6 缩圈进度（D13 #10）：剩余环数 / 初始环数 文本显示在圈上方
-        {
-            let total_rings = game_core::balance::Balance::start_radius_for(self.world.players.len() as u32)
-                / game_core::balance::Balance::default().ring_width;
-            let left_rings = ar as f64 / game_core::balance::Balance::default().ring_width;
-            if self.world.mode != 2 && !self.world.sandbox && ar > 0.5 {
-                let txt = format!("岩浆吞噬 {:.0}%", (1.0 - left_rings / total_rings).max(0.0) * 100.0);
-                draw_text(&mut canvas, ctx, &txt, 16.0, Color::from_rgba(255, 140, 90, 220), Point2 { x: self.offset.x, y: self.offset.y - ar * self.scale - 16.0 }, true)?;
-            }
-        }
         let fence = Mesh::new_circle(
             &ctx.gfx,
             DrawMode::stroke(3.0),
