@@ -1919,6 +1919,7 @@ impl Game {
         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
         self.world.configure_regen(self.match_regen);
         self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
+        self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
         self.meta = game_core::meta::MatchState::new(
             self.match_config(),
             &(0..p.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),
@@ -3310,8 +3311,8 @@ impl Game {
             let y = layout::row_in(content, i, rows.len().max(1)).y;
             let sel = i == self.room_cfg_row;
             let custom = settings_ui::is_custom(&self.match_cfg, id);
-            let col = if id.is_readonly() {
-                layout::text_dim() // 只读项（如人数上限）:醒目度降低
+            let col = if id.is_readonly() || id.is_locked() {
+                layout::text_dim() // 只读/锁定项（如人数上限、地图形状）:醒目度降低
             } else if sel {
                 layout::text_accent()
             } else if custom {
@@ -4678,6 +4679,7 @@ impl event::EventHandler for Game {
                         w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
                         w.configure_regen(self.match_cfg.base_regen);
                         w.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
+                        w.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
                         self.world = w;
                         self.meta = m;
                         self.app = AppState::Solo;
@@ -5945,6 +5947,7 @@ impl Game {
                             self.world
                                 .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
                             self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
+                            self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
                             // **客户端也要更新 meta.config**：否则房间面板/对局信息读的是旧快照，
                             // 表现为"客户端看不到房主的设置"（房主那边 publish 时会整份替换）。
                             self.meta.config = self.match_cfg.clone();
@@ -6367,12 +6370,16 @@ impl Game {
                     self.room_cfg_hint.clear();
                     eprintln!("[cfg] 人数上限 -> {}（2~{}）", self.room_meta.player_limit, STEAM_MAX_PLAYERS);
                 }
-            } else if read_only || id.is_readonly() {
-                // 只读：客户端的全部行 + host 的「人数上限」。
-                // 回车/T = 屏幕提示“只读”；O/Esc = 关闭（房主关闭时发布）。
+            } else if read_only || id.is_readonly() || id.is_locked() {
+                // 只读：客户端的全部行 + host 的「人数上限」；锁定：功能未开放（如地图形状仅圆形）。
+                // 回车/T = 屏幕提示；O/Esc = 关闭（房主关闭时发布）。
                 if just_named(NamedKey::Enter) || edit_key {
-                    self.room_cfg_hint = "只读：只有房主可以修改房间设置".to_string();
-                    eprintln!("[cfg] 只读：只有房主可以修改房间设置");
+                    self.room_cfg_hint = if id.is_locked() {
+                        format!("{}：暂锁定（{}）", id.label(), settings_ui::value_text(&self.match_cfg, id))
+                    } else {
+                        "只读：只有房主可以修改房间设置".to_string()
+                    };
+                    eprintln!("[cfg] {}", self.room_cfg_hint);
                 }
             } else {
                 let enter = just_named(NamedKey::Enter);
@@ -6472,6 +6479,7 @@ impl Game {
         self.world
             .configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
         self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
+        self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
         // **关键**：`meta.config` 是开局时的快照，不更新它 → 进行中的对局与 HUD
         // 仍旧显示/使用旧值（"改了好像没生效"就是这里）。整份替换即可。
         self.meta.config = self.match_cfg.clone();
@@ -6840,6 +6848,7 @@ impl Game {
                         self.world.configure_regen(self.match_cfg.base_regen);
                         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
                         self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
+                        self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
                         eprintln!("[cfg] 已对齐 host 房间设置（{} 字节）", self.match_cfg.to_meta_string().len());
                     } else {
                         eprintln!("[cfg] host 未提供房间设置串，使用默认值");
@@ -6870,6 +6879,7 @@ impl Game {
         self.world.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_ring_secs);
             self.world.configure_regen(self.match_regen);
             self.world.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
+            self.world.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
             self.meta = game_core::meta::MatchState::new(
                 self.match_config(),
                 &(0..n.max(1)).map(|i| i as u32).collect::<Vec<u32>>(),

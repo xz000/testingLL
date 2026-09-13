@@ -438,6 +438,10 @@ pub struct World {
     pub knockback_mult: Fix64,
     /// 出界（岩浆）伤害倍率（098c 设置 1 `To`，默认 1.0 = 标准 9/s；`0` = 关闭岩浆）。
     pub lava_damage_mult: Fix64,
+    /// 柱子模式（**我们自己的设置**）：0=关闭 1=随机（0~5 根，可无）2=每局必有（1~5 根）。
+    pub pillar_mode: u8,
+    /// 冰面模式（**我们自己的设置**）：0=关闭 1=随机（50% 有）2=每局必有。
+    pub ice_mode: u8,
     /// 试验场模式（单机技能试验场）：不缩圈、不出圈掉血、不判对局结束。
     pub sandbox: bool,
     /// 柱子/障碍布局使用的确定性种子。每轮递增，保证各小局地形不同、且两端一致。
@@ -511,7 +515,7 @@ impl World {
             players.push(Player::new(id, pos, Fix64::from_num(crate::player::DEFAULT_RADIUS)));
         }
         let mut obstacles = Vec::new();
-        _layout_obstacles(&mut obstacles, &mut rng, arena_radius);
+        _layout_obstacles(&mut obstacles, &mut rng, arena_radius, 1);
         World {
             players,
             arena_radius,
@@ -521,6 +525,8 @@ impl World {
             damage_mult: Fix64::ONE,
             knockback_mult: Fix64::ONE,
             lava_damage_mult: Fix64::ONE,
+            pillar_mode: 1,
+            ice_mode: 1,
             sandbox: false,
             round_seed: seed,
             obstacles,
@@ -2892,11 +2898,16 @@ impl World {
         best.map(|(id, _)| id)
     }
 
-    /// 掷冰面（098c YC/iA，冰面批）：50% 概率在场地内生成一块随机矩形冰面。
+    /// 掷冰面（098c YC/iA，冰面批）：按 `ice_mode`（0 关/1 随机 50%/2 必有）在场地内生成冰面。
     /// 冰面不被岩浆侵蚀（固定位置），站上滑行（抓地 ×0.25）。
     pub fn roll_ice(&mut self) {
+        if self.ice_mode == 0 {
+            self.ice.clear();
+            return;
+        }
         let mut rng = Rng::new(self.round_seed ^ 0x1CE_1CE);
-        if rng.next_u64_below(2) == 0 {
+        // 模式 1（随机）：50% 概率无冰；模式 2（必有）：总是生成。
+        if self.ice_mode != 2 && rng.next_u64_below(2) == 0 {
             self.ice.clear();
             return;
         }
@@ -2945,6 +2956,17 @@ impl World {
         self.damage_mult = Fix64::from_num(damage.max(0.0));
         self.knockback_mult = Fix64::from_num(knockback.max(0.0));
         self.lava_damage_mult = Fix64::from_num(lava.max(0.0));
+    }
+
+    /// 配置地形模式（**我们自己的设置**）：柱子 0 关/1 随机/2 必有；冰面同。
+    /// 立即重铺（否则要等下一轮）；用 `round_seed` 确定性重建，两端一致。
+    pub fn configure_terrain(&mut self, pillar_mode: u8, ice_mode: u8) {
+        self.pillar_mode = pillar_mode;
+        self.ice_mode = ice_mode;
+        let mut rng = Rng::new(self.round_seed);
+        self.obstacles.clear();
+        _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius, self.pillar_mode);
+        self.roll_ice();
     }
 
     /// 每轮角色设置（B3）：化身（模式 3）与国王（模式 4）的 F 槽替换与增益。
@@ -3071,7 +3093,7 @@ impl World {
             p.pos = Vec2::new(r * crate::fix::cos(angle), r * crate::fix::sin(angle));
         }
         self.obstacles.clear();
-        _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius);
+        _layout_obstacles(&mut self.obstacles, &mut rng, self.arena_radius, self.pillar_mode);
         // 应用本轮角色（化身/国王 buff 与 F 槽替换）
         let (av, kings) = (self.pending_avatar, self.pending_kings.clone());
         self.set_roles(av, &kings);
@@ -3142,9 +3164,16 @@ impl World {
 /// 等分角距足够大，天然保证柱子之间不重叠（最小圆心距 ≫ 半径和），
 /// 且环半径上限使柱子不碰玩家出生环（arena*0.6）、也不出界。
 /// 每轮柱子数量随机（0~5，可为 0 = 无柱子）。
-fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64) {
-    // 每轮柱子数量随机 0~5（0 = 本场无柱子），也由 round_seed 驱动、随轮次变化。
-    let count = rng.next_u64_below(6) as usize;
+fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64, mode: u8) {
+    // `mode` 是**我们自己的设置**（非 098c）：0=关闭；1=随机（每轮 0~5 根，可无）；2=每局必有（1~5 根）。
+    if mode == 0 {
+        return;
+    }
+    let count = if mode == 2 {
+        1 + rng.next_u64_below(5) as usize
+    } else {
+        rng.next_u64_below(6) as usize
+    };
     if count == 0 {
         return;
     }
@@ -6547,6 +6576,19 @@ mod tests {
             w.step(none.clone(), Fix64::from_num(1.0 / 60.0));
         }
         assert_eq!(w.players[0].hp, hp0, "lava_damage_mult=0 应关闭岩浆伤害");
+    }
+
+    #[test]
+    fn terrain_modes_control_pillar_and_ice() {
+        // 柱子/冰面模式（我们自己的设置）：0=关闭 2=必有。
+        let mut w = World::new(2, 777);
+        w.configure_terrain(0, 0);
+        assert!(w.obstacles.is_empty(), "pillar_mode=0 应无柱子");
+        assert!(w.ice.is_empty(), "ice_mode=0 应无冰面");
+        let mut w2 = World::new(2, 777);
+        w2.configure_terrain(2, 2);
+        assert!(!w2.obstacles.is_empty(), "pillar_mode=2（每局必有）应至少 1 根");
+        assert!(!w2.ice.is_empty(), "ice_mode=2（每局必有）应至少 1 块");
     }
 
     #[test]
