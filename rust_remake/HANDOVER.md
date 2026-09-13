@@ -68,7 +68,8 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      hash/snapshot 复用一份 `world_to_bytes`；接管取 seq 更新者（`newer_snapshot`）。
    - ⏸️ **host 固定节拍 + 输入延迟：已搜置（用户裁定 2026-09-13）**。走经典 RTS 式 lockstep（等齐再推进），**不引入固定 D**。
      草案见 `FRAME_SYNC_INPUT_DELAY_DESIGN.md`（保留为备选）；待用户实测手感后再定后续（候选：渲染插值 → 降 tick → D → 预测/回滚）。
-   - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步；输入每次 update 至多一条（渲染插值未做，待联机实测后再定）。
+   - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步。输入发送**每模拟 tick 一条**（曾改为“每次 update 一条”，
+     实测导致 host 缺输入、sim 掉到 20–30Hz，**已回退**；渲染插值未做）。
 
 ## 五、文档索引（读哪个）
 
