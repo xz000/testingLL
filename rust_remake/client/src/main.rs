@@ -2782,22 +2782,26 @@ impl Game {
             }
         }
 
-        // Shift 指令队列：为每个排队指令画编号标记（移动=绿环，施法=橙环）。
+        // Shift 指令队列（从**模拟侧权威队列**读）：为每条待执行指令画编号标记（移动=绿环，施法=橙环）。
         {
             use game_core::player::Cmd;
-            for (idx, cmd) in self.queued_cmds.iter().enumerate() {
-                let (target, col) = match cmd {
-                    Cmd::Move(p) => (Some(*p), Color::from_rgba(140, 230, 160, 210)),
-                    Cmd::Cast(_, Some(p)) => (Some(*p), Color::from_rgba(255, 180, 90, 220)),
-                    Cmd::Cast(_, None) => (None, Color::from_rgba(255, 180, 90, 220)),
-                    Cmd::Stop => (None, Color::from_rgba(180, 180, 190, 200)),
-                };
-                let Some(t) = target else { continue };
-                let mx = t.x.to_num::<f32>() * self.scale + self.offset.x;
-                let my = t.y.to_num::<f32>() * self.scale + self.offset.y;
-                let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: mx, y: my }, 5.0, 0.5, col)?;
-                canvas.draw(&ring, graphics::DrawParam::new());
-                draw_text(&mut canvas, ctx, &format!("{}", idx + 1), 13.0, col, Point2 { x: mx, y: my - 20.0 }, true)?;
+            let me_idx = self.self_index() as usize;
+            if let Some(qp) = self.world.players.get(me_idx) {
+                for idx in 0..qp.cmd_len {
+                    let Some(cmd) = qp.cmd_at(idx) else { continue };
+                    let (target, col) = match cmd {
+                        Cmd::Move(p) => (Some(p), Color::from_rgba(140, 230, 160, 210)),
+                        Cmd::Cast(_, Some(p)) => (Some(p), Color::from_rgba(255, 180, 90, 220)),
+                        Cmd::Cast(_, None) => (None, Color::from_rgba(255, 180, 90, 220)),
+                        Cmd::Stop => (None, Color::from_rgba(180, 180, 190, 200)),
+                    };
+                    let Some(t) = target else { continue };
+                    let mx = t.x.to_num::<f32>() * self.scale + self.offset.x;
+                    let my = t.y.to_num::<f32>() * self.scale + self.offset.y;
+                    let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: mx, y: my }, 5.0, 0.5, col)?;
+                    canvas.draw(&ring, graphics::DrawParam::new());
+                    draw_text(&mut canvas, ctx, &format!("{}", idx + 1), 13.0, col, Point2 { x: mx, y: my - 20.0 }, true)?;
+                }
             }
         }
 

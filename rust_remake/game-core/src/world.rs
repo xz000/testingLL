@@ -8089,6 +8089,18 @@ mod tests {
     }
 
     #[test]
+    fn cmd_at_reads_queue_in_order() {
+        // 表现层用 `cmd_at` 按序读取 shift 队列（索引 0 = 队头）。
+        let mut w = World::new(1, 3);
+        w.players[0].cmd_clear();
+        w.players[0].cmd_push(Cmd::Move(Vec2::new(d60(1.0), Fix64::ZERO)));
+        w.players[0].cmd_push(Cmd::Cast(SkillId::Rock, None));
+        assert!(matches!(w.players[0].cmd_at(0), Some(Cmd::Move(_))));
+        assert!(matches!(w.players[0].cmd_at(1), Some(Cmd::Cast(..))));
+        assert!(w.players[0].cmd_at(2).is_none(), "越界返回 None");
+    }
+
+    #[test]
     fn shift_queue_move_then_move() {
         let mut world = World::new(1, 100);
         world.obstacles.clear();
