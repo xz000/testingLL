@@ -51,7 +51,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 
 | 项 | 值 |
 |---|---|
-| `PROTOCOL_VERSION` | 16 |
+| `PROTOCOL_VERSION` | 17 |
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
@@ -111,7 +111,8 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 9. **S010/S012 接触伤害对齐（2026-09-13）**：`CA` 规格完整实现 —— `Player.charging`（`fr`）区分 A/B 形态；
    `bA` 改为以攻方为圆心的 AoE（`splash_damage`，半径 160×(1+.12xi)、×Gn）；
    S012A 撞敌自伤 + `xi>0` 的 `SI` AoE；凤凰弹门控改为只看 B 形态。协议 15→16。
-   仍有意保留：风步接触吸血（098c 无）。
+   **招架击退**：量级（4.5→125）与**方向**（双方互相推开）已修正。
+   **风步接触吸血已删除**（对齐 098c，其无此机制）→ 协议 16→17。
 
 ## 五、文档索引（读哪个）
 
