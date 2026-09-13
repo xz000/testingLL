@@ -7,7 +7,7 @@
 #![allow(clippy::type_complexity)] // 网络二进制签名的复杂元组类型：属协议固有，允许。
 //!
 //! 正确性要点：
-//! - host 必须等齐全部 client 输入才产生第 `seq` 帧（缺失时 `try_emit` 返回 None，不推残缺帧）。
+//! - host **固定节拍**产帧：每 tick 都产（`try_emit` 恒返回 `Some`，除非已被 Takeover 取缔）；某端本 tick 无新输入时用其**上一条输入的连续量**（held，丢弃离散动作）或默认占位，不再因“缺某端输入”而停摆。
 //! - client 严格按 `expect_seq` 顺序推进；收到 `seq > expect_seq`（漏帧）时向 host 发 `ReqFrame` 补发，
 //!   补齐前不推进——杜绝「跳 seq」导致的永久分叉。
 //! - host 保留最近 K 帧（`frame_buf`），收到 `ReqFrame` 时补发。
@@ -63,6 +63,10 @@ pub struct HostLockstep<T: Transport> {
     client_peers: Vec<Option<Peer>>,
     /// 各 client 最新输入（下标=client 序号 - local_base）。
     latest_input: Vec<Option<Vec<u8>>>,
+    /// 各 client **上一条**输入（held-continuous：本 tick 无新输入时复用其连续量）。
+    last_input: Vec<Option<Vec<u8>>>,
+    /// host 自身上一条输入（一般用不到，因为主循环每 iteration 都会 set）。
+    last_local: Option<Vec<u8>>,
     /// host 自身本地输入（参与时）。
     local: Option<Vec<u8>>,
     /// 下一帧 seq。
@@ -123,6 +127,8 @@ impl<T: Transport> HostLockstep<T> {
             participants_orig: Vec::new(),
             client_peers: vec![None; expected],
             latest_input: vec![None; expected],
+            last_input: vec![None; expected],
+            last_local: None,
             local: None,
             next_seq: 0,
             frame_buf: VecDeque::new(),
@@ -737,34 +743,47 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
-    /// 若已收齐全部 client（及 host 自身）输入，则合成一帧：入缓冲、广播，清空已用输入，
-    /// 返回 `Some((seq, entries))`（供各端包括 host 自身喂给本地 World）；未收齐返回 `None`。
+    /// **固定节拍**：每个 tick 必定产一帧（除非已被取缔），**不再要求“收齐全部输入”**。
+    /// 某端本 tick 没有新输入时：用其**上一条输入的连续量**（held，丢弃离散动作）或默认占位，
+    /// 从而 host 不会被“最慢那端”拖住停摆（消除 sim 频率被输入到达牵着走的问题）。
     pub fn try_emit(&mut self) -> Option<(u64, crate::proto::FrameData)> {
         // S2/S4：已被新 host 取缔 → 不再产/广播权威帧，避免与新 host 双权威脑裂。
         if self.superseded {
             return None;
         }
-        // 若 host 参与，总玩家数 = expected + 1；需 host 本地输入 + 所有【参与】的 client 输入（未参与的 vacant 槽位不要求）。
-        if !(0..self.expected).all(|c| !self.is_active(c) || self.latest_input[c].is_some()) {
-            return None;
-        }
-        if self.local_base > 0 && self.local.is_none() {
-            return None;
-        }
         let mut entries: FrameData = Vec::new();
         // host local = 本局 new index（host_index 在 participants_orig 中的位置，通常 0）。
         if self.local_base > 0 {
-            entries.push((self.orig_to_new(self.host_index), self.local.clone().unwrap()));
+            let b = self
+                .local
+                .take()
+                .or_else(|| self.last_local.clone())
+                .unwrap_or_else(default_input_bytes);
+            self.last_local = Some(b.clone());
+            entries.push((self.orig_to_new(self.host_index), b));
         }
         for c in 0..self.expected {
-            if self.is_active(c) {
-                if let Some(bytes) = &self.latest_input[c] {
-                    // 参与玩家收缩为本局连续 index：new index = 在 participants_orig 中该 orig index 的位置。
-                    let orig = self.client_indices[c];
-                    let new = self.orig_to_new(orig);
-                    entries.push((new, bytes.clone()));
-                }
+            if !self.is_active(c) {
+                continue;
             }
+            let bytes = if self.dropped[c] {
+                // 掉线：持续用默认输入推进（原语义）。
+                default_input_bytes()
+            } else if let Some(b) = self.latest_input[c].take() {
+                // 本 tick 有新输入：采用，并记为上一条。
+                self.last_input[c] = Some(b.clone());
+                b
+            } else if let Some(b) = &self.last_input[c] {
+                // 无新输入：held-continuous（只保留移动目标，丢离散）。
+                self.held_input(b)
+            } else {
+                // 从未收到过：默认占位。
+                default_input_bytes()
+            };
+            // 参与玩家收缩为本局连续 index：new index = 在 participants_orig 中该 orig index 的位置。
+            let orig = self.client_indices[c];
+            let new = self.orig_to_new(orig);
+            entries.push((new, bytes));
         }
         entries.sort_by_key(|(i, _)| *i);
         let seq = self.next_seq;
@@ -780,19 +799,25 @@ impl<T: Transport> HostLockstep<T> {
         while self.frame_buf.len() > self.frame_buf_capacity {
             self.frame_buf.pop_front();
         }
-        // 清空本帧已用输入，等待下一帧；掉线端保持默认占位（继续用默认输入推进）。
-        for (c, x) in self.latest_input.iter_mut().enumerate() {
-            if self.dropped[c] {
-                *x = Some(default_input_bytes());
-            } else {
-                *x = None;
-            }
-        }
-        if self.local_base > 0 {
-            self.local = None;
-        }
+        // 注：`latest_input` 已在上方 `take()`；不再把它们回填为默认/None——
+        // 无新输入时下一 tick 会走 held（上一条）或默认。
         self.bump_alive();
         Some((seq, entries))
+    }
+
+    /// held-continuous：复用上一条输入但**只保留连续量**（移动目标 `set_target`），
+    /// 丢弃离散动作（施法/队列/清队/停手）——避免重复施法，同时不让 host 停摆。
+    fn held_input(&self, bytes: &[u8]) -> Vec<u8> {
+        match game_core::netcode::decode_player_input(bytes) {
+            Ok(mut pi) => {
+                pi.cast = None;
+                pi.queued.clear();
+                pi.clear_queue = false;
+                pi.stop_move = false;
+                game_core::netcode::encode_player_input(&pi)
+            }
+            Err(_) => default_input_bytes(),
+        }
     }
 
     pub fn next_seq(&self) -> u64 {
@@ -1309,6 +1334,42 @@ mod tests {
             assert!(advanced.is_some(), "client 应收帧推进");
         }
         assert_eq!(cli.expect_seq(), 5, "client 应已按序推进 5 帧");
+    }
+
+    /// 固定节拍 + held：某端本 tick 无新输入时，host 用其**上一条输入的连续量**，
+    /// **丢弃离散动作**（避免重复施法）；且 host 不会因缺输入返回 None（不停摆）。
+    #[test]
+    fn host_holds_continuous_input_when_client_silent() {
+        use game_core::fix::{Fix64, Vec2};
+        use game_core::skill::SkillId;
+        use game_core::world::PlayerInput;
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        let target = Vec2::new(Fix64::from_num(7.0), Fix64::ZERO);
+        let fresh = game_core::netcode::encode_player_input(&PlayerInput {
+            set_target: Some(target),
+            cast: Some((SkillId::Rock, None)),
+            ..Default::default()
+        });
+        cli.send_input(&fresh).unwrap();
+        host.poll(&mut rcv);
+        host.set_local_input(Some(vec![1]));
+        let (seq0, e0) = host.try_emit().expect("固定节拍：应产帧");
+        assert_eq!(seq0, 0);
+        let c0 = e0.iter().find(|(i, _)| *i == 1).map(|(_, b)| b.clone()).unwrap();
+        let pi0 = game_core::netcode::decode_player_input(&c0).unwrap();
+        assert_eq!(pi0.cast, Some((SkillId::Rock, None)), "新输入应带上施法");
+
+        // 不再发输入：held → 保留移动目标、丢弃施法。
+        host.set_local_input(Some(vec![2]));
+        let (seq1, e1) = host.try_emit().expect("缺输入也应产帧（held/default，不停摆）");
+        assert_eq!(seq1, 1);
+        let c1 = e1.iter().find(|(i, _)| *i == 1).map(|(_, b)| b.clone()).unwrap();
+        let pi1 = game_core::netcode::decode_player_input(&c1).unwrap();
+        assert_eq!(pi1.set_target, Some(target), "held 应保留移动目标（连续量）");
+        assert_eq!(pi1.cast, None, "held 应丢弃离散施法（避免重复施法）");
     }
 
     /// 丢帧自愈：host 首次广播 seq=1 时被丢，client 应收齐逐帧推进（请求补发）。
@@ -2072,21 +2133,27 @@ mod tests {
         let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
         let mut rcv = [0u8; 4096];
 
-        // 未设参与集前（满员判定）：缺 client2 不能视为全在场、无法产帧。
+        // 未设参与集前（满员判定）：缺 client2 输入也可用默认占位产帧（固定节拍，host 不停摆）。
         assert!(!host.saw_all_clients(), "满员判定：client2 缺席时不全在场");
         cli.send_input(&encode_input(1)).unwrap();
         host.poll(&mut rcv);
         host.set_local_input(Some(vec![9]));
-        assert!(host.try_emit().is_none(), "满员判定下应因缺 client2 无法产帧");
+        let (seq0, entries0) = host.try_emit().expect("固定节拍：缺 client2 输入也用默认占位产帧");
+        assert_eq!(seq0, 0);
+        let players0: Vec<u8> = entries0.iter().map(|(i, _)| *i).collect();
+        assert_eq!(players0, vec![0, 1, 2], "满员判定：host + client1 + client2（默认占位）");
 
         // 设参与集：只 client1 参与 → 只要求 client1。
         assert!(host.set_participants(&[true, false]));
+        // 重新上行一条输入（上一帧 try_emit 已消耗在场信号）；再断言参与集“全在场”。
+        cli.send_input(&encode_input(2)).unwrap();
+        host.poll(&mut rcv);
         assert!(host.saw_all_clients(), "按参与集只在场的 client1 应视为全在场");
 
         // 产帧：只含 player0(host) + player1(client1)，不含 player2。
         let (seq, entries) = host.try_emit().expect("按参与集应能产帧");
         let players: Vec<u8> = entries.iter().map(|(i, _)| *i).collect();
-        assert_eq!(seq, 0);
+        assert_eq!(seq, 1, "固定节拍下上一帧已用 seq=0");
         assert_eq!(players, vec![0, 1], "产帧只应含参与玩家 host 与 client1");
         assert!(!players.contains(&2), "未参与的 client2 不应出现在帧里");
 
