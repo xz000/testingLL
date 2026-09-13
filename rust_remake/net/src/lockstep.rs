@@ -1212,6 +1212,11 @@ impl<T: Transport> ClientLockstep<T> {
         self.expect_seq
     }
 
+    /// 已收但尚未按序推进的帧数（诊断：区分“帧根本未到”与“本地落后/追赶快进”）。
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+
     /// 只读访问底层传输（诊断用，如取 `send_stats()`）。
     pub fn transport_ref(&self) -> &T {
         &self.transport

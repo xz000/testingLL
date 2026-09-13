@@ -106,5 +106,25 @@
 - （渲染插值仍未做。）
 
 **未实施（需联机验证）**：B（host 固定节拍 + 输入延迟）、渲染插值。
-下一步建议：安排两台 Steam 实测；实测时打开现有诊断日志
-（`send_stats`、`steam-cli`/`steam-host` 的 `emit seq`、`frame -> seq`）确认帧到达间隔。
+
+## 五、日志采集与指标（2026-09-13）
+
+为避免“人工粘贴日志”，诊断已改为进程内落盘：新增 `client/src/logging.rs`，带**毫秒时间戳**写
+`logs/<role>-<epoch>.log`（role 由启动参数判定 host/client/app），同时保留 stderr。`run-steam.ps1`
+另把控制台输出 tee 到 `logs/console-*.log`（兜底捕获 `net-steam` 内部 `eprintln!`）。`logs/` 已 gitignore。
+
+**采集方式**：两端各跑一局 → 把 **client 那台的 `logs/` 目录**拷回本机 → 直接读文件分析。
+
+**为延迟分析加的汇总指标（每 5s 一行 `[stat]`，避免逐帧刷屏）**：
+- host：`frames / seq / wait_ticks（因等输入而停摆的累计次数）/ ping_max / emit=[分桶]`；
+- client：`seq / stale / pending_max / ping_host / frame=[分桶] / in=[分桶]`。
+
+分桶 `16/33/50/67+` = 间隔 ≤25 / ≤42 / ≤59 / >59 ms（对应 1 / 2 / 3 / 4+ 个 TICK），
+分别回答：
+- **发射/推进间隔分布**：多少帧是正常 16ms、多少是晚 1~2 帧（量化“卡”的比例）；
+- **输入上行间隔 `in=`**：client 是否稳定每 tick 上行（应与 frame 桶相近）；
+- **`pending_max`**：区分“帧未到（网络）” vs “本地落后（追赶快进）”；
+- **`ping` / `ping_max`**：链路 RTT，用于判断是延迟还是抖动。
+
+另：逐帧 `frame -> seq` 日志已移除（旧日志一局数千行）；只保留 `[jit]`（间隔 >2 TICK 时才打印）。
+
