@@ -59,6 +59,47 @@ const PLAYER_TARGET_ARRIVE_EPS: f64 = 12.0;
 fn accumulate_tick(acc: f64, dt: f64) -> f64 {
     (acc + dt.min(0.25)).min(MAX_CATCHUP_STEPS as f64 * TICK)
 }
+
+/// 网络时序统计窗口（每 5s 汇总一行后清零）：间隔分桶（≤25/≤42/≤59/>59ms）+ 最大间隔。
+/// 桶边界对应 16.7/33/50ms 帧间隔的“正常/晚 1 帧/晚 2 帧/更多”。
+#[cfg(feature = "steam")]
+#[derive(Clone, Copy, Default)]
+struct IntervalStats {
+    b1: u32,
+    b2: u32,
+    b3: u32,
+    b4: u32,
+    max_ms: f32,
+    count: u32,
+}
+
+#[cfg(feature = "steam")]
+impl IntervalStats {
+    fn record(&mut self, ms: f32) {
+        self.count += 1;
+        self.max_ms = self.max_ms.max(ms);
+        if ms <= 25.0 {
+            self.b1 += 1;
+        } else if ms <= 42.0 {
+            self.b2 += 1;
+        } else if ms <= 59.0 {
+            self.b3 += 1;
+        } else {
+            self.b4 += 1;
+        }
+    }
+
+    fn summary(&self) -> String {
+        format!(
+            "16/33/50/67+={}/{}/{}/{} max={:.0}ms n={}",
+            self.b1, self.b2, self.b3, self.b4, self.max_ms, self.count
+        )
+    }
+
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
 /// 施法按键的「冷却预输入余量」（秒）：帧同步下客户端本地世界可能落后/领先权威若干帧，
 /// 只在 CD 剩余 <= 该值时响应按键（显示瞄准/施法），避免 CD 中按字母出现瞄准线误导玩家。
 const CAST_READY_LEAD_SECS: f64 = 0.2;
@@ -366,6 +407,21 @@ struct Game {
     last_ime_commit_frame: u64,
     /// 诊断（本轮加）：上一帧推进的墙钟时刻（秒）；用于打印模拟帧间隔异常（卡顿来源定位）。
     last_step_wall: f64,
+    /// 诊断：host 产帧间隔统计窗口（每 5s 汇总一行）。
+    #[cfg(feature = "steam")]
+    host_emit_stats: IntervalStats,
+    /// 诊断：client 推进帧间隔统计窗口。
+    #[cfg(feature = "steam")]
+    client_frame_stats: IntervalStats,
+    /// 诊断：client 上行输入间隔统计窗口。
+    #[cfg(feature = "steam")]
+    client_input_stats: IntervalStats,
+    /// 诊断：client 已收未推进帧数的窗口内峰值（区分“帧未到”与“本地落后”）。
+    #[cfg(feature = "steam")]
+    client_pending_max: usize,
+    /// 诊断：client 上次上行输入的墙钟（秒）。
+    #[cfg(feature = "steam")]
+    last_input_send_wall: f64,
     /// IME 预编辑（拼音组合）进行中：为真时屏蔽 ASCII 白名单手工插入，
     /// 否则组合期间的物理键会被当成普通字母直接拼进去（与提交的中文重复/乱码）。
     ime_composing: bool,
@@ -473,9 +529,6 @@ struct Game {
     /// Steam（host）：房间阶段是否已经历过「全员就绪」状态（用于倒计时只在真正全员就绪后才开始，避免边界"秒进/永不进"）。
     #[cfg(feature = "steam")]
     steam_was_all_ready: bool,
-    /// Steam：client 最近推进到的帧号（诊断：确认是否在收 host 权威帧）。
-    #[cfg(feature = "steam")]
-    steam_cli_last_seq: u64,
     /// Steam：主菜单内是否处于「大厅选择」子菜单（H 创建 / J 加入 / Q 返回）。
     #[cfg(feature = "steam")]
     steam_lobby_menu: bool,
@@ -1002,6 +1055,16 @@ impl Game {
             // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
             last_ime_commit_frame: u64::MAX,
             last_step_wall: 0.0,
+            #[cfg(feature = "steam")]
+            host_emit_stats: IntervalStats::default(),
+            #[cfg(feature = "steam")]
+            client_frame_stats: IntervalStats::default(),
+            #[cfg(feature = "steam")]
+            client_input_stats: IntervalStats::default(),
+            #[cfg(feature = "steam")]
+            client_pending_max: 0,
+            #[cfg(feature = "steam")]
+            last_input_send_wall: 0.0,
             ime_composing: false,
             float_texts: Vec::new(),
             banners: Vec::new(),
@@ -1050,8 +1113,6 @@ impl Game {
             steam_countdown: 0.0,
             #[cfg(feature = "steam")]
             steam_lobby_wait_ticks: 0,
-            #[cfg(feature = "steam")]
-            steam_cli_last_seq: 0,
             #[cfg(feature = "steam")]
             steam_last_sent_ready: None,
             #[cfg(feature = "steam")]
@@ -5060,12 +5121,15 @@ impl event::EventHandler for Game {
                                 }
                                 self.world.step(inputs, ticking);
                                 self.note_self_cast();
-                                // 诊断（本轮加）：host 产帧间隔异常（>2 TICK）打印——`try_emit` 因缺输入停摆时会看到。
+                                // 诊断：host 产帧间隔（>2 TICK 才打印；同时计入 5s 统计窗口）。
                                 {
                                     let now = ctx.time.time_since_start().as_secs_f64();
-                                    let gap = now - self.last_step_wall;
-                                    if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
-                                        logging::log(&format!("[jit] host sim gap {:.0}ms at seq={seq}", gap * 1000.0));
+                                    if self.last_step_wall > 0.0 {
+                                        let gap_ms = ((now - self.last_step_wall) * 1000.0) as f32;
+                                        self.host_emit_stats.record(gap_ms);
+                                        if gap_ms > (2.0 * TICK * 1000.0) as f32 {
+                                            logging::log(&format!("[jit] host sim gap {gap_ms:.0}ms at seq={seq}"));
+                                        }
                                     }
                                     self.last_step_wall = now;
                                 }
@@ -5084,14 +5148,23 @@ impl event::EventHandler for Game {
                                         host.set_snapshot(wb, host.next_seq());
                                     }
                                 }
-                                // 周期统计（每 5s）：host 产帧速率与“因等输入而停摆”的累计次数。
+                                // 周期统计（每 5s）：产帧间隔分布 + 因等输入而停摆的累计次数 + 最差 ping。
                                 if self.host_frame_count % 300 == 0 {
+                                    let ping_max = self
+                                        .steam_pings
+                                        .iter()
+                                        .filter(|(id, _)| *id != self.steam_my_id)
+                                        .map(|(_, ms)| *ms)
+                                        .max()
+                                        .unwrap_or(0);
                                     logging::log(&format!(
-                                        "[stat] host frames={} seq={seq} wait_ticks={} present={}",
+                                        "[stat] host frames={} seq={seq} wait_ticks={} ping_max={}ms emit=[{}]",
                                         self.host_frame_count,
                                         self.steam_lobby_wait_ticks,
-                                        host.present_clients_count()
+                                        ping_max,
+                                        self.host_emit_stats.summary()
                                     ));
+                                    self.host_emit_stats.reset();
                                 }
                                 self.accumulator -= TICK;
                             } else {
@@ -5191,16 +5264,29 @@ impl event::EventHandler for Game {
                         // 注：不能改成“每次 update 只发一条”——若 client 渲染<60fps，发送率会低于 host
                         // 产帧率，host `try_emit` 就会因缺输入而停摆（实测：sim 掉到 ~20–30Hz 且抖）。
                         while self.accumulator >= TICK {
+                            // 诊断（每 5s 汇总）：上行输入间隔。
+                            {
+                                let now = ctx.time.time_since_start().as_secs_f64();
+                                if self.last_input_send_wall > 0.0 {
+                                    self.client_input_stats
+                                        .record(((now - self.last_input_send_wall) * 1000.0) as f32);
+                                }
+                                self.last_input_send_wall = now;
+                            }
                             let enc = game_core::netcode::encode_player_input(&self.local_player_input());
                             let _ = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &enc);
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
                                 self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
-                                // 诊断（本轮加）：模拟帧间隔异常（>2 TICK）即打印——定位“~1s 一卡”是帧到达抖动还是本地卡顿。
+                                self.client_pending_max = self.client_pending_max.max(cli.pending_len());
+                                // 诊断：模拟帧间隔（>2 TICK 才打印；同时计入 5s 统计窗口）。
                                 {
                                     let now = ctx.time.time_since_start().as_secs_f64();
-                                    let gap = now - self.last_step_wall;
-                                    if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
-                                        logging::log(&format!("[jit] client sim gap {:.0}ms (next seq {})", gap * 1000.0, cli.expect_seq()));
+                                    if self.last_step_wall > 0.0 {
+                                        let gap_ms = ((now - self.last_step_wall) * 1000.0) as f32;
+                                        self.client_frame_stats.record(gap_ms);
+                                        if gap_ms > (2.0 * TICK * 1000.0) as f32 {
+                                            logging::log(&format!("[jit] client sim gap {:.0}ms (next seq {})", gap_ms, cli.expect_seq()));
+                                        }
                                     }
                                     self.last_step_wall = now;
                                 }
@@ -5214,13 +5300,8 @@ impl event::EventHandler for Game {
                                 }
                                 self.world.step(inputs, ticking);
                                 self.note_self_cast();
-                                // 诊断：打印推进到哪一帧（前若干帧/变化时不刷屏）。
+                                // 诊断：推进到哪一帧（不再逐帧打印，改由 5s [stat] 汇总）。
                                 let last = cli.expect_seq().saturating_sub(1);
-                                if self.steam_cli_last_seq != last {
-                                    let n_ents = self.world.players.len();
-                                    logging::log(&format!("[steam-client] frame -> seq={last}, n_ents={n_ents}"));
-                                    self.steam_cli_last_seq = last;
-                                }
                                 // 分歧检测：若 host 广播过该 seq 的世界哈希，与本端比对；不一致即帧同步分歧。
                                 if let Some(host_hash) = cli.take_state_hash_for(last) {
                                     let mine = game_core::world_ser::state_hash(&self.world);
@@ -5229,14 +5310,20 @@ impl event::EventHandler for Game {
                                         self.desync_detected = true;
                                     }
                                 }
-                                // 周期统计（每 5s）：client 推进帧、掉线计数、到 host 的延迟。
+                                // 周期统计（每 5s）：帧间隔分布 + 输入上行间隔 + pending 峰值 + 到 host 的延迟。
                                 if last % 300 == 0 {
                                     let host_id = self.steam_participants.first().copied().unwrap_or(0);
                                     logging::log(&format!(
-                                        "[stat] client seq={last} stale_ticks={} ping_host={:?}ms",
+                                        "[stat] client seq={last} stale={} pending_max={} ping_host={:?}ms frame=[{}] in=[{}]",
                                         self.steam_cli_stale_ticks,
-                                        self.steam_ping_of(host_id)
+                                        self.client_pending_max,
+                                        self.steam_ping_of(host_id),
+                                        self.client_frame_stats.summary(),
+                                        self.client_input_stats.summary()
                                     ));
+                                    self.client_frame_stats.reset();
+                                    self.client_input_stats.reset();
+                                    self.client_pending_max = 0;
                                 }
                                 self.accumulator -= TICK;
                             } else {
