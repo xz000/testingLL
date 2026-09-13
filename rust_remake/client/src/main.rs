@@ -5910,6 +5910,11 @@ impl Game {
         if o_pressed && !panel_open && (self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()) {
             self.room_cfg_edit = !self.room_cfg_edit;
             self.room_cfg_hint.clear();
+            if self.room_cfg_edit {
+                // 房间内的编辑器**永远不是**“创建模式”：清掉可能残留的建房标志，
+                // 否则回车会被当成“建房”直接关闭编辑器（真 bug）。
+                self.room_cfg_create_mode = false;
+            }
             // 房主改设置前先**取消自己的准备**：避免"房主已准备、还开着设置面板"的错位状态。
             if self.room_cfg_edit && self.steam_local_ready {
                 self.steam_local_ready = false;
@@ -6557,6 +6562,11 @@ impl Game {
             );
             self.steam_lobby_create = false;
             self.steam_lobby_menu = true;
+            // **建房成功：清掉“创建模式”标志**（否则进房后按 O 打开编辑器仍走创建语义：
+            // 回车被当成“建房”而直接关闭编辑器、且底部显示“回车 创建房间”——真 bug）。
+            self.room_cfg_create_mode = false;
+            self.room_cfg_edit = false;
+            self.room_cfg_hint.clear();
             self.steam_list_requested = false;
             self.steam_list_lobbies = Vec::new();
             self.steam_list_selection = 0;

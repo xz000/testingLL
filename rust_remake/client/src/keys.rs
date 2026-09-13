@@ -336,6 +336,20 @@ mod source_scan_tests {
         );
     }
 
+    /// 回归：建房成功后必须清掉 `room_cfg_create_mode`，否则房内按 O 仍走“创建模式”
+    /// （回车=建房→直接关闭编辑器、底部显示“回车 创建房间”）。
+    #[test]
+    fn build_clears_create_mode() {
+        let start = idx("fn steam_create_confirm");
+        let after = &SRC[start..];
+        let end = after.find("\n    }\n").unwrap_or(after.len());
+        let body = &after[..end];
+        assert!(
+            body.contains("room_cfg_create_mode = false"),
+            "建房成功应清掉创建模式标志"
+        );
+    }
+
     /// 回归：编辑房名/备注后必须随 `publish_room_cfg` 发布（否则客户端/房间列表读到建房时的旧值）。
     #[test]
     fn publish_room_cfg_pushes_room_name_and_note() {
