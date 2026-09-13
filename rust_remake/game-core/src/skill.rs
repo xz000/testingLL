@@ -166,8 +166,6 @@ pub enum SkillId {
     Y3Zone,
     Y3Zone2,
     // 测试类
-    Test01,
-    Test03,
     /// 雷电（D1）：指向性即时射线，命中敌人伤害+推，撞障碍停止。
     TestLightning,
     /// 换位（R3a）：点目标，有敌人则互换位置，否则瞬移过去。
@@ -262,8 +260,6 @@ impl SkillId {
             D2Fireball | D3Missile | D4Fireball | TestLightning => SkillTree::D,
             TLeech | T2Shot | T2Volley | T3Fast | T3Fast2 | TestLeech => SkillTree::T,
             Y1BlueLine | Y1BlueLine2 | Y2Delay | Y2Suite | Y3Zone | Y3Zone2 => SkillTree::Y,
-            Test03 => SkillTree::F,
-            Test01 => SkillTree::G,
             _Reserved | _SelfExplode => SkillTree::G,
             // 098b 热键（mechanics §6.1）：G=火球；D=闪电/追踪弹/回旋镖；E=陨石/分裂弹/疾风步/物品；
             // T=汲取/火焰喷射/弹跳弹/法术2；R=瞬间移动/冲撞/移形换位/法术1；C=反射盾/时光回溯/急行。
@@ -396,8 +392,6 @@ impl SkillId {
             Y2Suite => 27,
             Y3Zone => 28,
             Y3Zone2 => 29,
-            Test01 => 30,
-            Test03 => 31,
             TestLightning => 34,
             TestSwap => 35,
             _Reserved => 32,
@@ -474,8 +468,6 @@ impl SkillId {
             27 => Y2Suite,
             28 => Y3Zone,
             29 => Y3Zone2,
-            30 => Test01,
-            31 => Test03,
             32 => _Reserved,
             33 => _SelfExplode,
             34 => TestLightning,
@@ -722,14 +714,6 @@ pub enum SkillEffect {
         interval: f64,
         bullet_speed: Fix64,
         turn_rad: f64,
-    },
-    /// 蓄力自爆（F Test03）：吟唱结束后以自身为圆心 AOE 爆炸，自己扣到残血、范围内敌人掉血+踢开。
-    SelfExplode {
-        radius: Fix64,
-        self_stay: Fix64,
-        damage: Fix64,
-        kick: Fix64,
-        kick_time: Fix64,
     },
     /// 尚未实现/占位：契约上存在但暂不落地效果（绑定后施法会被消耗，但不产生作用）。
     Unimplemented,
@@ -1372,13 +1356,6 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
             interval,
             bullet_speed: sc(bullet_speed, LEGACY_SPEED),
             turn_rad,
-        },
-        SelfExplode { radius, self_stay, damage, kick, kick_time } => SelfExplode {
-            radius: sc(radius, LEGACY_RADIUS),
-            self_stay,
-            damage,
-            kick: sc(kick, LEGACY_SPEED),
-            kick_time,
         },
         // 镜像分身：分身偏移/火球间隔为长度/时长类（不缩放），其余字段为计数/倍率/时长（不缩放）。
         Mirror { count, duration, speed_bonus, fire_interval, clone_offset } => Mirror {
@@ -3146,58 +3123,6 @@ impl DefTable {
                     damage_delta: 0.3,
                     radius_base: 1.6,
                     duration_base: 4.0,
-                    ..DEF_ZERO
-                },
-            },
-            // F 树：蓄力自爆（Test03）
-            SkillId::Test03 => SkillDef {
-                id,
-                tree: SkillTree::F,
-                name: "蓄力自爆",
-                needs_point: false,
-                effect: SelfExplode {
-                    // war3 尺度：碰撞分离 64 起，自爆半径须 ≥64 才能打到贴身敌人（72 = 4.5×16）
-                    radius: Fix64::from_num(4.5 * 16.0),
-                    self_stay: Fix64::from_num(1.0),
-                    damage: Fix64::from_num(10.0),
-                    kick: Fix64::from_num(9.0),
-                    kick_time: Fix64::from_num(1.0),
-                },
-                growth: SkillGrowth {
-                    windup_base: 1.0, // 吟唱 1s
-                    recovery_base: 0.1,
-                    cooldown_base: 3.0,
-                    // war3 尺度：碰撞分离 64 起，自爆半径须 ≥64（4.5×16=72）
-                    radius_base: 4.5,
-                    damage_base: 10.0,
-                    push_power_base: 9.0,
-                    push_time_base: 1.0,
-                    ..DEF_ZERO
-                },
-            },
-            // G 树：普通爆炸弹（Test01）
-            SkillId::Test01 => SkillDef {
-                id,
-                tree: SkillTree::G,
-                name: "爆炸弹",
-                needs_point: true,
-                effect: PushShot {
-                    speed: Fix64::from_num(8.0),
-                    damage: Fix64::from_num(10.0),
-                    push_power: Fix64::from_num(8.0),
-                    push_time: Fix64::from_num(1.0),
-                    range: Fix64::from_num(12.0),
-                },
-                growth: SkillGrowth {
-                    windup_base: 0.1,
-                    recovery_base: 0.1,
-                    cooldown_base: 3.0,
-                    damage_base: 10.0,
-                    damage_delta: 2.0,
-                    speed_base: 8.0,
-                    push_power_base: 8.0,
-                    push_time_base: 1.0,
-                    range_base: 12.0,
                     ..DEF_ZERO
                 },
             },
