@@ -157,18 +157,18 @@ const STEAM_MAX_ROUNDS: u32 = 256;
 /// Steam 建房：默认总轮数（创建房间界面的初始值，与 MatchConfig 默认一致）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_ROUNDS: u32 = 3;
-/// Steam 建房：局间准备时间（秒）默认值（与 MatchConfig 默认一致）。
+/// Steam 建房：局间准备时间（秒）默认值。**必须与 `MatchConfig::default().learn_time_secs` 一致**（098c uo/wo=30）。
 #[cfg(feature = "steam")]
-const STEAM_DEFAULT_LEARN_SECS: u32 = 20;
+const STEAM_DEFAULT_LEARN_SECS: u32 = 30;
 /// Steam 建房：金币类字段的单档金额上限（初始金币 / 每轮金币 / 每档名次奖励）。
 #[cfg(feature = "steam")]
 const STEAM_MAX_GOLD: i32 = 99999;
-/// Steam 建房：开局初始金币默认值（第一局开始前一次性发放，与每轮参与奖独立叠加；默认 0）。
+/// Steam 建房：开局初始金币默认值。**必须与 `MatchConfig::default().starting_gold` 一致**（098c 全局 `Qo=20`）。
 #[cfg(feature = "steam")]
-const STEAM_DEFAULT_STARTING_GOLD: i32 = 0;
-/// Steam 建房：每轮固定金币（参与奖）默认值（与 MatchConfig 默认一致）。
+const STEAM_DEFAULT_STARTING_GOLD: i32 = 20;
+/// Steam 建房：每轮固定金币（参与奖）默认值。**必须与 `MatchConfig::default().gold_per_round` 一致**（098c 设置 17 `qo=10`）。
 #[cfg(feature = "steam")]
-const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 20;
+const STEAM_DEFAULT_GOLD_PER_ROUND: i32 = 10;
 /// 化身模式：击杀化身的奖励金（098c `AI` nn==3 的 `+lo`；`ed()` 默认 lo=1）。
 const AVATAR_KILL_REWARD: i32 = 1;
 /// 化身模式：化身本人的击杀奖励金（098c `AI` nn==3 的 `+1`）。
@@ -196,12 +196,12 @@ fn solo_world_and_meta() -> (game_core::world::World, game_core::meta::MatchStat
     (w, m)
 }
 
-/// Steam 建房：名次奖励默认第一名金额（配合自动递减）。
-#[cfg(feature = "steam")]
-const STEAM_DEFAULT_PLACE_FIRST: i32 = 30;
-
 /// 由「第一名奖励」自动生成名次奖励档位：每降一名奖励 ×0.6（向下取整），直到 ≤0。
 /// 这样只需输一个数字即可覆盖任意玩家数（档位只影响前几名，后几名逐渐归零）。
+///
+/// 注：098c 默认**没有**名次奖励（奖励走 `lo/Lo/Mo/po`+`ko/Ko/mo`），UI 也不再有该项；
+/// 本函数仅供单测/后续若重新暴露名次金时复用，故 `allow(dead_code)`。
+#[allow(dead_code)]
 #[cfg(feature = "steam")]
 fn auto_place_rewards(first: i32) -> Vec<i32> {
     let mut out = Vec::new();
@@ -823,8 +823,9 @@ impl Game {
         let init_starting_gold: i32 = STEAM_DEFAULT_STARTING_GOLD;
         #[cfg(feature = "steam")]
         let init_gold_per_round: i32 = STEAM_DEFAULT_GOLD_PER_ROUND;
+        // 098c 默认**没有**名次奖励（奖励走 lo/Lo/Mo/po + ko/Ko/mo）；名次金为空。
         #[cfg(feature = "steam")]
-        let init_place_rewards: Vec<i32> = auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST);
+        let init_place_rewards: Vec<i32> = Vec::new();
         let mut player_count: u32 = 1;
         match app {
             AppState::MainMenu => {}
@@ -6864,7 +6865,8 @@ impl Game {
                     } else {
                         eprintln!("[cfg] host 未提供房间设置串，使用默认值");
                     }
-                    self.match_place_rewards = sess.lobby_place_reward().unwrap_or_else(|| auto_place_rewards(STEAM_DEFAULT_PLACE_FIRST));
+                    // 098c 无名次金；host 未提供时用空（不再用 auto_place_rewards 的 30…）。
+                    self.match_place_rewards = sess.lobby_place_reward().unwrap_or_default();
                     let host_id = sess.host_steam_id().unwrap_or(0);
                     let my_slot = sess.my_slot();
                     self.steam_my_index = my_slot;
@@ -7840,6 +7842,18 @@ mod tests {
         // 金币不足
         p.gold = 0;
         assert_eq!(Game::shop_buy_block(&p, &rows[0]), Some("金币不足"));
+    }
+
+    /// 回归：Steam 建房的默认开局设置必须严格等于 `MatchConfig::default()`（单一真值源）。
+    /// 否则房间界面显示的默认值会与 098c/模拟不一致（曾出现初始金 0≠20、每轮金 20≠10）。
+    #[cfg(feature = "steam")]
+    #[test]
+    fn steam_defaults_match_matchconfig_default() {
+        let d = game_core::meta::MatchConfig::default();
+        assert_eq!(super::STEAM_DEFAULT_ROUNDS, d.total_rounds, "总轮数");
+        assert_eq!(super::STEAM_DEFAULT_LEARN_SECS as f64, d.learn_time_secs, "学习/局间时长");
+        assert_eq!(super::STEAM_DEFAULT_STARTING_GOLD, d.starting_gold, "初始金币 Qo");
+        assert_eq!(super::STEAM_DEFAULT_GOLD_PER_ROUND, d.gold_per_round, "每轮金币 qo");
     }
 
     /// 累加器封顶：卡顿后不能一帧内快进超过 MAX_CATCHUP_STEPS 步。
