@@ -216,6 +216,8 @@ pub struct Player {
     pub dash_vel: Vec2,
     /// S012 A「燃烧冲刺」（098c `Hr`）：冲刺期间为真；撞到**队友**触发 Burnout（熄灭）。
     pub burning: bool,
+    /// S010 A「冲锋」状态（098c `fr`，由 `RB` 设、`DR` 清）：与 B 形态（风步 `Fr`）区分。
+    pub charging: bool,
     /// S010 B「招架就绪」（098c `gr`）：风步期间为真；被攻击时刷新风步并互推；招架后 0.5s 恢复。
     pub parry_ready: bool,
     /// 招架冷却剩余秒（098c `NA`：0.5s 后恢复 `gr`）。
@@ -333,6 +335,7 @@ impl Player {
             blink2_window: None,
             dash_active: false,
             burning: false,
+            charging: false,
             parry_ready: false,
             parry_cd: Fix64::ZERO,
             contact_by_enemy: None,

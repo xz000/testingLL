@@ -155,6 +155,7 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
   （098c `CA` 是单位碰撞条件 `hv=ni`，见 §0.5；我们无自动攻击，故用「接触」等效），
   风步 B 接触敌人且 `parry_ready` 时：刷新风步（≤5s）、`parry_cd=0.5s`（到时恢复，即 `NA`）、
   双方互相击退（`push_knockback`：（攻击者 4.5、自己 2.25）×`100/(100+gn)`）。
+  **另（2026-09-13）**：`Player.charging` = 098c `fr`（S010A 冲锋），与 B 形态区分；`bA` 额外 AoE 已按 098c 实现。
   单测 `windwalk_parry_refreshes_and_knocks_back` / `windwalk_parry_ignores_allies_and_non_windwalkers` /
   `enemy_contact_marks_contact_by_enemy`。
 - ⚠️ **有意差异（已记录）**：我们**保留了 098c 没有的「风步接触吸血」**（098b 遗留，`0.6+0.1L`）。
@@ -223,14 +224,14 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
 |---|---|---|---|
 | S010A 命中伤害 | `4.6+0.8wr` ×Gn | kick `stats.damage`(5.4→11) ×damage_mult ✓ | 保留 |
 | S012A 命中伤害 | `5+.4Wr` ×Gn | kick `stats.damage`(5.4→8.6) ×damage_mult ✓ | 保留 |
-| `bA` 额外 AoE（冲锋 + `xi>0`） | **圆心=攻方**、半径 160*(1+.12xi)、**×Gn** | `stealth_extra`：**单体**、**不乘** Gn、门控 `Stealth` | **改** |
-| S012A 敌人接触自伤 | `FX(nr, 5+.4Wr)`（不乘 Gn） | 无 | **补** |
-| S012A 敌人接触 AoE（`xi>0`且非 fr） | `SI(nr, 5+.4Wr)` ×Gn | 无 | **补** |
+| `bA` 额外 AoE（冲锋 + `xi>0`） | **圆心=攻方**、半径 160*(1+.12xi)、**×Gn** | 已改（`splash_damage`） | ✅ |
+| S012A 敌人接触自伤 | `FX(nr, 5+.4Wr)`（不乘 Gn） | 已补（平直自伤） | ✅ |
+| S012A 敌人接触 AoE（`xi>0`且非 fr） | `SI(nr, 5+.4Wr)` ×Gn | 已补 | ✅ |
 | S012A 熄灭 | `BA()` | `stop_on_hit`→清 control/cur_vel/burning ✓ | 保留 |
 | 招架 | 刷新 + 互推 + `gr` CD | ✅ | 保留 |
 | 同队 Burnout | `lb` | ✅ | 保留 |
 
-### 3.3 所需基础改动
+### 3.3 所需基础改动（✅ **已完成 2026-09-13**）
 1. **新增 `fr` 标志**：区分 S010A 冲锋与 S010B 风步（两者现在都写 `windwalk_state`/`Stealth`）。
    - `fr` = S010A 冲锋（已入 `Charge` 分支）；`Fr` = S010B 风步（现有 `windwalk_state`）。
    - 副作用修复：凤凰弹的“需风步”门控应只看 `Fr`（S010B），不再被 S010A 误触。
@@ -239,6 +240,8 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
 4. 改变伤害/模拟逻辑 → **`PROTOCOL_VERSION` 15→16**。
 
 > 注：“破隐一击”这个名字本身就是误命名；正确概念是 **S010A 冲锋的 `bA` 额外 AoE（范围精通门控）**。
+> 实现：新增 `Player.charging`（`fr`，入快照）区分 A/B 形态；`stealth_extra` 已改为圆心=攻方的 AoE；
+> S012A 撞敌加自伤；凤凰弹门控改为只看 B 形态（`windwalk_state>0 && !charging`）。协议 15→16。
 
 ## 4. 建议跟进（已收窄）
 1. ✅ **S012 A 燃烧冲刺 + Burnout**（2026-09-13 完成：`Player.burning` + `CombatEvent::Burnout` + 同队熄火）。
