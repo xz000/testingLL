@@ -70,6 +70,9 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      草案见 `FRAME_SYNC_INPUT_DELAY_DESIGN.md`（保留为备选）；待用户实测手感后再定后续（候选：渲染插值 → 降 tick → D → 预测/回滚）。
    - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步。输入发送**每模拟 tick 一条**（曾改为“每次 update 一条”，
      实测导致 host 缺输入、sim 掉到 20–30Hz，**已回退**；渲染插值未做）。
+   - ✅ **诊断落盘**：新增 `client/src/logging.rs`（带 ms 时间戳，写 `logs/<role>-<epoch>.log`，role 由启动参数判定）；
+     关键 net/时序日志已改走它，并加周期 `[stat]`（host 产帧/等输入计数、client 帧号/延迟）。
+     `run-steam.ps1` 另将控制台输出 tee 到 `logs/console-*.log`（兜底捕获库内 `eprintln!`）。`logs/` 已 gitignore。
 7. **玩法修复**（`GAMEPLAY_FIX_PLAN.md`）：
    - ✅ **击退清掉移动目标**：改为 `Game::should_clear_player_target`（仅“已接受 + 未位移/冲刺 + 临近目标”才清，
      击退/冲刺中绝不清）；单测 `player_target_clear_requires_arrival_and_no_displacement`。
