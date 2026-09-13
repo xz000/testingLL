@@ -53,8 +53,6 @@ pub struct Balance {
     pub shrink_speed: f64,
     /// 出界掉血（HP/秒）。（098b 熔岩 Uo×10 = 0.9×10 = 9，mechanics §五）
     pub out_hurt: f64,
-    /// 玩家相互挤压损伤（HP/秒）。伤害尺度不变，维持旧值。
-    pub overlap_damage: f64,
     /// E3/E3b 扇形子弹伤害。伤害尺度不变，维持旧值。
     pub sabullet_damage: f64,
     /// E3/E3b 扇形子弹射程。按距离因子 ×60 过渡。
@@ -85,7 +83,6 @@ impl Balance {
             shrink_delay_secs: 10.0,
             shrink_speed: 11.2,
             out_hurt: 9.0,
-            overlap_damage: 2.0,
             sabullet_damage: 2.0,
             sabullet_range: 360.0,
         }

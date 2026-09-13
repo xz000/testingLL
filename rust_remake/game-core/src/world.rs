@@ -17,8 +17,6 @@ pub const START_RADIUS: f64 = Balance::default().start_radius;
 pub const LAVA_HURT: f64 = Balance::default().out_hurt;
 /// 兼容旧名（测试引用）。
 pub const OUT_HURT: f64 = LAVA_HURT;
-/// 玩家相互挤压（重叠）时受到的伤害 / 秒。
-pub const OVERLAP_DAMAGE: f64 = Balance::default().overlap_damage;
 /// E3/E3b 撒出的扇形子弹（原版 `SABulletScript`）的伤害与射程。
 pub const SABULLET_DAMAGE: f64 = Balance::default().sabullet_damage;
 pub const SABULLET_RANGE: f64 = Balance::default().sabullet_range;
@@ -4668,7 +4666,7 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
 ///
 /// 伤害处理：若两球重叠较深（被挤压）则双方各受一定伤害，鼓励拉开距离。
 /// 位置修正按半径反比分配（更小的球退得更多），保证确定性与顺序无关地一致。
-fn resolve_player_collisions(players: &mut [Player], dt: Fix64, damage_mult: Fix64, knockback_mult: Fix64) {
+fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fix64, knockback_mult: Fix64) {
     let n = players.len();
     for i in 0..n {
         for j in (i + 1)..n {
@@ -4740,11 +4738,7 @@ fn resolve_player_collisions(players: &mut [Player], dt: Fix64, damage_mult: Fix
                 }
             }
 
-            // 挤压伤害：重叠越深伤害越高（boost 期间返半回血）
-            let damage = Fix64::from_num(OVERLAP_DAMAGE) * dt
-                * (overlap / min_dist).max(Fix64::from_num(0.15));
-            players[i].hp = (players[i].hp - players[i].soak_boost(damage)).max(Fix64::ZERO);
-            players[j].hp = (players[j].hp - players[j].soak_boost(damage)).max(Fix64::ZERO);
+            // （098c 没有“挤压伤害”；玩家重叠只做分离+动量交换，不扣血。）
 
             // 踢击/撞击效果（冲锋·潜行踢）：携带 kick 的一方撞到敌人，造成技能伤害+击退，并消耗 kick。
             let dir_b_from_a = if dist == Fix64::ZERO {
@@ -7352,7 +7346,7 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        // 直线上两个敌人：500（被弹体直接命中）与 620（只在爆炸半径 200 内）。
+        // 直线上两个敌人：8m 与 10m；陨石飞向 **9m**（两敌之间）后爆炸，均在半径 210（≈3.5m）内。
         world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO);
         world.players[1].move_target = None;
         world.players[2].pos = Vec2::new(d60(10.0), Fix64::ZERO);
@@ -7361,7 +7355,7 @@ mod tests {
         let hp2 = world.players[2].hp;
         world.step(
             vec![
-                PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(12.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(9.0), Fix64::ZERO)))), ..Default::default() },
                 PlayerInput::default(),
                 PlayerInput::default(),
             ],
@@ -7369,10 +7363,10 @@ mod tests {
         );
         let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
         for _ in 0..150 {
-            world.step(none.clone(), dt); // 速度 400 → 800 距离需 2s
+            world.step(none.clone(), dt); // 速度 400 → 900 距离需 ~2.25s
         }
-        assert!(world.players[1].hp < hp1, "陨石直击目标应受伤");
-        assert!(world.players[2].hp < hp2, "爆炸半径 200（≈3.3 旧距离）应波及 620 处的第二敌人");
+        assert!(world.players[1].hp < hp1, "爆炸应波及 8m 处敌人");
+        assert!(world.players[2].hp < hp2, "爆炸半径 210（≈3.5m）应波及 10m 处敌人");
     }
 
     /// S016 弹跳弹：两敌布阵——第一跳全额 6、跳向第二敌 ×0.8≈4.8；寿命耗尽后消失。
