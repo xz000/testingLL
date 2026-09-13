@@ -4808,11 +4808,11 @@ impl Game {
                     });
                 }
                 CombatEvent::HealPulse { pos, radius } => {
-                    // 虔诚队友回血范围：精确半径绿环。
+                    // 虔诚队友回血范围：双绿环（无填充，区别于伤害圈）。
                     self.fx.spawn(fx::Fx {
-                        kind: fx::FxKind::Blast,
+                        kind: fx::FxKind::HealRing,
                         pos: [pos.x.to_num::<f32>(), pos.y.to_num::<f32>()],
-                        color: [0.4, 1.0, 0.55, 0.85],
+                        color: [0.35, 0.95, 0.5, 0.9],
                         life: HEAL_PULSE_LIFE,
                         max_life: HEAL_PULSE_LIFE,
                         radius: radius.to_num::<f32>(),
@@ -7935,17 +7935,17 @@ impl Game {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
 
-        // 标题区
+        // 标题区（上移，给 4 张卡片 + 底部提示留出空间，避免重叠）
         let title = "术士之战 Warlock Brawl";
-        draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.14 }, true)?;
-        draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.14 + 64.0 }, true)?;
+        draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: 64.0 }, true)?;
+        draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: 124.0 }, true)?;
 
-        // 卡片通用尺寸
+        // 卡片通用尺寸（紧凑：4 张卡 + 底部提示条不重叠）
         let card_w = (sw * 0.62).min(560.0);
-        let card_h = 96.0;
+        let card_h = 84.0;
         let card_x = cx - card_w / 2.0;
-        let y0 = sh * 0.34;
-        let gap = 26.0;
+        let y0 = 168.0;
+        let gap = 16.0;
 
         #[cfg(feature = "steam")]
         let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
@@ -8077,11 +8077,11 @@ impl Game {
             draw_text(&mut canvas, ctx, desc, 17.0, Color::from_rgb(150, 156, 172), Point2 { x: cx, y: y + card_h * 0.5 + 20.0 }, true)?;
         }
 
-        // 底部操作提示条
-        draw_text(&mut canvas, ctx, "↑/↓ 选择    回车 确认    或直接按数字键", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.92 }, true)?;
+        // 底部操作提示条（卡片下方，不重叠）
+        draw_text(&mut canvas, ctx, "↑/↓ 选择    回车 确认    或直接按数字键", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh - 34.0 }, true)?;
         // 局域网等需在 GUI 外接管的提示（拾取对应卡片后显示，避免只 eprintln 看不到）。
         if !self.menu_hint.is_empty() {
-            draw_text(&mut canvas, ctx, &self.menu_hint, 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh * 0.85 }, true)?;
+            draw_text(&mut canvas, ctx, &self.menu_hint, 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh - 76.0 }, true)?;
         }
         canvas.finish(ctx)?;
         Ok(())

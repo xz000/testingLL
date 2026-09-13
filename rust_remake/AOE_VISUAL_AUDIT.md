@@ -40,7 +40,7 @@
 |---|---|---|
 | S001/S020 nova | `Explode` → `Blast` 精确环 | ✅ 修复后精确 |
 | S021 伤敌 250 | `Explode` 精确环 | ✅ |
-| S021 **回血 500** | `HealPulse` → 绿色 `Blast` 精确环 | ✅（新增）|
+| S021 **回血 500** | `HealPulse` → 双绿环 `HealRing`（无填充，区别于伤害圈）| ✅（新增）|
 | 陨石 | 落点环（`DelayedBlast.radius` 精确）+ 收缩内圈 | ✅ 落点环 = 实际 |
 | 火球爆炸 | `Explode` 精确环 | ✅ |
 | 点目标瞄准圈（客户端） | `skill_aim_hint`：`blast` / nova `radius` | ✅ 与实际爆炸同源同值 |
