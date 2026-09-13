@@ -40,13 +40,16 @@
 | 1 | `process_parry`：`push_knockback(dir*4.5)` / `2.25` | **已修** → 125 / 62.5 | ✅ 修复 |
 | 2 | `explode_at` 调用处的 `bomb_force`（S001/S020/S008…） | `100*gx*kb_ji` | ✅ 有换算 |
 | 3 | `warlock_ki_knockback`（闪电/弹体击退） | 已含 `(100+mana)*…` | ✅ |
-| 4 | 冲刺 `kick.push_power`（S012/S010/凤凰） | 150（硬编码）/ 部分技能 def | ⚠ 需逐个确认无「6.0」类小值漏入 |
-| 5 | `SkillEffect::Lightning`（4484）`p.push(dir*stats.push_power,…)` | `stats.push_power` 来自旧技能 def | ⚠ 待核（可能 legacy/不可达） |
-| 6 | `pushes.push((victim, dir*push_power, …))`（W098b 弹体命中，1908/1974/1984/2025/2160） | 弹体字段 `push_power`（非 `kb_ji` 路径） | ⚠ 待核该字段来源与量级 |
-| 7 | `explode.push(ProjExplosion{ bomb_force: *push_power })`（1964） | 弹体字段 | ⚠ 待核 |
-| 8 | `p.push(vel, time)` 通用写回（2555） | 来自各处 `pushes` | 取决于上游 |
-| 9 | 旧名册 `sc(x, LEGACY_SPEED)`（skill.rs 1206+） | 统一 ×60 缩放 | ✅（旧名册专用） |
-| 10 | `splash_damage`（bA/SI） | 伤害值（不是速度） | ✅ |
+| 4 | 冲刺 `kick.push_power`（可达：S012/S010/凤凰） | 硬编码 150（我们标定） | ✅ |
+| 5 | `SkillEffect::Lightning`（4484） | 属于 `SkillId::TestLightning`（**测试技能，不在名册树**） | ✅ 不可达 |
+| 6 | `pushes.push(... *push_power ...)`（`Returner` 等） | 旧名册弹体（`Missile`/`Boomerang`/`DashStrike` 均不在树，且经 `sc()` 缩放） | ✅ 不可达 |
+| 7 | `explode.push(ProjExplosion{ bomb_force: *push_power })`（`Rock` 等） | 同上（旧名册） | ✅ 不可达 |
+| 8 | `p.push(vel, time)` 通用写回（2555） | 上游均为 KI/100×gx/速度 | ✅ |
+| 9 | 旧名册 `sc(x, LEGACY_SPEED)` | 统一 ×60 缩放 | ✅ |
+| 10 | `splash_damage`（bA/SI） | 伤害值（非速度） | ✅ |
+
+> **结论**：可达路径中，**唯一的量级错配是招架**（已修）；其余靠 `warlock_ki_knockback` / `100*gx*kb_ji`
+> / kick 150 / 冲刺速度 均正确；#5–#7 属旧名册测试技能，不可达（仅单测）。
 
 ---
 
@@ -66,7 +69,7 @@
 - 2026-09-13：**招架击退量级修复**（4.5/2.25 → 125/62.5）。原因：误把 098c 伤害型幅度当速度。
 - 2026-09-13：**S010 B 吸血量级**：`0.6+0.1L`（≈0.7）低于飘字阈值 `PRESENTATION_MIN_DELTA=1.0`，且数值本就极小
   → 肉眼不可见。**该机制 098c 没有（我们有意保留）**，量级待用户确定（见 §5）。
-- 待做：#4–#7 逐项核对（尤其 legacy `push_power` 是否漏入可达路径）。
+- 待做：#4–#7 **已核**（#4 ✅、#5–#7 旧名册不可达）。**可达路径已无已知量级错配**。
 
 ---
 
