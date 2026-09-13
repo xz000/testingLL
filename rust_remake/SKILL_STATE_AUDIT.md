@@ -23,7 +23,8 @@
    `dn/Cn`（连杀计数/时刻）、`Fn`（当前 HP）、`Gn/Hn`（伤害/击退倍率）、`vi/ei/xi/oi/Zr`（等级/成长）。
 3. **真·玩法副状态（少量，才是缺口）**：
    - `Hr`（**S012 A 燃烧冲刺**）→ Burnout；**✅ 已建（2026-09-13）**。
-   - `Fr/gr`（**S010 A**）/ `fr`（**S010 B**）：带 debuff `gR` 的标记状态；**待核**我们 S010 是否等价。
+   - `Fr/gr`（**S010 A**）/ `fr`（**S010 B**）：带 debuff `gR` 的标记状态；
+     **✅ 已核**：`Fr`/`fr`=风步/冲锋隐身（已对齐）；`gr`「招架刷新」与 `CA` 接触伤害分支未对齐（不影响播报）。
    - `kr`（**S012 B 凤凰**瞬时状态）：我们有凤凰实现，**大概率等价**。
    - `Fv` + `Dv/fv/Nv/bv/Bv` + `Mb`：**通用「链接/绑定」系统**（S003/S005/S013/S017B/S019 等都用），
      我们按弹体实现，缺少「单位级绑定」及其交互（Denied）。**结构不同**。
@@ -75,11 +76,17 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
   熄火（清 burning/control/vel）并播 `ann_burnout` + 「Burn out」漂字。
 - 注：098c `wR` 实为「链接谓词」（非距离）；我们以「burning 状态成立」等价处理。单测 `burnout_triggers_on_ally_contact_while_burning`。
 
-### 2.2 `Fr/gr`（S010 A）/ `fr`（S010 B）（**待核**）
-- `IB`(S010 B, 11890)：`gr[ii]=true; Fr[ii]=true; gR(ii, hR(ii)+Dr/2)`（加 debuff）。
-- `RB`(S010 A, 11866)：`fr[ii]=true; gR(...)`。
-- 读用：`7926 if Fr[nr] and (not Fr[Vr]) and gr[nr]`；`fr` 在 4895/7881 等。
-- 我们：S010 = Break Strike / Windwalk / Charge（见 `skill.rs`）；需核对是否覆盖这些「标记 + debuff」交互。
+### 2.2 `Fr/gr`（S010 A）/ `fr`（S010 B）（❓ 已核：**状态对齐，有细节分歧**）
+- `IB`(S010 B, 11890)：`gr[ii]=true; Fr[ii]=true; gR(ii, hR(ii)+Dr/2)`；`RB`(S010 A, 11866)：`fr[ii]=true; gR(...)`。
+  （两者都是「给 `ii` 挂 buff + 安排到期回调 `AA`/`DR`」；`fr`/`Fr` 只是「已挂」标志。）
+- **已对齐**：`Fr` = 风步/隐身状态 ≈ `Player.windwalk_state` + `BuffKind::Stealth`；
+  `fr` = S010 A 冲锋的同名隐身（我们 A 形态也挂 `Stealth` + 踢击窗口，测试 `s010_form_a_charge_vs_b_invisibility`）。
+- **未对齐**：
+  - `gr` = 「被击中时**刷新风步（招架）**」一次性标志。098c `CA`(7847)：`Fr[nr] and (not Fr[Vr]) and gr[nr]` → 重算 `Xr≤5`、刷新 `Fr`、`gr=false`、
+    重排 `AA`(Xr) + `NA`(0.5s 格挡特效)。**我们未建**。
+  - `CA`(7847) 接触伤害分支：`fr[nr]` → `4.6+.8*wr`；`Hr[nr]` → `5+.4*Wr`。
+    我们 `resolve_player_collisions` 只做了 `stealth_extra`（远程精通门控追加一笔），**公式与 098c 分支不完全一致**。
+- 影响：**不影响播报**（S010 无专属音效）。
 
 ### 2.3 `kr` — S012 B 凤凰（**大概率等价**）
 - `WB`(S012 B, 12852)：`kr[ri]=true` + 触发器（`UB` 处理点令）。
@@ -109,7 +116,8 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
 
 ## 4. 建议跟进（已收窄）
 1. ✅ **S012 A 燃烧冲刺 + Burnout**（2026-09-13 完成：`Player.burning` + `CombatEvent::Burnout` + 同队熄火）。
-2. **S010 A/B 标记**（`Fr/gr/fr`）→ 先核对我们的 S010 是否已覆盖 debuff/标记，再决定是否补。
+2. ✅ **S010 标记核对**（2026-09-13）：`Fr`/`fr`（风步/冲锋隐身状态）已对齐；
+   未对齐项：`gr`「被击中刷新风步（招架）」与 `CA` 的 `fr/Hr` 接触伤害分支。均不影响播报。
 3. **链接/绑定系统**（`Fv` 族）→ 决定「移植单位级绑定」还是「明确宣告弹体式为有意简化」；
    若移植，同时解锁 Denied 与若干链索交互。
 4. **S012 B 凤凰**：抽查即可（大概率已等价）。
