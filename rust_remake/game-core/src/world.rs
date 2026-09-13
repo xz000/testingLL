@@ -4293,7 +4293,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::PushShot { .. } => {
-                // 撞击迟缓（Y2）/爆炸弹（Test01）：直线弹命中→伤害 + 强推 push_time。（数值走 stats）
+                // 撞击迟缓（Y2）/直弹：直线弹命中→伤害 + 强推 push_time。（数值走 stats）
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     world.projectiles.push(Projectile {
@@ -4454,46 +4454,6 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     pos: place,
                     alive: true,
                 });
-            }
-            SkillEffect::SelfExplode { self_stay, .. } => {
-                // 蓄力自爆（F）：以施法者为中心 AOE；自己扣到残血、范围内敌人受伤并踢开。（数值走 stats）
-                let ppos = world.players[idx as usize].pos;
-                let radius = stats.radius;
-                eprintln!("[dbg-se] radius={:?} ppos={:?} epos={:?} dist={:?}", radius, ppos, world.players[1].pos, (world.players[1].pos - ppos).length());
-                let damage = stats.damage;
-                let kick = stats.push_power;
-                let kick_time = stats.push_time;
-                // 施法者自残：对照 Unity `GetHurt(min(10, hp-1))`——最多自扣 10 血、保底留 self_stay(1) 血。
-                // （旧实现把施法者固定扣到 1 血，高血量时过伤、与 Unity 不符。）
-                if let Some(p) = world.players.get_mut(idx as usize) {
-                    if p.hp > self_stay {
-                        let dmg = (p.hp - self_stay).min(Fix64::from_num(10));
-                        p.hp = (p.hp - dmg).max(Fix64::ZERO);
-                    }
-                }
-                // 范围内其他敌人：伤害 + 沿连线踢开
-                let mut kick_map: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (id, dir, power, time)
-                for i in 0..world.players.len() {
-                    let pid = world.players[i].id;
-                    if pid == idx || !world.players[i].alive {
-                        continue;
-                    }
-                    let d = world.players[i].pos - ppos;
-                    let dsq = d.length_squared();
-                    if dsq <= (radius * radius) && dsq > Fix64::ZERO {
-                        kick_map.push((pid, d.normalized(), kick, kick_time));
-                    } else if dsq <= (radius * radius) {
-                        kick_map.push((pid, Vec2::new(Fix64::ONE, Fix64::ZERO), kick, kick_time));
-                    }
-                }
-                for (pid, dir, power, t) in kick_map {
-                    world.damage_player(pid, damage, Some(idx));
-                    if let Some(p) = world.players.get_mut(pid as usize) {
-                        if p.alive {
-                            p.push(dir * power, t.to_num::<f64>());
-                        }
-                    }
-                }
             }
             SkillEffect::LineBeam { .. } => {
                 // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
@@ -7640,77 +7600,6 @@ mod tests {
 
 
     #[test]
-    fn f_self_explode_hurts_enemies_and_self() {
-        let mut world = World::new(2, 90);
-        let dt = Fix64::from_num(1.0 / 60.0);
-        world.players[0].pos = Vec2::ZERO;
-        world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(r16(1.5), Fix64::ZERO); // 在自爆半径内
-        world.players[1].move_target = None;
-        // 施放蓄力自爆（windup 1s），随后空输入让它吟唱完成
-        world.step(vec![
-            PlayerInput { cast: Some((SkillId::Test03, None)), ..Default::default() },
-            PlayerInput::default(),
-        ], dt);
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..80 {
-            world.step(none.clone(), dt);
-        }
-        assert!(world.players[1].hp < world.players[1].max_hp, "自爆应伤到范围内敌人");
-        // Unity：GetHurt(min(10, hp-1))，满血(100)自爆应最多自扣 10 → 剩 90，而非被固定扣到 1 血。
-        let expected = world.players[0].max_hp - Fix64::from_num(10);
-        assert!(
-            (world.players[0].hp - expected).abs() < Fix64::from_num(0.5),
-            "施法者应最多自扣 10 血（Unity min(10,hp-1)），当前 {:?} 预期 {expected:?}（容差含全局回血漂移）",
-            world.players[0].hp
-        );
-        assert!(world.players[0].hp > Fix64::from_num(80.0), "自爆不应再把满血施法者打到 1 血");
-    }
-
-    #[test]
-    fn f_self_explode_low_hp_floor_is_self_stay() {
-        // Unity 低血量分支：GetHurt(min(10, hp-1))，当 hp<=11 时扣 hp-1 → 保底留 1 血。
-        let mut world = World::new(2, 93);
-        world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
-        let dt = Fix64::from_num(1.0 / 60.0);
-        world.players[0].pos = Vec2::ZERO;
-        world.players[0].move_target = None;
-        world.players[0].hp = Fix64::from_num(5);
-        world.players[1].pos = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO); // 远离自爆，只测施法者自残
-        world.players[1].move_target = None;
-        world.step(vec![
-            PlayerInput { cast: Some((SkillId::Test03, None)), ..Default::default() },
-            PlayerInput::default(),
-        ], dt);
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..80 {
-            world.step(none.clone(), dt);
-        }
-        assert!(
-            world.players[0].hp > Fix64::ZERO && world.players[0].hp <= Fix64::from_num(1.1),
-            "低血量(5)自爆应保底留 1 血（Unity 扣 hp-1），当前 {:?}",
-            world.players[0].hp
-        );
-    }
-
-    #[test]
-    fn g_straight_bomb_damages_enemy() {
-        let mut world = World::new(2, 91);
-        let dt = Fix64::from_num(1.0 / 60.0);
-        world.players[0].pos = Vec2::ZERO;
-        world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
-        let hp1 = world.players[1].hp;
-        let input = vec![
-            PlayerInput { cast: Some((SkillId::Test01, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
-            PlayerInput::default(),
-        ];
-        for _ in 0..50 {
-            world.step(input.clone(), dt);
-        }
-        assert!(world.players[1].hp < hp1, "爆炸弹应命中造成伤害");
-    }
-
-    #[test]
     fn projectile_kill_is_recorded_in_kills_and_eliminated_order() {
         // 回归 P3：被弹体/爆炸击杀曾因 step-7 死亡结算循环 `if !alive { continue }`
         // 跳过而永不记账，导致击杀金币全不发、名次奖励发错人。
@@ -7718,9 +7607,9 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[1].pos = Vec2::new(Fix64::from_num(3.0), Fix64::ZERO);
-        world.players[1].hp = Fix64::from_num(1.0); // 一击致命，但需靠 Test01 爆炸弹打死
+        world.players[1].hp = Fix64::from_num(1.0); // 一击致命（用 S000 火球打死）
         let input = vec![
-            PlayerInput { cast: Some((SkillId::Test01, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(Fix64::from_num(6.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ];
         let mut guard = 0;
