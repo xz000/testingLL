@@ -127,13 +127,17 @@
 
 ## 2. 严重问题（重点）
 
-### S1（最严重）开局重建 `meta` 时丢弃大部分设置
+### S1（最严重）开局重建 `meta` 时丢弃大部分设置  — ✅ **已修**
 `main.rs:stage_world_for_participants`（`1938`，在 `4970/5128` 被首局调用）用
 `MatchState::new(self.match_config(), ...)` 重建 meta；而 `match_config()`（`1919`）**只拷 8 个字段**
 （`total_rounds/learn_time_secs/gold_per_round/starting_gold/place_rewards/game_mode/base_regen/team_count`），
 其余 `..Default::default()`。后果：Steam 房主在 `O` 编辑器里改的
 **击杀/助攻/胜利/伤害最高金币、三个得分项**在**开局瞬间被丢回默认**（房间面板/大厅串里还对，但落地的对局不用）。
 > 注：`publish_room_cfg` 里 `self.meta.config = self.match_cfg.clone()`（`6496/5969`）会被这个重建覆盖。
+>
+> **修复（已提交）**：`match_config()` 改为直接返回 `authored_match_cfg(&self.match_cfg, self.match_teams)`
+> —— 完整沿用房间设置，仅保留“国王模式强制两队”派生；两个 stage 调用点（`stage_world_for_participants`、`finish_enter_steam_mode`）
+> 自动拿到完整配置。回归测试 `authored_match_cfg_keeps_room_settings_and_king_teams`。
 
 ### S2 若干设置为“装饰”，gameplay 从不读取
 `damage_mult`、`knockback_mult`、`lava_damage_mult`、`pillar_mode`、`ice_mode`、
@@ -160,11 +164,10 @@
 > 下面每项明写 `[core]`/`[UI]`/`[schema]`/`[test]` 四处要做什么。
 
 ### 阶段 A — 确定性 bug（低风险，先做）
-- [ ] **A1（S1）开局别丢设置**
-  - `[core]` 无（沿用传入的 `match_cfg`）。
-  - `[UI]` 无 —— 但**改完 UI 里那些行才真正生效**。
-  - `[client]` `stage_world_for_participants` 首局用完整 `match_cfg`；保留 `team_count = if mode==4 {2} else {match_teams}` 派生。
-  - `[test]` 编辑器改击杀金/得分 → 开局后 `meta.config` 保留。
+- [x] **A1（S1）✅ 已完成：开局别丢设置**
+  - `[client]` `match_config()` → `authored_match_cfg(&self.match_cfg, self.match_teams)`；完整沿用房间设置，保留国王两队派生。
+  - `[UI]` 无 —— 但**此后 UI 里那些行真正生效**。
+  - `[test]` `authored_match_cfg_keeps_room_settings_and_king_teams`（含国王→两队）。
 - [ ] **A2 参与奖时点（原 A3）**
   - `[core]` `grant_opening_gold` 只发 `starting_gold`；`gold_per_round` 留在 `finish_round`。
   - `[UI]` 无。
@@ -215,9 +218,8 @@
 目标：先修“设置根本不生效”的确定性 bug，再做去冗余，最后接线 098c 旋钮。
 **每步都同时改 core + UI + 设置串 + 测试**（见 §0.5）。
 
-1. **S1（阶段 A1）— 最高优先级**：首局直接用完整 `match_cfg`（`stage_world_for_participants`）。
-   ⚠️ `team_count = if mode==4 {2} else {match_teams}` 派生不能丢。
-   （core 无改；UI 无改，但此后 UI 各行才真正生效。）
+1. **S1（阶段 A1）✅ 已完成**：`match_config()` 直接用完整 `match_cfg`（`authored_match_cfg`），
+   国王模式强制两队派生保留。（core 无改；UI 无改，但此后 UI 各行真正生效。）
 2. **S4 + A3**：参与奖时点 + `-no reward` 语义（core 小改；UI hint 同步；改几个单测）。
 3. **B2 → B1**（含 UI 撤行/文案 + schema bump）：先合并时长字段，再删名次金。
 4. **C1~C3**：伤害/击退/岩浆倍率接进结算（core + UI 保留行）。
@@ -237,3 +239,5 @@
   `arena_shape` 定为**不接线、从 UI 撤下**（我们只有圆形，短期不新增形状）。
 - 2026-09-13：修正上条：`arena_shape` 行**保留但置灰**（只显示“圆形”、不可改），
   作为远期形状扩展的占位（用户：远期计划，先置灰/单一选项即可）。
+- 2026-09-13：**A1/S1 已完成**（`match_config()` 改用完整 `match_cfg` + 国王两队派生；
+  新增回归测试；client+steam 48 测试绿）。

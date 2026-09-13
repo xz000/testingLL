@@ -218,6 +218,26 @@ fn auto_place_rewards(first: i32) -> Vec<i32> {
     }
     out
 }
+/// 由房间设置（`match_cfg`，**唯一真值源**）派生「本局使用的 `MatchConfig`」。
+///
+/// 唯一额外派生：国王模式（`game_mode==4`）强制两队（098c `kX`）；其余字段原样沿用房间设置，
+/// 不再从 `match_*` 标量逐项重建（那会丢掉未逐项搬运的字段，是 S1 的根因）。
+#[cfg(feature = "steam")]
+fn authored_match_cfg(
+    cfg: &game_core::meta::MatchConfig,
+    fallback_teams: u8,
+) -> game_core::meta::MatchConfig {
+    let mut c = cfg.clone();
+    c.team_count = if c.game_mode == 4 {
+        2
+    } else if c.team_count >= 1 {
+        c.team_count
+    } else {
+        fallback_teams.max(1)
+    };
+    c
+}
+
 /// Steam 房间列表：两次刷新（`request_lobby_list`）之间的最小间隔（秒）。
 /// Steam 对大厅搜索接口有限速（Steam 官方建议每秒至多一次）；频繁触发会拿到空/陈旧结果（今实测 `1->0->1` 漂忽）。
 #[cfg(feature = "steam")]
@@ -1916,20 +1936,13 @@ impl Game {
     }
 
     /// 当前场次的完整 `MatchConfig`（host 建房设定 / client 从大厅元数据读取后两端一致）。
+    ///
+    /// **唯一真值源是 `self.match_cfg`（房间设置）**：不再从 `match_*` 标量逐项重建 —— 那会丢掉
+    /// 未逐项搬运的字段（击杀/助攻/胜利/伤害金、得分、倍率、首轮时长…），
+    /// 导致“房间里改了、开局却没生效”（S1）。
     #[cfg(feature = "steam")]
     fn match_config(&self) -> game_core::meta::MatchConfig {
-        game_core::meta::MatchConfig {
-            total_rounds: self.match_rounds,
-            learn_time_secs: self.match_learn_secs as f64,
-            gold_per_round: self.match_gold_per_round,
-            starting_gold: self.match_starting_gold,
-            place_rewards: self.match_place_rewards.clone(),
-            game_mode: self.match_mode,
-            base_regen: self.match_regen,
-            // 国王模式按 098c kX 自动两队（其余按房间设置，默认 FFA）
-            team_count: if self.match_mode == 4 { 2 } else { self.match_teams },
-            ..Default::default()
-        }
+        authored_match_cfg(&self.match_cfg, self.match_teams)
     }
 
     /// 对局开始时把 world 与 meta 重建为“本局参与玩家数” `p`（不满员时两端角色数量由此一致）：
@@ -7854,6 +7867,29 @@ mod tests {
         assert_eq!(super::STEAM_DEFAULT_LEARN_SECS as f64, d.learn_time_secs, "学习/局间时长");
         assert_eq!(super::STEAM_DEFAULT_STARTING_GOLD, d.starting_gold, "初始金币 Qo");
         assert_eq!(super::STEAM_DEFAULT_GOLD_PER_ROUND, d.gold_per_round, "每轮金币 qo");
+    }
+
+    /// 回归（S1）：开局用的 `MatchConfig` 必须**完整保留房间设置**（不再被 `match_config()` 子集丢字段），
+    /// 且保留“国王模式强制两队”的派生。
+    #[cfg(feature = "steam")]
+    #[test]
+    fn authored_match_cfg_keeps_room_settings_and_king_teams() {
+        let mut cfg = game_core::meta::MatchConfig::default();
+        cfg.gold_per_kill = 7;
+        cfg.score_per_assist = 3;
+        cfg.first_round_time_secs = 55.0;
+        cfg.damage_mult = 1.25;
+        cfg.pillar_mode = 2;
+        let out = super::authored_match_cfg(&cfg, 1);
+        assert_eq!(out.gold_per_kill, 7, "击杀金应保留");
+        assert_eq!(out.score_per_assist, 3, "助攻得分应保留");
+        assert_eq!(out.first_round_time_secs, 55.0, "首轮时长应保留");
+        assert_eq!(out.damage_mult, 1.25, "伤害倍率应保留");
+        assert_eq!(out.pillar_mode, 2, "柱子模式应保留");
+        assert_eq!(out.team_count, 1, "非国王模式：沿用房间设置");
+        let mut king = cfg.clone();
+        king.game_mode = 4;
+        assert_eq!(super::authored_match_cfg(&king, 1).team_count, 2, "国王模式应强制两队");
     }
 
     /// 累加器封顶：卡顿后不能一帧内快进超过 MAX_CATCHUP_STEPS 步。
