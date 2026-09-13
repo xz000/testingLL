@@ -66,6 +66,52 @@
 
 ---
 
+## 1b. 时长字段专项（深挖：每个字段到底谁在读）
+
+全仓库扫描后的结论：**4 个字段其实是 2 个概念的重复副本**，而且“UI 改的那个”与“gameplay 读的那个”各在一半。
+另外收缩有 2 个旋钮，而 098c 只有 1 个。
+
+### 概念 A：首轮商店时长（098c `Uo=40`）
+
+| 字段 | 谁读 | 默认 | 结论 |
+|---|---|---|---|
+| `shopping_time_secs` | ✅ gameplay：`meta.rs:958 begin_first_round_config`；client `FASTROUND` 覆写 (`main.rs:915`) | 40 | **实际生效的那个** |
+| `first_round_time_secs` | ❌ 只被 UI/序列化/测试引用（`settings_ui.rs:309/343`、serde 槽 4） | 40 | **UI 改的那个，但没人读 → 无效** |
+
+→ 二者是同一个概念的副本。**保留一个即可**。建议保留 `first_round_time_secs`（名字/UI/098c 对齐），让 meta 改读它，删 `shopping_time_secs`。
+
+### 概念 B：局间商店时长（098c `uo=30`）
+
+| 字段 | 谁读 | 默认 | 结论 |
+|---|---|---|---|
+| `learn_time_secs` | ✅ gameplay：`meta.rs:780 finish_round`（回合后 Learning 倒计时）；client `match_config()` (`1923`) / `FASTROUND` (`914`) | 30 | **实际生效的那个** |
+| `between_rounds_time_secs` | ⚠️ 不直接读；经 client `publish_room_cfg`→`match_learn_secs`(`6486/6550`)→`match_config().learn_time_secs`→`learn_time_secs` 间接生效 | 30 | **UI 改的那个，绕了一大圈** |
+
+→ 同一概念。建议保留 `between_rounds_time_secs`（UI/098c 对齐），让 meta 直接读它，删 `learn_time_secs`
+（并顺手把 `match_learn_secs`/`host_set_learn`/大厅键 `learn` 改名为 between-rounds）。
+
+### 概念 C：场地收缩（098c 只有 `wo=10` 一个旋钮）
+
+| 字段 | 谁读 | 默认 | 结论 |
+|---|---|---|---|
+| `shrink_delay_secs` | ✅ `world.configure_shrink` → `shrink_timer = delay×√alive`（`world.rs:2920/3032`） | 10 | 对应 098c `wo*√sn` 延迟 |
+| `shrink_ring_secs` | ✅ `world` 每环时间（`world.rs:978`）；`Balance` 里另有同名默认 10 | 10 | 098c 没有单独的“每环时间”旋钮 |
+
+→ 098c 只有 `wo`。要不要把两个合并为一个 `wo`（或保留但标注“未在 098c 暴露”）是**决策点 D1**。
+
+### 运行时字段（保留，不算重复）
+- `learn_remaining`（`meta.rs:665/682/907`）：当前配置期剩余秒数，HUD `main.rs:3763` 显示。
+- `pending_first_round`：区分“首局配置”与“局间配置”。
+
+### 小结：哪些“两边都不需要/重复”
+- `shopping_time_secs` 与 `first_round_time_secs`：**同一概念，删一个**。
+- `learn_time_secs` 与 `between_rounds_time_secs`：**同一概念，删一个**。
+- `shrink_ring_secs`（若按 098c 对齐）：**可能多余**（098c 只有 `wo`）。
+
+> 设置串里这 4 个时长占了 4 个槽位（index 2..5）；合并后应为 2 个 → 影响 `ROOM_SETTINGS_SCHEMA`（见 B3）。
+
+---
+
 ## 2. 严重问题（重点）
 
 ### S1（最严重）开局重建 `meta` 时丢弃大部分设置
@@ -108,9 +154,11 @@
 ### 阶段 B — 去冗余 / 去非 098c（schema bump 一次做）
 - [ ] **B1** 删除 `place_rewards`：字段 + `to_meta_string`/`from_meta_string` 槽位 + `finish_round` 分支
       (`meta.rs:735`) + 客户端 `match_place_rewards`/`host_set_place_reward`/大厅键 + `auto_place_rewards`(+测试) + 相关 meta 测试。
-- [ ] **B2** 时长字段合并为 098c 的两个：保留 `first_round_time_secs`(Uo)/`between_rounds_time_secs`(uo)，
-      删 `shopping_time_secs`/`learn_time_secs`；`begin_first_round_config` 用前者、`finish_round` 用后者。
-      测试：`meta.rs` 首轮时长用例改指 `first_round_time_secs`。
+- [ ] **B2** 时长字段合并为 098c 的两个（见 §1b）：保留 `first_round_time_secs`(Uo)/`between_rounds_time_secs`(uo)，
+      删 `shopping_time_secs`/`learn_time_secs`；`meta::begin_first_round_config` 改读前者、`meta::finish_round` 改读后者。
+      同步：client `FASTROUND`(`main.rs:914-915`)、`match_config()`/`match_learn_secs` 链路、`STEAM_DEFAULT_LEARN_SECS` 护栏测试。
+      测试：`meta.rs` 首轮/局间时长用例改指新字段（`1464/1465/1588/1589`）。
+- [ ] **B2b** （可选）把 `match_learn_secs`/`host_set_learn`/大厅键 `learn` 重命名为 between-rounds，消除“learn=局间”歧义。
 - [ ] **B3** `ROOM_SETTINGS_SCHEMA` +1，更新 `to/from_meta_string` 与 `room_settings_meta_string_roundtrip` 断言。
 - [ ] **B4** UI 提示/文案同步（`settings_ui::hint`）删除已不存在项、修正时长行名。
 
@@ -133,3 +181,5 @@
 
 ## 4. 记录
 - 2026-09-13：初版审计（未改代码）。含 S1~S4 与阶段 A~D 清单。
+- 2026-09-13：补充 §1b「时长字段专项」——确认 4 个时长字段实为 2 个概念的重复副本，
+  列为“两边都不需要的重复项”；细化 B2（合并字段）与 B2b（重命名 learn→between-rounds）。
