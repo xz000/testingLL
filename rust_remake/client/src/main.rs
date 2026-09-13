@@ -282,6 +282,20 @@ enum SteamLobbyPending {
     Join { lobby_id: Option<u64> },
 }
 
+/// 房间列表界面的鼠标动作（绘制时登记命中盒，`update` 里派发；与键盘动作同路径）。
+#[cfg(feature = "steam")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum LobbyListAction {
+    /// 点击第 i 行：选中并加入。
+    Row(usize),
+    /// 刷新列表（同 `R`）。
+    Refresh,
+    /// 切换模式筛选（同 `F`）。
+    Filter,
+    /// 返回大厅主界面（同 `Q`）。
+    Back,
+}
+
 /// 文本输入焦点（`InputMode::TextInput` 的具体字段）。
 ///
 /// **这是 IME 提交的唯一去处**：`on_text_input` 由 `text_focus()` 决定写入哪个缓冲，
@@ -353,6 +367,9 @@ struct Game {
     /// 学习界面鼠标命中盒（U2）：绘制时写入，update 里左键命中派发（1 帧延迟可忽略）。
     /// 学习界面命中登记（U3：泛型原语 `ui::HitRegistry`，替代裸 `Vec<(Rect, Action)>`）。
     learn_hitboxes: ui::HitRegistry<LearnAction>,
+    /// 房间列表界面鼠标命中盒（U1）：绘制时写入，`update` 里左键派发（与键盘同路径）。
+    #[cfg(feature = "steam")]
+    lobby_hitboxes: ui::HitRegistry<LobbyListAction>,
     /// 机器人的当前目标点
     bot_targets: Vec<Option<Vec2>>,
     /// 机器人的确定性随机源
@@ -515,6 +532,9 @@ struct Game {
     /// Steam：房间列表当前选中项。
     #[cfg(feature = "steam")]
     steam_list_selection: usize,
+    /// Steam：房间列表滚动偏移（列表超过可见行数时使用）。
+    #[cfg(feature = "steam")]
+    steam_list_scroll: usize,
     /// Steam：是否为房间列表拉取过一次（true=已在加载/已加载，避免反复 request_lobby_list）。
     #[cfg(feature = "steam")]
     steam_list_requested: bool,
@@ -939,6 +959,8 @@ impl Game {
             shop_category: 0,
             shop_scroll: 0,
             learn_hitboxes: ui::HitRegistry::new(),
+            #[cfg(feature = "steam")]
+            lobby_hitboxes: ui::HitRegistry::new(),
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
@@ -1037,6 +1059,8 @@ impl Game {
             steam_list_mode_filter: 0,
             #[cfg(feature = "steam")]
             steam_list_selection: 0,
+            #[cfg(feature = "steam")]
+            steam_list_scroll: 0,
             #[cfg(feature = "steam")]
             steam_list_requested: false,
             #[cfg(feature = "steam")]
@@ -6575,6 +6599,7 @@ impl Game {
         if self.steam_list_selection >= self.steam_list_lobbies.len() {
             self.steam_list_selection = self.steam_list_lobbies.len().saturating_sub(1);
         }
+        self.steam_list_scroll = 0;
     }
 
     /// 列表拉取是帧驱动异步（S12）：`start_list_lobbies` 注册回调后立即返回，每帧 `tick_lobby_list` 推进后落地。
@@ -6582,13 +6607,27 @@ impl Game {
     #[cfg(feature = "steam")]
     fn steam_lobby_list_update(&mut self, ctx: &mut Context) {
         use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
         use winit::keyboard::NamedKey;
         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+        // 鼠标命中（上一帧绘制时登记；与键盘动作同路径）。
+        let (mut m_refresh, mut m_filter, mut m_back, mut m_join) = (false, false, false, None);
+        if ctx.mouse.button_just_pressed(MouseButton::Left) {
+            let m = ui::mouse_design(ctx);
+            for act in self.lobby_hitboxes.hits_at(m) {
+                match act {
+                    LobbyListAction::Row(i) => m_join = Some(i),
+                    LobbyListAction::Refresh => m_refresh = true,
+                    LobbyListAction::Filter => m_filter = true,
+                    LobbyListAction::Back => m_back = true,
+                }
+            }
+        }
         // 刷新节流：首次进入刷新一次；按 R 刷新需距上次 ≥ LOBBY_REFRESH_COOLDOWN_SECS（Steam 搜索接口限速，避免列表漂忽 1->0->1）。
         let first = !self.steam_list_requested;
         let now = ctx.time.time_since_start().as_secs_f64();
-        let want_refresh = first || just('r') || just('R');
+        let want_refresh = first || just('r') || just('R') || m_refresh;
         if want_refresh && (first || now - self.steam_list_last_refresh >= LOBBY_REFRESH_COOLDOWN_SECS) {
             self.steam_list_requested = true;
             self.steam_list_searching = true;
@@ -6623,12 +6662,12 @@ impl Game {
                 net_steam::session::LobbyListProgress::Pending | net_steam::session::LobbyListProgress::Idle => {}
             }
         }
-        if just('q') || just('Q') {
+        if m_back || just('q') || just('Q') {
             self.steam_lobby_list = false;
             return;
         }
         // F：循环切换模式筛选（0=全部 → 1..5 → 0），用于只看想要的玩法。
-        if just('f') || just('F') {
+        if m_filter || just('f') || just('F') {
             self.steam_list_mode_filter = if self.steam_list_mode_filter >= 5 { 0 } else { self.steam_list_mode_filter + 1 };
             self.steam_apply_list_filter();
             self.steam_list_selection = 0;
@@ -6643,31 +6682,50 @@ impl Game {
         } else if just_named(NamedKey::ArrowUp) {
             self.steam_list_selection = (self.steam_list_selection + n - 1) % n;
         }
-        if just_named(NamedKey::Enter) || just('\r') {
-            let sel = self.steam_list_selection;
-            if sel >= self.steam_list_lobbies.len() {
-                return;
+        if let Some(i) = m_join {
+            if i < n {
+                self.steam_list_selection = i;
             }
-            let l = &self.steam_list_lobbies[sel];
-            if l.members >= l.limit {
-                eprintln!("[steam-list] 选中的房间已满");
-                self.steam_lobby_error = Some("选中的房间已满，请换一个".to_string());
-            } else if l.version != Some(game_core::PROTOCOL_VERSION) {
-                // 版本不符：拒绝加入（房主版本 None 视为旧构建/不兼容）。
-                eprintln!("[steam-list] 版本不符：房主 {:?} vs 本端 {}", l.version, game_core::PROTOCOL_VERSION);
-                self.steam_lobby_error = Some(format!(
-                    "版本不符（房主 {:?}，本端 {}），无法加入",
-                    l.version,
-                    game_core::PROTOCOL_VERSION
-                ));
-            } else {
-                let lobby_id = l.id;
-                eprintln!("[steam] join lobby by id {lobby_id}");
-                self.steam_lobby_list = false;
-                self.steam_lobby_menu = true;
-                self.steam_join_lobby_id = Some(lobby_id); // enter_steam_mode client 分支优先按其加入
-                self.enter_steam_mode(ctx, false, 2, None, None);
-            }
+        }
+        // 保持选中项在可见窗口内（与绘制 `VISIBLE` 一致）。
+        const VISIBLE: usize = 9;
+        if self.steam_list_selection < self.steam_list_scroll {
+            self.steam_list_scroll = self.steam_list_selection;
+        }
+        if self.steam_list_selection >= self.steam_list_scroll + VISIBLE {
+            self.steam_list_scroll = self.steam_list_selection + 1 - VISIBLE;
+        }
+        if just_named(NamedKey::Enter) || just('\r') || m_join.is_some() {
+            self.try_join_selected_lobby(ctx);
+        }
+    }
+
+    /// 加入当前选中的房间（回车 / 鼠标点击共用）：满员/版本不符则拒绝并给提示。
+    #[cfg(feature = "steam")]
+    fn try_join_selected_lobby(&mut self, ctx: &mut Context) {
+        let sel = self.steam_list_selection;
+        if sel >= self.steam_list_lobbies.len() {
+            return;
+        }
+        let l = &self.steam_list_lobbies[sel];
+        if l.members >= l.limit {
+            eprintln!("[steam-list] 选中的房间已满");
+            self.steam_lobby_error = Some("选中的房间已满，请换一个".to_string());
+        } else if l.version != Some(game_core::PROTOCOL_VERSION) {
+            // 版本不符：拒绝加入（房主版本 None 视为旧构建/不兼容）。
+            eprintln!("[steam-list] 版本不符：房主 {:?} vs 本端 {}", l.version, game_core::PROTOCOL_VERSION);
+            self.steam_lobby_error = Some(format!(
+                "版本不符（房主 {:?}，本端 {}），无法加入",
+                l.version,
+                game_core::PROTOCOL_VERSION
+            ));
+        } else {
+            let lobby_id = l.id;
+            eprintln!("[steam] join lobby by id {lobby_id}");
+            self.steam_lobby_list = false;
+            self.steam_lobby_menu = true;
+            self.steam_join_lobby_id = Some(lobby_id); // enter_steam_mode client 分支优先按其加入
+            self.enter_steam_mode(ctx, false, 2, None, None);
         }
     }
 
@@ -7132,86 +7190,196 @@ impl Game {
 
     /// 绘制「房间列表」界面：公开大厅列表（房主昵称/房名/人数/备注），当前选中高亮。
     #[cfg(feature = "steam")]
-    fn draw_steam_lobby_list(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+    fn draw_steam_lobby_list(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
-        draw_text(canvas, ctx, "加入房间", 36.0, layout::border_selected(), Point2 { x: cx, y: sh * 0.22 }, true)?;
+        let pad = ui::theme::PAD;
+        let mouse = ui::mouse_design(ctx);
+        self.lobby_hitboxes.clear();
+
+        // 遮罩（与技能/商店页一致）
+        let dim = Mesh::new_rectangle(
+            &ctx.gfx, DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, sw, sh),
+            Color::from_rgba(8, 10, 16, 210),
+        )?;
+        canvas.draw(&dim, graphics::DrawParam::new());
+
+        // 标题 + 右上状态（搜索中 / 当前筛选 / 总数）
+        ui::text_center(canvas, ctx, "加入房间", 34.0, ui::theme::accent(), cx, sh * 0.11)?;
         let filter_name = if self.steam_list_mode_filter == 0 {
             "全部".to_string()
         } else {
             game_core::meta::MatchState::mode_name(self.steam_list_mode_filter).to_string()
         };
-        draw_text(canvas, ctx, &format!("↑/↓ 选择，回车加入，R 刷新，F 筛选模式：[{filter_name}]"), 20.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.22 + 50.0 }, true)?;
-        if self.steam_list_lobbies.is_empty() {
-            if self.steam_list_searching {
-                draw_text(canvas, ctx, "搜索中…", 28.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.5 }, true)?;
-                draw_text(canvas, ctx, "正在向 Steam 查询公开房间，请稍候", 18.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
-            } else if self.steam_list_mode_filter != 0 && !self.steam_list_all.is_empty() {
-                draw_text(canvas, ctx, &format!("（无 [{filter_name}] 模式的房间）"), 28.0, Color::from_rgb(230, 190, 140), Point2 { x: cx, y: sh * 0.5 }, true)?;
-                draw_text(canvas, ctx, "按 F 切换筛选条件，或 R 重新搜索", 18.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
-            } else {
-                draw_text(canvas, ctx, "（暂无可加入的房间）", 28.0, Color::from_rgb(170, 178, 194), Point2 { x: cx, y: sh * 0.5 }, true)?;
-                draw_text(canvas, ctx, "让好友先创建房间，或按 R 重新搜索", 18.0, layout::text_dim(), Point2 { x: cx, y: sh * 0.5 + 48.0 }, true)?;
-            }
+        let status = if self.steam_list_searching {
+            "搜索中…".to_string()
         } else {
-            let mut y = sh * 0.34;
-            let head_w = (sw * 0.8).min(760.0);
-            let head_x = cx - head_w / 2.0;
-            for (i, l) in self.steam_list_lobbies.iter().enumerate() {
-                // 房主昵称（临时查 friends；取不到则“房主”）。
-                let owner_name = self
-                    .steam_sess
-                    .as_ref()
-                    .map(|s| {
-                        let id = net_steam::steamworks::SteamId::from_raw(l.owner);
-                        s.transport.friends().get_friend(id).name()
-                    })
-                    .unwrap_or_else(|| "房主".to_string());
-                let full = format!("{}   {}", owner_name, l.name);
-                // 版本标注：房主版本与本端不一致（含旧房 None）标红，提示不可加入。
-                let ver_ok = l.version == Some(game_core::PROTOCOL_VERSION);
-                let mut meta = format!(
-                    "人数 {}/{}    [{}]    {}",
-                    l.members,
-                    l.limit,
-                    game_core::meta::MatchState::mode_name(l.mode),
-                    l.note
-                );
-                // 房间设置：解析房主的设置串并显示「自定义 N 项」（加入前就能看出房主开了高级设置）。
-                if let Some(n) = l
-                    .settings
-                    .as_deref()
-                    .and_then(game_core::meta::MatchConfig::from_meta_string)
-                    .map(|c| c.non_default_setting_count())
-                {
-                    if n > 0 {
-                        meta.push_str(&format!("    房间设置：自定义 {n} 项"));
-                    }
-                }
-                if !ver_ok {
-                    meta.push_str(&format!("    [版本不符 {:?}]", l.version));
-                }
+            format!("模式：[{filter_name}]    共 {} 个", self.steam_list_lobbies.len())
+        };
+        ui::text_right(canvas, ctx, &status, 18.0, ui::theme::text_dim(), sw - pad, sh * 0.11)?;
+
+        // 面板几何：左列表 + 右详情
+        let panel_y = sh * 0.19;
+        let panel_h = sh * 0.66;
+        let list_w = (sw * 0.56).max(360.0);
+        let list_x = pad;
+        let det_x = list_x + list_w + pad;
+        let det_w = (sw - det_x - pad).max(220.0);
+
+        const ROW_H: f32 = 56.0;
+        const VISIBLE: usize = 9;
+
+        if self.steam_list_lobbies.is_empty() {
+            // 空态（搜索中 / 筛选无结果 / 真没有）——与旧文案一致
+            let (title, sub, col) = if self.steam_list_searching {
+                ("搜索中…", "正在向 Steam 查询公开房间，请稍候", ui::theme::text())
+            } else if self.steam_list_mode_filter != 0 && !self.steam_list_all.is_empty() {
+                ("（无此模式的房间）", "按 F 切换筛选条件，或 R 重新搜索", ui::theme::ok())
+            } else {
+                ("（暂无可加入的房间）", "让好友先创建房间，或按 R 重新搜索", ui::theme::text_dim())
+            };
+            ui::text_center(canvas, ctx, title, 26.0, col, list_x + list_w / 2.0, panel_y + panel_h * 0.42)?;
+            ui::text_center(canvas, ctx, sub, 18.0, ui::theme::text_dim(), list_x + list_w / 2.0, panel_y + panel_h * 0.42 + 40.0)?;
+        } else {
+            let n = self.steam_list_lobbies.len();
+            let start = self.steam_list_scroll.min(n.saturating_sub(1));
+            let end = (start + VISIBLE).min(n);
+            // 列头
+            ui::text_left(canvas, ctx, "房间 / 房主", 17.0, ui::theme::text_dim(), list_x + 10.0, panel_y - 8.0)?;
+            ui::text_right(canvas, ctx, "人数 · 模式", 17.0, ui::theme::text_dim(), list_x + list_w - 10.0, panel_y - 8.0)?;
+            let mut y = panel_y + 18.0;
+            for i in start..end {
                 let selected = i == self.steam_list_selection;
-                let bg_col = if selected { layout::bg_selected() } else { layout::bg_normal() };
-                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(head_x, y, head_w, 64.0), bg_col)?;
+                let rect = graphics::Rect::new(list_x, y, list_w, ROW_H - 6.0);
+                let hover = !selected && rect.contains(mouse);
+                let bg_col = if selected {
+                    ui::theme::row_selected()
+                } else if hover {
+                    ui::theme::row_hover()
+                } else {
+                    ui::theme::row_bg()
+                };
+                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, bg_col)?;
                 canvas.draw(&bg, graphics::DrawParam::new());
-                let mark = if selected { "[v]" } else { "[ ]" };
+
+                // 逐行取字段（不持有引用跨过 `lobby_hitboxes.push`）
+                let (l_name, l_owner, l_members, l_limit, l_mode, l_note, l_ver, custom_n) = {
+                    let l = &self.steam_list_lobbies[i];
+                    let owner = self
+                        .steam_sess
+                        .as_ref()
+                        .map(|s| {
+                            let id = net_steam::steamworks::SteamId::from_raw(l.owner);
+                            s.transport.friends().get_friend(id).name()
+                        })
+                        .unwrap_or_else(|| "房主".to_string());
+                    let custom = l
+                        .settings
+                        .as_deref()
+                        .and_then(game_core::meta::MatchConfig::from_meta_string)
+                        .map(|c| c.non_default_setting_count())
+                        .unwrap_or(0);
+                    (l.name.clone(), owner, l.members, l.limit, l.mode, l.note.clone(), l.version, custom)
+                };
+                let ver_ok = l_ver == Some(game_core::PROTOCOL_VERSION);
                 let name_col = if !ver_ok {
-                    Color::from_rgb(200, 130, 120) // 版本不符：偏红，且不可加入
+                    Color::from_rgb(220, 120, 110)
                 } else if selected {
                     Color::WHITE
                 } else {
-                    layout::text_normal()
+                    ui::theme::text()
                 };
-                let meta_col = if ver_ok { layout::text_dim() } else { Color::from_rgb(220, 150, 140) };
-                draw_text(canvas, ctx, &format!("{mark}{full}"), 24.0, name_col, Point2 { x: cx, y: y + 20.0 }, true)?;
-                draw_text(canvas, ctx, &meta, 16.0, meta_col, Point2 { x: cx, y: y + 44.0 }, true)?;
-                y += 74.0;
+                let right = format!("{}/{}    {}", l_members, l_limit, game_core::meta::MatchState::mode_name(l_mode));
+                ui::text_left(canvas, ctx, &format!("{l_name}    {l_owner}"), 22.0, name_col, list_x + 12.0, y + 10.0)?;
+                ui::text_right(canvas, ctx, &right, 16.0, ui::theme::text_dim(), list_x + list_w - 12.0, y + 12.0)?;
+                // 第二行：备注 + 自定义项 + 版本
+                let mut meta = String::new();
+                if !l_note.is_empty() {
+                    meta.push_str(&l_note);
+                }
+                if custom_n > 0 {
+                    if !meta.is_empty() {
+                        meta.push_str("    ");
+                    }
+                    meta.push_str(&format!("房间设置：自定义 {custom_n} 项"));
+                }
+                if !ver_ok {
+                    if !meta.is_empty() {
+                        meta.push_str("    ");
+                    }
+                    meta.push_str(&format!("[版本不符 {l_ver:?}]"));
+                }
+                if !meta.is_empty() {
+                    let mcol = if ver_ok { ui::theme::text_dim() } else { Color::from_rgb(220, 140, 130) };
+                    ui::text_left(canvas, ctx, &meta, 15.0, mcol, list_x + 12.0, y + 34.0)?;
+                }
+                self.lobby_hitboxes.push((rect, LobbyListAction::Row(i)));
+                y += ROW_H;
+            }
+            if n > VISIBLE {
+                ui::text_right(canvas, ctx, &format!("{}-{} / {n}", start + 1, end), 16.0, ui::theme::text_dim(), list_x + list_w, panel_y + panel_h + 16.0)?;
+            }
+
+            // 右侧详情：选中房间
+            let sel = self.steam_list_selection.min(n - 1);
+            let det_rect = graphics::Rect::new(det_x, panel_y, det_w, panel_h);
+            let det_bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), det_rect, ui::theme::row_bg())?;
+            canvas.draw(&det_bg, graphics::DrawParam::new());
+            ui::text_left(canvas, ctx, "房间详情", 18.0, ui::theme::accent(), det_x + 12.0, panel_y + 10.0)?;
+            let (d_name, d_owner, d_members, d_limit, d_mode, d_note, d_ver) = {
+                let dl = &self.steam_list_lobbies[sel];
+                let owner = self
+                    .steam_sess
+                    .as_ref()
+                    .map(|s| {
+                        let id = net_steam::steamworks::SteamId::from_raw(dl.owner);
+                        s.transport.friends().get_friend(id).name()
+                    })
+                    .unwrap_or_else(|| "房主".to_string());
+                (dl.name.clone(), owner, dl.members, dl.limit, dl.mode, dl.note.clone(), dl.version)
+            };
+            let ver_ok = d_ver == Some(game_core::PROTOCOL_VERSION);
+            let mut dy = panel_y + 46.0;
+            let mut line = |dy: &mut f32, label: &str, val: &str, col: Color| -> GameResult {
+                ui::text_left(canvas, ctx, &format!("{label}{val}"), 18.0, col, det_x + 12.0, *dy)?;
+                *dy += 28.0;
+                Ok(())
+            };
+            line(&mut dy, "房间名：", &d_name, ui::theme::text())?;
+            line(&mut dy, "房主：", &d_owner, ui::theme::text())?;
+            line(&mut dy, "人数：", &format!("{d_members}/{d_limit}"), ui::theme::text())?;
+            line(&mut dy, "模式：", game_core::meta::MatchState::mode_name(d_mode), ui::theme::text())?;
+            if ver_ok {
+                line(&mut dy, "版本：", "兼容", ui::theme::ok())?;
+            } else {
+                line(&mut dy, "版本：", &format!("{d_ver:?}（不兼容）"), Color::from_rgb(220, 130, 120))?;
+            }
+            if !d_note.is_empty() {
+                ui::text_left(canvas, ctx, "备注：", 17.0, ui::theme::text_dim(), det_x + 12.0, dy)?;
+                dy += 22.0;
+                ui::text_wrapped(canvas, ctx, &d_note, 16.0, ui::theme::text(), det_x + 12.0, dy, det_w - 24.0)?;
             }
         }
-        draw_text(canvas, ctx, &format!("回车 加入    R 刷新    Q 返回    （本端版本 v{}）", game_core::PROTOCOL_VERSION), 18.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+
+        // 底部操作条（可点：刷新 / 筛选 / 返回）
+        let hint_y = sh * 0.93;
+        let btns = [("R 刷新", LobbyListAction::Refresh), ("F 筛选", LobbyListAction::Filter), ("Q 返回", LobbyListAction::Back)];
+        let bw = 130.0;
+        let bh = 34.0;
+        let total_w = bw * btns.len() as f32 + pad * (btns.len() as f32 - 1.0);
+        let mut bx = cx - total_w / 2.0;
+        for (label, act) in btns {
+            let r = graphics::Rect::new(bx, hint_y - bh / 2.0, bw, bh);
+            let hover = r.contains(mouse);
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), r, if hover { ui::theme::row_hover() } else { ui::theme::row_bg() })?;
+            canvas.draw(&bg, graphics::DrawParam::new());
+            ui::text_center(canvas, ctx, label, 18.0, if hover { ui::theme::text() } else { ui::theme::text_dim() }, bx + bw / 2.0, hint_y)?;
+            self.lobby_hitboxes.push((r, act));
+            bx += bw + pad;
+        }
         if let Some(err) = self.steam_lobby_error.as_ref() {
-            draw_text(canvas, ctx, err, 20.0, Color::from_rgb(255, 130, 120), Point2 { x: cx, y: sh * 0.84 }, true)?;
+            ui::text_center(canvas, ctx, err, 19.0, Color::from_rgb(255, 130, 120), cx, hint_y - 34.0)?;
         }
         Ok(())
     }

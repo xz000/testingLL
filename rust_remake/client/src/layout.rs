@@ -82,6 +82,7 @@ pub fn bg_hover() -> Color {
     Color::from_rgb(38, 44, 56)
 }
 /// 选中底色（键盘焦点在本行）。
+#[allow(dead_code)]
 pub fn bg_selected() -> Color {
     Color::from_rgb(56, 66, 84)
 }
@@ -115,6 +116,7 @@ pub fn btn_secondary_hover() -> Color {
     Color::from_rgb(90, 70, 70)
 }
 /// 普通文字。
+#[allow(dead_code)]
 pub fn text_normal() -> Color {
     Color::from_rgb(215, 220, 232)
 }
