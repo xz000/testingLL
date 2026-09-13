@@ -302,6 +302,18 @@ enum LobbyListAction {
     MenuBack,
 }
 
+/// 房间设置编辑器（建房 / 房内 `O`）的鼠标动作。
+#[cfg(feature = "steam")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum RoomCfgAction {
+    /// 点击分组页签。
+    Group(settings_ui::Group),
+    /// 点击第 `i` 行：选中并激活（等同该行的回车/T 操作）。
+    Row(usize),
+    /// 点击底部「关闭」按钮（同 Esc/O）。
+    Close,
+}
+
 /// 文本输入焦点（`InputMode::TextInput` 的具体字段）。
 ///
 /// **这是 IME 提交的唯一去处**：`on_text_input` 由 `text_focus()` 决定写入哪个缓冲，
@@ -376,6 +388,9 @@ struct Game {
     /// 房间列表界面鼠标命中盒（U1）：绘制时写入，`update` 里左键派发（与键盘同路径）。
     #[cfg(feature = "steam")]
     lobby_hitboxes: ui::HitRegistry<LobbyListAction>,
+    /// 房间设置编辑器的鼠标命中盒（绘制时登记，输入时派发）。
+    #[cfg(feature = "steam")]
+    room_cfg_hitboxes: ui::HitRegistry<RoomCfgAction>,
     /// 机器人的当前目标点
     bot_targets: Vec<Option<Vec2>>,
     /// 机器人的确定性随机源
@@ -967,6 +982,8 @@ impl Game {
             learn_hitboxes: ui::HitRegistry::new(),
             #[cfg(feature = "steam")]
             lobby_hitboxes: ui::HitRegistry::new(),
+            #[cfg(feature = "steam")]
+            room_cfg_hitboxes: ui::HitRegistry::new(),
             bot_targets,
             bot_rngs,
             accumulator: 0.0,
@@ -3228,7 +3245,7 @@ impl Game {
     /// 为什么要有它：原先每个子界面各自在自己那段代码里画编辑器，**漏一处就"看不见"**
     /// （本项目已发生 3 次）。今后新增覆盖层只改这里，且各子界面都在 `canvas.finish` 前调用它。
     #[cfg(feature = "steam")]
-    fn draw_lobby_overlays(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+    fn draw_lobby_overlays(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         if self.room_cfg_edit {
             self.draw_room_cfg_editor(canvas, ctx)?;
         }
@@ -3266,7 +3283,10 @@ impl Game {
     /// 房间设置编辑器覆盖层（`O` 打开）：分组页签 + 行列表 + 值 + 说明。
     /// 交互提示与逻辑同源（`settings_ui`）。
     #[cfg(feature = "steam")]
-    fn draw_room_cfg_editor(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+    fn draw_room_cfg_editor(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        // 鼠标命中盒每帧重建（与键盘同一条动作路径，见 `room_cfg_editor_input`）。
+        self.room_cfg_hitboxes.clear();
+        let mouse = ui::mouse_design(ctx);
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         // 半透明底 + 面板
         let dim = Mesh::new_rectangle(
@@ -3319,8 +3339,20 @@ impl Game {
         let mut tx = px + 24.0;
         for g in settings_ui::Group::ALL {
             let sel = g == self.room_cfg_group;
+            // 页签命中区（含 hover 底色）
+            let tab_rect = graphics::Rect::new(tx - 6.0, py + 48.0, 100.0, 26.0);
+            let hover = !sel && tab_rect.contains(mouse);
+            if sel || hover {
+                let tb = Mesh::new_rectangle(
+                    &ctx.gfx, DrawMode::fill(), tab_rect,
+                    if sel { ui::theme::row_selected() } else { ui::theme::row_hover() },
+                )?;
+                canvas.draw(&tb, graphics::DrawParam::new());
+            }
             let col = if sel {
                 layout::border_selected()
+            } else if hover {
+                ui::theme::text()
             } else {
                 ui::theme::text_dim()
             };
@@ -3329,6 +3361,7 @@ impl Game {
                 &format!("[{}] {}", g.hotkey().to_uppercase(), g.name()),
                 ui::theme::BODY, col, tx, py + 56.0,
             )?;
+            self.room_cfg_hitboxes.push((tab_rect, RoomCfgAction::Group(g)));
             tx += 110.0;
         }
 
@@ -3338,8 +3371,19 @@ impl Game {
         // 行在"内容区"内等分（内容区 = 面板去掉标题/页签/底部提示）
         let content = graphics::Rect::new(px + 24.0, py + 80.0, row_w, ph - 80.0 - 76.0);
         for (i, &id) in rows.iter().enumerate() {
-            let y = layout::row_in(content, i, rows.len().max(1)).y;
+            let row_rect = layout::row_in(content, i, rows.len().max(1));
+            let y = row_rect.y;
             let sel = i == self.room_cfg_row;
+            let hover = !sel && row_rect.contains(mouse);
+            // hover 底色（选中行不加底，保持原有文字高亮风格）
+            if hover {
+                let hb = Mesh::new_rectangle(
+                    &ctx.gfx, DrawMode::fill(), row_rect,
+                    Color::from_rgba(58, 68, 88, 90),
+                )?;
+                canvas.draw(&hb, graphics::DrawParam::new());
+            }
+            self.room_cfg_hitboxes.push((row_rect, RoomCfgAction::Row(i)));
             let custom = settings_ui::is_custom(&self.match_cfg, id);
             let col = if id.is_readonly() || id.is_locked() {
                 layout::text_dim() // 只读/锁定项（如人数上限、地图形状）:醒目度降低
@@ -3410,6 +3454,18 @@ impl Game {
             sw / 2.0,
             py + ph - 26.0,
         )?;
+        // 右下角「关闭」按钮（鼠标）：与 Esc/O 同义（保存并关闭；创建模式为取消）。
+        let close_w = 92.0;
+        let close_rect = graphics::Rect::new(px + pw - close_w - 24.0, py + ph - 44.0, close_w, 28.0);
+        let chover = close_rect.contains(mouse);
+        ui::paint_row(canvas, ctx, close_rect, false, chover)?;
+        ui::text_center(
+            canvas, ctx, "关闭",
+            ui::theme::BODY,
+            if chover { ui::theme::text() } else { ui::theme::text_dim() },
+            close_rect.x + close_w / 2.0, close_rect.y + 5.0,
+        )?;
+        self.room_cfg_hitboxes.push((close_rect, RoomCfgAction::Close));
         Ok(())
     }
 
@@ -5914,8 +5970,17 @@ impl Game {
         }
 
         // ── 房间内编辑设置（仅 host）：`O` 打开编辑器；关闭时重新发布 → 触发全员取消准备 ──
+        // 鼠标：点击顶部「房间设置」徐章 = 同 `O`（打开/关闭）。
+        let badge_clicked = !self.room_cfg_edit
+            && ctx.mouse.button_just_pressed(MouseButton::Left)
+            && {
+                let (sw, sh) = (ui::UI_W, ui::UI_H);
+                let badge_rect = graphics::Rect::new(sw / 2.0 - 260.0, sh * 0.075 - 10.0, 520.0, 32.0);
+                badge_rect.contains(ui::mouse_design(ctx))
+            };
         let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()));
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()))
+            || badge_clicked;
         // 房主可改、客户端可看（只读）——只要能确定在当前房间里就允许打开。
         // 好友面板展开时不响应（面板优先吃键；见 ROOM_UI_REVIEW.md P7）。
         if o_pressed && !panel_open && (self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()) {
@@ -6265,6 +6330,7 @@ impl Game {
     #[cfg(feature = "steam")]
     fn room_cfg_editor_input(&mut self, ctx: &Context) -> bool {
         use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
         use winit::keyboard::NamedKey;
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         let just = |c: &str| {
@@ -6283,6 +6349,27 @@ impl Game {
         let read_only = self.steam_lobby_id.is_some()
             && self.steam_host_ls.is_none()
             && !self.room_cfg_create_mode;
+        // ── 鼠标：派发上一帧绘制时登记的命中盒（分组页签 / 行 / 关闭）──
+        // `mouse_activate` = “点行”的行级语义（切换/输入），**不**等同建房回车（避免在创建模式点行就建房）。
+        let mut mouse_activate = false;
+        let mut mouse_close = false;
+        if self.room_cfg_input.is_none() && ctx.mouse.button_just_pressed(MouseButton::Left) {
+            let m = ui::mouse_design(ctx);
+            for act in self.room_cfg_hitboxes.hits_at(m) {
+                match act {
+                    RoomCfgAction::Group(g) => {
+                        self.room_cfg_group = g;
+                        self.room_cfg_row = 0;
+                        self.room_cfg_hint.clear();
+                    }
+                    RoomCfgAction::Row(i) => {
+                        self.room_cfg_row = i;
+                        mouse_activate = true;
+                    }
+                    RoomCfgAction::Close => mouse_close = true,
+                }
+            }
+        }
         // ── 自定义输入态：只处理文本键 ──
         if let Some(mut buf) = self.room_cfg_input.take() {
             let rows = settings_ui::SettingId::rows(self.room_cfg_group);
@@ -6358,7 +6445,7 @@ impl Game {
             return false;
         }
         // 创建模式下 Esc/O = 取消建房流程（回大厅主界面）
-        if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o")) {
+        if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o") || mouse_close) {
             self.room_cfg_edit = false;
             self.room_cfg_hint.clear();
             self.room_cfg_create_mode = false;
@@ -6401,7 +6488,7 @@ impl Game {
             } else if read_only || id.is_readonly() || id.is_locked() {
                 // 只读：客户端的全部行 + host 的「人数上限」；锁定：功能未开放（如地图形状仅圆形）。
                 // 回车/T = 屏幕提示；O/Esc = 关闭（房主关闭时发布）。
-                if just_named(NamedKey::Enter) || edit_key {
+                if just_named(NamedKey::Enter) || edit_key || mouse_activate {
                     self.room_cfg_hint = if id.is_locked() {
                         format!("{}：暂锁定（{}）", id.label(), settings_ui::value_text(&self.match_cfg, id))
                     } else {
@@ -6433,13 +6520,13 @@ impl Game {
                 }
                 // 回车/T：**操作当前行（方案 B）**，不关闭编辑器：
                 // 文本行/数值行 → 进入输入；枚举/开关 → 切换值。
-                if meta && (enter || edit_key) {
+                if meta && (enter || edit_key || mouse_activate) {
                     self.room_cfg_hint.clear();
                     self.room_cfg_input = Some(settings_ui::meta_value(&self.room_meta, id));
                     eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
                     return true;
                 }
-                if numeric && (enter || edit_key) {
+                if numeric && (enter || edit_key || mouse_activate) {
                     let v = settings_ui::value(&self.match_cfg, id);
                     let init = if (v.fract()).abs() < 1e-9 {
                         format!("{}", v.round() as i64)
@@ -6451,8 +6538,8 @@ impl Game {
                     eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
                     return true;
                 }
-                if enter {
-                    // 枚举/开关：回车 = 切换（与 ←→ 等价，方向固定 +1）。
+                if enter || mouse_activate {
+                    // 枚举/开关：回车/鼠标 = 切换（与 ←→ 等价，方向固定 +1）。
                     settings_ui::nudge(&mut self.match_cfg, id, 1);
                     self.room_cfg_hint.clear();
                     eprintln!(
@@ -6467,7 +6554,7 @@ impl Game {
         }
         // 关闭编辑器统一用 **O / Esc**（保存并发布）。
         // 注意：**回车不再关闭** —— 它只“操作当前行”（方案 B），避免“有时关闭、有时切换”的二义。
-        if just_named(NamedKey::Escape) || just("o") {
+        if just_named(NamedKey::Escape) || just("o") || mouse_close {
             self.room_cfg_edit = false;
             self.room_cfg_hint.clear();
             self.publish_room_cfg();

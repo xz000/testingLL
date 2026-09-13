@@ -413,4 +413,31 @@ mod source_scan_tests {
             "建房分支应绘制统一设置编辑器（而非已退休的旧建房界面）"
         );
     }
+
+    /// 回归：设置编辑器（建房 / 房内 `O`）必须兼容鼠标。
+    ///
+    /// `draw_room_cfg_editor` 每帧 `clear` 并登记 `room_cfg_hitboxes`（页签/行/关闭）；
+    /// `room_cfg_editor_input` 必须 `hits_at` 派发，且行操作用 `mouse_activate`（≠建房回车）。
+    #[test]
+    fn settings_editor_supports_mouse() {
+        let d = idx("fn draw_room_cfg_editor");
+        let dscope = &SRC[d..];
+        let dend = dscope.find("\n    }\n").unwrap_or(dscope.len());
+        let dbody = &dscope[..dend];
+        assert!(dbody.contains("room_cfg_hitboxes.clear()"), "绘制前应清空命中盒");
+        for pat in ["RoomCfgAction::Group", "RoomCfgAction::Row", "RoomCfgAction::Close"] {
+            assert!(dbody.contains(pat), "编辑器绘制应登记 {pat} 命中盒");
+        }
+
+        let i = idx("fn room_cfg_editor_input");
+        let iscope = &SRC[i..];
+        let iend = iscope.find("\n    }\n").unwrap_or(iscope.len());
+        let ibody = &iscope[..iend];
+        assert!(ibody.contains("room_cfg_hitboxes.hits_at"), "输入应派发命中盒");
+        assert!(ibody.contains("mouse_activate"), "鼠标点行应走行级激活语义");
+        assert!(
+            ibody.contains("mouse_close"),
+            "鼠标点「关闭」应与 Esc/O 同义"
+        );
+    }
 }
