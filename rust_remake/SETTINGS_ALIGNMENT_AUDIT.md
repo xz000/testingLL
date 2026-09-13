@@ -180,7 +180,25 @@
 
 ---
 
-## 4. 记录
+## 5. 建议动手顺序
+
+目标：先修“设置根本不生效”的确定性 bug，再做去冗余，最后接线 098c 旋钮。
+
+1. **S1（阶段 A1）— 最高优先级**：让首局直接用完整 `match_cfg`，
+   `stage_world_for_participants` 改传 `self.match_cfg.clone()`（host）／客户端从大厅串还原的 `match_cfg`。
+   ⚠️ **注意**：`match_config()` 里有一个隐含派生——`team_count = if mode==4 {2} else {match_teams}`（国王模式自动两队）；
+   改为直接用 `match_cfg` 后，需保证这个派生不丢（在 game_mode 变更时同步 `match_cfg.team_count`，或保留该派生）。
+   测试：编辑器改击杀金/得分 → 开局后 `meta.config` 保留。
+2. **S4 + A2**：参与奖时点（`grant_opening_gold` 只发初始金）+ `-no reward` 语义。小改 meta，改几个单测。
+3. **B2 → B1**：先合并时长字段（B2），再删名次金（B1）；`ROOM_SETTINGS_SCHEMA` 每步 bump。
+4. **C1~C3**：把伤害/击退/岩浆倍率接进结算（这类“装饰项”最能被玩家察觉）。
+5. **C5~C7 + D2~D4**：柱子/冰面/地图形状与剩余决策点。
+
+> 收缩不在列表中（有意不同）。
+
+---
+
+## 6. 记录
 - 2026-09-13：初版审计（未改代码）。含 S1~S4 与阶段 A~D 清单。
 - 2026-09-13：补充 §1b「时长字段专项」——确认 4 个时长字段实为 2 个概念的重复副本，
   列为“两边都不需要的重复项”；细化 B2（合并字段）与 B2b（重命名 learn→between-rounds）。
