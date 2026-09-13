@@ -11,7 +11,7 @@
 
 | 项 | 之前 | 现在 |
 |---|---|---|
-| `CombatEvent::Explode` 视觉 | `Ring`：`radius*(0.5 → 2.0)`，最大 2× 真实半径 | `Blast`：恒为 `radius`（淡填充 + 2.5px 亮环），淡出 |
+| `CombatEvent::Explode` 视觉 | `Ring`：`radius*(0.5 → 2.0)`，最大 2× 真实半径 | `Blast`：从中心扩大到 `radius`（不超出），淡填充 + 2.5px 亮环，淡出 |
 | 位置 | `client/src/fx.rs` `FxKind::Ring` | 新增 `FxKind::Blast`；`client/src/main.rs` 消费 `Explode` |
 
 `Ring` 仍用于死亡/柱子尘（纯装饰，不代表范围），不受影响。
@@ -84,6 +84,6 @@
 
 ## 4. 回归入口
 
-- 表现：`client/src/fx.rs`（`FxKind::Blast` 恒半径）、`client/src/main.rs`（`CombatEvent::Explode/PillarBreak`）。
+- 表现：`client/src/fx.rs`（`FxKind::Blast`：从中心扩大至精确半径）、`client/src/main.rs`（`CombatEvent::Explode/PillarBreak`）。
 - 真值：`game-core/src/world.rs`（`explode_at` 各调用点、`splash_damage`）、`game-core/src/skill.rs`（`W098bNova{radius}`、`Blast`）。
 - 单测：`explode_multi_hit_emits_hattrick_or_vampire` 断言 `Explode` 事件存在。
