@@ -2787,6 +2787,9 @@ impl World {
             .get(owner as usize)
             .map(|a| a.gn_factor())
             .unwrap_or(1.0);
+        // 全局伤害倍率（098c `Gn`，D9）：098c 在统一伤害入口 `hI` 里乘 `Gn[攻方]`，
+        // AoE 经 mI→hI 也乘；故这里同样乘上（否则陨石/新星等爆炸不吃倍率）。
+        let world_dmg_mult = self.damage_mult;
         // 队伍过滤（098c cn[]，B2）：技能 nova 只伤异队（owner 同队天然排除）。
         let owner_team = self.players.get(owner as usize).map(|p| p.team);
         let mut deaths: Vec<u32> = Vec::new();
@@ -2809,7 +2812,7 @@ impl World {
                         DmgFalloff::Sub(k) => (damage - d_sq.sqrt() / k).max(Fix64::ZERO),
                         _ => damage,
                     };
-                    let mut v = base * Fix64::from_num(owner_gn * p.dmg_taken_mult);
+                    let mut v = base * Fix64::from_num(owner_gn * p.dmg_taken_mult) * world_dmg_mult;
                     if let DmgFalloff::Mul(k) = dmg_falloff {
                         v *= (Fix64::ONE - d_sq.sqrt() / k).max(Fix64::ZERO);
                     }
@@ -6555,6 +6558,38 @@ mod tests {
     }
 
     /// `configure_regen`：房间设置可调基础回血（098c 主机常量 `-C9`）。
+    #[test]
+    fn explode_at_scales_with_damage_mult() {
+        // AoE（陨石/新星等经 explode_at）也应乘全局伤害倍率（098c 在 hI 入口乘 Gn）。
+        let mut a = World::new(2, 321);
+        a.obstacles.clear();
+        a.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        let mut b = World::new(2, 321);
+        b.obstacles.clear();
+        b.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
+        b.damage_mult = Fix64::from_num(2.0);
+        let hp_a = a.players[1].hp;
+        let hp_b = b.players[1].hp;
+        let at = |w: &mut World| {
+            w.explode_at(
+                Vec2::new(Fix64::from_num(2.0), Fix64::ZERO),
+                0,
+                Fix64::from_num(1.0),
+                Fix64::from_num(10.0),
+                Fix64::ZERO,
+                false,
+                false,
+                DmgFalloff::None,
+            )
+        };
+        at(&mut a);
+        at(&mut b);
+        let da = (hp_a - a.players[1].hp).to_num::<f64>();
+        let db = (hp_b - b.players[1].hp).to_num::<f64>();
+        assert!(da > 0.0, "基础 AoE 伤害应 > 0");
+        assert!((db - 2.0 * da).abs() < 1e-6, "AoE 应乘 damage_mult：da={da} db={db}");
+    }
+
     #[test]
     fn configure_mults_scales_damage_and_lava() {
         // configure_mults 存储三倍率
