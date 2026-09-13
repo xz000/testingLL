@@ -3651,8 +3651,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let mut smite_hits: u32 = 0;
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
-                        // S001 天罚（098c mC，普通局 F 键）：半径 250、衰减 1-d/1000、伤害 10+血剑。
-                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::None);
+                        // S001 天罚（098c mC，普通局 F 键）：半径 250（按**半径**判定 `cO<=$FA`），
+                        // 伤害随距离乘法衰减 `×(1-d/1000)`（mC `mI(...,1.-cO/$3E8)`），伤害 10+血剑。
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)));
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变（098c `qC` 实证）：伤害按阶段 `$B/$C/$E` = **11/12/14**（+血剑 Zr）；
@@ -3673,9 +3674,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
-                        // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚；500 内**队友**
+                        // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚（半径 250、衰减 ×(1-d/1000)）；500 内**队友**
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::None);
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)));
                         let caster_team = world.players[idx as usize].team;
                         let mut healed_any = false;
                         let allies: Vec<u32> = world
@@ -6542,8 +6543,9 @@ mod tests {
             world.step(none.clone(), dt); // windup 0.7s
             if f == 44 {
                 // 天罚刚落地即采集：击退会把 p1 推出场外进岩浆（098c 正确行为），不计入
+                // 距离衰减（098c `mI(...,1-d/1000)`）：p1 在 120 处 → 11×(1-120/1000)=9.68。
                 let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
-                assert!((d1 - 11.0).abs() < 0.5, "目标应吃 10+1 血剑天罚 11，实际 {d1}");
+                assert!((d1 - 9.68).abs() < 0.5, "目标应吃 11×(1-120/1000)=9.68 天罚，实际 {d1}");
             }
         }
         assert!(!world.players[0].aegis_charged, "天罚释放应消耗充能");
@@ -6837,6 +6839,35 @@ mod tests {
             Fix64::ONE,
         );
         assert_eq!(hits, 1, "仅半径内的敌人被命中");
+    }
+
+    /// 天罚/虔诚伤害随距离乘法衰减（098c `mI(...,1-d/1000)`）：中心 > 边缘。
+    #[test]
+    fn smite_damage_falls_off_with_distance() {
+        let mut w = World::new(3, 5);
+        for p in w.players.iter_mut() {
+            p.alive = true;
+        }
+        w.players[0].team = 0;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].team = 1;
+        w.players[1].pos = Vec2::ZERO; // 中心
+        w.players[2].team = 1;
+        w.players[2].pos = Vec2::new(Fix64::from_num(200.0), Fix64::ZERO); // 半径内、远离中心
+        let _ = w.explode_at(
+            Vec2::ZERO,
+            0,
+            Fix64::from_num(250.0),
+            Fix64::from_num(10.0),
+            Fix64::ZERO,
+            true,
+            true,
+            DmgFalloff::Mul(Fix64::from_num(1000.0)),
+        );
+        let d_center = 100.0 - w.players[1].hp.to_num::<f64>();
+        let d_edge = 100.0 - w.players[2].hp.to_num::<f64>();
+        assert!(d_center > d_edge, "中心伤害应高于边缘: {d_center} vs {d_edge}");
+        assert!((d_edge / d_center - 0.8).abs() < 0.05, "200/1000 → 边缘约 0.8×，实际 {}", d_edge / d_center);
     }
 
     #[test]

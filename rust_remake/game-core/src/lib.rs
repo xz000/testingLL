@@ -43,4 +43,5 @@ pub fn version() -> &'static str {
 /// v16（2026-09-13）：`Player.charging`（S010 A 冲锋 `fr`，与 B 形态风步区分）入快照。
 /// v17（2026-09-13）：删除疾风步 B 的「接触吸血」（`BuffKind::Windwalk`/`windwalk_cd`）—— 对齐 098c（其无此机制）。
 /// v18（2026-09-13）：`W098b.pillar_rest`（弹体撞柱反弹系数 `xv`）入快照。
-pub const PROTOCOL_VERSION: u32 = 18;
+/// v19（2026-09-13）：天罚（S001）/虔诚（S021）伤害距离衰减改为 `×(1-d/1000)`（对齐 098c `mI(...,1-cO/$3E8)`）。
+pub const PROTOCOL_VERSION: u32 = 19;
