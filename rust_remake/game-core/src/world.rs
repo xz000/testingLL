@@ -323,6 +323,12 @@ const W098B_KB_MAX_SPEED: f64 = 2000.0;
 /// 098b 火球点燃时长（秒）：consolidated S000「点燃 2.5×jn」。
 const W098B_IGNITE_SECONDS: f64 = 2.5;
 
+/// 098c 英雄撞柱/撞界的弹性系数 `xv`：`FR` 创建英雄时 `set xv[i]=.5`
+/// （war3map_pretty.j:4953 `OO(1,..)` → `nv==1`，4979 `set xv[i]=.5`）。
+/// 撞障碍走 `set Q=-Q*xv`（8656/8674）→ 该轴速度**反向 ×0.5（半速反弹）**，切向保留。
+/// （投射物另有 `xv=1` 全反射，见弹体撞柱分支。）
+const PLAYER_OBS_RESTITUTION: f64 = 0.5;
+
 /// 098c KI 击退初速：`(100 + 目标当前魔法) × gX × Gn[攻] × hn[受] × JI`（单位/秒）。
 /// 魔法为挨打回魔的张力值（出生 0 → 基数 100；挨打越多被推越远）。
 /// `Gn[攻]` = 攻方伤害成长/灼烧惩罚；`hn[受]` = 受方受伤倍率（`dmg_taken_mult`）；
@@ -1122,24 +1128,25 @@ impl World {
                     let overlap = min - dist;
                     p.pos += dir * overlap;
                     hit_wall = true;
-                    // 098c：撞障碍是**逐轴**响应（war3map_pretty.j 8640-8730 对 X/Y 各自 `RA(...)` 检查）：
-                    // 哪个轴朝向障碍就把那个轴的速度清零，**另一轴保留** → 斜撞沿墙滑行/偏折；
-                    // `xv>0` 的 mover 才反弹（+反射），其余清零。旧实现（接触即 `control = None`）会整体停死。
-                    // 用逐轴而非“沿法线投影”：圆形障碍的法线投影会保留一个指向墙内的切向 +x 分量，导致逐渐穿墙。
+                    // 098c 撞障碍是**逐轴**响应（war3map_pretty.j:8654-8687 对 X/Y 各自 `RA(...)` 检查）：
+                    // 英雄 `nv==1` 且 `xv=0.5`（`FR` 创建时设定）→ 走 `set Q=-Q*xv` 分支，
+                    // 即该轴速度**反向 ×0.5（半速反弹）**，另一轴保留 → 斜撞沿墙弹开。
+                    // （旧实现“接触即 `control = None`”/“逐轴清零”会整体停死，与 098c 不符。）
+                    let rest = Fix64::from_num(PLAYER_OBS_RESTITUTION);
                     if let Some(c) = p.control.as_mut() {
                         if c.vel.x * dir.x < Fix64::ZERO {
-                            c.vel.x = Fix64::ZERO;
+                            c.vel.x = -c.vel.x * rest;
                         }
                         if c.vel.y * dir.y < Fix64::ZERO {
-                            c.vel.y = Fix64::ZERO;
+                            c.vel.y = -c.vel.y * rest;
                         }
                     }
                     if p.dash_active {
                         if p.dash_vel.x * dir.x < Fix64::ZERO {
-                            p.dash_vel.x = Fix64::ZERO;
+                            p.dash_vel.x = -p.dash_vel.x * rest;
                         }
                         if p.dash_vel.y * dir.y < Fix64::ZERO {
-                            p.dash_vel.y = Fix64::ZERO;
+                            p.dash_vel.y = -p.dash_vel.y * rest;
                         }
                     }
                 }
@@ -7032,10 +7039,10 @@ mod tests {
             "4 级精通击退应≈×0.9，d4={:?} d0={:?}", d4, d0);
     }
 
-    /// S012 冲撞：正面撞墙 → 停止在障碍前（098c 逐轴：法向分量归零，无切向则整体停住），
-    /// 持续时长自然结束后 `control` 清空。
+    /// S012 冲撞：正面撞柱 → **半速反弹**（098c 英雄 `nv==1,xv=.5`：`set Q=-Q*xv`，
+    /// war3map_pretty.j:4953/4979/8656），而不是停在障碍前。
     #[test]
-    fn s012_dash_stops_at_obstacle_head_on() {
+    fn s012_dash_bounces_off_obstacle_head_on() {
         let mut world = World::new(2, 9584);
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -7052,18 +7059,29 @@ mod tests {
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 先推进到刚接触，确认发生了反弹（该轴速度反向）。
+        let mut bounced = false;
+        let mut max_x = Fix64::ZERO;
         for _ in 0..40 {
             world.step(none.clone(), dt);
+            max_x = max_x.max(world.players[0].pos.x);
+            if let Some(c) = world.players[0].control.as_ref() {
+                if c.vel.x < Fix64::ZERO {
+                    bounced = true;
+                }
+            }
         }
-        // 应停在障碍前（pos.x ≈ 障碍中心 - 障碍半径 - 玩家半径），且强制位移已截断。
-        let max_x = d60(5.0) - Fix64::from_num(obs_r) - world.players[0].radius;
-        assert!(world.players[0].pos.x <= max_x + Fix64::from_num(3.0),
-            "应撞墙截断停在障碍前，x={:?} 上限={:?}", world.players[0].pos.x, max_x);
-        assert!(world.players[0].control.is_none(), "撞墙后持续时长自然结束，control 应已清空");
+        // 应停在障碍前（pos.x ≈ 障碍中心 - 障碍半径 - 玩家半径）。
+        let contact_limit = d60(5.0) - Fix64::from_num(obs_r) - world.players[0].radius;
+        assert!(max_x <= contact_limit + Fix64::from_num(3.0),
+            "不应钻入障碍，max_x={:?} 上限={:?}", max_x, contact_limit);
+        assert!(bounced, "英雄撞柱应按 098c 逐轴 `-Q*xv` 半速反弹（速度反向）");
+        assert!(world.players[0].pos.x < contact_limit - Fix64::from_num(30.0),
+            "反弹后应明显退回，pos.x={:?}", world.players[0].pos.x);
     }
 
-    /// S012 冲撞：**斜撞**障碍 → 沿墙滑行（098c 逐轴响应：清零法向、保留切向），
-    /// 而不是像旧实现那样整体清掉强制位移（`control=None`）停死。
+    /// S012 冲撞：**斜撞**障碍 → 法向轴半速反弹、切向保留（098c 逐轴 `-Q*xv`），
+    /// 而不是像旧实现那样整体清掉强制位移（`control=None`）或清零停死。
     #[test]
     fn s012_dash_slides_along_obstacle_at_angle() {
         let mut world = World::new(2, 4242);
