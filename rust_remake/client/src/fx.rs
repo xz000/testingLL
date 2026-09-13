@@ -23,8 +23,10 @@ pub enum FxKind {
     Afterimage,
     /// 碎片：向外飞散的实心小方块（柱子被摧毁）。
     Debris,
-    /// 爆炸：【精确半径】的淡填充圆 + 亮描边（表示真实作用范围）。
+    /// 爆炸：【精确半径】的淡填充圆 + 亮描边（从中心扩大至 radius）。
     Blast,
+    /// 治疗脉冲：**仅描边**的双绿环（区别伤害圈；同样扩至精确 radius）。
+    HealRing,
 }
 
 /// 一个特效实例。`life`/`max_life` 决定进度；`radius` 为世界单位基准半径。
@@ -133,6 +135,16 @@ impl FxSystem {
                     canvas.draw(&disc, DrawParam::new());
                     let edge = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.5), Point2 { x, y }, r, 0.5, c)?;
                     canvas.draw(&edge, DrawParam::new());
+                }
+                FxKind::HealRing => {
+                    // 治疗：无填充、双绿环（外环 + 0.6r 内环），从中心扩大至真实半径。
+                    let e = if t > 0.5 { (1.0 - t) / 0.5 } else { 1.0 };
+                    let r = (f.radius * e.clamp(0.0, 1.0) * scale).max(1.0);
+                    let outer = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(3.0), Point2 { x, y }, r, 0.5, c)?;
+                    canvas.draw(&outer, DrawParam::new());
+                    let inner_c = Color::new(f.color[0], f.color[1], f.color[2], f.color[3] * a * 0.6);
+                    let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x, y }, (r * 0.6).max(1.0), 0.5, inner_c)?;
+                    canvas.draw(&inner, DrawParam::new());
                 }
             }
         }
