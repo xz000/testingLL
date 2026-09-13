@@ -7,3 +7,10 @@
 /netlogs/
 /logs/
 /logs_client/
+*日志*.txt
+
+# 临时/一次性调查脚本与输出
+/_g*.py
+/_g*.txt
+/_s*.txt
+/_mojibake.txt
