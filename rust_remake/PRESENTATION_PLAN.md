@@ -116,9 +116,9 @@ impl FxSystem {
 
 ## 6. 分步实施（每步可编译/提交/过门禁）
 
-- [ ] **P3-0 基础设施**：`client/src/fx.rs`（`FxKind`/`Fx`/`FxSystem` + 上限 + `alpha/scale` 单测）；
+- [x] **P3-0 基础设施**：`client/src/fx.rs`（`FxKind`/`Fx`/`FxSystem` + 上限 + `alpha/progress` 单测）；
       `Game` 增 `fx: FxSystem`；绘制接入（实体后、HUD 前）。
-- [ ] **P3-1**：命中闪光 + 火花（hp 差分驱动）。
+- [x] **P3-1**：命中闪光 + 火花（hp 差分驱动）。
 - [ ] **P3-2**：死亡圆环 + 残影。
 - [ ] **P3-3a**：`combat_events` 增 `PillarBreak`/`Explode`（core，非序列化）+ 单测。
 - [ ] **P3-3b**：柱子碎裂粒子 / 爆炸圆环（客户端消费）。
