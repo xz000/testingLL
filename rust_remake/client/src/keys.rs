@@ -336,6 +336,16 @@ mod source_scan_tests {
         );
     }
 
+    /// 回归：就绪界面不得再提示已退休的 `E 编辑房间`（设置入口统一为 `O`）。
+    #[test]
+    fn room_ready_hint_uses_o_not_e_for_settings() {
+        assert!(!SRC.contains("E 编辑房间"), "就绪界面仍写着已退休的 E 编辑房间");
+        assert!(
+            SRC.contains("O 房间设置") || SRC.contains("O 查看设置"),
+            "应提示 O 打开/查看设置"
+        );
+    }
+
     /// 回归③（一键两用：`Q` 关编辑器却退了房）：子界面打开时大厅按键必须被守卫。
     #[test]
     fn lobby_keys_are_guarded_while_a_subscreen_is_open() {

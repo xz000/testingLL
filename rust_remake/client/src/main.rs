@@ -3289,9 +3289,15 @@ impl Game {
                 py + 8.0,
             )?;
         }
+        // 标题区分两种模式：创建（建房前）/ 房间内（编辑进行中的房间）。
+        let title = if self.room_cfg_create_mode {
+            format!("创建房间 · 设置   （自定义 {n} 项）")
+        } else {
+            format!("房间设置   （自定义 {n} 项）")
+        };
         ui::text_center(
             canvas, ctx,
-            &format!("房间设置   （自定义 {n} 项）"),
+            &title,
             ui::theme::TITLE,
             layout::border_selected(),
             sw / 2.0,
@@ -3465,11 +3471,11 @@ impl Game {
         } else {
             draw_text(canvas, ctx, "▶ 按 U 就绪（再按 U 取消）", 28.0, Color::from_rgb(255, 240, 120), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         }
-        // host 附加“编辑房间”入口，显示在底部。
+        // host 附加“房间设置”入口，显示在底部。（`E` 已退休，统一为 `O`。）
         if self.steam_host_ls.is_some() {
-            draw_text(canvas, ctx, "E 编辑房间（含 L 锁定）    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            draw_text(canvas, ctx, "O 房间设置（含 L 锁定）    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         } else {
-            draw_text(canvas, ctx, "U 就绪/取消    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            draw_text(canvas, ctx, "U 就绪/取消    O 查看设置    I 邀请好友    Q 退出房间", 19.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: sh * 0.90 }, true)?;
         }
         draw_text(canvas, ctx, "== 就绪状态 ==", 20.0, Color::from_rgb(200, 210, 220), Point2 { x: cx, y: sh * 0.42 }, true)?;
         let mut y = sh * 0.42 + 32.0;
