@@ -45,12 +45,22 @@ if ($Mode -eq 'menu') {
     $argsList = @('--steam-join',"$LobbyId")
 }
 
-# 前台运行（&）并把控制台输出同时 tee 到 logs/（进程内 logging 已带 ms 时间戳；
+# 前台运行（&）并把控制台输出同时写到 logs/（进程内 logging 已带 ms 时间戳；
 # 这里兜底捕获 net-steam 等库内直接用 eprintln! 的行）。
+# 注意：本机 PowerShell 5.1 的 Tee-Object **不支持 -Encoding**，默认写 UTF-16LE（乱码）；
+# 且 native exe 的 UTF-8 stderr 需先告诉 PowerShell 用 UTF-8 解码（否则中文先被错解）。
+# 故这里：设 [Console]::OutputEncoding=UTF8 + 逐行用 UTF8（无 BOM）追加到文件。
 $logDir = Join-Path $PSScriptRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logFile = Join-Path $logDir "console-$Mode-$stamp.log"
 Write-Host "== log -> $logFile =="
-& $exe @argsList 2>&1 | Tee-Object -FilePath $logFile
+$prevEnc = [Console]::OutputEncoding
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+& $exe @argsList 2>&1 | ForEach-Object {
+    Out-Host $_
+    try { [System.IO.File]::AppendAllText($logFile, "$_`r`n", $utf8NoBom) } catch {}
+}
+try { [Console]::OutputEncoding = $prevEnc } catch {}
 Pop-Location

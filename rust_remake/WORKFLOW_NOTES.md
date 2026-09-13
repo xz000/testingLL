@@ -34,3 +34,17 @@
 
 改完必须确认**跑的是新 exe**：`dir target\debug\client.exe` 看时间戳；
 或直接在 exe 里搜新增字符串 ✓。曾被 9/6 的旧 exe 误导过 ✗。
+
+## 4. PowerShell `Tee-Object` 默认写 UTF-16（日志乱码）
+
+`run-steam.ps1` 曾用 `... 2>&1 | Tee-Object -FilePath $log` 同时看控制台+存盘，
+但**Windows PowerShell 5.1 的 `Tee-Object` 不支持 `-Encoding`**，默认写成 **UTF-16LE + BOM**，
+用 UTF-8 工具读就全乱码。而且 native exe 的 stderr 是 UTF-8，若 `[Console]::OutputEncoding` 不是 UTF-8，
+PowerShell 会先按 GBK 解码 → 中文先错解再存盘。
+
+**修复（已在 run-steam.ps1）**：设 `[Console]::OutputEncoding = UTF8`，逐行用
+`[System.IO.File]::AppendAllText($log, "$_`r`n", (New-Object System.Text.UTF8Encoding($false)))` 追加（UTF-8 无 BOM）。
+
+**验证**：`python -c "print(open('logs/console-xxx.log','rb').read(4))"` → 应为 ASCII/UTF-8，**不是** `\xff\xfe`。
+进程内 `logging.rs` 的 `app-*.log` 一直就是 UTF-8，不受影响；
+以后优先看 `app-*.log`（它才是带 ms 时间戳的诊断主文件）。
