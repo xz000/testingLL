@@ -4620,6 +4620,10 @@ impl Game {
                     self.audio.play(audio::AudioCue::AnnBurnout);
                     self.push_float(pos, "Burn out".to_string(), Color::from_rgb(255, 255, 80));
                 }
+                CombatEvent::Denied { pos, .. } => {
+                    self.audio.play(audio::AudioCue::AnnDenied);
+                    self.push_float(pos, "Denied".to_string(), Color::from_rgb(255, 80, 80));
+                }
             }
         }
         let me = self.self_index();
