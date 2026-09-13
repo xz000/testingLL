@@ -486,6 +486,8 @@ struct Game {
     present_victory_played: bool,
     /// 表现层音效：本场是否已播「开局」（098c `Vo` GameFound，首局开始时）。
     present_match_started: bool,
+    /// 表现层：上一次见到的总轮数（`total_rounds` 增加 = 098c 平局加赛）。
+    present_total_rounds: u32,
     /// 表现层：本场累计表现时钟（秒），用于多重击杀窗口判定。
     present_clock: f32,
     /// 表现层：各玩家上次击杀时刻（098c `Cn`；窗口 = `Wn` = 9s）。
@@ -1087,6 +1089,7 @@ impl Game {
             present_hit_cooldown: 0.0,
             present_victory_played: false,
             present_match_started: false,
+            present_total_rounds: 0,
             present_clock: 0.0,
             present_last_kill_at: Vec::new(),
             present_multikill: Vec::new(),
@@ -4573,6 +4576,7 @@ impl Game {
             if self.world.round_number <= 1 {
                 self.present_victory_played = false;
                 self.present_match_started = false;
+                self.present_total_rounds = 0;
             }
             self.present_last_kill_at = vec![-1e9; self.world.players.len()];
             self.present_multikill = vec![0; self.world.players.len()];
@@ -4594,6 +4598,17 @@ impl Game {
         if self.world.round_number == 1 && !self.present_match_started {
             self.present_match_started = true;
             self.audio.play(audio::AudioCue::AnnGameStart);
+        }
+        // 098c 平局加赛：总轮数增加 → 播 `Vo` + 「Draw! One more round」横幅（见 `MatchState::finish_round`）。
+        if self.meta.config.total_rounds != self.present_total_rounds {
+            if self.present_total_rounds != 0 && self.meta.config.total_rounds > self.present_total_rounds {
+                self.audio.play(audio::AudioCue::AnnGameStart);
+                self.push_banner(
+                    "Draw! One more round to decide the battle".to_string(),
+                    Color::from_rgb(255, 210, 90),
+                );
+            }
+            self.present_total_rounds = self.meta.config.total_rounds;
         }
         // 战斗事件播报（098c：Hattrick/Vampire/Silencer/Pancake 音效 + 头顶漂字）。
         for ev in combat_events {
@@ -4749,6 +4764,7 @@ impl Game {
         self.present_first_blood = false;
         self.present_victory_played = false;
         self.present_match_started = false;
+        self.present_total_rounds = 0;
         self.present_hit_cooldown = 0.0;
         self.present_clock = 0.0;
         self.present_last_kill_at = vec![-1e9; self.world.players.len()];

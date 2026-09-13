@@ -753,11 +753,26 @@ impl MatchState {
         let early_win = self.config.game_mode == 2
             && self.profiles.iter().any(|pr| pr.score >= self.config.win_score);
         if early_win || self.round >= self.config.total_rounds {
-            self.phase = MatchPhase::Finished;
+            // 098c `rI`（22470–22492）：终局时若**最高分并列**（`ZD>1`）→ **加赛一轮**（`AV=AV+1` +
+            // 播放 `Vo` + 广播 "Draw! One more round to decide the battle"）。
+            // 化身模式（`nn==3`）与死亡竞赛提前终局（`early_win`）不加赛。
+            if !early_win && self.config.game_mode != 3 && self.top_score_tied() {
+                self.config.total_rounds += 1; // 追加一轮（总轮数在本次 meta 内部生效）
+                self.phase = MatchPhase::Learning;
+                self.learn_remaining = self.config.between_rounds_time_secs;
+            } else {
+                self.phase = MatchPhase::Finished;
+            }
         } else {
             self.phase = MatchPhase::Learning;
             self.learn_remaining = self.config.between_rounds_time_secs;
         }
+    }
+
+    /// 终局平局判定：**最高分并列 >1**（098c `ZD>1`）。无分（全 0）不算平局。
+    fn top_score_tied(&self) -> bool {
+        let max = self.profiles.iter().map(|p| p.score).max().unwrap_or(0);
+        max > 0 && self.profiles.iter().filter(|p| p.score == max).count() > 1
     }
 
     /// 终局排名（En 批）：按分数降序、最优名次升序；返回 (player_id, score)。
@@ -1387,6 +1402,35 @@ mod tests {
         };
         let mut m = MatchState::new(config, &[0, 1], 8);
         m.finish_round(vec![1, 0]);
+        assert_eq!(m.phase, MatchPhase::Finished);
+    }
+
+    /// 098c `rI` 平局加赛：终局时最高分并列 >1 → 追加一轮（继续 Learning），不直接结束。
+    #[test]
+    fn drawn_final_round_adds_extra_round() {
+        let config = MatchConfig {
+            total_rounds: 1,
+            ..Default::default()
+        };
+        let mut m = MatchState::new(config, &[0, 1], 8);
+        m.profiles[0].score = 5;
+        m.profiles[1].score = 5; // 并列最高
+        m.finish_round(vec![0, 1]);
+        assert_eq!(m.phase, MatchPhase::Learning, "平局应加赛而不是结束");
+        assert_eq!(m.config.total_rounds, 2, "总轮数 +1");
+    }
+
+    /// 终局有唯一胜者 → 正常结束（不加赛）。
+    #[test]
+    fn decisive_final_round_finishes() {
+        let config = MatchConfig {
+            total_rounds: 1,
+            ..Default::default()
+        };
+        let mut m = MatchState::new(config, &[0, 1], 8);
+        m.profiles[0].score = 7;
+        m.profiles[1].score = 3;
+        m.finish_round(vec![0, 1]);
         assert_eq!(m.phase, MatchPhase::Finished);
     }
 

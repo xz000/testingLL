@@ -55,7 +55,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 54 / game-core 241 / net 39 / net-steam 9；steam client 61 |
+| 测试基线 | client 54 / game-core 244 / net 39 / net-steam 9；steam client 61 |
 
 ## 四、待办（按建议优先级）
 
@@ -108,10 +108,9 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      遗留：**mover（弹体）撞柱反弹已按 `xv` 实现**（S000/S004/S009/S014/S016/S018 满反弹=1，S008=.75 衰减；
      其余被挡；见 `skill::pillar_restitution`），逐技能 `xv` 衰减已区分。场地边界 ×0.5 反弹 = **War3 地图可玩区域**
      （`bj_mapInitialPlayableArea`）的引擎限制 → **不做**（我们的边界是岩浆区）。
-8. **平局加赛机制缺失**（待做）：098c 平局时**加赛一轮**（`rI` war3map_pretty.j:22488-22492：
-   `AV=AV+1; StartSound(Vo)` + 广播 `"Draw! One more round to decide the battle"`）。
-   我们目前只有固定 `total_rounds`，**无平局判定、无追加轮**。
-   待定义：平局条件（如同分/并列第一）→ 追加一轮 → 结算；暂已用 `Vo` 音效（`ann_game_start`/`ann_finish`）。
+8. ✅ **平局加赛机制已完成（2026-09-13）**：`MatchState::finish_round` 在终局时若**最高分并列 >1**
+   （098c `rI` 的 `ZD>1`）且非死亡竞赛/化身模式 → `total_rounds += 1` 继续 Learning（对应 `AV=AV+1`）；
+   客户端检测到总轮数增加 → 播 `Vo` + 「Draw! One more round to decide the battle」横幅。
 9. **S010/S012 接触伤害对齐（2026-09-13）**：`CA` 规格完整实现 —— `Player.charging`（`fr`）区分 A/B 形态；
    `bA` 改为以攻方为圆心的 AoE（`splash_damage`，半径 160×(1+.12xi)、×Gn）；
    S012A 撞敌自伤 + `xi>0` 的 `SI` AoE；凤凰弹门控改为只看 B 形态。协议 15→16。
