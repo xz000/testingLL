@@ -927,29 +927,28 @@ impl MatchState {
     }
     /// 开局前的配置阶段结束 → 进入第一局。
     ///
-    /// **开局时才发钱**（初始金 + 首轮参与奖），且**只发一次**（幂等）——
+    /// **开局时只发初始金**（幂等）——参与奖 `qo` 由 `finish_round` 在每回合结束发放。
     /// 首局配置期有两条路径会走到这里：`tick_learning` 倒计时结束、单机 `finish_first_round_config`。
     pub fn enter_first_round(&mut self) {
         self.phase = MatchPhase::Fighting;
         self.grant_opening_gold();
     }
 
-    /// 发放「开局金」= 初始金 + 首轮参与奖，**只发一次**（幂等）。
+    /// 发放「开局金」= **仅初始金 `Qo`**，且**只发一次**（幂等）。
     ///
-    /// 触发点有**两处**，谁先到谁发：
-    /// - `begin_first_round_config`（**第一次进配置/商店**）—— 玩家此时就要买东西，必须有钱；
-    /// - `enter_first_round`（直接开战，例如跳过配置的路径）。
+    /// 098c 实证（`Od`/`aI`）：开局把金币**置为** `Qo`（首轮商店只有这么多）；
+    /// 每回合的参与奖 `qo` 在**回合结束**（`aI` 的 `+qo`）才发。故此处不发 `gold_per_round`。
+    /// 触发点：`begin_first_round_config`（首次进商店）或 `enter_first_round`（跳过配置），谁先到谁发。
     fn grant_opening_gold(&mut self) {
         if !self.opening_gold_granted {
             self.opening_gold_granted = true;
             self.give_starting_gold();
-            self.give_round_gold();
         }
     }
 
     /// 首局进入配置学习（联机用倒计时自动开始）：进入 Learning，倒计时 =
     /// `shopping_time_secs`（098b Wo=40 开局购物，D6/M4；区别于每轮 wo=30 的 learn_time_secs）。
-    /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发参与奖）。
+    /// 倒计时归零（`tick_learning`）走 `enter_first_round`（round 保持 1、不重复发初始金）。
     pub fn begin_first_round_config(&mut self) {
         self.phase = MatchPhase::Learning;
         // **第一次进配置（商店）时就发钱**：否则玩家在配置期无钱可买
@@ -1002,20 +1001,21 @@ mod tests {
         m.begin_first_round_config(); // = 第一次进配置/商店
         assert_eq!(
             m.profiles[0].gold,
-            40,
-            "进配置期就要发 初始金 20 + 首轮参与奖 20（sample 口径），否则没钱买东西"
+            20,
+            "进配置期就要发 初始金 20（sample 口径），否则没钱买东西"
         );
         // 配置期结束进入第一局：不应重复发
         m.finish_first_round_config();
-        assert_eq!(m.profiles[0].gold, 40, "开局不重复发（幂等）");
+        assert_eq!(m.profiles[0].gold, 20, "开局不重复发（幂等）");
     }
 
     #[test]
-    fn round_start_gives_participation_gold() {
+    fn opening_grants_starting_gold_only() {
+        // 098c：开局只发 Qo；参与奖 qo 在回合结束发（见 finish_round）。
         let mut m = sample();
-        m.enter_first_round(); // 开局发钱（098c：开局时才发）
-        assert_eq!(m.profiles[0].gold, 40, "So20 + 首轮参与奖 20");
-        assert_eq!(m.profiles[1].gold, 40);
+        m.enter_first_round();
+        assert_eq!(m.profiles[0].gold, 20, "开局只发初始金 Qo=20");
+        assert_eq!(m.profiles[1].gold, 20);
     }
 
     #[test]
@@ -1027,9 +1027,9 @@ mod tests {
         let mut m = MatchState::new(config, &[0, 1], 8);
         assert_eq!(m.profiles[0].gold, 0, "构造时尚未开局 → 不应发钱");
         m.enter_first_round();
-        // 第一局 = 初始金币 50 + 每轮金（098c 设置 17 `qo` = 10）= 60
-        assert_eq!(m.profiles[0].gold, 50 + 10);
-        assert_eq!(m.profiles[1].gold, 50 + 10);
+        // 开局只发初始金 50（参与奖 qo 在回合结束发）。
+        assert_eq!(m.profiles[0].gold, 50);
+        assert_eq!(m.profiles[1].gold, 50);
     }
 
     /// 模式专属奖励直发（098c 化身模式 `AI` 的 `+lo` / `+1`）。
@@ -1174,21 +1174,21 @@ mod tests {
     #[test]
     fn kill_gives_gold() {
         let mut m = sample();
-        m.enter_first_round(); // 开局发钱（098c：开局时才发）
+        m.enter_first_round(); // 开局只发初始金
         m.register_kill(0);
-        assert_eq!(m.profiles[0].gold, 40 + 15, "基础 40 + 击杀 15");
+        assert_eq!(m.profiles[0].gold, 20 + 15, "基础 20 + 击杀 15");
         assert_eq!(m.profiles[0].total_kills, 1);
     }
 
     #[test]
     fn finish_round_rewards_placement_and_gold() {
         let mut m = sample();
-        m.enter_first_round(); // 开局发钱（098c：开局时才发）
+        m.enter_first_round(); // 开局只发初始金 20
         // 名次：0=冠军（+30+存活），1=第二（+20），2=第三（+10）
         m.finish_round(vec![0, 1, 2]);
-        assert_eq!(m.profiles[0].gold, 40 + 30 + 20, "名次 30 + 结算参与奖 20");
-        assert_eq!(m.profiles[1].gold, 40 + 20 + 20);
-        assert_eq!(m.profiles[2].gold, 40 + 10 + 20);
+        assert_eq!(m.profiles[0].gold, 20 + 30 + 20, "初始 20 + 名次 30 + 结算参与奖 20");
+        assert_eq!(m.profiles[1].gold, 20 + 20 + 20);
+        assert_eq!(m.profiles[2].gold, 20 + 10 + 20);
         assert_eq!(m.profiles[0].best_placement, 1);
         assert_eq!(m.profiles[1].best_placement, 2);
         assert_eq!(m.round_placements.len(), 1);
@@ -1198,7 +1198,7 @@ mod tests {
     #[test]
     fn learning_then_advance_gives_round_gold_again() {
         let mut m = sample();
-        m.enter_first_round(); // 开局发钱（098c：开局时才发）
+        m.enter_first_round(); // 开局只发初始金
         m.finish_round(vec![0, 1, 2]); // → Learning
         assert_eq!(m.phase, MatchPhase::Learning);
         let advanced = m.tick_learning(30.01); // 学习超时（098b wo=30）
@@ -1206,7 +1206,7 @@ mod tests {
         assert_eq!(m.round, 2);
         assert_eq!(m.phase, MatchPhase::Fighting);
         // 第二局参与奖已发放
-        assert_eq!(m.profiles[0].gold, 40 + 30 + 20);
+        assert_eq!(m.profiles[0].gold, 20 + 30 + 20);
     }
 
     #[test]
@@ -1274,10 +1274,10 @@ mod tests {
         let mut m = MatchState::new(config, &[0, 1], 8);
         assert_eq!(m.profiles[0].gold, 0, "构造时尚未开局，不应发钱");
         m.enter_first_round();
-        assert_eq!(m.profiles[0].gold, 20 + 10, "开局 Qo=20 + 首轮 qo=10");
+        assert_eq!(m.profiles[0].gold, 20, "开局只发 Qo=20（qo 在回合结束发）");
         // 击杀：发分 + 发金（098c `ko=1` / `lo=1`）
         m.register_kill(0);
-        assert_eq!(m.profiles[0].gold, 30 + 1, "击杀金 lo=1（基线 30 = 20+10）");
+        assert_eq!(m.profiles[0].gold, 20 + 1, "击杀金 lo=1（基线 20 = Qo）");
         assert_eq!(m.profiles[0].score, 1, "098c 击杀 1 分（globals ko=1）");
         assert_eq!(m.profiles[0].current_streak, 1);
         // 助攻
@@ -1370,12 +1370,12 @@ mod tests {
     #[test]
     fn upgrade_skill_spends_gold_and_fails_when_poor() {
         let mut m = sample();
-        m.enter_first_round(); // 开局发钱（098c：开局时才发）
-        // 升一级 Rock(id=6) 花费 10（sample 基础 40）
+        m.enter_first_round(); // 开局只发初始金 20
+        // 升一级 Rock(id=6) 花费 10（sample 初始 20）
         assert!(m.profiles[0].upgrade_skill(SkillId::Rock, 10));
-        assert_eq!(m.profiles[0].gold, 30);
+        assert_eq!(m.profiles[0].gold, 10);
         assert_eq!(m.profiles[0].skill_level(SkillId::Rock), 2);
-        // 再花 40 不够（剩 30）→ 失败
+        // 再花 40 不够（剩 10）→ 失败
         assert!(!m.profiles[0].upgrade_skill(SkillId::Rock, 40));
         assert_eq!(m.profiles[0].skill_level(SkillId::Rock), 2);
     }
@@ -1468,7 +1468,7 @@ mod tests {
         assert!(advanced);
         assert_eq!(m.phase, MatchPhase::Fighting);
         assert_eq!(m.round, 1, "首局配置归零不应 +round");
-        assert_eq!(m.profiles[0].gold, gold_before + 20 + 20, "首局开始时一次性发放 初始金 20 + 首轮参与奖 20（sample 口径）");
+        assert_eq!(m.profiles[0].gold, gold_before + 20, "首局开始时只发 初始金 20（sample 口径）");
         let after = m.profiles[0].gold;
         m.enter_first_round(); // 幂等：重复进入第一局不再发
         assert_eq!(m.profiles[0].gold, after, "首局金只发一次");
