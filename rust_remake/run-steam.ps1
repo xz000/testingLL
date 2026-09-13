@@ -45,6 +45,12 @@ if ($Mode -eq 'menu') {
     $argsList = @('--steam-join',"$LobbyId")
 }
 
-# 前台运行（&），让 stderr（panic/错误/[steam-join] 日志）直接进当前控制台，便于排查 client 加入失败。
-& $exe @argsList
+# 前台运行（&）并把控制台输出同时 tee 到 logs/（进程内 logging 已带 ms 时间戳；
+# 这里兜底捕获 net-steam 等库内直接用 eprintln! 的行）。
+$logDir = Join-Path $PSScriptRoot 'logs'
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$logFile = Join-Path $logDir "console-$Mode-$stamp.log"
+Write-Host "== log -> $logFile =="
+& $exe @argsList 2>&1 | Tee-Object -FilePath $logFile
 Pop-Location

@@ -28,6 +28,8 @@ mod netlink;
 
 /// 可复用 UI 原语（U3）：主题 / 文本排版 / 面板 / 可点行 / 命中登记 / 滚动。
 mod ui;
+/// 诊断日志（带毫秒时间戳落盘）：联机延迟/卡顿分析用。
+mod logging;
 
 // Steam 联机逻辑（feature 门控，独立模块便于阅读维护；字段与方法均属 `Game`，纯逻辑分组）。
 mod steam;
@@ -1855,7 +1857,7 @@ impl Game {
     fn settle_round(&mut self) {
         // 诊断（本轮加）：把“为何判定本局结束”的状态完整打出来。
         // 最近双机实测出现过“两人都还活着却进了购买页”→ 需要确认是 round_over 的哪个条件满足。
-        eprintln!(
+        logging::log(&format!(
             "[round] settle_round: mode={} round={} phase={:?} round_forced={} avatar={:?} kings={:?} players={:?}",
             self.world.mode,
             self.meta.round,
@@ -1868,7 +1870,7 @@ impl Game {
                 .iter()
                 .map(|p| (p.id, p.alive, p.team, p.hp.to_num::<f32>().round() as i32, p.last_hit_by))
                 .collect::<Vec<_>>()
-        );
+        ));
         // 击杀结算（D6）：击杀分/金 + 连杀播报 + 死者连杀清零 + 助攻（伤害矩阵）。
         for (killer, victim) in self.world.take_kills() {
             let is_first = self.meta.register_kill(killer);
@@ -5041,12 +5043,12 @@ impl event::EventHandler for Game {
                             }
                             // 掉线判定（Steam 战斗端）：某 client 连续未上行超时 → 自动 drop（默认输入占位），其余端继续，不空转等它。
                             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
-                                eprintln!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues");
+                                logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues"));
                             }
                             if let Some((seq, frame)) = host.try_emit() {
                                 takeover_bcast = false; // 首个在线 client 已连上，停止广播 Takeover
                                 if seq < 30 {
-                                    eprintln!("[steam-host] emit seq={seq}, n_entries={}", frame.len());
+                                    logging::log(&format!("[steam-host] emit seq={seq}, n_entries={}", frame.len()));
                                 }
                                 let n = self.world.players.len();
                                 let mut inputs = vec![PlayerInput::default(); n];
@@ -5063,7 +5065,7 @@ impl event::EventHandler for Game {
                                     let now = ctx.time.time_since_start().as_secs_f64();
                                     let gap = now - self.last_step_wall;
                                     if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
-                                        eprintln!("[jit] host sim gap {:.0}ms at seq={seq}", gap * 1000.0);
+                                        logging::log(&format!("[jit] host sim gap {:.0}ms at seq={seq}", gap * 1000.0));
                                     }
                                     self.last_step_wall = now;
                                 }
@@ -5082,12 +5084,21 @@ impl event::EventHandler for Game {
                                         host.set_snapshot(wb, host.next_seq());
                                     }
                                 }
+                                // 周期统计（每 5s）：host 产帧速率与“因等输入而停摆”的累计次数。
+                                if self.host_frame_count % 300 == 0 {
+                                    logging::log(&format!(
+                                        "[stat] host frames={} seq={seq} wait_ticks={} present={}",
+                                        self.host_frame_count,
+                                        self.steam_lobby_wait_ticks,
+                                        host.present_clients_count()
+                                    ));
+                                }
                                 self.accumulator -= TICK;
                             } else {
                                 // 诊断（节流）：尝试产帧但没收到 client 输入 → 说明 host→client 帧/输入链可能断。
                                 self.steam_lobby_wait_ticks = self.steam_lobby_wait_ticks.wrapping_add(1);
                                 if self.steam_lobby_wait_ticks % 120 == 1 {
-                                    eprintln!("[steam-host] trying to emit but waiting for client input (present={})", host.present_clients_count());
+                                    logging::log(&format!("[steam-host] trying to emit but waiting for client input (present={})", host.present_clients_count()));
                                 }
                                 break;
                             }
@@ -5189,7 +5200,7 @@ impl event::EventHandler for Game {
                                     let now = ctx.time.time_since_start().as_secs_f64();
                                     let gap = now - self.last_step_wall;
                                     if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
-                                        eprintln!("[jit] client sim gap {:.0}ms (next seq {})", gap * 1000.0, cli.expect_seq());
+                                        logging::log(&format!("[jit] client sim gap {:.0}ms (next seq {})", gap * 1000.0, cli.expect_seq()));
                                     }
                                     self.last_step_wall = now;
                                 }
@@ -5207,16 +5218,25 @@ impl event::EventHandler for Game {
                                 let last = cli.expect_seq().saturating_sub(1);
                                 if self.steam_cli_last_seq != last {
                                     let n_ents = self.world.players.len();
-                                    eprintln!("[steam-client] frame -> seq={last}, n_ents={n_ents}");
+                                    logging::log(&format!("[steam-client] frame -> seq={last}, n_ents={n_ents}"));
                                     self.steam_cli_last_seq = last;
                                 }
                                 // 分歧检测：若 host 广播过该 seq 的世界哈希，与本端比对；不一致即帧同步分歧。
                                 if let Some(host_hash) = cli.take_state_hash_for(last) {
                                     let mine = game_core::world_ser::state_hash(&self.world);
                                     if mine != host_hash {
-                                        eprintln!("[steam-client] DESYNC at seq={last}: host={host_hash:#018x} mine={mine:#018x}");
+                                        logging::log(&format!("[steam-client] DESYNC at seq={last}: host={host_hash:#018x} mine={mine:#018x}"));
                                         self.desync_detected = true;
                                     }
+                                }
+                                // 周期统计（每 5s）：client 推进帧、掉线计数、到 host 的延迟。
+                                if last % 300 == 0 {
+                                    let host_id = self.steam_participants.first().copied().unwrap_or(0);
+                                    logging::log(&format!(
+                                        "[stat] client seq={last} stale_ticks={} ping_host={:?}ms",
+                                        self.steam_cli_stale_ticks,
+                                        self.steam_ping_of(host_id)
+                                    ));
                                 }
                                 self.accumulator -= TICK;
                             } else {
@@ -5300,7 +5320,7 @@ impl event::EventHandler for Game {
                         host.poll(&mut host_rcv);
                         // 掉线判定：任一 client 空闲超时才自动 mark_dropped（不卡全队）。
                         for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
-                            eprintln!("[host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues");
+                            logging::log(&format!("[host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues"));
                         }
                         if let Some((seq, frame)) = host.try_emit() {
                             if seq == 0 {
@@ -5378,7 +5398,7 @@ impl event::EventHandler for Game {
                                 let now = ctx.time.time_since_start().as_secs_f64();
                                 let gap = now - self.last_step_wall;
                                 if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
-                                    eprintln!("[jit] lan client sim gap {:.0}ms", gap * 1000.0);
+                                    logging::log(&format!("[jit] lan client sim gap {:.0}ms", gap * 1000.0));
                                 }
                                 self.last_step_wall = now;
                             }
@@ -8400,8 +8420,20 @@ fn main() -> GameResult {
     // 若无任一参数 → 进主菜单选择。
     let args: Vec<String> = std::env::args().collect();
     let app = parse_app_from_args(&args);
-    eprintln!("[main] app = {:?} args = {:?}", app, args[1..].to_vec());
-    eprintln!("[main] building ggez context (window)...");
+    // 诊断日志落盘（带 ms 时间戳）：按启动参数区分 host/client，便于两端时序对齐。
+    let role = if args.iter().any(|a| a == "--steam-host" || a == "--host") {
+        "host"
+    } else if args
+        .iter()
+        .any(|a| a == "--steam-join" || a == "+connect_lobby" || a == "--join")
+    {
+        "client"
+    } else {
+        "app"
+    };
+    logging::init(role);
+    logging::log(&format!("[main] app = {:?} args = {:?}", app, args[1..].to_vec()));
+    logging::log("[main] building ggez context (window)...");
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
         .window_setup(ggez::conf::WindowSetup::default().title("术士之战 Warlock Brawl"))
