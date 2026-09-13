@@ -4852,8 +4852,8 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     // 隐身下接触命中才在基础伤害之外追加一笔同级伤害（`SI(... 4.6+.8*wr ...)`）。
                     // 这同时解释了两份资料：技能说明的「单笔伤害」是未点精通时的基础值，
                     // 098c 的额外一笔是精通带来的加成（决策记录见 SKILL_AUDIT §7.6）。
-                    // 098c：基础接触伤害经 `mI`→`hI` 乘 `Gn`；破隐（远程精通）的**额外那笔**经 `FX`
-                    // 直伤、**不**乘 `Gn`（war3map_pretty.j:7885-7891/7908-7912）。故只对基础乘 `damage_mult`。
+                    // ⚠ 修正解读（见 SKILL_STATE_AUDIT §0.6）：098c `bA` 走 `SI→pI→mI→hI`，**吃 Gn**；
+                    // 而 `FX` 是「自伤」（扣自身 hp），并非加成直伤。“额外不乘 Gn + 单体”待修。
                     let stealth_extra = players[i].has_buff(BuffKind::Stealth) && players[i].mastery[1] > 0;
                     let dmg = kick.push_damage * damage_mult
                         + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
@@ -4879,7 +4879,7 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                 if let Some(kick) = players[j].kick.take() {
                     // ⚠ 待核（同上看 SKILL_STATE_AUDIT §0.6）。
                     // 同上：破隐一击（098c bA）—— 需施法者具备远程精通（xi>0）才追加。
-                    // 同上：基础乘 `Gn`，破隐额外那笔不乘（098c `FX`）。
+                    // ⚠ 修正解读（同上看 SKILL_STATE_AUDIT §0.6）：“额外不乘 Gn”是误读。
                     let stealth_extra = players[j].has_buff(BuffKind::Stealth) && players[j].mastery[1] > 0;
                     let dmg = kick.push_damage * damage_mult
                         + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
