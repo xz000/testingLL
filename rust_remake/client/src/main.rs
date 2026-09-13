@@ -480,6 +480,10 @@ struct Game {
     present_first_blood: bool,
     /// 表现层：本场各玩家**当前连杀**（击杀 +1、阵亡清零）。
     present_streak: Vec<u32>,
+    /// 表现层音效：命中音最小间隔（避免 DoT / 多目标同帧刷屏）。
+    present_hit_cooldown: f32,
+    /// 表现层音效：本场是否已播「胜利」。
+    present_victory_played: bool,
     /// 渲染插值：上一 sim 步的各玩家位置（索引 = player id）。绘制时在 `prev → cur` 间按 alpha 插值，
     /// 消除帧到达抖动带来的画面跳动（纯渲染，不进快照）。
     prev_player_pos: Vec<Vec2>,
@@ -1070,6 +1074,8 @@ impl Game {
             present_round: 0,
             present_first_blood: false,
             present_streak: Vec::new(),
+            present_hit_cooldown: 0.0,
+            present_victory_played: false,
             prev_player_pos: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
@@ -4519,6 +4525,7 @@ impl Game {
             b.life -= dt;
             b.life > 0.0
         });
+        self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
 
         let n = self.world.players.len();
         // 世界重建（人数变化）→ 重新采样，不产生事件。
@@ -4550,12 +4557,15 @@ impl Game {
             let prev_hp = self.present_prev_hp[i];
             if was_alive && !alive {
                 // 阵亡 → 击杀横幅（含首杀 / 连杀）；本人连杀清零。
+                // 098c：单位死亡由 War3 引擎发声；此处用自制音等效。
+                self.audio.play(audio::AudioCue::CombatDeath);
                 let victim = self.world.players[i].id;
                 if let Some(slot) = self.present_streak.get_mut(i) {
                     *slot = 0;
                 }
                 let killer = self.world.players[i].last_hit_by.filter(|k| *k != victim);
                 if let Some(k) = killer {
+                    self.audio.play(audio::AudioCue::CombatKill);
                     if let Some(slot) = self.present_streak.get_mut(k as usize) {
                         *slot += 1;
                     }
@@ -4564,12 +4574,16 @@ impl Game {
                     let vl = self.player_label(victim);
                     if !self.present_first_blood {
                         self.present_first_blood = true;
+                        self.audio.play(audio::AudioCue::AnnFirstBlood);
                         self.push_banner("First Blood!".to_string(), Color::from_rgb(255, 210, 90));
                     }
                     let text = match game_core::meta::MatchState::streak_label(count) {
                         Some(label) => format!("{who} 击杀了 {vl}  ·  {label} ×{count}"),
                         None => format!("{who} 击杀了 {vl}"),
                     };
+                    if let Some(cue) = spree_cue(count) {
+                        self.audio.play(cue);
+                    }
                     self.push_banner(text, Color::from_rgb(255, 150, 90));
                 } else {
                     let vl = self.player_label(victim);
@@ -4587,7 +4601,17 @@ impl Game {
                         Color::from_rgb(120, 225, 150)
                     };
                     let pos = self.world.players[i].pos;
+                    let damaged = txt.starts_with('-');
                     self.push_float(pos, txt, color);
+                    // 098c：命中/治疗由 War3 引擎发声；自制音等效，命中做最小间隔防刷屏。
+                    if damaged {
+                        if self.present_hit_cooldown <= 0.0 {
+                            self.audio.play(audio::AudioCue::CombatHit);
+                            self.present_hit_cooldown = 0.06;
+                        }
+                    } else {
+                        self.audio.play(audio::AudioCue::CombatHeal);
+                    }
                 }
             }
             self.present_prev_hp[i] = hp;
@@ -4602,6 +4626,8 @@ impl Game {
         self.present_streak = vec![0; self.world.players.len()];
         self.present_round = self.world.round_number;
         self.present_first_blood = false;
+        self.present_victory_played = false;
+        self.present_hit_cooldown = 0.0;
         self.float_texts.clear();
         self.banners.clear();
     }
@@ -4936,6 +4962,11 @@ impl event::EventHandler for Game {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
                 self.accumulator = 0.0;
+                // 098c：`EpicVictory`（`no`）在胜负判定时播放；这里只播一次。
+                if !self.present_victory_played {
+                    self.present_victory_played = true;
+                    self.audio.play(audio::AudioCue::AnnVictory);
+                }
                 // Steam：整场结束上报一次战绩（统计 + 成就 + 排行榜），内部有“只上报一次”保护。
                 #[cfg(feature = "steam")]
                 if self.steam_active() {
@@ -7938,6 +7969,24 @@ fn health_delta_text(prev: f32, cur: f32) -> Option<String> {
     }
 }
 
+/// 连杀计数 → 098c 播报音（3..10 与 >10）二。纯函数，便于单测。
+/// 完全对齐 098c 的 `mn[3..10]` / `io`（见 `AUDIO_PLAN.md` §1.2）。
+fn spree_cue(count: u32) -> Option<audio::AudioCue> {
+    use audio::AudioCue::*;
+    match count {
+        3 => Some(AnnSpree3),
+        4 => Some(AnnSpree4),
+        5 => Some(AnnSpree5),
+        6 => Some(AnnSpree6),
+        7 => Some(AnnSpree7),
+        8 => Some(AnnSpree8),
+        9 => Some(AnnSpree9),
+        10 => Some(AnnSpree10),
+        c if c > 10 => Some(AnnSpreeHoly),
+        _ => None,
+    }
+}
+
 /// 商店页一行（列表 / 键盘选择 / 详情面板共用同一构造）。
 ///
 /// 旧模型把 `[买]`/`[卖]` 前缀塞进行标签、行内同时编码买卖两个动作，既难读也难点。
@@ -8523,6 +8572,19 @@ mod tests {
         assert_eq!(super::health_delta_text(50.0, 62.0), Some("+12".to_string()));
         assert_eq!(super::health_delta_text(50.0, 50.4), None, "微小变化忽略");
         assert_eq!(super::health_delta_text(50.0, 49.2), None);
+    }
+
+    /// 连杀音效按 098c 断点（3..10 与 >10）映射。
+    #[test]
+    fn spree_cue_matches_098c_breakpoints() {
+        use super::spree_cue;
+        assert_eq!(spree_cue(0), None);
+        assert_eq!(spree_cue(2), None, "1–2 杀无播报音");
+        assert_eq!(spree_cue(3), Some(audio::AudioCue::AnnSpree3));
+        assert_eq!(spree_cue(9), Some(audio::AudioCue::AnnSpree9));
+        assert_eq!(spree_cue(10), Some(audio::AudioCue::AnnSpree10));
+        assert_eq!(spree_cue(11), Some(audio::AudioCue::AnnSpreeHoly));
+        assert_eq!(spree_cue(99), Some(audio::AudioCue::AnnSpreeHoly));
     }
 
     /// 成长页「购买」按钮的禁用原因：金币不足 / 已满级。
