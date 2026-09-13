@@ -311,6 +311,31 @@ mod source_scan_tests {
         }
     }
 
+    /// 回归（方案 B）：设置编辑器（`O`）的回车统一为“操作当前行”，不再“有时关闭/有时切换”。
+    /// 关闭统一 `O`/`Esc`；创建模式下**裸回车**=建房（`Shift+回车` 仍用于编辑当前行）。
+    #[test]
+    fn settings_editor_enter_activates_row_not_closes() {
+        let start = idx("fn room_cfg_editor_input");
+        let after = &SRC[start..];
+        let body_end = after.find("\n    }\n").unwrap_or(after.len());
+        let body = &after[..body_end];
+        // 旧的“回车也关闭”兜底已移除。
+        assert!(
+            !body.contains("just_named(NamedKey::Enter) || just_named(NamedKey::Escape) || just(\"o\")"),
+            "编辑器不应再让回车直接关闭（方案 B：回车=操作当前行，O/Esc=关闭）"
+        );
+        // 只读/无操作行应有可见反馈（room_cfg_hint）。
+        assert!(
+            body.contains("room_cfg_hint"),
+            "只读/无操作行应用 room_cfg_hint 给出反馈"
+        );
+        // 创建模式建房需排除 Shift+回车。
+        assert!(
+            body.contains("active_modifiers.shift_key()"),
+            "创建模式建房应排除 Shift+回车（Shift+回车用于编辑当前行）"
+        );
+    }
+
     /// 回归③（一键两用：`Q` 关编辑器却退了房）：子界面打开时大厅按键必须被守卫。
     #[test]
     fn lobby_keys_are_guarded_while_a_subscreen_is_open() {

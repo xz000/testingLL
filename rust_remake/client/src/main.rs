@@ -634,9 +634,12 @@ struct Game {
     room_cfg_group: settings_ui::Group,
     #[cfg(feature = "steam")]
     room_cfg_row: usize,
-    /// 自定义数值输入缓冲（编辑器内按回车开始输入；回车提交、Esc 取消）。
+    /// 自定义数值输入缓冲（编辑器内按回车/T 开始输入；回车提交、Esc 取消）。
     #[cfg(feature = "steam")]
     room_cfg_input: Option<String>,
+    /// 编辑器的一行提示（只读/非法输入等）；非空时覆盖底部键位提示显示。
+    #[cfg(feature = "steam")]
+    room_cfg_hint: String,
     /// **房间元数据**（房名/备注/人数上限）：与 `match_cfg` 分开 —— 它不进设置串、不影响模拟，
     /// 只作为大厅展示信息（见 `settings_ui::RoomMeta` 的说明）。
     #[cfg(feature = "steam")]
@@ -1151,6 +1154,8 @@ impl Game {
             room_cfg_row: 0,
             #[cfg(feature = "steam")]
             room_cfg_input: None,
+            #[cfg(feature = "steam")]
+            room_cfg_hint: String::new(),
             #[cfg(feature = "steam")]
             room_meta: settings_ui::RoomMeta::default(),
             #[cfg(feature = "steam")]
@@ -3368,15 +3373,21 @@ impl Game {
         let hint_line = if read_only {
             "[只读] A/Z/X/C/V 分组 · ↑↓ 选择 · Esc 或 O 关闭"
         } else if self.room_cfg_create_mode {
-            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 输入 · 回车 创建房间 · Esc 取消"
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车 创建房间 · Esc 取消"
         } else {
-            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · T 或 Shift+回车 输入 · 回车=切换/保存关闭"
+            "A/Z/X/C/V 分组 · ↑↓ 选择 · ←→ 档位 · 回车/T 编辑当前行 · Esc 或 O 关闭"
+        };
+        // `room_cfg_hint` 非空（如“只读”）时覆盖键位提示，给出一行反馈。
+        let (shown, col) = if self.room_cfg_hint.is_empty() {
+            (hint_line, Color::from_rgb(160, 200, 255))
+        } else {
+            (self.room_cfg_hint.as_str(), Color::from_rgb(255, 200, 120))
         };
         ui::text_center(
             canvas, ctx,
-            hint_line,
+            shown,
             ui::theme::SMALL,
-            Color::from_rgb(160, 200, 255),
+            col,
             sw / 2.0,
             py + ph - 26.0,
         )?;
@@ -5868,6 +5879,7 @@ impl Game {
         // 锁房：`L`（就绪界面没有文本框，不会与输入冲突；原在房间信息界面，因抢键而搬来）。
         if self.steam_host_ls.is_some()
             && !self.room_cfg_edit
+            && !panel_open
             && (ctx.keyboard.is_logical_key_just_pressed(&Key::Character("l".into()))
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("L".into())))
         {
@@ -5886,8 +5898,10 @@ impl Game {
         let o_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("o".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("O".into()));
         // 房主可改、客户端可看（只读）——只要能确定在当前房间里就允许打开。
-        if o_pressed && (self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()) {
+        // 好友面板展开时不响应（面板优先吃键；见 ROOM_UI_REVIEW.md P7）。
+        if o_pressed && !panel_open && (self.steam_host_ls.is_some() || self.steam_cli_ls.is_some()) {
             self.room_cfg_edit = !self.room_cfg_edit;
+            self.room_cfg_hint.clear();
             // 房主改设置前先**取消自己的准备**：避免"房主已准备、还开着设置面板"的错位状态。
             if self.room_cfg_edit && self.steam_local_ready {
                 self.steam_local_ready = false;
@@ -5977,7 +5991,7 @@ impl Game {
             let by = flow_y + 48.0;
             let btn_rect = graphics::Rect::new(cx - 280.0, by - 24.0, 560.0, 48.0);
             let host_start_action = self.steam_host_ls.is_some() && self.steam_manual_start_pending && !self.steam_manual_countdown;
-            if ctx.mouse.button_just_pressed(MouseButton::Left) && btn_rect.contains(ui::mouse_design(ctx)) && (host_start_action || !locked) {
+            if ctx.mouse.button_just_pressed(MouseButton::Left) && !self.room_cfg_edit && btn_rect.contains(ui::mouse_design(ctx)) && (host_start_action || !locked) {
                 if host_start_action {
                     self.steam_manual_countdown = true;
                     self.steam_was_all_ready = true;
@@ -6195,6 +6209,7 @@ impl Game {
                 self.steam_lobby_create = true; // 仍标记"处于建房流程"（绘制/输入走创建模式）
                 self.room_cfg_create_mode = true;
                 self.room_cfg_edit = true;
+                self.room_cfg_hint.clear();
                 self.room_cfg_group = settings_ui::Group::Room;
                 self.room_cfg_row = 0;
             }
@@ -6303,7 +6318,11 @@ impl Game {
         // ── 创建模式下：**回车 = 建房**（文本行例外：回车先用于输入房名/备注）──
         // 注意必须在"行级回车处理"之前判断，否则回车总被行处理吃掉（此前就是这个 bug：
         // 建房时回车变成了"自定义输入"，只能连按 Esc 再回车才能建房）。
-        if self.room_cfg_create_mode && just_named(NamedKey::Enter) {
+        // Shift+回车不算“建房”（它是编辑当前行的组合键，见下）；仅**裸回车**建房。
+        if self.room_cfg_create_mode
+            && just_named(NamedKey::Enter)
+            && !ctx.keyboard.active_modifiers.shift_key()
+        {
             // **创建模式下回车恒等于"建房"**（不分行类型）。
             // 曾经对"文本行"放行、期望它去进输入，结果默认停在房间名那一行时回车毫无反应
             //（用户实测：连按回车也进不去房间）。现在输入统一走 `T` / `Shift+回车`，
@@ -6315,6 +6334,7 @@ impl Game {
         // 创建模式下 Esc/O = 取消建房流程（回大厅主界面）
         if self.room_cfg_create_mode && (just_named(NamedKey::Escape) || just("o")) {
             self.room_cfg_edit = false;
+            self.room_cfg_hint.clear();
             self.room_cfg_create_mode = false;
             self.steam_lobby_create = false;
             return false;
@@ -6336,7 +6356,8 @@ impl Game {
                 self.room_cfg_row = (self.room_cfg_row + 1) % n_rows;
             }
             let id = settings_ui::SettingId::rows(self.room_cfg_group)[self.room_cfg_row.min(n_rows - 1)];
-            // 人数上限：**创建模式下可改**（正是选人数的时候）；编辑模式下只读。
+            // 人数上限：**创建模式下可改**（正是选人数的时候）；房间内只读。
+            // （创建模式下“回车=建房”已在函数开头处理，故这里只管 ←→ 与关闭。）
             if id == settings_ui::SettingId::PlayerLimit && self.room_cfg_create_mode {
                 let mut dir = 0;
                 if just_named(NamedKey::ArrowLeft) {
@@ -6348,100 +6369,77 @@ impl Game {
                 if dir != 0 {
                     let v = self.room_meta.player_limit as i32 + dir;
                     self.room_meta.player_limit = v.clamp(2, STEAM_MAX_PLAYERS as i32) as u32;
+                    self.room_cfg_hint.clear();
                     eprintln!("[cfg] 人数上限 -> {}（2~{}）", self.room_meta.player_limit, STEAM_MAX_PLAYERS);
                 }
-                if just("o") || just_named(NamedKey::Escape) {
-                    self.room_cfg_edit = false;
-                    self.room_cfg_create_mode = false;
-                    self.steam_lobby_create = false;
-                    return false;
-                }
-                return true;
-            }
-            // 只读项（人数上限，编辑模式）：不接受调整/输入。
-            if id.is_readonly() {
-                if just("o") || just_named(NamedKey::Escape) {
-                    self.room_cfg_edit = false;
-                    self.publish_room_cfg();
-                    return false;
-                }
-                return true;
-            }
-            // 大厅元数据项（房名/备注）：**`T`** 进入文本输入（预填当前值）。
-            // 用独立键是为了把回车留给"确认/建房" —— 两者共用回车会让建房时无法提交（曾经如此）。
-            if id.target() == settings_ui::SettingTarget::Meta {
-                if edit_key && read_only {
+            } else if read_only || id.is_readonly() {
+                // 只读：客户端的全部行 + host 的「人数上限」。
+                // 回车/T = 屏幕提示“只读”；O/Esc = 关闭（房主关闭时发布）。
+                if just_named(NamedKey::Enter) || edit_key {
+                    self.room_cfg_hint = "只读：只有房主可以修改房间设置".to_string();
                     eprintln!("[cfg] 只读：只有房主可以修改房间设置");
-                    return true;
                 }
-                if edit_key {
+            } else {
+                let enter = just_named(NamedKey::Enter);
+                let meta = id.target() == settings_ui::SettingTarget::Meta;
+                let numeric = id.num_range().is_some() || id.int_range().is_some();
+                // ←→：调值（枚举循环 / 数值档位）。
+                let mut dir = 0;
+                if just_named(NamedKey::ArrowLeft) {
+                    dir = -1;
+                }
+                if just_named(NamedKey::ArrowRight) {
+                    dir = 1;
+                }
+                if dir != 0 {
+                    settings_ui::nudge(&mut self.match_cfg, id, dir);
+                    self.room_cfg_hint.clear();
+                    eprintln!(
+                        "[cfg] {} = {}（自定义 {} 项）",
+                        id.label(),
+                        settings_ui::value_text(&self.match_cfg, id),
+                        self.match_cfg.non_default_setting_count()
+                    );
+                }
+                // 回车/T：**操作当前行（方案 B）**，不关闭编辑器：
+                // 文本行/数值行 → 进入输入；枚举/开关 → 切换值。
+                if meta && (enter || edit_key) {
+                    self.room_cfg_hint.clear();
                     self.room_cfg_input = Some(settings_ui::meta_value(&self.room_meta, id));
                     eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
                     return true;
                 }
-                if just("o") || just_named(NamedKey::Escape) {
-                    self.room_cfg_edit = false;
-                    self.publish_room_cfg();
-                    return false;
+                if numeric && (enter || edit_key) {
+                    let v = settings_ui::value(&self.match_cfg, id);
+                    let init = if (v.fract()).abs() < 1e-9 {
+                        format!("{}", v.round() as i64)
+                    } else {
+                        format!("{v}")
+                    };
+                    self.room_cfg_hint.clear();
+                    self.room_cfg_input = Some(init);
+                    eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
+                    return true;
                 }
-                return true;
-            }
-            let mut dir = 0;
-            if just_named(NamedKey::ArrowLeft) {
-                dir = -1;
-            }
-            if just_named(NamedKey::ArrowRight) {
-                dir = 1;
-            }
-            if dir != 0 && read_only {
-                eprintln!("[cfg] 只读：只有房主可以修改房间设置");
-            } else if dir != 0 {
-                settings_ui::nudge(&mut self.match_cfg, id, dir);
-                eprintln!(
-                    "[cfg] {} = {}（自定义 {} 项）",
-                    id.label(),
-                    settings_ui::value_text(&self.match_cfg, id),
-                    self.match_cfg.non_default_setting_count()
-                );
-            }
-            // **`T`**：数值行 → 进入自定义输入（预填当前值）。
-            // **回车**：枚举/开关 → 直接切换；非创建模式下回车 = 保存并关闭（见下）。
-            if edit_key && read_only {
-                eprintln!("[cfg] 只读：只有房主可以修改房间设置");
-                return true;
-            }
-            if edit_key && (id.num_range().is_some() || id.int_range().is_some()) {
-                let v = settings_ui::value(&self.match_cfg, id);
-                let init = if (v.fract()).abs() < 1e-9 {
-                    format!("{}", v.round() as i64)
-                } else {
-                    format!("{v}")
-                };
-                self.room_cfg_input = Some(init);
-                eprintln!("[cfg] 输入 {}（回车提交 / Esc 取消）", id.label());
-                return true;
-            }
-            if just_named(NamedKey::Enter) && read_only {
-                eprintln!("[cfg] 只读：只有房主可以修改房间设置");
-                return true;
-            }
-            if just_named(NamedKey::Enter)
-                && !(id.num_range().is_some() || id.int_range().is_some())
-            {
-                // 枚举/开关：回车切换
-                settings_ui::nudge(&mut self.match_cfg, id, 1);
-                eprintln!(
-                    "[cfg] {} = {}（自定义 {} 项）",
-                    id.label(),
-                    settings_ui::value_text(&self.match_cfg, id),
-                    self.match_cfg.non_default_setting_count()
-                );
-                return true;
+                if enter {
+                    // 枚举/开关：回车 = 切换（与 ←→ 等价，方向固定 +1）。
+                    settings_ui::nudge(&mut self.match_cfg, id, 1);
+                    self.room_cfg_hint.clear();
+                    eprintln!(
+                        "[cfg] {} = {}（自定义 {} 项）",
+                        id.label(),
+                        settings_ui::value_text(&self.match_cfg, id),
+                        self.match_cfg.non_default_setting_count()
+                    );
+                    return true;
+                }
             }
         }
-        // 编辑模式：**回车 / Esc / O** 都表示"保存并关闭"（关闭即生效）。
-        if just_named(NamedKey::Enter) || just_named(NamedKey::Escape) || just("o") {
+        // 关闭编辑器统一用 **O / Esc**（保存并发布）。
+        // 注意：**回车不再关闭** —— 它只“操作当前行”（方案 B），避免“有时关闭、有时切换”的二义。
+        if just_named(NamedKey::Escape) || just("o") {
             self.room_cfg_edit = false;
+            self.room_cfg_hint.clear();
             self.publish_room_cfg();
             return false;
         }
