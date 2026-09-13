@@ -39,6 +39,8 @@ mod keys;
 mod local_settings;
 
 mod audio;
+/// 表现层 P3：客户端本地特效（命中闪光/火花）——纯客户端、不进快照。
+mod fx;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 mod settings_ui;
 /// 版面骨架（四带网格）：把"各界面手工摆坐标"改成"按带填充"，可单测。
@@ -468,6 +470,8 @@ struct Game {
     ime_composing: bool,
     /// 表现层（纯客户端）：伤害/治疗飘字。
     float_texts: Vec<FloatText>,
+    /// 表现层（纯客户端）：命中闪光/火花等世界层特效。
+    fx: fx::FxSystem,
     /// 表现层（纯客户端）：首杀/连杀等顶部横幅。
     banners: Vec<Banner>,
     /// 表现层采样：上一帧各玩家 hp（索引 = player id）。
@@ -1080,6 +1084,7 @@ impl Game {
             last_input_send_wall: 0.0,
             ime_composing: false,
             float_texts: Vec::new(),
+            fx: fx::FxSystem::new(),
             banners: Vec::new(),
             present_prev_hp: Vec::new(),
             present_prev_alive: Vec::new(),
@@ -3142,6 +3147,7 @@ impl Game {
         }
 
         // 表现层：飘字（世界） + 首杀/连杀横幅（屏幕中上），画在世界之上、记分板之下。
+        self.fx.draw(&mut canvas, ctx, self.offset, self.scale)?;
         self.draw_presentation(&mut canvas, ctx)?;
 
         // 局内记分板（CS 式：**按住 Tab** 显示）：画在最上层。
@@ -4547,6 +4553,7 @@ impl Game {
             b.life -= dt;
             b.life > 0.0
         });
+        self.fx.update(dt);
         self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
         self.present_clock += dt;
         // 098c 播报事件（由确定性模拟产生，纯表现消费）：每帧取走，避免重复播放。
@@ -4572,6 +4579,7 @@ impl Game {
             self.present_multikill = vec![0; self.world.players.len()];
             self.present_prev_oob = vec![false; self.world.players.len()];
             self.float_texts.clear();
+            self.fx.clear();
             return;
         }
         let in_fight = self.meta.phase == game_core::meta::MatchPhase::Fighting;
@@ -4708,6 +4716,31 @@ impl Game {
                     let pos = self.world.players[i].pos;
                     let damaged = txt.starts_with('-');
                     self.push_float(pos, txt, color);
+                    if damaged {
+                        // P3-1 命中视觉：受击者闪光 + 命中点火花（世界坐标特效，纯客户端）。
+                        let r = self.world.players[i].radius.to_num::<f32>();
+                        let px = pos.x.to_num::<f32>();
+                        let py = pos.y.to_num::<f32>();
+                        self.fx.spawn(fx::Fx {
+                            kind: fx::FxKind::HitFlash,
+                            pos: [px, py],
+                            color: [1.0, 0.85, 0.5, 0.9],
+                            life: HIT_FLASH_LIFE,
+                            max_life: HIT_FLASH_LIFE,
+                            radius: r,
+                        });
+                        for k in 0..4 {
+                            let ang = k as f32 * std::f32::consts::FRAC_PI_2 + i as f32;
+                            self.fx.spawn(fx::Fx {
+                                kind: fx::FxKind::Spark,
+                                pos: [px + ang.cos() * r, py + ang.sin() * r],
+                                color: [1.0, 0.8, 0.45, 0.9],
+                                life: HIT_SPARK_LIFE,
+                                max_life: HIT_SPARK_LIFE,
+                                radius: 5.0,
+                            });
+                        }
+                    }
                     // 098c：命中/治疗由 War3 引擎发声；自制音等效，命中做最小间隔防刷屏。
                     if damaged {
                         if self.present_hit_cooldown <= 0.0 {
@@ -4762,6 +4795,7 @@ impl Game {
         self.present_prev_oob = vec![false; self.world.players.len()];
         self.float_texts.clear();
         self.banners.clear();
+        self.fx.clear();
     }
 
     /// 压入一条飘字（带上限，超出丢最旧）。
@@ -8091,6 +8125,10 @@ const PRESENTATION_MIN_DELTA: f32 = 1.0;
 /// 飘字/横幅数量上限（防刷屏）。
 const PRESENTATION_MAX_FLOATS: usize = 64;
 const PRESENTATION_MAX_BANNERS: usize = 5;
+/// 命中闪光存活秒数（P3-1）。
+const HIT_FLASH_LIFE: f32 = 0.18;
+/// 命中火花存活秒数（P3-1）。
+const HIT_SPARK_LIFE: f32 = 0.22;
 
 /// 把一次血量变化转成飘字文本：负=伤害（`-N`）、正=治疗（`+N`）、微小变化忽略。
 /// 纯函数，便于单测（与绘制/世界无关）。
