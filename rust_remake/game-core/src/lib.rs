@@ -41,4 +41,5 @@ pub fn version() -> &'static str {
 /// v14（2026-09-13）：`Player.burning`（S012 A 燃烧冲刺，098c `Hr`）入快照（`world_ser` 每玩家 +1 字节）。
 /// v15（2026-09-13）：`Player.parry_ready`/`parry_cd`（S010 B 招架，098c `gr`/`NA`）入快照。
 /// v16（2026-09-13）：`Player.charging`（S010 A 冲锋 `fr`，与 B 形态风步区分）入快照。
-pub const PROTOCOL_VERSION: u32 = 16;
+/// v17（2026-09-13）：删除疾风步 B 的「接触吸血」（`BuffKind::Windwalk`/`windwalk_cd`）—— 对齐 098c（其无此机制）。
+pub const PROTOCOL_VERSION: u32 = 17;

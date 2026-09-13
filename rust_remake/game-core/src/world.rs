@@ -3021,8 +3021,10 @@ impl World {
             } else {
                 Vec2::new(Fix64::ONE, Fix64::ZERO)
             };
-            self.players[ai].push_knockback(dir * Fix64::from_num(PARRY_KB_ATTACKER) * scale);
-            self.players[i].push_knockback(-dir * Fix64::from_num(PARRY_KB_SELF) * scale);
+            // 互相推开（098c `MI(nr,Vr,4.5)`：把对方推离风步者；`MI(Vr,nr,2.25)`：把自己推离对方）。
+            // `dir` = 对方 → 风步者；敌人应沿 `-dir` 远离，自己沿 `+dir` 远离。
+            self.players[ai].push_knockback(-dir * Fix64::from_num(PARRY_KB_ATTACKER) * scale);
+            self.players[i].push_knockback(dir * Fix64::from_num(PARRY_KB_SELF) * scale);
         }
         // 清瞬态（本 tick 的接触记录）。
         for p in self.players.iter_mut() {
@@ -3729,18 +3731,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Windwalk => {
-                        // 疾风步·隐身（B 形态，098c IB / 文档「潜行」）：隐身 + 较慢移速 +
-                        // 接触敌人偷取生命 **且不打断隐身**。吸血量随技能等级 `L`：
-                        // `0.6 + 0.1×L`（文档「偷取生命 0.6+0.1×升级次数」）。
+                        // 疾风步·隐身（B 形态，098c IB）：隐身 + 较慢移速（无接触吸血，对齐 098c）。
                         if let Some(p) = world.players.get_mut(idx as usize) {
-                            let lvl = p.skill_levels[crate::skill::SkillId::S010 as usize];
-                            let lifesteal = Fix64::from_num(0.6 + 0.1 * lvl as f64);
                             p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
-                            p.add_buff(BuffKind::Windwalk(lifesteal.to_num::<f64>()), dur);
                             p.windwalk_state = Fix64::from_num(dur);
                             // 098c `IB`：进入风步 B 形态即获得一次招架就绪（`gr=true`）。
-                            // （注：吸血是我们保留的 098b 行为，098c 无，见 SKILL_STATE_AUDIT §2.2c。）
                             p.parry_ready = true;
                             p.parry_cd = Fix64::ZERO;
                         }
@@ -4986,27 +4982,6 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                         players[j].control = None;
                         players[j].cur_vel = Vec2::ZERO;
                         players[j].burning = false;
-                    }
-                }
-                // 疾风步·隐身（B 形态）接触偷取生命：带 Windwalk buff 的一方撞到敌人，
-                // 偷取生命 `0.6+0.1×L` 并回血，**不**打断隐身（098c IB / 文档「潜行」）。
-                // 与冲锋(A) 踢击分支互斥——B 形态无 kick，故此处独立处理且绝不 remove_buff(Stealth)。
-                if let Some(ls) = players[i].windwalk_lifesteal() {
-                    if players[i].windwalk_cd <= Fix64::ZERO {
-                        let ls_fix = Fix64::from_num(ls);
-                        players[j].hp = (players[j].hp - players[j].soak_boost(ls_fix)).max(Fix64::ZERO);
-                        players[j].last_hit_by = Some(players[i].id);
-                        players[i].hp = (players[i].hp + ls_fix).min(players[i].max_hp);
-                        players[i].windwalk_cd = Fix64::from_num(0.5);
-                    }
-                }
-                if let Some(ls) = players[j].windwalk_lifesteal() {
-                    if players[j].windwalk_cd <= Fix64::ZERO {
-                        let ls_fix = Fix64::from_num(ls);
-                        players[i].hp = (players[i].hp - players[i].soak_boost(ls_fix)).max(Fix64::ZERO);
-                        players[i].last_hit_by = Some(players[j].id);
-                        players[j].hp = (players[j].hp + ls_fix).min(players[j].max_hp);
-                        players[j].windwalk_cd = Fix64::from_num(0.5);
                     }
                 }
             } else {
@@ -6873,6 +6848,9 @@ mod tests {
         w.obstacles.clear();
         w.players[0].team = 0;
         w.players[1].team = 1;
+        // 风步者在原点，敌人在 +x；招架应把两者**互相推开**（敌 −x、自己 +x）。
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].pos = Vec2::new(Fix64::from_num(60.0), Fix64::ZERO);
         w.players[0].windwalk_state = Fix64::from_num(1.0);
         w.players[0].parry_ready = true;
         w.players[0].contact_by_enemy = Some(1);
@@ -6883,6 +6861,9 @@ mod tests {
         assert!(w.players[0].parry_cd > Fix64::ZERO);
         assert!(w.players[1].control.is_some(), "攻击者应被击退");
         assert!(w.players[0].control.is_some(), "风步者自己应被击退");
+        // 方向：敌人沿 +x 远离风步者（control.vel.x > 0）；风步者沿 −x 远离敌人（< 0）。
+        assert!(w.players[1].control.as_ref().unwrap().vel.x > Fix64::ZERO, "敌人应被推离风步者（+x）");
+        assert!(w.players[0].control.as_ref().unwrap().vel.x < Fix64::ZERO, "风步者应被推离敌人（−x）");
         assert!(w.players[0].contact_by_enemy.is_none(), "瞬态应被清除");
 
         // `NA`：0.5s 后 `gr` 恢复（仍在风步）。
@@ -8731,42 +8712,6 @@ mod tests {
             "AoE 对同一目标有距离衰减，应 < 2 倍：{:?} vs {:?}", d_bonus, d_plain);
         assert!(d_bonus > d_plain * Fix64::from_num(1.3),
             "有范围精通应有明显的额外 AoE 伤害：{:?} vs {:?}", d_bonus, d_plain);
-    }
-
-    /// 疾风步·隐身（B 形态，098c IB / 文档「潜行」）：接触敌人偷取生命 `0.6+0.1×L` 且**不打断隐身**。
-    /// 对比未进入潜行的控制组，敌人额外损失≈一笔吸血；施法者隐身 buff 在接触后保留（区别于 A 形态冲锋破隐）。
-    #[test]
-    fn s010_windwalk_lifesteal_preserves_stealth() {
-        let run = |windwalk: bool| -> (Fix64, bool, bool) {
-            let mut world = World::new(2, 4242);
-            world.obstacles.clear();
-            world.sandbox = true;
-            let dt = Fix64::from_num(1.0 / 60.0);
-            world.players[0].pos = Vec2::ZERO;
-            world.players[0].move_target = None;
-            world.players[1].pos = Vec2::new(d60(0.5), Fix64::ZERO); // 与 p0 重叠（半径 30，间距 30 → 重叠 30）
-            world.players[1].move_target = None;
-            if windwalk {
-                world.players[0].forms[SkillId::S010.as_u32() as usize] = true;
-                world.step(vec![
-                    PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
-                    PlayerInput::default(),
-                ], dt);
-                assert!(world.players[0].windwalk_lifesteal().is_some(), "潜行应有 Windwalk 吸血 buff");
-            } else {
-                // 控制组：p0 不施法、不隐身
-                world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
-            }
-            (world.players[1].hp, world.players[0].stealth(), windwalk)
-        };
-        let (ctrl_hp, _, _) = run(false);
-        let (ww_hp, stealth, _) = run(true);
-        // 敌人血量：潜行组应比控制组更低（多承受一笔吸血；挤压伤害两组几何相同，可抵消）
-        assert!(ww_hp < ctrl_hp,
-            "潜行接触应偷取生命：敌 hp {:?} 应 < 控制 {:?}", ww_hp, ctrl_hp);
-        assert!(ctrl_hp - ww_hp > Fix64::from_num(0.3),
-            "吸血差额应≈一笔（0.6+0.1×L≈0.7）：{:?}", ctrl_hp - ww_hp);
-        assert!(stealth, "潜行形态撞敌不打断隐身：接触后施法者仍应隐身");
     }
 
     /// S009 双形态：目标（A）到点碎裂出弹片；区域（B）飞行中持续撒侧弹。
