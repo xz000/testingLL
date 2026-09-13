@@ -94,9 +94,9 @@
 | Hattrick / Vampire | `Ux` / `Oo` | ✅ 接：一次 AoE 命中 ≥3 敌人（`World::explode_at` 返回命中数）→ `CombatEvent::MultiHit`；戴死亡面具（`FireMask`/`scourge_double`）为 Vampire |
 | Silencer | `Eo` | ✅ 接：同一施法者本 tick 沉默 ≥3 目标 → `CombatEvent::Silencer` |
 | Pancake | `ao` | ✅ 接：地震法球拍扁 → `CombatEvent::Pancake` |
-| Burnout | `Xo` | ⏸ 搁置：我们无通用友伤反噬机制（需再挖 098c） |
-| Denied | `Wx` | ⏸ 搁置：无「击杀阻止」概念（需再挖 098c） |
-| Last Second Save | `wx` | ⏸ 搁置：需新增「危险区极限逃生」判定（需再挖 098c） |
+| Last Second Save | `wx` | ✅ 接（**纯客户端**）：从出界岩浆区回到场内且 HP ≤ 约 6（`Fn<=6*To+0.5`）；仅本队可见 |
+| Burnout | `Xo` | ⛔ 不接：需 `Hr` 燃烧冲刺状态（S012 A 形态的子行为），未建模 |
+| Denied | `Wx` | ⛔ 不接：需 `Fv` 链索绑定 + `kr`/`Fr` 状态，未建模 |
 | 学习 / 升级完成 | `Ro` ResearchComplete | ✅ 接 `ann_research`（仅本机，仅技能购买/升级成功） |
 | 开局 / 平局加赛 | `Vo` GameFound | ⬜ 待接 |
 | 终局过场 | `yx` Rescue | ⬜ 待接 |
@@ -272,3 +272,5 @@
 - 2026-09-13：**Ludicrous Kill**（`Io`，击杀本轮 0 伤害对手）+ **学习/升级完成**（`Ro` ResearchComplete，仅本机）。
 - 2026-09-13：**战斗事件通道**（`World.combat_events`，不进快照/`state_hash`）：
   接 Hattrick / Vampire / Silencer / Pancake（音效 + 头顶漂字）；Burnout / Denied / LastSecondSave 搁置。
+- 2026-09-13：**Last Second Save 已接**（纯客户端：出界→回场 + 残血阈值）。
+  深挖结论：Burnout 需 `Hr` 燃烧冲刺状态、Denied 需 `Fv` 链索绑定 —— 均为 S012/S019 的**副状态机**，未建模 → 不接。
