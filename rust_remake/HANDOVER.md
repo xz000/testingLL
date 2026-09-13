@@ -70,6 +70,11 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      草案见 `FRAME_SYNC_INPUT_DELAY_DESIGN.md`（保留为备选）；待用户实测手感后再定后续（候选：渲染插值 → 降 tick → D → 预测/回滚）。
    - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步。输入发送**每模拟 tick 一条**（曾改为“每次 update 一条”，
      实测导致 host 缺输入、sim 掉到 20–30Hz，**已回退**；渲染插值未做）。
+7. **玩法修复**（`GAMEPLAY_FIX_PLAN.md`）：
+   - **击退清掉移动目标**：世界层已排除（实测保留）；嫌疑是客户端 `note_self_cast` 的「到达清除」启发式
+     （无法区分“到达”与“被位移”）。方案：仅在 `control.is_none() && !dash_active` 且临近目标时清除。
+   - **冲撞撞柱与 098c 不一致**：JASS 实证（`war3map_pretty.j` 8640-8730）是**分轴**响应（保留切向 → 沿墙滑行；
+     `xv>0` 时反射），而非我们现在的“整体清 control 停死”。方案：`resolve_obstacles` 改为分轴；替换相应测试。
 
 ## 五、文档索引（读哪个）
 
@@ -84,6 +89,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `PRESENTATION_PLAN.md` | 表现层 P1–P6 |
 | `FRAME_SYNC_ANALYSIS.md` | **联机卡顿分析**（房间信息轮询 + 帧同步；快照队头阻塞等） |
 | `FRAME_SYNC_INPUT_DELAY_DESIGN.md` | **主机固定节拍 + 输入延迟 设计草案**（未实施） |
+| `GAMEPLAY_FIX_PLAN.md` | **玩法修复计划**（击退清移动目标、冲撞撞柱与 098c 差异） |
 | `UI_AUDIT.md` | 更早的 UI 审视结论 |
 | `tools/README.md` + `tools/parse_w3a.py` / `parse_w3q.py` / `parse_objects.py` | 098c 物体数据解析工具 |
 
