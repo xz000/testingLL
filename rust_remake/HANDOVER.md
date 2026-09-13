@@ -73,6 +73,9 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    - ✅ **诊断落盘**：新增 `client/src/logging.rs`（带 ms 时间戳，写 `logs/<role>-<epoch>.log`，role 由启动参数判定）；
      关键 net/时序日志已改走它，并加周期 `[stat]`（host 产帧/等输入计数、client 帧号/延迟）。
      `run-steam.ps1` 另将控制台输出 tee 到 `logs/console-*.log`（兜底捕获库内 `eprintln!`）。`logs/` 已 gitignore。
+   - ✅ **held-continuous 固定节拍 + 渲染插值（2026-09-13，方案对比后选定；均无协议改动）**：
+     `HostLockstep::try_emit` 每 tick 必产帧，缺输入时用上一条输入的**连续量**（丢弃离散动作）/默认；
+     `MAX_CATCHUP_STEPS` 4→8；绘制对玩家位置做 `prev→cur` 插值。**待双机复测**（目标 sim≈60）。
 7. **玩法修复**（`GAMEPLAY_FIX_PLAN.md`）：
    - ✅ **击退清掉移动目标**：改为 `Game::should_clear_player_target`（仅“已接受 + 未位移/冲刺 + 临近目标”才清，
      击退/冲刺中绝不清）；单测 `player_target_clear_requires_arrival_and_no_displacement`。

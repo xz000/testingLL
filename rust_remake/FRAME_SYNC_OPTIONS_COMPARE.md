@@ -1,5 +1,9 @@
 # 联机抖动方案深度对比：D 帧 vs 其它（2026-09-13）
 
+> **已实施（2026-09-13）**：采用 **held-continuous 固定节拍 + 渲染插值**（均无协议改动），
+> `MAX_CATCHUP_STEPS` 4→8。代码：`net/src/lockstep.rs::try_emit/held_input`、`client/src/main.rs::step_sim` + 绘制插值。
+> 仍需双机实测复测（目标 sim≈60、33ms 占比大幅下降、观感顺）。以下为当时对比依据。
+
 > 背景/实测见 `FRAME_SYNC_ANALYSIS.md` 第五、六节。本文只做方案权衡。
 > 实测要点（约 3000 帧，host/client 各一份）：**ping 6~8ms；client pending_max=1；sim ~52.5Hz（47~56）；
 > host `[jit]` 182 次中 131 次（72%）紧邻 `waiting for client input`；时长为 33ms×125 / 50ms×43 / 67ms+×8 / 100ms+×6。**
