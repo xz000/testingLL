@@ -1,0 +1,4 @@
+game-core/src\world_ser.rs:3: ['锛'] //! 绾墜鍐欍€佸ぇ绔€侀暱搴﹀墠缂€锛岄€愬瓧娈佃鐩?World锛堝惈 Player / Caster / Projectile / Obstacle 绛夛級锛?
+game-core/src\world_ser.rs:4: ['涓'] //! 淇濊瘉 `to_bytes` 鈫?`from_bytes` 鍚庨€愪綅涓€鑷达紝渚涢噸杩炵閲嶅缓鏁村満 World 鍚庣户缁?lockstep銆?
+game-core/src\world_ser.rs:948: ['锛'] /// 搴忓垪鍖栫敤鐨勪究鎹锋帴鍙ｏ細`World::to_bytes` / `from_bytes`锛堜緷璧栨湰妯″潡锛夈€?
+total suspicious lines: 3
