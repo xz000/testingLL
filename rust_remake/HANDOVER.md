@@ -105,8 +105,8 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      击退/冲刺中绝不清）；单测 `player_target_clear_requires_arrival_and_no_displacement`。
    - ✅ **冲撞撞柱与 098c 不一致**：JASS 实证（`war3map_pretty.j` 8640-8730）是**逐轴**响应；`resolve_obstacles`
      已改为“只清指向障碍的那一轴、保留切向 → 沿墙滑行”，不再接触即清 `control`；测试已替换/新增。
-     遗留：**mover（弹体）撞柱反弹已按 `xv` 技能集实现**（S000/S004/S008/S009/S014/S016/S018 反弹，
-     其余被挡；见 `skill::pillar_bounce_for`）。待细：`xv` 的 `1` vs `.75`（S008）衰减未区分。场地边界 ×0.5 反弹 = **War3 地图可玩区域**
+     遗留：**mover（弹体）撞柱反弹已按 `xv` 实现**（S000/S004/S009/S014/S016/S018 满反弹=1，S008=.75 衰减；
+     其余被挡；见 `skill::pillar_restitution`），逐技能 `xv` 衰减已区分。场地边界 ×0.5 反弹 = **War3 地图可玩区域**
      （`bj_mapInitialPlayableArea`）的引擎限制 → **不做**（我们的边界是岩浆区）。
 8. **平局加赛机制缺失**（待做）：098c 平局时**加赛一轮**（`rI` war3map_pretty.j:22488-22492：
    `AV=AV+1; StartSound(Vo)` + 广播 `"Draw! One more round to decide the battle"`）。
