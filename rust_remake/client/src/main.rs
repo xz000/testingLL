@@ -490,6 +490,8 @@ struct Game {
     present_last_kill_at: Vec<f32>,
     /// 表现层：各玩家窗口内连续击杀数（098c `dn[VI+$C]`）。
     present_multikill: Vec<u32>,
+    /// 表现层：各玩家上一帧是否在出界（危险）区，用于 Last Second Save 判定。
+    present_prev_oob: Vec<bool>,
     /// 渲染插值：上一 sim 步的各玩家位置（索引 = player id）。绘制时在 `prev → cur` 间按 alpha 插值，
     /// 消除帧到达抖动带来的画面跳动（纯渲染，不进快照）。
     prev_player_pos: Vec<Vec2>,
@@ -1085,6 +1087,7 @@ impl Game {
             present_clock: 0.0,
             present_last_kill_at: Vec::new(),
             present_multikill: Vec::new(),
+            present_prev_oob: Vec::new(),
             prev_player_pos: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
@@ -4569,6 +4572,7 @@ impl Game {
             }
             self.present_last_kill_at = vec![-1e9; self.world.players.len()];
             self.present_multikill = vec![0; self.world.players.len()];
+            self.present_prev_oob = vec![false; self.world.players.len()];
             self.float_texts.clear();
             return;
         }
@@ -4578,6 +4582,7 @@ impl Game {
             for i in 0..n {
                 self.present_prev_hp[i] = self.world.players[i].hp.to_num::<f32>();
                 self.present_prev_alive[i] = self.world.players[i].alive;
+                self.present_prev_oob[i] = self.world.players[i].pos.length() > self.world.arena_radius;
             }
             return;
         }
@@ -4694,6 +4699,27 @@ impl Game {
             }
             self.present_prev_hp[i] = hp;
             self.present_prev_alive[i] = alive;
+            // Last Second Save（098c `wx`）：从出界岩浆区（外环 `qa`）回到场内（`Qa`）
+            // 且残血极低（`Fn <= 6*To+0.5`，`Fn`=当前 HP）。仅对该玩家所在队显示/发声。
+            let oob = alive
+                && self.world.players[i].pos.length() > self.world.arena_radius;
+            if was_alive
+                && alive
+                && self.present_prev_oob.get(i).copied().unwrap_or(false)
+                && !oob
+            {
+                let my_team = self.world.players.get(me as usize).map(|p| p.team).unwrap_or(0);
+                // 098c `To` 默认 .9 ↔ 我们 `lava_damage_mult` 默认 1.0，故阈值 ≈ 5.4×倍率+0.5。
+                let threshold = 5.4 * self.world.lava_damage_mult.to_num::<f32>() + 0.5;
+                if self.world.players[i].team == my_team && hp <= threshold {
+                    let pos = self.world.players[i].pos;
+                    self.audio.play(audio::AudioCue::AnnLastSecondSave);
+                    self.push_float(pos, "Last Second Save".to_string(), Color::from_rgb(255, 80, 255));
+                }
+            }
+            if let Some(slot) = self.present_prev_oob.get_mut(i) {
+                *slot = oob;
+            }
         }
     }
 
@@ -4709,6 +4735,7 @@ impl Game {
         self.present_clock = 0.0;
         self.present_last_kill_at = vec![-1e9; self.world.players.len()];
         self.present_multikill = vec![0; self.world.players.len()];
+        self.present_prev_oob = vec![false; self.world.players.len()];
         self.float_texts.clear();
         self.banners.clear();
     }
