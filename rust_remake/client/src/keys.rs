@@ -336,6 +336,17 @@ mod source_scan_tests {
         );
     }
 
+    /// 回归：编辑房名/备注后必须随 `publish_room_cfg` 发布（否则客户端/房间列表读到建房时的旧值）。
+    #[test]
+    fn publish_room_cfg_pushes_room_name_and_note() {
+        let start = idx("fn publish_room_cfg");
+        let after = &SRC[start..];
+        let end = after.find("\n    }\n").unwrap_or(after.len());
+        let body = &after[..end];
+        assert!(body.contains("ROOM_NAME_KEY"), "publish_room_cfg 应发布房名");
+        assert!(body.contains("ROOM_NOTE_KEY"), "publish_room_cfg 应发布备注");
+    }
+
     /// 回归：就绪界面不得再提示已退休的 `E 编辑房间`（设置入口统一为 `O`）。
     #[test]
     fn room_ready_hint_uses_o_not_e_for_settings() {
