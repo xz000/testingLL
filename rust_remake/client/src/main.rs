@@ -286,8 +286,10 @@ enum SteamLobbyPending {
 #[cfg(feature = "steam")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum LobbyListAction {
-    /// 点击第 i 行：选中并加入。
+    /// 点击第 i 行：**仅选中**（不再直接加入；加入走 `Join` / 回车）。
     Row(usize),
+    /// 点击「加入」按钮（同回车）：加入当前选中房间。
+    Join,
     /// 刷新列表（同 `R`）。
     Refresh,
     /// 切换模式筛选（同 `F`）。
@@ -3467,24 +3469,24 @@ impl Game {
         )?;
         // 右下角操作按钮（按模式不同）：
         // - 建房：创建房间 / 取消；- 房内（房主）：保存 / 不保存；- 只读（客户端）：关闭。
-        let buttons: Vec<(&str, RoomCfgAction, bool)> = if self.room_cfg_create_mode {
+        let buttons: Vec<(&str, RoomCfgAction, bool, &str)> = if self.room_cfg_create_mode {
             vec![
-                ("创建房间", RoomCfgAction::Build, true),
-                ("取消", RoomCfgAction::Cancel, false),
+                ("创建房间", RoomCfgAction::Build, true, "回车"),
+                ("取消", RoomCfgAction::Cancel, false, "Esc"),
             ]
         } else if read_only {
-            vec![("关闭", RoomCfgAction::Save, false)]
+            vec![("关闭", RoomCfgAction::Save, false, "Esc")]
         } else {
             vec![
-                ("保存", RoomCfgAction::Save, true),
-                ("不保存", RoomCfgAction::Discard, false),
+                ("保存", RoomCfgAction::Save, true, "O"),
+                ("不保存", RoomCfgAction::Discard, false, "Esc"),
             ]
         };
-        let bw = 116.0;
+        let bw = 150.0;
         let bh = 30.0;
         let by = py + ph - 46.0;
         let mut bx = px + pw - 24.0 - bw;
-        for (label, act, primary) in buttons.iter() {
+        for (label, act, primary, hint) in buttons.iter() {
             let r = graphics::Rect::new(bx, by, bw, bh);
             let hover = r.contains(mouse);
             ui::paint_row(canvas, ctx, r, false, hover)?;
@@ -3495,7 +3497,13 @@ impl Game {
             } else {
                 ui::theme::text_dim()
             };
-            ui::text_center(canvas, ctx, label, ui::theme::BODY, col, r.x + bw / 2.0, by + 5.0)?;
+            // 按键提示：有对应快捷键的按钮标出（如 `[回车]`/`[O]`/`[Esc]`）。
+            let txt = if hint.is_empty() {
+                (*label).to_string()
+            } else {
+                format!("{label}  [{hint}]")
+            };
+            ui::text_center(canvas, ctx, &txt, ui::theme::SMALL, col, r.x + bw / 2.0, by + 7.0)?;
             self.room_cfg_hitboxes.push((r, *act));
             bx -= bw + 10.0;
         }
@@ -6754,7 +6762,7 @@ impl Game {
     }
 
     /// 列表拉取是帧驱动异步（S12）：`start_list_lobbies` 注册回调后立即返回，每帧 `tick_lobby_list` 推进后落地。
-    /// - ↑/↓ 选择；回车=加入选中的大厅；R=重新刷新；Q=返回大厅主界面。
+    /// - ↑/↓ 选择；**鼠标点行=仅选中**；回车 / 底部「加入」按钮=加入选中大厅；R=刷新；F=筛选；Q=返回。
     #[cfg(feature = "steam")]
     fn steam_lobby_list_update(&mut self, ctx: &mut Context) {
         use ggez::input::keyboard::Key;
@@ -6763,12 +6771,15 @@ impl Game {
         let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
         let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
         // 鼠标命中（上一帧绘制时登记；与键盘动作同路径）。
-        let (mut m_refresh, mut m_filter, mut m_back, mut m_join) = (false, false, false, None);
+        let (mut m_refresh, mut m_filter, mut m_back, mut m_join) = (false, false, false, false);
+        let mut m_select: Option<usize> = None;
         if ctx.mouse.button_just_pressed(MouseButton::Left) {
             let m = ui::mouse_design(ctx);
             for act in self.lobby_hitboxes.hits_at(m) {
                 match act {
-                    LobbyListAction::Row(i) => m_join = Some(i),
+                    // 点行=**仅选中**（加入改由下方「加入」按钮 / 回车触发）。
+                    LobbyListAction::Row(i) => m_select = Some(i),
+                    LobbyListAction::Join => m_join = true,
                     LobbyListAction::Refresh => m_refresh = true,
                     LobbyListAction::Filter => m_filter = true,
                     LobbyListAction::Back => m_back = true,
@@ -6834,7 +6845,7 @@ impl Game {
         } else if just_named(NamedKey::ArrowUp) {
             self.steam_list_selection = (self.steam_list_selection + n - 1) % n;
         }
-        if let Some(i) = m_join {
+        if let Some(i) = m_select {
             if i < n {
                 self.steam_list_selection = i;
             }
@@ -6847,12 +6858,12 @@ impl Game {
         if self.steam_list_selection >= self.steam_list_scroll + VISIBLE {
             self.steam_list_scroll = self.steam_list_selection + 1 - VISIBLE;
         }
-        if just_named(NamedKey::Enter) || just('\r') || m_join.is_some() {
+        if just_named(NamedKey::Enter) || just('\r') || m_join {
             self.try_join_selected_lobby(ctx);
         }
     }
 
-    /// 加入当前选中的房间（回车 / 鼠标点击共用）：满员/版本不符则拒绝并给提示。
+    /// 加入当前选中的房间（回车 / 底部「加入」按钮共用）：满员/版本不符则拒绝并给提示。
     #[cfg(feature = "steam")]
     fn try_join_selected_lobby(&mut self, ctx: &mut Context) {
         let sel = self.steam_list_selection;
@@ -7529,18 +7540,30 @@ impl Game {
             }
         }
 
-        // 底部操作条（可点：刷新 / 筛选 / 返回）
+        // 底部操作条（可点：加入 / 刷新 / 筛选 / 返回）；Join 为主操作。
         let hint_y = sh * 0.93;
-        let btns = [("R 刷新", LobbyListAction::Refresh), ("F 筛选", LobbyListAction::Filter), ("Q 返回", LobbyListAction::Back)];
-        let bw = 130.0;
+        let btns = [
+            ("回车 加入", LobbyListAction::Join, true),
+            ("R 刷新", LobbyListAction::Refresh, false),
+            ("F 筛选", LobbyListAction::Filter, false),
+            ("Q 返回", LobbyListAction::Back, false),
+        ];
+        let bw = 122.0;
         let bh = 34.0;
         let total_w = bw * btns.len() as f32 + pad * (btns.len() as f32 - 1.0);
         let mut bx = cx - total_w / 2.0;
-        for (label, act) in btns {
+        for (label, act, primary) in btns {
             let r = graphics::Rect::new(bx, hint_y - bh / 2.0, bw, bh);
             let hover = r.contains(mouse);
-            ui::paint_row(canvas, ctx, r, false, hover)?;
-            ui::text_center(canvas, ctx, label, 18.0, if hover { ui::theme::text() } else { ui::theme::text_dim() }, bx + bw / 2.0, hint_y)?;
+            ui::paint_row(canvas, ctx, r, primary && !hover, hover)?;
+            let col = if hover {
+                ui::theme::text()
+            } else if primary {
+                ui::theme::accent()
+            } else {
+                ui::theme::text_dim()
+            };
+            ui::text_center(canvas, ctx, label, 18.0, col, bx + bw / 2.0, hint_y)?;
             self.lobby_hitboxes.push((r, act));
             bx += bw + pad;
         }
