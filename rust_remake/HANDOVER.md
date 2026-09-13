@@ -66,7 +66,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 6. **联机卡顿修复**（`FRAME_SYNC_ANALYSIS.md`）：
    - ✅ **快照广播降频**：Steam host 每 30 帧只本地 `set_snapshot`（重连），广播降为每 150 帧（接管）；
      hash/snapshot 复用一份 `world_to_bytes`；接管取 seq 更新者（`newer_snapshot`）。
-   - ⬜ host 固定节拍产帧 + 输入延迟（需协议改动 + 联机验证）；
+   - ⬜ host 固定节拍产帧 + 输入延迟（**设计草案见 `FRAME_SYNC_INPUT_DELAY_DESIGN.md`**，需协议改动 + 联机验证）；
    - ✅ **client 收敛追赶**：`accumulate_tick` 夹到 4 步；输入每次 update 至多一条（渲染插值未做，待联机实测后再定）。
 
 ## 五、文档索引（读哪个）
@@ -81,6 +81,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `LOBBY_UI_PLAN.md` | 大厅重构动机（已被 UI_MASTER_PLAN 取代，保留来龙去脉） |
 | `PRESENTATION_PLAN.md` | 表现层 P1–P6 |
 | `FRAME_SYNC_ANALYSIS.md` | **联机卡顿分析**（房间信息轮询 + 帧同步；快照队头阻塞等） |
+| `FRAME_SYNC_INPUT_DELAY_DESIGN.md` | **主机固定节拍 + 输入延迟 设计草案**（未实施） |
 | `UI_AUDIT.md` | 更早的 UI 审视结论 |
 | `tools/README.md` + `tools/parse_w3a.py` / `parse_w3q.py` / `parse_objects.py` | 098c 物体数据解析工具 |
 
