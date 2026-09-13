@@ -4782,11 +4782,11 @@ impl Game {
                     });
                 }
                 CombatEvent::Explode { pos, radius } => {
-                    // P3-3 爆炸：扩散圆环（半径 = AoE 半径）。
+                    // P3-3 爆炸：精确作用半径（淡填充 + 亮环）。
                     self.fx.spawn(fx::Fx {
-                        kind: fx::FxKind::Ring,
+                        kind: fx::FxKind::Blast,
                         pos: [pos.x.to_num::<f32>(), pos.y.to_num::<f32>()],
-                        color: [1.0, 0.6, 0.3, 0.85],
+                        color: [1.0, 0.6, 0.3, 0.9],
                         life: EXPLODE_RING_LIFE,
                         max_life: EXPLODE_RING_LIFE,
                         radius: radius.to_num::<f32>(),
