@@ -201,7 +201,11 @@ UI 不再有“改了没效果”的行。
 - [x] **C1 `damage_mult`（设置 2）✅ 已完成**：`[core]` `damage_player` + 接触踢击伤害乘它。
 - [x] **C2 `knockback_mult`（设置 3）✅ 已完成**：`[core]` KI/弹体击退与踢击 `imp` 乘它。
 - [x] **C3 `lava_damage_mult`（设置 1）✅ 已完成**：`[core]` 出界伤害乘它（`0`=关闭）。
-  - `[client]` `configure_mults` 在各 `configure_shrink/regen` 处同步；`[test]` `configure_mults_scales_damage_and_lava`。
+  - `[client]` `configure_mults` 在各 `configure_shrink/regen` 处同步；`[test]` `configure_mults_scales_damage_and_lava`、`explode_at_scales_with_damage_mult`。
+  - **`Gn` 覆盖（098c 实证）**：主流战斗伤害都经统一入口 `hI` 乘 `Gn[攻方]`（`6943`）→ **技能/弹体/AoE/踢击基础伤害都乘**；
+    但另有一条 `FX(gX,cX)` **直伤通道不乘 `Gn`**（如冲锋/潜行的“额外破隐伤害” `7887/7912`），岩浆 `To` 也独立。
+    我们已对齐：`damage_player`/`explode_at`/踢击基础 = 乘；踢击的**破隐额外那笔** = 不乘（拆开）。
+  其他不乘项（有意）：岩浆（`lava_damage_mult`）、风步偷取（治疗）、自残、国王 Doom；玩家重叠的“挤压伤害”已删除（098c 无）。
 - [ ] **C4** `first_round_time_secs` 由 B2 自动生效。
 - [x] **C5 `pillar_mode`（我们自己的设置）✅ 已完成**：`_layout_obstacles` 读 `mode`（0 关/1 随机 0~5/2 必有 1~5）。
 - [x] **C6 `arena_shape` ✅ 已完成**：UI 行保留但`is_locked()`→置灰 + 回车/T 提示“暂锁定（圆形）”。
