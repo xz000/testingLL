@@ -184,13 +184,14 @@
   - `[UI]` 本就没有行（段 3 已删）；确认 `hint` 无残留。
   - `[client]` `match_place_rewards`/`host_set_place_reward`/大厅键、`auto_place_rewards`(+测试)。
   - `[schema]` bump。
-- [ ] **B2 时长字段合并**（见 §1b）
+- [x] **B2 时长字段合并 ✅ 已完成**
   - `[core]` 删 `shopping_time_secs`/`learn_time_secs`；`begin_first_round_config` 读 `first_round_time_secs`、`finish_round` 读 `between_rounds_time_secs`。
-  - `[UI]` 保留 `FirstRoundSecs`/`BetweenRoundsSecs` 两行（名字已对）；修正 `hint`。
-  - `[client]` `FASTROUND`、`match_config()`/`match_learn_secs` 链路、`STEAM_DEFAULT_LEARN_SECS`。
-  - `[schema]` bump；`[test]` `meta.rs` 时长用例。
+  - `[UI]` 保留 `FirstRoundSecs`/`BetweenRoundsSecs` 两行（名字已对）。
+  - `[client]` 删 `init_learn_secs`；`match_learn_secs` 初值用 `STEAM_DEFAULT_LEARN_SECS`；`FASTROUND` 改用新字段名。
+  - `[schema]` 设置串去 2 槽（learn/shopping），`ROOM_SETTINGS_SCHEMA` **1 → 2**；不兼容旧串（已确认）。
+  - `[test]` 更新往返/默认值断言（`wrong_schema` 改用当前 schema 构造）。
 - [ ] **B2b（可选）** `match_learn_secs`/`host_set_learn`/大厅键 `learn` → between-rounds 命名。
-- [ ] **B3** `ROOM_SETTINGS_SCHEMA` +1（B1/B2 各一次）；更新 roundtrip 断言。
+- [ ] **B3** `ROOM_SETTINGS_SCHEMA`：B2 已 1→2；B1 删名次金时再 2→3（每步都能解析当前历史串）。
 - [ ] **B4** 全量 `settings_ui` 文案/hint 复查（删已不存在项、修正时长行名）。
 
 ### 阶段 C — 把 098c 有、但我们没接的旋钮接进对局（每项都要动 UI）
@@ -222,7 +223,7 @@
 1. **S1（阶段 A1）✅ 已完成**：`match_config()` 直接用完整 `match_cfg`（`authored_match_cfg`），
    国王模式强制两队派生保留。（core 无改；UI 无改，但此后 UI 各行真正生效。）
 2. **S4 + A3 ✅ 已完成**：参与奖时点（只发初始金）+ `-no reward` 语义（只清击杀/胜利/伤害金）。
-3. **B2 → B1**（含 UI 撤行/文案 + schema bump）：先合并时长字段，再删名次金。
+3. **B2 → B1**（含 UI 文案 + schema bump）：B2 ✅ 已完成（时长合并，schema→2）；B1（删名次金，schema→3）待做。
 4. **C1~C3**：伤害/击退/岩浆倍率接进结算（core + UI 保留行）。
 5. **C5~C7 + D2~D4**：柱子/冰面 + 地图形状（`arena_shape` 行保留但**置灰**只显示“圆形”，不接线；远期再扩）。
 
@@ -244,3 +245,5 @@
 - 2026-09-13：**A2/S4 已完成**（开局只发初始金；`qo` 留在回合结束）。
 - 2026-09-13：**A3 已完成**（`-no reward` = 关击杀/胜利/伤害金（lo/Mo/po），点数与助攻/每轮金不变）；
   game-core 235 + client+steam 48 测试绿。**阶段 A 全部完成**。
+- 2026-09-13：**B2 已完成**（时长字段合并：删 `shopping_time_secs`/`learn_time_secs`，meta 直接读 `first_round_time_secs`/`between_rounds_time_secs`；
+  `ROOM_SETTINGS_SCHEMA` 1→2；不兼容旧串）。B1（删 `place_rewards`）待做。
