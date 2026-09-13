@@ -35,6 +35,10 @@ mod logging;
 mod steam;
 /// 界面按键契约（确认键等）：文案与判定放一起，单测钉住两者一致。
 mod keys;
+
+mod local_settings;
+
+mod audio;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 mod settings_ui;
 /// 版面骨架（四带网格）：把"各界面手工摆坐标"改成"按带填充"，可单测。
@@ -304,6 +308,23 @@ enum LobbyListAction {
     MenuBack,
 }
 
+/// 主菜单「设置」（本机音量/静音）界面的鼠标动作。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum SettingsAction {
+    /// 点击第 i 行：选中并调整（音量行 +步进，静音行切换）。
+    Row(usize),
+    /// 点击底部「返回」。
+    Back,
+}
+
+/// 设置界面行：`(标签, 是否为音量行)`。
+const SETTINGS_ROWS: [(&str, bool); 4] = [
+    ("主音量", true),
+    ("音效音量", true),
+    ("音乐音量", true),
+    ("静音", false),
+];
+
 /// 房间设置编辑器（建房 / 房内 `O`）的鼠标动作。
 #[cfg(feature = "steam")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -355,6 +376,18 @@ struct Game {
     world: World,
     /// 多局 meta 状态（经济/升级/周期）
     meta: MatchState,
+    /// 本机设置（音量/静音）：纯本地，不进同步/快照。
+    local_settings: local_settings::LocalSettings,
+    /// 本机设置存储路径（启动读、改动写回）。
+    local_settings_path: std::path::PathBuf,
+    /// 音效播放（缺素材/无声卡静默降级）。
+    audio: audio::AudioBank,
+    /// 本机设置界面是否打开（主菜单 4 号入口）。
+    settings_open: bool,
+    /// 设置界面当前选中行。
+    settings_row: usize,
+    /// 设置界面鼠标命中盒。
+    settings_hitboxes: ui::HitRegistry<SettingsAction>,
     /// 玩家本人待发送的移动目标（右键设置；成功发给 World 后由 World 保留）
     player_target: Option<Vec2>,
     /// 世界是否已接受当前 `player_target`（本机角色的 `move_target` 曾等于它）。
@@ -970,9 +1003,24 @@ impl Game {
         let bot_targets: Vec<Option<Vec2>> = Vec::new();
 
         let (w, h) = (ui::UI_W, ui::UI_H);
+        let local_settings_path = local_settings::default_path();
+        let local_settings = local_settings::load(&local_settings_path);
+        let audio = audio::AudioBank::new(ctx, &local_settings);
+        eprintln!(
+            "[audio] 已加载 {}/{} 个音效素材（静音={}）",
+            audio.loaded_count(),
+            audio::AudioCue::ALL.len(),
+            local_settings.muted
+        );
         Ok(Game {
             world,
             meta,
+            local_settings,
+            local_settings_path,
+            audio,
+            settings_open: false,
+            settings_row: 0,
+            settings_hitboxes: ui::HitRegistry::new(),
             player_target: None,
             player_target_accepted: false,
             pending_cast: None,
@@ -4616,6 +4664,21 @@ impl event::EventHandler for Game {
         self.frame = self.frame.wrapping_add(1);
         let dt = ctx.time.delta().as_secs_f64();
 
+        // F10：全机静音开关，任何界面都生效（F10 不是文本字符，无需焦点守卫）。
+        if ctx
+            .keyboard
+            .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::F10))
+        {
+            let muted = self.local_settings.toggle_mute();
+            self.audio.apply(&self.local_settings);
+            local_settings::save(&self.local_settings_path, &self.local_settings);
+            eprintln!("[audio] 静音 -> {muted}（F10）");
+            self.push_banner(
+                if muted { "音频已静音 [F10]".to_string() } else { "音频已开启 [F10]".to_string() },
+                Color::from_rgb(200, 220, 255),
+            );
+        }
+
         // S12：进行中的大厅操作（建厅/加入）是帧驱动异步，由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 推进。
         // 连接期间跳过其余菜单/房间输入（也不应被认为已进房），只泵回调 + 推进，完成后才落地进房。
         #[cfg(feature = "steam")]
@@ -4687,7 +4750,13 @@ impl event::EventHandler for Game {
             use ggez::input::mouse::MouseButton;
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
             let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
-            const MENU_COUNT: usize = 3;
+            const MENU_COUNT: usize = 4;
+            // 本机设置界面（主菜单 4 号入口）独占输入。
+            if self.settings_open {
+                self.settings_update(ctx);
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             // 大厅子界面（主/建房设置/房间列表）内不响应主菜单的方向键/数字。
             #[cfg(feature = "steam")]
             let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
@@ -4769,7 +4838,7 @@ impl event::EventHandler for Game {
                 let y0 = sh * 0.34;
                 let gap = 26.0;
                 let p = ui::mouse_design(ctx);
-                for i in 0..3 {
+                for i in 0..4 {
                     let y = y0 + i as f32 * (card_h + gap);
                     if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
                         self.menu_selection = i;
@@ -4790,6 +4859,9 @@ impl event::EventHandler for Game {
             } else if just('3') {
                 self.menu_selection = 2;
                 act = Some(2);
+            } else if just('4') {
+                self.menu_selection = 3;
+                act = Some(3);
             }
             if let Some(sel) = act {
                 match sel {
@@ -4844,6 +4916,14 @@ impl event::EventHandler for Game {
                         }
                         #[cfg(not(feature = "steam"))]
                         eprintln!("[menu] Steam 未启用（需 --features client/steam 构建）");
+                    }
+                    3 => {
+                        // 本机设置（音量 / 静音）：纯本地，不进房间同步。
+                        eprintln!("[menu] -> Settings");
+                        self.menu_hint.clear();
+                        self.settings_open = true;
+                        self.settings_row = 0;
+                        self.audio.play(audio::AudioCue::UiConfirm);
                     }
                     _ => {}
                 }
@@ -7167,7 +7247,183 @@ impl Game {
     }
 
         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
+    /// 设置界面键鼠输入：↑↓ 选择、←→ 调值、回车/点击 调整、Esc/Q/返回 关闭。自动保存。
+    fn settings_update(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
+        use winit::keyboard::NamedKey;
+        let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
+        let q = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
+        let n = SETTINGS_ROWS.len();
+
+        let mut clicked: Option<usize> = None;
+        let mut back = false;
+        if ctx.mouse.button_just_pressed(MouseButton::Left) {
+            let m = ui::mouse_design(ctx);
+            for a in self.settings_hitboxes.hits_at(m) {
+                match a {
+                    SettingsAction::Row(i) => clicked = Some(i),
+                    SettingsAction::Back => back = true,
+                }
+            }
+        }
+
+        if back || q || pressed(NamedKey::Escape) {
+            self.settings_open = false;
+            self.audio.play(audio::AudioCue::UiCancel);
+            return;
+        }
+
+        let mut moved = false;
+        if pressed(NamedKey::ArrowUp) {
+            self.settings_row = (self.settings_row + n - 1) % n;
+            moved = true;
+        }
+        if pressed(NamedKey::ArrowDown) {
+            self.settings_row = (self.settings_row + 1) % n;
+            moved = true;
+        }
+        if moved {
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        if let Some(i) = clicked {
+            self.settings_row = i;
+        }
+
+        let mut delta = 0i32;
+        if pressed(NamedKey::ArrowLeft) {
+            delta -= 1;
+        }
+        if pressed(NamedKey::ArrowRight) {
+            delta += 1;
+        }
+        let enter = pressed(NamedKey::Enter)
+            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into()));
+        if enter || clicked.is_some() {
+            // 回车 / 点击 = 调一档（音量 +5% 且满则回 0；静音则切换）。
+            self.settings_adjust(self.settings_row, 1, true);
+        } else if delta != 0 {
+            self.settings_adjust(self.settings_row, delta, false);
+        }
+    }
+
+    /// 调整设置行并应用/保存。`wrap` = 满则回 0（点击/回车）；否则夹到 0..1（方向键）。
+    fn settings_adjust(&mut self, row: usize, delta: i32, wrap: bool) {
+        let is_volume = SETTINGS_ROWS.get(row).map(|r| r.1).unwrap_or(false);
+        if !is_volume {
+            self.local_settings.toggle_mute();
+        } else {
+            let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
+            let cur = match row {
+                0 => self.local_settings.master_volume,
+                1 => self.local_settings.sfx_volume,
+                2 => self.local_settings.music_volume,
+                _ => 0.0,
+            };
+            let mut v = cur + step;
+            if wrap && v > 1.0 + 1e-4 {
+                v = 0.0;
+            }
+            v = v.clamp(0.0, 1.0);
+            match row {
+                0 => self.local_settings.master_volume = v,
+                1 => self.local_settings.sfx_volume = v,
+                2 => self.local_settings.music_volume = v,
+                _ => {}
+            }
+        }
+        self.audio.apply(&self.local_settings);
+        local_settings::save(&self.local_settings_path, &self.local_settings);
+        self.audio.play(audio::AudioCue::UiConfirm);
+    }
+
+    /// 设置行的值文本（音量百分比 / 静音开关）。
+    fn settings_value_text(&self, row: usize) -> String {
+        match row {
+            0 => format!("{}%", (self.local_settings.master_volume * 100.0).round() as i32),
+            1 => format!("{}%", (self.local_settings.sfx_volume * 100.0).round() as i32),
+            2 => format!("{}%", (self.local_settings.music_volume * 100.0).round() as i32),
+            3 => {
+                if self.local_settings.muted {
+                    "开（静音）".to_string()
+                } else {
+                    "关".to_string()
+                }
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// 主菜单「设置」界面（本机音量/静音）。
+    fn draw_settings(&mut self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        ui::set_design_coordinates(&mut canvas, ctx);
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        let mouse = ui::mouse_design(ctx);
+        self.settings_hitboxes.clear();
+
+        ui::text_center(&mut canvas, ctx, "设置（本机）", 34.0, ui::theme::accent(), cx, sh * 0.13)?;
+        ui::text_center(&mut canvas, ctx, "音量与静音仅影响本机，不影响联机", 17.0, ui::theme::text_dim(), cx, sh * 0.13 + 32.0)?;
+
+        let panel = layout::centered_panel(sw, sh, 0.66, 0.6);
+        let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
+        let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
+        for (i, (label, is_volume)) in SETTINGS_ROWS.iter().enumerate() {
+            let r = layout::row_in(content, i, SETTINGS_ROWS.len());
+            let sel = i == self.settings_row;
+            let hover = !sel && r.contains(mouse);
+            ui::paint_row(&mut canvas, ctx, r, sel, hover)?;
+            let col = if sel { ui::theme::accent() } else { ui::theme::text() };
+            ui::text_left(&mut canvas, ctx, label, ui::theme::BODY, col, r.x + 14.0, r.y + 8.0)?;
+            if *is_volume {
+                let bar = graphics::Rect::new(r.x + r.w * 0.5, r.y + r.h / 2.0 - 5.0, r.w * 0.34, 10.0);
+                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), bar, ui::theme::row_bg())?;
+                canvas.draw(&bg, graphics::DrawParam::new());
+                let frac = match i {
+                    0 => self.local_settings.master_volume,
+                    1 => self.local_settings.sfx_volume,
+                    _ => self.local_settings.music_volume,
+                };
+                let fill = graphics::Rect::new(bar.x, bar.y, bar.w * frac.clamp(0.0, 1.0), bar.h);
+                let fg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), fill, ui::theme::ok())?;
+                canvas.draw(&fg, graphics::DrawParam::new());
+            }
+            ui::text_right(&mut canvas, ctx, &self.settings_value_text(i), ui::theme::BODY, col, r.x + r.w - 14.0, r.y + 8.0)?;
+            self.settings_hitboxes.push((r, SettingsAction::Row(i)));
+        }
+
+        let bw = 110.0;
+        let bh = 30.0;
+        let br = graphics::Rect::new(px + pw - bw - 24.0, py + ph - 50.0, bw, bh);
+        let br_hover = br.contains(mouse);
+        ui::paint_row(&mut canvas, ctx, br, false, br_hover)?;
+        ui::text_center(
+            &mut canvas, ctx, "返回  [Esc]", ui::theme::SMALL,
+            if br_hover { ui::theme::text() } else { ui::theme::text_dim() },
+            br.x + bw / 2.0, br.y + 7.0,
+        )?;
+        self.settings_hitboxes.push((br, SettingsAction::Back));
+
+        ui::text_center(
+            &mut canvas, ctx,
+            "↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回",
+            ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
+        )?;
+        if self.local_settings.muted {
+            ui::text_center(&mut canvas, ctx, "当前：已静音（F10 切换）", ui::theme::SMALL, ui::theme::warn(), cx, py + ph + 22.0)?;
+        } else {
+            ui::text_center(&mut canvas, ctx, "F10 一键静音", ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 22.0)?;
+        }
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+
     fn draw_menu(&mut self, ctx: &mut Context) -> GameResult {
+        if self.settings_open {
+            return self.draw_settings(ctx);
+        }
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
         let (sw, sh) = (ui::UI_W, ui::UI_H);
@@ -7284,10 +7540,11 @@ impl Game {
         }
 
         // 主菜单三个入口卡片
-        let items: [(u8, &str, &str); 3] = [
+        let items: [(u8, &str, &str); 4] = [
             (1, "单机技能试验场", "无 AI 自由试技能与数值（进入后配置技能开始）"),
             (2, "局域网对战", "同机/内网：命令行 --host <port> / --join <host:port>"),
             (3, "Steam 在线对战", "联网与好友实时对抗（进入 Steam 大厅）"),
+            (4, "设置", "本机音量与静音（F10 快捷静音）"),
         ];
         let mpos = ui::mouse_design(ctx);
         for (i, (num, name, desc)) in items.iter().enumerate() {

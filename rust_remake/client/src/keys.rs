@@ -103,6 +103,7 @@ mod tests {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Screen {
     MainMenu,
+    Settings,
     SteamMenu,
     LobbyList,
     CreateLobby,
@@ -134,6 +135,17 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "1", action: "单机试验场" },
             Binding { key: "2", action: "局域网" },
             Binding { key: "3", action: "Steam 大厅" },
+            Binding { key: "4", action: "设置（本机音量/静音）" },
+        ],
+        Settings => &[
+            Binding { key: "up", action: "上移选择" },
+            Binding { key: "down", action: "下移选择" },
+            Binding { key: "left", action: "减少（音量）" },
+            Binding { key: "right", action: "增加（音量）" },
+            Binding { key: "enter", action: "调整 / 切换静音" },
+            Binding { key: "f10", action: "全局静音切换" },
+            Binding { key: "esc", action: "返回主菜单" },
+            Binding { key: "q", action: "返回主菜单" },
         ],
         SteamMenu => &[
             Binding { key: "up", action: "上移选择" },
@@ -213,8 +225,9 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
 mod keymap_tests {
     use super::*;
 
-    const ALL: [Screen; 8] = [
+    const ALL: [Screen; 9] = [
         Screen::MainMenu,
+        Screen::Settings,
         Screen::SteamMenu,
         Screen::LobbyList,
         Screen::CreateLobby,
@@ -254,6 +267,7 @@ mod keymap_tests {
     #[test]
     fn navigable_screens_offer_a_way_back() {
         for sc in [
+            Screen::Settings,
             Screen::SteamMenu,
             Screen::LobbyList,
             Screen::CreateLobby,
@@ -486,5 +500,18 @@ mod source_scan_tests {
             draw.contains("LobbyListAction::Join"),
             "房间列表应绘制可点的「加入」按钮"
         );
+    }
+
+    /// 回归：全局静音用 `F10`，**不能**用裸 `M`（`M` 是学习期商店的分类切换键 B/N/M）。
+    #[test]
+    fn mute_uses_f10_not_m() {
+        assert!(SRC.contains("NamedKey::F10"), "全局静音应绑定 F10");
+        assert!(
+            SRC.contains("char_just(ctx, \"m\")"),
+            "商店分类键 M 应保留（B/N/M），不得被静音占用"
+        );
+        // 设置界面应存在（主菜单入口）。
+        assert!(SRC.contains("SETTINGS_ROWS"), "应有本机设置界面");
+        assert!(SRC.contains("fn draw_settings"), "应绘制设置界面");
     }
 }

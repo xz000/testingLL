@@ -52,9 +52,7 @@ pub fn mouse_design(ctx: &Context) -> Point2<f32> {
     }
 }
 
-/// 行底色：按选中/悬停优先级取色（技能/商店/大厅共用）。
-/// 目前仅 Steam 大厅（房间列表/大厅菜单/底部按钮）使用，故随 `steam` feature 编译。
-#[cfg(feature = "steam")]
+/// 行底色：按选中/悬停优先级取色（技能/商店/大厅/设置共用）。
 pub fn row_color(selected: bool, hover: bool) -> Color {
     if selected {
         theme::row_selected()
@@ -65,8 +63,7 @@ pub fn row_color(selected: bool, hover: bool) -> Color {
     }
 }
 
-/// 铺一行底色（与技能/商店/大厅一致）。返回该矩形，方便调用方登记命中盒。
-#[cfg(feature = "steam")]
+/// 铺一行底色（与技能/商店/大厅/设置一致）。返回该矩形，方便调用方登记命中盒。
 pub fn paint_row(
     canvas: &mut Canvas,
     ctx: &Context,

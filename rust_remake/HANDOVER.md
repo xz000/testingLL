@@ -55,14 +55,14 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | 327 项（client 44 / game-core 235 / net 39 / net-steam 9）；steam client 51 |
+| 测试基线 | client 52 / game-core 235 / net 39 / net-steam 9；steam client 59 |
 
 ## 四、待办（按建议优先级）
 
-1. **表现层 P2 · 音效（进行中）**：`AUDIO_PLAN.md` —— 后端 `ggez::audio`；**先用占位素材**。
-   已按 **098c JASS 实证**重写清单：098c 自定义音效**几乎全是播报语音**（首杀/连杀/多重击杀/Hattrick/Vampire/Denied/…），
-   普通命中/爆炸/施法音依赖 War3 引擎 → **需我们自己制作**；含主菜单「设置」界面规划。
-   建议顺序：P2-1 基础设施+本地设置 → P2-2 设置界面 → P2-3/4 战斗/流程音 → P2-6 UI/商店 → P2-5 播报音。
+1. **表现层 P2 · 音效（进行中）**：`AUDIO_PLAN.md` —— 后端 `ggez::audio`；**占位素材已生成**。
+   ✅ P2-0 占位素材（`tools/gen_placeholder_audio.py`）· P2-1 `local_settings`+`AudioBank` ·
+   P2-2 主菜单「设置」界面（滑条+键鼠）+ `F10` 全局静音（`M` 已被商店分类键占用）。
+   ⬜ 待接：战斗/流程/UI/商店/播报触发点（P2-3~P2-5）。
 2. **表现层 P1 扩展**：Hattrick / Vampire / Denied / Burnout / Silencer / Pancake / Last-Second-Save 等事件横幅
    （需额外战斗信号）—— 与 P2 的播报音共用信号（098c 触发条件已录入 `AUDIO_PLAN.md` §1）。
 3. **死代码清理**（详细分段见 `DEAD_CODE_CLEANUP.md`）：
