@@ -359,6 +359,8 @@ struct Game {
     /// IME 去重：最近一次 `Ime::Commit` 提交的帧（置为当时 `frame+1`，即 `just(c)` 将要运行的下一帧）。
     /// `just(c)` ASCII 白名单在该帧跳过，避免同一物理键重复插入（C8，需真机验证）。
     last_ime_commit_frame: u64,
+    /// 诊断（本轮加）：上一帧推进的墙钟时刻（秒）；用于打印模拟帧间隔异常（卡顿来源定位）。
+    last_step_wall: f64,
     /// IME 预编辑（拼音组合）进行中：为真时屏蔽 ASCII 白名单手工插入，
     /// 否则组合期间的物理键会被当成普通字母直接拼进去（与提交的中文重复/乱码）。
     ime_composing: bool,
@@ -994,6 +996,7 @@ impl Game {
             frame: 0,
             // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
             last_ime_commit_frame: u64::MAX,
+            last_step_wall: 0.0,
             ime_composing: false,
             float_texts: Vec::new(),
             banners: Vec::new(),
@@ -1847,6 +1850,22 @@ impl Game {
 
     /// 本局进行中：结算击杀、名次，进入学习阶段。
     fn settle_round(&mut self) {
+        // 诊断（本轮加）：把“为何判定本局结束”的状态完整打出来。
+        // 最近双机实测出现过“两人都还活着却进了购买页”→ 需要确认是 round_over 的哪个条件满足。
+        eprintln!(
+            "[round] settle_round: mode={} round={} phase={:?} round_forced={} avatar={:?} kings={:?} players={:?}",
+            self.world.mode,
+            self.meta.round,
+            self.meta.phase,
+            self.world.round_forced,
+            self.world.avatar,
+            self.world.kings,
+            self.world
+                .players
+                .iter()
+                .map(|p| (p.id, p.alive, p.team, p.hp.to_num::<f32>().round() as i32, p.last_hit_by))
+                .collect::<Vec<_>>()
+        );
         // 击杀结算（D6）：击杀分/金 + 连杀播报 + 死者连杀清零 + 助攻（伤害矩阵）。
         for (killer, victim) in self.world.take_kills() {
             let is_first = self.meta.register_kill(killer);
@@ -5009,6 +5028,15 @@ impl event::EventHandler for Game {
                                 }
                                 self.world.step(inputs, ticking);
                                 self.note_self_cast();
+                                // 诊断（本轮加）：host 产帧间隔异常（>2 TICK）打印——`try_emit` 因缺输入停摆时会看到。
+                                {
+                                    let now = ctx.time.time_since_start().as_secs_f64();
+                                    let gap = now - self.last_step_wall;
+                                    if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
+                                        eprintln!("[jit] host sim gap {:.0}ms at seq={seq}", gap * 1000.0);
+                                    }
+                                    self.last_step_wall = now;
+                                }
                                 // 周期快照：本地每 30 帧保存（重连用）；广播更低频（主机迁移用，见下）。
                                 self.host_frame_count += 1;
                                 if self.host_frame_count % SNAPSHOT_EVERY == 0 {
@@ -5127,6 +5155,15 @@ impl event::EventHandler for Game {
                         while self.accumulator >= TICK {
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
                                 self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
+                                // 诊断（本轮加）：模拟帧间隔异常（>2 TICK）即打印——定位“~1s 一卡”是帧到达抖动还是本地卡顿。
+                                {
+                                    let now = ctx.time.time_since_start().as_secs_f64();
+                                    let gap = now - self.last_step_wall;
+                                    if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
+                                        eprintln!("[jit] client sim gap {:.0}ms (next seq {})", gap * 1000.0, cli.expect_seq());
+                                    }
+                                    self.last_step_wall = now;
+                                }
                                 let n = self.world.players.len();
                                 let mut inputs = vec![PlayerInput::default(); n];
                                 for (idx, bytes) in ents {
@@ -5308,6 +5345,15 @@ impl event::EventHandler for Game {
                         // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.note_self_cast();
+                            // 诊断（本轮加）：模拟帧间隔异常（>2 TICK）打印（局域网路径）。
+                            {
+                                let now = ctx.time.time_since_start().as_secs_f64();
+                                let gap = now - self.last_step_wall;
+                                if self.last_step_wall > 0.0 && gap > 2.0 * TICK {
+                                    eprintln!("[jit] lan client sim gap {:.0}ms", gap * 1000.0);
+                                }
+                                self.last_step_wall = now;
+                            }
                             // 分歧检测：step_frame 内比对了 host 世界哈希，不一致则标记并警示。
                             if let Some(seq) = link.take_desync_seq() {
                                 eprintln!("[client] DESYNC detected at seq={seq} -> 帧同步分歧，本局后续可能不一致");
