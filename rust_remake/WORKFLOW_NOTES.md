@@ -48,3 +48,13 @@ PowerShell 会先按 GBK 解码 → 中文先错解再存盘。
 **验证**：`python -c "print(open('logs/console-xxx.log','rb').read(4))"` → 应为 ASCII/UTF-8，**不是** `\xff\xfe`。
 进程内 `logging.rs` 的 `app-*.log` 一直就是 UTF-8，不受影响；
 以后优先看 `app-*.log`（它才是带 ms 时间戳的诊断主文件）。
+
+## 5. 源码扫描测试：`main.rs` 是 **CRLF**，`include_str!` 不规范化（2026-09-13，假通过）
+
+`keys.rs` 的 `source_scan_tests` 用 `include_str!("main.rs")` 做结构断言。
+`main.rs` 为 **CRLF** 换行，因此 `SRC.find("\n    }\n")` **永远匹配不到**，
+`unwrap_or(剩余全文)` 就把“整段后续代码”当作函数体 —— 于是断言 `!body.contains(...)` **恒真**（假通过），
+有些回归检测一直没有真正生效。
+
+**修复**：改用 `fn_body(name)`（兼容 `\n    }\r\n` 与 `\n    }\n`，找不到闭合直接 panic），并修正全部 7 处提取点。
+**教训**：源码扫描测试的“取函数体”必须对换行/缩进鲁棒，且“提取失败”应显式报错（而非 `unwrap_or(全文)`）。

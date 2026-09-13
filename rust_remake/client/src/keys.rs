@@ -286,6 +286,21 @@ mod source_scan_tests {
             .unwrap_or_else(|| panic!("源码中找不到 {needle:?}（可能被重构改名，请同步本测试）"))
     }
 
+    /// 取 `fn <name>` 的函数体文本（到该函数闭合大括号为止）。
+    ///
+    /// 注意：`main.rs` 是 **CRLF** 换行，`include_str!` 不做规范化 —— 早期测试用
+    /// `find("\n    }\n")` 实际**永远匹配不到**，`unwrap_or(剩余全文)` 把“整段后续代码”当成函数体，
+    /// 使 `!contains(...)` 断言恒真（假通过）。这里同时兼容 CRLF / LF，且“找不到闭合”改为 panic。
+    fn fn_body(name: &str) -> &'static str {
+        let start = idx(name);
+        let scope = &SRC[start..];
+        let end = scope
+            .find("\n    }\r\n")
+            .or_else(|| scope.find("\n    }\n"))
+            .unwrap_or_else(|| panic!("找不到 {name:?} 的闭合大括号"));
+        &scope[..end]
+    }
+
     /// 回归①（`O` 开→立刻关）+ 段 3：创建模式输入已收编到统一编辑器。
     ///
     /// 旧的两列键盘表单与"外层 `O` 切换"已删除；`steam_lobby_create_update` 只做
@@ -293,10 +308,7 @@ mod source_scan_tests {
     /// 不得再出现独立的 O/方向键/字段缓冲判定（否则会与编辑器抢输入）。
     #[test]
     fn create_screen_delegates_only_to_the_editor() {
-        let start = idx("fn steam_lobby_create_update");
-        let after = &SRC[start..];
-        let body_end = after.find("\n    }\n").unwrap_or(after.len());
-        let body = &after[..body_end];
+        let body = fn_body("fn steam_lobby_create_update");
         assert!(
             body.contains("self.room_cfg_editor_input(ctx)"),
             "创建模式必须委托统一编辑器处理输入（room_cfg_editor_input）"
@@ -318,10 +330,7 @@ mod source_scan_tests {
     /// 关闭统一 `O`/`Esc`；创建模式下**裸回车**=建房（`Shift+回车` 仍用于编辑当前行）。
     #[test]
     fn settings_editor_enter_activates_row_not_closes() {
-        let start = idx("fn room_cfg_editor_input");
-        let after = &SRC[start..];
-        let body_end = after.find("\n    }\n").unwrap_or(after.len());
-        let body = &after[..body_end];
+        let body = fn_body("fn room_cfg_editor_input");
         // 旧的“回车也关闭”兜底已移除。
         assert!(
             !body.contains("just_named(NamedKey::Enter) || just_named(NamedKey::Escape) || just(\"o\")"),
@@ -343,10 +352,7 @@ mod source_scan_tests {
     /// （回车=建房→直接关闭编辑器、底部显示“回车 创建房间”）。
     #[test]
     fn build_clears_create_mode() {
-        let start = idx("fn steam_create_confirm");
-        let after = &SRC[start..];
-        let end = after.find("\n    }\n").unwrap_or(after.len());
-        let body = &after[..end];
+        let body = fn_body("fn steam_create_confirm");
         assert!(
             body.contains("room_cfg_create_mode = false"),
             "建房成功应清掉创建模式标志"
@@ -356,10 +362,7 @@ mod source_scan_tests {
     /// 回归：编辑房名/备注后必须随 `publish_room_cfg` 发布（否则客户端/房间列表读到建房时的旧值）。
     #[test]
     fn publish_room_cfg_pushes_room_name_and_note() {
-        let start = idx("fn publish_room_cfg");
-        let after = &SRC[start..];
-        let end = after.find("\n    }\n").unwrap_or(after.len());
-        let body = &after[..end];
+        let body = fn_body("fn publish_room_cfg");
         assert!(body.contains("ROOM_NAME_KEY"), "publish_room_cfg 应发布房名");
         assert!(body.contains("ROOM_NOTE_KEY"), "publish_room_cfg 应发布备注");
     }
@@ -416,28 +419,48 @@ mod source_scan_tests {
 
     /// 回归：设置编辑器（建房 / 房内 `O`）必须兼容鼠标。
     ///
-    /// `draw_room_cfg_editor` 每帧 `clear` 并登记 `room_cfg_hitboxes`（页签/行/关闭）；
+    /// `draw_room_cfg_editor` 每帧 `clear` 并登记 `room_cfg_hitboxes`（页签/行/保存/不保存/建房）；
     /// `room_cfg_editor_input` 必须 `hits_at` 派发，且行操作用 `mouse_activate`（≠建房回车）。
     #[test]
     fn settings_editor_supports_mouse() {
-        let d = idx("fn draw_room_cfg_editor");
-        let dscope = &SRC[d..];
-        let dend = dscope.find("\n    }\n").unwrap_or(dscope.len());
-        let dbody = &dscope[..dend];
+        let dbody = fn_body("fn draw_room_cfg_editor");
         assert!(dbody.contains("room_cfg_hitboxes.clear()"), "绘制前应清空命中盒");
-        for pat in ["RoomCfgAction::Group", "RoomCfgAction::Row", "RoomCfgAction::Close"] {
+        for pat in [
+            "RoomCfgAction::Group",
+            "RoomCfgAction::Row",
+            "RoomCfgAction::Save",
+            "RoomCfgAction::Discard",
+            "RoomCfgAction::Build",
+            "RoomCfgAction::Cancel",
+        ] {
             assert!(dbody.contains(pat), "编辑器绘制应登记 {pat} 命中盒");
         }
 
-        let i = idx("fn room_cfg_editor_input");
-        let iscope = &SRC[i..];
-        let iend = iscope.find("\n    }\n").unwrap_or(iscope.len());
-        let ibody = &iscope[..iend];
+        let ibody = fn_body("fn room_cfg_editor_input");
         assert!(ibody.contains("room_cfg_hitboxes.hits_at"), "输入应派发命中盒");
         assert!(ibody.contains("mouse_activate"), "鼠标点行应走行级激活语义");
+        assert!(ibody.contains("mouse_build"), "建房应有鼠标确认（不然鼠标用户无法建房）");
+        assert!(ibody.contains("mouse_save"), "应有鼠标「保存」");
+        assert!(ibody.contains("mouse_discard"), "应有鼠标「不保存」");
+    }
+
+    /// 回归：房内编辑器关闭必须区分「保存」与「不保存」。
+    ///
+    /// 曾经只有一种关闭（直接发布）→ 想反悔也没办法。现在：`O`/保存=发布；`Esc`/不保存=回滚快照，不发布。
+    #[test]
+    fn editor_offers_save_and_discard() {
+        // 绘制：两种选择都在。
+        assert!(SRC.contains("\"保存\""), "应有「保存」按钮");
+        assert!(SRC.contains("\"不保存\""), "应有「不保存」按钮");
+        assert!(SRC.contains("\"创建房间\""), "应有「创建房间」按钮");
+        // 回滚方法存在，且只回滚不发布。
+        let body = fn_body("fn discard_room_cfg");
+        assert!(body.contains("room_cfg_snapshot.take()"), "放弃应从快照回滚");
+        assert!(!body.contains("publish_room_cfg"), "「不保存」不得发布设置");
+        // 打开时记录快照。
         assert!(
-            ibody.contains("mouse_close"),
-            "鼠标点「关闭」应与 Esc/O 同义"
+            SRC.contains("self.room_cfg_snapshot = Some((self.match_cfg.clone(), self.room_meta.clone()))"),
+            "打开编辑器时应记录 (match_cfg, room_meta) 快照"
         );
     }
 }
