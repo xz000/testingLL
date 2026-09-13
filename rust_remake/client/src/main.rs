@@ -5146,13 +5146,12 @@ impl event::EventHandler for Game {
                             self.accumulator = 0.0;
                             return Ok(());
                         }
-                        // 输入**每次 update 只上行一条**（不随追赶循环多次发送），避免抖动时输入突发；
-                        // host 只保留每条输入的最新值，多发无益且会放大产帧突发。
-                        if self.accumulator >= TICK {
+                        // 输入**每模拟 tick 上行一条**（与 host 每帧消耗 1 条一一对应）。
+                        // 注：不能改成“每次 update 只发一条”——若 client 渲染<60fps，发送率会低于 host
+                        // 产帧率，host `try_emit` 就会因缺输入而停摆（实测：sim 掉到 ~20–30Hz 且抖）。
+                        while self.accumulator >= TICK {
                             let enc = game_core::netcode::encode_player_input(&self.local_player_input());
                             let _ = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &enc);
-                        }
-                        while self.accumulator >= TICK {
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
                                 self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
                                 // 诊断（本轮加）：模拟帧间隔异常（>2 TICK）即打印——定位“~1s 一卡”是帧到达抖动还是本地卡顿。
@@ -5333,13 +5332,12 @@ impl event::EventHandler for Game {
                         self.accumulator = 0.0;
                         return Ok(());
                     }
-                    // 输入**每次 update 只上行一条**（不随追赶循环多次发送），避免抖动时输入突发。
-                    if self.accumulator >= TICK {
+                    // 输入**每模拟 tick 上行一条**（与 host 每帧消耗 1 条一一对应）；
+                    // 不能改成“每次 update 只发一条”（会因 client 帧率<60 而使 host 缺输入停摆）。
+                    while self.accumulator >= TICK {
                         let enc = game_core::netcode::encode_player_input(&self.local_player_input());
                         // 无条件上行（无论是否已收到首帧）。
                         link.upload(&enc)?;
-                    }
-                    while self.accumulator >= TICK {
                         // 收到权威帧则按权威推进（严格 lockstep，保证逐位一致）。
                         // 未收到帧【不乐观预测】——等待 host 的权威帧即可。乐观预测（4.7 阶段一）会与后续
                         // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
