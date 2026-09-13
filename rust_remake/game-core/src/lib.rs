@@ -40,4 +40,5 @@ pub fn version() -> &'static str {
 /// v9（2026-09-12）：S013A 换位/S013B 搬运改为弹体（`SwapTarget`/`CarrySelf`）；凤凰弹规格对齐 098c。
 /// v14（2026-09-13）：`Player.burning`（S012 A 燃烧冲刺，098c `Hr`）入快照（`world_ser` 每玩家 +1 字节）。
 /// v15（2026-09-13）：`Player.parry_ready`/`parry_cd`（S010 B 招架，098c `gr`/`NA`）入快照。
-pub const PROTOCOL_VERSION: u32 = 15;
+/// v16（2026-09-13）：`Player.charging`（S010 A 冲锋 `fr`，与 B 形态风步区分）入快照。
+pub const PROTOCOL_VERSION: u32 = 16;

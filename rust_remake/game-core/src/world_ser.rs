@@ -325,6 +325,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wu8(o, p.dash_active as u8);
     wvec(o, p.dash_vel);
     wu8(o, p.burning as u8);
+    wu8(o, p.charging as u8);
     wu8(o, p.parry_ready as u8);
     wfix(o, p.parry_cd);
     match p.ricochet_pending {
@@ -457,6 +458,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let dash_active = u8at(b, p)? != 0;
     let dash_vel = vecat(b, p)?;
     let burning = u8at(b, p)? != 0;
+    let charging = u8at(b, p)? != 0;
     let parry_ready = u8at(b, p)? != 0;
     let parry_cd = fixat(b, p)?;
     let ricochet_pending = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
@@ -538,6 +540,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.dash_active = dash_active;
     pl.dash_vel = dash_vel;
     pl.burning = burning;
+    pl.charging = charging;
     pl.parry_ready = parry_ready;
     pl.parry_cd = parry_cd;
     pl.contact_by_enemy = None;

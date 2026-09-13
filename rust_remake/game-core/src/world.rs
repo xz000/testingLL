@@ -640,7 +640,7 @@ impl World {
                 let d = t - p.pos;
                 if d.length() > Fix64::ZERO {
                     let nd = d.normalized();
-                    if p.windwalk_state > Fix64::ZERO {
+                    if p.windwalk_state > Fix64::ZERO && !p.charging {
                         phoenix_shots.push((i as u32, p.pos, nd));
                     } else {
                         // 098c `bO`：每 tick 冲量，18×0.5^(v/20)（v 单位/帧）。v=0 → 18/tick≈600/s；v=20/tick→9/tick。
@@ -696,10 +696,11 @@ impl World {
             // 098c `Fr[unit]`：疾风步状态（A 冲锋 / B 隐身两形态都置位）。
             if p.windwalk_state > Fix64::ZERO {
                 p.windwalk_state = (p.windwalk_state - dt).max(Fix64::ZERO);
-                // 风步结束 → 清招架就绪（098c `AA`：`gr=false`）。
+                // 风步/冲锋结束 → 清招架就绪（098c `AA`）与冲锋标志（098c `DR`）。
                 if p.windwalk_state == Fix64::ZERO {
                     p.parry_ready = false;
                     p.parry_cd = Fix64::ZERO;
+                    p.charging = false;
                 }
             }
             if p.phoenix_remaining > Fix64::ZERO {
@@ -3735,6 +3736,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             p.add_buff(BuffKind::Stealth, dur);
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
                             p.windwalk_state = Fix64::from_num(dur);
+                            // 098c `RB`：进入冲锋 A 形态（`fr=true`）。
+                            p.charging = true;
                             p.kick = Some(Kick {
                                 push_power: Fix64::from_num(150.0),
                                 push_time: Fix64::from_num(0.3),
@@ -4752,6 +4755,40 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
     (p - proj).length_squared() <= width * width
 }
 
+/// 098c `SI`/`pI` 的基础 AoE 半径（`pe = 0xA0 = 160`）；实际 = 本值 × (1 + 0.12 × 范围精通)。
+const SI_RADIUS_BASE: f64 = 160.0;
+
+/// 098c `bA`/`SI`：以 `center` 为圆心的 AoE 伤害（同 `pI`：半径 `pe×(1+.12xi)`，边缘衰减到 `qi`，乘 `Gn`）。
+fn splash_damage(
+    players: &mut [Player],
+    center: Vec2,
+    owner: u32,
+    base: Fix64,
+    radius: Fix64,
+    qi: f64,
+    damage_mult: Fix64,
+) {
+    let owner_team = players.get(owner as usize).map(|p| p.team);
+    for p in players.iter_mut() {
+        if !p.alive || p.id == owner || Some(p.team) == owner_team {
+            continue;
+        }
+        let dist = (p.pos - center).length();
+        if dist > radius {
+            continue;
+        }
+        let c_o = if radius > Fix64::ZERO {
+            1.0 - (dist / radius).to_num::<f64>()
+        } else {
+            1.0
+        };
+        let factor = qi + (1.0 - qi) * c_o;
+        let dmg = base * Fix64::from_num(factor) * damage_mult;
+        p.hp = (p.hp - p.soak_boost(dmg)).max(Fix64::ZERO);
+        p.last_hit_by = Some(owner);
+    }
+}
+
 /// 成对解析玩家圆球碰撞：把重叠的两球沿中心连线推开，避免相互穿透。
 ///
 /// **无“挤压伤害”**（098c 已实证：重叠只做分离 + 动量交换，不扣血，见 `cc79e8f`）。
@@ -4845,31 +4882,34 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                 players[i].contact_by_enemy = Some(players[j].id);
                 players[j].contact_by_enemy = Some(players[i].id);
                 if let Some(kick) = players[i].kick.take() {
-                    // ⚠ 待核（见 SKILL_STATE_AUDIT §0.6）：098c `CA` 的 `bA()` 是**受害方带 `fr`** 时的反制；
-                    // 我们这里把额外伤害挂在**攻击者带 `Stealth`** 上，方向/主体可能不对，待重新对照。
-                    // 破隐一击（098c `bA`，war3map_pretty.j:3697/3758/3764）：
-                    // 门控 `xi[id]>0` —— `xi` 是**远程精通**（非蓝量），即**只有点了远程精通**，
-                    // 隐身下接触命中才在基础伤害之外追加一笔同级伤害（`SI(... 4.6+.8*wr ...)`）。
-                    // 这同时解释了两份资料：技能说明的「单笔伤害」是未点精通时的基础值，
-                    // 098c 的额外一笔是精通带来的加成（决策记录见 SKILL_AUDIT §7.6）。
-                    // ⚠ 修正解读（见 SKILL_STATE_AUDIT §0.6）：098c `bA` 走 `SI→pI→mI→hI`，**吃 Gn**；
-                    // 而 `FX` 是「自伤」（扣自身 hp），并非加成直伤。“额外不乘 Gn + 单体”待修。
-                    let stealth_extra = players[i].has_buff(BuffKind::Stealth) && players[i].mastery[1] > 0;
-                    let dmg = kick.push_damage * damage_mult
-                        + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
+                    // 098c `CA`：命中伤害经 `mI→hI`，乘 `Gn`（= `damage_mult`）。
+                    let dmg = kick.push_damage * damage_mult;
                     players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
-                    // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
-                    // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917），在此缩放冲量大小。
-                    // （kn 碰撞系数由 push() 时长缩短承担；属性系统删除后不再有 kb_factor。）
+                    // 击退：伤害 × 受击者精通减免 × Hn（`knockback_mult`）。
                     let imp = kick.push_power
                         * Fix64::from_num(1.0 - players[j].mastery_kb_reduction())
                         * knockback_mult;
                     players[j].push(dir_b_from_a * imp, kick.push_time.to_num::<f64>());
+                    // 098c `CA` 按**攻方状态**的额外效果（见 SKILL_STATE_AUDIT §3）：
+                    // - `fr`（S010A 冲锋）→ `bA`：范围精通>0 时以攻方为圆心 AoE（×Gn）。
+                    // - `Hr`（S012A 燃烧）→ `FX` 自伤（不经 Gn）+ 若范围精通>0 且非冲锋则 AoE（×Gn）。
+                    let (apos, aid, charging, burning) =
+                        (players[i].pos, players[i].id, players[i].charging, players[i].burning);
+                    let xi = players[i].mastery[1] as f64;
+                    let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                    let qi = 0.15 * xi;
+                    if charging {
+                        if xi > 0.0 {
+                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        }
+                    } else if burning {
+                        players[i].hp = (players[i].hp - kick.push_damage).max(Fix64::ZERO);
+                        if xi > 0.0 {
+                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        }
+                    }
                     players[i].remove_buff(BuffKind::Stealth);
-                    // 098c BA（war3map_pretty.j:3771/3724-3735）：冲撞命中后施法者急停（Q=S=U=w=0），
-                    // 不再带着冲刺继续穿过目标。仅清强制位移（control）；受击者自身的击退在其后施加。
-                    // 仅 Dash（stop_on_hit）命中即停；凤凰/疾风步·冲锋/潜行踢为持续位移，命中后不停。
                     if kick.stop_on_hit {
                         players[i].control = None;
                         players[i].cur_vel = Vec2::ZERO;
@@ -4877,18 +4917,28 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     }
                 }
                 if let Some(kick) = players[j].kick.take() {
-                    // ⚠ 待核（同上看 SKILL_STATE_AUDIT §0.6）。
-                    // 同上：破隐一击（098c bA）—— 需施法者具备远程精通（xi>0）才追加。
-                    // ⚠ 修正解读（同上看 SKILL_STATE_AUDIT §0.6）：“额外不乘 Gn”是误读。
-                    let stealth_extra = players[j].has_buff(BuffKind::Stealth) && players[j].mastery[1] > 0;
-                    let dmg = kick.push_damage * damage_mult
-                        + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
+                    let dmg = kick.push_damage * damage_mult;
                     players[i].hp = (players[i].hp - players[i].soak_boost(dmg)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
                     let imp = kick.push_power
                         * Fix64::from_num(1.0 - players[i].mastery_kb_reduction())
                         * knockback_mult;
                     players[i].push(-dir_b_from_a * imp, kick.push_time.to_num::<f64>());
+                    let (apos, aid, charging, burning) =
+                        (players[j].pos, players[j].id, players[j].charging, players[j].burning);
+                    let xi = players[j].mastery[1] as f64;
+                    let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                    let qi = 0.15 * xi;
+                    if charging {
+                        if xi > 0.0 {
+                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        }
+                    } else if burning {
+                        players[j].hp = (players[j].hp - kick.push_damage).max(Fix64::ZERO);
+                        if xi > 0.0 {
+                            splash_damage(players, apos, aid, kick.push_damage, radius, qi, damage_mult);
+                        }
+                    }
                     players[j].remove_buff(BuffKind::Stealth);
                     if kick.stop_on_hit {
                         players[j].control = None;
@@ -8490,6 +8540,40 @@ mod tests {
     }
     // ===== B4 形态切换（098c sC，D13 #7） =====
 
+    /// S012 A 燃烧冲刺撞敌人：命中 + **自伤**（`FX` 不经 Gn）+ 熄灭（098c `CA` 的 `Hr[nr]` 分支）。
+    #[test]
+    fn s012_burning_dash_self_damage_on_enemy_contact() {
+        let mut w = World::new(2, 777);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].team = 0;
+        w.players[1].team = 1;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        w.players[1].move_target = None;
+        let hp0_before = w.players[0].hp;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut burned = false;
+        for _ in 0..120 {
+            if w.players[0].burning {
+                burned = true;
+            }
+            if w.players[0].kick.is_none() {
+                break;
+            }
+            w.step(none.clone(), dt);
+        }
+        assert!(burned, "S012 A 冲刺期间应处于燃烧状态");
+        assert!(w.players[0].hp < hp0_before, "燃烧冲刺撞敌人应自伤（FX）");
+        assert!(!w.players[0].burning, "命中后应烧尽（熄灭）");
+    }
+
     /// S010 双形态：冲锋（A）=移速 buff+接触踢击；隐身（B）=隐身+较慢移速。
     #[test]
     fn s010_form_a_charge_vs_b_invisibility() {
@@ -8512,14 +8596,15 @@ mod tests {
             PlayerInput { cast: Some((SkillId::S010, None)), ..Default::default() },
         ], dt);
         assert!(world2.players[0].has_buff(BuffKind::Stealth), "A 形态（冲锋）也应有隐身（098c RB）");
+        assert!(world2.players[0].charging, "A 形态应置 `charging`（098c `fr`）");
+        assert!(!world.players[0].charging, "B 形态不应置 `charging`");
         assert!(world2.players[0].kick.is_some(), "A 形态应有接触踢击窗口");
         let kick_dmg = world2.players[0].kick.as_ref().unwrap().push_damage.to_num::<f64>();
         assert!((kick_dmg - 5.4).abs() < 0.1, "冲锋踢击伤害应 5.4+0.2947L（L1=5.4，098c 背刺），实际 {kick_dmg}");
     }
 
-    /// S010 破隐一击（098c `bA`）**由远程精通门控**：`xi[id]>0` 才追加一笔同级伤害。
-    /// 未点远程精通时只有基础单笔伤害（与技能说明「撞向敌人产生伤害」一致）；
-    /// 点了远程精通后隐身命中≈双倍。
+    /// S010A 冲锋的额外 AoE（098c `bA`）**由范围精通门控**：`xi[id]>0` 才以攻方为圆心再放一个 AoE。
+    /// 未点精通只有基础接触伤害；点了精通额外 AoE（半径 160×(1+.12xi)、边缘衰减）——对同一目标按距离打折，故**略小于两倍**。
     #[test]
     fn s010_break_strike_requires_range_mastery() {
         let run = |range_mastery: u8| -> Fix64 {
@@ -8553,10 +8638,12 @@ mod tests {
         let d_bonus = Fix64::from_num(100.0) - hp_with_mastery;
         assert!(d_plain > Fix64::ZERO, "无精通也应有基础接触伤害，实际 {:?}", d_plain);
         assert!(d_bonus > d_plain,
-            "有远程精通应追加破隐一击：{:?} 应 > {:?}", d_bonus, d_plain);
-        // 追加一笔同级伤害 → 约为两倍
-        assert!((d_bonus - d_plain * Fix64::from_num(2.0)).abs() < d_plain * Fix64::from_num(0.15),
-            "有远程精通的伤害应≈基础两倍：{:?} vs {:?}", d_bonus, d_plain);
+            "有范围精通应追加 `bA` AoE：{:?} 应 > {:?}", d_bonus, d_plain);
+        // `bA` 是以攻方为圆心的 AoE（半径 160×(1+.12xi)，边缘衰减）：命中同一目标时按距离打折，略小于 2 倍。
+        assert!(d_bonus < d_plain * Fix64::from_num(1.99),
+            "AoE 对同一目标有距离衰减，应 < 2 倍：{:?} vs {:?}", d_bonus, d_plain);
+        assert!(d_bonus > d_plain * Fix64::from_num(1.3),
+            "有范围精通应有明显的额外 AoE 伤害：{:?} vs {:?}", d_bonus, d_plain);
     }
 
     /// 疾风步·隐身（B 形态，098c IB / 文档「潜行」）：接触敌人偷取生命 `0.6+0.1×L` 且**不打断隐身**。
