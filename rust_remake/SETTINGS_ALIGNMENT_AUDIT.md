@@ -173,10 +173,10 @@
   - `[core]` `grant_opening_gold` 只发 `starting_gold`；`gold_per_round` 留在 `finish_round`。
   - `[UI]` 无。
   - `[test]` 同步 `meta.rs` 多处期望值（首商店 20 而非 30）；`round_start_gives_participation_gold` 改名 `opening_grants_starting_gold_only`。
-- [ ] **A3 `gold_rewards_enabled`**
-  - `[core]` 按 098c `-no reward` 把 `Mo/po/lo` 视为 0（点数不变）。
-  - `[UI]` 改 `settings_ui::hint(GoldRewardsEnabled)` 文案为精确语义。
-  - `[test]` 关掉后这些奖励为 0。
+- [x] **A3 `gold_rewards_enabled` ✅ 已完成**
+  - `[core]` 按 098c `-no reward`：`kill_gold()/win_gold()/damage_gold()` 关闭时归零（`lo/Mo/po`）；点数、助攻金、每轮金不变。
+  - `[UI]` `settings_ui::hint(GoldRewardsEnabled)` 文案改为精确语义。
+  - `[test]` `no_reward_disables_kill_win_damage_gold_only`。
 
 ### 阶段 B — 去冗余 / 去非 098c（含 UI 撤行 + schema bump）
 - [ ] **B1 删 `place_rewards`**
@@ -221,7 +221,7 @@
 
 1. **S1（阶段 A1）✅ 已完成**：`match_config()` 直接用完整 `match_cfg`（`authored_match_cfg`），
    国王模式强制两队派生保留。（core 无改；UI 无改，但此后 UI 各行真正生效。）
-2. **S4 + A3**：S4 ✅ 已完成（参与奖时点）；A3（`-no reward`）待做。
+2. **S4 + A3 ✅ 已完成**：参与奖时点（只发初始金）+ `-no reward` 语义（只清击杀/胜利/伤害金）。
 3. **B2 → B1**（含 UI 撤行/文案 + schema bump）：先合并时长字段，再删名次金。
 4. **C1~C3**：伤害/击退/岩浆倍率接进结算（core + UI 保留行）。
 5. **C5~C7 + D2~D4**：柱子/冰面 + 地图形状（`arena_shape` 行保留但**置灰**只显示“圆形”，不接线；远期再扩）。
@@ -241,4 +241,6 @@
 - 2026-09-13：修正上条：`arena_shape` 行**保留但置灰**（只显示“圆形”、不可改），
   作为远期形状扩展的占位（用户：远期计划，先置灰/单一选项即可）。
 - 2026-09-13：**A1/S1 已完成**（`match_config()` 改用完整 `match_cfg` + 国王两队派生；新增回归测试）。
-- 2026-09-13：**A2/S4 已完成**（开局只发初始金；`qo` 留在回合结束）；game-core 234 测试绿。
+- 2026-09-13：**A2/S4 已完成**（开局只发初始金；`qo` 留在回合结束）。
+- 2026-09-13：**A3 已完成**（`-no reward` = 关击杀/胜利/伤害金（lo/Mo/po），点数与助攻/每轮金不变）；
+  game-core 235 + client+steam 48 测试绿。**阶段 A 全部完成**。
