@@ -484,6 +484,12 @@ struct Game {
     present_hit_cooldown: f32,
     /// 表现层音效：本场是否已播「胜利」。
     present_victory_played: bool,
+    /// 表现层：本场累计表现时钟（秒），用于多重击杀窗口判定。
+    present_clock: f32,
+    /// 表现层：各玩家上次击杀时刻（098c `Cn`；窗口 = `Wn` = 9s）。
+    present_last_kill_at: Vec<f32>,
+    /// 表现层：各玩家窗口内连续击杀数（098c `dn[VI+$C]`）。
+    present_multikill: Vec<u32>,
     /// 渲染插值：上一 sim 步的各玩家位置（索引 = player id）。绘制时在 `prev → cur` 间按 alpha 插值，
     /// 消除帧到达抖动带来的画面跳动（纯渲染，不进快照）。
     prev_player_pos: Vec<Vec2>,
@@ -1076,6 +1082,9 @@ impl Game {
             present_streak: Vec::new(),
             present_hit_cooldown: 0.0,
             present_victory_played: false,
+            present_clock: 0.0,
+            present_last_kill_at: Vec::new(),
+            present_multikill: Vec::new(),
             prev_player_pos: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
@@ -4526,6 +4535,7 @@ impl Game {
             b.life > 0.0
         });
         self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
+        self.present_clock += dt;
 
         let n = self.world.players.len();
         // 世界重建（人数变化）→ 重新采样，不产生事件。
@@ -4537,6 +4547,12 @@ impl Game {
             self.present_round = self.world.round_number;
             self.present_prev_hp = self.world.players.iter().map(|p| p.hp.to_num::<f32>()).collect();
             self.present_prev_alive = self.world.players.iter().map(|p| p.alive).collect();
+            // 新一场（回到第 1 局）：重置胜利标记，使下一场终局能再播；跨局清空多重击杀窗口。
+            if self.world.round_number <= 1 {
+                self.present_victory_played = false;
+            }
+            self.present_last_kill_at = vec![-1e9; self.world.players.len()];
+            self.present_multikill = vec![0; self.world.players.len()];
             self.float_texts.clear();
             return;
         }
@@ -4585,6 +4601,17 @@ impl Game {
                         self.audio.play(cue);
                     }
                     self.push_banner(text, Color::from_rgb(255, 150, 90));
+                    // 098c 多重击杀：同一击杀者 9s（`Wn`）内的连续击杀数（2/3/4/5/6 → Double..Monster）。
+                    let ki = k as usize;
+                    if ki < self.present_last_kill_at.len() {
+                        let within = self.present_clock - self.present_last_kill_at[ki] <= MULTIKILL_WINDOW_SECS;
+                        self.present_multikill[ki] = if within { self.present_multikill[ki] + 1 } else { 1 };
+                        self.present_last_kill_at[ki] = self.present_clock;
+                        if let Some((cue, label)) = multikill_cue(self.present_multikill[ki]) {
+                            self.audio.play(cue);
+                            self.push_banner(label.to_string(), Color::from_rgb(255, 120, 80));
+                        }
+                    }
                 } else {
                     let vl = self.player_label(victim);
                     self.push_banner(format!("{vl} 阵亡"), Color::from_rgb(180, 180, 190));
@@ -4628,6 +4655,9 @@ impl Game {
         self.present_first_blood = false;
         self.present_victory_played = false;
         self.present_hit_cooldown = 0.0;
+        self.present_clock = 0.0;
+        self.present_last_kill_at = vec![-1e9; self.world.players.len()];
+        self.present_multikill = vec![0; self.world.players.len()];
         self.float_texts.clear();
         self.banners.clear();
     }
@@ -7950,6 +7980,8 @@ struct Banner {
 const FLOAT_TEXT_LIFE: f32 = 1.0;
 /// 横幅存活秒数。
 const BANNER_LIFE: f32 = 2.6;
+/// 098c 多重击杀窗口（`Wn` = 9 秒）：同一击杀者在该窗口内的连续击杀计数。
+const MULTIKILL_WINDOW_SECS: f32 = 9.0;
 /// 触发飘字的最小血量变化（过滤回血等微小变化）。
 const PRESENTATION_MIN_DELTA: f32 = 1.0;
 /// 飘字/横幅数量上限（防刷屏）。
@@ -7985,6 +8017,20 @@ fn spree_cue(count: u32) -> Option<audio::AudioCue> {
         c if c > 10 => Some(AnnSpreeHoly),
         _ => None,
     }
+}
+
+/// 多重击杀计数 → 098c 音效 + 屏幕文本（1 不算）。纯函数，便于单测。
+/// 对齐 098c `dn[VI+$C]`：2=Double,3=Multi,4=Mega,5=Ultra,>=6=Monster（`Qx/tx/sx/Tx/Sx`）。
+fn multikill_cue(count: u32) -> Option<(audio::AudioCue, &'static str)> {
+    use audio::AudioCue::*;
+    Some(match count {
+        2 => (AnnDoubleKill, "Double Kill"),
+        3 => (AnnMultiKill, "Multi Kill"),
+        4 => (AnnMegaKill, "Mega Kill"),
+        5 => (AnnUltraKill, "Ultra Kill"),
+        c if c >= 6 => (AnnMonsterKill, "Monster Kill"),
+        _ => return None,
+    })
 }
 
 /// 商店页一行（列表 / 键盘选择 / 详情面板共用同一构造）。
@@ -8585,6 +8631,19 @@ mod tests {
         assert_eq!(spree_cue(10), Some(audio::AudioCue::AnnSpree10));
         assert_eq!(spree_cue(11), Some(audio::AudioCue::AnnSpreeHoly));
         assert_eq!(spree_cue(99), Some(audio::AudioCue::AnnSpreeHoly));
+    }
+
+    /// 多重击杀映射（098c `dn[VI+$C]`，2..6）。
+    #[test]
+    fn multikill_cue_matches_098c_thresholds() {
+        use super::multikill_cue;
+        assert_eq!(multikill_cue(1), None);
+        assert_eq!(multikill_cue(2), Some((audio::AudioCue::AnnDoubleKill, "Double Kill")));
+        assert_eq!(multikill_cue(3), Some((audio::AudioCue::AnnMultiKill, "Multi Kill")));
+        assert_eq!(multikill_cue(4), Some((audio::AudioCue::AnnMegaKill, "Mega Kill")));
+        assert_eq!(multikill_cue(5), Some((audio::AudioCue::AnnUltraKill, "Ultra Kill")));
+        assert_eq!(multikill_cue(6), Some((audio::AudioCue::AnnMonsterKill, "Monster Kill")));
+        assert_eq!(multikill_cue(9), Some((audio::AudioCue::AnnMonsterKill, "Monster Kill")));
     }
 
     /// 成长页「购买」按钮的禁用原因：金币不足 / 已满级。
