@@ -1122,12 +1122,27 @@ impl World {
                     let overlap = min - dist;
                     p.pos += dir * overlap;
                     hit_wall = true;
+                    // 098c：撞障碍是**逐轴**响应（war3map_pretty.j 8640-8730 对 X/Y 各自 `RA(...)` 检查）：
+                    // 哪个轴朝向障碍就把那个轴的速度清零，**另一轴保留** → 斜撞沿墙滑行/偏折；
+                    // `xv>0` 的 mover 才反弹（+反射），其余清零。旧实现（接触即 `control = None`）会整体停死。
+                    // 用逐轴而非“沿法线投影”：圆形障碍的法线投影会保留一个指向墙内的切向 +x 分量，导致逐渐穿墙。
+                    if let Some(c) = p.control.as_mut() {
+                        if c.vel.x * dir.x < Fix64::ZERO {
+                            c.vel.x = Fix64::ZERO;
+                        }
+                        if c.vel.y * dir.y < Fix64::ZERO {
+                            c.vel.y = Fix64::ZERO;
+                        }
+                    }
+                    if p.dash_active {
+                        if p.dash_vel.x * dir.x < Fix64::ZERO {
+                            p.dash_vel.x = Fix64::ZERO;
+                        }
+                        if p.dash_vel.y * dir.y < Fix64::ZERO {
+                            p.dash_vel.y = Fix64::ZERO;
+                        }
+                    }
                 }
-            }
-            // 098c：强制位移（冲撞/击退）撞墙即截断（不再沿墙滑行到 dur 结束）。
-            // 仅清 control；kick 窗口按自身计时自然结束（冲撞撞墙后若身旁有敌仍可触发接触踢击）。
-            if hit_wall && p.control.is_some() {
-                p.control = None;
             }
             // E2b 潜行踢·连推：携带 kick 又撞到障碍 → 排一个 0.3s 后的重新踢击（若总窗口还有）。
             if hit_wall && p.ricochet_window > Fix64::ZERO && p.ricochet_kick.is_some() {
@@ -7017,9 +7032,10 @@ mod tests {
             "4 级精通击退应≈×0.9，d4={:?} d0={:?}", d4, d0);
     }
 
-    /// S012 冲撞：撞墙截断（098c：强制位移撞障碍即停，不沿墙滑行到 dur 结束）。
+    /// S012 冲撞：正面撞墙 → 停止在障碍前（098c 逐轴：法向分量归零，无切向则整体停住），
+    /// 持续时长自然结束后 `control` 清空。
     #[test]
-    fn s012_dash_truncates_at_obstacle() {
+    fn s012_dash_stops_at_obstacle_head_on() {
         let mut world = World::new(2, 9584);
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -7043,7 +7059,49 @@ mod tests {
         let max_x = d60(5.0) - Fix64::from_num(obs_r) - world.players[0].radius;
         assert!(world.players[0].pos.x <= max_x + Fix64::from_num(3.0),
             "应撞墙截断停在障碍前，x={:?} 上限={:?}", world.players[0].pos.x, max_x);
-        assert!(world.players[0].control.is_none(), "撞墙后强制位移应截断（control 清空）");
+        assert!(world.players[0].control.is_none(), "撞墙后持续时长自然结束，control 应已清空");
+    }
+
+    /// S012 冲撞：**斜撞**障碍 → 沿墙滑行（098c 逐轴响应：清零法向、保留切向），
+    /// 而不是像旧实现那样整体清掉强制位移（`control=None`）停死。
+    #[test]
+    fn s012_dash_slides_along_obstacle_at_angle() {
+        let mut world = World::new(2, 4242);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人在远处，避免途中碰人。
+        world.players[1].pos = Vec2::new(d60(30.0), d60(30.0));
+        world.players[1].move_target = None;
+        // x=2m 处半径 0.5m 的障碍，法向为 +x。
+        let obs = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.obstacles.push(Obstacle::new(obs, 30.0));
+        // 斜向强制位移：x 快、y 慢 → 撞上后应保留 y 分量沿墙滑行。
+        world.players[0].push(
+            Vec2::new(Fix64::from_num(1300.0), Fix64::from_num(400.0)),
+            1.0,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..10 {
+            world.step(none.clone(), dt);
+        }
+        let p = &world.players[0];
+        // 未钻入障碍（圆心距 >= 双方半径之和 - 容差）
+        let sep = (p.pos - obs).length();
+        let min_sep = Fix64::from_num(30.0) + p.radius;
+        assert!(
+            sep >= min_sep - Fix64::from_num(2.0),
+            "不应钻入障碍：圆心距={:?} 需>={:?}",
+            sep,
+            min_sep
+        );
+        assert!(
+            p.pos.y > Fix64::from_num(20.0),
+            "斜撞应沿墙滑行（保留切向），y={:?}",
+            p.pos.y
+        );
+        assert!(p.control.is_some(), "沿墙滑行时强制位移不应被整体清掉");
     }
 
     /// S013A 移形换位（098c `MB`）：**弹体**命中敌人 → 双方互换位置，弹体销毁。

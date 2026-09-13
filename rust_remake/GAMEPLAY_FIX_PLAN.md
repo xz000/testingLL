@@ -1,6 +1,6 @@
 # 玩法问题修复计划（2026-09-13）
 
-> 本轮双机实测发现两个玩法问题 + 一个已知抖动问题的收尾。本文是**修复规划**，未改代码。
+> 状态：**Bug A / Bug B 已修复**（提交见文末）。仍在的待办：联机抖动（见第 0 节，待讨论）。
 > 关联：`FRAME_SYNC_ANALYSIS.md`（抖动）、`JASS_AUDIT_098c.md`、`PORT_098B_DECISIONS.md`。
 
 ---
@@ -55,7 +55,14 @@ if let Some(t) = self.player_target {
 > 但它是唯一会把「移动指令」永久清掉的客户端路径，且已被证实会在到达/定身/施法时清除。
 > 若用户实测仍复现，很可能是某个**技能位移**路径让 `move_target` 短暂为 None。
 
-### 修复方案（推荐）
+### 修复方案
+### 已实施（Bug A）
+已改为纯函数 `Game::should_clear_player_target(accepted, in_control, dashing, pos, target)`：
+- **强制位移/冲刺期间（`control.is_some()` / `dash_active`）绝不清**；
+- 仅在“已接受过该目标 + 未位移 + 距目标 ≤ `PLAYER_TARGET_ARRIVE_EPS`(12 世界单位)”时清。
+- 单测 `player_target_clear_requires_arrival_and_no_displacement`（含击退中/冲刺中不清这两个回归断言）。
+
+（以下为原设计方案，保留供参考）
 在客户端把「清除」条件收紧为**只在真正到达时**：
 
 1. **强制位移期间不清**：`p.control.is_none() && !p.dash_active` 才允许清（直接排除击退/冲刺/冲锋）。
@@ -76,7 +83,7 @@ if let Some(t) = self.player_target {
 
 ---
 
-## 2. Bug B：冲撞撞柱子的表现与 098c 不一致（已初步核实 JASS）
+## 2. Bug B：冲撞撞柱子的表现与 098c 不一致（已修复）
 
 ### 当前实现
 `game-core/src/world.rs::resolve_obstacles`：把玩家推出障碍后，只要 `hit_wall && control.is_some()` 就
@@ -129,6 +136,13 @@ endif
 5. 场地边界：夹取 + 速度×0.5 反向（若我们尚未实现）。
 6. 保留 E2b 潜行踢·连推的 `ricochet` 分支（撞墙排重踢），它与上述独立。
 
+### 已实施（Bug B）
+`resolve_obstacles` 改为**逐轴**响应：对 X/Y 各自判断速度是否指向障碍（`vel.axis * dir.axis < 0`），
+是则**只清该轴速度**、保留另一轴 → 斜撞沿墙滑行；不再因接触清 `control`。同样处理 `dash_active` 的 `dash_vel`。
+- 未采用“沿法线投影”：圆形障碍的法线投影会保留一个指向墙内的切向 +x 分量，导致逐渐穿墙；098c 本身就是逐轴网格检查。
+- 测试：原 `s012_dash_truncates_at_obstacle` 重命名为 `s012_dash_stops_at_obstacle_head_on`（正面仍停在障碍前）；
+  新增 `s012_dash_slides_along_obstacle_at_angle`（斜撞保留切向、不钻入障碍、`control` 不被整体清掉）。
+
 ### 测试改动
 - **替换** `s012_dash_truncates_at_obstacle`（它钉住的“整体截断”与 JASS 冲突）：
   - 正面撞柱：若该 mover 可反弹 → 断言 `vel` 反向（或至少不再朝原方向）；若不可 → 断言法向分量清零、切向保留。
@@ -143,12 +157,9 @@ endif
 
 ## 3. 建议执行顺序
 
-1. **Bug A**（客户端清除条件收紧，纯逻辑 + 单测，低风险）——先修，玩家感知直接。
-2. **Bug B**：
-   a. 先在 JASS 里定位 S012 施法者冲刺的 `nv`/`xv`（确认反弹 vs 分轴滑行）；
-   b. 改 `resolve_obstacles` 为分轴响应；替换/新增测试；
-   c. 回归 `control` 相关全部 `game-core` 测试。
-3. **抖动**：如仍不可接受，另开「渲染插值」规划（不增加输入延迟）；否则暂接受。
+- ✅ **Bug A**（客户端清除条件收紧 + 单测）。
+- ✅ **Bug B**（`resolve_obstacles` 逐轴响应；替换/新增测试）。
+- ⬜ **抖动**：如仍不可接受，另开「渲染插值」规划（不增加输入延迟）；否则暂接受。
 
 ---
 
