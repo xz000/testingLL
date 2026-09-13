@@ -3,6 +3,7 @@
 > 目标：给表现层 P2（音效）一份**可施工**清单，并规划承载「音量/静音」的**主菜单设置界面**。
 > **本清单直接来自 098c JASS 实证**（`war3map_pretty.j` 的 `CreateSound`/`StartSound`），是权威来源。
 > 关联：`PRESENTATION_PLAN.md`（P1–P6）· `HANDOVER.md` · `JASS_AUDIT_098c.md`。
+> **录制用清单与台词（中文/English）：见 [`AUDIO_SCRIPT.md`](AUDIO_SCRIPT.md)。**
 > 纪律：音效**纯客户端本地**，不进 `World`/快照，不改 `PROTOCOL_VERSION`；同帧同类去重；缺素材静默降级。
 
 ---

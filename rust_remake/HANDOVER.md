@@ -130,6 +130,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `LOBBY_UI_PLAN.md` | 大厅重构动机（已被 UI_MASTER_PLAN 取代，保留来龙去脉） |
 | `PRESENTATION_PLAN.md` | 表现层 P1–P6 |
 | `AUDIO_PLAN.md` | **音效清单（098c 实证）+ 本地设置 + 主菜单设置界面规划（P2）** |
+| `AUDIO_SCRIPT.md` | **占位音用途清单 + 播报台词（中文/English）—— 录制用** |
 | `FRAME_SYNC_ANALYSIS.md` | **联机卡顿分析**（房间信息轮询 + 帧同步；快照队头阻塞等） |
 | `FRAME_SYNC_INPUT_DELAY_DESIGN.md` | **主机固定节拍 + 输入延迟 设计草案**（未实施） |
 | `FRAME_SYNC_OPTIONS_COMPARE.md` | **抖动方案对比**（D 帧 vs held-continuous vs 渲染插值） |
