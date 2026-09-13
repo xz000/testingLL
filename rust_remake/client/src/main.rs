@@ -440,6 +440,9 @@ struct Game {
     present_first_blood: bool,
     /// 表现层：本场各玩家**当前连杀**（击杀 +1、阵亡清零）。
     present_streak: Vec<u32>,
+    /// 渲染插值：上一 sim 步的各玩家位置（索引 = player id）。绘制时在 `prev → cur` 间按 alpha 插值，
+    /// 消除帧到达抖动带来的画面跳动（纯渲染，不进快照）。
+    prev_player_pos: Vec<Vec2>,
     /// 世界坐标 → 屏幕坐标的缩放
     scale: f32,
     /// 相机偏移（世界原点 (0,0) 在屏幕上的位置）：每帧由 `cam` 推算，绘制时世界点 = world*scale + offset。
@@ -1074,6 +1077,7 @@ impl Game {
             present_round: 0,
             present_first_blood: false,
             present_streak: Vec::new(),
+            prev_player_pos: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             cam: Point2 { x: 0.0, y: 0.0 },
@@ -2283,6 +2287,13 @@ impl Game {
         }
     }
 
+    /// 推进世界一步，并在推进前记下各玩家位置（供绘制插值使用）。
+    /// 所有 `world.step` 调用点都走这里，保证 `prev_player_pos` 与最近的两次 sim 状态对应。
+    fn step_sim(&mut self, inputs: Vec<game_core::world::PlayerInput>, dt: Fix64) {
+        self.prev_player_pos = self.world.players.iter().map(|p| p.pos).collect();
+        self.world.step(inputs, dt);
+    }
+
     /// 「右键目标是否应清除（停止每帧重发）」的纯判定。
     ///
     /// 仅当：已接受过该目标（`accepted`）、**当前未处于强制位移/冲刺**（`in_control`/`dashing` 均为假）、
@@ -2575,12 +2586,24 @@ impl Game {
 
         // 玩家圆与 HP 条
         let me_idx = self.self_index();
-        for p in self.world.players.iter() {
+        // 渲染插值：两次 sim 步之间按 alpha 插值玩家位置，抹平帧到达抖动（纯渲染，不改世界）。
+        let it_alpha = if self.meta.phase == game_core::meta::MatchPhase::Fighting {
+            (self.accumulator / TICK).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let it_alpha_fix = Fix64::from_num(it_alpha);
+        for (pi, p) in self.world.players.iter().enumerate() {
             if !p.alive {
                 continue;
             }
-            let fx = p.pos.x.to_num::<f32>() * self.scale + self.offset.x;
-            let fy = p.pos.y.to_num::<f32>() * self.scale + self.offset.y;
+            let cur = p.pos;
+            let shown = match self.prev_player_pos.get(pi) {
+                Some(prev) if it_alpha < 1.0 => *prev + (cur - *prev) * it_alpha_fix,
+                _ => cur,
+            };
+            let fx = shown.x.to_num::<f32>() * self.scale + self.offset.x;
+            let fy = shown.y.to_num::<f32>() * self.scale + self.offset.y;
             let r = p.radius.to_num::<f32>() * self.scale;
             let mut color = player_color(p.id, me_idx);
             // B6 队伍色（D13 #17）：分队模式下同队玩家共享队色（蓝/红），FFA 保持玩家色。
@@ -5120,7 +5143,7 @@ impl event::EventHandler for Game {
                                             game_core::netcode::decode_player_input(&bytes).unwrap_or_default();
                                     }
                                 }
-                                self.world.step(inputs, ticking);
+                                self.step_sim(inputs, ticking);
                                 self.note_self_cast();
                                 // 诊断：host 产帧间隔（>2 TICK 才打印；同时计入 5s 统计窗口）。
                                 {
@@ -5299,7 +5322,7 @@ impl event::EventHandler for Game {
                                             game_core::netcode::decode_player_input(&bytes).unwrap_or_default();
                                     }
                                 }
-                                self.world.step(inputs, ticking);
+                                self.step_sim(inputs, ticking);
                                 self.note_self_cast();
                                 // 诊断：推进到哪一帧（不再逐帧打印，改由 5s [stat] 汇总）。
                                 let last = cli.expect_seq().saturating_sub(1);
@@ -5422,7 +5445,7 @@ impl event::EventHandler for Game {
                                         game_core::netcode::decode_player_input(&bytes).unwrap_or_default();
                                 }
                             }
-                            self.world.step(inputs, ticking);
+                            self.step_sim(inputs, ticking);
                             self.note_self_cast();
                             // 周期保存快照（供掉线者重连时拉取当前状态接回）。
                             self.host_frame_count += 1;
@@ -5479,6 +5502,8 @@ impl event::EventHandler for Game {
                         // 收到权威帧则按权威推进（严格 lockstep，保证逐位一致）。
                         // 未收到帧【不乐观预测】——等待 host 的权威帧即可。乐观预测（4.7 阶段一）会与后续
                         // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
+                        // 渲染插值：局域网 client 由 `link.step_frame` 内部推进世界，故先记上一帧位置。
+                        self.prev_player_pos = self.world.players.iter().map(|p| p.pos).collect();
                         if link.step_frame(&mut self.world, ticking)?.is_some() {
                             self.note_self_cast();
                             // 诊断（本轮加）：模拟帧间隔异常（>2 TICK）打印（局域网路径）。
@@ -5528,11 +5553,11 @@ impl event::EventHandler for Game {
                             if (me as usize) < n {
                                 inputs[me as usize] = self.local_player_input();
                             }
-                            self.world.step(inputs, ticking);
+                            self.step_sim(inputs, ticking);
                             self.note_self_cast();
                         } else {
                             let inputs = self.compute_inputs();
-                            self.world.step(inputs, ticking);
+                            self.step_sim(inputs, ticking);
                             self.note_self_cast();
                         }
                         self.accumulator -= TICK;
