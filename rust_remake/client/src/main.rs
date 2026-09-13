@@ -45,6 +45,15 @@ mod layout;
 const BOTS: u32 = 7;
 /// 固定步长模拟（帧率）
 const TICK: f64 = 1.0 / 60.0;
+/// 单次 `update` 最多追赶的模拟步数：卡顿后排空 accumulator 时，避免一帧内连续 step 十几步
+/// （呈现为“卡一下 → 快进一下”）。超出部分直接丢弃；推进仍严格按收到的权威帧，不影响确定性。
+const MAX_CATCHUP_STEPS: usize = 4;
+
+/// 固定步长累加器：加入本帧时间（上限 0.25s）并夹到 [`MAX_CATCHUP_STEPS`] 步以内。
+/// 纯函数，便于单测。
+fn accumulate_tick(acc: f64, dt: f64) -> f64 {
+    (acc + dt.min(0.25)).min(MAX_CATCHUP_STEPS as f64 * TICK)
+}
 /// 施法按键的「冷却预输入余量」（秒）：帧同步下客户端本地世界可能落后/领先权威若干帧，
 /// 只在 CD 剩余 <= 该值时响应按键（显示瞄准/施法），避免 CD 中按字母出现瞄准线误导玩家。
 const CAST_READY_LEAD_SECS: f64 = 0.2;
@@ -4860,7 +4869,7 @@ impl event::EventHandler for Game {
                 }
                 // 每帧轮询输入（技能键 / 鼠标）
                 self.poll_input(ctx);
-                self.accumulator += dt.min(0.25);
+                self.accumulator = accumulate_tick(self.accumulator, dt);
                 let ticking = Fix64::from_num(TICK);
                 #[cfg(feature = "steam")]
                 {
@@ -5109,10 +5118,13 @@ impl event::EventHandler for Game {
                             self.accumulator = 0.0;
                             return Ok(());
                         }
-                        while self.accumulator >= TICK {
-                            let me = self.local_player_input();
-                            let enc = game_core::netcode::encode_player_input(&me);
+                        // 输入**每次 update 只上行一条**（不随追赶循环多次发送），避免抖动时输入突发；
+                        // host 只保留每条输入的最新值，多发无益且会放大产帧突发。
+                        if self.accumulator >= TICK {
+                            let enc = game_core::netcode::encode_player_input(&self.local_player_input());
                             let _ = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &enc);
+                        }
+                        while self.accumulator >= TICK {
                             if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
                                 self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
                                 let n = self.world.players.len();
@@ -5153,7 +5165,7 @@ impl event::EventHandler for Game {
                                     self.accumulator = 0.0;
                                     break;
                                 }
-                                break; // 等权威帧（不扣 accumulator，避免时间凭空流逝导致分叉）
+                                break; // 等权威帧（不扣 accumulator；上限由 accumulate_tick 夹住，避免无限增长后一帧快进过多）
                             }
                         }
                         self.steam_cli_ls = Some(cli);
@@ -5284,11 +5296,13 @@ impl event::EventHandler for Game {
                         self.accumulator = 0.0;
                         return Ok(());
                     }
-                    while self.accumulator >= TICK {
-                        let me = self.local_player_input();
-                        let enc = game_core::netcode::encode_player_input(&me);
+                    // 输入**每次 update 只上行一条**（不随追赶循环多次发送），避免抖动时输入突发。
+                    if self.accumulator >= TICK {
+                        let enc = game_core::netcode::encode_player_input(&self.local_player_input());
                         // 无条件上行（无论是否已收到首帧）。
                         link.upload(&enc)?;
+                    }
+                    while self.accumulator >= TICK {
                         // 收到权威帧则按权威推进（严格 lockstep，保证逐位一致）。
                         // 未收到帧【不乐观预测】——等待 host 的权威帧即可。乐观预测（4.7 阶段一）会与后续
                         // 权威帧叠加、导致本地 World 与 host 分叉（若要乐观手感需配完整回滚，见 LATENCY_MASKING 阶段二）。
@@ -5310,7 +5324,7 @@ impl event::EventHandler for Game {
                                 return Ok(());
                             }
                             // 本 tick 不推进，等权威帧补齐（帧会由 lockstep 补发/排队，稍后追上）。
-                            // 注意：不扣 accumulator，下一帧继续尝试收帧，避免时间凭空流逝导致分叉。
+                            // 注意：不扣 accumulator；上限由 accumulate_tick 夹住，避免无限增长后一帧快进过多。
                             break;
                         }
                     }
@@ -8468,6 +8482,18 @@ mod tests {
         // 金币不足
         p.gold = 0;
         assert_eq!(Game::shop_buy_block(&p, &rows[0]), Some("金币不足"));
+    }
+
+    /// 累加器封顶：卡顿后不能一帧内快进超过 MAX_CATCHUP_STEPS 步。
+    #[test]
+    fn accumulate_tick_caps_catchup() {
+        let cap = super::MAX_CATCHUP_STEPS as f64 * super::TICK;
+        let a = super::accumulate_tick(0.0, super::TICK);
+        assert!((a - super::TICK).abs() < 1e-12, "正常一帧应约一个 TICK，实际 {a}");
+        assert!((super::accumulate_tick(0.0, 10.0) - cap).abs() < 1e-12, "巨大卡顿应封顶");
+        assert!((super::accumulate_tick(0.0, 100.0) - cap).abs() < 1e-12, "单帧 dt 上限也应封顶");
+        let near = cap - 1e-6;
+        assert!((super::accumulate_tick(near, 1.0) - cap).abs() < 1e-12);
     }
 
     /// 飘字的血量变化归类：伤害为负、治疗为正、微小变化忽略。
