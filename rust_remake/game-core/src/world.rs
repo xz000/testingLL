@@ -4754,7 +4754,9 @@ fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
 
 /// 成对解析玩家圆球碰撞：把重叠的两球沿中心连线推开，避免相互穿透。
 ///
-/// 伤害处理：若两球重叠较深（被挤压）则双方各受一定伤害，鼓励拉开距离。
+/// **无“挤压伤害”**（098c 已实证：重叠只做分离 + 动量交换，不扣血，见 `cc79e8f`）。
+/// 本函数只处理**碰撞/接触触发**的交互（098c `hv[unit]` 条件）：踢击命中（`kick`）、
+/// 破隐一击（`stealth_extra`）、同队 Burnout、风步招架（`contact_by_enemy`）。
 /// 位置修正按半径反比分配（更小的球退得更多），保证确定性与顺序无关地一致。
 fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fix64, knockback_mult: Fix64) -> Vec<CombatEvent> {
     let mut events: Vec<CombatEvent> = Vec::new();
@@ -4843,6 +4845,8 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                 players[i].contact_by_enemy = Some(players[j].id);
                 players[j].contact_by_enemy = Some(players[i].id);
                 if let Some(kick) = players[i].kick.take() {
+                    // ⚠ 待核（见 SKILL_STATE_AUDIT §0.6）：098c `CA` 的 `bA()` 是**受害方带 `fr`** 时的反制；
+                    // 我们这里把额外伤害挂在**攻击者带 `Stealth`** 上，方向/主体可能不对，待重新对照。
                     // 破隐一击（098c `bA`，war3map_pretty.j:3697/3758/3764）：
                     // 门控 `xi[id]>0` —— `xi` 是**远程精通**（非蓝量），即**只有点了远程精通**，
                     // 隐身下接触命中才在基础伤害之外追加一笔同级伤害（`SI(... 4.6+.8*wr ...)`）。
@@ -4873,6 +4877,7 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                     }
                 }
                 if let Some(kick) = players[j].kick.take() {
+                    // ⚠ 待核（同上看 SKILL_STATE_AUDIT §0.6）。
                     // 同上：破隐一击（098c bA）—— 需施法者具备远程精通（xi>0）才追加。
                     // 同上：基础乘 `Gn`，破隐额外那笔不乘（098c `FX`）。
                     let stealth_extra = players[j].has_buff(BuffKind::Stealth) && players[j].mastery[1] > 0;
