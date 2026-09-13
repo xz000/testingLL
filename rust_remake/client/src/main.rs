@@ -294,6 +294,12 @@ enum LobbyListAction {
     Filter,
     /// 返回大厅主界面（同 `Q`）。
     Back,
+    /// 大厅主界面：创建房间（同 `H`）。
+    MenuCreate,
+    /// 大厅主界面：加入房间（同 `J`）。
+    MenuJoin,
+    /// 大厅主界面：返回主菜单（同 `Q`）。
+    MenuBack,
 }
 
 /// 文本输入焦点（`InputMode::TextInput` 的具体字段）。
@@ -4614,35 +4620,33 @@ impl event::EventHandler for Game {
                 } else if just_named(NamedKey::ArrowDown) {
                     self.steam_lobby_selection = (self.steam_lobby_selection + 1) % 3;
                 }
-                // 鼠标点击卡片：命中即选中并执行。
-                let mut clicked = false;
+                // 鼠标点击行（绘制时登记命中盒）：命中即执行，与键盘共用 steam_lobby_act。
+                let mut act: Option<usize> = None;
                 if ctx.mouse.button_just_pressed(MouseButton::Left) {
-                    let (sw, sh) = (ui::UI_W, ui::UI_H);
-                    let card_w = (sw * 0.62).min(560.0);
-                    let card_h = 96.0;
-                    let card_x = sw / 2.0 - card_w / 2.0;
-                    let y0 = sh * 0.34;
-                    let gap = 26.0;
                     let p = ui::mouse_design(ctx);
-                    for i in 0..3 {
-                        let y = y0 + i as f32 * (card_h + gap);
-                        if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
-                            self.steam_lobby_selection = i;
-                            self.steam_lobby_act(i);
-                            clicked = true;
+                    for hit in self.lobby_hitboxes.hits_at(p) {
+                        match hit {
+                            LobbyListAction::MenuCreate => act = Some(0),
+                            LobbyListAction::MenuJoin => act = Some(1),
+                            LobbyListAction::MenuBack => act = Some(2),
+                            _ => {}
                         }
                     }
                 }
-                if !clicked {
+                if act.is_none() {
                     if just('h') || just('H') || just(' ') {
-                        self.steam_lobby_act(0);
+                        act = Some(0);
                     } else if just('j') || just('J') {
-                        self.steam_lobby_act(1);
+                        act = Some(1);
                     } else if just('q') || just('Q') {
-                        self.steam_lobby_act(2);
+                        act = Some(2);
                     } else if just_named(NamedKey::Enter) || just('\r') {
-                        self.steam_lobby_act(self.steam_lobby_selection);
+                        act = Some(self.steam_lobby_selection);
                     }
+                }
+                if let Some(i) = act {
+                    self.steam_lobby_selection = i;
+                    self.steam_lobby_act(i);
                 }
                 self.accumulator = 0.0;
                 return Ok(());
@@ -6621,6 +6625,7 @@ impl Game {
                     LobbyListAction::Refresh => m_refresh = true,
                     LobbyListAction::Filter => m_filter = true,
                     LobbyListAction::Back => m_back = true,
+                    LobbyListAction::MenuCreate | LobbyListAction::MenuJoin | LobbyListAction::MenuBack => {}
                 }
             }
         }
@@ -7060,41 +7065,54 @@ impl Game {
                 canvas.finish(ctx)?;
                 return Ok(());
             }
-            // 大厅主界面：创建 / 加入 / 返回，同样卡片样式。
+            // 大厅主界面：创建 / 加入 / 返回（主题行样式 + 鼠标可点）。
             #[cfg(feature = "steam")]
             {
-                let subs: [(&str, &str); 3] = [
-                    ("创建房间", "选房间名与玩家人数，然后进入房间"),
-                    ("加入房间", "从房间列表选择并加入"),
-                    ("返回主菜单", "回到主菜单选择"),
+                use ui::theme;
+                self.lobby_hitboxes.clear();
+                let subs: [(&str, &str, &str, LobbyListAction); 3] = [
+                    ("创建房间", "选房间名与玩家人数，然后进入房间", "H", LobbyListAction::MenuCreate),
+                    ("加入房间", "从房间列表选择并加入", "J", LobbyListAction::MenuJoin),
+                    ("返回主菜单", "回到主菜单选择", "Q", LobbyListAction::MenuBack),
                 ];
-                draw_text(&mut canvas, ctx, "Steam 对战 - 大厅", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.27 }, true)?;
+                ui::text_center(&mut canvas, ctx, "Steam 对战 · 大厅", 34.0, theme::accent(), cx, sh * 0.15)?;
+                ui::text_center(
+                    &mut canvas, ctx,
+                    &format!("本端版本 v{}，仅同版本可联机", game_core::PROTOCOL_VERSION),
+                    17.0, theme::text_dim(), cx, sh * 0.15 + 34.0,
+                )?;
+                let row_w = (sw * 0.62).min(600.0);
+                let row_h = 88.0;
+                let gap_m = 18.0;
+                let row_x = cx - row_w / 2.0;
                 let mpos = ui::mouse_design(ctx);
-                for (i, (name, desc)) in subs.iter().enumerate() {
-                    let y = y0 + (i as f32) * (card_h + gap);
-                    // 高亮：键盘选中最亮；鼠标悬停中亮；其他深灰。
+                for (i, (name, desc, key, act)) in subs.into_iter().enumerate() {
+                    let y = y0 + (i as f32) * (row_h + gap_m);
+                    let rect = graphics::Rect::new(row_x, y, row_w, row_h);
                     let selected = i == self.steam_lobby_selection;
-                    let hover = !selected && graphics::Rect::new(card_x, y, card_w, card_h).contains(mpos);
-                    let bg_color = if selected {
-                        Color::from_rgb(52, 60, 74)
-                    } else if hover {
-                        Color::from_rgb(40, 46, 58)
-                    } else {
-                        Color::from_rgb(30, 34, 44)
-                    };
-                    // 卡片背景
-                    let bg = Mesh::new_rectangle(
-                        &ctx.gfx, DrawMode::fill(),
-                        graphics::Rect::new(card_x, y, card_w, card_h),
-                        bg_color,
+                    let hover = !selected && rect.contains(mpos);
+                    ui::paint_row(&mut canvas, ctx, rect, selected, hover)?;
+                    let name_col = if selected { Color::WHITE } else { theme::text() };
+                    ui::text_left(
+                        &mut canvas, ctx,
+                        &format!("{}{name}", if selected { "▶ " } else { "  " }),
+                        28.0, name_col, row_x + 20.0, y + 22.0,
                     )?;
-                    canvas.draw(&bg, graphics::DrawParam::new());
-                    draw_text(&mut canvas, ctx, name, 30.0, graphics::Color::from_rgb(235, 238, 245), Point2 { x: cx, y: y + card_h * 0.5 - 16.0 }, true)?;
-                    draw_text(&mut canvas, ctx, desc, 17.0, graphics::Color::from_rgb(150, 155, 168), Point2 { x: cx, y: y + card_h * 0.5 + 18.0 }, true)?;
+                    ui::text_left(&mut canvas, ctx, desc, 16.0, theme::text_dim(), row_x + 20.0, y + 58.0)?;
+                    ui::text_right(
+                        &mut canvas, ctx, &format!("[{key}]"), 22.0,
+                        if selected || hover { theme::accent() } else { theme::text_dim() },
+                        row_x + row_w - 20.0, y + row_h / 2.0 - 12.0,
+                    )?;
+                    self.lobby_hitboxes.push((rect, act));
                 }
                 // 失败提示（加入失败/房间已满/进入房间失败）红字展示，返回菜单后可见。
                 if let Some(err) = self.steam_lobby_error.as_ref() {
-                    draw_text(&mut canvas, ctx, err, 22.0, graphics::Color::from_rgb(255, 130, 120), Point2 { x: cx, y: y0 + 3.0 * (card_h + gap) + 20.0 }, true)?;
+                    ui::text_center(
+                        &mut canvas, ctx, err, 20.0,
+                        Color::from_rgb(255, 130, 120), cx,
+                        y0 + 3.0 * (row_h + gap_m) + 6.0,
+                    )?;
                 }
             }
             #[cfg(not(feature = "steam"))]
@@ -7102,7 +7120,7 @@ impl Game {
                 draw_text(&mut canvas, ctx, "Steam 未启用", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
                 draw_text(&mut canvas, ctx, "需要 --features client/steam 构建", 20.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.44 }, true)?;
             }
-            draw_text(&mut canvas, ctx, &format!("H 创建    J 加入    Q 返回    （本端版本 v{}，仅同版本可联机）", game_core::PROTOCOL_VERSION), 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh * 0.90 }, true)?;
+            ui::text_center(&mut canvas, ctx, "↑/↓ 选择    回车 确认    H/J/Q 快捷键", 18.0, Color::from_rgb(160, 168, 182), cx, sh * 0.90)?;
             canvas.finish(ctx)?;
             return Ok(());
         }
@@ -7155,20 +7173,30 @@ impl Game {
         ui::set_design_coordinates(&mut canvas, ctx);
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
-        let cy = sh / 2.0;
         let is_host = matches!(self.steam_lobby_pending, Some(SteamLobbyPending::Host { .. }));
         let status = if is_host { "正在创建房间…" } else { "正在加入房间…" };
-        draw_text(&mut canvas, ctx, status, 44.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: cy - 64.0 }, true)?;
-        draw_text(&mut canvas, ctx, "正在连接 Steam 大厅，请稍候", 20.0, graphics::Color::from_rgb(180, 190, 205), Point2 { x: cx, y: cy - 18.0 }, true)?;
+        let title = if is_host { "创建房间" } else { "加入房间" };
+        // 居中面板（与技能/商店/房间列表一致的风格）。
+        let panel = layout::centered_panel(sw, sh, 0.5, 0.4);
+        let panel_bg = Mesh::new_rectangle(
+            &ctx.gfx, DrawMode::fill(),
+            graphics::Rect::new(panel.x, panel.y, panel.w, panel.h),
+            Color::from_rgba(22, 26, 36, 245),
+        )?;
+        canvas.draw(&panel_bg, graphics::DrawParam::new());
+        // 顶部标题 + 当前阶段
+        ui::text_center(&mut canvas, ctx, title, 30.0, ui::theme::accent(), cx, panel.y + 30.0)?;
+        ui::text_center(&mut canvas, ctx, status, 34.0, ui::theme::text(), cx, panel.y + panel.h * 0.32)?;
+        ui::text_center(&mut canvas, ctx, "正在连接 Steam 大厅，请稍候", 18.0, ui::theme::text_dim(), cx, panel.y + panel.h * 0.32 + 36.0)?;
         // 转圈动画（基于帧，无需额外字段）
         let spinner = ["|", "/", "-", "\\"][(self.frame as usize / 8) % 4];
-        draw_text(&mut canvas, ctx, spinner, 30.0, graphics::Color::from_rgb(200, 210, 225), Point2 { x: cx, y: cy + 24.0 }, true)?;
+        ui::text_center(&mut canvas, ctx, spinner, 30.0, ui::theme::ok(), cx, panel.y + panel.h * 0.62)?;
         // 已等待时长（连接界面让用户知道是否在卡住）
         if let Some(t0) = self.steam_lobby_pending_since {
             let waited = ctx.time.time_since_start().as_secs_f64() - t0;
-            draw_text(&mut canvas, ctx, &format!("已等待 {waited:.1}s"), 18.0, graphics::Color::from_rgb(150, 160, 178), Point2 { x: cx, y: cy + 62.0 }, true)?;
+            ui::text_center(&mut canvas, ctx, &format!("已等待 {waited:.1}s"), 17.0, ui::theme::text_dim(), cx, panel.y + panel.h * 0.62 + 34.0)?;
         }
-        draw_text(&mut canvas, ctx, "按 Q / Esc 取消", 18.0, graphics::Color::from_rgb(150, 165, 185), Point2 { x: cx, y: cy + 98.0 }, true)?;
+        ui::text_center(&mut canvas, ctx, "按 Q / Esc 取消", 18.0, ui::theme::text_dim(), cx, panel.y + panel.h - 26.0)?;
         canvas.finish(ctx)?;
         Ok(())
     }
@@ -7253,15 +7281,7 @@ impl Game {
                 let selected = i == self.steam_list_selection;
                 let rect = graphics::Rect::new(list_x, y, list_w, ROW_H - 6.0);
                 let hover = !selected && rect.contains(mouse);
-                let bg_col = if selected {
-                    ui::theme::row_selected()
-                } else if hover {
-                    ui::theme::row_hover()
-                } else {
-                    ui::theme::row_bg()
-                };
-                let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, bg_col)?;
-                canvas.draw(&bg, graphics::DrawParam::new());
+                ui::paint_row(canvas, ctx, rect, selected, hover)?;
 
                 // 逐行取字段（不持有引用跨过 `lobby_hitboxes.push`）
                 let (l_name, l_owner, l_members, l_limit, l_mode, l_note, l_ver, custom_n) = {
@@ -7372,8 +7392,7 @@ impl Game {
         for (label, act) in btns {
             let r = graphics::Rect::new(bx, hint_y - bh / 2.0, bw, bh);
             let hover = r.contains(mouse);
-            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), r, if hover { ui::theme::row_hover() } else { ui::theme::row_bg() })?;
-            canvas.draw(&bg, graphics::DrawParam::new());
+            ui::paint_row(canvas, ctx, r, false, hover)?;
             ui::text_center(canvas, ctx, label, 18.0, if hover { ui::theme::text() } else { ui::theme::text_dim() }, bx + bw / 2.0, hint_y)?;
             self.lobby_hitboxes.push((r, act));
             bx += bw + pad;

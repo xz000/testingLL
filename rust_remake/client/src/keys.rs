@@ -136,6 +136,9 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "3", action: "Steam 大厅" },
         ],
         SteamMenu => &[
+            Binding { key: "up", action: "上移选择" },
+            Binding { key: "down", action: "下移选择" },
+            Binding { key: "enter", action: "确认所选" },
             Binding { key: "h", action: "创建房间" },
             Binding { key: "j", action: "加入房间" },
             Binding { key: "q", action: "返回主菜单" },

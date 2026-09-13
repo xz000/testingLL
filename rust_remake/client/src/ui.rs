@@ -52,6 +52,33 @@ pub fn mouse_design(ctx: &Context) -> Point2<f32> {
     }
 }
 
+/// 行底色：按选中/悬停优先级取色（技能/商店/大厅共用）。
+/// 目前仅 Steam 大厅（房间列表/大厅菜单/底部按钮）使用，故随 `steam` feature 编译。
+#[cfg(feature = "steam")]
+pub fn row_color(selected: bool, hover: bool) -> Color {
+    if selected {
+        theme::row_selected()
+    } else if hover {
+        theme::row_hover()
+    } else {
+        theme::row_bg()
+    }
+}
+
+/// 铺一行底色（与技能/商店/大厅一致）。返回该矩形，方便调用方登记命中盒。
+#[cfg(feature = "steam")]
+pub fn paint_row(
+    canvas: &mut Canvas,
+    ctx: &Context,
+    rect: graphics::Rect,
+    selected: bool,
+    hover: bool,
+) -> GameResult<graphics::Rect> {
+    let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, row_color(selected, hover))?;
+    canvas.draw(&bg, graphics::DrawParam::new());
+    Ok(rect)
+}
+
 /// 统一主题。颜色是**函数**而非 const：本 ggez 版本的 `Color::from_rgb*` 不是 const fn，
 /// 无法用于常量初始化；尺寸类仍是 `const`。
 pub mod theme {
