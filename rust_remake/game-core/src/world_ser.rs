@@ -540,7 +540,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.burning = burning;
     pl.parry_ready = parry_ready;
     pl.parry_cd = parry_cd;
-    pl.damage_taken_by = None;
+    pl.contact_by_enemy = None;
     pl.ricochet_pending = ricochet_pending;
     pl.ricochet_kick = ricochet_kick;
     pl.ricochet_window = ricochet_window;
