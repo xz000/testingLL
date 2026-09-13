@@ -69,7 +69,8 @@ cargo build --release -p client --features client/steam  :: release（联机用�
    - ✅ **阶段 A**：开局丢设置 S1、参与奖时点 S4、`-no reward`(A3)。
    - ✅ **阶段 B**：时长 4→2 合并、删除名次金 `place_rewards`（settings schema → **3**）。
    - ✅ **阶段 C**：伤害/击退/岩浆倍率接入结算；柱子/冰面按我们三档接入；地图形状行置灰锁定。
-   - ⬜ **剩余**：`-league` 模式开关（098c `-league`）；以及整套改动的实机/双机验证。
+   - ✅ **无剩余实现项**：`-league` 不做专用开关（用现有金币/点数/柱子/冰面/时长配置项即可组合出等价预设，已裁定）。
+   - ⬜ 仅剩：整套改动的**实机/双机验证**。
 5. `R017` 的小遗漏：`I004` 持有者击退减免按 +3 级计（`JASS_AUDIT_098c.md`）
 6. **联机卡顿修复**（`FRAME_SYNC_ANALYSIS.md`）：
    - ✅ **快照广播降频**：Steam host 每 30 帧只本地 `set_snapshot`（重连），广播降为每 150 帧（接管）；
