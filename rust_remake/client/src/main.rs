@@ -4792,6 +4792,28 @@ impl Game {
                         radius: radius.to_num::<f32>(),
                     });
                 }
+                CombatEvent::Splash { pos, radius } => {
+                    // 接触 AoE（冲锋/燃烧撞人）：精确半径橙红环。
+                    self.fx.spawn(fx::Fx {
+                        kind: fx::FxKind::Blast,
+                        pos: [pos.x.to_num::<f32>(), pos.y.to_num::<f32>()],
+                        color: [1.0, 0.5, 0.25, 0.85],
+                        life: SPLASH_RING_LIFE,
+                        max_life: SPLASH_RING_LIFE,
+                        radius: radius.to_num::<f32>(),
+                    });
+                }
+                CombatEvent::HealPulse { pos, radius } => {
+                    // 虔诚队友回血范围：精确半径绿环。
+                    self.fx.spawn(fx::Fx {
+                        kind: fx::FxKind::Blast,
+                        pos: [pos.x.to_num::<f32>(), pos.y.to_num::<f32>()],
+                        color: [0.4, 1.0, 0.55, 0.85],
+                        life: HEAL_PULSE_LIFE,
+                        max_life: HEAL_PULSE_LIFE,
+                        radius: radius.to_num::<f32>(),
+                    });
+                }
             }
         }
         let me = self.self_index();
@@ -8420,6 +8442,10 @@ const SKILL_READY_PULSE_LIFE: f32 = 0.5;
 const PILLAR_DEBRIS_LIFE: f32 = 0.6;
 /// P3-3 爆炸扩散圆环存活秒数。
 const EXPLODE_RING_LIFE: f32 = 0.45;
+/// 接触 AoE（bA/SI）圈存活秒数。
+const SPLASH_RING_LIFE: f32 = 0.4;
+/// 治疗脉冲（虔诚）圈存活秒数。
+const HEAL_PULSE_LIFE: f32 = 0.7;
 
 /// P4-3 状态图标：一个 buff/状态对应一个小方块（单字 + 颜色）。
 #[derive(Clone, Copy, Debug, PartialEq)]
