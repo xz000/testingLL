@@ -74,7 +74,7 @@
 | 收缩 `wo` | `shrink_delay_secs`(10) + `shrink_ring_secs`(10) | 10/10 | ✅ **有意不同**：098c 的单 `wo` 是 War3 限制下的做法；我们用延迟+每环两个旋钮的连续收缩，**不按 098c 调整** |
 | 回血 `In` | `base_regen` | 0.5 | ✅ 生效 |
 | `-no reward` | `gold_rewards_enabled` | true | ❌ **装饰**：从不读取；且语义比 098c 宽（098c 只清 `Mo/po/lo`） |
-| — | `place_rewards` | 空 | ❌ **非 098c**（要删） |
+| — | ~~`place_rewards`~~ | — | ✅ **已移除**（098c 无名次金） |
 | 模式/轮数/队伍 | `game_mode`/`total_rounds`/`team_count`/`win_score` | 1/3/1/10 | ✅ 生效 |
 
 ---
@@ -179,11 +179,11 @@
   - `[test]` `no_reward_disables_kill_win_damage_gold_only`。
 
 ### 阶段 B — 去冗余 / 去非 098c（含 UI 撤行 + schema bump）
-- [ ] **B1 删 `place_rewards`**
-  - `[core]` 字段 + `to/from_meta_string` 槽 + `finish_round` 分支。
-  - `[UI]` 本就没有行（段 3 已删）；确认 `hint` 无残留。
-  - `[client]` `match_place_rewards`/`host_set_place_reward`/大厅键、`auto_place_rewards`(+测试)。
-  - `[schema]` bump。
+- [x] **B1 删 `place_rewards` ✅ 已完成**
+  - `[core]` 删除字段 + `to/from_meta_string` 槽 + `finish_round` 名次金分支 + `default`/`non_default_setting_count`。
+  - `[client]` 删 `match_place_rewards`/`host_set_place_reward`/`lobby_place_reward`/`auto_place_rewards`(+测试)。
+  - `[schema]` `ROOM_SETTINGS_SCHEMA` 2 → 3。
+  - `[test]` `finish_round_rewards_placement_and_gold` → `finish_round_gives_participation_gold_no_place`；往返/默认值断言更新。
 - [x] **B2 时长字段合并 ✅ 已完成**
   - `[core]` 删 `shopping_time_secs`/`learn_time_secs`；`begin_first_round_config` 读 `first_round_time_secs`、`finish_round` 读 `between_rounds_time_secs`。
   - `[UI]` 保留 `FirstRoundSecs`/`BetweenRoundsSecs` 两行（名字已对）。
@@ -191,7 +191,7 @@
   - `[schema]` 设置串去 2 槽（learn/shopping），`ROOM_SETTINGS_SCHEMA` **1 → 2**；不兼容旧串（已确认）。
   - `[test]` 更新往返/默认值断言（`wrong_schema` 改用当前 schema 构造）。
 - [ ] **B2b（可选）** `match_learn_secs`/`host_set_learn`/大厅键 `learn` → between-rounds 命名。
-- [ ] **B3** `ROOM_SETTINGS_SCHEMA`：B2 已 1→2；B1 删名次金时再 2→3（每步都能解析当前历史串）。
+- [x] **B3** `ROOM_SETTINGS_SCHEMA`：B2 1→2、B1 2→3（已升到 **3**）。
 - [ ] **B4** 全量 `settings_ui` 文案/hint 复查（删已不存在项、修正时长行名）。
 
 ### 阶段 C — 把 098c 有、但我们没接的旋钮接进对局（每项都要动 UI）
@@ -223,7 +223,7 @@
 1. **S1（阶段 A1）✅ 已完成**：`match_config()` 直接用完整 `match_cfg`（`authored_match_cfg`），
    国王模式强制两队派生保留。（core 无改；UI 无改，但此后 UI 各行真正生效。）
 2. **S4 + A3 ✅ 已完成**：参与奖时点（只发初始金）+ `-no reward` 语义（只清击杀/胜利/伤害金）。
-3. **B2 → B1**（含 UI 文案 + schema bump）：B2 ✅ 已完成（时长合并，schema→2）；B1（删名次金，schema→3）待做。
+3. **B2 → B1**（含 UI 文案 + schema bump）：B2 ✅、B1 ✅（schema 已到 3）；B4（文案复查）待做。
 4. **C1~C3**：伤害/击退/岩浆倍率接进结算（core + UI 保留行）。
 5. **C5~C7 + D2~D4**：柱子/冰面 + 地图形状（`arena_shape` 行保留但**置灰**只显示“圆形”，不接线；远期再扩）。
 
@@ -247,3 +247,5 @@
   game-core 235 + client+steam 48 测试绿。**阶段 A 全部完成**。
 - 2026-09-13：**B2 已完成**（时长字段合并：删 `shopping_time_secs`/`learn_time_secs`，meta 直接读 `first_round_time_secs`/`between_rounds_time_secs`；
   `ROOM_SETTINGS_SCHEMA` 1→2；不兼容旧串）。B1（删 `place_rewards`）待做。
+- 2026-09-13：**B1 已完成**（删 `place_rewards` 全链路 + net-steam 大厅键/接口；schema 2→3）；
+  game-core 235 + client+steam 47 测试绿。阶段 B 主体完成（仅 B4 文案复查待做）。
