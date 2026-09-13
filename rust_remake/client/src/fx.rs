@@ -126,11 +126,9 @@ impl FxSystem {
                     canvas.draw(&sq, DrawParam::new());
                 }
                 FxKind::Blast => {
-                    // 从中心向外扩大，**升至真实半径后保持并淡出**（不超出实际范围）。
-                    // t: 1（刚生成）→ 0（消亡）；前一半时间扩张到 r，后一半保持在 r。
-                    let e = if t > 0.5 { (1.0 - t) / 0.5 } else { 1.0 };
-                    let r = (f.radius * e.clamp(0.0, 1.0) * scale).max(1.0);
-                    let fill_c = Color::new(f.color[0], f.color[1], f.color[2], f.color[3] * a * 0.22);
+                    // 精确半径：淡填充 + 亮描边（不随进度扩散，避免误导作用范围）。
+                    let r = (f.radius * scale).max(2.0);
+                    let fill_c = Color::new(f.color[0], f.color[1], f.color[2], f.color[3] * a * 0.25);
                     let disc = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x, y }, r, 0.5, fill_c)?;
                     canvas.draw(&disc, DrawParam::new());
                     let edge = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.5), Point2 { x, y }, r, 0.5, c)?;
