@@ -269,6 +269,12 @@ impl SettingId {
     pub fn is_readonly(self) -> bool {
         self == SettingId::PlayerLimit
     }
+
+    /// 是否**暂锁定/置灰**（编辑器显示但不可改；如地图形状目前仅圆形）。
+    /// 与 `is_readonly`（权限原因）区分：锁定是“功能未实现/未开放”。
+    pub fn is_locked(self) -> bool {
+        self == SettingId::ArenaShape
+    }
 }
 
 /// 读取 `RoomMeta` 的显示值。
@@ -584,6 +590,15 @@ mod tests {
     }
 
     /// 总轮数行：可调、有上下界（1..=50）。
+    /// 地图形状：暂锁定（仅圆形）；锁定 ≠ 只读（权限）。
+    #[test]
+    fn arena_shape_is_locked_to_circle() {
+        use SettingId::*;
+        assert!(ArenaShape.is_locked(), "地图形状应锁定（仅圆形）");
+        assert!(!ArenaShape.is_readonly(), "锁定与只读是不同概念");
+        assert_eq!(ArenaShape.enum_tiers(), Some(&["圆形"][..]), "只有圆形一个档位");
+    }
+
     #[test]
     fn total_rounds_row_clamps() {
         let mut c = fresh();

@@ -68,9 +68,9 @@
 | 伤害倍率 `Gn` | `damage_mult` | 1 | ✅ **已接入**（`damage_player`/接触踢击伤害乘它） |
 | 击退倍率 `Hn` | `knockback_mult` | 1 | ✅ **已接入**（KI/弹体击退与踢击 `imp` 乘它） |
 | 岩浆伤害 `To[0]` | `lava_damage_mult` | 1 | ✅ **已接入**（出界伤害乘它；`0` = 关闭） |
-| 柱子 `Po` | `pillar_mode`(0关/1随机/2必有) | 1 | ⚪ **我们自己的设置**（非 098c）：不追求对齐，按我们语义接入 `_layout_obstacles`（C5） |
-| 冰面 `-ice` | `ice_mode`(0关/1随机/2必有) | 1 | ⚪ **我们自己的设置**（非 098c 开关）：保留三档，按我们语义接入（C7） |
-| 地图形状 `to` | `arena_shape` | 0 | ⚪ **我们自己的设置**：仅圆形（C6 置灰），不接 098c `to` |
+| 柱子 `Po` | `pillar_mode`(0关/1随机/2必有) | 1 | ✅ **我们自己的设置**，已接入 `_layout_obstacles`（C5） |
+| 冰面 `-ice` | `ice_mode`(0关/1随机/2必有) | 1 | ✅ **我们自己的设置**，已接入 `roll_ice`（C7） |
+| 地图形状 `to` | `arena_shape` | 0 | ✅ **我们自己的设置**：仅圆形，行**已置灰/锁定**（C6） |
 | 冰面 `-ice` | `ice_mode`（0/1/2） | 1 | ⚪ **我们自己的设置**（非 098c）；按我们语义接入（C7） |
 | 收缩 `wo` | `shrink_delay_secs`(10) + `shrink_ring_secs`(10) | 10/10 | ✅ **有意不同**：098c 的单 `wo` 是 War3 限制下的做法；我们用延迟+每环两个旋钮的连续收缩，**不按 098c 调整** |
 | 回血 `In` | `base_regen` | 0.5 | ✅ 生效 |
@@ -140,10 +140,10 @@
 > —— 完整沿用房间设置，仅保留“国王模式强制两队”派生；两个 stage 调用点（`stage_world_for_participants`、`finish_enter_steam_mode`）
 > 自动拿到完整配置。回归测试 `authored_match_cfg_keeps_room_settings_and_king_teams`。
 
-### S2 若干设置为“装饰”，gameplay 从不读取（**大部分已消除**）
-原先 `damage_mult`/`knockback_mult`/`lava_damage_mult`/`gold_rewards_enabled` 也只序列化不读；
-已在 A3/C1-C3 接进结算。**只剩** `pillar_mode`、`ice_mode`、`arena_shape`
-（C5/C6/C7 待做；三者都是**我们自己的设置**，arena_shape 将置灰）。
+### S2 若干设置为“装饰”，gameplay 从不读取 —— ✅ **已全部消除**
+原先 `damage_mult`/`knockback_mult`/`lava_damage_mult`/`gold_rewards_enabled`/`pillar_mode`/`ice_mode`
+均只序列化不读；现已在 A3/C1-C3/C5/C7 接进结算/生成，`arena_shape` 行已置灰锁定（C6）。
+UI 不再有“改了没效果”的行。
 
 ### S3 字段冗余 / 非 098c 项
 - 时长 4 个字段表达 2 个概念（`shopping_time_secs`/`learn_time_secs` 与 `first_round_time_secs`/`between_rounds_time_secs`）。
@@ -200,12 +200,10 @@
 - [x] **C3 `lava_damage_mult`（设置 1）✅ 已完成**：`[core]` 出界伤害乘它（`0`=关闭）。
   - `[client]` `configure_mults` 在各 `configure_shrink/regen` 处同步；`[test]` `configure_mults_scales_damage_and_lava`。
 - [ ] **C4** `first_round_time_secs` 由 B2 自动生效。
-- [ ] **C5 `pillar_mode`（我们自己的设置）**：`[core]` `_layout_obstacles` 读取（0=关闭/1=随机/2=必有）；`[UI]` 行保留。
-- [ ] **C6 `arena_shape` —— 不接线，UI 保留但置灰**
-  - 我们**只有圆形**、短期不新增形状 → 不接 098c 的 `to`（这是**远期计划**）。
-  - `[UI]` `ArenaShape` 行**保留**，但置灰/锁定（只显示“圆形”、不可改）——可复用在 `is_readonly()` 上或新增一个“置灰/锁定”概念。
-  - `[core]` 字段保留（默认 0）；不为非 098c 的形状做预留。
-- [ ] **C7 冰面（我们自己的设置）**：保留三档（0关/1随机/2必有），按我们语义接入塔生成；不改成 098c 开关。
+- [x] **C5 `pillar_mode`（我们自己的设置）✅ 已完成**：`_layout_obstacles` 读 `mode`（0 关/1 随机 0~5/2 必有 1~5）。
+- [x] **C6 `arena_shape` ✅ 已完成**：UI 行保留但`is_locked()`→置灰 + 回车/T 提示“暂锁定（圆形）”。
+- [x] **C7 冰面（我们自己的设置）✅ 已完成**：`roll_ice` 读 `ice_mode`（0 关/1 随机 50%/2 必有）。
+  - `[core]` 新增 `configure_terrain(pillar, ice)`（立即重铺，`round_seed` 确定性）；`[test]` `terrain_modes_control_pillar_and_ice`。
 
 ### 阶段 D — 决策点（需你拍板）
 - [x] **D2 已定**：柱子/冰面/地图形状都是**我们自己的设置**，保留我们现有语义（柱子/冰面三档；地图仅圆形）；
@@ -227,7 +225,7 @@
 2. **S4 + A3 ✅ 已完成**：参与奖时点（只发初始金）+ `-no reward` 语义（只清击杀/胜利/伤害金）。
 3. **B2 → B1**（含 UI 文案 + schema bump）：B2 ✅、B1 ✅、B4 ✅（schema 已到 3）。**阶段 B 完成**。
 4. **C1~C3 ✅ 已完成**：伤害/击退/岩浆倍率接入结算（core + UI 行保留）。
-5. **C5~C7 + D2~D4**：柱子/冰面 + 地图形状（`arena_shape` 行保留但**置灰**只显示“圆形”，不接线；远期再扩）。
+5. **C5~C7 ✅ 已完成**：柱子/冰面按我们三档语义接入，地图形状行置灰锁定。**阶段 C 完成**。
 
 > 收缩不在列表中（有意不同）。
 
@@ -254,3 +252,5 @@
 - 2026-09-13：**B4 已完成**（`ArenaShape` hint 改为“仅圆形（暂锁定，置灰）”）——**阶段 B 全部完成**。
 - 2026-09-13：**D2 已定**：C5/C6/C7（柱子/地图/冰面）是**我们自己的设置**，不追求 098c 对齐；未接线的按我们语义接入。
 - 2026-09-13：**C1/C2/C3 已完成**（`World::configure_mults` + 伤害/击退/岩浆接入；客户端各处同步）；game-core 236 测试绿。
+- 2026-09-13：**C5/C6/C7 已完成**（`configure_terrain`：柱子/冰面三档接入；ArenaShape 行置灰锁定）；
+  game-core 237 + client+steam 48 测试绿。**阶段 C 完成（A/B/C 均完成）**。
