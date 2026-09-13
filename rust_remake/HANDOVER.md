@@ -56,11 +56,13 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 
 1. **表现层 P2**（`PRESENTATION_PLAN.md`）：音效（原生 rodio）—— P1 飘字/横幅已完成
 2. **表现层 P1 扩展**：Hattrick / Vampire / Denied 等事件横幅（需额外战斗信号）
-3. **死代码清理**（旧建房界面 `draw_steam_create_lobby` / `CreateAction` / `create_hitboxes` / `create_step_field`
-   / 旧 `create_dispatch` + 鼠标命中块；旧 `E` 房间信息界面 `steam_room_edit*` / `draw_steam_room_edit`）
-   - 现在有 `#[allow(dead_code)]`，**不影响运行**；属整洁性
-   - **做法**：一次只删**一个**符号 → `cargo check` → 通过再删下一个（上次一次删一批，改坏过 `draw_menu`，已回滚）
-   - 注意：本次尝试用「行号 + ASCII 断言」脚本删除，因 `read` 行号/CRLF 与脚本不一致而**未改动**（断言失败即未落盘）→ 后改用 `edit` 工具逐块删最稳。
+3. **死代码清理**（详细分段见 `DEAD_CODE_CLEANUP.md`）：
+   - ✅ **段 1**：已删旧建房界面 `draw_steam_create_lobby` / `CreateAction` / `create_hitboxes` / `create_step_field`
+     / `create_dispatch` + 鼠标命中块（净 −207 行）。`layout.rs` 遗留表单项暂 `#[allow(dead_code)]`，待段 2 删。
+   - ⬜ **段 2**：旧 `E` 房间信息界面（`steam_room_edit*` / `draw_steam_room_edit` / `steam_edit_*`）——
+     需同步改 `on_text_input`/`keys.rs`:`Screen::RoomEdit`/`source_scan_tests` 两条测试。
+   - ⬜ **段 3（待评估）**：旧建房键盘表单（与 `steam_create_confirm` 有耦合）。
+   - **做法**：一次一个可编译单元；`edit` 工具按精确文本删（不再用行号脚本）；每段跑门禁 + 记录。
 4. **房间设置与 098c 设置对话框的剩余对齐**：`-league` / `-no reward` 模式开关
 5. `R017` 的小遗漏：`I004` 持有者击退减免按 +3 级计（`JASS_AUDIT_098c.md`）
 6. **联机卡顿修复**（`FRAME_SYNC_ANALYSIS.md`）：
@@ -100,6 +102,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `FRAME_SYNC_INPUT_DELAY_DESIGN.md` | **主机固定节拍 + 输入延迟 设计草案**（未实施） |
 | `FRAME_SYNC_OPTIONS_COMPARE.md` | **抖动方案对比**（D 帧 vs held-continuous vs 渲染插值） |
 | `GAMEPLAY_FIX_PLAN.md` | **玩法修复计划**（击退清移动目标、冲撞撞柱与 098c 差异） |
+| `DEAD_CODE_CLEANUP.md` | 死代码清理分段计划与进度 |
 | `UI_AUDIT.md` | 更早的 UI 审视结论 |
 | `tools/README.md` + `tools/parse_w3a.py` / `parse_w3q.py` / `parse_objects.py` | 098c 物体数据解析工具 |
 
