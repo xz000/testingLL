@@ -3207,29 +3207,37 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
 // 无需单独的 make 辅助函数。
 // NOTE: 技能成长斜率集中在 `SkillGrowth` 表，后续调参只需改这里的数值。
 
-/// 098c 弹体撞柱是否**反弹**（`xv > 0`）：依据 JASS 中 `set xv[Nb]=1/.75` 的技能集合，
-/// 其余（默认 `xv=-1`）被柱**挡下**。命中均为「逐轴反弹 + 对柱造成伤害」。
-/// 证据（`war3map_pretty.j`）：`Ub`(S004)/`OB`(S008)/`GB`(S009)/`ac`(S014)/`Gc`+`Dc`(S016)/`Jc`+`Mc`(S018)
-/// 均设 `xv>0`；S004 回旋镖另走 `Boomerang` 专用反弹。
+/// 098c 弹体撞柱的**反弹系数 `xv`**（0 = 被挡下）。
+/// 依据 JASS 中 `set xv[Nb]=…`：S008（`OB`）=`.75`（衰减反弹），
+/// S000/S004/S009/S014/S016/S018 = `1`（满反弹）；其余默认 `-1`→0（被挡）。
+pub fn pillar_restitution(id: SkillId) -> Fix64 {
+    match id {
+        SkillId::S008 => Fix64::from_num(0.75),
+        SkillId::S000 | SkillId::S004 | SkillId::S009 | SkillId::S014 | SkillId::S016 | SkillId::S018 => Fix64::ONE,
+        _ => Fix64::ZERO,
+    }
+}
+
+/// 098c 弹体撞柱是否**反弹**（`xv > 0`）。
 pub fn pillar_bounce_for(id: SkillId) -> bool {
-    matches!(
-        id,
-        SkillId::S000 | SkillId::S004 | SkillId::S008 | SkillId::S009 | SkillId::S014 | SkillId::S016 | SkillId::S018
-    )
+    pillar_restitution(id) > Fix64::ZERO
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 098c `xv>0` 映射：只有设了 `xv` 的技能弹体撞柱反弹，其余被挡。
+    /// 098c `xv` 映射：反弹系数（S008 为 .75 衰减，其余反弹技能 1，未设者 0=被挡）。
     #[test]
     fn pillar_bounce_matches_xv_set() {
-        for id in [SkillId::S000, SkillId::S004, SkillId::S008, SkillId::S009, SkillId::S014, SkillId::S016, SkillId::S018] {
-            assert!(pillar_bounce_for(id), "{id:?} 应撞柱反弹（098c 设了 xv>0）");
+        assert_eq!(pillar_restitution(SkillId::S008).to_num::<f64>(), 0.75);
+        for id in [SkillId::S000, SkillId::S004, SkillId::S009, SkillId::S014, SkillId::S016, SkillId::S018] {
+            assert_eq!(pillar_restitution(id), Fix64::ONE, "{id:?} 应满反弹");
+            assert!(pillar_bounce_for(id));
         }
         for id in [SkillId::S002, SkillId::S003, SkillId::S019] {
-            assert!(!pillar_bounce_for(id), "{id:?} 未设 xv → 应被柱挡下");
+            assert_eq!(pillar_restitution(id), Fix64::ZERO, "{id:?} 未设 xv → 应被柱挡下");
+            assert!(!pillar_bounce_for(id));
         }
     }
 

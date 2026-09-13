@@ -273,8 +273,9 @@ pub enum ProjectileKind {
         emit_angle: f64,
         /// 回旋镖出程距离（098c cO：前向匀减速到 0 的位置）。
         out_dist: Fix64,
-        /// 击中柱子时**镜向反弹**而非被挡下消失（术士之战：火球击中柱子能够反弹）。
-        /// 仅火球（S000）为 true；反弹的同时仍按 098c 对柱子造成伤害（nx=40 可摧毁）。
+        /// 击中柱子时按 098c `xv` 反弹的**反弹系数**（0=被挡下消失；1=满反弹；S008=.75）。
+        /// 反弹的同时仍按 098c 对柱子造成伤害（nx=40 可摧毁）。
+        pillar_rest: Fix64,
         pillar_bounce: bool,
         /// 红链（S019B）附加闪电伤害（098c `sc`：目标为友军/柱子时引发，1.0→3.4）；其余技能为 0。
         lightning_dmg: Fix64,
@@ -871,6 +872,7 @@ impl World {
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
                     pillar_bounce: false,
+                    pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
                 },
                 pos,
@@ -1745,13 +1747,14 @@ impl World {
                         // 098b 回旋镖撞柱反弹（与 D2 原型同手感）；Straight/Homing 被柱子挡下消失。
                         *vel = crate::fix::mirror_by(*vel, normal);
                         pr.pos = o.pos + normal * min;
-                    } else if let ProjectileKind::W098b { vel, pillar_bounce: true, .. } = &mut pr.kind {
+                    } else if let ProjectileKind::W098b { vel, pillar_bounce: true, pillar_rest, .. } = &mut pr.kind {
                         // 术士之战：火球击中柱子能够反弹（Straight 运动由 vel 驱动）。
                         // 反弹同时仍按 098c 对柱子造成伤害（nx=40 可摧毁），与「被挡下消失」分支一致。
                         // 注意：柱面是「面」，反弹应沿切向反射（v' = v − 2(v·n)n）。
                         // `mirror_by` 是「沿法线所在直线」反射（保留法向、翻转切向），正面撞击时 v 不变，故这里不用它。
                         let dot = vel.dot(normal); // normal 已是单位向量（delta/dist）
                         *vel -= normal * (dot * Fix64::from_num(2));
+                        *vel = *vel * *pillar_rest; // 098c `xv`：1=满反弹、.75=衰减（S008）
                         pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
                         let dmg = match &pr.kind {
                             ProjectileKind::W098b { gx, .. } => gx.to_num::<f64>(),
@@ -2519,6 +2522,7 @@ impl World {
                         emit_cooldown: Fix64::ZERO,
                         emit_angle: 0.0,
                         pillar_bounce: false,
+                        pillar_rest: Fix64::ZERO,
                         lightning_dmg: Fix64::ZERO,
                     },
                     pos: clone_pos,
@@ -2699,6 +2703,7 @@ impl World {
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
                     pillar_bounce: false,
+                    pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
                 },
                 pos,
@@ -3597,6 +3602,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             // 098c `xv>0` 的技能弹体撞柱**反弹**；其余（默认 `xv=-1`）被柱挡下消失。
                             // 见 `skill::pillar_bounce_for`（依据 JASS 的 `set xv[Nb]=…` 集合）。
                             pillar_bounce: crate::skill::pillar_bounce_for(id),
+                            pillar_rest: crate::skill::pillar_restitution(id),
                             // 红链闪电伤害（098c `sc`：仅 S019B 用，其余 0）。
                             lightning_dmg: if on_hit == crate::skill::W098bOnHit::RedChain { stats.extra } else { Fix64::ZERO },
                         },

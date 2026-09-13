@@ -42,4 +42,5 @@ pub fn version() -> &'static str {
 /// v15（2026-09-13）：`Player.parry_ready`/`parry_cd`（S010 B 招架，098c `gr`/`NA`）入快照。
 /// v16（2026-09-13）：`Player.charging`（S010 A 冲锋 `fr`，与 B 形态风步区分）入快照。
 /// v17（2026-09-13）：删除疾风步 B 的「接触吸血」（`BuffKind::Windwalk`/`windwalk_cd`）—— 对齐 098c（其无此机制）。
-pub const PROTOCOL_VERSION: u32 = 17;
+/// v18（2026-09-13）：`W098b.pillar_rest`（弹体撞柱反弹系数 `xv`）入快照。
+pub const PROTOCOL_VERSION: u32 = 18;
