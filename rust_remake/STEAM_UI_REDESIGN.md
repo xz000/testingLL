@@ -54,9 +54,10 @@
 - [x] **U1 房间列表 ✅ 已完成**：改用主题风格（遮罩 + `ui::theme` 行背景/悬停/选中 + `ui::text_*`）；
   左列表可滚动（`steam_list_scroll`，可见 9 行）+ 列头 + 悬停高亮；右侧「房间详情」（房名/房主/人数/模式/版本/备注）；
   底部「刷新/筛选/返回」可点按钮；新增 `lobby_hitboxes`（与键盘同一动作路径）+ 鼠标点行=选中并加入（抽 `try_join_selected_lobby`）。
-- [ ] **U2 大厅主界面**改为行列表 + 鼠标命中 + 错误行。
-- [ ] **U3 连接中**套主题面板与配色。
-- [ ] **U4 收尾**：抽共享行绘制工具；`ROOM_UI_REVIEW.md`/`keys::keymap` 同步。
+- [x] **U2 大厅主界面 ✅ 已完成**：改为主题行列表（创建/加入/返回）+ `ui::paint_row` 底色 + 悬停/选中高亮 + 右侧快捷键标签；
+  鼠标命中改走 `lobby_hitboxes`（新增 `LobbyListAction::{MenuCreate,MenuJoin,MenuBack}`），与键盘 `H/J/Q/回车/空格` 共用 `steam_lobby_act`；错误行在列表下方。
+- [x] **U3 连接中 ✅ 已完成**：套 `layout::centered_panel` 居中面板 + `ui::theme` 配色/字号；保留转圈与等待秒数。
+- [x] **U4 收尾 ✅ 已完成**：新增共享 `ui::paint_row` / `ui::row_color`（房间列表 / 大厅菜单 / 底部按钮共用）；`keys::keymap` 的 `SteamMenu` 补上 ↑/↓/回车。
 
 ## 4. 风险 / 注意
 - 输入既有键盘又有鼠标：需保证“鼠标点击”和“键盘回车”走**同一条动作路径**（避免两套逻辑分叉）。
@@ -68,3 +69,4 @@
 - 2026-09-13：初版规划（未改代码）。
 - 2026-09-13：**U1 房间列表已完成**（主题化 + 滚动 + 悬停 + 右详情 + 鼠标可点；`LobbyListAction`/`lobby_hitboxes`/`steam_list_scroll`）。
   `layout::bg_selected`/`text_normal` 暂无人用 → 标 `#[allow(dead_code)]`（与同文件其他共享项一致）。
+- 2026-09-13：**U2/U3/U4 已完成**（大厅主界面行列表 + 鼠标；连接中面板；共享 `ui::paint_row`）。
