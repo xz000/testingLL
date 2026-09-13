@@ -120,12 +120,12 @@ impl FxSystem {
       `Game` 增 `fx: FxSystem`；绘制接入（实体后、HUD 前）。
 - [x] **P3-1**：命中闪光 + 火花（hp 差分驱动）。
 - [x] **P3-2**：死亡圆环 + 残影。
-- [ ] **P3-3a**：`combat_events` 增 `PillarBreak`/`Explode`（core，非序列化）+ 单测。
-- [ ] **P3-3b**：柱子碎裂粒子 / 爆炸圆环（客户端消费）。
+- [x] **P3-3a**：`combat_events` 增 `PillarBreak`/`Explode`（core，非序列化）+ 单测。
+- [x] **P3-3b**：柱子碎裂粒子 / 爆炸圆环（客户端消费）。
 - [ ] **P3-4**：施法前摇收缩圆 + 落点脉冲。
 - [x] **P4-1**：技能就绪脉冲（边沿检测 `ready_pulse_edge` + 单测）。
 - [ ] **P4-2**：施法条。
-- [ ] **P4-3**：状态图标行（纯函数 `active_status_icons` + 单测 + 绘制）。
+- [x] **P4-3**：状态图标行（纯函数 `active_status_icons` + 单测 + 绘制）。
 - [ ] **P4-4**：自机环 / 目标标记。
 - [ ] **P5**：出界/缩圈预警 + 移动目标标记（+ 可选跟随）。
 
