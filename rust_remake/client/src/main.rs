@@ -1427,7 +1427,11 @@ impl Game {
         }
         // 098c：升级价 = 基础升级价 + 涨价档数 × glvl（买第 3/4/5 个法术各触发一次 `Jf`）。
         let cost = profile.upgrade_cost_escalated(skill);
-        profile.upgrade_skill(skill, cost);
+        let ok = profile.upgrade_skill(skill, cost);
+        if ok {
+            // 098c：学习/升级完成播 `ResearchComplete`（仅本机；见 `AUDIO_PLAN.md` §1.4）。
+            self.audio.play(audio::AudioCue::AnnResearch);
+        }
     }
 
     /// 购买/升级当前选中的技能（详情面板按钮与 `=` 键共用）：
@@ -1468,12 +1472,22 @@ impl Game {
                 })
                 .unwrap_or(false);
             if break_done {
+                self.audio.play(audio::AudioCue::AnnResearch);
                 return;
             }
             self.upgrade_selected_skill();
-        } else if let Some(profile) = self.meta.profiles.iter_mut().find(|pr| pr.player_id == me) {
+        } else {
             // 未购买 → 购买（同树已锁或金币不足时内部失败，不扣金）
-            profile.purchase_skill(key, skill);
+            let ok = self
+                .meta
+                .profiles
+                .iter_mut()
+                .find(|pr| pr.player_id == me)
+                .map(|profile| profile.purchase_skill(key, skill))
+                .unwrap_or(false);
+            if ok {
+                self.audio.play(audio::AudioCue::AnnResearch);
+            }
         }
     }
 
@@ -4611,6 +4625,18 @@ impl Game {
                             self.audio.play(cue);
                             self.push_banner(label.to_string(), Color::from_rgb(255, 120, 80));
                         }
+                    }
+                    // 098c Ludicrous Kill（`Io`）：击杀**本轮 0 伤害**的对手（`Rn[NI]==0`）。
+                    let victim_zero_dmg = self
+                        .meta
+                        .profiles
+                        .iter()
+                        .find(|p| p.player_id == victim)
+                        .map(|p| p.damage_this_round <= 0.0)
+                        .unwrap_or(false);
+                    if victim_zero_dmg {
+                        self.audio.play(audio::AudioCue::AnnLudicrousKill);
+                        self.push_banner("Ludicrous Kill!".to_string(), Color::from_rgb(220, 130, 255));
                     }
                 } else {
                     let vl = self.player_label(victim);
