@@ -103,9 +103,12 @@ from `war3map_pretty.j` 施法分发（约 16340–16620）：
   注释引用的是**文档/098b 口径**（“偷取生命 0.6+0.1×升级次数”），**在 098c `IB`/`AA`/`CA` 里未找到对应**；
   全文也搜不到 `0.6+0.1L` 这个值 → **应为 098b 遗留**，应删。
 - 结论：**招架（`gr`）已补**；**吸血保留**（有意差异，098c 无）。
-- **已实现**：`Player.parry_ready`/`parry_cd`（入快照）——风步 B 被敌人伤害时刷新风步（≤5s）、
-  `parry_cd=0.5s`（到时恢复 `parry_ready`，即 098c `NA`），双方互相击退（`push_knockback`）。
-  单测 `windwalk_parry_refreshes_and_knocks_back` / `windwalk_parry_ignores_allies_and_non_windwalkers`。
+- **已实现**：`Player.parry_ready`/`parry_cd`（入快照）——触发点在我们这里取**与敌人接触**
+  （098c `CA` 是近战/接触命中处理，`hv[unit]=ni` 由 `RB/IB/AB` 设置；我们无自动攻击，故用「接触」等效），
+  风步 B 接触敌人且 `parry_ready` 时：刷新风步（≤5s）、`parry_cd=0.5s`（到时恢复，即 `NA`）、
+  双方互相击退（`push_knockback`：（攻击者 4.5、自己 2.25）×`100/(100+gn)`）。
+  单测 `windwalk_parry_refreshes_and_knocks_back` / `windwalk_parry_ignores_allies_and_non_windwalkers` /
+  `enemy_contact_marks_contact_by_enemy`。
 - ⚠️ **有意差异（已记录）**：我们**保留了 098c 没有的「风步接触吸血」**（098b 遗留，`0.6+0.1L`）。
   若要严格对齐 098c，删掉 `BuffKind::Windwalk` 应用与碰撞里的吸血分支即可（用户决定保留）。
 

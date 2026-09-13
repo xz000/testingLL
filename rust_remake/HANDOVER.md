@@ -55,7 +55,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 54 / game-core 239 / net 39 / net-steam 9；steam client 61 |
+| 测试基线 | client 54 / game-core 240 / net 39 / net-steam 9；steam client 61 |
 
 ## 四、待办（按建议优先级）
 

@@ -220,8 +220,8 @@ pub struct Player {
     pub parry_ready: bool,
     /// 招架冷却剩余秒（098c `NA`：0.5s 后恢复 `gr`）。
     pub parry_cd: Fix64,
-    /// 瞬态（**不进快照**）：本 tick 对本人造成伤害的敌人 id，用于招架判定。
-    pub damage_taken_by: Option<u32>,
+    /// 瞬态（**不进快照**）：本 tick 与本人**接触的敌人** id，供招架判定（我们以「接触」代 098c 的「被近战攻击」）。
+    pub contact_by_enemy: Option<u32>,
     /// S006 时光回溯（098b fC/ER）：到点闪回 `pos` 并还原 `hp`；元组 = (锚点, 锚点 HP, 剩余秒)。
     pub rewind: Option<(Vec2, Fix64, Fix64)>,
     /// S020 灾变（098b MC）三级递进阶段：0→1→2 循环（每放一次 +1）；半径 300/300/400。
@@ -335,7 +335,7 @@ impl Player {
             burning: false,
             parry_ready: false,
             parry_cd: Fix64::ZERO,
-            damage_taken_by: None,
+            contact_by_enemy: None,
             dash_vel: Vec2::ZERO,
             rewind: None,
             catastrophe_stage: 0,

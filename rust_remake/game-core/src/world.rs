@@ -1344,7 +1344,6 @@ impl World {
             };
             if let Some(hitter) = from {
                 p.last_hit_by = Some(hitter);
-                p.damage_taken_by = from; // 瞬态：本 tick 攻击者（供招架判定）
             }
             // C1 疾跑：boost 期间返还一半伤害回血（soak_boost 返回净扣血）
             let net = p.soak_boost(dealt);
@@ -2870,7 +2869,6 @@ impl World {
                 // 受伤（记录击杀者）；boost 期间返还一半回血；护甲/法抗折算 + 098c 攻方 Gn（D9）。
                 if p.id != owner {
                     p.last_hit_by = Some(owner);
-                    p.damage_taken_by = Some(owner);
                 }
                 let mut dmg = {
                     // 距离衰减（098c）：陨石为乘法 `×(1-d/k)`；灾变为加法 `dmg - d/k`。
@@ -2946,7 +2944,7 @@ impl World {
         self.players.iter().filter(|p| p.alive).count()
     }
 
-    /// 098c `CA` 招架（S010 B / `gr`）：风步中的单位**被敌人伤害**时，
+    /// 098c `CA` 招架（S010 B / `gr`）：风步中的单位**与敌人接触**时（我们以「接触」代 098c 的「被近战攻击」），
     /// 刷新风步（`Xr = 剩余 + 1.5×jn`，封顶 5s）、`gr` 进入 0.5s 冷却（`NA` 恢复），
     /// 并与攻击者**互相击退**（`MI`：攻击者 4.5、自己 2.25，× `100/(100+gn)`）。
     fn process_parry(&mut self, dt: Fix64) {
@@ -2961,7 +2959,7 @@ impl World {
             }
         }
         for i in 0..n {
-            let Some(att) = self.players[i].damage_taken_by else { continue };
+            let Some(att) = self.players[i].contact_by_enemy else { continue };
             let ai = att as usize;
             if ai >= n || ai == i {
                 continue;
@@ -2989,9 +2987,9 @@ impl World {
             self.players[ai].push_knockback(dir * Fix64::from_num(4.5) * scale);
             self.players[i].push_knockback(-dir * Fix64::from_num(2.25) * scale);
         }
-        // 清瞬态（本 tick 的伤害记录）。
+        // 清瞬态（本 tick 的接触记录）。
         for p in self.players.iter_mut() {
-            p.damage_taken_by = None;
+            p.contact_by_enemy = None;
         }
     }
 
@@ -4841,6 +4839,9 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
             };
             // 踢击只对异队生效（098c 冲撞/潜行踢命中「敌人」；同队穿过不触发，B2）。
             if players[i].team != players[j].team {
+                // 098c `CA` 是近战/接触命中处理（`hv[unit]=ni`）；我们无自动攻击 → 以「接触」触发招架。
+                players[i].contact_by_enemy = Some(players[j].id);
+                players[j].contact_by_enemy = Some(players[i].id);
                 if let Some(kick) = players[i].kick.take() {
                     // 破隐一击（098c `bA`，war3map_pretty.j:3697/3758/3764）：
                     // 门控 `xi[id]>0` —— `xi` 是**远程精通**（非蓝量），即**只有点了远程精通**，
@@ -4854,7 +4855,6 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                         + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
                     players[j].hp = (players[j].hp - players[j].soak_boost(dmg)).max(Fix64::ZERO);
                     players[j].last_hit_by = Some(players[i].id);
-                    players[j].damage_taken_by = Some(players[i].id);
                     // 098c mI（war3map_pretty.j:3331）：击退冲量 = 伤害 × 魔法系数(Hn) × 碰撞系数(hn) × 常量 × 时长。
                     // 魔法系数 Hn = 受击者**精通**击退减免（每级 -2.5%，098c kf L12917），在此缩放冲量大小。
                     // （kn 碰撞系数由 push() 时长缩短承担；属性系统删除后不再有 kb_factor。）
@@ -4880,7 +4880,6 @@ fn resolve_player_collisions(players: &mut [Player], _dt: Fix64, damage_mult: Fi
                         + if stealth_extra { kick.push_damage } else { Fix64::ZERO };
                     players[i].hp = (players[i].hp - players[i].soak_boost(dmg)).max(Fix64::ZERO);
                     players[i].last_hit_by = Some(players[j].id);
-                    players[i].damage_taken_by = Some(players[j].id);
                     let imp = kick.push_power
                         * Fix64::from_num(1.0 - players[i].mastery_kb_reduction())
                         * knockback_mult;
@@ -6734,7 +6733,7 @@ mod tests {
         w.players[1].team = 1;
         w.players[0].windwalk_state = Fix64::from_num(1.0);
         w.players[0].parry_ready = true;
-        w.players[0].damage_taken_by = Some(1);
+        w.players[0].contact_by_enemy = Some(1);
         let before_ww = w.players[0].windwalk_state;
         w.process_parry(Fix64::from_num(1.0 / 60.0));
         assert!(w.players[0].windwalk_state > before_ww, "招架应刷新风步");
@@ -6742,7 +6741,7 @@ mod tests {
         assert!(w.players[0].parry_cd > Fix64::ZERO);
         assert!(w.players[1].control.is_some(), "攻击者应被击退");
         assert!(w.players[0].control.is_some(), "风步者自己应被击退");
-        assert!(w.players[0].damage_taken_by.is_none(), "瞬态应被清除");
+        assert!(w.players[0].contact_by_enemy.is_none(), "瞬态应被清除");
 
         // `NA`：0.5s 后 `gr` 恢复（仍在风步）。
         w.process_parry(Fix64::from_num(0.6));
@@ -6758,16 +6757,34 @@ mod tests {
         w.players[1].team = 0;
         w.players[0].windwalk_state = Fix64::from_num(1.0);
         w.players[0].parry_ready = true;
-        w.players[0].damage_taken_by = Some(1);
+        w.players[0].contact_by_enemy = Some(1);
         w.process_parry(Fix64::from_num(1.0 / 60.0));
-        assert!(w.players[0].parry_ready, "同队伤害不应触发招架");
+        assert!(w.players[0].parry_ready, "同队接触不应触发招架");
         assert!(w.players[0].control.is_none());
         // 非风步 → 不招架。
         w.players[1].team = 1;
         w.players[0].windwalk_state = Fix64::ZERO;
-        w.players[0].damage_taken_by = Some(1);
+        w.players[0].contact_by_enemy = Some(1);
         w.process_parry(Fix64::from_num(1.0 / 60.0));
         assert!(w.players[1].control.is_none(), "非风步不应触发招架");
+    }
+
+    #[test]
+    fn enemy_contact_marks_contact_by_enemy() {
+        // 接触敌方时在两个方向都标记瞬态（供 `process_parry` 判定）。
+        let mut w = World::new(2, 9);
+        w.players[0].team = 0;
+        w.players[1].team = 1;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].pos = Vec2::new(Fix64::from_num(1.0), Fix64::ZERO);
+        let _ = resolve_player_collisions(&mut w.players, Fix64::from_num(1.0 / 60.0), Fix64::ONE, Fix64::ONE);
+        assert_eq!(w.players[0].contact_by_enemy, Some(1));
+        assert_eq!(w.players[1].contact_by_enemy, Some(0));
+        // 同队接触不标记。
+        w.players[1].team = 0;
+        w.players[0].contact_by_enemy = None;
+        let _ = resolve_player_collisions(&mut w.players, Fix64::from_num(1.0 / 60.0), Fix64::ONE, Fix64::ONE);
+        assert_eq!(w.players[0].contact_by_enemy, None, "同队不应标记");
     }
 
     #[test]
