@@ -241,6 +241,19 @@ impl MatchConfig {
         }
         h
     }
+
+    // ── 098c `-no reward` 语义（`gold_rewards_enabled`，设置 16/15/12 的金币）──
+    /// 关闭金币奖励时：击杀 `lo` / 胜利 `Mo` / 最高伤害 `po` 金归零；
+    /// **点数（ko/Ko/mo）、助攻金 `Lo`、每轮金 `qo`、初始金 `Qo` 不受影响**（与 098c `-no reward` 一致，`18609`）。
+    pub fn kill_gold(&self) -> i32 {
+        if self.gold_rewards_enabled { self.gold_per_kill } else { 0 }
+    }
+    pub fn win_gold(&self) -> i32 {
+        if self.gold_rewards_enabled { self.gold_per_round_win } else { 0 }
+    }
+    pub fn damage_gold(&self) -> i32 {
+        if self.gold_rewards_enabled { self.gold_per_most_damage } else { 0 }
+    }
 }
 
 impl Default for MatchConfig {
@@ -754,7 +767,7 @@ impl MatchState {
             .map(|p| p.damage_this_round)
             .fold(0.0_f64, f64::max);
         if most > 0.0 {
-            let reward = self.config.gold_per_most_damage;
+            let reward = self.config.damage_gold();
             for p in self.profiles.iter_mut() {
                 if p.damage_this_round >= most {
                     p.gold += reward;
@@ -798,13 +811,14 @@ impl MatchState {
     pub fn register_kill(&mut self, killer_id: u32) -> bool {
         let first = !self.first_blood_taken;
         self.first_blood_taken = true;
+        let kill_gold = self.config.kill_gold();
         if let Some(p) = self
             .profiles
             .iter_mut()
             .find(|pr| pr.player_id == killer_id)
         {
             p.total_kills += 1;
-            p.gold += self.config.gold_per_kill;
+            p.gold += kill_gold;
             p.score += self.config.score_per_kill;
             p.current_streak += 1; // 连杀计数（死亡清零在 register_death）
         }
@@ -878,8 +892,8 @@ impl MatchState {
             .find(|pr| pr.player_id == winner_id)
         {
             p.score += self.config.score_per_round_win;
-            // 098c `Mo`（Win Gold Reward，全局默认 2）—— 此前完全未发胜利金。
-            p.gold += self.config.gold_per_round_win;
+            // 098c `Mo`（Win Gold Reward，全局默认 2）—— `-no reward` 时为 0。
+            p.gold += self.config.win_gold();
         }
     }
 
@@ -1290,6 +1304,26 @@ mod tests {
         assert_eq!(MatchState::streak_label(2), None);
         assert_eq!(MatchState::streak_label(3), Some("大杀特杀"));
         assert_eq!(MatchState::streak_label(12), Some("超越神了"));
+    }
+
+    /// A3：`gold_rewards_enabled=false` 按 098c `-no reward` 只清 击杀/胜利/伤害金（`lo/Mo/po`）；
+    /// 点数、助攻金、每轮金、初始金不变。
+    #[test]
+    fn no_reward_disables_kill_win_damage_gold_only() {
+        let mut c = MatchConfig::default();
+        assert_eq!((c.kill_gold(), c.win_gold(), c.damage_gold()), (1, 2, 1), "默认全开");
+        c.gold_rewards_enabled = false;
+        assert_eq!((c.kill_gold(), c.win_gold(), c.damage_gold()), (0, 0, 0), "关闭三项");
+        assert_eq!(c.gold_per_assist, 1, "助攻金 Lo 不受影响");
+        assert_eq!(c.gold_per_round, 10, "每轮金 qo 不受影响");
+        // 集成：关闭后击杀不再给金，但给分；开局初始金照发。
+        let mut m = MatchState::new(c, &[0, 1], 8);
+        m.enter_first_round();
+        let base = m.profiles[0].gold;
+        assert_eq!(base, 20, "初始金 Qo 不受影响");
+        m.register_kill(0);
+        assert_eq!(m.profiles[0].gold, base, "击杀金 lo 关闭");
+        assert_eq!(m.profiles[0].score, 1, "击杀点数照常");
     }
 
     #[test]

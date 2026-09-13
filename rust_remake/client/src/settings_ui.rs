@@ -179,7 +179,7 @@ impl SettingId {
             PillarMode => "关闭 / 随机 / 每局必有。",
             IceMode => "关闭 / 随机 / 每局必有。",
             GameMode => "1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还。改动会取消全员准备。",
-            GoldRewardsEnabled => "关闭后所有金币奖励归零（等价 098c `-no reward`）；点数不受影响。",
+            GoldRewardsEnabled => "关闭后击杀/胜利/最高伤害金归零（等价 098c `-no reward`）；点数、助攻金、每轮金不变。",
         }
     }
 
