@@ -214,6 +214,8 @@ pub struct Player {
     pub dash_active: bool,
     /// 冲刺斩的位移速度（单位 / 秒），`dash_active` 时按此直线移动。
     pub dash_vel: Vec2,
+    /// S012 A「燃烧冲刺」（098c `Hr`）：冲刺期间为真；撞到**队友**触发 Burnout（熄灭）。
+    pub burning: bool,
     /// S006 时光回溯（098b fC/ER）：到点闪回 `pos` 并还原 `hp`；元组 = (锚点, 锚点 HP, 剩余秒)。
     pub rewind: Option<(Vec2, Fix64, Fix64)>,
     /// S020 灾变（098b MC）三级递进阶段：0→1→2 循环（每放一次 +1）；半径 300/300/400。
@@ -324,6 +326,7 @@ impl Player {
             fake_active: None,
             blink2_window: None,
             dash_active: false,
+            burning: false,
             dash_vel: Vec2::ZERO,
             rewind: None,
             catastrophe_stage: 0,

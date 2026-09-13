@@ -95,7 +95,7 @@
 | Silencer | `Eo` | ✅ 接：同一施法者本 tick 沉默 ≥3 目标 → `CombatEvent::Silencer` |
 | Pancake | `ao` | ✅ 接：地震法球拍扁 → `CombatEvent::Pancake` |
 | Last Second Save | `wx` | ✅ 接（**纯客户端**）：从出界岩浆区回到场内且 HP ≤ 约 6（`Fn<=6*To+0.5`）；仅本队可见 |
-| Burnout | `Xo` | ⛔ 不接：需 `Hr` 燃烧冲刺状态（S012 A 形态的子行为），未建模 |
+| Burnout | `Xo` | ✅ 接：S012 A 燃烧冲刺（新 `Player.burning`/`Hr`）撞队友 → `CombatEvent::Burnout` + 对队友伤害 + 熄火 |
 | Denied | `Wx` | ⛔ 不接：需 `Fv` 链索绑定 + `kr`/`Fr` 状态，未建模 |
 | 学习 / 升级完成 | `Ro` ResearchComplete | ✅ 接 `ann_research`（仅本机，仅技能购买/升级成功） |
 | 开局 / 平局加赛 | `Vo` GameFound | ⬜ 待接 |
@@ -274,3 +274,5 @@
   接 Hattrick / Vampire / Silencer / Pancake（音效 + 头顶漂字）；Burnout / Denied / LastSecondSave 搁置。
 - 2026-09-13：**Last Second Save 已接**（纯客户端：出界→回场 + 残血阈值）。
   深挖结论：Burnout 需 `Hr` 燃烧冲刺状态、Denied 需 `Fv` 链索绑定 —— 均为 S012/S019 的**副状态机**，未建模 → 不接。
+- 2026-09-13：**S012 A 燃烧冲刺（`Hr`）+ Burnout 已实现**：`Player.burning` 入快照（PROTOCOL_VERSION 13→14），
+  同队接触 → Burnout 事件 + 伤害 + 熄火。剩 Denied（需 `Fv` 链索绑定）仍待定。
