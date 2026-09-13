@@ -3594,8 +3594,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Fix64::ZERO
                             },
                             emit_angle: 0.0,
-                            // 术士之战：火球击中柱子能够反弹（其余直射弹仍被柱子挡下消失）。
-                            pillar_bounce: id == crate::skill::SkillId::S000,
+                            // 098c `xv>0` 的技能弹体撞柱**反弹**；其余（默认 `xv=-1`）被柱挡下消失。
+                            // 见 `skill::pillar_bounce_for`（依据 JASS 的 `set xv[Nb]=…` 集合）。
+                            pillar_bounce: crate::skill::pillar_bounce_for(id),
                             // 红链闪电伤害（098c `sc`：仅 S019B 用，其余 0）。
                             lightning_dmg: if on_hit == crate::skill::W098bOnHit::RedChain { stats.extra } else { Fix64::ZERO },
                         },
