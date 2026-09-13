@@ -111,6 +111,8 @@
 - `keys::Screen` / `keymap()`：文档 + 表内守护。
 - `ui::theme::warn` / `TITLE`：预留主题项。
 - `BOTS`：预留 AI 测试常量。
+- `SkillId::_Reserved` / `_SelfExplode`（id 32/33）：预留占位技能 id（`DefTable` 给 `Unimplemented`，不可选）；
+  已删除废弃的 `Test01`/`Test03`（见提交 `928de7a`），但**名字保留为占位**（用户 2026-09-13 裁定）。
 - net 测试里 `pair()` 的几个 `unused_mut` 警告：测试代码，低价值。
 
 ## 记录
