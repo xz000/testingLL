@@ -65,7 +65,11 @@ cargo build --release -p client --features client/steam  :: release（联机用�
      `steam_create_confirm`/`finish_enter_steam_mode` 只读 `room_meta`+`match_cfg`/`match_*`（修好了编辑器设置被旧缓冲覆盖）。
      ⚠️ 待双机实测“建房后客户端收到的大厅参数一致”。详见 `DEAD_CODE_CLEANUP.md`。
    - **做法**：一次一个可编译单元；`edit` 工具按精确文本删（不再用行号脚本）；每段跑门禁 + 记录。
-4. **房间设置与 098c 设置对话框的剩余对齐**：`-league` / `-no reward` 模式开关
+4. **房间设置与 098c 对齐**（详见 `SETTINGS_ALIGNMENT_AUDIT.md`）：
+   - ✅ **阶段 A**：开局丢设置 S1、参与奖时点 S4、`-no reward`(A3)。
+   - ✅ **阶段 B**：时长 4→2 合并、删除名次金 `place_rewards`（settings schema → **3**）。
+   - ✅ **阶段 C**：伤害/击退/岩浆倍率接入结算；柱子/冰面按我们三档接入；地图形状行置灰锁定。
+   - ⬜ **剩余**：`-league` 模式开关（098c `-league`）；以及整套改动的实机/双机验证。
 5. `R017` 的小遗漏：`I004` 持有者击退减免按 +3 级计（`JASS_AUDIT_098c.md`）
 6. **联机卡顿修复**（`FRAME_SYNC_ANALYSIS.md`）：
    - ✅ **快照广播降频**：Steam host 每 30 帧只本地 `set_snapshot`（重连），广播降为每 150 帧（接管）；
@@ -105,6 +109,7 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 | `FRAME_SYNC_OPTIONS_COMPARE.md` | **抖动方案对比**（D 帧 vs held-continuous vs 渲染插值） |
 | `GAMEPLAY_FIX_PLAN.md` | **玩法修复计划**（击退清移动目标、冲撞撞柱与 098c 差异） |
 | `DEAD_CODE_CLEANUP.md` | 死代码清理分段计划与进度 |
+| `SETTINGS_ALIGNMENT_AUDIT.md` | **房间/开局设置与 098c 对齐审计 + 清单**（阶段 A/B/C 已完成） |
 | `UI_AUDIT.md` | 更早的 UI 审视结论 |
 | `tools/README.md` + `tools/parse_w3a.py` / `parse_w3q.py` / `parse_objects.py` | 098c 物体数据解析工具 |
 
