@@ -23,6 +23,8 @@ pub enum FxKind {
     Afterimage,
     /// 碎片：向外飞散的实心小方块（柱子被摧毁）。
     Debris,
+    /// 爆炸：【精确半径】的淡填充圆 + 亮描边（表示真实作用范围）。
+    Blast,
 }
 
 /// 一个特效实例。`life`/`max_life` 决定进度；`radius` 为世界单位基准半径。
@@ -120,6 +122,15 @@ impl FxSystem {
                     let rect = ggez::graphics::Rect::new(x - s / 2.0, y - s / 2.0, s, s);
                     let sq = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, c)?;
                     canvas.draw(&sq, DrawParam::new());
+                }
+                FxKind::Blast => {
+                    // 精确半径：淡填充 + 亮描边（不随进度扩散，避免误导作用范围）。
+                    let r = (f.radius * scale).max(2.0);
+                    let fill_c = Color::new(f.color[0], f.color[1], f.color[2], f.color[3] * a * 0.25);
+                    let disc = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x, y }, r, 0.5, fill_c)?;
+                    canvas.draw(&disc, DrawParam::new());
+                    let edge = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.5), Point2 { x, y }, r, 0.5, c)?;
+                    canvas.draw(&edge, DrawParam::new());
                 }
             }
         }
