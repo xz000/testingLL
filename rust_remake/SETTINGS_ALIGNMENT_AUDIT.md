@@ -42,6 +42,19 @@
 
 ---
 
+## 0.5 原则：设置改动 = core + UI + 设置串 + 测试，**四处同步**
+
+**配置改动必须连着 UI 一起改**（用户已强调）。每个设置项牵涉四处：
+1. **core 逻辑**：`game-core/src/meta.rs`（字段/结算）、`game-core/src/world.rs`；
+2. **UI 行**：`client/src/settings_ui.rs` 的 `rows()`/`label()`/`hint()`/`value()`/`nudge()`/`enum_tiers()`/`num_range()`/`int_range()`；
+3. **设置串**：`MatchConfig::to_meta_string`/`from_meta_string`（必要时 bump `ROOM_SETTINGS_SCHEMA`）；
+4. **测试**：core 单测 + client 护栏/源码扫描。
+
+> 只改 1、不改 2/3 → UI 会显示“无效”或“多余”的行（正是本次审计发现的毛病）；
+> 反过来，**UI 只能暴露我们真正支持的项**（例：地图形状）。
+
+---
+
 ## 1. 字段对照表（098c ↔ 我们）
 
 | 098c 旋钮 | 我们的字段 | 默认 | 当前状态 |
@@ -56,7 +69,7 @@
 | 击退倍率 `Hn` | `knockback_mult` | 1 | ❌ **装饰** |
 | 岩浆伤害 `To[0]` | `lava_damage_mult` | 1 | ❌ **装饰** |
 | 柱子 `Po` | `pillar_mode` | 1 | ❌ **装饰**：世界生成只看 seed，不读该项 |
-| 地图形状 `to` | `arena_shape` | 0 | ❌ **装饰**（仅支持圆形） |
+| 地图形状 `to` | `arena_shape` | 0 | ❌ **不接线**：我们**只有圆形**且短期不做其他形状；098c 的 `to`/随机不适用 → **UI 撤下该行**（或只读显示“圆形”） |
 | 冰面 `-ice` | `ice_mode`（0/1/2） | 1 | ❌ **装饰**；且 098c 是**开关**，我们是三档 |
 | 收缩 `wo` | `shrink_delay_secs`(10) + `shrink_ring_secs`(10) | 10/10 | ✅ **有意不同**：098c 的单 `wo` 是 War3 限制下的做法；我们用延迟+每环两个旋钮的连续收缩，**不按 098c 调整** |
 | 回血 `In` | `base_regen` | 0.5 | ✅ 生效 |
@@ -123,9 +136,10 @@
 > 注：`publish_room_cfg` 里 `self.meta.config = self.match_cfg.clone()`（`6496/5969`）会被这个重建覆盖。
 
 ### S2 若干设置为“装饰”，gameplay 从不读取
-`damage_mult`、`knockback_mult`、`lava_damage_mult`、`pillar_mode`、`ice_mode`、`arena_shape`、
+`damage_mult`、`knockback_mult`、`lava_damage_mult`、`pillar_mode`、`ice_mode`、
 `gold_rewards_enabled`、`first_round_time_secs` 在 `game-core` 里**只有序列化/默认值/测试引用**，
 没有任何对局逻辑读取。UI 给出这些行会误导玩家。
+（例外：`arena_shape` 我们**短期不实现其他形状**，不接线，而是**从 UI 撤下该行**。）
 
 ### S3 字段冗余 / 非 098c 项
 - 时长 4 个字段表达 2 个概念（`shopping_time_secs`/`learn_time_secs` 与 `first_round_time_secs`/`between_rounds_time_secs`）。
@@ -138,43 +152,58 @@
 
 ---
 
-## 3. 待办清单
+## 3. 待办清单（每项 = core + UI + 设置串 + 测试，四处同步）
 
-> 原则：每项独立可编译/提交；能加单测的加单测；改动设置串 schema 的项要 bump `ROOM_SETTINGS_SCHEMA`。
+> 原则（见 §0.5）：每个设置项都要同时动 **core 逻辑 / UI 行 / 设置串 / 测试**；
+> 每项独立可编译提交；改动设置串的项 bump `ROOM_SETTINGS_SCHEMA`。
+> 下面每项明写 `[core]`/`[UI]`/`[schema]`/`[test]` 四处要做什么。
 
 ### 阶段 A — 确定性 bug（低风险，先做）
-- [ ] **A1** 开局别丢设置：让首局直接用完整 `match_cfg`（不再用子集 `match_config()` 重建 meta）；
-      或把 `match_config()` 改为 `self.match_cfg.clone()`（客户端则用从大厅串还原的 `match_cfg`）。
-      涉及 `main.rs:1938/1919/4970/5128/6895`。测试：加一条“编辑器改击杀金→开局后 `meta.config.gold_per_kill` 生效”。
-- [ ] **A2** `gold_rewards_enabled` 接进经济（或删行）：按 098c `-no reward` 语义，在 `finish_round`/`register_kill`/`register_assists`
-      里把 `Mo/po/lo` 视为 0（点数不受影响），或按我们更宽的“全部金币归零”实现并明确。
-- [ ] **A3** 参与奖时点（S4）：`grant_opening_gold` 只发 `starting_gold`；`gold_per_round` 保留在 `finish_round`。
-      同步 `meta.rs` 4~5 个测试期望值。
+- [ ] **A1（S1）开局别丢设置**
+  - `[core]` 无（沿用传入的 `match_cfg`）。
+  - `[UI]` 无 —— 但**改完 UI 里那些行才真正生效**。
+  - `[client]` `stage_world_for_participants` 首局用完整 `match_cfg`；保留 `team_count = if mode==4 {2} else {match_teams}` 派生。
+  - `[test]` 编辑器改击杀金/得分 → 开局后 `meta.config` 保留。
+- [ ] **A2 参与奖时点（原 A3）**
+  - `[core]` `grant_opening_gold` 只发 `starting_gold`；`gold_per_round` 留在 `finish_round`。
+  - `[UI]` 无。
+  - `[test]` `meta.rs` 4~5 处期望值（首商店 20 而非 30）。
+- [ ] **A3 `gold_rewards_enabled`**
+  - `[core]` 按 098c `-no reward` 把 `Mo/po/lo` 视为 0（点数不变）。
+  - `[UI]` 改 `settings_ui::hint(GoldRewardsEnabled)` 文案为精确语义。
+  - `[test]` 关掉后这些奖励为 0。
 
-### 阶段 B — 去冗余 / 去非 098c（schema bump 一次做）
-- [ ] **B1** 删除 `place_rewards`：字段 + `to_meta_string`/`from_meta_string` 槽位 + `finish_round` 分支
-      (`meta.rs:735`) + 客户端 `match_place_rewards`/`host_set_place_reward`/大厅键 + `auto_place_rewards`(+测试) + 相关 meta 测试。
-- [ ] **B2** 时长字段合并为 098c 的两个（见 §1b）：保留 `first_round_time_secs`(Uo)/`between_rounds_time_secs`(uo)，
-      删 `shopping_time_secs`/`learn_time_secs`；`meta::begin_first_round_config` 改读前者、`meta::finish_round` 改读后者。
-      同步：client `FASTROUND`(`main.rs:914-915`)、`match_config()`/`match_learn_secs` 链路、`STEAM_DEFAULT_LEARN_SECS` 护栏测试。
-      测试：`meta.rs` 首轮/局间时长用例改指新字段（`1464/1465/1588/1589`）。
-- [ ] **B2b** （可选）把 `match_learn_secs`/`host_set_learn`/大厅键 `learn` 重命名为 between-rounds，消除“learn=局间”歧义。
-- [ ] **B3** `ROOM_SETTINGS_SCHEMA` +1，更新 `to/from_meta_string` 与 `room_settings_meta_string_roundtrip` 断言。
-- [ ] **B4** UI 提示/文案同步（`settings_ui::hint`）删除已不存在项、修正时长行名。
+### 阶段 B — 去冗余 / 去非 098c（含 UI 撤行 + schema bump）
+- [ ] **B1 删 `place_rewards`**
+  - `[core]` 字段 + `to/from_meta_string` 槽 + `finish_round` 分支。
+  - `[UI]` 本就没有行（段 3 已删）；确认 `hint` 无残留。
+  - `[client]` `match_place_rewards`/`host_set_place_reward`/大厅键、`auto_place_rewards`(+测试)。
+  - `[schema]` bump。
+- [ ] **B2 时长字段合并**（见 §1b）
+  - `[core]` 删 `shopping_time_secs`/`learn_time_secs`；`begin_first_round_config` 读 `first_round_time_secs`、`finish_round` 读 `between_rounds_time_secs`。
+  - `[UI]` 保留 `FirstRoundSecs`/`BetweenRoundsSecs` 两行（名字已对）；修正 `hint`。
+  - `[client]` `FASTROUND`、`match_config()`/`match_learn_secs` 链路、`STEAM_DEFAULT_LEARN_SECS`。
+  - `[schema]` bump；`[test]` `meta.rs` 时长用例。
+- [ ] **B2b（可选）** `match_learn_secs`/`host_set_learn`/大厅键 `learn` → between-rounds 命名。
+- [ ] **B3** `ROOM_SETTINGS_SCHEMA` +1（B1/B2 各一次）；更新 roundtrip 断言。
+- [ ] **B4** 全量 `settings_ui` 文案/hint 复查（删已不存在项、修正时长行名）。
 
-### 阶段 C — 把 098c 有、但我们没接的旋钮真正接进对局
-- [ ] **C1** `damage_mult`（设置 2）→ 所有伤害结算乘上它（找 `damage_player`/`warlock_ki_impact` 入口）。
-- [ ] **C2** `knockback_mult`（设置 3）→ 击退初速乘上它（`push_knockback`/KI 公式）。
-- [ ] **C3** `lava_damage_mult`（设置 1）→ 出界/岩浆伤害乘上它（`world.step` 出界分支）。
-- [ ] **C4** `first_round_time_secs` → 由 B2 后自动生效。
-- [ ] **C5** `pillar_mode`（设置 8）：0 随机/1 每局必有/2? —— 接进 `_layout_obstacles`（当前只看 seed）。
-- [ ] **C6** `arena_shape`（设置 7）：至少 `0=圆`；其余形状未实现则从 UI 撤下或标注“未实现”。
-- [ ] **C7** 冰面：098c 是 `-ice` 开关；考虑把 `ice_mode` 收敛为开关（决策点 D2）。
+### 阶段 C — 把 098c 有、但我们没接的旋钮接进对局（每项都要动 UI）
+- [ ] **C1 `damage_mult`（设置 2）**：`[core]` 伤害结算乘它；`[UI]` 保留行；`[test]` 倍率。
+- [ ] **C2 `knockback_mult`（设置 3）**：`[core]` 击退初速乘它；`[UI]` 保留行。
+- [ ] **C3 `lava_damage_mult`（设置 1）**：`[core]` 出界伤害乘它；`[UI]` 保留行。
+- [ ] **C4** `first_round_time_secs` 由 B2 自动生效。
+- [ ] **C5 `pillar_mode`（设置 8）**：`[core]` `_layout_obstacles` 读取；`[UI]` 行保留（档位对齐 098c `Po`）。
+- [ ] **C6 `arena_shape` —— 不接线，UI 撤下**
+  - 我们**目前只有圆形**、**短期不新增形状** → 不接 098c 的 `to`。
+  - `[UI]` 把 `ArenaShape` 行**从 `Group::Map` 撤下**（或改只读显示“圆形”），避免“可改却无效果”。
+  - `[core]` 字段可留（默认 0）但 UI 不暴露；不建议为非 098c 的形状做预留。
+- [ ] **C7 冰面**：098c 是 `-ice` 开关，我们三档 → 见 D2。
 
 ### 阶段 D — 决策点（需你拍板）
-- [ ] **D2** 冰面：3 档 (关闭/随机/每局必有) vs 098c 的开关？柱子同理（098c `Po` 0 随机）。
-- [ ] **D3** S2 那些“装饰”项：接进 gameplay（阶段 C）还是先从 UI 撤下，避免继续误导？
-- [ ] **D4** 设置串 schema 是否需要兼容旧串（若 bump，旧客户端不能加入）？
+- [ ] **D2** 冰面粒度（开关 vs 三档）；柱子 `Po`（0 随机）对齐。
+- [ ] **D3** 其余“装饰”项：C 阶段接线；若某项也不打算实现（如 `arena_shape`）→ 从 UI 撤下。
+- [ ] **D4** schema bump 是否需要兼容旧串（若 bump，旧客户端不能加入）。
 
 > 收缩（原 D1）已裁定：**有意不同，不调整**。
 
@@ -183,16 +212,15 @@
 ## 5. 建议动手顺序
 
 目标：先修“设置根本不生效”的确定性 bug，再做去冗余，最后接线 098c 旋钮。
+**每步都同时改 core + UI + 设置串 + 测试**（见 §0.5）。
 
-1. **S1（阶段 A1）— 最高优先级**：让首局直接用完整 `match_cfg`，
-   `stage_world_for_participants` 改传 `self.match_cfg.clone()`（host）／客户端从大厅串还原的 `match_cfg`。
-   ⚠️ **注意**：`match_config()` 里有一个隐含派生——`team_count = if mode==4 {2} else {match_teams}`（国王模式自动两队）；
-   改为直接用 `match_cfg` 后，需保证这个派生不丢（在 game_mode 变更时同步 `match_cfg.team_count`，或保留该派生）。
-   测试：编辑器改击杀金/得分 → 开局后 `meta.config` 保留。
-2. **S4 + A2**：参与奖时点（`grant_opening_gold` 只发初始金）+ `-no reward` 语义。小改 meta，改几个单测。
-3. **B2 → B1**：先合并时长字段（B2），再删名次金（B1）；`ROOM_SETTINGS_SCHEMA` 每步 bump。
-4. **C1~C3**：把伤害/击退/岩浆倍率接进结算（这类“装饰项”最能被玩家察觉）。
-5. **C5~C7 + D2~D4**：柱子/冰面/地图形状与剩余决策点。
+1. **S1（阶段 A1）— 最高优先级**：首局直接用完整 `match_cfg`（`stage_world_for_participants`）。
+   ⚠️ `team_count = if mode==4 {2} else {match_teams}` 派生不能丢。
+   （core 无改；UI 无改，但此后 UI 各行才真正生效。）
+2. **S4 + A3**：参与奖时点 + `-no reward` 语义（core 小改；UI hint 同步；改几个单测）。
+3. **B2 → B1**（含 UI 撤行/文案 + schema bump）：先合并时长字段，再删名次金。
+4. **C1~C3**：伤害/击退/岩浆倍率接进结算（core + UI 保留行）。
+5. **C5~C7 + D2~D4**：柱子/冰面 + 地图形状（`arena_shape` 从 UI 撤下，不接线）。
 
 > 收缩不在列表中（有意不同）。
 
@@ -204,3 +232,5 @@
   列为“两边都不需要的重复项”；细化 B2（合并字段）与 B2b（重命名 learn→between-rounds）。
 - 2026-09-13：收缩**移出对齐范围**：098c 的单 `wo` 是 War3 限制的产物，我们用连续收缩两旋钮，
   **有意不同、不调整**；删除原决策点 D1。
+- 2026-09-13：重整为“**配置 + UI 同步改**”组织（§0.5 四处同步原则）；每项清单明写 core/UI/schema/test；
+  `arena_shape` 定为**不接线、从 UI 撤下**（我们只有圆形，短期不新增形状）。
