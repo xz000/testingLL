@@ -7,7 +7,8 @@
 #  用法：
 #     powershell -ExecutionPolicy Bypass -File publish.ps1            # 编译+上传（交互问账号）
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -BuildOnly # 只编译+收集产物，不上传
-#     powershell -ExecutionPolicy Bypass -File publish.ps1 -SetLive public  # 直接上 public
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -SetLive default  # 直接上默认分支
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -NoSetLive       # 只上传构建，稍后后台手动上线
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan # 非交互（靠已缓存登录态登录）
 #
 #  前置：
@@ -26,8 +27,12 @@
 
 [CmdletBinding()]
 param(
-    # 上传后设为哪个分支：public / beta / [自定义分支名]；只构建不上传时忽略。
-    [string]$SetLive = 'public',
+    # 上传后设为哪个分支；只构建不上传时忽略。**Steam 默认主分支名是 `default`，不是 public**
+    # （名字写错会在 commit 时被拒）。留空或 -NoSetLive 则只提交构建、不设分支上线。
+    [string]$SetLive = 'default',
+    # 只提交构建、不设为任何分支上线：成功后到 Steamworks「构建设置」页手动上线到分支。
+    # 适用于「上传能成功但 SetLive 被拒」的 app（例如缺少“设默认分支上线”的权限）。
+    [switch]$NoSetLive,
     # 只编译+收集产物，不调用 steamcmd 上传（用于本地检查 staging 内容）。
     [switch]$BuildOnly,
     # Steam 登录账号（非交互用；留空则读 $env:STEAM_USER，再留空则交互询问）。
@@ -173,6 +178,13 @@ $esc = { param($p) ($p -replace '\', '\\') -replace '"', '\"' }
 $contentRoot = ($Content -replace '\\', '/')
 $outRoot     = ($OutDir  -replace '\\', '/')
 
+# SetLive 行：-NoSetLive / 留空时不写入（只提交构建，不上线到分支）。
+if ($NoSetLive) { $SetLive = '' }
+$setLiveLine = if ($SetLive) { "`t`"SetLive`" `"$SetLive`"" } else { '' }
+if (-not $SetLive) {
+    Write-Host '[info] 不设分支上线（仅提交构建）；随后到 Steamworks「构建设置」页手动上线。' -ForegroundColor Yellow
+}
+
 $vdfBody = @"
 "AppBuild"
 {
@@ -180,7 +192,7 @@ $vdfBody = @"
 	"Desc" "rust_remake build ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
 	"BuildOutput" "$outRoot"
 	"ContentRoot" "$contentRoot"
-	"SetLive" "$SetLive"
+$setLiveLine
 	"Depots"
 	{
 		"$DepotId"
