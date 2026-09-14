@@ -796,6 +796,25 @@ impl Player {
         self.recompute_item_fx();
     }
 
+    /// 把「档案中的可同步战斗字段」应用到世界玩家：技能等级 / 精通 / 形态 / 物品，并重算派生。
+    ///
+    /// 局间配置同步（学习阶段 → 下一局）后，各端必须用**同源的 `meta.profiles`** 覆盖
+    /// `world.players`。此前只同步了技能等级与物品，漏了精通与形态 —— 而这两项会在本机
+    /// 直接写 `world.players`（成长页买精通、`b` 键/单击切形态），只经 `PlayerConfig`
+    /// 进 `meta.profiles`、不回灌世界；且 `reset_round`/`reset_state` 都保留它们，
+    /// 于是第二局起两端 `state_hash` 不一致（desync）。
+    pub fn apply_profile_sync(&mut self, profile: &crate::meta::PlayerProfile) {
+        for i in 0..self.skill_levels.len().min(profile.skill_levels.len()) {
+            self.skill_levels[i] = profile.skill_levels[i];
+        }
+        self.mastery = [profile.mastery.life, profile.mastery.range, profile.mastery.time];
+        for i in 0..self.forms.len().min(profile.forms.len()) {
+            self.forms[i] = profile.forms[i];
+        }
+        self.set_items(&profile.items);
+        self.refresh_derived();
+    }
+
     /// 派生战斗数值：最大生命 = 基础 `MAX_HP` + 物品生命加成（保持当前血比）。
     /// 098c 无点数购买属性；生命/移速只由物品与 buff 决定。确定性纯函数，跨局/跨端一致。
     pub fn refresh_derived(&mut self) {
@@ -988,6 +1007,24 @@ mod tests {
         assert!(!p.stealth());
         p.add_buff(BuffKind::Tied, 1.0);
         assert!(p.tied());
+    }
+
+    #[test]
+    fn apply_profile_sync_copies_mastery_forms_items_and_levels() {
+        // 回归「第二局 desync」：局间同步必须把精通与形态也从档案灌回世界（此前漏了）。
+        let mut p = Player::new(0, Vec2::ZERO, Fix64::ONE);
+        let mut profile = crate::meta::PlayerProfile::new(0, crate::MAX_SKILL_SLOTS);
+        profile.skill_levels[0] = 3;
+        profile.mastery.life = 2;
+        profile.mastery.range = 1;
+        profile.mastery.time = 4;
+        profile.forms[1] = true;
+        profile.items = vec![crate::item::ItemId::Helm1];
+        p.apply_profile_sync(&profile);
+        assert_eq!(p.skill_levels[0], 3, "技能等级必须同步");
+        assert_eq!(p.mastery, [2, 1, 4], "精通必须同步（漏同步会导致第二局 desync）");
+        assert!(p.forms[1], "形态必须同步（漏同步会导致第二局 desync）");
+        assert_eq!(p.items, vec![crate::item::ItemId::Helm1], "物品必须同步");
     }
 
     #[test]
