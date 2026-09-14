@@ -8,6 +8,10 @@ description = "帧同步圆球竞技场 - ggez 客户端（渲染/输入/UI）"
 # Steam 联机：开 `--features client/steam` 才编译 SteamTransport/大厅接入（需要蒸汽环境 + AppID + 双账号）。
 # 默认关 → 局域网/单机不受影响，check.ps1 全绿。
 steam = ["dep:net-steam", "net-steam/steam"]
+# 发布版 GUI 子系统（不弹命令行窗口）：**只由 publish.ps1 开启**。
+# 不能靠 `not(debug_assertions)` 判断——release profile 为帧同步确定性强制开了
+# `debug-assertions = true`，导致 release 也带 debug_assertions → 旧判定恒假、发布版弹黑框。
+gui = []
 
 [dependencies]
 game-core = { path = "../game-core" }

@@ -72,10 +72,11 @@ $Content = Join-Path $Staging 'content'
 $OutDir  = Join-Path $Staging 'output'
 $Vdf     = Join-Path $Staging "app_build_$AppId.vdf"
 
-Write-Host '== 1/4 cargo build --release (client + steam) ==' -ForegroundColor Cyan
+Write-Host '== 1/4 cargo build --release (client + steam + gui) ==' -ForegroundColor Cyan
 # 注意：native 命令的 stderr（如 cargo 编译进度）在 PS5.1+$ErrorActionPreference='Stop' 下若被
 # 2>&1 重定向会误报为 NativeCommandError。这里不重定向，让输出直接透传，失败靠 $LASTEXITCODE 判断。
-& cargo build --release -p client --features client/steam
+# `client/gui` = 发布版 GUI 子系统（不弹命令行窗口）；详见 client/Cargo.toml 的 gui feature 注释。
+& cargo build --release -p client --features client/steam,client/gui
 if ($LASTEXITCODE -ne 0) { Write-Host '[FAIL] build 失败' -ForegroundColor Red; Pop-Location; exit 1 }
 
 # ----------------------------------------------------------------------------
@@ -106,7 +107,7 @@ try {
         Write-Host '[ok] 发布版为 GUI 子系统（不弹命令行窗口）' -ForegroundColor Green
     } else {
         Write-Host "[WARN] 发布版是 Console 子系统(subsystem=$sub)，会弹命令行窗口！" -ForegroundColor Yellow
-        Write-Host '       请确认 client/src/main.rs 顶部的 `#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]` 存在且用 release 构建。'
+        Write-Host '       请确认 client/src/main.rs 顶部的 `#![cfg_attr(all(windows, feature = "gui"), windows_subsystem = "windows")]` 存在，且本次构建带了 `client/gui` feature。'
     }
 } catch {
     Write-Host '[WARN] 无法读取 exe 的 PE 子系统，跳过 GUI 校验。' -ForegroundColor Yellow
