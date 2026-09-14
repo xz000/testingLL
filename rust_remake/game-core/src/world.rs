@@ -935,6 +935,8 @@ impl World {
                         if ok {
                             // 施法开始（会取消移动）；施法状态机由下一帧 handle_casts 推进并结算效果。
                             self.players[i].move_target = None;
+                            // 098c：疾风步期间施放技能 → 提前结束风步（与直接施法同一条规则）。
+                            self.players[i].end_windwalk();
                         }
                         break; // 本帧不再继续执行后续指令（若施成功则进入 busy，若不成功则丢弃）
                     }
@@ -981,6 +983,7 @@ impl World {
                     p.pos = anchor;
                     p.shadow_window = Fix64::ZERO;
                     p.move_target = None;
+                    p.end_windwalk(); // 施放技能 → 提前结束疾风步（098c）
                     just_cast[idx] = true;
                     continue;
                 }
@@ -1001,6 +1004,7 @@ impl World {
                         }
                     }
                     p.move_target = None;
+                    p.end_windwalk(); // 施放技能 → 提前结束疾风步（098c）
                     just_cast[idx] = true;
                     continue;
                 }
@@ -1013,6 +1017,9 @@ impl World {
                 {
                     // 施法开始：取消当前移动命令（施法优先于走位）
                     p.move_target = None;
+                    // 098c：疾风步期间施放其它技能 → 提前结束风步（清隐身/计时/招架/移速）。
+                    // 若施放的正是疾风步/冲锋本身，其效果结算时会重新挂上（等于刷新）。
+                    p.end_windwalk();
                     just_cast[idx] = true;
                 }
             }
@@ -6984,6 +6991,39 @@ mod tests {
         w.players[0].contact_by_enemy = Some(1);
         w.process_parry(Fix64::from_num(1.0 / 60.0));
         assert!(w.players[1].control.is_none(), "非风步不应触发招架");
+    }
+
+    #[test]
+    fn casting_a_skill_ends_windwalk() {
+        // 098c：疾风步期间**施放其它技能** → 提前结束风步（隐身消失、风步计时清零、
+        // 招架就绪/冷却重置，风步附带的移速 buff 一并移除），而不是等计时到期。
+        let mut w = World::new(2, 4242);
+        w.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].team = 0;
+        w.players[1].team = 1;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        // 进入风步状态（隐身 + 移速 + 风步计时 + 招架就绪）。
+        w.players[0].add_buff(crate::player::BuffKind::Stealth, 5.0);
+        w.players[0].add_buff(crate::player::BuffKind::Speed(100.0), 5.0);
+        w.players[0].windwalk_state = Fix64::from_num(5.0);
+        w.players[0].parry_ready = true;
+        assert!(w.players[0].stealth());
+
+        // 施放火球（非风步技能）→ 施法成功的那一帧应立即结束风步。
+        let input = vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ];
+        w.step(input, dt);
+        assert!(!w.players[0].stealth(), "施法后应现形（清除 Stealth）");
+        assert_eq!(w.players[0].windwalk_state, Fix64::ZERO, "施法后风步计时应清零");
+        assert!(!w.players[0].parry_ready, "施法后招架就绪应清除");
+        assert!(
+            !w.players[0].has_buff(crate::player::BuffKind::Speed(0.0)),
+            "风步附带的移速 buff 应随风步结束而移除"
+        );
     }
 
     #[test]
