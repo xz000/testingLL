@@ -5,10 +5,13 @@
 #        生成 app_build VDF，再调用 steamcmd 上传到 Steam 后台。
 #
 #  用法：
-#     powershell -ExecutionPolicy Bypass -File publish.ps1            # 编译+上传（交互问账号）
-#     powershell -ExecutionPolicy Bypass -File publish.ps1 -BuildOnly # 只编译+收集产物，不上传
-#     powershell -ExecutionPolicy Bypass -File publish.ps1 -SetLive default  # 直接上默认分支
-#     powershell -ExecutionPolicy Bypass -File publish.ps1 -NoSetLive       # 只上传构建，稍后后台手动上线
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan  # 【推荐】编译+上传构建（不改线上）
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -BuildOnly        # 只编译+收集产物，不上传
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -SetLive <branch> # 上传并把构建设为 <branch> 上线
+#
+#  默认只上传、不设分支上线（本 app 的 `default` 分支拒绝 steamcmd SetLive，会报 Failure）：
+#  上传后到 Steamworks「Builds」页用下拉把新构建设到 default 上线（owner 在网页可操作）。
+#  非默认分支（beta）的 SetLive 是可行的，可全自动。
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan # 非交互（靠已缓存登录态登录）
 #
 #  前置：
@@ -27,11 +30,11 @@
 
 [CmdletBinding()]
 param(
-    # 上传后设为哪个分支；只构建不上传时忽略。**Steam 默认主分支名是 `default`，不是 public**
-    # （名字写错会在 commit 时被拒）。留空或 -NoSetLive 则只提交构建、不设分支上线。
-    [string]$SetLive = 'default',
-    # 只提交构建、不设为任何分支上线：成功后到 Steamworks「构建设置」页手动上线到分支。
-    # 适用于「上传能成功但 SetLive 被拒」的 app（例如缺少“设默认分支上线”的权限）。
+    # 上传后设为哪个分支上线；**留空（默认）= 只上传构建、不改线上**（之后网页手动上线）。
+    # 注意 Steam 默认主分支名是 `default`（不是 public）；本 app 的 default 拒绝 steamcmd
+    # SetLive（报 Failure），故默认留空。要自动上线非默认分支（如 beta）就传分支名。
+    [string]$SetLive = '',
+    # 显式声明「只提交构建、不设分支上线」（与 SetLive 留空等价，语义更清楚）。
     [switch]$NoSetLive,
     # 只编译+收集产物，不调用 steamcmd 上传（用于本地检查 staging 内容）。
     [switch]$BuildOnly,
