@@ -5,9 +5,10 @@
 #        生成 app_build VDF，再调用 steamcmd 上传到 Steam 后台。
 #
 #  用法：
-#     powershell -ExecutionPolicy Bypass -File publish.ps1            # 编译+上传
+#     powershell -ExecutionPolicy Bypass -File publish.ps1            # 编译+上传（交互问账号）
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -BuildOnly # 只编译+收集产物，不上传
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -SetLive public  # 直接上 public
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan # 非交互（靠已缓存登录态登录）
 #
 #  前置：
 #    1) 已装 steamcmd（见 $SteamCmd），或让脚本从官网下载。
@@ -29,6 +30,8 @@ param(
     [string]$SetLive = 'public',
     # 只编译+收集产物，不调用 steamcmd 上传（用于本地检查 staging 内容）。
     [switch]$BuildOnly,
+    # Steam 登录账号（非交互用；留空则读 $env:STEAM_USER，再留空则交互询问）。
+    [string]$SteamUser = '',
     # 可选：覆盖默认的 steamcmd.exe 路径。
     [string]$SteamCmdExe = ''
 )
@@ -48,7 +51,6 @@ $DepotId  = 908661
 # 出于安全考虑，本脚本不再把密码写进命令行（同机任意进程可读命令行参数）。
 # 改用 steamcmd 已缓存的登录态：先手动跑一次 `steamcmd +login <账号>`，
 # 凭据写入 loginusers.vdf 后即可只用账号名登录。账号可用 $env:STEAM_USER 注入。
-$SteamUser = ''
 if (-not $SteamUser -and $env:STEAM_USER) { $SteamUser = $env:STEAM_USER }
 
 # steamcmd 位置；为空时自动探测常见路径，找不到则提示从官网下载。
@@ -217,8 +219,10 @@ if ($SteamPass) {
 if (-not $SteamUser) {
     Write-Host '[info] 未提供账号：将尝试直接 +run_app_build（依赖已缓存且未过期的登录态）。' -ForegroundColor Yellow
 } elseif (-not (Test-Path $cachedLoginUsers)) {
-    Write-Host '[FAIL] 未检测到 SteamCMD 缓存（loginusers.vdf）。请先手动运行一次 `steamcmd +login <账号>` 以缓存凭据，再重新运行本脚本。' -ForegroundColor Red
-    Pop-Location; exit 1
+    # 不直接失败：不同版本的 steamcmd 缓存位置不同（有的写 config/loginusers.vdf，
+    # 有的只在 config/config.vdf 的 Accounts 里记住账号）。继续走 +login <账号>，
+    # 真无缓存时 steamcmd 自己会提示输入密码，错误更直观。
+    Write-Host '[WARN] 未找到 config/loginusers.vdf；将尝试 +login <账号>（若已有缓存登录态应能直接登录，否则 steamcmd 会要求输入密码）。' -ForegroundColor Yellow
 }
 if (-not (Test-Path $SteamCmdExe)) {
     Write-Host "[FAIL] 找不到 steamcmd：$SteamCmdExe" -ForegroundColor Red
