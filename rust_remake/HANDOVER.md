@@ -15,6 +15,34 @@ cargo build --release -p client --features client/steam  :: release（联机用�
 - 联机复验走 `powershell -ExecutionPolicy Bypass -File run-steam.ps1`
 - **改完必看 exe 时间戳**；或在 exe 里搜新增字符串确认是新版本（详见 `WORKFLOW_NOTES.md`）
 
+## 一·补、发布到 Steam（上传 + 上线）
+
+**脚本**：`publish.ps1` = 编译 release → 收集 staging → 生成 app_build VDF → 调 steamcmd。
+- 构建特征：`client/steam,client/gui`。**`gui` feature 只在这里开**：release profile 为帧同步确定性
+  强制 `debug-assertions = true`，所以 GUI 子系统**不能**靠 `not(debug_assertions)` 判定
+  （旧写法导致发布版弹黑框）；`gui` 控制 `windows_subsystem="windows"`。`check.ps1` 也构建/测试/clippy 这组。
+- appid **908660**（Circle Brawl）/ depot **908661**（Circle Brawl Content）。
+
+**推荐流程（本 app 的 `default` 分支拒绝命令行 SetLive）**：
+```bat
+powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只上传，不动线上
+:: 然后到 Steamworks → SteamPipe → Builds → 用下拉把新构建设到 default 上线
+```
+`publish.ps1` **默认就是“只上传、不设分支”**；要自动上线非默认分支用 `-SetLive <branch>`。
+
+**踩过的坑（2026-09-14 排查）**：
+1. `SetLive "public"` → `Access Denied`：**根本没有 `public` 分支**；Steam 默认主分支名就是 **`default`**。
+2. `SetLive "default"` → `Failure`：**命令行 SetLive 到默认分支被拒**（缓存令牌登录即可复现；
+   与手机 Steam 令牌无关）。**非默认分支（beta）的 SetLive 可行** → 内部测试可建 beta 分支全自动。
+   网页以 owner 身份把构建设到 default 上线正常。
+3. `publish.ps1` 曾硬要求 `steamcmd\config\loginusers.vdf`（本机 steamcmd 把账号记在
+   `config.vdf` 的 Accounts 里）→ 已降级为 WARN，并加 `-SteamUser`（非交互）。
+4. **上传 ≠ 上线**：构建上传成功不代表已上线；`Builds` 列表里“已包含 Depot”但没设分支就是没上线
+   （曾误判为“没传上去”）。
+
+**字体**：外置 `assets/fonts/LXGWWenKaiMonoLite-Medium.ttf`（LXGW 文楷，OFL-1.1），随 exe 分发；
+`load_cjk_font` **只从磁盘加载，找不到直接报错**（已移除内联 168k 回退）。
+
 ## 二、当前状态（已实现且已验证）
 
 - **设置系统（统一）**：`H`（建房）与 `O`（房内）打开**同一个**设置编辑器；分组 `[A]房间 [Z]经济 [X]玩法 [C]地图 [V]模式`；
