@@ -3908,7 +3908,7 @@ impl Game {
                         Some(ms) => format!("延迟 {ms} ms"),
                         None => "延迟 -- ms".to_string(),
                     };
-                    draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh - 116.0 }, true)?;
+                    draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh - 138.0 }, true)?;
                 }
                 // 自身状态面板（Dota2 风格，左下）：生命 / 状态 / 施法
                 self.draw_self_status(canvas, ctx)?;
@@ -5111,7 +5111,7 @@ impl Game {
         let (_, sh) = (ui::UI_W, ui::UI_H);
         let x = 10.0;
         let w = 250.0;
-        let h = 104.0;
+        let h = 126.0;
         let y = sh - h - 12.0;
         let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(x, y, w, h), Color::from_rgba(10, 12, 18, 200))?;
         canvas.draw(&bg, graphics::DrawParam::new());
@@ -5157,6 +5157,24 @@ impl Game {
             CastPhase::Idle => ("待命".to_string(), Color::from_rgb(140, 150, 170)),
         };
         ui::text_left(canvas, ctx, &cast.0, 15.0, cast.1, x + 10.0, y + 75.0)?;
+
+        // 物品冷却（目前仅熔岩靴有 CD：熔岩上用天罚/虔诚激活熔岩抵抗，进入 25s CD）。
+        // 最省事的文本指示：就绪=绿、冷却=橙 + 剩余秒数；未持有则显示占位。
+        let lava_boots = p
+            .items
+            .iter()
+            .any(|it| it.def().family == game_core::item::ItemFamily::LavaBoots);
+        let (item_txt, item_col) = if lava_boots && p.lava_boot_cd > Fix64::ZERO {
+            (
+                format!("熔岩靴 冷却 {:.1}s", p.lava_boot_cd.to_num::<f32>()),
+                Color::from_rgb(255, 170, 90),
+            )
+        } else if lava_boots {
+            ("熔岩靴 就绪".to_string(), Color::from_rgb(140, 220, 160))
+        } else {
+            ("物品 —".to_string(), Color::from_rgb(130, 140, 160))
+        };
+        ui::text_left(canvas, ctx, &item_txt, 15.0, item_col, x + 10.0, y + 98.0)?;
         Ok(())
     }
 }
