@@ -824,7 +824,7 @@ struct Game {
 ///
 /// 发布版 cjk.ttf 随 exe 一起分发（见 publish.ps1）；开发期在仓库 `assets/fonts/` 下。
 /// 候选路径依次尝试：exe 同目录、exe 同目录的 `assets/fonts/`、以及相对 cwd 的仓库布局。
-/// 全部失败（如字体文件被误删）时回退到内联的 168KB 子集（稀有字可能成豆腐块，但可执行文件仅 +168KB）。
+/// **只使用外置字体**：找不到时返回错误（不再回退内联子集），以免静默渲染成豆腐块。
 fn load_cjk_font(ctx: &mut Context) -> GameResult<()> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -850,10 +850,9 @@ fn load_cjk_font(ctx: &mut Context) -> GameResult<()> {
             }
         }
     }
-    eprintln!("[font] 未在磁盘找到 cjk.ttf，回退到内联 168k 子集字体");
-    let font = ggez::graphics::FontData::from_vec(include_bytes!("../../assets/fonts/cjk-168k.ttf").to_vec())?;
-    ctx.gfx.add_font("cjk", font);
-    Ok(())
+    Err(ggez::GameError::ResourceLoadError(
+        "未找到 CJK 字体 cjk.ttf（已移除内联回退；请把 cjk.ttf 放到 exe 同目录或 assets/fonts/）".into(),
+    ))
 }
 
 /// C8 去重判定（纯函数，便于单测）：本帧是否应抑制 ASCII 白名单插入。
@@ -869,8 +868,8 @@ fn ime_commit_suppresses_ascii(frame: u64, last_ime_commit_frame: u64) -> bool {
 
 impl Game {
     fn new(ctx: &mut Context, app: AppState) -> GameResult<Self> {
-        // 注册中文字体：从磁盘加载完整 cjk.ttf（不内联进 17.7MB 二进制）；
-        // 发布版 cjk.ttf 随 exe 一起分发，开发期在仓库 assets/ 下。找不到时回退内联 168k 子集。
+        // 注册中文字体：外部加载完整 cjk.ttf（不内联进二进制）。
+        // 发布版 cjk.ttf 随 exe 一起分发，开发期在仓库 assets/ 下；缺失则直接报错。
         load_cjk_font(ctx)?;
 
         // 联网：加入 host 或开房作 host；否则单机（含本地 AI 机器人）。

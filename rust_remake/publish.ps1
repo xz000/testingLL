@@ -126,13 +126,14 @@ if ($dll) {
     Write-Host '[WARN] 未找到 steam_api64.dll，请把官方 dll 放到 staging content 根目录。' -ForegroundColor Yellow
 }
 
-# 完整 CJK 字体：随 exe 分发（运行时从 exe 同目录加载，不再内联进 17.7MB 二进制）。
+# 完整 CJK 字体：随 exe 分发（运行时从 exe 同目录加载，不内联进二进制）。
+# 已移除内联回退——缺失字体时客户端会直接报错启动失败，故这里必须打包。
 $font = Join-Path $PSScriptRoot 'assets/fonts/cjk.ttf'
 if (Test-Path $font) {
     Copy-Item $font (Join-Path $Content 'cjk.ttf') -Force
     Write-Host '[ok] cjk.ttf'
 } else {
-    Write-Host '[WARN] 未找到 assets/fonts/cjk.ttf，发布版将回退到内联 168k 子集（稀有字可能缺）。' -ForegroundColor Yellow
+    Write-Host '[ERROR] 未找到 assets/fonts/cjk.ttf：发布版将无法启动（已移除内联回退）。' -ForegroundColor Red
 }
 # SIL OFL-1.1 要求字体随附许可文本：cjk.ttf 是思源黑体（Source Han Sans / Noto CJK），
 # 商用/再分发均允许，但必须一并打包许可说明，否则违反开源字体许可。
