@@ -6,7 +6,7 @@
 ## 一、怎么跑 / 怎么验
 
 ```bat
-cargo test --workspace                                  :: 基线：313 项
+cargo test --workspace                                  :: 基线：356 项
 cargo clippy --workspace -- -D warnings                 :: 必须干净
 cargo clippy --workspace --features client/steam -- -D warnings
 cargo build -p client                                   :: debug
@@ -79,11 +79,11 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 
 | 项 | 值 |
 |---|---|
-| `PROTOCOL_VERSION` | 17 |
+| `PROTOCOL_VERSION` | 20 |
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 54 / game-core 244 / net 39 / net-steam 9；steam client 61 |
+| 测试基线 | client 59 / game-core 249 / net 39 / net-steam 9（合计 356）；steam client 66 |
 
 ## 四、待办（按建议优先级）
 
@@ -171,15 +171,14 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 
 ## 六、最近提交（新→旧）
 
-`fc1fd6b` 编辑器按钮快捷键提示 + 房间列表两步式 ← `465429e` 编辑器保存/不保存 + 鼠标建房 + 修 CRLF 假通过 ←
-`9edecb7` 设置编辑器鼠标支持 ← `992a8f6` Steam 大厅菜单/连接中主题化 ← `dce5bdb` Steam 房间列表主题化 ←
-`f1255e5` 占位符保留 + Steam UI 计划 ← `16a097d` 删弃用测试技能收尾 ← `928de7a` 删 Test01/Test03 ←
-`6dbcede` net 测试警告清理 ← `7cd4cbe` 快照广播降频/复用 hash/取新基线 ←
-`ca25399` 快照体积更正 ← `58e31db` 帧同步卡顿分析 ← `2f207cf` 表现层 P1 ←
-`6d9d3f2` client 看房主参数 ← `b21d81f` 输入路由+中文 IME ← `f4835c6` 商店升级后保持高亮 ←
-`811ad8d` 商店/成长列表+详情 ← `c854027` HANDOVER 刷新 ←
-`565728e` 商店退格卖出可用化 ← `7270497` HANDOVER ← `961182d` 商店一行两动作
-← `065c4ff` 源码扫描测试抗重构 ← `74edf9d` 金币时序 ← `12f1946` 工程坑文档
-← `31bf70b` 人数/提示 ← `30e6ea5` 非房主只读 ← `5ce9ee1` 开局发钱（初版）
-← `7ebacee` 客户端同步 meta.config ← `e75579d` 房间信息界面职责拆分
-← `fb62684` 统一设置（双数据源）← `254b044` H 走统一编辑器 ← `aa7899e` 建房界面收敛
+`50daa58` HANDOVER 补 Steam 发布流程 ← `2cec2a2` publish 默认只上传 ← `fa79b17` publish SetLive 默认 `default` + `-NoSetLive` ←
+`66473e7` publish `-SteamUser` + 不硬卡 loginusers.vdf ← `5e98f75` 发布版 GUI 子系统 feature `gui` ←
+`bc17ed2` 头顶状态字下移 3px ← `eb88e47` 头顶状态框描边 1.0 ← `918d7c8` 头顶状态框描边调细 ←
+`83bc962` 换字体 LXGW 文楷 ← `b615abd` 删内联 168k 字体回退 ← `9d176cc` HUD 显示熔岩靴 CD ←
+`8590df4` 施法结束疾风步 ← `02891d5` 局间同步 mastery/forms + 敌方隐身不可见 ←
+`746e946` Blast 固定半径（回退动画）← `a240469` 虔诚治疗环 + 主菜单溢出修复 ←
+`f9a0a64` Blast 中心扩散 ← `0defc16` 天罚/虔诚距离衰减 ← `d636f6a` 队列移动标记改青色 ←
+`0f6fb2a` 队列标记读模拟队列（修空）← `c813e43` 冲锋/燃烧接触 AoE + 虔诚治疗半径特效 ←
+`42dcf02` 爆炸按真实半径绘制 ← `7743711` 状态图标/自身面板/队列标记/商店音效 ←
+`a4d042b` P4-2 施法条 + P4-4 自机环/目标标记 ← `d75c769` P4-3 状态图标行 + P3-3 柱子碎裂/爆炸
+（更早的提交见 `git log`）
