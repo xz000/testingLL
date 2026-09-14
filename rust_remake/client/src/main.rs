@@ -2027,15 +2027,12 @@ impl Game {
     fn teardown_round_end(&mut self) {
         // 诊断：同步前本端 profiles 技能等级（局间技能同步关键）。
         eprintln!("[teardown] profiles pre: {:?}", self.meta.profiles.iter().map(|pr| (pr.player_id, pr.skill_levels.clone())).collect::<Vec<_>>());
-        // 把 meta.profiles 全量同步到 world.players，使所有端下一局的技能等级一致。
+        // 把 meta.profiles 全量同步到 world.players，使所有端下一局的技能等级/精通/形态/物品一致。
         // （联网下 profiles 已经由 host 广播的完整配置统一；单机下按本地各玩家档案设置。）
+        // 注：精通与形态也必须在此回灌——它们只在本机被直接写进 `world.players`，
+        // 若漏同步，第二局起两端 `state_hash` 会不一致（client 报 desync）。
         for (profile, p) in self.meta.profiles.iter().zip(self.world.players.iter_mut()) {
-            for i in 0..p.skill_levels.len().min(profile.skill_levels.len()) {
-                p.skill_levels[i] = profile.skill_levels[i];
-            }
-            // 把物品派生数值（生命等）同步到战斗世界（确定性纯函数，跨端/跨局一致）。
-            p.set_items(&profile.items);
-            p.refresh_derived();
+            p.apply_profile_sync(profile);
         }
         // 诊断：同步后 world 各玩家技能等级。
         eprintln!("[teardown] world post: {:?}", self.world.players.iter().enumerate().map(|(i, p)| (i as u32, p.skill_levels.to_vec())).collect::<Vec<_>>());
@@ -2609,8 +2606,15 @@ impl Game {
             1.0
         };
         let it_alpha_fix = Fix64::from_num(it_alpha);
+        // 本机所在队伍：用于判定隐身对谁可见（自己/同队可见半透明，敌方完全不可见）。
+        let me_team = self.world.players.get(me_idx as usize).map(|p| p.team);
         for (pi, p) in self.world.players.iter().enumerate() {
             if !p.alive {
+                continue;
+            }
+            // 隐身（疾风步等）：敌方视角**完全看不见**；只有本人/同队能看到半透明残影。
+            // （此前对所有视角一视同仁地画半透明，导致敌方也能看到隐身目标。）
+            if p.stealth() && me_team != Some(p.team) {
                 continue;
             }
             let cur = p.pos;
@@ -2629,7 +2633,7 @@ impl Game {
                     color = Color::from_rgb(90, 230, 170); // 自己始终绿松石以便辨识
                 }
             }
-            // 潜行：半透明（潜行踢 / 隐蔽效果）
+            // 潜行：仅本人/同队视角半透明（潜行踢 / 隐蔽效果）；敌方已在上方跳过。
             if p.stealth() {
                 color.a = 0.4;
             }
