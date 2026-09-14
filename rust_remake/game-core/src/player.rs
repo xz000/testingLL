@@ -506,6 +506,28 @@ impl Player {
         self.has_buff(BuffKind::Stealth)
     }
 
+    /// 结束疾风步/风步状态（S010 A 冲锋 / B 隐身）：清隐身、风步计时、冲锋标志、
+    /// 招架就绪/冷却，以及风步附带的移速 buff。
+    ///
+    /// 098c：疾风步期间**施放其它技能**会提前结束风步（隐身随之消失），而非只等
+    /// 计时回调 `AA` 到期。`handle_casts`/`step_command_queue` 在施法**成功**时调用
+    /// 本方法；若施放的正是疾风步/冲锋本身，其效果结算时会重新挂上，等于刷新。
+    ///
+    /// 仅当确实处于风步/冲锋（`windwalk_state>0` 或 `charging`）时才清 `Speed`，
+    /// 避免误删其它技能（如 S007 急行）给的移速 buff；非风步来源的 `Stealth`
+    /// （冲刺斩 / 潜行踢 / 长期隐身）不受影响。
+    pub fn end_windwalk(&mut self) {
+        if self.windwalk_state <= Fix64::ZERO && !self.charging {
+            return;
+        }
+        self.windwalk_state = Fix64::ZERO;
+        self.charging = false;
+        self.parry_ready = false;
+        self.parry_cd = Fix64::ZERO;
+        self.remove_buff(BuffKind::Stealth);
+        self.remove_buff(BuffKind::Speed(0.0));
+    }
+
     /// 是否被束缚（不能施法）。
     pub fn tied(&self) -> bool {
         self.has_buff(BuffKind::Tied)
