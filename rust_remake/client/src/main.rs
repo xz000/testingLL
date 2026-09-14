@@ -2774,7 +2774,8 @@ impl Game {
                     // 边框细一些（1.5 → 1.0）：原 1.5 会压住方框里的单字。
                     let cell_bd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.0), cell, c)?;
                     canvas.draw(&cell_bd, graphics::DrawParam::new());
-                    draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy - 2.0 }, true)?;
+                    // 文字下移 3px（y: iy-2 → iy+1）：原本字顶越过方框上边，被描边压住。
+                    draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy + 1.0 }, true)?;
                 }
             }
         }
