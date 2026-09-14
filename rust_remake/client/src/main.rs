@@ -2771,7 +2771,8 @@ impl Game {
                     let cell_bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), cell, Color::from_rgba(12, 14, 20, 210))?;
                     canvas.draw(&cell_bg, graphics::DrawParam::new());
                     let c = Color::from_rgb(ic.color[0], ic.color[1], ic.color[2]);
-                    let cell_bd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.5), cell, c)?;
+                    // 边框细一些（1.5 → 0.5）：粗边框会压住方框里的单字。
+                    let cell_bd = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(0.5), cell, c)?;
                     canvas.draw(&cell_bd, graphics::DrawParam::new());
                     draw_text(&mut canvas, ctx, ic.label, 13.0, c, Point2 { x: rx + sz / 2.0, y: iy - 2.0 }, true)?;
                 }
