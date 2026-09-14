@@ -820,39 +820,46 @@ struct Game {
     steam_toast: (String, f64),
 }
 
-/// 从磁盘加载完整 CJK 字体并注册为 "cjk"，避免把 17.7MB 的 cjk.ttf 内联进二进制。
+/// 外置 CJK 字体文件名候选（按优先级）；发布时随 exe 分发，开发期在仓库 `assets/fonts/` 下。
+/// 主字体 = **LXGW 文楷 Mono Lite（Medium）**（SIL OFL-1.1）；`cjk.ttf` 保留为兼容别名。
+const CJK_FONT_FILES: &[&str] = &["LXGWWenKaiMonoLite-Medium.ttf", "cjk.ttf"];
+
+/// 从磁盘加载完整 CJK 字体并注册为 "cjk"（ggez 字体键名），避免把十几 MB 的字体内联进二进制。
 ///
-/// 发布版 cjk.ttf 随 exe 一起分发（见 publish.ps1）；开发期在仓库 `assets/fonts/` 下。
-/// 候选路径依次尝试：exe 同目录、exe 同目录的 `assets/fonts/`、以及相对 cwd 的仓库布局。
+/// 候选目录依次尝试：exe 同目录、exe 同目录的 `assets/fonts/`、以及相对 cwd 的仓库布局
+/// （开发期 cwd 通常为 `client/`，仓库字体在 `../../assets/fonts/`）。
 /// **只使用外置字体**：找不到时返回错误（不再回退内联子集），以免静默渲染成豆腐块。
 fn load_cjk_font(ctx: &mut Context) -> GameResult<()> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("cjk.ttf"));
-            candidates.push(dir.join("assets").join("fonts").join("cjk.ttf"));
+            dirs.push(dir.to_path_buf());
+            dirs.push(dir.join("assets").join("fonts"));
         }
     }
-    // 开发期 cwd 通常为 client/，仓库字体在 ../../assets/fonts/cjk.ttf
-    candidates.push(std::path::PathBuf::from("assets/fonts/cjk.ttf"));
-    candidates.push(std::path::PathBuf::from("../assets/fonts/cjk.ttf"));
-    candidates.push(std::path::PathBuf::from("../../assets/fonts/cjk.ttf"));
+    dirs.push(std::path::PathBuf::from("assets/fonts"));
+    dirs.push(std::path::PathBuf::from("../assets/fonts"));
+    dirs.push(std::path::PathBuf::from("../../assets/fonts"));
 
-    for path in &candidates {
-        if let Ok(bytes) = std::fs::read(path) {
-            match ggez::graphics::FontData::from_vec(bytes) {
-                Ok(font) => {
-                    ctx.gfx.add_font("cjk", font);
-                    eprintln!("[font] 已加载 CJK 字体：{}", path.display());
-                    return Ok(());
+    for dir in &dirs {
+        for name in CJK_FONT_FILES {
+            let path = dir.join(name);
+            if let Ok(bytes) = std::fs::read(&path) {
+                match ggez::graphics::FontData::from_vec(bytes) {
+                    Ok(font) => {
+                        ctx.gfx.add_font("cjk", font);
+                        eprintln!("[font] 已加载 CJK 字体：{}", path.display());
+                        return Ok(());
+                    }
+                    Err(e) => eprintln!("[font] 解析失败 {}: {:?}", path.display(), e),
                 }
-                Err(e) => eprintln!("[font] 解析失败 {}: {:?}", path.display(), e),
             }
         }
     }
-    Err(ggez::GameError::ResourceLoadError(
-        "未找到 CJK 字体 cjk.ttf（已移除内联回退；请把 cjk.ttf 放到 exe 同目录或 assets/fonts/）".into(),
-    ))
+    Err(ggez::GameError::ResourceLoadError(format!(
+        "未找到 CJK 字体（{}）；请放到 exe 同目录或 assets/fonts/（已移除内联回退）",
+        CJK_FONT_FILES.join(" / ")
+    )))
 }
 
 /// C8 去重判定（纯函数，便于单测）：本帧是否应抑制 ASCII 白名单插入。
@@ -868,8 +875,8 @@ fn ime_commit_suppresses_ascii(frame: u64, last_ime_commit_frame: u64) -> bool {
 
 impl Game {
     fn new(ctx: &mut Context, app: AppState) -> GameResult<Self> {
-        // 注册中文字体：外部加载完整 cjk.ttf（不内联进二进制）。
-        // 发布版 cjk.ttf 随 exe 一起分发，开发期在仓库 assets/ 下；缺失则直接报错。
+        // 注册中文字体：外置加载（LXGW 文楷，不内联进二进制）。
+        // 发布版随 exe 一起分发，开发期在仓库 assets/ 下；缺失则直接报错。
         load_cjk_font(ctx)?;
 
         // 联网：加入 host 或开房作 host；否则单机（含本地 AI 机器人）。
