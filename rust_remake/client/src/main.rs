@@ -7,9 +7,11 @@
 //!
 //! 玩法逻辑全部在 `game-core` 的 `World` 中，本文件只负责输入采集与渲染。
 
-// 发布版（release）在 Windows 上使用 GUI 子系统：不弹出黑色命令行窗口，改善玩家体验。
-// debug 构建仍保留 console（便于本地看日志/调试）。publish.ps1 走 release，自动生效。
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+// 发布版在 Windows 上使用 GUI 子系统：不弹出黑色命令行窗口，改善玩家体验。
+// 由 `gui` feature 控制（**只由 publish.ps1 开启**）——不能用 `not(debug_assertions)`：
+// release profile 为帧同步确定性强制开了 `debug-assertions = true`，该判定恒假。
+// 本地 debug / release 手动构建仍保留 console（便于看日志/调试）。
+#![cfg_attr(all(windows, feature = "gui"), windows_subsystem = "windows")]
 
 use game_core::fix::{cos, sin, Fix64, Vec2};
 use game_core::meta::{MatchConfig, MatchPhase, MatchState};

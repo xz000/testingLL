@@ -32,9 +32,11 @@ Run "cargo test --workspace"       { cargo test --workspace }
 Run "cargo clippy --workspace -- -D warnings" { cargo clippy --workspace -- -D warnings }
 
 # steam feature：client 启用后连带编译 net-steam，覆盖此前零检查的 #cfgs(steam) 代码。
-Run "cargo build -p client --features client/steam" { cargo build -p client --features client/steam }
-Run "cargo test -p client --features client/steam"  { cargo test -p client --features client/steam }
-Run "cargo clippy -p client --features client/steam -- -D warnings" { cargo clippy -p client --features client/steam -- -D warnings }
+# 额外带 `gui`（发布版 GUI 子系统）：publish.ps1 用的正是 `client/steam,client/gui` 这组，
+# 门禁先覆盖，避免"发布时才第一次编译该组合"。
+Run "cargo build -p client --features client/steam,client/gui" { cargo build -p client --features client/steam,client/gui }
+Run "cargo test -p client --features client/steam,client/gui"  { cargo test -p client --features client/steam,client/gui }
+Run "cargo clippy -p client --features client/steam,client/gui -- -D warnings" { cargo clippy -p client --features client/steam,client/gui -- -D warnings }
 
 if ($FmtCheck) {
     Run "cargo fmt --check"        { cargo fmt --check }
