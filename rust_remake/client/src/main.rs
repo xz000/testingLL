@@ -1,4 +1,4 @@
-//! ggez 客户端 —— Warlock Brawl（098c）复刻的输入采集与渲染层。
+//! ggez 客户端 —— Circle Brawl（圆圈之战）：Warlock Brawl（098c）复刻的输入采集与渲染层。
 //!
 //! - 玩家圆：**右键**设置移动目标点，圆球匀速走过去，到达即停
 //! - 场地逐渐收缩，出界扣血；球被挤到边缘/相互重叠会受压损血
@@ -8095,7 +8095,7 @@ impl Game {
         let cx = sw / 2.0;
 
         // 标题区（上移，给 4 张卡片 + 底部提示留出空间，避免重叠）
-        let title = i18n::t("术士之战 Warlock Brawl");
+        let title = i18n::t("圆圈之战 Circle Brawl");
         draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: 64.0 }, true)?;
         draw_text(&mut canvas, ctx, i18n::t("—— 选择对战模式 ——"), 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: 124.0 }, true)?;
 
@@ -8110,7 +8110,7 @@ impl Game {
         if in_lobby_menu {
             // LAYOUT-CLEAR: lobby sub-screen clears the canvas before drawing
             // **清屏**：主菜单的标题/卡片/提示已经画在同一张画布上；子界面直接叠画会让它们透在
-            // 下面（用户看到的"创建房间"下面还有一行"术士之战 Warlock Brawl"就是此因）。
+            // 下面（用户看到的"创建房间"下面还有一行"圆圈之战 Circle Brawl"就是此因）。
             // 注意必须清在**这里**（菜单内容之后、子界面之前），早一步清等于没清。
             #[cfg(feature = "steam")]
             {
@@ -9084,7 +9084,7 @@ fn main() -> GameResult {
     logging::log("[main] building ggez context (window)...");
 
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
-        .window_setup(ggez::conf::WindowSetup::default().title("术士之战 Warlock Brawl"))
+        .window_setup(ggez::conf::WindowSetup::default().title("圆圈之战 Circle Brawl"))
         .window_mode(
             ggez::conf::WindowMode::default()
                 .dimensions(1280.0, 720.0)
@@ -9099,6 +9099,8 @@ fn main() -> GameResult {
         i18n::set_lang(pref.resolve(None));
         eprintln!("[i18n] language override via --lang: {pref:?}");
     }
+    // 窗口标题按已解析的语言设置（中文：圆圈之战 Circle Brawl；英文：Circle Brawl）。
+    ctx.gfx.set_window_title(i18n::t("圆圈之战 Circle Brawl"));
     // 用自定义事件循环替代 `event::run`，以接入中文 IME 输入。
     let mut app = GameApp {
         ctx,

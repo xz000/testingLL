@@ -208,7 +208,7 @@ const EN: &[(&str, &str)] = &[
     ("否", "No"),
     ("返回", "Back"),
     // ---- 主菜单 ----
-    ("术士之战 Warlock Brawl", "Warlock Brawl"),
+    ("圆圈之战 Circle Brawl", "Circle Brawl"),
     ("—— 选择对战模式 ——", "— Select Game Mode —"),
     ("单机技能试验场", "Single-player Sandbox"),
     ("无 AI 自由试技能与数值（进入后配置技能开始）", "Freely test skills and stats with no AI (configure skills to begin)"),
