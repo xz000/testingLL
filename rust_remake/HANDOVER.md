@@ -87,6 +87,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 
 | 项 | 值 |
 |---|---|
+| 产品名 | 英文 **Circle Brawl** / 中文 **圆圈之战**（Steam AppID 908660；原名 Warlock Brawl / 术士之战） |
 | `PROTOCOL_VERSION` | 20 |
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
