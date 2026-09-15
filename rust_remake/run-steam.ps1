@@ -1,7 +1,10 @@
 param(
     [ValidateSet('host','join','menu')] [string]$Mode = 'menu',
     [int]$Players = 2,
-    [string]$LobbyId = ''
+    [string]$LobbyId = '',
+    # 界面语言（传给 client 的 --lang）：auto=跟随 Steam（默认）/ zh=中文 / en=英文。
+    # 不传（''）则不覆盖，完全按 Steam + 本地设置决定。
+    [ValidateSet('auto','zh','en','')] [string]$Lang = ''
 )
 
 $ErrorActionPreference = 'Continue'
@@ -43,6 +46,12 @@ if ($Mode -eq 'menu') {
 } else {
     Write-Host "== Steam JOIN manual lobby $LobbyId =="
     $argsList = @('--steam-join',"$LobbyId")
+}
+
+# 语言覆盖（可选）：传给 client 的 --lang（auto/zh/en）。不传则不动。
+if ($Lang -ne '') {
+    Write-Host "== lang override: --lang $Lang =="
+    $argsList += @('--lang', $Lang)
 }
 
 # 前台运行（&）并把控制台输出同时写到 logs/（进程内 logging 已带 ms 时间戳；
