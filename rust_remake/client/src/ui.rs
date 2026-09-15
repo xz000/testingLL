@@ -158,6 +158,11 @@ impl RowState {
 }
 
 /// 文本绘制的公共部分；`centered` 为真时把 `x` 当作**中心**。
+///
+/// **i18n**：在这里统一过一层 [`crate::i18n::t`] —— 调用方无论写中文原文还是已经查过表，
+/// 都被安全处理（未登记的词条原样返回，重复翻译也幂等）。
+/// 因此新增静态文案只需在 `i18n::EN` 里补词条，**不必**逐个改绘制调用点。
+/// 注意：含变量的文案请先用 [`crate::i18n::tf`] 组装（`format!` 出来的完整串查不到词条）。
 #[allow(clippy::too_many_arguments)]
 fn draw_text_at(
     canvas: &mut Canvas,
@@ -169,6 +174,7 @@ fn draw_text_at(
     y: f32,
     centered: bool,
 ) -> GameResult {
+    let s = crate::i18n::t(s);
     let fragment = TextFragment::new(s).color(color).scale(size).font("cjk".to_string());
     let mut t = Text::new(fragment);
     t.set_bounds(Vector2 { x: 4000.0, y: 200.0 });
@@ -255,6 +261,7 @@ pub fn text_right(
     right: f32,
     y: f32,
 ) -> GameResult {
+    let s = crate::i18n::t(s);
     let fragment = TextFragment::new(s).color(color).scale(size).font("cjk".to_string());
     let mut t = Text::new(fragment);
     t.set_bounds(Vector2 { x: 4000.0, y: 200.0 });

@@ -175,6 +175,22 @@ impl SteamTransport {
         self.client.friends()
     }
 
+    /// 应用（Apps）句柄；用 `current_game_language()` 读玩家在 Steam 里给本游戏设置的语言。
+    pub fn apps(&self) -> steamworks::Apps {
+        self.client.apps()
+    }
+
+    /// 玩家为**本游戏**设置的语言码（Steam 语言设置；未单独设置时回退到 Steam 客户端语言）。
+    /// 返回如 `"schinese"` / `"english"`；读不到返回 `None`。
+    pub fn current_game_language(&self) -> Option<String> {
+        let code = self.client.apps().current_game_language();
+        if code.is_empty() {
+            None
+        } else {
+            Some(code)
+        }
+    }
+
     /// ISteamNetworkingMessages 句柄：查某 peer 会话的实时质量（如 ping）。
     pub fn networking_messages(&self) -> steamworks::networking_messages::NetworkingMessages {
         self.client.networking_messages()

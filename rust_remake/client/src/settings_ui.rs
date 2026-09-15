@@ -9,6 +9,8 @@
 
 use game_core::meta::MatchConfig;
 
+use crate::i18n;
+
 /// 设置分组（房间 UI 的四个页签）。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Group {
@@ -29,13 +31,13 @@ impl Group {
     ];
 
     pub fn name(self) -> &'static str {
-        match self {
+        i18n::t(match self {
             Group::Room => "房间",
             Group::Economy => "经济",
             Group::Gameplay => "玩法",
             Group::Map => "地图",
             Group::Mode => "模式",
-        }
+        })
     }
 
     /// 页签快捷键字母（`J/K/L` 已用于技能/商店/成长页，这里用 `Z/X/C/V`）。
@@ -120,7 +122,7 @@ impl SettingId {
 
     pub fn label(self) -> &'static str {
         use SettingId::*;
-        match self {
+        i18n::t(match self {
             RoomName => "房间名",
             RoomNote => "备注",
             PlayerLimit => "人数上限（只读）",
@@ -147,13 +149,13 @@ impl SettingId {
             TotalRounds => "总轮数",
             GameMode => "游戏模式",
             GoldRewardsEnabled => "金币奖励总开关",
-        }
+        })
     }
 
     /// 一句话说明（详情区显示；写清 098c 出处与语义）。
     pub fn hint(self) -> &'static str {
         use SettingId::*;
-        match self {
+        i18n::t(match self {
             RoomName => "大厅里显示的房间名（改完关闭编辑器即生效）。",
             RoomNote => "大厅备注，可留空。",
             TotalRounds => "本场打几轮（1~50）。",
@@ -180,7 +182,7 @@ impl SettingId {
             IceMode => "关闭 / 随机 / 每局必有。",
             GameMode => "1 轮次 · 2 死亡竞赛 · 3 化身 · 4 国王 · 5 最后生还。改动会取消全员准备。",
             GoldRewardsEnabled => "关闭后击杀/胜利/最高伤害金归零（等价 098c `-no reward`）；点数、助攻金、每轮金不变。",
-        }
+        })
     }
 
     /// 枚举型档位（非枚举返回 `None`）。
@@ -282,7 +284,7 @@ pub fn meta_value(meta: &RoomMeta, id: SettingId) -> String {
     match id {
         SettingId::RoomName => meta.name.clone(),
         SettingId::RoomNote => meta.note.clone(),
-        SettingId::PlayerLimit => format!("{} 人", meta.player_limit),
+        SettingId::PlayerLimit => i18n::tf("{n} 人", &[("n", meta.player_limit.to_string())]),
         _ => String::new(),
     }
 }
@@ -442,22 +444,26 @@ pub fn value_text(cfg: &MatchConfig, id: SettingId) -> String {
         // `GameMode` 是 1-based，档位表 0-based（同 `nudge` 的换算）。
         let base = if id == SettingId::GameMode { 1 } else { 0 };
         let i = ((v.round() as i32 - base).max(0) as usize).min(tiers.len().saturating_sub(1));
-        return tiers.get(i).copied().unwrap_or("?").to_string();
+        return i18n::t(tiers.get(i).copied().unwrap_or("?")).to_string();
     }
     if id == SettingId::GoldRewardsEnabled {
-        return if cfg.gold_rewards_enabled { "开".into() } else { "关".into() };
+        return if cfg.gold_rewards_enabled {
+            i18n::t("开").into()
+        } else {
+            i18n::t("关").into()
+        };
     }
     if id.num_range().is_some() {
         let is_tier = id
             .num_tiers()
             .map(|t| t.iter().any(|x| (x - v).abs() < 1e-6))
             .unwrap_or(true);
-        let tag = if is_tier { "" } else { "（自定义）" };
+        let tag = if is_tier { "" } else { i18n::t("（自定义）") };
         // 倍率显示为百分比更直观
         return match id {
             SettingId::DamageMult | SettingId::KnockbackMult | SettingId::LavaDamageMult => {
                 if id == SettingId::LavaDamageMult && v == 0.0 {
-                    format!("关闭{tag}")
+                    i18n::tf("关闭{tag}", &[("tag", tag.to_string())])
                 } else {
                     format!("{:.0}%{tag}", v * 100.0)
                 }
