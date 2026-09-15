@@ -40,6 +40,9 @@ mod keys;
 
 mod local_settings;
 
+/// 多语言（i18n）：以中文原文为 key 查英文表；语言可由 Steam 设置或本地设置决定。
+mod i18n;
+
 mod audio;
 /// 表现层 P3：客户端本地特效（命中闪光/火花）——纯客户端、不进快照。
 mod fx;
@@ -321,12 +324,22 @@ enum SettingsAction {
     Back,
 }
 
-/// 设置界面行：`(标签, 是否为音量行)`。
-const SETTINGS_ROWS: [(&str, bool); 4] = [
-    ("主音量", true),
-    ("音效音量", true),
-    ("音乐音量", true),
-    ("静音", false),
+/// 设置界面行：`(行类型, 标签 key)`。标签为中文原文，绘制时过 [`i18n::t`]。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum SetRow {
+    Master,
+    Sfx,
+    Music,
+    Mute,
+    Lang,
+}
+
+const SETTINGS_ROWS: [(SetRow, &str); 5] = [
+    (SetRow::Master, "主音量"),
+    (SetRow::Sfx, "音效音量"),
+    (SetRow::Music, "音乐音量"),
+    (SetRow::Mute, "静音"),
+    (SetRow::Lang, "语言"),
 ];
 
 /// 房间设置编辑器（建房 / 房内 `O`）的鼠标动作。
@@ -375,15 +388,46 @@ fn append_text_limited(buf: &mut String, text: &str, max_chars: usize) {
     }
 }
 
+// ---------- 主菜单卡片布局（绘制与点击命中共用同一份几何） ----------
+//
+// ⚠ 卡片矩形曾在 `draw_menu`（绘制）与 `update`（点击命中）各写一份且常量不同步，
+// 调整开屏布局后「点到的卡片」与「看到的卡片」对不上。统一由此处提供。
+
+/// 主菜单卡片高度。
+const MAIN_MENU_CARD_H: f32 = 84.0;
+/// 主菜单第一张卡片的顶部 y。
+const MAIN_MENU_CARD_Y0: f32 = 168.0;
+/// 主菜单卡片间距。
+const MAIN_MENU_CARD_GAP: f32 = 16.0;
+
+/// 主菜单卡片宽度（随设计宽度缩放，上限 560）。
+fn main_menu_card_w() -> f32 {
+    (ui::UI_W * 0.62).min(560.0)
+}
+
+/// 主菜单第 `i` 张卡片的矩形（**绘制与命中盒必须共用此函数**）。
+fn main_menu_card_rect(i: usize) -> graphics::Rect {
+    let card_w = main_menu_card_w();
+    let x = ui::UI_W / 2.0 - card_w / 2.0;
+    let y = MAIN_MENU_CARD_Y0 + i as f32 * (MAIN_MENU_CARD_H + MAIN_MENU_CARD_GAP);
+    graphics::Rect::new(x, y, card_w, MAIN_MENU_CARD_H)
+}
+
 struct Game {
     /// 当前小局的战斗世界
     world: World,
     /// 多局 meta 状态（经济/升级/周期）
     meta: MatchState,
-    /// 本机设置（音量/静音）：纯本地，不进同步/快照。
+    /// 本机设置（音量/静音/语言）：纯本地，不进同步/快照。
     local_settings: local_settings::LocalSettings,
     /// 本机设置存储路径（启动读、改动写回）。
     local_settings_path: std::path::PathBuf,
+    /// Steam 报告的游戏语言（Steam 未初始化/读取失败时为 `None`）。
+    /// 只用于 `LangPref::Auto` 的解析；不持久化。
+    steam_lang: Option<i18n::Lang>,
+    /// `--lang` 命令行覆盖（仅本次启动生效，不写回 `settings.txt`；
+    /// 玩家在设置界面改语言时清除覆盖并持久化）。
+    lang_override: Option<i18n::LangPref>,
     /// 音效播放（缺素材/无声卡静默降级）。
     audio: audio::AudioBank,
     /// 本机设置界面是否打开（主菜单 4 号入口）。
@@ -1041,6 +1085,9 @@ impl Game {
         let (w, h) = (ui::UI_W, ui::UI_H);
         let local_settings_path = local_settings::default_path();
         let local_settings = local_settings::load(&local_settings_path);
+        // 启动即按本地设置确定语言（此时尚未连 Steam，`Auto` 先回退中文；
+        // 进主菜单后会 `steam_ensure_session` 拿到 Steam 语言再刷新，见 `steam_sync_language`）。
+        i18n::set_lang(local_settings.lang.resolve(None));
         let audio = audio::AudioBank::new(ctx, &local_settings);
         eprintln!(
             "[audio] 已加载 {}/{} 个音效素材（静音={}）",
@@ -1053,6 +1100,8 @@ impl Game {
             meta,
             local_settings,
             local_settings_path,
+            steam_lang: None,
+            lang_override: None,
             audio,
             settings_open: false,
             settings_row: 0,
@@ -1742,10 +1791,10 @@ impl Game {
             // 描述优先展示可购买目标（未购/可升级时玩家最关心升到哪），否则展示已持有物。
             let desc = buy.or(sell).map(|id| id.def().desc).unwrap_or("");
             let label = match (sell, buy) {
-                (Some(cur), Some(t)) => format!("{} → {}  {}G", cur.def().name, t.def().name, t.def().cost),
-                (Some(cur), None) => format!("{}  （已满级）", cur.def().name),
-                (None, Some(t)) => format!("{}  {}G", t.def().name, t.def().cost),
-                (None, None) => format!("{}  （不可购买）", e.family.name_zh()),
+                (Some(cur), Some(t)) => format!("{} → {}  {}G", i18n::t(cur.def().name), i18n::t(t.def().name), t.def().cost),
+                (Some(cur), None) => i18n::tf("{name}  （已满级）", &[("name", i18n::t(cur.def().name).to_string())]),
+                (None, Some(t)) => format!("{}  {}G", i18n::t(t.def().name), t.def().cost),
+                (None, None) => i18n::tf("{name}  （不可购买）", &[("name", i18n::t(e.family.name_zh()).to_string())]),
             };
             rows.push(ShopRow { label, buy, sell, desc });
         }
@@ -2283,7 +2332,7 @@ impl Game {
                 return name.clone();
             }
         }
-        format!("玩家{player_id}")
+        i18n::tf("玩家{id}", &[("id", player_id.to_string())])
     }
 
     /// 生成「本机玩家最终配置快照」的编码字节（学习阶段结束/就绪时上报给 host）。
@@ -3142,13 +3191,15 @@ impl Game {
                 // 注意：本文件的 `draw_text` 是**居中**绘制（`_centered` 参数被忽略），
                 // 左对齐必须用 `ui::text_left` —— 否则 x 会被当作中心，文字左半边出屏。
                 let hud_x = 14.0;
-                ui::text_left(&mut canvas, ctx, &format!("金币 {}", pr.gold), 19.0, Color::from_rgb(255, 220, 120), hud_x, 20.0)?;
+                ui::text_left(&mut canvas, ctx, &i18n::tf("金币 {n}", &[("n", pr.gold.to_string())]), 19.0, Color::from_rgb(255, 220, 120), hud_x, 20.0)?;
                 ui::text_left(
                     &mut canvas, ctx,
-                    &format!(
-                        "模式：{}（{}）",
-                        game_core::meta::MatchState::mode_name(self.match_mode),
-                        if self.match_teams >= 2 { "两队" } else { "FFA" }
+                    &i18n::tf(
+                        "模式：{mode}（{align}）",
+                        &[
+                            ("mode", i18n::t(game_core::meta::MatchState::mode_name(self.match_mode)).to_string()),
+                            ("align", i18n::t(if self.match_teams >= 2 { "两队" } else { "FFA" }).to_string()),
+                        ],
                     ),
                     16.0, Color::from_rgb(170, 200, 255), hud_x, 44.0,
                 )?;
@@ -3156,15 +3207,26 @@ impl Game {
                 if m.life + m.range + m.time + m.backpack > 0 {
                     ui::text_left(
                         &mut canvas, ctx,
-                        &format!("精通 命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
+                        &i18n::tf(
+                            "精通 命{life} 范{range} 射{time} 包{bag}",
+                            &[
+                                ("life", m.life.to_string()),
+                                ("range", m.range.to_string()),
+                                ("time", m.time.to_string()),
+                                ("bag", m.backpack.to_string()),
+                            ],
+                        ),
                         15.0, Color::from_rgb(170, 200, 255), hud_x, 66.0,
                     )?;
                 }
                 // 进度（常驻 HUD）：死斗/最后生还无回合概念，改显示目标分；其余显示当前局 / 总轮数。
                 let progress = if self.match_mode == 2 {
-                    format!("死斗：目标 {} 分", self.meta.config.win_score)
+                    i18n::tf("死斗：目标 {n} 分", &[("n", self.meta.config.win_score.to_string())])
                 } else {
-                    format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+                    i18n::tf(
+                        "第 {round} / {total} 局",
+                        &[("round", self.meta.round.to_string()), ("total", self.meta.config.total_rounds.to_string())],
+                    )
                 };
                 ui::text_left(&mut canvas, ctx, &progress, 19.0, Color::from_rgb(255, 235, 150), hud_x, 88.0)?;
                 // 角色提示（模式 3 化身 / 模式 4 国王）：世界层虽有环，但 HUD 应直接说明「你是谁」。
@@ -3346,15 +3408,18 @@ impl Game {
 
         // 标题：模式相关（死斗/最后生还无回合概念）
         let title = if self.match_mode == 2 {
-            format!("死斗  目标 {} 分", self.meta.config.win_score)
+            i18n::tf("死斗  目标 {n} 分", &[("n", self.meta.config.win_score.to_string())])
         } else {
-            format!("第 {} / {} 局", self.meta.round, self.meta.config.total_rounds)
+            i18n::tf(
+                "第 {round} / {total} 局",
+                &[("round", self.meta.round.to_string()), ("total", self.meta.config.total_rounds.to_string())],
+            )
         };
         // 角色标记图例（只在有化身/国王的模式下提示）。
         let title = if self.match_mode == 3 {
-            format!("{title}     化 = 化身")
+            i18n::tf("{title}     化 = 化身", &[("title", title)])
         } else if self.match_mode == 4 {
-            format!("{title}     王 = 国王")
+            i18n::tf("{title}     王 = 国王", &[("title", title)])
         } else {
             title
         };
@@ -3405,14 +3470,14 @@ impl Game {
                     };
                     // 角色标记（模式 3 化身 / 模式 4 国王）：单字后缀，避免撑爆名字列宽。
                     let role = if self.world.avatar == Some(*pid) {
-                        "·化"
+                        i18n::t("·化")
                     } else if self.world.kings.contains(pid) {
-                        "·王"
+                        i18n::t("·王")
                     } else {
                         ""
                     };
                     let name = if is_me {
-                        format!("{}{role} (我)", self.player_label(*pid))
+                        i18n::tf("{name}{role} (我)", &[("name", self.player_label(*pid)), ("role", role.to_string())])
                     } else {
                         format!("{}{role}", self.player_label(*pid))
                     };
@@ -3451,9 +3516,9 @@ impl Game {
     fn draw_room_cfg_badge(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let n = self.match_cfg.non_default_setting_count();
         let text = if n == 0 {
-            "房间设置：默认（原版）".to_string()
+            i18n::t("房间设置：默认（原版）").to_string()
         } else {
-            format!("房间设置：自定义 {n} 项 ⚠")
+            i18n::tf("房间设置：自定义 {n} 项 ⚠", &[("n", n.to_string())])
         };
         let col = if n == 0 {
             ui::theme::text_dim()
@@ -3516,9 +3581,9 @@ impl Game {
         }
         // 标题区分两种模式：创建（建房前）/ 房间内（编辑进行中的房间）。
         let title = if self.room_cfg_create_mode {
-            format!("创建房间 · 设置   （自定义 {n} 项）")
+            i18n::tf("创建房间 · 设置   （自定义 {n} 项）", &[("n", n.to_string())])
         } else {
-            format!("房间设置   （自定义 {n} 项）")
+            i18n::tf("房间设置   （自定义 {n} 项）", &[("n", n.to_string())])
         };
         ui::text_center(
             canvas, ctx,
@@ -3601,7 +3666,7 @@ impl Game {
             };
             let val_txt = if sel {
                 match &self.room_cfg_input {
-                    Some(buf) => format!("[输入 {buf}_]"),
+                    Some(buf) => i18n::tf("[输入 {buf}_]", &[("buf", buf.clone())]),
                     None => base_txt,
                 }
             } else {
@@ -3702,14 +3767,21 @@ impl Game {
         // 房间名 + 人数 + 锁状态（host 读 matchmaking，client 用本地记录）。
         let (rname, rnote) = self.steam_current_room_info();
         let n_in = self.steam_roster.len();
-        let lock_txt = if self.steam_room_locked { "[锁]" } else { "[开]" };
-        let mut roomline = format!("房间：{rname}    人数 {n_in}    版本 v{}", game_core::PROTOCOL_VERSION);
+        let lock_txt = if self.steam_room_locked { i18n::t("[锁]") } else { i18n::t("[开]") };
+        let mut roomline = i18n::tf(
+            "房间：{name}    人数 {n}    版本 v{v}",
+            &[
+                ("name", rname.clone()),
+                ("n", n_in.to_string()),
+                ("v", game_core::PROTOCOL_VERSION.to_string()),
+            ],
+        );
         if self.steam_host_ls.is_some() {
             roomline.push_str(&format!("   {lock_txt}"));
         }
         draw_text(canvas, ctx, &roomline, 20.0, Color::from_rgb(190, 200, 215), Point2 { x: cx, y: sh * 0.18 + 40.0 }, true)?;
         if !rnote.is_empty() {
-            draw_text(canvas, ctx, &format!("备注：{rnote}"), 18.0, Color::from_rgb(170, 180, 195), Point2 { x: cx, y: sh * 0.18 + 66.0 }, true)?;
+            draw_text(canvas, ctx, &i18n::tf("备注：{note}", &[("note", rnote.clone())]), 18.0, Color::from_rgb(170, 180, 195), Point2 { x: cx, y: sh * 0.18 + 66.0 }, true)?;
         }
         let flow_y = if rnote.is_empty() { sh * 0.18 + 66.0 } else { sh * 0.18 + 92.0 };
         draw_text(canvas, ctx, "流程：全员就绪 → 倒计时 → 技能配置 → 配好后自动开战", 18.0, Color::from_rgb(160, 172, 190), Point2 { x: cx, y: flow_y }, true)?;
@@ -3740,17 +3812,17 @@ impl Game {
             // host 本机：不满员手动倒计时（本地直接数秒）。
             let secs = self.steam_countdown.max(0.0);
             let hint = if secs <= STEAM_COUNTDOWN_LOCK_SECS { "即将开始（不可取消）" } else { "按 U 可取消" };
-            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：房主已确认，{secs:.0} 秒后进配置（{hint}）"), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+            draw_text(canvas, ctx, &i18n::tf("人数不足（已入 {n}）：房主已确认，{secs} 秒后进配置（{hint}）", &[("n", n_in.to_string()), ("secs", format!("{secs:.0}")), ("hint", i18n::t(hint).to_string())]), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else if self.steam_manual_ms > 0 {
             // client 端：收到 host 广播的不满足手动倒计时剩余毫秒，跨端显示同一倒计时。
             let secs = (self.steam_manual_ms as f32) / 1000.0;
             let hint = if secs <= STEAM_COUNTDOWN_LOCK_SECS { "即将开始（不可取消）" } else { "按 U 可取消" };
-            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：房主已确认，{secs:.0} 秒后进配置（{hint}）"), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+            draw_text(canvas, ctx, &i18n::tf("人数不足（已入 {n}）：房主已确认，{secs} 秒后进配置（{hint}）", &[("n", n_in.to_string()), ("secs", format!("{secs:.0}")), ("hint", i18n::t(hint).to_string())]), 26.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else if self.steam_all_ready {
-            draw_text(canvas, ctx, &format!("全员就绪：{:.0} 秒后进配置（结束前按 U 可取消）", self.steam_countdown.max(0.0)), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+            draw_text(canvas, ctx, &i18n::tf("全员就绪：{secs} 秒后进配置（结束前按 U 可取消）", &[("secs", format!("{:.0}", self.steam_countdown.max(0.0)))]), 28.0, Color::from_rgb(90, 220, 130), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else if self.steam_host_ls.is_some() && self.steam_manual_start_pending {
             // 不满员但在线者都就绪：不自动倒计时，由 host 按回车确认后才开始倒计时。
-            draw_text(canvas, ctx, &format!("人数不足（已入 {n_in}）：当前全员就绪，按回车 开始倒计时"), 26.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
+            draw_text(canvas, ctx, &i18n::tf("人数不足（已入 {n}）：当前全员就绪，按回车 开始倒计时", &[("n", n_in.to_string())]), 26.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: flow_y + 48.0 }, true)?;
         } else if self.steam_local_ready {
             // 本机已就绪但还没全员就绪：别再提示“按 U 就绪”（那会让人以为自己没准备好）。
             let hint = if self.steam_host_ls.is_some() {
@@ -3797,7 +3869,7 @@ impl Game {
             let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(card_x, y - 6.0, card_w, 44.0), bg_col)?;
             canvas.draw(&bg, graphics::DrawParam::new());
             let mark = if ready { "[v]" } else { "[ ]" };
-            let me_tag = if is_me { "（我）" } else { "" };
+            let me_tag = if is_me { i18n::t("（我）") } else { "" };
             draw_text(canvas, ctx, &format!("  {mark}  {name}{me_tag}"), 26.0, col, Point2 { x: card_x + 90.0, y }, true)?;
             // 延迟：画在卡片右端（没测到显示“--”）。
             let ping_txt = match self.steam_ping_of(*id) {
@@ -3851,11 +3923,11 @@ impl Game {
                 canvas.draw(&bg, graphics::DrawParam::new());
                 let mark = if selected { "[v]" } else { "[ ]" };
                 let tag = if f.in_lobby {
-                    "（已在房间）"
+                    i18n::t("（已在房间）")
                 } else if f.online {
-                    "（在线）"
+                    i18n::t("（在线）")
                 } else {
-                    "（离线）"
+                    i18n::t("（离线）")
                 };
                 let col = if selected { Color::WHITE } else { Color::from_rgb(205, 210, 222) };
                 let name = if f.name.is_empty() { f.id.to_string() } else { f.name.clone() };
@@ -3867,7 +3939,7 @@ impl Game {
         }
         draw_text(canvas, ctx, "↑/↓ 选择    回车 邀请    A Steam 邀请窗口    R 刷新    I/Q 收起", 17.0, Color::from_rgb(160, 200, 255), Point2 { x: cx, y: hint_y }, true)?;
         if !self.steam_friend_hint.is_empty() {
-            draw_text(canvas, ctx, &self.steam_friend_hint, 18.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: hint_y + 24.0 }, true)?;
+            draw_text(canvas, ctx, i18n::t(&self.steam_friend_hint), 18.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: hint_y + 24.0 }, true)?;
         }
         Ok(())
     }
@@ -3915,8 +3987,8 @@ impl Game {
                             .max()
                     };
                     let txt = match mine {
-                        Some(ms) => format!("延迟 {ms} ms"),
-                        None => "延迟 -- ms".to_string(),
+                        Some(ms) => i18n::tf("延迟 {ms} ms", &[("ms", ms.to_string())]),
+                        None => i18n::t("延迟 -- ms").to_string(),
                     };
                     draw_text(canvas, ctx, &txt, 18.0, Color::from_rgb(150, 175, 205), Point2 { x: 76.0, y: sh - 138.0 }, true)?;
                 }
@@ -4070,16 +4142,19 @@ impl Game {
 
                 // 标题 + 剩余时间（右上）
                 let title = if self.meta.is_first_config() {
-                    "开局配置".to_string()
+                    i18n::t("开局配置").to_string()
                 } else {
-                    format!("第 {} / {} 局结束 - 学习阶段", self.meta.round, self.meta.config.total_rounds)
+                    i18n::tf(
+                        "第 {round} / {total} 局结束 - 学习阶段",
+                        &[("round", self.meta.round.to_string()), ("total", self.meta.config.total_rounds.to_string())],
+                    )
                 };
                 ui::text_center(canvas, ctx, &title, 32.0, ui::theme::accent(), sw / 2.0, sh * 0.055)?;
                 // 单机试验场不计时 → 不显示倒计时，改提示手动开始方式。
                 let learn_note = if self.world.sandbox {
-                    "自由配置 · 空格 / 回车 开始".to_string()
+                    i18n::t("自由配置 · 空格 / 回车 开始").to_string()
                 } else {
-                    format!("剩余 {:.0}s", self.meta.learn_remaining.max(0.0))
+                    i18n::tf("剩余 {secs}s", &[("secs", format!("{:.0}", self.meta.learn_remaining.max(0.0)))])
                 };
                 ui::text_right(canvas, ctx, &learn_note, 20.0, ui::theme::ok(), sw - 16.0, sh * 0.055)?;
 
@@ -4087,9 +4162,13 @@ impl Game {
                 let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) else {
                     return Ok(());
                 };
-                let info = format!(
-                    "金币 {}   击杀 {}   最佳名次 #{}",
-                    me.gold, me.total_kills, me.best_placement
+                let info = i18n::tf(
+                    "金币 {gold}   击杀 {kills}   最佳名次 #{rank}",
+                    &[
+                        ("gold", me.gold.to_string()),
+                        ("kills", me.total_kills.to_string()),
+                        ("rank", me.best_placement.to_string()),
+                    ],
                 );
                 ui::text_center(canvas, ctx, &info, 19.0, ui::theme::text(), sw / 2.0, sh * 0.10)?;
 
@@ -4137,8 +4216,8 @@ impl Game {
                     let bound = me.bound_skill(key);
                     let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
                     let txt = match bound {
-                        Some(s) => format!("[{}] {} Lv{}", key.letter(), game_core::skill::DefTable::neutral_name(s), lv),
-                        None => format!("[{}] 未绑定", key.letter()),
+                        Some(s) => format!("[{}] {} Lv{}", key.letter(), i18n::t(game_core::skill::DefTable::neutral_name(s)), lv),
+                        None => i18n::tf("[{key}] 未绑定", &[("key", key.letter().to_string())]),
                     };
                     let sel = self.learn_tree_key == Some(key);
                     let r = graphics::Rect::new(left_x + 4.0, ly, left_w - 8.0, ui::theme::ROW_H);
@@ -4157,7 +4236,7 @@ impl Game {
                 ly += 8.0;
                 ui::text_left(
                     canvas, ctx,
-                    &format!("持有物品 ({}/{})", me.items.len(), me.inventory_slots()),
+                    &i18n::tf("持有物品 ({n}/{cap})", &[("n", me.items.len().to_string()), ("cap", me.inventory_slots().to_string())]),
                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                 )?;
                 ly += 22.0;
@@ -4171,7 +4250,7 @@ impl Game {
                     for &id in me.items.iter() {
                         let d = id.def();
                         ui::text_left(
-                            canvas, ctx, &format!("· {}", d.name),
+                            canvas, ctx, &format!("· {}", i18n::t(d.name)),
                             ui::theme::SMALL, ui::theme::text(), left_x + pad, ly,
                         )?;
                         ly += 18.0;
@@ -4180,7 +4259,7 @@ impl Game {
                                 let nd = next.def();
                                 ui::text_left(
                                     canvas, ctx,
-                                    &format!("  ↑ 升 {} · {}G", nd.name, nd.cost),
+                                    &i18n::tf("  ↑ 升 {name} · {cost}G", &[("name", i18n::t(nd.name).to_string()), ("cost", nd.cost.to_string())]),
                                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                                 )?;
                                 ly += 18.0;
@@ -4199,7 +4278,15 @@ impl Game {
                 let m = me.mastery;
                 ui::text_left(
                     canvas, ctx,
-                    &format!("精通  命{} 范{} 射{} 包{}", m.life, m.range, m.time, m.backpack),
+                    &i18n::tf(
+                        "精通  命{life} 范{range} 射{time} 包{bag}",
+                        &[
+                            ("life", m.life.to_string()),
+                            ("range", m.range.to_string()),
+                            ("time", m.time.to_string()),
+                            ("bag", m.backpack.to_string()),
+                        ],
+                    ),
                     ui::theme::SMALL, ui::theme::text_dim(), left_x + pad, ly,
                 )?;
                 ly += 26.0;
@@ -4219,7 +4306,7 @@ impl Game {
                             Some(key) => {
                                 ui::text_left(
                                     canvas, ctx,
-                                    &format!("{} 树 — 点技能查看详情，再购买 / 升级", key.tree().name_zh()),
+                                    &i18n::tf("{tree} 树 — 点技能查看详情，再购买 / 升级", &[("tree", i18n::t(key.tree().name_zh()).to_string())]),
                                     ui::theme::BODY, ui::theme::accent(), rx, panel_y + 14.0,
                                 )?;
                                 let mut ry = panel_y + 46.0;
@@ -4232,7 +4319,7 @@ impl Game {
                                     let cost = skill.learn_cost();
                                     let affordable = me.gold >= cost;
                                     // 行用中性基础名（去掉 ·形态 后缀；形态见详情面板）
-                                    let form_name = game_core::skill::DefTable::neutral_name(*skill);
+                                    let form_name = i18n::t(game_core::skill::DefTable::neutral_name(*skill));
                                     // 行状态仅表达"当前选中/悬停/普通"，不可用程度由文案说明——因为任何技能都可点开详情
                                     let st = if selected {
                                         ui::RowState::Selected
@@ -4242,13 +4329,13 @@ impl Game {
                                         ui::RowState::Normal
                                     };
                                     let label = if bound_here {
-                                        format!("{} {}  ✓已购", i + 1, form_name)
+                                        i18n::tf("{i} {name}  ✓已购", &[("i", (i + 1).to_string()), ("name", form_name.to_string())])
                                     } else if tree_locked {
-                                        format!("{} {}  （同树已锁定）", i + 1, form_name)
+                                        i18n::tf("{i} {name}  （同树已锁定）", &[("i", (i + 1).to_string()), ("name", form_name.to_string())])
                                     } else if affordable {
                                         format!("{} {}  ({}G)", i + 1, form_name, cost)
                                     } else {
-                                        format!("{} {}  ({}G 金币不足)", i + 1, form_name, cost)
+                                        i18n::tf("{i} {name}  ({cost}G 金币不足)", &[("i", (i + 1).to_string()), ("name", form_name.to_string()), ("cost", cost.to_string())])
                                     };
                                     ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                                     // 任何技能（含已锁定/金币不足）都可点击查看详情，只是买不了
@@ -4272,18 +4359,18 @@ impl Game {
                                         let head = if owned {
                                             let jb = me.jordan_breaks_for_skill(skill);
                                             if jb > 0 {
-                                                format!("{name}  Lv{lv} / {cap}  （已购买，乔丹 +{}）", 2 * jb)
+                                                i18n::tf("{name}  Lv{lv} / {cap}  （已购买，乔丹 +{jb}）", &[("name", i18n::t(name).to_string()), ("lv", lv.to_string()), ("cap", cap.to_string()), ("jb", (2 * jb).to_string())])
                                             } else {
-                                                format!("{name}  Lv{lv} / {cap}  （已购买）")
+                                                i18n::tf("{name}  Lv{lv} / {cap}  （已购买）", &[("name", i18n::t(name).to_string()), ("lv", lv.to_string()), ("cap", cap.to_string())])
                                             }
                                         } else {
-                                            format!("{name}  {cost}G")
+                                            format!("{}  {cost}G", i18n::t(name))
                                         };
                                         ui::text_left(canvas, ctx, &head, ui::theme::BODY, ui::theme::accent(), rx, ry)?;
                                         ry += 22.0;
                                         // 技能描述（长文案自动换行，返回下一行 y）
                                         ry = ui::text_wrapped(
-                                            canvas, ctx, game_core::skill::DefTable::desc(skill),
+                                            canvas, ctx, i18n::t(game_core::skill::DefTable::desc(skill)),
                                             ui::theme::SMALL, ui::theme::text_dim(), rx, ry, content_w,
                                         )?;
                                         ry += 2.0;
@@ -4291,11 +4378,15 @@ impl Game {
                                         let st = game_core::skill::DefTable::def(skill).stats_at(lv);
                                         ui::text_left(
                                             canvas, ctx,
-                                            &format!(
-                                                "Lv{lv} / 上限{cap}  伤害 {:.1}  冷却 {:.1}s  射程 {:.0}",
-                                                st.damage.to_num::<f32>(),
-                                                st.cooldown.to_num::<f32>(),
-                                                st.range.to_num::<f32>()
+                                            &i18n::tf(
+                                                "Lv{lv} / 上限{cap}  伤害 {dmg}  冷却 {cd}s  射程 {rng}",
+                                                &[
+                                                    ("lv", lv.to_string()),
+                                                    ("cap", cap.to_string()),
+                                                    ("dmg", format!("{:.1}", st.damage.to_num::<f32>())),
+                                                    ("cd", format!("{:.1}", st.cooldown.to_num::<f32>())),
+                                                    ("rng", format!("{:.0}", st.range.to_num::<f32>())),
+                                                ],
                                             ),
                                             ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
                                         )?;
@@ -4306,13 +4397,13 @@ impl Game {
                                             let b = game_core::skill::DefTable::def_for(skill, true).name;
                                             ui::text_left(
                                                 canvas, ctx,
-                                                &format!("二形态  形态A：{a}   ⇄   形态B：{b}"),
+                                                &i18n::tf("二形态  形态A：{a}   ⇄   形态B：{b}", &[("a", i18n::t(a).to_string()), ("b", i18n::t(b).to_string())]),
                                                 ui::theme::SMALL, ui::theme::text_dim(), rx, ry,
                                             )?;
                                             ry += 22.0;
                                             ui::text_left(
                                                 canvas, ctx,
-                                                &format!("当前出战：{}", if on { b } else { a }),
+                                                &i18n::tf("当前出战：{name}", &[("name", i18n::t(if on { b } else { a }).to_string())]),
                                                 ui::theme::SMALL, ui::theme::accent(), rx, ry,
                                             )?;
                                             ry += 22.0;
@@ -4320,7 +4411,7 @@ impl Game {
                                             let fst = if fr.contains(mouse) { ui::RowState::Hover } else { ui::RowState::Normal };
                                             ui::row(
                                                 canvas, ctx, fr,
-                                                &format!("切换为 {}  (B)", if on { a } else { b }),
+                                                &i18n::tf("切换为 {name}  (B)", &[("name", i18n::t(if on { a } else { b }).to_string())]),
                                                 ui::theme::BODY, fst,
                                             )?;
                                             self.learn_hitboxes.push((fr, LearnAction::Form(skill)));
@@ -4338,32 +4429,35 @@ impl Game {
                                                     // 098c `Hf`：一颗戒指（5G）只换一次 +2，用掉即消耗，但**可反复购买**。
                                                     // 乔丹之石不占物品栏。
                                                     let n = me.jordan_breaks_for_skill(skill);
-                                                    let extra = if n > 0 { format!("，已突破 ×{n}") } else { String::new() };
+                                                    let extra = if n > 0 { i18n::tf("，已突破 ×{n}", &[("n", n.to_string())]) } else { String::new() };
                                                     (
-                                                        format!(
-                                                            "突破上限 +2（乔丹之石 · {}G{extra}）  {}",
-                                                            game_core::meta::JORDAN_PRICE,
-                                                            keys::CONFIRM_HINT
+                                                        i18n::tf(
+                                                            "突破上限 +2（乔丹之石 · {price}G{extra}）  {hint}",
+                                                            &[
+                                                                ("price", game_core::meta::JORDAN_PRICE.to_string()),
+                                                                ("extra", extra),
+                                                                ("hint", i18n::t(keys::CONFIRM_HINT).to_string()),
+                                                            ],
                                                         ),
                                                         true,
                                                     )
                                                 } else {
-                                                    (format!("已满级 Lv{lv}"), false)
+                                                    (i18n::tf("已满级 Lv{lv}", &[("lv", lv.to_string())]), false)
                                                 }
                                             } else {
                                                 {
                                                     // 升级价与购买价是**两套**（且升级价会随已购法术数涨价），
                                                     // 此前这里误显示了 `cost`（= learn_cost）—— 修正为实际扣款价。
                                                     let ucost = me.upgrade_cost_escalated(skill);
-                                                    (format!("升级到 Lv{} ({ucost}G)  [= / 回车]", lv + 1), true)
+                                                    (i18n::tf("升级到 Lv{lv} ({cost}G)  [= / 回车]", &[("lv", (lv + 1).to_string()), ("cost", ucost.to_string())]), true)
                                                 }
                                             }
                                         } else if tree_locked {
                                             ("同树已锁定，不可购买".to_string(), false)
                                         } else if me.gold >= cost {
-                                            (format!("购买 ({cost}G)  [= / 回车]"), true)
+                                            (i18n::tf("购买 ({cost}G)  [= / 回车]", &[("cost", cost.to_string())]), true)
                                         } else {
-                                            (format!("购买 ({cost}G) — 金币不足"), false)
+                                            (i18n::tf("购买 ({cost}G) — 金币不足", &[("cost", cost.to_string())]), false)
                                         };
                                         let br = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
                                         let bst = if enabled {
@@ -4416,13 +4510,13 @@ impl Game {
                             } else {
                                 ui::RowState::Normal
                             };
-                            ui::row(canvas, ctx, r, &format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], name), ui::theme::BODY, st)?;
+                            ui::row(canvas, ctx, r, &format!("[{}] {}", game_core::item::SHOP_CATEGORY_KEYS[ci], i18n::t(name)), ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::Category(ci as u8)));
                         }
                         cy += ui::theme::ROW_H + 10.0;
                         ui::text_left(
                             canvas, ctx,
-                            &format!("物品栏 {}/{}    金币 {}G", me.items.len(), me.inventory_slots(), me.gold),
+                            &i18n::tf("物品栏 {n}/{cap}    金币 {gold}G", &[("n", me.items.len().to_string()), ("cap", me.inventory_slots().to_string()), ("gold", me.gold.to_string())]),
                             ui::theme::SMALL, ui::theme::accent(), rx, cy,
                         )?;
                         cy += 24.0;
@@ -4466,15 +4560,15 @@ impl Game {
                                 ui::text_left(canvas, ctx, name, ui::theme::BODY, ui::theme::accent(), rx, iy)?;
                                 iy += 24.0;
                                 if !row.desc.is_empty() {
-                                    iy = ui::text_wrapped(canvas, ctx, row.desc, ui::theme::SMALL, ui::theme::text_dim(), rx, iy, content_w)?;
+                                    iy = ui::text_wrapped(canvas, ctx, i18n::t(row.desc), ui::theme::SMALL, ui::theme::text_dim(), rx, iy, content_w)?;
                                 }
                                 iy += 4.0;
                                 // 购买按钮：不可买时置灰并写明原因。
                                 let buy_block = Self::shop_buy_block(me, row);
                                 let (buy_label, buy_ok) = match (row.buy, buy_block) {
-                                    (Some(t), None) => (format!("{} 购买 {}（{}G）", keys::CONFIRM_HINT, t.def().name, t.def().cost), true),
-                                    (Some(t), Some(reason)) => (format!("{} 购买 {}（{}G）— {}", keys::CONFIRM_HINT, t.def().name, t.def().cost, reason), false),
-                                    (None, _) => (format!("{} 购买 — 已满级", keys::CONFIRM_HINT), false),
+                                    (Some(t), None) => (i18n::tf("{hint} 购买 {name}（{cost}G）", &[("hint", i18n::t(keys::CONFIRM_HINT).to_string()), ("name", i18n::t(t.def().name).to_string()), ("cost", t.def().cost.to_string())]), true),
+                                    (Some(t), Some(reason)) => (i18n::tf("{hint} 购买 {name}（{cost}G）— {reason}", &[("hint", i18n::t(keys::CONFIRM_HINT).to_string()), ("name", i18n::t(t.def().name).to_string()), ("cost", t.def().cost.to_string()), ("reason", i18n::t(reason).to_string())]), false),
+                                    (None, _) => (i18n::tf("{hint} 购买 — 已满级", &[("hint", i18n::t(keys::CONFIRM_HINT).to_string())]), false),
                                 };
                                 let br = graphics::Rect::new(rx, iy, content_w, ui::theme::ROW_H);
                                 let bst = if buy_ok {
@@ -4491,8 +4585,8 @@ impl Game {
                                 iy += ui::theme::ROW_H + 4.0;
                                 // 卖出按钮：未持有时置灰。
                                 let (sell_label, sell_ok) = match row.sell {
-                                    Some(sid) => (format!("{} 卖出 {}（+{}G）", keys::SELL_HINT, sid.def().name, sid.def().sell), true),
-                                    None => (format!("{} 卖出 — 未持有该物品", keys::SELL_HINT), false),
+                                    Some(sid) => (i18n::tf("{hint} 卖出 {name}（+{gold}G）", &[("hint", i18n::t(keys::SELL_HINT).to_string()), ("name", i18n::t(sid.def().name).to_string()), ("gold", sid.def().sell.to_string())]), true),
+                                    None => (i18n::tf("{hint} 卖出 — 未持有该物品", &[("hint", i18n::t(keys::SELL_HINT).to_string())]), false),
                                 };
                                 let sr = graphics::Rect::new(rx, iy, content_w, ui::theme::ROW_H);
                                 let sst = if sell_ok {
@@ -4514,10 +4608,10 @@ impl Game {
                                 )?;
                             }
                         }
-                        let range = if rows_len == 0 { "（无）".to_string() } else { format!("（{}-{}）", start + 1, end) };
+                        let range = if rows_len == 0 { i18n::t("（无）").to_string() } else { format!("（{}-{}）", start + 1, end) };
                         ui::text_left(
                             canvas, ctx,
-                            &format!("共 {rows_len} 条 · 滚轮/↑↓ 滚动 {range} · 数字选中"),
+                            &i18n::tf("共 {n} 条 · 滚轮/↑↓ 滚动 {range} · 数字选中", &[("n", rows_len.to_string()), ("range", range)]),
                             ui::theme::SMALL, ui::theme::text_dim(), rx, bot_edge - 22.0,
                         )?;
                     }
@@ -4525,7 +4619,7 @@ impl Game {
                         // 成长页：精通列表（数字选中）→ 详情区显示描述 + 「购买」按钮
                         // （带快捷键，金币不足/满级时置灰并写明原因）。
                         let mut ay = panel_y + 14.0;
-                        ui::text_left(canvas, ctx, &format!("金币 {}G", me.gold), ui::theme::SMALL, ui::theme::accent(), rx, ay)?;
+                        ui::text_left(canvas, ctx, &i18n::tf("金币 {n}G", &[("n", me.gold.to_string())]), ui::theme::SMALL, ui::theme::accent(), rx, ay)?;
                         ay += 24.0;
                         for (kind, (name, _)) in MASTERY_INFO.iter().enumerate() {
                             let lv = Self::mastery_level(me, kind);
@@ -4538,7 +4632,7 @@ impl Game {
                             } else {
                                 ui::RowState::Normal
                             };
-                            let label = format!("[{}] {}  Lv{}/{}", kind + 1, name, lv, game_core::meta::Mastery::CAPS[kind]);
+                            let label = format!("[{}] {}  Lv{}/{}", kind + 1, i18n::t(name), lv, game_core::meta::Mastery::CAPS[kind]);
                             ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
                             self.learn_hitboxes.push((r, LearnAction::Mastery(kind)));
                             ay += ui::theme::ROW_H + 4.0;
@@ -4551,14 +4645,14 @@ impl Game {
                                 let lv = Self::mastery_level(me, kind);
                                 let cost = game_core::meta::Mastery::COSTS[kind];
                                 let cap = game_core::meta::Mastery::CAPS[kind];
-                                ui::text_left(canvas, ctx, &format!("{name}  Lv{lv} / {cap}"), ui::theme::BODY, ui::theme::accent(), rx, ay)?;
+                                ui::text_left(canvas, ctx, &format!("{}  Lv{lv} / {cap}", i18n::t(name)), ui::theme::BODY, ui::theme::accent(), rx, ay)?;
                                 ay += 24.0;
-                                ay = ui::text_wrapped(canvas, ctx, desc, ui::theme::SMALL, ui::theme::text_dim(), rx, ay, content_w)?;
+                                ay = ui::text_wrapped(canvas, ctx, i18n::t(desc), ui::theme::SMALL, ui::theme::text_dim(), rx, ay, content_w)?;
                                 ay += 4.0;
                                 let block = Self::mastery_block(me, kind);
                                 let (label, enabled) = match block {
-                                    None => (format!("{} 购买（{}G）", keys::CONFIRM_HINT, cost), true),
-                                    Some(reason) => (format!("{} 购买（{}G）— {}", keys::CONFIRM_HINT, cost, reason), false),
+                                    None => (i18n::tf("{hint} 购买（{cost}G）", &[("hint", i18n::t(keys::CONFIRM_HINT).to_string()), ("cost", cost.to_string())]), true),
+                                    Some(reason) => (i18n::tf("{hint} 购买（{cost}G）— {reason}", &[("hint", i18n::t(keys::CONFIRM_HINT).to_string()), ("cost", cost.to_string()), ("reason", i18n::t(reason).to_string())]), false),
                                 };
                                 let br = graphics::Rect::new(rx, ay, content_w, ui::theme::ROW_H);
                                 let bst = if enabled {
@@ -4615,7 +4709,16 @@ impl Game {
                 let mut sorted: Vec<_> = self.meta.profiles.iter().collect();
                 sorted.sort_by_key(|p| p.best_placement);
                 for p in sorted.iter() {
-                    let line = format!("{}  金币{}  击杀{}  伤害{:.0}  最佳名次#{}", self.player_label(p.player_id), p.gold, p.total_kills, p.total_damage, p.best_placement);
+                    let line = i18n::tf(
+                        "{name}  金币{gold}  击杀{kills}  伤害{dmg}  最佳名次#{rank}",
+                        &[
+                            ("name", self.player_label(p.player_id)),
+                            ("gold", p.gold.to_string()),
+                            ("kills", p.total_kills.to_string()),
+                            ("dmg", format!("{:.0}", p.total_damage)),
+                            ("rank", p.best_placement.to_string()),
+                        ],
+                    );
                     draw_text(canvas, ctx, &line, 24.0, Color::WHITE, Point2 { x: cx, y }, true)?;
                     y += 40.0;
                 }
@@ -4625,7 +4728,7 @@ impl Game {
                 y += 36.0;
                 for (rank, (pid, score)) in self.meta.final_ranking().iter().enumerate() {
                     let color = if rank == 0 { Color::from_rgb(255, 220, 90) } else { Color::from_rgb(200, 210, 225) };
-                    let line = format!("#{}  {}  {} 分", rank + 1, self.player_label(*pid), score);
+                    let line = i18n::tf("#{rank}  {name}  {score} 分", &[("rank", (rank + 1).to_string()), ("name", self.player_label(*pid)), ("score", score.to_string())]);
                     draw_text(canvas, ctx, &line, 22.0, color, Point2 { x: cx, y }, true)?;
                     y += 34.0;
                 }
@@ -4635,11 +4738,9 @@ impl Game {
                 #[cfg(feature = "steam")]
                 if let Some(s) = self.steam_stats_snapshot {
                     let f = |v: Option<i32>| v.map(|n| n.to_string()).unwrap_or_else(|| "--".to_string());
-                    let line = format!(
-                        "Steam 统计：场次 {}    胜场 {}    击杀 {}",
-                        f(s.matches),
-                        f(s.wins),
-                        f(s.kills)
+                    let line = i18n::tf(
+                        "Steam 统计：场次 {matches}    胜场 {wins}    击杀 {kills}",
+                        &[("matches", f(s.matches)), ("wins", f(s.wins)), ("kills", f(s.kills))],
                     );
                     draw_text(canvas, ctx, &line, 20.0, Color::from_rgb(170, 190, 215), Point2 { x: cx, y }, true)?;
                     y += 34.0;
@@ -4657,7 +4758,7 @@ impl Game {
                                 .map(|t| t.friends().get_friend(net_steam::steamworks::SteamId::from_raw(r.steam_id)).name())
                                 .unwrap_or_default();
                             let who = if name.is_empty() { format!("{}", r.steam_id) } else { name };
-                            draw_text(canvas, ctx, &format!("#{}  {}  {} 分", r.rank, who, r.score), 18.0, Color::from_rgb(205, 212, 225), Point2 { x: cx, y }, true)?;
+                            draw_text(canvas, ctx, &i18n::tf("#{rank}  {name}  {score} 分", &[("rank", r.rank.to_string()), ("name", who), ("score", r.score.to_string())]), 18.0, Color::from_rgb(205, 212, 225), Point2 { x: cx, y }, true)?;
                             y += 26.0;
                         }
                     }
@@ -4925,8 +5026,16 @@ impl Game {
                         self.push_banner("First Blood!".to_string(), Color::from_rgb(255, 210, 90));
                     }
                     let text = match game_core::meta::MatchState::streak_label(count) {
-                        Some(label) => format!("{who} 击杀了 {vl}  ·  {label} ×{count}"),
-                        None => format!("{who} 击杀了 {vl}"),
+                        Some(label) => i18n::tf(
+                            "{who} 击杀了 {victim}  ·  {label} ×{count}",
+                            &[
+                                ("who", who.clone()),
+                                ("victim", vl.clone()),
+                                ("label", i18n::t(label).to_string()),
+                                ("count", count.to_string()),
+                            ],
+                        ),
+                        None => i18n::tf("{who} 击杀了 {victim}", &[("who", who), ("victim", vl)]),
                     };
                     if let Some(cue) = spree_cue(count) {
                         self.audio.play(cue);
@@ -4957,7 +5066,7 @@ impl Game {
                     }
                 } else {
                     let vl = self.player_label(victim);
-                    self.push_banner(format!("{vl} 阵亡"), Color::from_rgb(180, 180, 190));
+                    self.push_banner(i18n::tf("{name} 阵亡", &[("name", vl)]), Color::from_rgb(180, 180, 190));
                 }
             } else if was_alive && alive {
                 if let Some(txt) = health_delta_text(prev_hp, hp) {
@@ -5135,7 +5244,7 @@ impl Game {
         canvas.draw(&bar_bg, graphics::DrawParam::new());
         let bar_fg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(bar.x, bar.y, bar.w * ratio, bar.h), hp_color(ratio))?;
         canvas.draw(&bar_fg, graphics::DrawParam::new());
-        ui::text_left(canvas, ctx, &format!("生命 {:.0} / {:.0}", p.hp.to_num::<f32>(), p.max_hp.to_num::<f32>()), 15.0, Color::WHITE, x + 12.0, y + 6.0)?;
+        ui::text_left(canvas, ctx, &i18n::tf("生命 {cur} / {max}", &[("cur", format!("{:.0}", p.hp.to_num::<f32>())), ("max", format!("{:.0}", p.max_hp.to_num::<f32>()))]), 15.0, Color::WHITE, x + 12.0, y + 6.0)?;
 
         // 状态图标行
         ui::text_left(canvas, ctx, "状态", 14.0, Color::from_rgb(150, 165, 190), x + 10.0, y + 47.0)?;
@@ -5159,12 +5268,12 @@ impl Game {
         // 施法状态（前摇/后摇）
         let cast = match p.caster.phase() {
             CastPhase::Windup { id, remaining, .. } => {
-                (format!("施法中 · {} {:.1}s", DefTable::neutral_name(id), remaining.to_num::<f32>()), Color::from_rgb(255, 200, 110))
+                (i18n::tf("施法中 · {name} {secs}s", &[("name", i18n::t(DefTable::neutral_name(id)).to_string()), ("secs", format!("{:.1}", remaining.to_num::<f32>()))]), Color::from_rgb(255, 200, 110))
             }
             CastPhase::Recovery { id, remaining } => {
-                (format!("收招 · {} {:.1}s", DefTable::neutral_name(id), remaining.to_num::<f32>()), Color::from_rgb(160, 200, 255))
+                (i18n::tf("收招 · {name} {secs}s", &[("name", i18n::t(DefTable::neutral_name(id)).to_string()), ("secs", format!("{:.1}", remaining.to_num::<f32>()))]), Color::from_rgb(160, 200, 255))
             }
-            CastPhase::Idle => ("待命".to_string(), Color::from_rgb(140, 150, 170)),
+            CastPhase::Idle => (i18n::t("待命").to_string(), Color::from_rgb(140, 150, 170)),
         };
         ui::text_left(canvas, ctx, &cast.0, 15.0, cast.1, x + 10.0, y + 75.0)?;
 
@@ -5176,13 +5285,13 @@ impl Game {
             .any(|it| it.def().family == game_core::item::ItemFamily::LavaBoots);
         let (item_txt, item_col) = if lava_boots && p.lava_boot_cd > Fix64::ZERO {
             (
-                format!("熔岩靴 冷却 {:.1}s", p.lava_boot_cd.to_num::<f32>()),
+                i18n::tf("熔岩靴 冷却 {secs}s", &[("secs", format!("{:.1}", p.lava_boot_cd.to_num::<f32>()))]),
                 Color::from_rgb(255, 170, 90),
             )
         } else if lava_boots {
-            ("熔岩靴 就绪".to_string(), Color::from_rgb(140, 220, 160))
+            (i18n::t("熔岩靴 就绪").to_string(), Color::from_rgb(140, 220, 160))
         } else {
-            ("物品 —".to_string(), Color::from_rgb(130, 140, 160))
+            (i18n::t("物品 —").to_string(), Color::from_rgb(130, 140, 160))
         };
         ui::text_left(canvas, ctx, &item_txt, 15.0, item_col, x + 10.0, y + 98.0)?;
         Ok(())
@@ -5205,7 +5314,7 @@ impl event::EventHandler for Game {
             local_settings::save(&self.local_settings_path, &self.local_settings);
             eprintln!("[audio] 静音 -> {muted}（F10）");
             self.push_banner(
-                if muted { "音频已静音 [F10]".to_string() } else { "音频已开启 [F10]".to_string() },
+                i18n::t(if muted { "音频已静音 [F10]" } else { "音频已开启 [F10]" }).to_string(),
                 Color::from_rgb(200, 220, 255),
             );
         }
@@ -5270,6 +5379,8 @@ impl event::EventHandler for Game {
             {
                 self.steam_ensure_session();
                 self.steam_poll_join_requests(ctx);
+                // 会话就绪后读取 Steam 语言并应用（`Auto` 偏好时生效；手动固定不受影响）。
+                self.steam_sync_language();
                 // 被邀请进房后本帧不再处理菜单输入。
                 if self.steam_in_lobby || self.steam_cli_ls.is_some() || self.steam_host_ls.is_some() {
                     self.accumulator = 0.0;
@@ -5362,16 +5473,9 @@ impl event::EventHandler for Game {
             let mut act: Option<usize> = None;
             // 鼠标点击主菜单卡片（与键盘共用 menu_selection + act）。
             if !in_lobby_menu && ctx.mouse.button_just_pressed(MouseButton::Left) {
-                let (sw, sh) = (ui::UI_W, ui::UI_H);
-                let card_w = (sw * 0.62).min(560.0);
-                let card_h = 96.0;
-                let card_x = sw / 2.0 - card_w / 2.0;
-                let y0 = sh * 0.34;
-                let gap = 26.0;
                 let p = ui::mouse_design(ctx);
-                for i in 0..4 {
-                    let y = y0 + i as f32 * (card_h + gap);
-                    if graphics::Rect::new(card_x, y, card_w, card_h).contains(p) {
+                for i in 0..MENU_COUNT {
+                    if main_menu_card_rect(i).contains(p) {
                         self.menu_selection = i;
                         act = Some(i);
                     }
@@ -6503,14 +6607,20 @@ impl Game {
         if just_named(NamedKey::Enter) || just('\r') {
             let sel = self.steam_friends[self.steam_friend_selection].clone();
             if sel.in_lobby {
-                self.steam_friend_hint = format!("{} 已经在房间里了", sel.name);
+                self.steam_friend_hint = i18n::tf("{name} 已经在房间里了", &[("name", sel.name.clone())]);
                 return;
             }
             match self.steam_lobby_id {
                 Some(lid) => {
                     if let Some(t) = self.steam_transport() {
                         net_steam::session::invite_friend(t, lid, sel.id);
-                        self.steam_friend_hint = format!("已邀请 {}{}", sel.name, if sel.online { "" } else { "（离线，邀请会等到其上线）" });
+                        self.steam_friend_hint = i18n::tf(
+                            "已邀请 {name}{note}",
+                            &[
+                                ("name", sel.name.clone()),
+                                ("note", if sel.online { String::new() } else { i18n::t("（离线，邀请会等到其上线）").to_string() }),
+                            ],
+                        );
                     }
                 }
                 None => self.steam_friend_hint = "尚未在房间里，无法邀请".to_string(),
@@ -6951,9 +7061,9 @@ impl Game {
                 // 统一设置编辑器里改（`match_cfg` + `room_meta`），这里只初始化默认值。
                 let disp = self.steam_my_display_name.clone();
                 self.room_meta.name = if disp.is_empty() {
-                    "我的房间".to_string()
+                    i18n::t("我的房间").to_string()
                 } else {
-                    format!("{disp}的房间")
+                    i18n::tf("{name}的房间", &[("name", disp)])
                 };
                 self.room_meta.note = String::new();
                 self.room_meta.player_limit = STEAM_DEFAULT_PLAYERS as u32;
@@ -7158,9 +7268,9 @@ impl Game {
                 // 回车/T = 屏幕提示；O/Esc = 关闭（房主关闭时发布）。
                 if just_named(NamedKey::Enter) || edit_key || mouse_activate {
                     self.room_cfg_hint = if id.is_locked() {
-                        format!("{}：暂锁定（{}）", id.label(), settings_ui::value_text(&self.match_cfg, id))
+                        i18n::tf("{label}：暂锁定（{value}）", &[("label", id.label().to_string()), ("value", settings_ui::value_text(&self.match_cfg, id))])
                     } else {
-                        "只读：只有房主可以修改房间设置".to_string()
+                        i18n::t("只读：只有房主可以修改房间设置").to_string()
                     };
                     eprintln!("[cfg] {}", self.room_cfg_hint);
                 }
@@ -7298,7 +7408,7 @@ impl Game {
         // 否则“在房间里改房名/备注”只改了本端 `room_meta`，客户端/房间列表读到的仍是建房那一刻的旧值（真 bug）。
         // 与 `SteamSession::host_set_room_info` 保持同样修正：空白房名回退为“未命名房间”。
         let rname = self.room_meta.name.trim();
-        let rname = if rname.is_empty() { "未命名房间" } else { rname };
+        let rname = if rname.is_empty() { i18n::t("未命名房间") } else { rname };
         mm.set_lobby_data(lobby, net_steam::session::ROOM_NAME_KEY, rname);
         mm.set_lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY, self.room_meta.note.trim());
         eprintln!(
@@ -7495,10 +7605,9 @@ impl Game {
         } else if l.version != Some(game_core::PROTOCOL_VERSION) {
             // 版本不符：拒绝加入（房主版本 None 视为旧构建/不兼容）。
             eprintln!("[steam-list] 版本不符：房主 {:?} vs 本端 {}", l.version, game_core::PROTOCOL_VERSION);
-            self.steam_lobby_error = Some(format!(
-                "版本不符（房主 {:?}，本端 {}），无法加入",
-                l.version,
-                game_core::PROTOCOL_VERSION
+            self.steam_lobby_error = Some(i18n::tf(
+                "版本不符（房主 {host:?}，本端 {mine}），无法加入",
+                &[("host", format!("{:?}", l.version)), ("mine", game_core::PROTOCOL_VERSION.to_string())],
             ));
         } else {
             let lobby_id = l.id;
@@ -7588,7 +7697,7 @@ impl Game {
             net_steam::session::LobbyProgress::Done(Err(e)) => {
                 eprintln!("[steam] lobby op failed: {e:?}");
                 // 失败提示上屏：返回大厅菜单后用红字展示，避免只 eprintln 用户看不到。
-                self.steam_lobby_error = Some(format!("加入失败：{e}"));
+                self.steam_lobby_error = Some(i18n::tf("加入失败：{err}", &[("err", e.to_string())]));
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
                 // 收回主菜单态（CLI 直通时 app 是 SteamHost/SteamJoin，不清回会有崩溃/黑屏风险）。
@@ -7728,7 +7837,7 @@ impl Game {
         })();
         if let Err(e) = res {
             eprintln!("[steam-menu] failed to enter steam mode: {e:?}");
-            self.steam_lobby_error = Some(format!("进入房间失败：{e}"));
+            self.steam_lobby_error = Some(i18n::tf("进入房间失败：{err}", &[("err", e.to_string())]));
             self.app = AppState::MainMenu;
             self.steam_lobby_menu = true;
             self.steam_lobby_create = false;
@@ -7846,50 +7955,68 @@ impl Game {
         }
     }
 
+    /// 当前生效的语言偏好：`--lang` 命令行覆盖优先，其次本地设置。
+    fn lang_pref(&self) -> i18n::LangPref {
+        self.lang_override.unwrap_or(self.local_settings.lang)
+    }
+
     /// 调整设置行并应用/保存。`wrap` = 满则回 0（点击/回车）；否则夹到 0..1（方向键）。
     fn settings_adjust(&mut self, row: usize, delta: i32, wrap: bool) {
-        let is_volume = SETTINGS_ROWS.get(row).map(|r| r.1).unwrap_or(false);
-        if !is_volume {
-            self.local_settings.toggle_mute();
-        } else {
-            let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
-            let cur = match row {
-                0 => self.local_settings.master_volume,
-                1 => self.local_settings.sfx_volume,
-                2 => self.local_settings.music_volume,
-                _ => 0.0,
-            };
-            let mut v = cur + step;
-            if wrap && v > 1.0 + 1e-4 {
-                v = 0.0;
+        match SETTINGS_ROWS.get(row).map(|r| r.0) {
+            Some(SetRow::Mute) => {
+                self.local_settings.toggle_mute();
             }
-            v = v.clamp(0.0, 1.0);
-            match row {
-                0 => self.local_settings.master_volume = v,
-                1 => self.local_settings.sfx_volume = v,
-                2 => self.local_settings.music_volume = v,
-                _ => {}
+            Some(SetRow::Lang) => {
+                // 语言行：点击/回车/方向键均循环切到下一选项（顺序：自动 → 简体中文 → English）。
+                // 玩家主动选择 = 清除 `--lang` 覆盖并持久化。
+                let next = self.lang_pref().next();
+                self.lang_override = None;
+                self.local_settings.lang = next;
+                i18n::set_lang(next.resolve(self.steam_lang));
             }
+            Some(kind) => {
+                // 音量行：`wrap` 时满则回 0（点击/回车步进一格）；否则按 delta 微调。
+                let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
+                let cur = match kind {
+                    SetRow::Master => self.local_settings.master_volume,
+                    SetRow::Sfx => self.local_settings.sfx_volume,
+                    SetRow::Music => self.local_settings.music_volume,
+                    SetRow::Mute | SetRow::Lang => 0.0,
+                };
+                let mut v = cur + step;
+                if wrap && v > 1.0 + 1e-4 {
+                    v = 0.0;
+                }
+                v = v.clamp(0.0, 1.0);
+                match kind {
+                    SetRow::Master => self.local_settings.master_volume = v,
+                    SetRow::Sfx => self.local_settings.sfx_volume = v,
+                    SetRow::Music => self.local_settings.music_volume = v,
+                    SetRow::Mute | SetRow::Lang => {}
+                }
+            }
+            None => {}
         }
         self.audio.apply(&self.local_settings);
         local_settings::save(&self.local_settings_path, &self.local_settings);
         self.audio.play(audio::AudioCue::UiConfirm);
     }
 
-    /// 设置行的值文本（音量百分比 / 静音开关）。
+    /// 设置行的值文本（音量百分比 / 静音开关 / 语言名）。
     fn settings_value_text(&self, row: usize) -> String {
-        match row {
-            0 => format!("{}%", (self.local_settings.master_volume * 100.0).round() as i32),
-            1 => format!("{}%", (self.local_settings.sfx_volume * 100.0).round() as i32),
-            2 => format!("{}%", (self.local_settings.music_volume * 100.0).round() as i32),
-            3 => {
+        match SETTINGS_ROWS.get(row).map(|r| r.0) {
+            Some(SetRow::Master) => format!("{}%", (self.local_settings.master_volume * 100.0).round() as i32),
+            Some(SetRow::Sfx) => format!("{}%", (self.local_settings.sfx_volume * 100.0).round() as i32),
+            Some(SetRow::Music) => format!("{}%", (self.local_settings.music_volume * 100.0).round() as i32),
+            Some(SetRow::Mute) => {
                 if self.local_settings.muted {
-                    "开（静音）".to_string()
+                    i18n::t("开（静音）").to_string()
                 } else {
-                    "关".to_string()
+                    i18n::t("关").to_string()
                 }
             }
-            _ => String::new(),
+            Some(SetRow::Lang) => i18n::t(self.lang_pref().display()).to_string(),
+            None => String::new(),
         }
     }
 
@@ -7902,26 +8029,26 @@ impl Game {
         let mouse = ui::mouse_design(ctx);
         self.settings_hitboxes.clear();
 
-        ui::text_center(&mut canvas, ctx, "设置（本机）", 34.0, ui::theme::accent(), cx, sh * 0.13)?;
-        ui::text_center(&mut canvas, ctx, "音量与静音仅影响本机，不影响联机", 17.0, ui::theme::text_dim(), cx, sh * 0.13 + 32.0)?;
+        ui::text_center(&mut canvas, ctx, i18n::t("设置（本机）"), 34.0, ui::theme::accent(), cx, sh * 0.13)?;
+        ui::text_center(&mut canvas, ctx, i18n::t("音量与静音仅影响本机，不影响联机"), 17.0, ui::theme::text_dim(), cx, sh * 0.13 + 32.0)?;
 
         let panel = layout::centered_panel(sw, sh, 0.66, 0.6);
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
         let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
-        for (i, (label, is_volume)) in SETTINGS_ROWS.iter().enumerate() {
+        for (i, (kind, label)) in SETTINGS_ROWS.iter().enumerate() {
             let r = layout::row_in(content, i, SETTINGS_ROWS.len());
             let sel = i == self.settings_row;
             let hover = !sel && r.contains(mouse);
             ui::paint_row(&mut canvas, ctx, r, sel, hover)?;
             let col = if sel { ui::theme::accent() } else { ui::theme::text() };
-            ui::text_left(&mut canvas, ctx, label, ui::theme::BODY, col, r.x + 14.0, r.y + 8.0)?;
-            if *is_volume {
+            ui::text_left(&mut canvas, ctx, i18n::t(label), ui::theme::BODY, col, r.x + 14.0, r.y + 8.0)?;
+            if matches!(kind, SetRow::Master | SetRow::Sfx | SetRow::Music) {
                 let bar = graphics::Rect::new(r.x + r.w * 0.5, r.y + r.h / 2.0 - 5.0, r.w * 0.34, 10.0);
                 let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), bar, ui::theme::row_bg())?;
                 canvas.draw(&bg, graphics::DrawParam::new());
-                let frac = match i {
-                    0 => self.local_settings.master_volume,
-                    1 => self.local_settings.sfx_volume,
+                let frac = match kind {
+                    SetRow::Master => self.local_settings.master_volume,
+                    SetRow::Sfx => self.local_settings.sfx_volume,
                     _ => self.local_settings.music_volume,
                 };
                 let fill = graphics::Rect::new(bar.x, bar.y, bar.w * frac.clamp(0.0, 1.0), bar.h);
@@ -7938,7 +8065,7 @@ impl Game {
         let br_hover = br.contains(mouse);
         ui::paint_row(&mut canvas, ctx, br, false, br_hover)?;
         ui::text_center(
-            &mut canvas, ctx, "返回  [Esc]", ui::theme::SMALL,
+            &mut canvas, ctx, i18n::t("返回  [Esc]"), ui::theme::SMALL,
             if br_hover { ui::theme::text() } else { ui::theme::text_dim() },
             br.x + bw / 2.0, br.y + 7.0,
         )?;
@@ -7946,13 +8073,13 @@ impl Game {
 
         ui::text_center(
             &mut canvas, ctx,
-            "↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回",
+            i18n::t("↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
         )?;
         if self.local_settings.muted {
-            ui::text_center(&mut canvas, ctx, "当前：已静音（F10 切换）", ui::theme::SMALL, ui::theme::warn(), cx, py + ph + 22.0)?;
+            ui::text_center(&mut canvas, ctx, i18n::t("当前：已静音（F10 切换）"), ui::theme::SMALL, ui::theme::warn(), cx, py + ph + 22.0)?;
         } else {
-            ui::text_center(&mut canvas, ctx, "F10 一键静音", ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 22.0)?;
+            ui::text_center(&mut canvas, ctx, i18n::t("F10 一键静音"), ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 22.0)?;
         }
         canvas.finish(ctx)?;
         Ok(())
@@ -7968,16 +8095,11 @@ impl Game {
         let cx = sw / 2.0;
 
         // 标题区（上移，给 4 张卡片 + 底部提示留出空间，避免重叠）
-        let title = "术士之战 Warlock Brawl";
+        let title = i18n::t("术士之战 Warlock Brawl");
         draw_text(&mut canvas, ctx, title, 54.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: 64.0 }, true)?;
-        draw_text(&mut canvas, ctx, "—— 选择对战模式 ——", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: 124.0 }, true)?;
+        draw_text(&mut canvas, ctx, i18n::t("—— 选择对战模式 ——"), 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: 124.0 }, true)?;
 
-        // 卡片通用尺寸（紧凑：4 张卡 + 底部提示条不重叠）
-        let card_w = (sw * 0.62).min(560.0);
-        let card_h = 84.0;
-        let card_x = cx - card_w / 2.0;
-        let y0 = 168.0;
-        let gap = 16.0;
+        // 卡片几何由 `main_menu_card_rect` 统一提供（与点击命中盒同源，避免再次错位）。
 
         #[cfg(feature = "steam")]
         let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
@@ -8027,10 +8149,10 @@ impl Game {
                     ("加入房间", "从房间列表选择并加入", "J", LobbyListAction::MenuJoin),
                     ("返回主菜单", "回到主菜单选择", "Q", LobbyListAction::MenuBack),
                 ];
-                ui::text_center(&mut canvas, ctx, "Steam 对战 · 大厅", 34.0, theme::accent(), cx, sh * 0.15)?;
+                ui::text_center(&mut canvas, ctx, i18n::t("Steam 对战 · 大厅"), 34.0, theme::accent(), cx, sh * 0.15)?;
                 ui::text_center(
                     &mut canvas, ctx,
-                    &format!("本端版本 v{}，仅同版本可联机", game_core::PROTOCOL_VERSION),
+                    &i18n::tf("本端版本 v{v}，仅同版本可联机", &[("v", game_core::PROTOCOL_VERSION.to_string())]),
                     17.0, theme::text_dim(), cx, sh * 0.15 + 34.0,
                 )?;
                 let row_w = (sw * 0.62).min(600.0);
@@ -8039,7 +8161,7 @@ impl Game {
                 let row_x = cx - row_w / 2.0;
                 let mpos = ui::mouse_design(ctx);
                 for (i, (name, desc, key, act)) in subs.into_iter().enumerate() {
-                    let y = y0 + (i as f32) * (row_h + gap_m);
+                    let y = MAIN_MENU_CARD_Y0 + (i as f32) * (row_h + gap_m);
                     let rect = graphics::Rect::new(row_x, y, row_w, row_h);
                     let selected = i == self.steam_lobby_selection;
                     let hover = !selected && rect.contains(mpos);
@@ -8047,10 +8169,10 @@ impl Game {
                     let name_col = if selected { Color::WHITE } else { theme::text() };
                     ui::text_left(
                         &mut canvas, ctx,
-                        &format!("{}{name}", if selected { "▶ " } else { "  " }),
+                        &format!("{}{}", if selected { "▶ " } else { "  " }, i18n::t(name)),
                         28.0, name_col, row_x + 20.0, y + 22.0,
                     )?;
-                    ui::text_left(&mut canvas, ctx, desc, 16.0, theme::text_dim(), row_x + 20.0, y + 58.0)?;
+                    ui::text_left(&mut canvas, ctx, i18n::t(desc), 16.0, theme::text_dim(), row_x + 20.0, y + 58.0)?;
                     ui::text_right(
                         &mut canvas, ctx, &format!("[{key}]"), 22.0,
                         if selected || hover { theme::accent() } else { theme::text_dim() },
@@ -8063,16 +8185,16 @@ impl Game {
                     ui::text_center(
                         &mut canvas, ctx, err, 20.0,
                         Color::from_rgb(255, 130, 120), cx,
-                        y0 + 3.0 * (row_h + gap_m) + 6.0,
+                        MAIN_MENU_CARD_Y0 + 3.0 * (row_h + gap_m) + 6.0,
                     )?;
                 }
             }
             #[cfg(not(feature = "steam"))]
             {
-                draw_text(&mut canvas, ctx, "Steam 未启用", 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
-                draw_text(&mut canvas, ctx, "需要 --features client/steam 构建", 20.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.44 }, true)?;
+                draw_text(&mut canvas, ctx, i18n::t("Steam 未启用"), 34.0, graphics::Color::from_rgb(255, 210, 120), Point2 { x: cx, y: sh * 0.36 }, true)?;
+                draw_text(&mut canvas, ctx, i18n::t("需要 --features client/steam 构建"), 20.0, Color::from_rgb(200, 205, 215), Point2 { x: cx, y: sh * 0.44 }, true)?;
             }
-            ui::text_center(&mut canvas, ctx, "↑/↓ 选择    回车 确认    H/J/Q 快捷键", 18.0, Color::from_rgb(160, 168, 182), cx, sh * 0.90)?;
+            ui::text_center(&mut canvas, ctx, i18n::t("↑/↓ 选择    回车 确认    H/J/Q 快捷键"), 18.0, Color::from_rgb(160, 168, 182), cx, sh * 0.90)?;
             canvas.finish(ctx)?;
             return Ok(());
         }
@@ -8086,9 +8208,9 @@ impl Game {
         ];
         let mpos = ui::mouse_design(ctx);
         for (i, (num, name, desc)) in items.iter().enumerate() {
-            let y = y0 + (i as f32) * (card_h + gap);
+            let card = main_menu_card_rect(i);
             let selected = i == self.menu_selection;
-            let hover = !selected && graphics::Rect::new(card_x, y, card_w, card_h).contains(mpos);
+            let hover = !selected && card.contains(mpos);
             // 选中卡片：高亮背景条；悬停：中亮；未选中：深灰背景。
             let bg_color = if selected {
                 Color::from_rgb(52, 60, 74)
@@ -8097,23 +8219,19 @@ impl Game {
             } else {
                 Color::from_rgb(28, 31, 38)
             };
-            let bg = Mesh::new_rectangle(
-                &ctx.gfx, DrawMode::fill(),
-                graphics::Rect::new(card_x, y, card_w, card_h),
-                bg_color,
-            )?;
+            let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), card, bg_color)?;
             canvas.draw(&bg, graphics::DrawParam::new());
             let mark = if selected { "[v]" } else { "[ ]" };
             let name_col = if selected { Color::WHITE } else { Color::from_rgb(210, 214, 225) };
-            draw_text(&mut canvas, ctx, &format!("[{num}]  {mark}{name}"), 30.0, name_col, Point2 { x: cx, y: y + card_h * 0.5 - 16.0 }, true)?;
-            draw_text(&mut canvas, ctx, desc, 17.0, Color::from_rgb(150, 156, 172), Point2 { x: cx, y: y + card_h * 0.5 + 20.0 }, true)?;
+            draw_text(&mut canvas, ctx, &format!("[{num}]  {mark}{}", i18n::t(name)), 30.0, name_col, Point2 { x: cx, y: card.y + card.h * 0.5 - 16.0 }, true)?;
+            draw_text(&mut canvas, ctx, i18n::t(desc), 17.0, Color::from_rgb(150, 156, 172), Point2 { x: cx, y: card.y + card.h * 0.5 + 20.0 }, true)?;
         }
 
         // 底部操作提示条（卡片下方，不重叠）
-        draw_text(&mut canvas, ctx, "↑/↓ 选择    回车 确认    或直接按数字键", 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh - 34.0 }, true)?;
+        draw_text(&mut canvas, ctx, i18n::t("↑/↓ 选择    回车 确认    或直接按数字键"), 18.0, graphics::Color::from_rgb(160, 168, 182), Point2 { x: cx, y: sh - 34.0 }, true)?;
         // 局域网等需在 GUI 外接管的提示（拾取对应卡片后显示，避免只 eprintln 看不到）。
         if !self.menu_hint.is_empty() {
-            draw_text(&mut canvas, ctx, &self.menu_hint, 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh - 76.0 }, true)?;
+            draw_text(&mut canvas, ctx, i18n::t(&self.menu_hint), 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh - 76.0 }, true)?;
         }
         canvas.finish(ctx)?;
         Ok(())
@@ -8147,7 +8265,7 @@ impl Game {
         // 已等待时长（连接界面让用户知道是否在卡住）
         if let Some(t0) = self.steam_lobby_pending_since {
             let waited = ctx.time.time_since_start().as_secs_f64() - t0;
-            ui::text_center(&mut canvas, ctx, &format!("已等待 {waited:.1}s"), 17.0, ui::theme::text_dim(), cx, panel.y + panel.h * 0.62 + 34.0)?;
+            ui::text_center(&mut canvas, ctx, &i18n::tf("已等待 {secs}s", &[("secs", format!("{waited:.1}"))]), 17.0, ui::theme::text_dim(), cx, panel.y + panel.h * 0.62 + 34.0)?;
         }
         ui::text_center(&mut canvas, ctx, "按 Q / Esc 取消", 18.0, ui::theme::text_dim(), cx, panel.y + panel.h - 26.0)?;
         canvas.finish(ctx)?;
@@ -8189,14 +8307,14 @@ impl Game {
         // 标题 + 右上状态（搜索中 / 当前筛选 / 总数）
         ui::text_center(canvas, ctx, "加入房间", 34.0, ui::theme::accent(), cx, sh * 0.11)?;
         let filter_name = if self.steam_list_mode_filter == 0 {
-            "全部".to_string()
+            i18n::t("全部").to_string()
         } else {
-            game_core::meta::MatchState::mode_name(self.steam_list_mode_filter).to_string()
+            i18n::t(game_core::meta::MatchState::mode_name(self.steam_list_mode_filter)).to_string()
         };
         let status = if self.steam_list_searching {
             "搜索中…".to_string()
         } else {
-            format!("模式：[{filter_name}]    共 {} 个", self.steam_list_lobbies.len())
+            i18n::tf("模式：[{mode}]    共 {n} 个", &[("mode", filter_name), ("n", self.steam_list_lobbies.len().to_string())])
         };
         ui::text_right(canvas, ctx, &status, 18.0, ui::theme::text_dim(), sw - pad, sh * 0.11)?;
 
@@ -8246,7 +8364,7 @@ impl Game {
                             let id = net_steam::steamworks::SteamId::from_raw(l.owner);
                             s.transport.friends().get_friend(id).name()
                         })
-                        .unwrap_or_else(|| "房主".to_string());
+                        .unwrap_or_else(|| i18n::t("房主").to_string());
                     let custom = l
                         .settings
                         .as_deref()
@@ -8263,7 +8381,7 @@ impl Game {
                 } else {
                     ui::theme::text()
                 };
-                let right = format!("{}/{}    {}", l_members, l_limit, game_core::meta::MatchState::mode_name(l_mode));
+                let right = format!("{}/{}    {}", l_members, l_limit, i18n::t(game_core::meta::MatchState::mode_name(l_mode)));
                 ui::text_left(canvas, ctx, &format!("{l_name}    {l_owner}"), 22.0, name_col, list_x + 12.0, y + 10.0)?;
                 ui::text_right(canvas, ctx, &right, 16.0, ui::theme::text_dim(), list_x + list_w - 12.0, y + 12.0)?;
                 // 第二行：备注 + 自定义项 + 版本
@@ -8275,13 +8393,13 @@ impl Game {
                     if !meta.is_empty() {
                         meta.push_str("    ");
                     }
-                    meta.push_str(&format!("房间设置：自定义 {custom_n} 项"));
+                    meta.push_str(&i18n::tf("房间设置：自定义 {n} 项", &[("n", custom_n.to_string())]));
                 }
                 if !ver_ok {
                     if !meta.is_empty() {
                         meta.push_str("    ");
                     }
-                    meta.push_str(&format!("[版本不符 {l_ver:?}]"));
+                    meta.push_str(&i18n::tf("[版本不符 {ver:?}]", &[("ver", format!("{l_ver:?}"))]));
                 }
                 if !meta.is_empty() {
                     let mcol = if ver_ok { ui::theme::text_dim() } else { Color::from_rgb(220, 140, 130) };
@@ -8309,7 +8427,7 @@ impl Game {
                         let id = net_steam::steamworks::SteamId::from_raw(dl.owner);
                         s.transport.friends().get_friend(id).name()
                     })
-                    .unwrap_or_else(|| "房主".to_string());
+                    .unwrap_or_else(|| i18n::t("房主").to_string());
                 (dl.name.clone(), owner, dl.members, dl.limit, dl.mode, dl.note.clone(), dl.version)
             };
             let ver_ok = d_ver == Some(game_core::PROTOCOL_VERSION);
@@ -8319,17 +8437,17 @@ impl Game {
                 *dy += 28.0;
                 Ok(())
             };
-            line(&mut dy, "房间名：", &d_name, ui::theme::text())?;
-            line(&mut dy, "房主：", &d_owner, ui::theme::text())?;
-            line(&mut dy, "人数：", &format!("{d_members}/{d_limit}"), ui::theme::text())?;
-            line(&mut dy, "模式：", game_core::meta::MatchState::mode_name(d_mode), ui::theme::text())?;
+            line(&mut dy, i18n::t("房间名："), &d_name, ui::theme::text())?;
+            line(&mut dy, i18n::t("房主："), &d_owner, ui::theme::text())?;
+            line(&mut dy, i18n::t("人数："), &format!("{d_members}/{d_limit}"), ui::theme::text())?;
+            line(&mut dy, i18n::t("模式："), i18n::t(game_core::meta::MatchState::mode_name(d_mode)), ui::theme::text())?;
             if ver_ok {
-                line(&mut dy, "版本：", "兼容", ui::theme::ok())?;
+                line(&mut dy, i18n::t("版本："), i18n::t("兼容"), ui::theme::ok())?;
             } else {
-                line(&mut dy, "版本：", &format!("{d_ver:?}（不兼容）"), Color::from_rgb(220, 130, 120))?;
+                line(&mut dy, i18n::t("版本："), &i18n::tf("{ver:?}（不兼容）", &[("ver", format!("{d_ver:?}"))]), Color::from_rgb(220, 130, 120))?;
             }
             if !d_note.is_empty() {
-                ui::text_left(canvas, ctx, "备注：", 17.0, ui::theme::text_dim(), det_x + 12.0, dy)?;
+                ui::text_left(canvas, ctx, i18n::t("备注："), 17.0, ui::theme::text_dim(), det_x + 12.0, dy)?;
                 dy += 22.0;
                 ui::text_wrapped(canvas, ctx, &d_note, 16.0, ui::theme::text(), det_x + 12.0, dy, det_w - 24.0)?;
             }
@@ -8650,6 +8768,8 @@ fn draw_text(
 ) -> GameResult {
     use ggez::graphics::{Text, TextFragment};
     use ggez::mint::Vector2;
+    // i18n：与 `ui::draw_text_at` 同策略 —— 绘制前统一过一层 `t`（未登记原样返回，幂等）。
+    let text = i18n::t(text);
     let fragment = TextFragment::new(text).color(color).scale(size).font("cjk".to_string());
     let mut t = Text::new(fragment);
     t.set_bounds(Vector2 { x: 2000.0, y: 200.0 });
@@ -8727,6 +8847,19 @@ fn parse_app_from_args(args: &[String]) -> AppState {
         }
     }
     app
+}
+
+/// 解析命令行语言覆盖：`--lang <auto|zh|en>`（也接受 `chinese`/`english` 等码，大小写不敏感）。
+///
+/// 用途：不开 Steam 也能直接进英文界面（验证/截图/CI），或临时固定语言。
+/// 显式覆盖优先于 Steam 与本地设置；`auto` = 仍跟随 Steam。
+fn parse_lang_arg(args: &[String]) -> Option<i18n::LangPref> {
+    let pos = args.iter().position(|a| a == "--lang")?;
+    let v = args.get(pos + 1)?.trim().to_ascii_lowercase();
+    if v == "auto" {
+        return Some(i18n::LangPref::Auto);
+    }
+    i18n::Lang::from_code(&v).map(i18n::LangPref::Fixed)
 }
 
 /// 自定义 winit 事件循环：在 ggez 官方 `event::run` 基础上，额外接入 winit 的
@@ -8959,7 +9092,13 @@ fn main() -> GameResult {
         )
         .build()?;
 
-    let game = Game::new(&mut ctx, app)?;
+    let mut game = Game::new(&mut ctx, app)?;
+    // `--lang` 命令行覆盖（不开 Steam 也能测英文）：优先于 Steam 与本地设置，不写回磁盘。
+    if let Some(pref) = parse_lang_arg(&args) {
+        game.lang_override = Some(pref);
+        i18n::set_lang(pref.resolve(None));
+        eprintln!("[i18n] language override via --lang: {pref:?}");
+    }
     // 用自定义事件循环替代 `event::run`，以接入中文 IME 输入。
     let mut app = GameApp {
         ctx,
@@ -9356,5 +9495,52 @@ mod tests {
         );
         // 缺参数 → 主菜单（不能死循环 / 不能误解析后面的参数）。
         assert_eq!(parse_app_from_args(&s(&["exe", "+connect_lobby"])), AppState::MainMenu);
+    }
+
+    /// `--lang` 命令行语言覆盖：`auto/zh/en`（及 `chinese`/`english`），大小写不敏感；
+    /// 缺参/非法值 → `None`（不覆盖）。
+    #[test]
+    fn parse_lang_arg_accepts_codes_and_rejects_junk() {
+        let s = |x: &[&str]| x.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        assert_eq!(super::parse_lang_arg(&s(&["exe"])), None, "无参数不覆盖");
+        assert_eq!(super::parse_lang_arg(&s(&["exe", "--lang"])), None, "缺值不覆盖");
+        assert_eq!(super::parse_lang_arg(&s(&["exe", "--lang", "junk"])), None, "非法值不覆盖");
+        assert_eq!(
+            super::parse_lang_arg(&s(&["exe", "--lang", "en"])),
+            Some(i18n::LangPref::Fixed(i18n::Lang::En))
+        );
+        assert_eq!(
+            super::parse_lang_arg(&s(&["exe", "--lang", "ENGLISH"])),
+            Some(i18n::LangPref::Fixed(i18n::Lang::En)),
+            "应大小写不敏感"
+        );
+        assert_eq!(
+            super::parse_lang_arg(&s(&["exe", "--lang", "schinese"])),
+            Some(i18n::LangPref::Fixed(i18n::Lang::ZhHans))
+        );
+        assert_eq!(
+            super::parse_lang_arg(&s(&["exe", "--lang", "auto"])),
+            Some(i18n::LangPref::Auto)
+        );
+    }
+
+    /// 主菜单卡片几何：绘制与点击命中共用 `main_menu_card_rect`，
+    /// 回归之前「布局改了但命中盒没同步」导致点啥都对不上的问题。
+    #[test]
+    fn main_menu_cards_hit_region_matches_drawn_region() {
+        // 四张卡片互不重叠，且每张卡的中心点命中它自己。
+        let rects: Vec<_> = (0..4).map(super::main_menu_card_rect).collect();
+        for (i, r) in rects.iter().enumerate() {
+            let center = ggez::mint::Point2 { x: r.x + r.w / 2.0, y: r.y + r.h / 2.0 };
+            assert!(r.contains(center), "卡片 {i} 的中心应命中自身");
+            for (j, other) in rects.iter().enumerate() {
+                if i != j {
+                    assert!(!other.contains(center), "卡片 {i} 的中心不应落入卡片 {j}");
+                }
+            }
+        }
+        // 最后一张卡片必须落在底部提示条（UI_H - 34）之上，避免压字。
+        let last = rects[3];
+        assert!(last.y + last.h < super::ui::UI_H - 34.0, "卡片不得与底部提示重叠");
     }
 }

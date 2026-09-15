@@ -75,6 +75,14 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
   + 首杀/击杀/连杀**横幅**（连杀用 098c `streak_label`）。纯客户端、由 hp/alive 差分推导，不进快照；
   世界重建/新一局/复活均正确重置。纯函数 `health_delta_text` 有单测。
 
+- **多语言（i18n，2026-09-15）**：主语言中文 + English；语言由 **Steam 语言设置**驱动
+  （`Apps::current_game_language`，见 `net-steam`），也可在「设置 → 语言」手动固定（`Auto/简体中文/English`，
+  存 `LocalSettings.lang`）。实现：`client/src/i18n.rs` —— **以中文原文为 key** 查英文表、漏翻回退中文；
+  静态文案在 `draw_text`/`ui::text_*` **绘制时统一过一层 `t`**，含变量文案用 `i18n::tf("…{x}…")`。
+  英文技能/道具文案优先取自 098c 原文。详见 `I18N.md`。
+  命令行语言覆盖：`client.exe --lang en|zh|auto`（不开 Steam 也能测英文）。
+- **主菜单卡片点击错位修复**：绘制与点击命中共用 `main_menu_card_rect`（此前两处硬编码不同步），有回归单测。
+
 ## 三、关键常量与版本
 
 | 项 | 值 |
@@ -83,7 +91,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 59 / game-core 249 / net 39 / net-steam 9（合计 356）；steam client 66 |
+| 测试基线 | client 70 / game-core 249 / net 39 / net-steam 9（合计 367）；steam client 70 |
 
 ## 四、待办（按建议优先级）
 
@@ -159,6 +167,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 | `PRESENTATION_PLAN.md` | 表现层 P1–P6 |
 | `AUDIO_PLAN.md` | **音效清单（098c 实证）+ 本地设置 + 主菜单设置界面规划（P2）** |
 | `AUDIO_SCRIPT.md` | **占位音用途清单 + 播报台词（中文/English）—— 录制用** |
+| `I18N.md` | **多语言（i18n）设计与用法**：中文 key + 英文表、Steam 语言驱动、如何加新语言 |
 | `FRAME_SYNC_ANALYSIS.md` | **联机卡顿分析**（房间信息轮询 + 帧同步；快照队头阻塞等） |
 | `FRAME_SYNC_INPUT_DELAY_DESIGN.md` | **主机固定节拍 + 输入延迟 设计草案**（未实施） |
 | `FRAME_SYNC_OPTIONS_COMPARE.md` | **抖动方案对比**（D 帧 vs held-continuous vs 渲染插值） |

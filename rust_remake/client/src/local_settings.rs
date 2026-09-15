@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::i18n::LangPref;
+
 /// 本地设置。音量内部用 `0.0..=1.0`（UI 展示为 0–100）。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LocalSettings {
@@ -12,6 +14,8 @@ pub struct LocalSettings {
     pub sfx_volume: f32,
     pub music_volume: f32,
     pub muted: bool,
+    /// 语言偏好：`Auto`（跟随 Steam）默认；也可手动固定为某语言。
+    pub lang: LangPref,
 }
 
 impl Default for LocalSettings {
@@ -21,6 +25,7 @@ impl Default for LocalSettings {
             sfx_volume: 1.0,
             music_volume: 1.0,
             muted: false,
+            lang: LangPref::Auto,
         }
     }
 }
@@ -91,6 +96,9 @@ pub fn parse(text: &str) -> LocalSettings {
             "muted" => {
                 s.muted = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
             }
+            "lang" => {
+                s.lang = LangPref::from_code(v);
+            }
             _ => {}
         }
     }
@@ -100,11 +108,12 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
-        if s.muted { 1 } else { 0 }
+        if s.muted { 1 } else { 0 },
+        s.lang.code()
     )
 }
 
@@ -154,9 +163,19 @@ mod tests {
             sfx_volume: 0.25,
             music_volume: 0.0,
             muted: true,
+            lang: LangPref::Fixed(crate::i18n::Lang::En),
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn lang_defaults_to_auto_and_parses_codes() {
+        assert_eq!(LocalSettings::default().lang, LangPref::Auto);
+        assert_eq!(parse("lang=en\n").lang, LangPref::Fixed(crate::i18n::Lang::En));
+        assert_eq!(parse("lang=zh\n").lang, LangPref::Fixed(crate::i18n::Lang::ZhHans));
+        assert_eq!(parse("lang=auto\n").lang, LangPref::Auto);
+        assert_eq!(parse("lang=bogus\n").lang, LangPref::Auto, "非法值应回退自动");
     }
 
     #[test]
@@ -175,6 +194,7 @@ mod tests {
             sfx_volume: 0.5,
             music_volume: 0.8,
             muted: false,
+            ..Default::default()
         };
         assert!((s.effective_sfx() - 0.25).abs() < 1e-6);
         assert!((s.effective_music() - 0.4).abs() < 1e-6);

@@ -295,17 +295,17 @@ impl Game {
             Some(ls) => ls.transport_ref(),
             None => match self.steam_cli_ls.as_ref() {
                 Some(ls) => ls.transport_ref(),
-                None => return ("未命名房间".to_string(), String::new()),
+                None => return (i18n::t("未命名房间").to_string(), String::new()),
             },
         };
         let Some(lid) = self.steam_lobby_id else {
-            return ("未命名房间".to_string(), String::new());
+            return (i18n::t("未命名房间").to_string(), String::new());
         };
         let mm = t.matchmaking();
         let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
         let name = mm
             .lobby_data(lobby, net_steam::session::ROOM_NAME_KEY)
-            .unwrap_or_else(|| "未命名房间".to_string());
+            .unwrap_or_else(|| i18n::t("未命名房间").to_string());
         let note = mm.lobby_data(lobby, net_steam::session::ROOM_NOTE_KEY).unwrap_or_default();
         (name, note)
     }
@@ -408,11 +408,14 @@ impl Game {
             let (name, _) = self.steam_current_room_info();
             let n = self.steam_roster.len();
             let limit = self.world.players.len().max(n);
-            format!("房间「{name}」{n}/{limit} 等待中")
+            i18n::tf(
+                "房间「{name}」{n}/{limit} 等待中",
+                &[("name", name), ("n", n.to_string()), ("limit", limit.to_string())],
+            )
         } else if self.pre_game_config {
-            "正在配置技能".to_string()
+            i18n::t("正在配置技能").to_string()
         } else {
-            format!("对局中（第 {} 局）", self.meta.round)
+            i18n::tf("对局中（第 {round} 局）", &[("round", self.meta.round.to_string())])
         };
         self.steam_set_presence(now, &status, Some(&connect));
     }
@@ -553,15 +556,35 @@ impl Game {
                 .iter()
                 .map(|k| net_steam::stats::achievement_label(k))
                 .collect();
-            format!("成就已上报：{}", names.join("、"))
+            i18n::tf("成就已上报：{names}", &[("names", names.join(i18n::t("、")))])
         } else if report.had_failure {
-            "战绩上报未生效（需在 Steamworks 后台配置统计/成就）".to_string()
+            i18n::t("战绩上报未生效（需在 Steamworks 后台配置统计/成就）").to_string()
         } else {
             String::new()
         };
         if !msg.is_empty() {
             self.steam_toast = (msg, now + 6.0);
         }
+    }
+
+    /// 读 **Steam 语言设置**并应用（进入主菜单/大厅时调用；无 Steam 会话时不清空已有值）。
+    ///
+    /// 语义：`LangPref::Auto` 跟随 Steam；`LangPref::Fixed` 无视 Steam（手动覆盖）。
+    /// 也负责把最新 Steam 值缓存到 `self.steam_lang`，供设置界面里切换“自动/固定”时重新解析。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_sync_language(&mut self) {
+        // 取出 Steam 游戏语言码（自有 String，借此结束对 `self` 的不可变借用）。
+        let code = self.steam_transport().and_then(|t| t.current_game_language());
+        let steam = code.as_deref().and_then(i18n::Lang::from_steam_code);
+        if steam == self.steam_lang {
+            return;
+        }
+        if let Some(code) = code.as_deref() {
+            eprintln!("[i18n] Steam game language: {code} -> {steam:?}");
+        }
+        self.steam_lang = steam;
+        let resolved = self.lang_pref().resolve(steam);
+        i18n::set_lang(resolved);
     }
 
     /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。
