@@ -79,6 +79,8 @@ pub enum AudioCue {
     AnnLastSecondSave,
     AnnVictory,
     AnnGameStart,
+    /// 平局加赛专属 sting（098c 复用 `Vo` GameFound；本作独立，见 `AUDIO_PLAN.md` §1.6）。
+    AnnDraw,
     AnnFinish,
     AnnResearch,
 }
@@ -143,6 +145,7 @@ impl AudioCue {
         AudioCue::AnnLastSecondSave,
         AudioCue::AnnVictory,
         AudioCue::AnnGameStart,
+        AudioCue::AnnDraw,
         AudioCue::AnnFinish,
         AudioCue::AnnResearch,
     ];
@@ -207,6 +210,7 @@ impl AudioCue {
             AudioCue::AnnLastSecondSave => "ann_last_second_save.wav",
             AudioCue::AnnVictory => "ann_victory.wav",
             AudioCue::AnnGameStart => "ann_game_start.wav",
+            AudioCue::AnnDraw => "ann_draw.wav",
             AudioCue::AnnFinish => "ann_finish.wav",
             AudioCue::AnnResearch => "ann_research.wav",
         }

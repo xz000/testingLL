@@ -4835,12 +4835,13 @@ impl Game {
             self.present_match_started = true;
             self.audio.play(audio::AudioCue::AnnGameStart);
         }
-        // 098c 平局加赛：总轮数增加 → 播 `Vo` + 「Draw! One more round」横幅（见 `MatchState::finish_round`）。
+        // 098c 平局加赛：总轮数增加 → 加赛横幅 + 专属音效 `ann_draw`
+        // （098c 原版复用 `Vo` GameFound；本作改用独立 sting，见 `AUDIO_PLAN.md` §1.6）。
         if self.meta.config.total_rounds != self.present_total_rounds {
             if self.present_total_rounds != 0 && self.meta.config.total_rounds > self.present_total_rounds {
-                self.audio.play(audio::AudioCue::AnnGameStart);
+                self.audio.play(audio::AudioCue::AnnDraw);
                 self.push_banner(
-                    "Draw! One more round to decide the battle".to_string(),
+                    i18n::t("平局！加赛一轮定胜负").to_string(),
                     Color::from_rgb(255, 210, 90),
                 );
             }

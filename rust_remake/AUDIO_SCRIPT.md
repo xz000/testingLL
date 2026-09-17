@@ -101,13 +101,14 @@
 | 文件 | 触发 | 098c 原声 | English 台词 | 中文台词（建议） |
 |---|---|---|---|---|
 | `ann_victory.wav` | 整场结束 | **器乐**（`EpicVictory.mp3`） | Victory | 胜利！ |
-| `ann_game_start.wav` | 首局开局 / **平局加赛**（`Vo`） | **器乐**（`GameFound.wav`） | The battle begins / Draw! One more round | 战斗开始！/ 平局！再战一轮！ |
+| `ann_game_start.wav` | 首局开局（`Vo`） | **器乐**（`GameFound.wav`） | The battle begins | 战斗开始！ |
+| `ann_draw.wav` | 平局加赛（**本作新增**；098c 复用 `Vo`） | **器乐 sting**（占位；可换器乐/人声） | Draw! One more round | 平局！再战一轮！ |
 | `ann_finish.wav` | 终局过场（离开结算画面） | **器乐**（`Rescue.wav`） | 战斗结束 | 战斗结束 |
 | `ann_research.wav` | 学习 / 升级完成（仅本机） | **人声**（`ResearchCompleteGeneric.mp3`，War3 顾问） | Research complete | 升级完成！ |
 
 > 对照小结：098c 自有播报里**人声台词**为 `A*/B*/C*` 系列 + `Denied` + `Pancake`（共 ~23 条）；
 > `EpicVictory` / `GameFound` / `Rescue` 是**器乐/提示音**（无人声）；`ResearchCompleteGeneric` 是 **War3 顾问语音**。
-> 因此 E1/E2 基本应录**人声**；E3 的 victory/game_start/finish 录**器乐**更贴原版（人声属新增）。
+> 因此 E1/E2 基本应录**人声**；E3 的 victory/game_start/finish/draw 录**器乐**更贴原版（draw 为本作新增，人声/器乐皆可）。
 
 ---
 
@@ -118,8 +119,8 @@
 | B 流程 | 6 | 否 |
 | C UI | 10 | 否 |
 | D 商店 | 3 | 否 |
-| E 播报 | 27 | **大部分需台词**：098c 人声 ~23–24（E1/E2 + research）；器乐 3（victory/game_start/finish，098c 原声为器乐） |
-| **合计** | **59** | 战斗/流程/UI/商店 32 条为音效；播报 27 条中 **23–24 条录人声**、3 条器乐 |
+| E 播报 | 28 | **大部分需台词**：098c 人声 ~23–24（E1/E2 + research）；器乐 4（victory/game_start/finish + 本作新增 draw） |
+| **合计** | **60** | 战斗/流程/UI/商店 32 条为音效；播报 28 条中 **23–24 条录人声**、4 条器乐 |
 
 > 录制建议：播报单条 0.4–1.2s；命中/UI 短促 0.05–0.2s；爆炸/胜负 0.3–1.0s。
 > 采样率 44.1kHz、单声道或立体声 `.wav` 均可（`ggez::audio`/rodio 解码 WAV）。

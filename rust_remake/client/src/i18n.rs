@@ -513,6 +513,7 @@ const EN: &[(&str, &str)] = &[
     ("{hint} 购买（{cost}G）— {reason}", "{hint} Buy ({cost}G) — {reason}"),
     // ---- 结算 / 播报 / 自身状态 ----
     ("对局结束", "Match Over"),
+    ("平局！加赛一轮定胜负", "Draw! One more round to decide the battle"),
     ("最终得分排名", "Final Score Ranking"),
     ("#{rank}  {name}  {score} 分", "#{rank}  {name}  {score} pts"),
     ("{name}  金币{gold}  击杀{kills}  伤害{dmg}  最佳名次#{rank}", "{name}  Gold{gold}  Kills{kills}  Dmg{dmg}  Best#{rank}"),

@@ -40,7 +40,7 @@ CUES = [
     "ann_spree8", "ann_spree9", "ann_spree10", "ann_spree_holy",
     "ann_hattrick", "ann_vampire", "ann_denied", "ann_burnout",
     "ann_silencer", "ann_pancake", "ann_last_second_save",
-    "ann_victory", "ann_game_start", "ann_finish", "ann_research",
+    "ann_victory", "ann_game_start", "ann_draw", "ann_finish", "ann_research",
 ]
 
 
@@ -64,7 +64,10 @@ def tone(name: str) -> bytes:
     r = name_hash(name)
     f0 = 180.0 + r * 620.0  # 180..800 Hz
 
-    if name.startswith("ann_"):
+    if name == "ann_draw":
+        # 平局加赛：稍长的三段上行号角（区别于开局的“两音”提示）。
+        dur, kind = 0.55, "draw"
+    elif name.startswith("ann_"):
         dur, kind = 0.30, "two"
     elif name.startswith("flow_"):
         dur, kind = 0.26, "two"
@@ -90,6 +93,15 @@ def tone(name: str) -> bytes:
             f = f0 if t < dur * 0.5 else f0 * 1.5
             s = math.sin(2 * math.pi * f * t) * 0.8
             s += 0.2 * math.sin(2 * math.pi * f * 2 * t)
+        elif kind == "draw":
+            # 三段上行、每段重新起音：像“再来一轮”的号角，明显区别于开局两音。
+            seg = dur / 3.0
+            k = min(int(t / seg), 2)
+            f = f0 * (1.0, 1.26, 1.5)[k]
+            local = (t - k * seg) / seg
+            env = envelope(local * seg, seg)
+            s = math.sin(2 * math.pi * f * t) * 0.8
+            s += 0.25 * math.sin(2 * math.pi * f * 2 * t)
         else:  # blip
             f = f0
             s = math.sin(2 * math.pi * f * t)

@@ -66,7 +66,7 @@
 |---|---|---|---|
 | `Ro` | `Sound\Dialogue\GenericWarnings\GenericWarningResearchComplete1.mp3` | **学习/升级完成**（科技研究） | 仅本机 |
 | `no` | `EpicVictory.mp3` | 整场**胜利**（`yD and not YD`） | 全局 |
-| `Vo` | `Sound\Interface\GameFound.wav` | **游戏开始**（`OR==2`）；平局**加赛** | 全局 |
+| `Vo` | `Sound\Interface\GameFound.wav` | **游戏开始**（`OR==2`）；平局**加赛**（本作加赛改用独立 `ann_draw`，见 §1.6 / §2·E28） | 全局 |
 | `yx` | `Sound\Interface\Rescue.wav` | 终局**过场**（白屏淡出） | 全局 |
 
 ### 1.5 定义但**未播放**（遗留，供参考）
@@ -99,7 +99,7 @@
 | Burnout | `Xo` | ✅ 接：S012 A 燃烧冲刺（新 `Player.burning`/`Hr`）撞队友 → `CombatEvent::Burnout` + 对队友伤害 + 熄火 |
 | Denied | `Wx` | ⛔ 不接：需 `Fv` 链索绑定 + `kr`/`Fr` 状态，未建模 |
 | 学习 / 升级完成 | `Ro` ResearchComplete | ✅ 接 `ann_research`（仅本机，仅技能购买/升级成功） |
-| 开局 / 平局加赛 | `Vo` GameFound | ✅ 接：**首局开局**播一次 `ann_game_start` |
+| 开局 / 平局加赛 | `Vo` GameFound | ✅ 接：首局开局 `ann_game_start`；**平局加赛改用独立 `ann_draw`**（098c 复用 `Vo`，本作为清晰区分而自造 sting，见 §2·E28） |
 | 终局过场 | `yx` Rescue | ✅ 接：离开结算画面（Q）时播 `ann_finish`（避免与 `ann_victory` 同时响） |
 | **缩圈 / 出界 / 倒计时 / 回合开始结束 / 配置阶段** | **098c 无** | ⛔ **不接**（098c 确实没这些音效） |
 | 商店买 / 卖 | 098c 无（只有“研究完成”音） | ⛔ 不接买卖；升级/学习→Research |
@@ -191,6 +191,7 @@
 | V25 | `ann_game_start.wav` | GameFound |
 | V26 | `ann_finish.wav` | Rescue |
 | V27 | `ann_research.wav` | ResearchCompleteGeneric |
+| V28 | `ann_draw.wav` | —（**非 098c**：098c 复用 `Vo`；本作独立的平局加赛 sting） |
 
 > 若暂时不录播报，可先**只做 A/B/C/D**，播报用 §1 的文本横幅 + 占位音。
 
@@ -278,3 +279,4 @@
 - 2026-09-13：**S012 A 燃烧冲刺（`Hr`）+ Burnout 已实现**：`Player.burning` 入快照（PROTOCOL_VERSION 13→14），
   同队接触 → Burnout 事件 + 伤害 + 熄火。剩 Denied（需 `Fv` 链索绑定）仍待定。
 - 2026-09-13：**开局/终局过场音**：首局开局 `ann_game_start`（`Vo`）；离开结算画面 `ann_finish`（`yx`）。至此音效接入基本收尾。
+- 2026-09-17：**平局加赛专属音效**：新增 `ann_draw`（器乐 sting 占位，`tools/gen_placeholder_audio.py` 生成），加赛不再复用 `ann_game_start`；加赛横幅补 i18n（`平局！加赛一轮定胜负`）。
