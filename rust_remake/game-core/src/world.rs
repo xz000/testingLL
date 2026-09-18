@@ -1621,8 +1621,9 @@ impl World {
                     }
                 }
                 ProjectileKind::Gravity { dir, speed, remaining, .. } => {
-                    // 引力场缓慢前移，随后原地鼓动（简化：只前移一小段后停住）
-                    pr.pos += *dir * (*speed * dt * Fix64::from_num(0.5));
+                    // 引力·暗物质：从施法者向目标点直线飞行（098c `Jc`/`bO`：速度 400/s），
+                    // 寿命 2.25s（≈range 900 / speed 400）；飞行途中拉拽+伤害附近敌人。
+                    pr.pos += *dir * (*speed * dt);
                     *remaining -= dt;
                     if *remaining < eps {
                         pr.alive = false;
@@ -2914,7 +2915,6 @@ impl World {
         // 队伍过滤（098c cn[]，B2）：技能 nova 只伤异队（owner 同队天然排除）。
         let owner_team = self.players.get(owner as usize).map(|p| p.team);
         let mut deaths: Vec<u32> = Vec::new();
-        let mut hit_non_owner = false;
         let mut hit_enemies: u32 = 0;
         let mut hits: Vec<u32> = Vec::new();
         for p in self.players.iter_mut() {
@@ -2949,7 +2949,6 @@ impl World {
                 // 098c 挨打回魔（D9 批次1）。
                 p.mana += dmg.to_num::<f64>();
                 if p.id != owner {
-                    hit_non_owner = true;
                     hit_enemies += 1;
                     hits.push(p.id);
                 }
@@ -2974,14 +2973,8 @@ impl World {
                 }
             }
         }
-        // 098c 伤害成长（D9 批次1）：本次爆炸命中了非 owner 目标 → 施法者 Gn ×1.1。
-        if hit_non_owner {
-            if let Some(o) = self.players.get_mut(owner as usize) {
-                if o.alive {
-                    o.on_dealt_damage();
-                }
-            }
-        }
+        // 098c 伤害成长（D9）：**只有弹体命中**（JASS `oc`，由 `bv[弹体]` 门控）才 `Gn×1.1`；
+        // AoE/新星经 `mI→hI` 结算**不涨 Gn**，故此处不再调用 `on_dealt_damage`。
         // 循环外记账，避免在 iter_mut 借用期间再借 self。
         for victim in deaths {
             self.record_death(victim);
@@ -4641,13 +4634,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 }
             }
             SkillEffect::GravityZone { pull_speed, .. } => {
-                // 引力场（Y3）：在点击处/朝目标方向发射一个吸引附近敌人的场。（数值走 stats）
+                // 引力·暗物质（S018A，098c `Jc`）：从**施法者**处发射弹体，以 400/s 飞向目标点；
+                // 飞行途中每 tick 拉拽（半径 600）并伤害（半径 274）附近敌人（见 step_projectiles/step_area_forces）。
                 // 吸引力（098c Force）随等级成长，走 stats.extra；effect 的 pull_speed 仅作 L1 兜底。
                 let pull = if stats.extra > Fix64::ZERO { stats.extra } else { pull_speed };
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
-                    let range = Fix64::from_num(stats.range.to_num::<f64>().max(1.0));
-                    let place = if let Some(t) = target { t } else { p.pos + dir * range };
+                    let from = p.pos;
                     world.projectiles.push(Projectile {
                         owner: idx,
                         kind: ProjectileKind::Gravity {
@@ -4658,7 +4651,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             damage_per_sec: stats.damage,
                             remaining: stats.duration,
                         },
-                        pos: place,
+                        pos: from,
                         alive: true,
                     });
                 }
@@ -4669,11 +4662,15 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let alt = world.players.get(idx as usize).map(|q| q.form_of(id)).unwrap_or(false);
                 let place = target.unwrap_or(world.players[idx as usize].pos);
                 let heal = if heal_per_sec > Fix64::ZERO { heal_per_sec } else { stats.extra };
+                // 半径随**范围精通**缩放（098c `Lc`：`Rv=250×.7√(1+.1·xi)`＝175√(1+.1·xi)，
+                // xi = 端口 `mastery[1]`（字段名 `range`，实为 Area of Effect）。
+                let area_mastery = world.players.get(idx as usize).map(|q| q.mastery[1] as f64).unwrap_or(0.0);
+                let radius = Fix64::from_num(stats.radius.to_num::<f64>() * (1.0 + 0.1 * area_mastery).sqrt());
                 world.projectiles.push(Projectile {
                     owner: idx,
                     kind: ProjectileKind::Star {
                         owner: idx,
-                        radius: stats.radius,
+                        radius,
                         damage_per_sec: stats.damage,
                         heal_per_sec: heal,
                         remaining: stats.duration,
@@ -7547,11 +7544,11 @@ mod tests {
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
         let k = 1.0 / 0.06;
         assert!((d - (0.3 + 0.2 * l) * k).abs() < 1e-3, "blackhole dps {d} != {}", (0.3 + 0.2 * l) * k);
-        // S018 force field (B)
+        // S018 force field (B)：逐级**非线性**伤害表（2.25,3.50,4.25,5.00,...）；回复 1.0+0.2/级。
         let st = DefTable::def_alt(SkillId::S018).expect("S018 has B form").growth.stats(lvl);
         let d = st.damage.to_num::<f64>();
         let e = st.extra.to_num::<f64>();
-        assert!((d - (2.25 + 0.8214 * l)).abs() < 1e-6, "field dps {d} != {}", 2.25 + 0.8214 * l);
+        assert!((d - 4.25).abs() < 1e-6, "field dps L3 {d} != 4.25");
         assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "field hps {e} != {}", 1.0 + 0.2 * l);
     }
 

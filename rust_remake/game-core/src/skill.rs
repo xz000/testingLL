@@ -2015,11 +2015,12 @@ impl DefTable {
                     extra_delta: 1.0,        // 098c: Force 12->19 (8 lv)
                     // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
                     // ——语义不同。贴 098b 升级版（落点原地漩涡 5s）取 0（场不漂移）；飞行段弹体化 TODO。
-                    speed_base: 400.0,       // 098c Jc: flying field speed 400
+                    speed_base: 400.0,       // 098c Jc: 从施法者飞向落点，速度 400/s（bO 400*.03）
                     // 拉拽半径 600（098c `hc`：`Rr<$57E40`=360000=600²）；
                     // 伤害半径更小（274），在 world.rs 用常量 `DARK_MATTER_DAMAGE_RADIUS` 处理。
                     radius_base: 600.0,
-                    duration_base: 5.0,
+                    // 寿命：098c `Jc` `ev[Nb]=900*(1+.1ei)/400` ≈ 2.25s（×400/s = 900 = range）。
+                    duration_base: 2.25,
                     range_base: 900.0,       // 098c Jc: range 900*(1+.1ei)
                     ..DEF_ZERO
                 },
@@ -2421,21 +2422,26 @@ impl DefTable {
                 name: "引力·力场",
                 needs_point: true,
                 effect: StarZone {
-                    damage_per_sec: Fix64::ZERO, // stats（2.25+0.3026L）取 growth
-                    heal_per_sec: Fix64::ZERO,   // stats.extra（1.0+0.0737L）取 growth
-                    radius: Fix64::from_num(200.0),
+                    damage_per_sec: Fix64::ZERO, // stats（逐级 2.25→8.0）取 growth
+                    heal_per_sec: Fix64::ZERO,   // stats.extra（1.0+0.2L）取 growth
+                    // 基线半径 175（098c `Rv=250×.7√(1+.1×范围精通)`；x=0 时 =175），
+                    // 实际施法时按施法者范围精通缩放（见 world.rs StarZone）。
+                    radius: Fix64::from_num(175.0),
                     duration: 5.0,
                     range: Fix64::from_num(850.0),
                 },
                 growth: SkillGrowth {
                     cooldown_base: 26.0,
-                    // 力场每秒伤害（098c Lc/Mc）：2.25→8.0（8 级），delta 取原斜率 0.8214/级。
+                    // 力场每秒伤害（098c Mc/Lc）：**非线性**逐级 `2.25,3.50,4.25,5.00,5.75,6.50,7.25,8.00`
+                    // （首级 +1.25，之后每级 +0.75）；用 `damage_levels` 精确表，避免线性近似。
                     damage_base: 2.25,
-                    damage_delta: 0.8214, // 098c: 2.25->8.0 (8 lv)
+                    damage_delta: 0.8214, // 兼容用近似（实际以 damage_levels 为准）
+                    damage_levels: Some(&[2.25, 3.50, 4.25, 5.00, 5.75, 6.50, 7.25, 8.00]),
                     // 每秒生命恢复（098c Lc）：1.0→2.4（8 级），delta 取原斜率 0.2/级。
                     extra_base: 1.0,
                     extra_delta: 0.2,     // 098c: heal 1.0->2.4 (8 lv)
-                    radius_base: 200.0,
+                    // 基线半径 175（098c `Rv=250×.7√(1+.1×范围精通)`，见 world.rs 施法缩放）。
+                    radius_base: 175.0,
                     duration_base: 5.0,
                     range_base: 850.0,    // 098c Mc: range 850*(1+.1ei)
                     speed_base: 850.0,
@@ -3491,7 +3497,7 @@ mod tests {
         assert!(near(d.stats_at(1).cooldown, 26.0, 1e-3) && near(d.stats_at(5).cooldown, 26.0, 1e-3));
         let s5 = d.stats_at(5);
         assert!(near(s5.speed, 400.0, 1e-3) && near(s5.radius, 600.0, 1e-3), "flying field speed 400, pull radius 600");
-        assert!(near(s5.duration, 5.0, 1e-3), "field should last 5*jn sec");
+        assert!(near(s5.duration, 2.25, 1e-2), "dark matter lifetime ≈ 2.25s (900/400)");
         // 伤害为每秒 DPS：098c 每 tick 0.3（L1）→ 按 0.06s 实际间隔换算（×16.67）。
         assert!(near(d.stats_at(1).damage, 5.0, 1e-2), "L1 dark matter DPS ≈ 5, got {:?}", d.stats_at(1).damage);
         assert!(near(s5.damage, 5.0 + (10.0 / 3.0) * 4.0, 1e-1), "L5 DPS ≈ 18.3, got {:?}", s5.damage);
