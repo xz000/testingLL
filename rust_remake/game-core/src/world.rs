@@ -1666,9 +1666,20 @@ impl World {
                     }
                     pr.pos += *dir * (*speed * dt);
                 }
-                ProjectileKind::Tether { remaining, .. } => {
+                ProjectileKind::Tether { owner, target, remaining, .. } => {
                     *remaining -= dt;
-                    if *remaining < eps {
+                    // 098c `tc`：链接**按距离**断裂——`WX(owner,target) ≥ 900×(1+.1×射程精通)`（非固定时长）。
+                    let broke = match (
+                        self.players.get(*owner as usize),
+                        self.players.get(*target as usize),
+                    ) {
+                        (Some(o), Some(t)) => {
+                            let r = 900.0 * (1.0 + 0.1 * o.mastery[2] as f64);
+                            (t.pos - o.pos).length() > Fix64::from_num(r)
+                        }
+                        _ => true, // 任一方不存在 → 断
+                    };
+                    if *remaining < eps || broke {
                         pr.alive = false;
                     }
                 }
@@ -2354,7 +2365,7 @@ impl World {
                                             damage_per_sec: *gx,
                                             beam_dps: Fix64::ZERO,
                                             pull_speed: Fix64::from_num(1.4 / 0.03), // >0：目标→施法者（098c `Q+=1.4/tick`÷0.03）
-                                            remaining: *debuff_dur,
+                                            remaining: Fix64::from_num(60.0), // 098c `tc`：范围内持续，超距才断
                                             beam: false, // 蓝链无沿线切割（098c `YI` 仅红链）
                                         },
                                         pos: pr.pos,
@@ -2409,7 +2420,7 @@ impl World {
                                             // 红链沿线切割（098c `YI`：`.7+.3×Yr` 只在 `je` 内 → 每 0.18s）÷0.18 得 DPS。
                                             beam_dps: *lightning_dmg / Fix64::from_num(0.18),
                                             pull_speed: Fix64::from_num(-1.4 / 0.03), // <0：施法者→目标（098c `Q+=1.4/tick`÷0.03）
-                                            remaining: *debuff_dur,
+                                            remaining: Fix64::from_num(60.0), // 098c `tc`：范围内持续，超距才断
                                             beam: true, // 红链沿连线切割经过的敌人
                                         },
                                         pos: pr.pos,
@@ -9654,6 +9665,48 @@ mod tests {
         let red = find(true, &w).expect("红链应生成 Tether");
         assert!(red.0, "红链应沿线切割（beam=true）");
         assert!(red.1 > 0.0, "红链 beam_dps 应 > 0（098c YI）");
+    }
+
+    /// 回归：锁链链接**按距离**持续（非固定 0.5s）——近距离常驻，超距（>900）断裂。
+    #[test]
+    fn s019_link_persists_by_range() {
+        let mut w = World::new(2, 7001);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..40 {
+            w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "应生成链接");
+        // 再保持 2 秒（远超旧 0.5s），链接应仍在。
+        for _ in 0..120 {
+            w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(
+            w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })),
+            "近距离链接应持续（>0.5s，按距离不断）"
+        );
+        // 拉远到 1200 > 900 → 断裂。
+        for _ in 0..5 {
+            w.players[1].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(
+            !w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })),
+            "超距链接应断裂"
+        );
     }
 
     /// 回归：单机试验场场景下，暗物质确实生成飞行弹体，并对敌人造成伤害与位移。
