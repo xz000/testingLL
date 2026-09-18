@@ -1454,9 +1454,13 @@ impl World {
             }
         }
         // 伤害矩阵记账（D6）：助攻/最高伤害统计的数据源（折算后值）。
+        // 按矩阵**实际尺寸**守卫（而非 players.len()）——有些测试/异常路径会手动增减 players
+        // 而未同步重建矩阵，旧守卫会越界 panic。
         if let Some(f) = from {
-            if f < self.players.len() as u32 && id < self.players.len() as u32 {
-                self.damage_matrix[f as usize][id as usize] += dealt;
+            let fi = f as usize;
+            let vi = id as usize;
+            if fi < self.damage_matrix.len() && vi < self.damage_matrix[fi].len() {
+                self.damage_matrix[fi][vi] += dealt;
             }
         }
         // 化身模式**累计伤害积分**（098c `fI`：`JV[i] += Rn[i]`）。在伤害结算处累加，
@@ -2168,10 +2172,14 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Magma, radius, .. } => {
-                    // 岩浆滚石接触（098c OB/VB，B4）：推离 + 「肉饼」减速 ×0.1（1.5s）+ 吸收敌方弹体。
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Magma, radius, gx, .. } => {
+                    // 岩浆滚石接触（098c OB/VB，B4）：推离 + 「肉饼」减速 ×0.1（1.5s）+ 接触 DoT + 吸收敌方弹体。
+                    // 接触 DoT（098c `VB`→buff `rr`：`ZO=.3+.3×Xv`、每 0.25s 一次 → DPS = ZO/0.25 =
+                    // 1.5+1.5×level）；与爆炸伤害同为 `3+1.5×level` 的线性族 → 这里取 `gx − 1.5`。
+                    // 属于 buff DoT → 走 `dot_events`（不涨 Gn）。
                     let owner = pr.owner;
                     let oteam: Option<u8> = self.players.get(owner as usize).map(|p| p.team);
+                    let dps = (*gx - Fix64::from_num(1.5)).max(Fix64::ZERO);
                     for (j, q) in self.players.iter().enumerate() {
                         if !q.alive || Some(q.team) == oteam {
                             continue;
@@ -2180,6 +2188,7 @@ impl World {
                         let rr = *radius + q.radius;
                         if d.length_squared() <= rr * rr {
                             let dir = if d.length_squared() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
+                            dot_events.push((j as u32, dps * dt, Some(owner)));
                             pushes.push((j as u32, dir * Fix64::from_num(300.0), 0.3, false));
                             pancakes.push((j as u32, 1.5));
                         }
@@ -9016,6 +9025,35 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[2].hp < world.players[2].max_hp, "滚石寿命尽爆炸应伤到尽头处的敌人");
+    }
+
+    /// 回归：岩浆滚石**接触**敌人应持续掉血（098c `VB`→buff `rr` DoT），且不涨 Gn。
+    #[test]
+    fn s008_magma_contact_dot_damages_enemy() {
+        let mut world = World::new(2, 5001);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.configure_regen(0.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S008.as_u32() as usize] = true; // B=岩浆
+        world.players[1].pos = Vec2::new(d60(1.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.players[1].move_target = None;
+        let growth0 = world.players[0].growth;
+        let hp0 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..20 {
+            world.players[1].pos = Vec2::new(d60(0.5), Fix64::ZERO); // 钉在出生点附近，保证接触
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(world.players[1].hp < hp0, "岩浆接触应造成 DoT 伤害（{hp0} -> {}）", world.players[1].hp);
+        assert_eq!(world.players[0].growth, growth0, "岩浆 DoT 不应涨 Gn");
     }
 
     // ===== B4-T 形态机制 =====
