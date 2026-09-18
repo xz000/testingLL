@@ -181,6 +181,8 @@ pub enum ProjectileKind {
         owner: u32,
         target: u32,
         damage_per_sec: Fix64,
+        /// `beam` 沿线切割的每秒伤害（098c 红链 `YI`：`.7+.3×Yr`/je，与本体伤害不同）。
+        beam_dps: Fix64,
         pull_speed: Fix64,
         remaining: Fix64,
         beam: bool,
@@ -2129,14 +2131,14 @@ impl World {
                         returners.push((*owner, pr.pos, bdir, Fix64::from_num(14.0)));
                     }
                 }
-                ProjectileKind::Tether { owner, target, damage_per_sec, beam, .. } => {
-                    // 回拉线：绑定目标持续掉血（伤害已含进 pull）；beam=Y1b 沿路径扫射
+                ProjectileKind::Tether { owner, target, damage_per_sec, beam_dps, beam, .. } => {
+                    // 回拉线：绑定目标持续掉血；beam=红链 `YI` 沿路径切割（用 `beam_dps`，与本体伤害不同）。
                     // 镜像分身免疫：被链目标若处于 Mirror 期间，不结算链伤害/拉拽。
                     if !self.players.get(*target as usize).is_some_and(|p| p.has_buff(BuffKind::Mirror)) {
                         dot_events.push((*target, *damage_per_sec * dt, Some(*owner)));
                     }
                     if *beam {
-                        // 沿施法者→目标线段扫射经过的所有敌人
+                        // 沿施法者→目标线段穿过的所有敌人（098c `YI`：`.7+.3×Yr`/je）。
                         let from = self.players.get(*owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
                         let to = self.players.get(*target as usize).map(|p| p.pos).unwrap_or(from);
                         for j in 0..n {
@@ -2145,7 +2147,7 @@ impl World {
                                 continue;
                             }
                             if point_near_segment(p.pos, from, to, p.radius) {
-                                dot_events.push((p.id, *damage_per_sec * dt, Some(*owner)));
+                                dot_events.push((p.id, *beam_dps * dt, Some(*owner)));
                             }
                         }
                     }
@@ -2350,9 +2352,10 @@ impl World {
                                             owner: pr.owner,
                                             target: victim,
                                             damage_per_sec: *gx,
+                                            beam_dps: Fix64::ZERO,
                                             pull_speed: Fix64::from_num(1.4 / 0.03), // >0：目标→施法者（098c `Q+=1.4/tick`÷0.03）
                                             remaining: *debuff_dur,
-                                            beam: true, // 沿连线切割经过的敌人
+                                            beam: false, // 蓝链无沿线切割（098c `YI` 仅红链）
                                         },
                                         pos: pr.pos,
                                         alive: true,
@@ -2403,9 +2406,11 @@ impl World {
                                             owner: pr.owner,
                                             target: victim,
                                             damage_per_sec: *gx,
+                                            // 红链沿线切割（098c `YI`：`.7+.3×Yr` 只在 `je` 内 → 每 0.18s）÷0.18 得 DPS。
+                                            beam_dps: *lightning_dmg / Fix64::from_num(0.18),
                                             pull_speed: Fix64::from_num(-1.4 / 0.03), // <0：施法者→目标（098c `Q+=1.4/tick`÷0.03）
                                             remaining: *debuff_dur,
-                                            beam: true, // 沿连线切割经过的敌人
+                                            beam: true, // 红链沿连线切割经过的敌人
                                         },
                                         pos: pr.pos,
                                         alive: true,
@@ -4558,6 +4563,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 owner: idx,
                                 target: tid,
                                 damage_per_sec: stats.damage,
+                                beam_dps: Fix64::ZERO,
                                 pull_speed: stats.speed,
                                 remaining: stats.duration,
                                 beam,
@@ -6972,6 +6978,7 @@ mod tests {
                 owner: 0,
                 target: 1,
                 damage_per_sec: Fix64::ZERO,
+                beam_dps: Fix64::ZERO,
                 pull_speed: Fix64::ZERO,
                 remaining: Fix64::from_num(1.0),
                 beam: false,
@@ -9593,6 +9600,60 @@ mod tests {
         assert_eq!(world.players[0].growth, growth0, "力场 DoT 不应改变攻方 Gn");
         let lost = 100.0 - world.players[1].hp.to_num::<f64>();
         assert!(lost < 30.0, "力场 5s 总伤害应有界（实测 {lost}）");
+    }
+
+    /// 回归：蓝链 Tether 不沿线切割（beam=false）；红链 beam=true 且 `beam_dps>0`（098c `YI`）。
+    #[test]
+    fn s019_chain_beam_flags_match_098c() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let find = |beam: bool, w: &World| -> Option<(bool, f64)> {
+            let _ = beam;
+            w.projectiles.iter().find_map(|p| match p.kind {
+                ProjectileKind::Tether { beam, beam_dps, .. } => Some((beam, beam_dps.to_num::<f64>())),
+                _ => None,
+            })
+        };
+        // 蓝链（A，默认形态）
+        let mut w = World::new(2, 6001);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..40 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let blue = find(false, &w).expect("蓝链应生成 Tether");
+        assert!(!blue.0, "蓝链不应沿线切割（beam=false）");
+        assert_eq!(blue.1, 0.0, "蓝链 beam_dps 应为 0");
+        // 红链（B）
+        let mut w = World::new(2, 6002);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[0].forms[SkillId::S019.as_u32() as usize] = true; // B=红链
+        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..40 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let red = find(true, &w).expect("红链应生成 Tether");
+        assert!(red.0, "红链应沿线切割（beam=true）");
+        assert!(red.1 > 0.0, "红链 beam_dps 应 > 0（098c YI）");
     }
 
     /// 回归：单机试验场场景下，暗物质确实生成飞行弹体，并对敌人造成伤害与位移。
