@@ -4692,7 +4692,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 引力·暗物质（S018A，098c `Jc`）：从**施法者**处发射弹体，以 400/s 飞向目标点；
                 // 飞行途中每 tick 拉拽（半径 600）并伤害（半径 274）附近敌人（见 step_projectiles/step_area_forces）。
                 // 吸引力（098c Force）随等级成长，走 stats.extra；effect 的 pull_speed 仅作 L1 兜底。
-                let pull = if stats.extra > Fix64::ZERO { stats.extra } else { pull_speed };
+                // 098c `Hc` 是“每 tick 位移”（故意不乘 `.03`，而速度类都写 `速度×.03`），
+                // 故速度 = `Hc/0.03`；tooltip `Force = Hc×20` → 实际速度 = `Force×5/3`。
+                // 交叉验证：锁链拉拽为 `1.4/tick`（已知温和）；若按“每 tick 叠加+阻尼”解释会达 ~1120/s（荒谬），
+                // 因此应为“每 tick 位移直读”模型。
+                let force = if stats.extra > Fix64::ZERO { stats.extra } else { pull_speed };
+                let pull = force * Fix64::from_num(5.0 / 3.0);
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let dir = towards(p.pos, target);
                     let from = p.pos;
@@ -9649,6 +9654,33 @@ mod tests {
             world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Gravity { .. })),
             "暗物质应能存活若干帧（不被障碍销毁）"
         );
+    }
+
+    /// 回归：暗物质吸力按 098c `Hc/0.03 = Force×5/3`（L1 Force=12 → 20/s）。
+    #[test]
+    fn s018_pull_speed_is_force_times_five_thirds() {
+        let mut world = World::new(2, 77);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let p = world.projectiles.iter().find(|p| matches!(p.kind, ProjectileKind::Gravity { .. })).unwrap();
+        match p.kind {
+            ProjectileKind::Gravity { pull_speed, .. } => {
+                let v = pull_speed.to_num::<f64>();
+                assert!((v - 20.0).abs() < 1e-2, "L1 吸力应 = Force×5/3 = 20/s，实际 {v}");
+            }
+            _ => unreachable!(),
+        }
     }
 
     /// 回归：引力吸力随距离衰减（098c `Hc×(1−d²/R²)`）——同帧内**近处位移大于远处**。
