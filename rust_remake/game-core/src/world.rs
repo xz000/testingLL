@@ -359,7 +359,9 @@ impl ProjectileKind {
             | ProjectileKind::Rolling { radius, .. }
             | ProjectileKind::BonusBomb { radius, .. }
             | ProjectileKind::Returner { radius, .. }
-            | ProjectileKind::Gravity { radius, .. }
+            // Gravity 是**场**（引力·暗物质）：与 Star 一样不与柱/障碍碰撞。
+            // 旧 bug：它被当成实体弹且半径 600（==拉拽半径），出生点附近任何柱子都会让它**第一帧就被撞销毁**，
+            // 表现为“施放了但什么都看不到”。
             | ProjectileKind::PushBullet { radius, .. }
             // 回旋镖单独处理：撞柱是**反弹**而不是消失（原版 BoomerangScript 的 MirrorBy），保留原手感。
             | ProjectileKind::Boomerang { radius, .. } => *radius,
@@ -373,6 +375,7 @@ impl ProjectileKind {
             | ProjectileKind::Beam { .. }
             | ProjectileKind::Tether { .. }
             | ProjectileKind::Star { .. }
+            | ProjectileKind::Gravity { .. }
             | ProjectileKind::BindLine { .. }
             | ProjectileKind::Clone { .. }
             | ProjectileKind::DelayedBlast { .. } => return None,
@@ -9574,6 +9577,35 @@ mod tests {
         assert!(max_x > 400.0, "暗物质弹体应从施法者飞出一段距离（实测 max_x={max_x}）");
         assert!(world.players[1].hp < hp0, "暗物质应对敌人造成伤害");
         assert!((world.players[1].pos - pos0).length() > Fix64::from_num(2.0), "暗物质应把敌人拉向场心");
+    }
+
+    /// 回归：暗物质是**场**，不应被柱子/障碍销毁（旧 bug：它被当实体弹、半径 600 与柱重叠 → 首帧销毁）。
+    #[test]
+    fn s018_survives_obstacles() {
+        let mut world = World::new(2, 999);
+        // 在场上放一个柱子，刚好覆盖暗物质出生点（半径 600 会与柱重叠）。
+        world.obstacles = vec![Obstacle::new(Vec2::ZERO, 100.0)];
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        assert!(
+            world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Gravity { .. })),
+            "暗物质不应被柱子首帧销毁"
+        );
+        for _ in 0..30 {
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(
+            world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Gravity { .. })),
+            "暗物质应能存活若干帧（不被障碍销毁）"
+        );
     }
 
     /// 098c `hc` nv==2：暗物质会把附近的**飞弹**也拉向场心。

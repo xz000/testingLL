@@ -3074,15 +3074,16 @@ impl Game {
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::Gravity { radius, .. } => {
-                    // 引力·暗物质：飞行核心（浅紫实心点）+ 内圈（伤害半径 274）+ 外圈（拉拽半径 600）。
-                    // 之前只画一个细圈、且半径放大到 600，飞得快时看着像“什么都没放”。
+                    // 引力·暗物质：填充伤害盘(274) + 拉拽外圈(600) + 大核心点。
                     let outer_r = (radius.to_num::<f32>() * self.scale).max(8.0);
                     let inner_r = (game_core::world::DARK_MATTER_DAMAGE_RADIUS as f32 * self.scale).max(6.0);
-                    let outer = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, outer_r, 0.4, Color::from_rgba(170, 130, 255, 110))?;
+                    let fill = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, inner_r, 0.4, Color::from_rgba(150, 110, 235, 55))?;
+                    canvas.draw(&fill, graphics::DrawParam::new());
+                    let outer = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, outer_r, 0.4, Color::from_rgba(170, 130, 255, 120))?;
                     canvas.draw(&outer, graphics::DrawParam::new());
-                    let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, inner_r, 0.4, Color::from_rgba(200, 160, 255, 210))?;
+                    let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(3.0), Point2 { x: px, y: py }, inner_r, 0.4, Color::from_rgba(210, 170, 255, 230))?;
                     canvas.draw(&inner, graphics::DrawParam::new());
-                    let core = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 7.0, 0.5, Color::from_rgba(225, 195, 255, 240))?;
+                    let core = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 13.0, 0.5, Color::from_rgba(235, 210, 255, 255))?;
                     canvas.draw(&core, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::Star { radius, .. } => {
