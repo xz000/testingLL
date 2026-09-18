@@ -83,16 +83,22 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
   命令行语言覆盖：`client.exe --lang en|zh|auto`（不开 Steam 也能测英文）。
 - **主菜单卡片点击错位修复**：绘制与点击命中共用 `main_menu_card_rect`（此前两处硬编码不同步），有回归单测。
 
+- **098c 持续伤害/拉拽口径对齐（2026-09-19）**：① DoT 不再每帧涨 `Gn`（成长由每发弹体命中触发）；
+  ② 引力/锁链 A 形态的“每 tick”数值按 `je` 门控（每 0.18s）换算为每秒 DPS；
+  ③ 引力吸力带距离平方衰减 `Hc×(1−d²/600²)`，量纲 = `Force×5/3`；
+  ④ 暗物质是“场”、不与柱碰撞（旧 bug 导致首帧被销毁→看不到效果）；
+  ⑤ 岩浆补接触 DoT（buff `rr`）；⑥ 红链沿线切割 `Tether.beam_dps`（协议 20→21）。均有回归单测。
+
 ## 三、关键常量与版本
 
 | 项 | 值 |
 |---|---|
 | 产品名 | 英文 **Circle Brawl** / 中文 **圆圈之战**（Steam AppID 908660；原名 Warlock Brawl / 术士之战） |
-| `PROTOCOL_VERSION` | 20 |
+| `PROTOCOL_VERSION` | 21 |
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 70 / game-core 249 / net 39 / net-steam 9（合计 367）；steam client 70 |
+| 测试基线 | client 71 / game-core 257 / net 39 / net-steam 9（合计 376）；steam client 78 |
 
 ## 四、待办（按建议优先级）
 
