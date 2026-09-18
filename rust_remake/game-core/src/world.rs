@@ -1668,18 +1668,16 @@ impl World {
                 }
                 ProjectileKind::Tether { owner, target, remaining, .. } => {
                     *remaining -= dt;
-                    // 098c `tc`：链接**按距离**断裂——`WX(owner,target) ≥ 900×(1+.1×射程精通)`（非固定时长）。
-                    let broke = match (
+                    // 098c `M1` 持久链接断裂条件：`Rr ≤ 89`（拉到位就松开）或任一方不存在。
+                    // （`900×(1+.1×射程)` 是**飞行阶段**弹体的最大射程，与持久链接无关。）
+                    let ended = match (
                         self.players.get(*owner as usize),
                         self.players.get(*target as usize),
                     ) {
-                        (Some(o), Some(t)) => {
-                            let r = 900.0 * (1.0 + 0.1 * o.mastery[2] as f64);
-                            (t.pos - o.pos).length() > Fix64::from_num(r)
-                        }
+                        (Some(o), Some(t)) => (t.pos - o.pos).length() <= Fix64::from_num(89.0),
                         _ => true, // 任一方不存在 → 断
                     };
-                    if *remaining < eps || broke {
+                    if *remaining < eps || ended {
                         pr.alive = false;
                     }
                 }
@@ -2365,7 +2363,7 @@ impl World {
                                             damage_per_sec: *gx,
                                             beam_dps: Fix64::ZERO,
                                             pull_speed: Fix64::from_num(1.4 / 0.03), // >0：目标→施法者（098c `Q+=1.4/tick`÷0.03）
-                                            remaining: Fix64::from_num(60.0), // 098c `tc`：范围内持续，超距才断
+                                            remaining: Fix64::from_num(60.0), // 098c：持续到两人靠到 ≤89 才断（见 movement 分支）
                                             beam: false, // 蓝链无沿线切割（098c `YI` 仅红链）
                                         },
                                         pos: pr.pos,
@@ -2420,7 +2418,7 @@ impl World {
                                             // 红链沿线切割（098c `YI`：`.7+.3×Yr` 只在 `je` 内 → 每 0.18s）÷0.18 得 DPS。
                                             beam_dps: *lightning_dmg / Fix64::from_num(0.18),
                                             pull_speed: Fix64::from_num(-1.4 / 0.03), // <0：施法者→目标（098c `Q+=1.4/tick`÷0.03）
-                                            remaining: Fix64::from_num(60.0), // 098c `tc`：范围内持续，超距才断
+                                            remaining: Fix64::from_num(60.0), // 098c：持续到两人靠到 ≤89 才断（见 movement 分支）
                                             beam: true, // 红链沿连线切割经过的敌人
                                         },
                                         pos: pr.pos,
@@ -9696,16 +9694,16 @@ mod tests {
         }
         assert!(
             w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })),
-            "近距离链接应持续（>0.5s，按距离不断）"
+            "近距离链接应持续（>0.5s，非固定时长）"
         );
-        // 拉远到 1200 > 900 → 断裂。
+        // 两人靠到 ≤89 → 断裂（098c：拉到位就松开）。
         for _ in 0..5 {
-            w.players[1].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+            w.players[1].pos = Vec2::new(Fix64::from_num(30.0), Fix64::ZERO);
             w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
         }
         assert!(
             !w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })),
-            "超距链接应断裂"
+            "靠到 ≤89 时链接应断裂"
         );
     }
 
