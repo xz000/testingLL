@@ -2988,21 +2988,6 @@ impl Game {
                     )?;
                     canvas.draw(&line, graphics::DrawParam::new());
                 }
-                game_core::world::ProjectileKind::Beam { dir, length, width, .. } => {
-                    // 激光线：从 pr.pos 朝 dir 延伸 length 的亮色线段
-                    let d = dir;
-                    let fx = d.x.to_num::<f32>();
-                    let fy = d.y.to_num::<f32>();
-                    let f = length.to_num::<f32>() * self.scale;
-                    let tip = Point2 { x: px + fx * f, y: py + fy * f };
-                    let beam = Mesh::new_line(
-                        &ctx.gfx,
-                        &[Point2 { x: px, y: py }, tip],
-                        (width.to_num::<f32>() * self.scale).max(3.0),
-                        Color::from_rgba(150, 230, 255, 200),
-                    )?;
-                    canvas.draw(&beam, graphics::DrawParam::new());
-                }
                 game_core::world::ProjectileKind::Rolling { dir, radius, .. } => {
                     // 滚动火球：暖色球 + 旋转小拖尾（示意在滚动）
                     let d = dir;

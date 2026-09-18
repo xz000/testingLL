@@ -131,14 +131,6 @@ pub enum ProjectileKind {
         remaining: Fix64, // 剩余飞行距离
         scatter: ScatterKind,
     },
-    /// 持续伤害线：一端在施法者，朝目标方向延伸，扫过即伤（LineBeam）。
-    Beam {
-        dir: Vec2,
-        length: Fix64,
-        width: Fix64,
-        damage_per_sec: Fix64,
-        remaining: Fix64,
-    },
     /// 链式/跳弹镖（T1b/T3/TestLeech）：全速直追最近敌人，命中后跳跃到下一个（或吸血、衰减伤害）。
     Chain {
         dir: Vec2,
@@ -350,7 +342,7 @@ impl ProjectileKind {
     /// 该弹体是否参与「撞柱子（静态圆形障碍）」判定，以及判定时用的半径。
     ///
     /// 返回 `None` = 不参与：都是**不飞行**的类型——
-    /// `Rock` 是落在目标点的延时爆炸物（不移动）、`Decoy` 是假身、`Beam` 是从施法者伸出的固定射线、
+    /// `Rock` 是落在目标点的延时爆炸物（不移动）、`Decoy` 是假身、
     /// `Tether` 绑定在目标玩家身上、`Star` 是静态区域、`BindLine` 是两点收拢的线。
     /// 前三者要做阻挡得改成"截断长度/改落点"，是另一类改动，本次不做。
     fn obstacle_radius(&self) -> Option<Fix64> {
@@ -374,7 +366,6 @@ impl ProjectileKind {
             }
             ProjectileKind::Rock { .. }
             | ProjectileKind::Decoy { .. }
-            | ProjectileKind::Beam { .. }
             | ProjectileKind::Tether { .. }
             | ProjectileKind::Star { .. }
             | ProjectileKind::Gravity { .. }
@@ -1802,12 +1793,6 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Beam { remaining, .. } => {
-                    *remaining -= dt;
-                    if *remaining <= Fix64::ZERO {
-                        pr.alive = false;
-                    }
-                }
             }
         }
 
@@ -2105,23 +2090,6 @@ impl World {
                         }
                     }
                     let _ = dir;
-                }
-                ProjectileKind::Beam { dir, length, width, damage_per_sec, .. } => {
-                    // 持续伤害线：对线段内敌人造成每帧伤害
-                    for j in 0..n {
-                        let p = &self.players[j];
-                        if !p.alive || p.id == pr.owner {
-                            continue;
-                        }
-                        let rel = p.pos - pr.pos;
-                        let along = rel.dot(*dir);
-                        if along > Fix64::ZERO && along <= *length {
-                            let perp = (rel - *dir * along).length();
-                            if perp <= *width + p.radius {
-                                dot_events.push((p.id, *damage_per_sec * dt, Some(pr.owner)));
-                            }
-                        }
-                    }
                 }
                 ProjectileKind::BonusBomb { damage, radius, push_power, push_time, owner, .. } => {
                     // 蓄力炸弹命中：伤+推+damageplus+生成回返镖
