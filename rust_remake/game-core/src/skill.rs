@@ -2004,9 +2004,11 @@ impl DefTable {
                 growth: SkillGrowth {
                     // 098c（w3a_strings.txt Gravity）：CD 26 恒定（w3a acdn 实证，20 档均 26）。
                     cooldown_base: 26.0,
-                    // 黑洞每秒伤害（098c mc）：0.3→1.7（+0.2/级，8 级）。
-                    damage_base: 0.3,
-                    damage_delta: 0.2,       // 098c: 0.3->1.7 (8 lv)
+                    // 黑洞伤害（098c `hc`→`hI`）：**每 tick 一次** `0.1+0.2×等级`（L1=0.3、L8=1.7），
+                    // 主循环 tick=0.03s、`je` 门控（每 3 tick 翻转）→ 实际约每 0.06s 一次
+                    // （≈16.67 次/秒）。故这里存**每秒 DPS**：`(0.3+0.2×(L-1)) / 0.06`。
+                    damage_base: 5.0,        // = 0.3 / 0.06
+                    damage_delta: 10.0 / 3.0, // = 0.2 / 0.06
                     // 吸引力（098c Force）：12→19（+1/级，8 档）；走 stats.extra 由 world.rs 读入 pull_speed
                     //（effect 的 pull_speed 不随等级成长，仅作 L1 兜底）。单位与 098c Force 一致。
                     extra_base: 12.0,
@@ -2014,7 +2016,9 @@ impl DefTable {
                     // speed 850 是 098b 弹体飞行速度（飞向落点）；GravityZone 原型的 speed 是「场漂移速度」
                     // ——语义不同。贴 098b 升级版（落点原地漩涡 5s）取 0（场不漂移）；飞行段弹体化 TODO。
                     speed_base: 400.0,       // 098c Jc: flying field speed 400
-                    radius_base: 200.0,
+                    // 拉拽半径 600（098c `hc`：`Rr<$57E40`=360000=600²）；
+                    // 伤害半径更小（274），在 world.rs 用常量 `DARK_MATTER_DAMAGE_RADIUS` 处理。
+                    radius_base: 600.0,
                     duration_base: 5.0,
                     range_base: 900.0,       // 098c Jc: range 900*(1+.1ei)
                     ..DEF_ZERO
@@ -3481,13 +3485,16 @@ mod tests {
             }
             ref e => panic!("S017 effect 错：{e:?}"),
         }
-        // S018 引力·暗物质（A 形态）：CD 26 恒定（w3a Gravity acdn）；漩涡半径 200 / 5s。
+        // S018 引力·暗物质（A 形态）：CD 26 恒定（w3a Gravity acdn）；拉拽半径 600 / 伤害半径 274（098c `hc`）。
         let d = DefTable::def(SkillId::S018);
         assert_eq!(d.name, "引力·暗物质");
         assert!(near(d.stats_at(1).cooldown, 26.0, 1e-3) && near(d.stats_at(5).cooldown, 26.0, 1e-3));
         let s5 = d.stats_at(5);
-        assert!(near(s5.speed, 400.0, 1e-3) && near(s5.radius, 200.0, 1e-3), "flying field speed 400, radius 200");
+        assert!(near(s5.speed, 400.0, 1e-3) && near(s5.radius, 600.0, 1e-3), "flying field speed 400, pull radius 600");
         assert!(near(s5.duration, 5.0, 1e-3), "field should last 5*jn sec");
+        // 伤害为每秒 DPS：098c 每 tick 0.3（L1）→ 按 0.06s 实际间隔换算（×16.67）。
+        assert!(near(d.stats_at(1).damage, 5.0, 1e-2), "L1 dark matter DPS ≈ 5, got {:?}", d.stats_at(1).damage);
+        assert!(near(s5.damage, 5.0 + (10.0 / 3.0) * 4.0, 1e-1), "L5 DPS ≈ 18.3, got {:?}", s5.damage);
         assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 Force should be 12");
         assert!(near(s5.extra, 16.0, 1e-1), "L5 Force should be ~16, got {:?}", s5.extra);
         // S019 锁链·钩引（A 形态）：CD 17→8（098c L9=8，原斜率）；radius 35；拉拽+0.5s 定身。

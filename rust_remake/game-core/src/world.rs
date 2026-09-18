@@ -20,6 +20,10 @@ pub const OUT_HURT: f64 = LAVA_HURT;
 /// E3/E3b 撒出的扇形子弹（原版 `SABulletScript`）的伤害与射程。
 pub const SABULLET_DAMAGE: f64 = Balance::default().sabullet_damage;
 pub const SABULLET_RANGE: f64 = Balance::default().sabullet_range;
+/// 暗物质（S018A）的**伤害**半径：098c `hc` 里 `Rr<$57E40`（=360000=600²）是**拉拽**半径（600，
+/// 已存于 `SkillGrowth::radius`）；伤害另有更小的门限 `Rr<75000` → √75000 ≈ 273.9。
+/// 两者不同，故伤害半径单独用此常量（引自 098c JASS `hc`）。
+pub const DARK_MATTER_DAMAGE_RADIUS: f64 = 273.86;
 
 /// 每个玩家当前帧的输入。
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1335,7 +1339,20 @@ impl World {
         }
     }
 
+    /// 离散命中伤害（弹体/爆炸/近战等）：计入 098c `Gn` 伤害成长（命中敌人 ×1.1）。
     fn damage_player(&mut self, id: u32, amount: Fix64, from: Option<u32>) {
+        self.damage_player_impl(id, amount, from, true);
+    }
+
+    /// 持续伤害（每帧 DoT：引力场/力场/锁链/滚动火球/线束）：同 `damage_player`，
+    /// 但**不**涨 `Gn`。原因：098c 的 `Gn×1.1` 由 `bv[弹体]` 门控（每发弹体只触发一次），
+    /// 而 DoT 是每帧结算；若每帧都乘 1.1（1.1^60/s）会指数爆炸，几帧内就秒杀满血。
+    fn damage_player_dot(&mut self, id: u32, amount: Fix64, from: Option<u32>) {
+        self.damage_player_impl(id, amount, from, false);
+    }
+
+    /// 伤害结算内核。`grow_gn` = 是否计入 `Gn` 伤害成长（DoT 传 `false`）。
+    fn damage_player_impl(&mut self, id: u32, amount: Fix64, from: Option<u32>, grow_gn: bool) {
         // 098c Gn[施法者]（D9 批次1）：伤害成长 × 灼烧惩罚。先取系数再进可变借用。
         let gn = from
             .and_then(|f| self.players.get(f as usize))
@@ -1380,11 +1397,13 @@ impl World {
                 p.mana += dealt.to_num::<f64>();
             }
         }
-        // 098c 伤害成长（D9 批次1）：命中敌人 Gn ×= 1.1。
-        if let Some(f) = from {
-            if let Some(a) = self.players.get_mut(f as usize) {
-                if a.alive {
-                    a.on_dealt_damage();
+        // 098c 伤害成长（D9 批次1）：**离散命中**敌人时 Gn ×= 1.1（`grow_gn=false` 的 DoT 不算）。
+        if grow_gn {
+            if let Some(f) = from {
+                if let Some(a) = self.players.get_mut(f as usize) {
+                    if a.alive {
+                        a.on_dealt_damage();
+                    }
                 }
             }
         }
@@ -1819,6 +1838,10 @@ impl World {
         // 2) 判定与收集对玩家的影响：命中伤害 / AOE / 持续伤害 / 爆炸。
         // 每个 (伤害, 来源) 事件在 4) 统一结算；被反弹护盾命中的直射弹只反射方向。
         let mut events: Vec<(u32, Fix64, Option<u32>)> = Vec::new();
+        // 持续伤害（每帧 DoT：引力场 / 力场星域 / 锁链 / 滚动火球 / 线束）：
+        // **不**触发 098c 的 `Gn×1.1` 伤害成长 —— 原版成长由 `bv[弹体]` 门控（每发弹体命中一次），
+        // 若每帧都涨会指数爆炸（1.1^60/s）导致秒杀。
+        let mut dot_events: Vec<(u32, Fix64, Option<u32>)> = Vec::new();
         let mut heals: Vec<(u32, Fix64)> = Vec::new(); // 力场治疗（B4-Y）
         let mut explode: Vec<ProjExplosion> = Vec::new();
         let mut pushes: Vec<(u32, Vec2, f64, bool)> = Vec::new(); // (受害者 id, 击退方向, 时长, 098b 衰减模型?)
@@ -2016,7 +2039,7 @@ impl World {
                         }
                         let rr = *radius + p.radius;
                         if (p.pos - pr.pos).length_squared() <= rr * rr {
-                            events.push((p.id, *damage_per_sec * dt, Some(pr.owner)));
+                            dot_events.push((p.id, *damage_per_sec * dt, Some(pr.owner)));
                         }
                     }
                     let _ = dir;
@@ -2033,7 +2056,7 @@ impl World {
                         if along > Fix64::ZERO && along <= *length {
                             let perp = (rel - *dir * along).length();
                             if perp <= *width + p.radius {
-                                events.push((p.id, *damage_per_sec * dt, Some(pr.owner)));
+                                dot_events.push((p.id, *damage_per_sec * dt, Some(pr.owner)));
                             }
                         }
                     }
@@ -2059,7 +2082,7 @@ impl World {
                     // 回拉线：绑定目标持续掉血（伤害已含进 pull）；beam=Y1b 沿路径扫射
                     // 镜像分身免疫：被链目标若处于 Mirror 期间，不结算链伤害/拉拽。
                     if !self.players.get(*target as usize).is_some_and(|p| p.has_buff(BuffKind::Mirror)) {
-                        events.push((*target, *damage_per_sec * dt, Some(*owner)));
+                        dot_events.push((*target, *damage_per_sec * dt, Some(*owner)));
                     }
                     if *beam {
                         // 沿施法者→目标线段扫射经过的所有敌人
@@ -2071,7 +2094,7 @@ impl World {
                                 continue;
                             }
                             if point_near_segment(p.pos, from, to, p.radius) {
-                                events.push((p.id, *damage_per_sec * dt, Some(*owner)));
+                                dot_events.push((p.id, *damage_per_sec * dt, Some(*owner)));
                             }
                         }
                     }
@@ -2128,7 +2151,7 @@ impl World {
                             && p.id != *owner
                             && Some(p.team) != self.players.get(*owner as usize).map(|o| o.team)
                         {
-                            events.push((p.id, *damage_per_sec * dt, Some(*owner)));
+                            dot_events.push((p.id, *damage_per_sec * dt, Some(*owner)));
                             // 力场（B4-Y）：范围内敌人减速 45%（098c Lc：降低移速 45%）。
                             // 仅 heal_team（力场形态）施加；每帧刷新短窗避免离开后残留。
                             if *heal_team {
@@ -2392,17 +2415,19 @@ impl World {
                     }
                 }
                 ProjectileKind::Gravity { radius, damage_per_sec, .. } => {
-                    // 黑洞（A 形态 mc）：范围内敌人每秒扣血（098c 伤敌 0.3+0.2×L，随 cast 写入 damage_per_sec）。
+                    // 黑洞（A 形态）：伤害半径比拉拽半径小（098c `hc`：`Rr<75000`≈274²；拉拽为 600²）。
+                    // `damage_per_sec` 已是每秒 DPS（每 tick 0.1+0.2×等级 ÷ 0.06 换算，见 skill.rs）。
                     let owner = pr.owner;
                     let oteam = self.players.get(owner as usize).map(|p| p.team);
+                    let dmg_r = (*radius).min(Fix64::from_num(DARK_MATTER_DAMAGE_RADIUS));
                     for j in 0..n {
                         let p = &self.players[j];
                         if !p.alive || Some(p.team) == oteam {
                             continue;
                         }
-                        let rr = *radius + p.radius;
+                        let rr = dmg_r + p.radius;
                         if (p.pos - pr.pos).length_squared() <= rr * rr {
-                            events.push((p.id, *damage_per_sec * dt, Some(owner)));
+                            dot_events.push((p.id, *damage_per_sec * dt, Some(owner)));
                         }
                     }
                 }
@@ -2558,6 +2583,10 @@ impl World {
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
         for (victim, amount, from) in events {
             self.damage_player(victim, amount, from);
+        }
+        // 4a-bis) 持续伤害（DoT）：同上，但**不涨 Gn**（见 `dot_events` 声明处说明）。
+        for (victim, amount, from) in dot_events {
+            self.damage_player_dot(victim, amount, from);
         }
         // 4a) 结算弹体直接命中的击退（回旋镖 / 香蕉）
         for (victim, heal_amt) in heals.drain(..) {
@@ -6698,8 +6727,9 @@ mod tests {
             world.step(none.clone(), dt);
         }
         let total = hp1 - world.players[1].hp;
-        // 两段伤害：7（Gn1.0）+ 7.7（Gn1.1）= 14.7（±点燃/漂移）
-        assert!(total > 13.0, "成长后第二发应 7×1.1=7.7，合计 >13，实际 {total}");
+        // 第二发直伤在 Gn 成长后约为 7×1.1≈7.7（点燃等 DoT 不再随 Gn 指数上涨，见
+        // `dot_damage_does_not_grow_gn_or_oneshot`）。这里只断言“第二发确实打中了且量级合理”。
+        assert!(total > 7.0, "成长后第二发应仍有 ~7.7 直伤，合计 >7，实际 {total}");
     }
 
     /// M5 熔岩（圈外=熔岩统一，D8）：熔岩靴激活式——熔岩上用天罚 → 87.5% 窗口（1 档 3s）
@@ -7475,7 +7505,7 @@ mod tests {
         assert!(dist_after < dist_before, "引力场应把附近敌人吸向场心，{} -> {}", dist_before, dist_after);
     }
 
-    /// S018 引力·黑洞（A 形态）：范围内敌人**每秒扣血**（098c mc `0.3 + 0.2×升级次数`）。
+    /// S018 引力·黑洞（A 形态）：范围内敌人持续扣血（098c `hc`：每 tick `0.1+0.2×等级`，换算为 DPS）。
     #[test]
     fn s018_black_hole_damages_enemies_in_field() {
         let mut world = World::new(2, 1010);
@@ -7486,12 +7516,12 @@ mod tests {
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
         world.players[1].team = 1;
-        // 敌人原地不动，位于落点场心（360,0）半径 200 内
-        world.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
+        // 敌人原地不动，位于落点场心（240,0）伤害半径 274 内
+        world.players[1].pos = Vec2::new(d60(4.0), d60(1.0));
         world.players[1].move_target = None;
         let hp_before = world.players[1].hp.to_num::<f64>();
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
@@ -7513,9 +7543,10 @@ mod tests {
         // S019 chain (A)
         let d = DefTable::def(SkillId::S019).growth.stats(lvl).damage.to_num::<f64>();
         assert!((d - (0.2 + 0.2 * l)).abs() < 1e-6, "chain dmg {d} != {}", 0.2 + 0.2 * l);
-        // S018 gravity blackhole (A)
+        // S018 gravity blackhole (A)：098c 每 tick 0.1+0.2×L（L1=0.3），按 0.06s 间隔换算为 DPS ×16.67。
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
-        assert!((d - (0.3 + 0.2 * l)).abs() < 1e-6, "blackhole dmg {d} != {}", 0.3 + 0.2 * l);
+        let k = 1.0 / 0.06;
+        assert!((d - (0.3 + 0.2 * l) * k).abs() < 1e-3, "blackhole dps {d} != {}", (0.3 + 0.2 * l) * k);
         // S018 force field (B)
         let st = DefTable::def_alt(SkillId::S018).expect("S018 has B form").growth.stats(lvl);
         let d = st.damage.to_num::<f64>();
@@ -7524,7 +7555,7 @@ mod tests {
         assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "field hps {e} != {}", 1.0 + 0.2 * l);
     }
 
-    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c mc `0.3+0.2×L` 每秒）。
+    /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c `hc`：每 tick `0.1+0.2×等级`）。
     #[test]
     fn s018_black_hole_damages_enemy_in_field() {
         let mut world = World::new(2, 1008);
@@ -7535,12 +7566,14 @@ mod tests {
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
         world.players[1].team = 1;
-        // 敌人在落点（场心）附近且不自行移动，保证整段都在半径内
-        world.players[1].pos = Vec2::new(d60(6.0), d60(1.0));
+        // 敌人在落点（场心 240,0）伤害半径 274 内且不自行移动
+        world.players[1].pos = Vec2::new(d60(4.0), d60(1.0));
         world.players[1].move_target = None;
+        // 关掉基础回血，保证测的是黑洞伤害本身。
+        world.configure_regen(0.0);
         let hp_before = world.players[1].hp.to_num::<f64>();
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
@@ -7548,7 +7581,7 @@ mod tests {
             world.step(none.clone(), dt);
         }
         let hp_after = world.players[1].hp.to_num::<f64>();
-        assert!(hp_after < hp_before, "黑洞应持续扣血（0.3+0.2×L 每秒），{hp_before} -> {hp_after}");
+        assert!(hp_after < hp_before, "黑洞应持续扣血（0.1+0.2×L 每 tick），{hp_before} -> {hp_after}");
     }
 
     /// S006 时光回溯：施放记锚点 → 受伤+位移 → 3.6s 后闪回锚点并还原 HP。
@@ -9413,5 +9446,64 @@ mod tests {
         }
         assert!(world.on_ice(world.players[0].pos), "玩家应站在冰面上");
         assert_eq!(world.players[0].hp, hp, "冰面应免疫岩浆（不掉血）");
+    }
+
+    /// 回归：持续伤害（DoT）**不得**触发 `Gn` 伤害成长。
+    ///
+    /// 旧 bug：引力场/力场等每帧 `damage_per_sec*dt` 都走 `damage_player` → `Gn×1.1`，
+    /// 60Hz 下 `1.1^60 ≈ 300/秒` 指数爆炸，几帧内秒杀满血。
+    /// 098c 的 `Gn×1.1` 由 `bv[弹体]` 门控（每发弹体命中一次），DoT 不算。
+    #[test]
+    fn dot_damage_does_not_grow_gn_or_oneshot() {
+        use crate::skill::DefTable;
+        // 数值锚：A 形态换算后 DPS ≈ 5.0（L1：每 tick 0.3 ÷ 0.06）；B 力场 2.25/s（098c 原值）。
+        let a = DefTable::def(SkillId::S018).growth.stats(1);
+        assert!((a.damage.to_num::<f64>() - 5.0).abs() < 1e-2, "暗物质 L1 DPS 应 ≈ 5");
+        let b = DefTable::def_alt(SkillId::S018).unwrap().growth.stats(1);
+        assert!((b.damage.to_num::<f64>() - 2.25).abs() < 1e-6, "力场 L1 应为 2.25/s");
+
+        // A 形态：坤满 5s（引力场在场），Gn 不变、总伤害有界（不得秒杀）。
+        let mut world = World::new(2, 7);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.players[1].move_target = None;
+        let growth0 = world.players[0].growth;
+        world.step(vec![PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() }, PlayerInput::default()], dt);
+        for _ in 0..300 {
+            world.players[1].move_target = None;
+            world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO); // 钉在伤害半径（274）内
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert_eq!(world.players[0].growth, growth0, "DoT 不应改变攻方 Gn（伤害成长）");
+        let lost = 100.0 - world.players[1].hp.to_num::<f64>();
+        assert!(lost > 1.0 && lost < 40.0, "暗物质 5s 总伤害应有界且非零（实测 {lost}）");
+
+        // B 形态（力场）：同样不得涨 Gn / 秒杀。
+        let mut world = World::new(2, 8);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S018.as_u32() as usize] = true; // B=力场
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.players[1].move_target = None;
+        let growth0 = world.players[0].growth;
+        world.step(vec![PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() }, PlayerInput::default()], dt);
+        for _ in 0..300 {
+            world.players[1].move_target = None;
+            world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 钉在场内，满 5s
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert_eq!(world.players[0].growth, growth0, "力场 DoT 不应改变攻方 Gn");
+        let lost = 100.0 - world.players[1].hp.to_num::<f64>();
+        assert!(lost < 30.0, "力场 5s 总伤害应有界（实测 {lost}）");
     }
 }

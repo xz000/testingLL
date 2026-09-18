@@ -522,6 +522,9 @@ struct Game {
     banners: Vec<Banner>,
     /// 表现层采样：上一帧各玩家 hp（索引 = player id）。
     present_prev_hp: Vec<f32>,
+    /// 持续伤害（DoT）飘字累加：每帧血量差低于阈值（1.0）时先攒着，攒够再飘一次。
+    /// 否则引力场/力场这类每帧只掉 0.005 的小额伤害永远不显示。
+    present_dmg_accum: Vec<f32>,
     /// 表现层采样：上一帧各玩家存活（推死亡/击杀）。
     present_prev_alive: Vec<bool>,
     /// 表现层采样：上一帧轮号（变 = 新一局 → 清表现并重新采样）。
@@ -1152,6 +1155,7 @@ impl Game {
             fx: fx::FxSystem::new(),
             banners: Vec::new(),
             present_prev_hp: Vec::new(),
+            present_dmg_accum: Vec::new(),
             present_prev_alive: Vec::new(),
             present_round: 0,
             present_first_blood: false,
@@ -4802,6 +4806,7 @@ impl Game {
         if self.world.round_number != self.present_round {
             self.present_round = self.world.round_number;
             self.present_prev_hp = self.world.players.iter().map(|p| p.hp.to_num::<f32>()).collect();
+            self.present_dmg_accum = vec![0.0; self.world.players.len()];
             self.present_prev_alive = self.world.players.iter().map(|p| p.alive).collect();
             // 新一场（回到第 1 局）：重置胜利标记，使下一场终局能再播；跨局清空多重击杀窗口。
             if self.world.round_number <= 1 {
@@ -4825,6 +4830,7 @@ impl Game {
             // 非对局阶段只同步采样（进对局第一帧不误报）。
             for i in 0..n {
                 self.present_prev_hp[i] = self.world.players[i].hp.to_num::<f32>();
+                self.present_dmg_accum[i] = 0.0;
                 self.present_prev_alive[i] = self.world.players[i].alive;
                 self.present_prev_oob[i] = self.world.players[i].pos.length() > self.world.arena_radius;
             }
@@ -4982,6 +4988,9 @@ impl Game {
             let was_alive = self.present_prev_alive[i];
             let prev_hp = self.present_prev_hp[i];
             if was_alive && !alive {
+                if let Some(s) = self.present_dmg_accum.get_mut(i) {
+                    *s = 0.0;
+                }
                 // 阵亡 → 击杀横幅（含首杀 / 连杀）；本人连杀清零。
                 // 098c：单位死亡由 War3 引擎发声；此处用自制音等效。
                 self.audio.play(audio::AudioCue::CombatDeath);
@@ -5070,7 +5079,20 @@ impl Game {
                     self.push_banner(i18n::tf("{name} 阵亡", &[("name", vl)]), Color::from_rgb(180, 180, 190));
                 }
             } else if was_alive && alive {
-                if let Some(txt) = health_delta_text(prev_hp, hp) {
+                // 持续伤害（DoT）每帧只掉 <1 血，若直接按帧差判断会一直不出字；
+                // 这里：伤害先累积到阈值再飘；治疗只在单帧明显变化时飘（避免基础回血刷屏）。
+                let delta = hp - prev_hp;
+                let txt_opt: Option<String> = if delta < 0.0 {
+                    self.present_dmg_accum
+                        .get_mut(i)
+                        .and_then(|slot| accumulate_damage_float(slot, delta, PRESENTATION_MIN_DELTA))
+                } else {
+                    if let Some(slot) = self.present_dmg_accum.get_mut(i) {
+                        *slot = 0.0; // 回血会抵消掉未满阈值的累积伤害
+                    }
+                    health_delta_text(prev_hp, hp) // 离散治疗（如天罚自愈/奉献）
+                };
+                if let Some(txt) = txt_opt {
                     let color = if txt.starts_with('-') {
                         if i as u32 == me {
                             Color::from_rgb(255, 120, 110)
@@ -5148,6 +5170,7 @@ impl Game {
     /// 采样数组按当前世界重建（人数/轮号），并清空本场首杀标记。
     fn reseed_presentation(&mut self) {
         self.present_prev_hp = self.world.players.iter().map(|p| p.hp.to_num::<f32>()).collect();
+        self.present_dmg_accum = vec![0.0; self.world.players.len()];
         self.present_prev_alive = self.world.players.iter().map(|p| p.alive).collect();
         self.present_streak = vec![0; self.world.players.len()];
         self.present_round = self.world.round_number;
@@ -8666,6 +8689,24 @@ fn active_status_icons(p: &game_core::player::Player) -> Vec<StatusIcon> {
     v
 }
 
+/// 累积伤害飘字：把本帧血量差 `delta`（负=伤害）累加进 `accum`；
+/// 累积到阈值 `threshold` 时返回飘字文本（整数）并清零，否则返回 `None`。
+///
+/// 解决：持续伤害（引力场/力场等）每帧只掉 0.005 血，若按单帧差判断会永远不出字。
+fn accumulate_damage_float(accum: &mut f32, delta: f32, threshold: f32) -> Option<String> {
+    if delta >= 0.0 {
+        return None;
+    }
+    *accum += delta;
+    if *accum <= -threshold {
+        let txt = format!("{}", (*accum).round() as i32);
+        *accum = 0.0;
+        Some(txt)
+    } else {
+        None
+    }
+}
+
 /// 把一次血量变化转成飘字文本：负=伤害（`-N`）、正=治疗（`+N`）、微小变化忽略。
 /// 纯函数，便于单测（与绘制/世界无关）。
 fn health_delta_text(prev: f32, cur: f32) -> Option<String> {
@@ -9318,6 +9359,25 @@ mod tests {
     }
 
     /// 飘字的血量变化归类：伤害为负、治疗为正、微小变化忽略。
+    /// 持续伤害累积飘字：小额伤害攒够阈值才出一次，且不丢总量。
+    #[test]
+    fn accumulate_damage_float_emits_after_threshold() {
+        let mut acc = 0.0f32;
+        // 单帧 0.005 的 DoT：累积到 -1.0 才出字（浮点误差，多跑一帧）。
+        let mut emitted = Vec::new();
+        for _ in 0..201 {
+            if let Some(t) = super::accumulate_damage_float(&mut acc, -0.005, 1.0) {
+                emitted.push(t);
+            }
+        }
+        assert_eq!(emitted, vec!["-1".to_string()], "累积满 1.0 应飘一次");
+        // 单帧大伤害立即出字，不受累积影响。
+        assert_eq!(super::accumulate_damage_float(&mut acc, -13.4, 1.0).unwrap(), "-13");
+        // 回血（delta>=0）不累积、不出字。
+        assert_eq!(super::accumulate_damage_float(&mut acc, 0.5, 1.0), None);
+        assert_eq!(acc, 0.0, "大伤害后已清零");
+    }
+
     #[test]
     fn health_delta_text_classifies_damage_and_heal() {
         assert_eq!(super::health_delta_text(100.0, 87.4), Some("-13".to_string()));
