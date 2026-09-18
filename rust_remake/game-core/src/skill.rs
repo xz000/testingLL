@@ -2052,8 +2052,9 @@ impl DefTable {
                     cooldown_base: 17.0,
                     cooldown_delta: -1.125, // 098c: 17->8 (9 lv)
                     cooldown_levels: Some(&[17.0, 14.5, 12.5, 11.0, 10.0, 9.5, 9.0, 8.5, 8.0]),
-                    damage_base: 0.2,
-                    damage_delta: 0.2,      // 098c: 0.2->1.8 (9 lv)
+                    // 伤害：098c `hI(nr,Vr,.2×Yr)` 在 `if je` 内 → **每 0.18s** 一次，故存每秒 DPS。
+                    damage_base: 0.2 / 0.18,
+                    damage_delta: 0.2 / 0.18, // 098c: 每 tick 0.2->1.8 (9 lv) ÷ 0.18
                     duration_base: 0.5,
                     ..DEF_ZERO
                 },
@@ -2472,8 +2473,9 @@ impl DefTable {
                     // max_level=9，delta 取原斜率：CD 恒定 16、伤害 0.2/级。
                     cooldown_base: 16.0,
                     cooldown_delta: 0.0,
-                    damage_base: 0.2,
-                    damage_delta: 0.2,      // 098c: 0.2->1.8 (9 lv)
+                    // 伤害：同 A，098c 在 `if je` 内每 0.18s 一次 `0.2×Yr`，存每秒 DPS。
+                    damage_base: 0.2 / 0.18,
+                    damage_delta: 0.2 / 0.18, // 098c: 每 tick 0.2->1.8 (9 lv) ÷ 0.18
                     duration_base: 0.5,
                     // 098c 红链闪电（目标为友军/柱子时引发）：1.0→3.4（9 级），delta 取原斜率 0.3/级。
                     // world.rs 读 stats.extra 作为闪电伤害。

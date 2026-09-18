@@ -7579,9 +7579,10 @@ mod tests {
     fn doc_s019_s018_growth_matches_doc() {
         let lvl = 3u32;
         let l = (lvl - 1) as f64;
-        // S019 chain (A)
+        // S019 chain (A)：098c `hI(.2×Yr)` 在 `if je` 内 → 每 0.18s；存每秒 DPS。
         let d = DefTable::def(SkillId::S019).growth.stats(lvl).damage.to_num::<f64>();
-        assert!((d - (0.2 + 0.2 * l)).abs() < 1e-6, "chain dmg {d} != {}", 0.2 + 0.2 * l);
+        let k19 = 1.0 / 0.18;
+        assert!((d - (0.2 + 0.2 * l) * k19).abs() < 1e-3, "chain dps {d} != {}", (0.2 + 0.2 * l) * k19);
         // S018 gravity blackhole (A)：098c 每 tick 0.1+0.2×L（L1=0.3），受 `je` 门控每 6 tick≈0.18s。
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
         let k = 1.0 / 0.18;
