@@ -1111,15 +1111,19 @@ impl World {
             match pr.kind {
                 ProjectileKind::Gravity { radius, pull_speed, .. } => {
                     // 098c `hc`：只拉**异队**单位（`cn[Vv[gX]]!=cn[id]`），不含施法者/队友。
+                    // 吸力随距离**平方**衰减：`strength = Hc × (1 − d²/R²)`（R=600，`$57E40`），
+                    // 超出 R 则为 0（原版不加目标半径）。
                     let owner_team = self.players.get(pr.owner as usize).map(|p| p.team);
+                    let r2 = radius * radius;
                     for p in self.players.iter_mut() {
                         if !p.alive || p.id == pr.owner || Some(p.team) == owner_team {
                             continue;
                         }
                         let d = pr.pos - p.pos;
                         let dsq = d.length_squared();
-                        if dsq > Fix64::ZERO && dsq <= (radius + p.radius) * (radius + p.radius) {
-                            p.pull += d.normalized() * pull_speed;
+                        if dsq > Fix64::ZERO && dsq < r2 {
+                            let falloff = Fix64::ONE - dsq / r2;
+                            p.pull += d.normalized() * pull_speed * falloff;
                         }
                     }
                 }
@@ -2337,7 +2341,7 @@ impl World {
                                             owner: pr.owner,
                                             target: victim,
                                             damage_per_sec: *gx,
-                                            pull_speed: Fix64::from_num(600.0), // >0：目标→施法者
+                                            pull_speed: Fix64::from_num(1.4 / 0.03), // >0：目标→施法者（098c `Q+=1.4/tick`÷0.03）
                                             remaining: *debuff_dur,
                                             beam: true, // 沿连线切割经过的敌人
                                         },
@@ -2390,7 +2394,7 @@ impl World {
                                             owner: pr.owner,
                                             target: victim,
                                             damage_per_sec: *gx,
-                                            pull_speed: Fix64::from_num(-600.0), // <0：施法者→目标
+                                            pull_speed: Fix64::from_num(-1.4 / 0.03), // <0：施法者→目标（098c `Q+=1.4/tick`÷0.03）
                                             remaining: *debuff_dur,
                                             beam: true, // 沿连线切割经过的敌人
                                         },
@@ -9607,6 +9611,43 @@ mod tests {
             world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Gravity { .. })),
             "暗物质应能存活若干帧（不被障碍销毁）"
         );
+    }
+
+    /// 回归：引力吸力随距离衰减（098c `Hc×(1−d²/R²)`）——同帧内**近处位移大于远处**。
+    #[test]
+    fn s018_pull_falls_off_with_distance() {
+        let mut world = World::new(3, 321);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].pos = Vec2::new(Fix64::from_num(500.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        // 在场心放一个静止的引力场（不推进 movement，直接调 step_area_forces 看一次吸力）。
+        world.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::Gravity {
+                dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                speed: Fix64::ZERO,
+                radius: Fix64::from_num(600.0),
+                pull_speed: Fix64::from_num(12.0),
+                damage_per_sec: Fix64::ZERO,
+                remaining: Fix64::from_num(5.0),
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        world.step_area_forces(dt);
+        let near = world.players[1].pull.length().to_num::<f64>();
+        let far = world.players[2].pull.length().to_num::<f64>();
+        assert!(near > far, "近处吸力应大于远处：near={near} far={far}");
+        assert!(far > 0.0, "600 四舍五入内仍应有吸力，far={far}");
     }
 
     /// 098c `hc` nv==2：暗物质会把附近的**飞弹**也拉向场心。
