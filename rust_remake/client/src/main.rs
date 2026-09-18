@@ -3074,10 +3074,16 @@ impl Game {
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::Gravity { radius, .. } => {
-                    // 引力场：半透明浅紫圈
-                    let r = (radius.to_num::<f32>() * self.scale).max(8.0);
-                    let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, r, 0.4, Color::from_rgba(170, 130, 255, 190))?;
-                    canvas.draw(&ring, graphics::DrawParam::new());
+                    // 引力·暗物质：飞行核心（浅紫实心点）+ 内圈（伤害半径 274）+ 外圈（拉拽半径 600）。
+                    // 之前只画一个细圈、且半径放大到 600，飞得快时看着像“什么都没放”。
+                    let outer_r = (radius.to_num::<f32>() * self.scale).max(8.0);
+                    let inner_r = (game_core::world::DARK_MATTER_DAMAGE_RADIUS as f32 * self.scale).max(6.0);
+                    let outer = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, outer_r, 0.4, Color::from_rgba(170, 130, 255, 110))?;
+                    canvas.draw(&outer, graphics::DrawParam::new());
+                    let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, inner_r, 0.4, Color::from_rgba(200, 160, 255, 210))?;
+                    canvas.draw(&inner, graphics::DrawParam::new());
+                    let core = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 7.0, 0.5, Color::from_rgba(225, 195, 255, 240))?;
+                    canvas.draw(&core, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::Star { radius, .. } => {
                     // 星域：金色星形节点 + 半径

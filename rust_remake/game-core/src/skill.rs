@@ -2004,11 +2004,11 @@ impl DefTable {
                 growth: SkillGrowth {
                     // 098c（w3a_strings.txt Gravity）：CD 26 恒定（w3a acdn 实证，20 档均 26）。
                     cooldown_base: 26.0,
-                    // 黑洞伤害（098c `hc`→`hI`）：**每 tick 一次** `0.1+0.2×等级`（L1=0.3、L8=1.7），
-                    // 主循环 tick=0.03s、`je` 门控（每 3 tick 翻转）→ 实际约每 0.06s 一次
-                    // （≈16.67 次/秒）。故这里存**每秒 DPS**：`(0.3+0.2×(L-1)) / 0.06`。
-                    damage_base: 5.0,        // = 0.3 / 0.06
-                    damage_delta: 10.0 / 3.0, // = 0.2 / 0.06
+                    // 黑洞伤害（098c `hc`→`hI`）：每 tick `0.1+0.2×等级`，但**受 `je` 门控**。
+                    // `je` 由 `Ke` 计数器每 6 tick 开一次（见 JASS 主循环）→ 实际每 **0.18s** 一次。
+                    // 故这里存**每秒 DPS**：`(0.3+0.2×(L-1)) / 0.18`。
+                    damage_base: 0.3 / 0.18,   // L1 ≈ 1.667/s
+                    damage_delta: 0.2 / 0.18,  // +1.111/级
                     // 吸引力（098c Force）：12→19（+1/级，8 档）；走 stats.extra 由 world.rs 读入 pull_speed
                     //（effect 的 pull_speed 不随等级成长，仅作 L1 兜底）。单位与 098c Force 一致。
                     extra_base: 12.0,
@@ -3498,9 +3498,9 @@ mod tests {
         let s5 = d.stats_at(5);
         assert!(near(s5.speed, 400.0, 1e-3) && near(s5.radius, 600.0, 1e-3), "flying field speed 400, pull radius 600");
         assert!(near(s5.duration, 2.25, 1e-2), "dark matter lifetime ≈ 2.25s (900/400)");
-        // 伤害为每秒 DPS：098c 每 tick 0.3（L1）→ 按 0.06s 实际间隔换算（×16.67）。
-        assert!(near(d.stats_at(1).damage, 5.0, 1e-2), "L1 dark matter DPS ≈ 5, got {:?}", d.stats_at(1).damage);
-        assert!(near(s5.damage, 5.0 + (10.0 / 3.0) * 4.0, 1e-1), "L5 DPS ≈ 18.3, got {:?}", s5.damage);
+        // 伤害为每秒 DPS：098c 每 tick 0.3（L1）但受 `je` 门控（每 6 tick≈0.18s）→ ×5.556。
+        assert!(near(d.stats_at(1).damage, 0.3 / 0.18, 1e-3), "L1 dark matter DPS ≈ 1.67, got {:?}", d.stats_at(1).damage);
+        assert!(near(s5.damage, (0.3 + 0.2 * 4.0) / 0.18, 1e-2), "L5 DPS ≈ 6.1, got {:?}", s5.damage);
         assert!(near(d.stats_at(1).extra, 12.0, 1e-3), "L1 Force should be 12");
         assert!(near(s5.extra, 16.0, 1e-1), "L5 Force should be ~16, got {:?}", s5.extra);
         // S019 锁链·钩引（A 形态）：CD 17→8（098c L9=8，原斜率）；radius 35；拉拽+0.5s 定身。

@@ -786,6 +786,8 @@ impl World {
 
         // 6) 飞行物 / 延时区域
         self.step_projectiles(dt);
+        // 6b) 暗物质的「拉飞弹」（098c `hc` nv==2 分支）
+        self.step_gravity_pull_projectiles(dt);
 
         // 7) 边界：出界掉血（无自动回收，玩家需自己走位回去）+ 死亡
         let ice_flags: Vec<bool> = self.players.iter().map(|p| self.on_ice(p.pos)).collect();
@@ -1105,8 +1107,10 @@ impl World {
             }
             match pr.kind {
                 ProjectileKind::Gravity { radius, pull_speed, .. } => {
+                    // 098c `hc`：只拉**异队**单位（`cn[Vv[gX]]!=cn[id]`），不含施法者/队友。
+                    let owner_team = self.players.get(pr.owner as usize).map(|p| p.team);
                     for p in self.players.iter_mut() {
-                        if !p.alive {
+                        if !p.alive || p.id == pr.owner || Some(p.team) == owner_team {
                             continue;
                         }
                         let d = pr.pos - p.pos;
@@ -1150,6 +1154,41 @@ impl World {
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    /// 098c `hc` 的 `nv==2` 分支：引力·暗物质把附近的**飞弹**也拉向场心。
+    /// 每 tick 位移 `1.5×(1−d²/625²)`（源 `$5F5E1`=390625=625²），按 dt 折算到本帧。
+    /// 注意：原版对**飞弹不分敌我**都拉（只有 `gX!=nr` 与类型排除），故这里也不过滤 owner。
+    fn step_gravity_pull_projectiles(&mut self, dt: Fix64) {
+        const MISSILE_PULL_R2: f64 = 390625.0; // $5F5E1 = 625²
+        const MISSILE_PULL_FORCE: f64 = 1.5;   // 每 tick（0.03s）位移
+        // 先收集场心（不可变借用），再改弹体（可变借用），避免借用冲突。
+        let holes: Vec<Vec2> = self
+            .projectiles
+            .iter()
+            .filter(|p| p.alive && matches!(p.kind, ProjectileKind::Gravity { .. }))
+            .map(|p| p.pos)
+            .collect();
+        if holes.is_empty() {
+            return;
+        }
+        let per_frame = Fix64::from_num(MISSILE_PULL_FORCE * dt.to_num::<f64>() / 0.03);
+        for pr in self.projectiles.iter_mut() {
+            // 不拖场自己；也不拖同类持续场（对齐 098c 排除 `na` 场）。
+            if !pr.alive
+                || matches!(pr.kind, ProjectileKind::Gravity { .. } | ProjectileKind::Star { .. })
+            {
+                continue;
+            }
+            for hpos in &holes {
+                let d = *hpos - pr.pos;
+                let dsq = d.length_squared().to_num::<f64>();
+                if dsq > 0.0 && dsq < MISSILE_PULL_R2 {
+                    let falloff = 1.0 - dsq / MISSILE_PULL_R2;
+                    pr.pos += d.normalized() * Fix64::from_num(falloff) * per_frame;
+                }
             }
         }
     }
@@ -7540,9 +7579,9 @@ mod tests {
         // S019 chain (A)
         let d = DefTable::def(SkillId::S019).growth.stats(lvl).damage.to_num::<f64>();
         assert!((d - (0.2 + 0.2 * l)).abs() < 1e-6, "chain dmg {d} != {}", 0.2 + 0.2 * l);
-        // S018 gravity blackhole (A)：098c 每 tick 0.1+0.2×L（L1=0.3），按 0.06s 间隔换算为 DPS ×16.67。
+        // S018 gravity blackhole (A)：098c 每 tick 0.1+0.2×L（L1=0.3），受 `je` 门控每 6 tick≈0.18s。
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
-        let k = 1.0 / 0.06;
+        let k = 1.0 / 0.18;
         assert!((d - (0.3 + 0.2 * l) * k).abs() < 1e-3, "blackhole dps {d} != {}", (0.3 + 0.2 * l) * k);
         // S018 force field (B)：逐级**非线性**伤害表（2.25,3.50,4.25,5.00,...）；回复 1.0+0.2/级。
         let st = DefTable::def_alt(SkillId::S018).expect("S018 has B form").growth.stats(lvl);
@@ -9453,9 +9492,9 @@ mod tests {
     #[test]
     fn dot_damage_does_not_grow_gn_or_oneshot() {
         use crate::skill::DefTable;
-        // 数值锚：A 形态换算后 DPS ≈ 5.0（L1：每 tick 0.3 ÷ 0.06）；B 力场 2.25/s（098c 原值）。
+        // 数值锚：A 形态换算后 DPS ≈ 1.667（L1：每 0.18s 打 0.3）；B 力场 2.25/s（098c 原值）。
         let a = DefTable::def(SkillId::S018).growth.stats(1);
-        assert!((a.damage.to_num::<f64>() - 5.0).abs() < 1e-2, "暗物质 L1 DPS 应 ≈ 5");
+        assert!((a.damage.to_num::<f64>() - 0.3 / 0.18).abs() < 1e-3, "暗物质 L1 DPS 应 ≈ 1.67");
         let b = DefTable::def_alt(SkillId::S018).unwrap().growth.stats(1);
         assert!((b.damage.to_num::<f64>() - 2.25).abs() < 1e-6, "力场 L1 应为 2.25/s");
 
@@ -9463,6 +9502,7 @@ mod tests {
         let mut world = World::new(2, 7);
         world.obstacles.clear();
         world.sandbox = true;
+        world.configure_regen(0.0); // 关回血，确保测到的是暗物质伤害本身
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].team = 0;
@@ -9502,5 +9542,76 @@ mod tests {
         assert_eq!(world.players[0].growth, growth0, "力场 DoT 不应改变攻方 Gn");
         let lost = 100.0 - world.players[1].hp.to_num::<f64>();
         assert!(lost < 30.0, "力场 5s 总伤害应有界（实测 {lost}）");
+    }
+
+    /// 回归：单机试验场场景下，暗物质确实生成飞行弹体，并对敌人造成伤害与位移。
+    #[test]
+    fn s018_sandbox_spawns_moves_and_hits() {
+        let mut world = World::new(2, 4242);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.configure_regen(0.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.players[1].move_target = None;
+        let hp0 = world.players[1].hp;
+        let pos0 = world.players[1].pos;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let mut max_x = 0.0f64;
+        for _ in 0..150 {
+            world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+            if let Some(p) = world.projectiles.iter().find(|p| matches!(p.kind, ProjectileKind::Gravity { .. })) {
+                max_x = max_x.max(p.pos.x.to_num::<f64>());
+            }
+        }
+        assert!(max_x > 400.0, "暗物质弹体应从施法者飞出一段距离（实测 max_x={max_x}）");
+        assert!(world.players[1].hp < hp0, "暗物质应对敌人造成伤害");
+        assert!((world.players[1].pos - pos0).length() > Fix64::from_num(2.0), "暗物质应把敌人拉向场心");
+    }
+
+    /// 098c `hc` nv==2：暗物质会把附近的**飞弹**也拉向场心。
+    #[test]
+    fn s018_pulls_nearby_missiles() {
+        let mut world = World::new(2, 55);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].team = 0;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+        world.players[1].team = 1;
+        world.players[1].move_target = None;
+        // 场心附近放一个朝 +x 飞的飞弹（位于 y=60，应被拉向场心 y=0）。
+        world.projectiles.push(Projectile {
+            owner: 1,
+            kind: ProjectileKind::Bullet {
+                dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                speed: Fix64::from_num(300.0),
+                damage: Fix64::from_num(1.0),
+                radius: Fix64::from_num(2.0),
+                remaining: Fix64::from_num(600.0),
+            },
+            pos: Vec2::new(d60(2.0), d60(3.0)),
+            alive: true,
+        });
+        // 施放暗物质朝向 (6,0)（场心会从施法者沿 +x 飞）。
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let y0 = d60(3.0).to_num::<f64>();
+        for _ in 0..30 {
+            world.step_gravity_pull_projectiles(dt);
+        }
+        let b = world.projectiles.iter().find(|p| !matches!(p.kind, ProjectileKind::Gravity { .. })).unwrap();
+        assert!(b.pos.y.to_num::<f64>() < y0, "missile should be pulled toward hole; y={} y0={}", b.pos.y.to_num::<f64>(), y0);
     }
 }
