@@ -203,6 +203,59 @@ def write_wav_stereo(path, left, right):
         w.writeframes(bytes(data))
 
 
+def write_png(path, width, height, pixel):
+    """极简 PNG（8-bit RGB）编码器；`pixel(x,y)->(r,g,b)`。无第三方依赖。"""
+    import zlib
+    import binascii
+
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)  # filter type 0
+        for x in range(width):
+            r, g, b = pixel(x, y)
+            raw += bytes((r & 255, g & 255, b & 255))
+
+    def chunk(tag, data):
+        out = struct.pack(">I", len(data)) + tag + data
+        return out + struct.pack(">I", binascii.crc32(tag + data) & 0xFFFFFFFF)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", ihdr)
+    png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+    png += chunk(b"IEND", b"")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(png)
+
+
+def preview_pixel(size):
+    """返回一个 pixel 函数：深色渐变 + 同心圆 + 声波条。"""
+    cx, cy = size / 2, size / 2
+
+    def pixel(x, y):
+        # 背景渐变
+        t = (x + y) / (2 * size)
+        r = int(18 + 40 * t)
+        g = int(22 + 60 * t)
+        b = int(34 + 90 * t)
+        # 同心圆环
+        d = math.hypot(x - cx, y - cy)
+        for radius, col in ((0.36 * size, (90, 200, 255)), (0.24 * size, (120, 230, 200))):
+            if abs(d - radius) < 3:
+                r, g, b = col
+        if d < 12:
+            r, g, b = (240, 240, 255)
+        # 声波条
+        if size * 0.62 < y < size * 0.70:
+            amp = 26 * math.sin(2 * math.pi * x / (size / 4.0))
+            if abs(y - (size * 0.66 + amp)) < 2.5:
+                r, g, b = (255, 190, 90)
+        return r, g, b
+
+    return pixel
+
+
 def main():
     if len(sys.argv) > 1:
         out = sys.argv[1]
@@ -234,6 +287,8 @@ def main():
             "type=both\n"
             "description=自动生成的演示包：全部音效为合成音，BGM 4 场景 8 秒循环。\n"
         )
+    print("生成预览图 preview.png …")
+    write_png(os.path.join(out, "preview.png"), 512, 512, preview_pixel(512))
     with open(os.path.join(out, "README.txt"), "w", encoding="utf-8") as f:
         f.write(
             "这是 tools/gen_demo_audio_pack.py 自动生成的演示音频包。\n"

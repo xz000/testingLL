@@ -327,6 +327,7 @@ enum WorkshopPublish {
         title: String,
         description: String,
         tags: Vec<String>,
+        preview: Option<std::path::PathBuf>,
     },
     /// 上传中（轮询 `progress`）。
     Uploading {
@@ -340,11 +341,11 @@ enum WorkshopPublish {
 
 /// 发布时是否附带创意工坊 tag（`Sound` / `Music`）。
 ///
-/// **默认关**：Steam 会在**提交更新时**校验 tag 是否在 Steamworks 后台已定义；
-/// 未定义会返回 `k_EResultInvalidParam`（“a parameter is invalid”）。
-/// 待后台把 `Sound`/`Music` 配好后改为 `true` 即可启用分类。
+/// **现为开启**：Steamworks 的 Workshop 标签配置可要求“至少一个 tag”；未带 tag 时
+/// `SubmitItemUpdate` 会返回 `k_EResultInvalidParam`（“a parameter is invalid”）。
+/// 前提：后台已在「立即可用项目标签」里定义 `Sound` / `Music`（字面一致）。
 #[cfg(feature = "steam")]
-const SEND_WORKSHOP_TAGS: bool = false;
+const SEND_WORKSHOP_TAGS: bool = true;
 
 /// 主菜单「设置」（本机音量/静音）界面的鼠标动作。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -8281,16 +8282,18 @@ impl Game {
             return;
         };
         let tags = if SEND_WORKSHOP_TAGS { meta.tags.clone() } else { Vec::new() };
+        let preview = audio_pack::preview_path(&pack.root);
         eprintln!(
-            "[workshop] 创建物品：app_id={} 已安装={} title={:?} tags={:?} content={}",
+            "[workshop] 创建物品：app_id={} 已安装={} title={:?} tags={:?} preview={:?} content={}",
             t.app_id(),
             t.app_installed(),
             meta.title,
             tags,
+            preview,
             content.display()
         );
         if tags.is_empty() {
-            eprintln!("[workshop] 未附带 tag（后台未配置 tag 时会导致 InvalidParam；可在代码里开启 SEND_WORKSHOP_TAGS）");
+            eprintln!("[workshop] 警告：未附带 tag；若后台要求至少一个 tag，提交会报 InvalidParam");
         }
         let rx = t.create_workshop_item();
         self.workshop_publish = Some(WorkshopPublish::Creating {
@@ -8299,6 +8302,7 @@ impl Game {
             title: meta.title,
             description: meta.description,
             tags,
+            preview,
         });
     }
 
@@ -8310,7 +8314,7 @@ impl Game {
             return;
         };
         match state {
-            WorkshopPublish::Creating { rx, content, title, description, tags } => {
+            WorkshopPublish::Creating { rx, content, title, description, tags, preview } => {
                 match rx.try_recv() {
                     Ok(Ok((id, needs_agreement))) => {
                         eprintln!(
@@ -8321,8 +8325,9 @@ impl Game {
                                 i18n::t("需先在 Steam 同意 Workshop 协议").to_string(),
                             ));
                         } else if let Some(t) = self.steam_transport() {
-                            let (handle, done) =
-                                t.submit_workshop_update(id, content, title, description, tags, None);
+                            let (handle, done) = t.submit_workshop_update(
+                                id, content, title, description, tags, preview,
+                            );
                             eprintln!("[workshop] 开始上传 id={id}…");
                             self.workshop_publish = Some(WorkshopPublish::Uploading {
                                 handle,
@@ -8346,6 +8351,7 @@ impl Game {
                             title,
                             description,
                             tags,
+                            preview,
                         });
                     }
                     Err(TryRecvError::Disconnected) => {

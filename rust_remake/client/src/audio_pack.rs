@@ -176,6 +176,19 @@ pub fn resolve_bgm(root: &Path, scene: MusicScene) -> Option<PathBuf> {
     resolve(root, "bgm", scene.key(), BGM_EXTS)
 }
 
+/// 包封面 / 创意工坊预览图：`<root>/preview.<png|jpg|jpeg|gif>`（可选）。
+/// 发布到创意工坊时作为物品预览图（部分 App 要求提交时带预览）。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub fn preview_path(root: &Path) -> Option<PathBuf> {
+    for ext in ["png", "jpg", "jpeg", "gif"] {
+        let p = root.join(format!("preview.{ext}"));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
 /// 扫描一个根目录下的所有子目录，识别为音频包。
 ///
 /// 规则：
@@ -530,6 +543,15 @@ mod tests {
             assert!(t.contains(scene.key()), "应列出场景 {}", scene.key());
         }
         assert!(t.contains("Opus"), "应提示 Opus 不支持");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn preview_path_finds_cover() {
+        let root = tmp_root("preview");
+        assert!(preview_path(&root).is_none());
+        write(&root.join("preview.png"), b"x");
+        assert!(preview_path(&root).unwrap().ends_with("preview.png"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
