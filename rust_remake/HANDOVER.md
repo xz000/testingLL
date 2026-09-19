@@ -59,6 +59,10 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
   - 行标签**不再有 `[买]`/`[卖]` 前缀**（动作只在按钮上）；`=`/回车 只购买/升级，`退格`/`Delete` 卖出；
   - 纯函数 `shop_rows`（`ShopRow` 行模型）、`shop_buy_block`、`shop_sell_target`、`mastery_block` 均有单测；
   - 成长页同构（无卖出），选中精通看描述 + 购买按钮禁用态；
+  - **价格模型（2026-09-19 校正）**：技能购买价 = `learn_cost + jf×10`（`jf = spell_buys.saturating_sub(2).min(3)`，
+    买第 3/4/5 个法术时 JASS `Jf` 抬的是**购买研究**，故涨价计入购买价）；技能升级价 = `upgrade_cost + (等级-1)×glvl`
+    （火球 R002 `glvl=11`、其余 10）；精通价 = `COSTS[kind] + COST_PER_LEVEL[kind]×已购级`（6/6/6/3）。
+    （此前把 `Jf` 涨价错记到升级价，已修正；见 `JASS_AUDIT_098c.md` B 轮。）
   - `keys::CONFIRM_HINT` / `keys::SELL_HINT` + `keys::confirm_just` / `keys::sell_just` 统一提示与判定。
 - **大厅 UI**：四带版面骨架（`layout.rs`）、统一调色板、覆盖层统一入口、鼠标可点、
   子界面**清屏**、房间面板显示设置信息块（所有端可见）、房间列表显示「自定义 N 项」。

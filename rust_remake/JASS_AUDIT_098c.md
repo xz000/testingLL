@@ -110,9 +110,9 @@
 | 助攻判定 | `Jn[受×12+施]` 取**伤害最高者**（`>0` 且非凶手）= 唯一助攻 | 新增 `assist_damager_of(victim, killer)` | ✅（2026-09-12） |
 | 模式 | 5 种（-round/-dm/-avatar/-king/-lms） | 逻辑齐备；**房间界面 1-5 选、房间列表显示、按模式筛选**（2026-09-12 补齐） | ✅ |
 | 精通上限 | 各 **6** 级（w3q tooltip「…Mastery 1..6」+ `glvl=6`；R017 合成科技 glvl=20） | `Mastery::CAPS=[6,6,6,2]` | ✅ |
-| 精通价格 | 生命6 / 范围7 / 射程5 / 背包3（w3q `gglb`） | `Mastery::COSTS=[6,7,5,3]` | ✅ |
-| 技能购买价 | w3q「购买研究」`gglb`（R002/R009/R005/…） | 已全量对齐（修正 S003=10/S005=13/S012=12） | ✅ |
-| 技能升级价 | w3q「升级研究」`gglb`（每级固定价，18 个技能） | 新增 `SkillId::upgrade_cost()` | ✅ |
+| 精通价格 | `gglb + glvl×已购级`（b=6/7/5/3，glvl=6/6/6/3）→ 越买越贵 | `Mastery::COSTS` + `COST_PER_LEVEL`，`mastery_cost()` | ✅（2026-09-19） |
+| 技能购买价 | w3q「购买研究」`gglb` + Jf 档×`glvl`(=10) | `SkillId::learn_cost()` + `purchase_cost()` | ✅（2026-09-19） |
+| 技能升级价 | w3q「升级研究」`gglb` + 自身已升级次数×`glvl`（火球 11、其余 10） | `SkillId::upgrade_cost()` + `upgrade_cost_per_level()`，`upgrade_cost_escalated()` | ✅（2026-09-19） |
 | 背包容量 | 098c `bD`：容量 = 0.5×(S128等级²+等级) → L1=**1**、L2=3、L3=6（war3 上限）；R000 研究提升 S128 等级 | `inventory_slots()` 同公式；初始 1 格，放开到 L4=10（突破 war3） | ✅ |
 | w3a 能力数值 | `war3map.w3a`（能力逐档 cooldown/levels） | **已对齐**：缺表技能（S002/S003/S004/S005/S006/S008/S011/S013）补 `cooldown_levels`（w3a `acdn`）；S018 CD 25→26；已有表全验证吻合 | ✅ |
 | 属性购买系统 | **098c 无此机制** | 已删除（2026-09-12）：成长轴 = 精通 + 物品 | ✅ |
@@ -551,7 +551,7 @@ endfunction
 用户最初的直觉（"在对应等级升级技能的时候多收 5 金币"）**正是 098c 的行为**。
 
 
-## B 轮复核（进行中）：技能购买 / 升级涨价
+## B 轮复核：技能购买 / 升级涨价（**2026-09-19 更正**）
 
 **实证（`war3map_pretty.j`）**：
 
@@ -562,18 +562,21 @@ endfunction
 25854  else if oi[id]>2 then                // 第 3 个法术之后
 25856     DisplayTextToPlayer(..., "Purchase cost of spells has increased")
 25858     call Jf(Kf,id)
-25493  function Jf: 对 R001..R013 共 18 个升级科技各 AddPlayerTechResearched(+1)
+25493  function Jf: 对 **购买研究** R009/R005/R00Z/R00F/R00A/R00H/R004/R007/R013/
+                      R003/R001/R00E/R006/R00C/R011/R00B/R00G/R008 共 18 条各 AddPlayerTechResearched(+1)
 ```
 
-即：**购买第 3、4、5 个法术时**，每买一个就把「所有技能升级科技」的已研究等级 +1；
-在 war3 里科技等级越高升级越贵 → **第 3 个技能之后，后续每次技能升级都涨价**
-（共 3 次跳档；`oi==6` 时法术位已满、不再触发）。
+**关键更正**：`Jf` 抬的是**购买研究**（`R009` 等，对应 `kf` 里 `GetPlayerTechMaxAllowed(uO,Kf)==$A` 的
+首次购买分支），**不是**升级研究（`R00P` 等，对应 `>1` 的升级分支）。对已买的法术这些购买研究已被
+`SetPlayerTechMaxAllowed(...,0)` 锁死、无影响；但**尚未购买**的法术其购买研究仍可研、价格随之上涨。
+因此 25856 抬的是**未购法术的购买价**（第 3/4/5 个法术各触发一次 `Jf`，累计最多 +3×`glvl`=+30）。
 
-**我方现状（不符）**：`PlayerProfile::purchase_skill` 不涨价；`learn_cost`/`upgrade_cost` 是固定表
-（测试 `purchase_skill_spends_gold_locks_slot_no_escalation` 明确断言「不涨价」）。
+**升级价**与 `Jf` 无关：它按 war3 引擎公式 `gglb + glvl×该技能的已升级次数` 自然递涨
+（火球升级研究 `R002` 的 `glvl=11`、其余为 10）。
 
-**待办**：用 `war3map.w3q` 的升级价格表（`tools/parse_objects.py` 已能读出 `gglb`=金价 / `glvl`=级上限）
-标定「升级科技等级 → 该技能升级单价」的映射，再实装 `oi` 计数与 3 次跳档。
+**已实装**：`PlayerProfile::purchase_cost()` / `upgrade_cost_escalated()` / `mastery_cost()`；
+测试 `spell_costs_escalate_per_098c`、`purchase_skill_spends_gold_locks_slot_and_escalates`。
+（早先把 `Jf` 错记到升级价的段落已作废，保留于 git 历史。）
 
 
 ### B 轮：涨价校准的**障碍记录**（下次从这里继续）
@@ -681,18 +684,21 @@ endfunction
 
 （44 个对象带非零 `glvl`；`glmb = 0` → 上限不由升级表控制，而由 JASS `SetPlayerTechMaxAllowed` 控制。）
 
-**涨价机制（与 JASS `Jf` 对上）**：war3 的升级金价 = `gglb + glvl × 已研究等级`；
-`Jf` 对全部 18 个科技 `AddPlayerTechResearched(+1)` →
-**每触发一次 `Jf`，该玩家所有技能的"下一级升级价"就上涨一个 `glvl`**（Fireball +11、其余多为 +10）。
+**涨价机制（与 JASS `Jf` 对上）**：war3 研究金价 = `gglb + glvl × 已研究等级`。要分清两套研究：
 
-这解释了 25856 的 `"Purchase cost of spells has increased"`：
-购买第 3/4/5 个法术时各触发一次 `Jf` → **此后每次技能升级都更贵**，累计最多 +3×`glvl`。
+- **购买研究**（`R009`/`R005`/`R00Z`/`R00F`… 18 条，[`learn_cost`] 来源）：`Jf` 正是对这 18 条
+  `AddPlayerTechResearched(+1)`。购买后虽被锁死，但**尚未购买的**法术其研究仍可研 → 购买价上涨。
+- **升级研究**（`R00P`/`R00O`/`R010`…，[`upgrade_cost`] 来源）：**不在** `Jf` 列表；涨价纯来自引擎公式——
+  每升 1 级该研究等级 +1，下次升级价 = `gglb + glvl×已升级次数`（火球 `R002` glvl=11、其余 10）。
 
-**下一步（实装）**：
+这解释了 25856 的 `"Purchase cost of spells has increased"`：买第 3/4/5 个法术时各触发一次 `Jf` →
+**此后尚未购买的法术购买价更贵**，累计最多 +3×`glvl`(=10)。
+
+**实装（2026-09-19 完成）**：
 1. `PlayerProfile::spell_buys: u8`（成功购买新法术时 +1）
-2. 升级价 = `gglb[skill] + glvl[skill] × (已有等级 - 1 + jf)`，其中 `jf = spell_buys.saturating_sub(2).min(3)`
-3. 用 w3q 表作为唯一真值源，加交叉校验测试（类似 `w3a_cooldown_crosscheck`）
-4. `CONFIG_VERSION` / `PROTOCOL_VERSION` 各 +1（新字段进配置同步）
+2. 购买价 = `learn_cost + jf × 10`，`jf = spell_buys.saturating_sub(2).min(3)`
+3. 升级价 = `upgrade_cost + (skill_level - 1) × upgrade_cost_per_level`（火球 11、其余 10）
+4. 精通价 = `COSTS[kind] + COST_PER_LEVEL[kind] × 已购级`（6/6/6/3）
 
 
 ## B 轮复核：③ 背包容量（**发现待查差异**）

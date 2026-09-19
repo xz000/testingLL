@@ -1902,7 +1902,7 @@ impl Game {
         } else {
             eprintln!(
                 "[learn] 精通 {sel} 需要 {} 金或已达上限 {}",
-                game_core::meta::Mastery::COSTS[sel],
+                profile.mastery_cost(sel),
                 game_core::meta::Mastery::CAPS[sel]
             );
         }
@@ -1919,7 +1919,7 @@ impl Game {
         if Self::mastery_level(me, kind) >= game_core::meta::Mastery::CAPS[kind] {
             return Some("已满级");
         }
-        if me.gold < game_core::meta::Mastery::COSTS[kind] {
+        if me.gold < me.mastery_cost(kind) {
             return Some("金币不足");
         }
         None
@@ -4312,7 +4312,7 @@ impl Game {
                                     let selected = self.learn_skill_index == Some(i);
                                     let r = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
                                     let hover = r.contains(mouse);
-                                    let cost = skill.learn_cost();
+                                    let cost = me.purchase_cost(*skill);
                                     let affordable = me.gold >= cost;
                                     // 行用中性基础名（去掉 ·形态 后缀；形态见详情面板）
                                     let form_name = i18n::t(game_core::skill::DefTable::neutral_name(*skill));
@@ -4344,7 +4344,7 @@ impl Game {
                                     if let Some(&skill) = key.tree().skills_in_tree().get(i) {
                                         let owned = me.bound_skill(key) == Some(skill);
                                         let lv = if owned { me.skill_level(skill) } else { 1 };
-                                        let cost = skill.learn_cost();
+                                        let cost = me.purchase_cost(skill);
                                         // 当前等级上限 = 基础上限 + 乔丹之石突破（2 × 次数）；
                                         // 直接写进标题，玩家能一眼看到上限随突破增长（base → +2 → +4 …）。
                                         let cap = game_core::skill::DefTable::max_level(skill) + me.cap_bonus_for_skill(skill);
@@ -4639,7 +4639,7 @@ impl Game {
                             Some(kind) => {
                                 let (name, desc) = MASTERY_INFO[kind];
                                 let lv = Self::mastery_level(me, kind);
-                                let cost = game_core::meta::Mastery::COSTS[kind];
+                                let cost = me.mastery_cost(kind);
                                 let cap = game_core::meta::Mastery::CAPS[kind];
                                 ui::text_left(canvas, ctx, &format!("{}  Lv{lv} / {cap}", i18n::t(name)), ui::theme::BODY, ui::theme::accent(), rx, ay)?;
                                 ay += 24.0;

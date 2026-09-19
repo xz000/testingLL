@@ -288,10 +288,13 @@ pub struct Mastery {
 impl Mastery {
     /// 购买价（**w3q `gglb` 实证**：生命 R00D=6 / 范围 R00I=7 / 射程 R00Y=5 / 背包 R000=3）。
     pub const COSTS: [i32; 4] = [6, 7, 5, 3];
+    /// **每级增量**：w3q `glvl` 实证（R00D=6 / R00I=6 / R00Y=6 / R000=3）。
+    /// 研究价 = `gglb + glvl × 已购级`，故精通**越买越贵**（生命 6/12/18…，背包 3/6/9）。
+    pub const COST_PER_LEVEL: [i32; 4] = [6, 6, 6, 3];
     /// 级数上限：三精通各 **6**（w3q tooltip「Life steal Mastery 1..6」+ `glvl=6` 实证；
     /// R017 合成科技 glvl=20 → 6+6+6=18 ≤ 20 亦相符）；背包 **3**（098c `alev=3` 为 2 次，
     /// 本作放开 1 次到 L4 = 10 格，突破 war3 的 6 格上限）。
-    pub const CAPS: [u8; 4] = [6, 6, 6, 3];
+    pub const CAPS: [u8; 4] = [6, 6, 6, 3]; // 级数上限（tooltip/研究级数实证）；`glvl` 是“每级金价”不是上限。
 
     /// 三精通总级数（击退减免用；背包不计——098c lf=vi+ei+xi）。
     pub fn levels(&self) -> u8 {
@@ -397,12 +400,10 @@ impl PlayerProfile {
         self.key_slots[key.as_u32() as usize]
     }
 
-    /// 已购买的技能数量（键位已占用的数量）。用于 UI 显示「已购 N 个」。
+    /// 已购买的技能数量（键位已占用的数量）。用于 UI 显示「已购 N 个」，也是购买涨价的档位来源。
     ///
-    /// 注：098c 实测每个法术科技在 `war3map.w3q` 只有**单级金币成本**（10~15），
-    /// 购买后科技即被 `SetPlayerTechMaxAllowed(...,0)` 锁死，`Jf` 抬级不生效——
-    /// 故 098c **无**「买越多越贵」的功能性涨价（"Purchase cost..." 为遗留提示）。
-    /// 各技能价格即 `SkillId::learn_cost`，不随已购数量变化。
+    /// 098c `kf` 买下法术即 `oi[id] = oi[id] + 1`；当 `oi>2` 且 `oi!=6`（即第 3/4/5 个）时调用 `Jf`
+    /// 把全部**购买研究**抬 1 级，使尚未购买的法术购买价每档 +`glvl`(=10)。见 [`Self::spell_cost_step`]。
     pub fn purchased_spell_count(&self) -> usize {
         // 不计**开局默认技能**（火球 S000 / 天罚 S001，它们免费自带，不算“已购”）。
         self.key_slots
@@ -414,8 +415,8 @@ impl PlayerProfile {
 
     /// 花钱购买某键（树）下的一个技能：扣金币、置 1 级、锁定该树其余技能。
     ///
-    /// 对标 098c `kf`：技能经 WC3 科技树购买扣金（此处直接扣 `gold`），
-    /// 每个技能有固定单价（`SkillId::learn_cost`，10~15，单级、不随数量涨价），
+    /// 对标 098c `kf`：技能经 WC3 科技树购买扣金（此处直接扣 `gold`）。价格为
+    /// [`Self::purchase_cost`]（= `learn_cost` + 已触发涨价档 × 10，见 [`Self::spell_cost_step`]），
     /// 同树（槽）内 3 选 1 互斥、整场锁定不可改（无洗点/解绑）。
     ///
     /// 返回是否购买成功：
@@ -430,7 +431,7 @@ impl PlayerProfile {
         if self.key_slots[idx].is_some() {
             return false;
         }
-        let cost = skill.learn_cost();
+        let cost = self.purchase_cost(skill);
         if self.gold < cost {
             return false;
         }
@@ -511,9 +512,14 @@ impl PlayerProfile {
         true
     }
 
-    /// 购买 1 级精通（kind：0=生命 1=远程 2=时间 3=背包）。098c kf：不涨价、永久保留。
+    /// 当前要买的精通价：`gglb + glvl × 已购级`（098c 研究价），故越买越贵。
+    pub fn mastery_cost(&self, kind: usize) -> i32 {
+        Mastery::COSTS[kind] + Mastery::COST_PER_LEVEL[kind] * self.mastery.at(kind) as i32
+    }
+
+    /// 购买 1 级精通（kind：0=生命 1=远程 2=时间 3=背包）。098c kf：研究价随已购级递涨。
     pub fn buy_mastery(&mut self, kind: usize) -> bool {
-        let cost = Mastery::COSTS[kind];
+        let cost = self.mastery_cost(kind);
         if self.gold < cost || self.mastery.at(kind) >= Mastery::CAPS[kind] {
             return false;
         }
@@ -563,16 +569,24 @@ impl PlayerProfile {
         self.skill_levels[idx] += 1;
         true
     }
-    /// 因「已购买法术数」造成的升级涨价档数（098c `oi[id] > 2` → 每买一个触发一次 `Jf`，最多到 `oi == 6`）。
+    /// 因「已购买法术数」造成的**购买**涨价档数（098c `oi[id] > 2` → 每买一个触发一次 `Jf`，最多到 `oi == 6`）。
     ///
     /// `spell_buys` 为 3/4/5 时各已触发一次（买第 6 个法术时 `oi == 6`，JASS 显式跳过不触发）。
+    /// 注意：`Jf` 抬的是**购买研究**，故只影响[`Self::purchase_cost`]，不影响升级价。
     pub fn spell_cost_step(&self) -> i32 {
         self.spell_buys.saturating_sub(2).min(3) as i32
     }
 
-    /// 该技能**当前**的升级价：基础升级价 + 涨价档数 × `glvl`（098c war3 升级金价公式）。
+    /// 该技能的**当前购买价**：`gglb + 涨价档 × glvl`（购买研究 `glvl` 全为 10）。
+    pub fn purchase_cost(&self, skill: SkillId) -> i32 {
+        skill.learn_cost() + self.spell_cost_step() * SkillId::PURCHASE_COST_PER_LEVEL
+    }
+
+    /// 该技能**当前**的升级价：基础升级价 + 该技能**自身已升级次数** × `glvl`
+    /// （098c war3 升级金价公式 `gglb + glvl × 已研究等级`；火球 `glvl=11`、其余 10）。
     pub fn upgrade_cost_escalated(&self, skill: SkillId) -> i32 {
-        skill.upgrade_cost() + self.spell_cost_step() * crate::skill::SkillId::UPGRADE_COST_PER_LEVEL
+        let owned_upgrades = self.skill_level(skill).saturating_sub(1) as i32;
+        skill.upgrade_cost() + owned_upgrades * skill.upgrade_cost_per_level()
     }
 
     /// 该槽的乔丹之石突破**次数**（098c `Hf`：每颗戒指只 +2 一次，但可反复购买）。
@@ -1096,29 +1110,46 @@ mod tests {
         assert_eq!(p.gold, JORDAN_PRICE - 1, "失败不应扣钱");
     }
 
-    /// 乔丹之石在不同槽之间各自累计、互不影响。
-    /// 技能涨价（098c `oi[id]` + `Jf`）：买第 3/4/5 个法术各触发一次，
-    /// 每次让所有技能升级价 +`glvl`（w3q `glvl` 实证 = 10）；第 6 个不再触发。
+    /// 技能涨价（098c `oi[id]` + `Jf`）：买第 3/4/5 个法术各触发一次，每次让所有**尚未购买**
+    /// 法术的**购买价** +`glvl`（w3q 购买研究 `glvl` 实证 = 10）；第 6 个不再触发。
+    /// 升级价不随购买数变化，而随**该技能自身已升级次数** × `glvl` 递涨（火球 `glvl`=11）。
     #[test]
-    fn spell_upgrade_cost_escalates_after_third_purchase() {
+    fn spell_costs_escalate_per_098c() {
         use crate::skill::SkillId;
-        let per_level = SkillId::UPGRADE_COST_PER_LEVEL;
+        let per_level = SkillId::PURCHASE_COST_PER_LEVEL;
         let mut m = MatchState::new(MatchConfig::default(), &[0], 34);
         let p = &mut m.profiles[0];
-        p.gold = 10_000;
-        let base = SkillId::S002.upgrade_cost();
+        p.gold = 100_000;
+        let buy_base = SkillId::S002.learn_cost();
 
-        // 档位公式（098c：`oi[id] > 2` 起每买一个触发一次 `Jf`，`oi == 6` 时 JASS 显式跳过）
-        let expect = |buys: u8| (buys.saturating_sub(2).min(3)) as i32;
+        // 购买价档位（098c：`oi[id] > 2` 起每买一个触发一次 `Jf`，`oi == 6` 时 JASS 显式跳过）
+        let step = |buys: u8| (buys.saturating_sub(2).min(3)) as i32;
         for buys in 0u8..=8 {
             p.spell_buys = buys;
-            assert_eq!(p.spell_cost_step(), expect(buys), "buys={buys} 的涨价档");
+            assert_eq!(p.spell_cost_step(), step(buys), "buys={buys} 的涨价档");
             assert_eq!(
-                p.upgrade_cost_escalated(SkillId::S002),
-                base + expect(buys) * per_level,
-                "buys={buys} 的升级价"
+                p.purchase_cost(SkillId::S002),
+                buy_base + step(buys) * per_level,
+                "buys={buys} 的购买价"
             );
         }
+
+        // 升级价按**该技能自身等级**递涨：S002 glvl=10，S000（火球）glvl=11。
+        p.spell_buys = 0;
+        assert_eq!(p.upgrade_cost_escalated(SkillId::S002), SkillId::S002.upgrade_cost());
+        assert_eq!(p.upgrade_cost_escalated(SkillId::S000), SkillId::S000.upgrade_cost());
+        p.skill_levels[SkillId::S002.as_u32() as usize] = 4; // 升了 3 次
+        assert_eq!(
+            p.upgrade_cost_escalated(SkillId::S002),
+            SkillId::S002.upgrade_cost() + 3 * 10,
+            "S002 升级 3 次后每级 +10"
+        );
+        p.skill_levels[SkillId::S000.as_u32() as usize] = 2; // 升了 1 次
+        assert_eq!(
+            p.upgrade_cost_escalated(SkillId::S000),
+            SkillId::S000.upgrade_cost() + 11,
+            "火球升级研究 glvl=11"
+        );
 
         // 真实购买也要计数（098c `oi[id] = oi[id] + 1`）
         p.spell_buys = 0;
@@ -1461,10 +1492,10 @@ mod tests {
     }
 
     #[test]
-    fn purchase_skill_spends_gold_locks_slot_no_escalation() {
+    fn purchase_skill_spends_gold_locks_slot_and_escalates() {
         let mut p = PlayerProfile::new(0, 8);
         p.gold = 200;
-        // 购买 D 树技能 S002（learn_cost=11，固定单价，不随已购数量涨价）
+        // 购买 D 树技能 S002（learn_cost=11；第 1 个不涨价）
         assert!(p.purchase_skill(CastKey::D, SkillId::S002));
         assert_eq!(p.gold, 189);
         assert_eq!(p.bound_skill(CastKey::D), Some(SkillId::S002));
@@ -1478,17 +1509,18 @@ mod tests {
         // 技能不属于该键的树 → 失败
         assert!(!p.purchase_skill(CastKey::D, SkillId::S008));
 
-        // 第 2、3 个技能按各自基础价（S008=14, S011=11）
+        // 第 2、3 个技能仍按基础价（S008=14, S011=11；涨价从第 3 个之后开始）
         assert!(p.purchase_skill(CastKey::E, SkillId::S008));
         assert_eq!(p.gold, 175);
         assert!(p.purchase_skill(CastKey::R, SkillId::S011));
         assert_eq!(p.gold, 164);
         assert_eq!(p.purchased_spell_count(), 3);
+        assert_eq!(p.spell_cost_step(), 1, "买下第 3 个后 Jf 抬一档");
 
-        // 098c 无功能性涨价：第 4 个技能仍按基础价（S014=14），不叠加
+        // 098c 有功能性涨价：第 4 个技能 = S014 基础价 14 + 1 档×10 = 24
         let before = p.gold;
         assert!(p.purchase_skill(CastKey::T, SkillId::S014));
-        assert_eq!(p.gold, before - 14);
+        assert_eq!(p.gold, before - 24);
         assert_eq!(p.purchased_spell_count(), 4);
     }
 
@@ -1664,7 +1696,8 @@ mod tests {
     fn mastery_costs_and_caps_match_w3q() {
         // 顺序：0=生命汲取 1=范围 2=射程 3=背包（与 `Mastery::at` 一致）。
         assert_eq!(Mastery::COSTS, [6, 7, 5, 3], "w3q gglb：R00D/R00I/R00Y/R000");
-        assert_eq!(Mastery::CAPS, [6, 6, 6, 3], "w3q glvl：R00D/R00I/R00Y/R000");
+        assert_eq!(Mastery::COST_PER_LEVEL, [6, 6, 6, 3], "w3q glvl（每级金价增量）");
+        assert_eq!(Mastery::CAPS, [6, 6, 6, 3], "级数上限：生命/范围/射程 6、背包 3（非 glvl）");
     }
 
     #[test]
@@ -1676,9 +1709,12 @@ mod tests {
         assert!(pr.buy_mastery(0) && pr.buy_mastery(1) && pr.buy_mastery(2) && pr.buy_mastery(3));
         assert_eq!(pr.gold, 79, "精通应扣费 21 金");
         assert_eq!((pr.mastery.life, pr.mastery.range, pr.mastery.time, pr.mastery.backpack), (1, 1, 1, 1));
+        // 递涨（098c 研究价 gglb + glvl×已购级）：生命已 1 级 → 下一级 6+6=12；背包 3+3=6。
+        assert_eq!(pr.mastery_cost(0), 12);
+        assert_eq!(pr.mastery_cost(3), 6);
         // 金币不足失败
         pr.gold = 2;
-        assert!(!pr.buy_mastery(0), "余 2 金买不起 6 金生命精通");
+        assert!(!pr.buy_mastery(0), "余 2 金买不起（现价 12）生命精通");
         // 上限（w3q glvl/tooltip 实证：生命/范围/射程各 6 级；背包 3）
         pr.gold = 1000;
         assert!(pr.buy_mastery(3), "背包第 2 级");

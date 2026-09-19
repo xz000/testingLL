@@ -315,19 +315,17 @@ impl SkillId {
         }
     }
 
-    /// 技能升级价的**每级增量**（098c `war3map.w3q` 的 `glvl` = "Gold Cost per Level" 实证）。
+    /// **购买**研究的每级增量（w3q `glvl`）：098c 18 条法术购买研究 `R009`…`R008` 的 `glvl` 全为 10。
     ///
-    /// war3 的升级金价 = `gglb + glvl × 已研究等级`；Warlock 的 JASS `Jf`（`war3map_pretty.j` 25493）
-    /// 会在玩家买下第 3/4/5 个法术时对**全部**升级科技 `AddPlayerTechResearched(+1)`，
-    /// 于是每次触发都让"下一级升级价"上涨一个 `glvl` —— 这就是
-    /// `"Purchase cost of spells has increased"`（25856）的精确机制。
-    ///
-    /// 实测：所有技能对应的 B 槽研究条目 `glvl` 均为 **10**（`R00J`…`R00X` 等；仅 `R015` 为 5，
-    /// 其技能 S? 未在 098c 名册里，故不计）。因此统一取 10。
-    pub const UPGRADE_COST_PER_LEVEL: i32 = 10;
+    /// war3 研究价 = `gglb + glvl × 已研究等级`。JASS `Jf`（`war3map_pretty.j` 25493）在玩家
+    /// 买下第 3/4/5 个法术时，对**全部购买研究** `AddPlayerTechResearched(+1)`（调用点 25849-25858，
+    /// `oi>2 && oi!=6`）。注意它升的是**购买**研究（`R009` 等；尚未买的法术其研究仍可研、价格随之上涨），
+    /// 因此 `"Purchase cost of spells has increased"`（25856）抬的是**未购法术的购买价**，每档 +10，
+    /// 而**不是**升级价（升级另用 `R00P` 等一套研究，见 [`Self::upgrade_cost_per_level`]）。
+    pub const PURCHASE_COST_PER_LEVEL: i32 = 10;
 
-    /// 技能**升级价**（从 L1 升到 L2 起，每级固定价，不涨价）。
-    /// 来源：098c `war3map.w3q` 的「升级研究」条目 `gglb`（JASS `kf` 中 buy 研究设其 max allowed）。
+    /// 技能**升级价**（L1→L2 的基价 = 该技能升级研究的 `gglb`；之后每级 + [`Self::upgrade_cost_per_level`]）。
+    /// 来源：098c `war3map.w3q` 的「升级研究」条目 `gglb`（JASS `kf` 中 `Kf=='R00P'` 等分支）。
     /// 映射：R002→S000 / R00P→S002 / R00O→S003 / R010→S004 / R00T→S005 / R012→S006 /
     /// R00S→S007 / R00R→S008 / R00U→S009 / R00X→S010 / R00V→S011 / R00W→S012 / R014→S013 /
     /// R00L→S014 / R00J→S015 / R00K→S016 / R00M→S017 / R00N→S018 / R00Q→S019。
@@ -355,6 +353,16 @@ impl SkillId {
             S018 => 7,
             S019 => 5,
             _ => self.learn_cost(),
+        }
+    }
+
+    /// 该技能**升级研究**的每级增量（w3q `glvl`）：直接作用于技能自己的升级研究
+    /// （`kf` 中 `Kf=='R002'/'R00P'…` 分支）。除火球 `R002` 的 `glvl=11` 外，其余升级研究均为 10。
+    pub fn upgrade_cost_per_level(&self) -> i32 {
+        if matches!(self, SkillId::S000) {
+            11
+        } else {
+            10
         }
     }
 
