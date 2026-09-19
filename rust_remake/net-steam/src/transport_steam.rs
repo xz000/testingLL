@@ -47,6 +47,18 @@ pub struct SteamTransport {
     recv_queue: VecDeque<(u64, Vec<u8>)>,
 }
 
+/// 一个已订阅工坊物品的状态快照（传输层解码位向，供 UI 用）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkshopItemInfo {
+    pub id: u64,
+    pub installed: bool,
+    pub needs_update: bool,
+    pub downloading: bool,
+    /// (已下载字节, 总字节)；非下载中时可能为 (0,0)。
+    pub downloaded: u64,
+    pub total: u64,
+}
+
 /// 创意工坊物品更新参数（项多，打包成结构以避免 `too_many_arguments`）。
 pub struct WorkshopUpdate {
     pub file_id: u64,
@@ -242,6 +254,31 @@ impl SteamTransport {
             .filter(|id| ugc.item_state(**id).contains(steamworks::ItemState::INSTALLED))
             .count();
         (items.len(), installed)
+    }
+
+    /// 已订阅工坊物品的**状态列表**（用于设置页“工坊物品”一屏概览）。
+    pub fn workshop_items(&self) -> Vec<WorkshopItemInfo> {
+        let ugc = self.client.ugc();
+        let mut out = Vec::new();
+        for id in ugc.subscribed_items(false) {
+            let st = ugc.item_state(id);
+            let (downloaded, total) = ugc.item_download_info(id).unwrap_or((0, 0));
+            out.push(WorkshopItemInfo {
+                id: id.0,
+                installed: st.contains(steamworks::ItemState::INSTALLED),
+                needs_update: st.contains(steamworks::ItemState::NEEDS_UPDATE),
+                downloading: st.contains(steamworks::ItemState::DOWNLOADING)
+                    || st.contains(steamworks::ItemState::DOWNLOAD_PENDING),
+                downloaded,
+                total,
+            });
+        }
+        out
+    }
+
+    /// 立即下载/更新某个工坊物品（`high_priority=true`）。返回是否已提交。
+    pub fn download_item(&self, id: u64) -> bool {
+        self.client.ugc().download_item(steamworks::PublishedFileId(id), true)
     }
 
     /// 创意工坊发布①：创建空白物品。回调里把 `(PublishedFileId, 需先同意协议?)` 写回 channel。

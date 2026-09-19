@@ -389,7 +389,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 16] = [
     (SetRow::SfxPack, "音效包"),
     (SetRow::Music, "音乐音量"),
     (SetRow::MusicPack, "BGM 包"),
-    (SetRow::Workshop, "浏览创意工坊"),
+    (SetRow::Workshop, "创意工坊物品"),
     (SetRow::PublishTarget, "要发布的包"),
     (SetRow::PublishPack, "发布本地包"),
     (SetRow::PublishReuse, "发布时复用物品 id"),
@@ -428,6 +428,27 @@ fn music_scene_label(s: audio_pack::MusicScene) -> &'static str {
         Lobby => "大厅",
         Battle => "对局",
         Result => "结算",
+    }
+}
+
+/// 工坊物品状态文本（纯函数，便于单测）。非 Steam 构建下暂未使用。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+fn workshop_state_text(
+    installed: bool,
+    needs_update: bool,
+    downloading: bool,
+    downloaded: u64,
+    total: u64,
+) -> String {
+    if downloading {
+        let pct = if total > 0 { downloaded * 100 / total } else { 0 };
+        i18n::tf("下载中 {pct}%", &[("pct", pct.to_string())])
+    } else if needs_update {
+        i18n::t("需更新（回车下载）").to_string()
+    } else if installed {
+        i18n::t("已就绪").to_string()
+    } else {
+        i18n::t("已订阅（等待下载）").to_string()
     }
 }
 
@@ -527,6 +548,13 @@ struct Game {
     workshop_counts: Option<(usize, usize)>,
     /// 设置页「试听 BGM 场景」的临时场景覆盖（`None` = 跟随游戏状态）；关设置时清除。
     audition_scene: Option<audio_pack::MusicScene>,
+    /// 设置页内是否打开「创意工坊物品」一屏概览。
+    workshop_open: bool,
+    /// 概览选中行。
+    workshop_sel: usize,
+    /// 已订阅工坊物品状态快照（仅 Steam 构建）。
+    #[cfg(feature = "steam")]
+    workshop_items: Vec<net_steam::WorkshopItemInfo>,
     /// 创意工坊发布状态（仅 Steam 构建）。
     #[cfg(feature = "steam")]
     workshop_publish: Option<WorkshopPublish>,
@@ -1212,6 +1240,10 @@ impl Game {
             pending_audio_reload: false,
             workshop_counts: None,
             audition_scene: None,
+            workshop_open: false,
+            workshop_sel: 0,
+            #[cfg(feature = "steam")]
+            workshop_items: Vec::new(),
             #[cfg(feature = "steam")]
             workshop_publish: None,
             settings_open: false,
@@ -8048,6 +8080,10 @@ impl Game {
         use ggez::input::keyboard::Key;
         use ggez::input::mouse::MouseButton;
         use winit::keyboard::NamedKey;
+        if self.workshop_open {
+            self.workshop_list_update(ctx);
+            return;
+        }
         let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
         let q = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
@@ -8068,6 +8104,7 @@ impl Game {
         if back || q || pressed(NamedKey::Escape) {
             self.settings_open = false;
             self.audition_scene = None;
+            self.workshop_open = false;
             self.audio.play(audio::AudioCue::UiCancel);
             return;
         }
@@ -8138,7 +8175,7 @@ impl Game {
                 self.pending_audio_reload = true;
             }
             Some(SetRow::Workshop) => {
-                self.open_workshop();
+                self.open_workshop_list();
             }
             Some(SetRow::PublishTarget) => {
                 let ids: Vec<String> =
@@ -8663,7 +8700,146 @@ impl Game {
     }
 
     /// 主菜单「设置」界面（本机音量/静音）。
+    /// 工坊物品列表的一行 `(名称, 状态)`（非 Steam 构建为空）。
+    fn workshop_row_views(&self) -> Vec<(String, String)> {
+        #[cfg(feature = "steam")]
+        {
+            self.workshop_items
+                .iter()
+                .map(|it| {
+                    let name = audio_pack::find(&self.audio_packs, &it.id.to_string())
+                        .map(|p| p.display())
+                        .unwrap_or_else(|| format!("#{}", it.id));
+                    let state = workshop_state_text(
+                        it.installed,
+                        it.needs_update,
+                        it.downloading,
+                        it.downloaded,
+                        it.total,
+                    );
+                    (name, state)
+                })
+                .collect()
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            Vec::new()
+        }
+    }
+
+    /// 打开「创意工坊物品」一屏概览（刷新订阅状态）。
+    fn open_workshop_list(&mut self) {
+        #[cfg(feature = "steam")]
+        {
+            self.refresh_workshop_items();
+            self.workshop_sel = 0;
+            self.workshop_open = true;
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            eprintln!("[workshop] 本构建未启用 Steam");
+        }
+    }
+
+    /// 刷新订阅/下载状态（Steam 构建）。
+    #[cfg(feature = "steam")]
+    fn refresh_workshop_items(&mut self) {
+        self.workshop_items = self
+            .steam_transport()
+            .map(|t| t.workshop_items())
+            .unwrap_or_default();
+    }
+
+    /// 「创意工坊物品」概览的键盘输入。
+    fn workshop_list_update(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
+        if Self::char_just(ctx, "q") || pressed(NamedKey::Escape) {
+            self.workshop_open = false;
+            self.audio.play(audio::AudioCue::UiCancel);
+            return;
+        }
+        let n = self.workshop_row_views().len();
+        if n > 0 && pressed(NamedKey::ArrowDown) {
+            self.workshop_sel = (self.workshop_sel + 1) % n;
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        if n > 0 && pressed(NamedKey::ArrowUp) {
+            self.workshop_sel = (self.workshop_sel + n - 1) % n;
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        if Self::char_just(ctx, "o") {
+            self.open_workshop();
+            return;
+        }
+        if Self::char_just(ctx, "r") {
+            #[cfg(feature = "steam")]
+            {
+                self.refresh_workshop_items();
+                self.workshop_sel = 0;
+            }
+            self.audio.play(audio::AudioCue::UiConfirm);
+            return;
+        }
+        if pressed(NamedKey::Enter) {
+            #[cfg(feature = "steam")]
+            {
+                if let Some(it) = self.workshop_items.get(self.workshop_sel).cloned() {
+                    if it.needs_update || !it.installed {
+                        let id = it.id;
+                        if let Some(t) = self.steam_transport() {
+                            let ok = t.download_item(id);
+                            eprintln!("[workshop] 下载/更新 id={id} -> {ok}");
+                        }
+                    }
+                }
+            }
+            self.audio.play(audio::AudioCue::UiConfirm);
+        }
+    }
+
+    /// 「创意工坊物品」一屏概览界面。
+    fn draw_workshop_list(&mut self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        ui::set_design_coordinates(&mut canvas, ctx);
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        ui::text_center(
+            &mut canvas, ctx, i18n::t("创意工坊物品"), 34.0, ui::theme::accent(), cx, sh * 0.13,
+        )?;
+        let rows = self.workshop_row_views();
+        let panel = layout::centered_panel(sw, sh, 0.66, 0.7);
+        let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
+        if rows.is_empty() {
+            ui::text_center(
+                &mut canvas, ctx, i18n::t("（无已订阅物品）"), ui::theme::BODY, ui::theme::text_dim(),
+                cx, py + 40.0,
+            )?;
+        } else {
+            let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
+            for (i, (name, state)) in rows.iter().enumerate() {
+                let r = layout::row_in(content, i, rows.len());
+                let sel = i == self.workshop_sel;
+                ui::paint_row(&mut canvas, ctx, r, sel, false)?;
+                let col = if sel { ui::theme::accent() } else { ui::theme::text() };
+                ui::text_left(&mut canvas, ctx, name, ui::theme::BODY, col, r.x + 14.0, r.y + 8.0)?;
+                ui::text_right(&mut canvas, ctx, state, ui::theme::BODY, col, r.x + r.w - 14.0, r.y + 8.0)?;
+            }
+        }
+        ui::text_center(
+            &mut canvas, ctx,
+            i18n::t("回车：下载/更新 · O：在工坊页打开 · R：刷新 · Esc/Q：返回"),
+            ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
+        )?;
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+
     fn draw_settings(&mut self, ctx: &mut Context) -> GameResult {
+        if self.workshop_open {
+            return self.draw_workshop_list(ctx);
+        }
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
         let (sw, sh) = (ui::UI_W, ui::UI_H);
@@ -10186,6 +10362,17 @@ mod tests {
         );
         // 缺参数 → 主菜单（不能死循环 / 不能误解析后面的参数）。
         assert_eq!(parse_app_from_args(&s(&["exe", "+connect_lobby"])), AppState::MainMenu);
+    }
+
+    /// 工坊物品状态文本（纯函数）。
+    #[test]
+    fn workshop_state_text_covers_states() {
+        i18n::set_lang(i18n::Lang::ZhHans);
+        assert_eq!(super::workshop_state_text(false, false, true, 50, 200), "下载中 25%");
+        assert_eq!(super::workshop_state_text(false, false, true, 0, 0), "下载中 0%");
+        assert_eq!(super::workshop_state_text(false, true, false, 0, 0), "需更新（回车下载）");
+        assert_eq!(super::workshop_state_text(true, false, false, 0, 0), "已就绪");
+        assert_eq!(super::workshop_state_text(false, false, false, 0, 0), "已订阅（等待下载）");
     }
 
     /// `--lang` 命令行语言覆盖：`auto/zh/en`（及 `chinese`/`english`），大小写不敏感；
