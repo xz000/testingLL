@@ -319,10 +319,17 @@
 - ✅ **A0**：本地目录扫描 + 音效包整包覆盖 + 设置页选择 + 启动/改包热重载（`audio_pack.rs`、`audio.rs`、`local_settings.rs`）。
 - ✅ **B0**：BGM 场景系统（`menu/lobby/battle/result` + 循环 + 交叉淡入淡出 + `music_volume` 接线）。
 - ✅ **A1**：创意工坊目录扫描 + `detect_steam_root` 定位（exe 祖先 `steamapps` / `STEAM_PATH` / 常规路径；失败静默）。
+  再由 `libraryfolders.vdf` 枚举**所有库**（支持游戏装在非默认盘），逐一扫描工坊内容。
   打开设置时重扫（新订阅物品即时出现）。
 - ✅ **B2-A/B（基础）**：`SteamTransport::{ugc, open_url, subscribed_item_counts, create_workshop_item, submit_workshop_update}`；
   设置页「浏览创意工坊」（覆盖层开页）与「发布本地音效包」（创建物品 → 上传，显示进度）。
   ⚠️ Steam 部分**只能在真机验证**（需 Steam 客户端 + 登录 + 已启用 Workshop）；逻辑层（元数据/标签/路径）已单测。
+- ✅ **首次成功上传（2026-09-19）**：物品 `3804448012`（Demo Pack，含预览图 + tag）。
+  **坑（必记）**：Steamworks 后台必须开启并**发布**两项，否则上传报 `no workshop depot found`：
+  ① **Steam 创意工坊配置 → 附加配置选项 → 勾选 `Enable ISteamUGC for file transfer`**；
+  ② **Steam 云端设置**的配额（存工坊预览图用）；
+  两者都要走 **Publish → Prepare for Publishing → Publish to Steam**。此外可设 Workshop 可见性。
+  详见官方文档 `partner.steamgames.com/doc/features/workshop/implementation`（“Enabling ISteamUGC…”）。
 
 
 ## 7. 记录
