@@ -1594,11 +1594,11 @@ impl DefTable {
                     cooldown_base: 15.0,
                     cooldown_delta: -0.6875,
                     cooldown_levels: Some(&[15.0, 13.5, 12.5, 12.0, 11.5, 11.0, 10.5, 10.0, 9.5]), // w3a acdn 实证
-                    // 伤害（098c JASS function Lb: `7 + 1*Ur`）：Ur 为 D 槽法术等级计数，解锁科技（R005）即 +1、
-                    // 每次升级再 +1 → Ur = 等级 L（L1 时 Ur=1）。因三 D 槽技能互斥，Ur≡本技能等级，
-                    // per-level 即 `7 + 1×L` → L1=8 / L9=16（base 8.0 / delta 1.0）。
-                    // 原以为「+ range」是飞行距离加成，实为 Ur 等级计数（已通过 JASS 反编译确认，非距离机制）。
-                    damage_base: 8.0,
+                    // 伤害（098c JASS `Bb(...,cX)` 处 `cX = 6 + 1*Ur`，`war3map_pretty.j` 10921）：
+                    // `Ur` 为 D 槽法术等级计数，解锁科技（R005）即 +1、每次升级再 +1 → Ur = 等级 L，
+                    // 故伤害 = `6 + L`，与 w3a tooltip（L1 7.0 … L9 15.0）逐档吻合。
+                    // per-level = base 7.0 / delta 1.0（旧版误作 `7 + Ur` → base 8.0，已修正）。
+                    damage_base: 7.0,
                     damage_delta: 1.0,
                     ..DEF_ZERO
                 },
@@ -3338,6 +3338,35 @@ mod tests {
 
 
 
+    /// w3a 逐级**单发伤害**交叉校验（数值取自 `war3map.w3a` `aub1` tooltip 的 `Damage:`）。
+    ///
+    /// 仅收录 tooltip 的 `Damage:` 即**实际命中/单发伤害**的技能：
+    /// - S008 陨石 tooltip 是**最大距离**伤害（= 中心值×½，JASS `Zb` 距离衰减），故不在此表（见 `s008_meteor_matches_spec`）。
+    /// - S018/S019 的 tooltip 是**每跳**伤害，工程实现按 `/0.18` 存每秒值，单位不同，另见各自 `s01x_*` 测试。
+    #[test]
+    fn w3a_damage_crosscheck() {
+        let table: &[(SkillId, bool, &[f64])] = &[
+            (SkillId::S000, false, &[7.0, 7.7, 8.4, 9.1, 9.8, 10.5, 11.2, 11.9, 12.6, 13.3]),
+            (SkillId::S002, false, &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0]),
+            (SkillId::S003, false, &[7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0]),
+            (SkillId::S004, false, &[7.2, 8.0, 8.8, 9.6, 10.4, 11.2, 12.0]),
+            (SkillId::S010, false, &[5.4, 6.2, 7.0, 7.8, 8.6, 9.4]),
+            (SkillId::S012, false, &[5.4, 5.8, 6.2, 6.6, 7.0, 7.4, 7.8]),
+            (SkillId::S015, false, &[2.6, 2.8, 3.0, 3.2, 3.4, 3.6]),
+        ];
+        for (id, alt, ds) in table {
+            let d = DefTable::def_for(*id, *alt);
+            for (i, want) in ds.iter().enumerate() {
+                let got = d.stats_at(i as u32 + 1).damage.to_num::<f64>();
+                assert!(
+                    (got - want).abs() < 0.06,
+                    "{id:?} alt={alt} L{}: got {got}, want {want} (098c w3a tooltip Damage)",
+                    i + 1
+                );
+            }
+        }
+    }
+
     fn near(a: Fix64, b: f64, tol: f64) -> bool {
         (a.to_num::<f64>() - b).abs() < tol
     }
@@ -3382,10 +3411,10 @@ mod tests {
         let s9 = def.stats_at(9);
         assert!(near(s1.cooldown, 15.0, 1e-3), "L1 CD 应 15（spec l1），实际 {:?}", s1.cooldown);
         assert!(near(s9.cooldown, 9.5, 1e-2), "L9 CD 应 9.5（spec lmax），实际 {:?}", s9.cooldown);
-        // 基础伤害系数（098c JASS `7 + 1*Ur`，Ur=等级 L 含解锁+1）：L1=8 / L9=16；w3a「+ range」= Ur 等级计数
-        // （非距离加成），因 D 槽技能互斥 Ur≡等级，per-level 模型已覆盖，无需距离项。
-        assert!(near(s1.damage, 8.0, 1e-3), "L1 基础伤害应 8（7+1*Ur, Ur=1），实际 {:?}", s1.damage);
-        assert!(near(s9.damage, 16.0, 1e-2), "L9 基础伤害应 16（7+1*Ur, Ur=9），实际 {:?}", s9.damage);
+        // 伤害（098c JASS `cX = 6 + 1*Ur`，Ur = D 槽等级计数 = L）：`6 + L` → L1=7 / L9=15。
+        // w3a tooltip（L1 7.0 … L9 15.0）逐档实证。
+        assert!(near(s1.damage, 7.0, 1e-3), "L1 基础伤害应 7（6+1*Ur），实际 {:?}", s1.damage);
+        assert!(near(s9.damage, 15.0, 1e-2), "L9 基础伤害应 15（6+9*Ur），实际 {:?}", s9.damage);
         match def.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Homing, speed, radius, life, ignite, .. } => {
                 assert!(near(speed, 900.0, 1e-3), "speed 应 900（spec），实际 {speed:?}");

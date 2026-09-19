@@ -984,3 +984,27 @@ endfunction
 - 上述均已实装 + 回归单测；`Tether.beam_dps` 入快照 → **协议 20→21**。
 - `ProjectileKind::Beam` 无创建点，已作为死代码删除（`LineBeam` 遗留 SkillId 仍保留）。
 - 仍存疑（未改）：`po`（伤害金）发放规则；其他 on-hit 时长逐条对照。
+
+
+## 逐级效果审计（伤害 / 冷却 / 时长 / 射程）—— 2026-09-19
+
+**数据源**：`war3map.w3a` 的 `aub1`（逐级 tooltip）+ `acdn`（逐级冷却）+ `aran`（射程）。
+本机用 `tools/parse_w3a.py` 的输出 `098c/out/w3a_parsed.json` 重抽一遍，逐技能逐级对照 `SkillDef::stats_at`。
+
+**结果**：
+- **冷却（全部技能+形态）**：与 `acdn` 逐档吻合 → 既有 `w3a_cooldown_crosscheck` 已覆盖，无需改。
+- **时长 / 射程**：S005/S007/S010/S012/S014/S017 与 `w3a_duration_crosscheck` 吻合；S011 `770+70(L-1)`、S012 `700+50(L-1)` 与 tooltip 的 `Range` 逐档吻合。
+- **伤害（单发）**：除下述两项外均吻合，新增回归测试 `w3a_damage_crosscheck`（录入 S000/S002/S003/S004/S010/S012/S015 的 tooltip 逐档值）。
+
+**修正 1 处真偏差**：
+- **S003 追踪弹**：JASS `war3map_pretty.j` 10921 `local real cX=(6+1*Ur[ri])`（`Bb(...,cX)` 即单发伤害），
+  `Ur` 解锁 D 槽即 +1、逐级再 +1 → `Ur = 等级 L`，故伤害 = **`6 + L`**（L1=7 … L9=15）。
+  w3a tooltip 也恰为 `7.0 … 15.0`。旧实现误作 `7 + Ur` → `base 8.0`（全部 +1），已改为 **`base 7.0 / delta 1.0`**。
+
+**两处“看似不符”但已定性为正确**：
+- **S008 陨石**：tooltip `Damage: 7.0` 是**最大距离**伤害；实际中心伤害由 JASS `Zb=(12+2L)×(1−dist/(2(200+20xi)))`（11555），
+  满距时正好 = `(12+2L)×0.5` = tooltip。我方 `damage_base 14 / delta 2`（= 中心值）**正确**，不随 tooltip 改。
+- **S018 / S019**：tooltip 是**每跳**伤害（`Gn` 计 `0.18s` 一拍），工程实现存的是**每秒**值（tooltip/0.18），单位不同，非偏差。
+
+**仍无 tooltip 可校的技能**：S009/S014/S016（w3a_parsed 无 `aub1` 或 damage 字段）、S017（tooltip 无 Damage），
+其伤害仍以 consolidated/JASS 为准（见各自 `sXXX_matches_spec`）。
