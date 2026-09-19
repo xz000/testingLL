@@ -284,6 +284,8 @@
 ```
 - `type = sound | music | both`（缺省按目录推断：有 `sfx/`→sound，有 `bgm/`→music，两者→both）。
 - 仅含 `sfx/` 或 `bgm/` 的目录才会被识别为包（避免杂物目录被当包）。
+- **演示包生成器**：`python tools/gen_demo_audio_pack.py [输出目录]` —— 从 `client/src/audio.rs` 读全部 cue 名，
+  生成覆盖全部音效 + 4 场景 BGM 的演示包（默认 `%APPDATA%/warlock_brawl/audio/DemoPack`，全 WAV）用于本机验证。
 
 ### 8.3 格式（引擎实证）
 音频栈 = `ggez 0.10 → rodio 0.22.2 → Symphonia 0.5.5`。支持：**WAV / Ogg Vorbis / FLAC / MP3**；
