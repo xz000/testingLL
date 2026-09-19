@@ -357,11 +357,13 @@ enum SetRow {
     MusicPack,
     Workshop,
     PublishPack,
+    OpenAudioDir,
+    Audition,
     Mute,
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 9] = [
+const SETTINGS_ROWS: [(SetRow, &str); 11] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -369,9 +371,29 @@ const SETTINGS_ROWS: [(SetRow, &str); 9] = [
     (SetRow::MusicPack, "BGM 包"),
     (SetRow::Workshop, "浏览创意工坊"),
     (SetRow::PublishPack, "发布本地音效包"),
+    (SetRow::OpenAudioDir, "打开音频包目录"),
+    (SetRow::Audition, "试听当前音效包"),
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
 ];
+
+/// 用系统文件管理器打开目录（跨平台；失败静默）。
+#[cfg(target_os = "windows")]
+fn open_in_file_manager(path: &std::path::Path) {
+    let _ = std::process::Command::new("explorer").arg(path).spawn();
+}
+
+/// 用系统文件管理器打开目录（macOS）。
+#[cfg(target_os = "macos")]
+fn open_in_file_manager(path: &std::path::Path) {
+    let _ = std::process::Command::new("open").arg(path).spawn();
+}
+
+/// 用系统文件管理器打开目录（其他 Unix）。
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_in_file_manager(path: &std::path::Path) {
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+}
 
 /// 房间设置编辑器（建房 / 房内 `O`）的鼠标动作。
 #[cfg(feature = "steam")]
@@ -8079,6 +8101,12 @@ impl Game {
                     eprintln!("[workshop] 本构建未启用 Steam，无法发布");
                 }
             }
+            Some(SetRow::OpenAudioDir) => {
+                self.open_audio_dir();
+            }
+            Some(SetRow::Audition) => {
+                self.audition_pack();
+            }
             Some(kind) => {
                 // 音量行：`wrap` 时满则回 0（点击/回车步进一格）；否则按 delta 微调。
                 let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
@@ -8091,7 +8119,9 @@ impl Game {
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::Workshop
-                    | SetRow::PublishPack => 0.0,
+                    | SetRow::PublishPack
+                    | SetRow::OpenAudioDir
+                    | SetRow::Audition => 0.0,
                 };
                 let mut v = cur + step;
                 if wrap && v > 1.0 + 1e-4 {
@@ -8107,7 +8137,9 @@ impl Game {
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::Workshop
-                    | SetRow::PublishPack => {}
+                    | SetRow::PublishPack
+                    | SetRow::OpenAudioDir
+                    | SetRow::Audition => {}
                 }
             }
             None => {}
@@ -8170,6 +8202,28 @@ impl Game {
         {
             self.workshop_counts = None;
         }
+    }
+
+    /// 打开本地音频包目录（不存在则创建），写一份说明并交给系统文件管理器。
+    fn open_audio_dir(&self) {
+        match audio_pack::ensure_local_root() {
+            Ok(root) => {
+                let stems: Vec<&str> = audio::AudioCue::ALL
+                    .iter()
+                    .map(|c| c.file().trim_end_matches(".wav"))
+                    .collect();
+                if let Err(e) = audio_pack::write_readme(&root, &stems) {
+                    eprintln!("[audio] 写说明文件失败（忽略）：{e}");
+                }
+                open_in_file_manager(&root);
+            }
+            Err(e) => eprintln!("[audio] 创建音频包目录失败：{e}"),
+        }
+    }
+
+    /// 试听当前选中的音效包（播一个代表性 cue）。
+    fn audition_pack(&mut self) {
+        self.audio.play(audio::AudioCue::CombatHit);
     }
 
     /// 发布行显示文本。
@@ -8327,6 +8381,8 @@ impl Game {
                 None => i18n::t("需要 Steam").to_string(),
             },
             Some(SetRow::PublishPack) => self.publish_status_text(),
+            Some(SetRow::OpenAudioDir) => i18n::t("[打开]").to_string(),
+            Some(SetRow::Audition) => i18n::t("[试听]").to_string(),
             None => String::new(),
         }
     }

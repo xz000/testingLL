@@ -52,6 +52,10 @@ pub enum MusicScene {
 }
 
 impl MusicScene {
+    /// 全部场景（生成说明文件时遍历用）。
+    pub const ALL: [MusicScene; 4] =
+        [MusicScene::Menu, MusicScene::Lobby, MusicScene::Battle, MusicScene::Result];
+
     /// 文件名（无扩展名）。
     pub fn key(self) -> &'static str {
         match self {
@@ -241,6 +245,39 @@ pub fn local_root() -> PathBuf {
     } else {
         PathBuf::from("audio")
     }
+}
+
+/// 确保本地音频包根目录存在（不存在则创建）。返回该目录。
+pub fn ensure_local_root() -> std::io::Result<PathBuf> {
+    let root = local_root();
+    std::fs::create_dir_all(&root)?;
+    Ok(root)
+}
+
+/// 在 `root` 写一份玩家说明 `README.txt`（列出全部音效 cue 名与 BGM 场景名）。
+///
+/// `cue_stems` 为**不含扩展名**的音效文件名（= `AudioCue::file` 去 `.wav`）。
+pub fn write_readme(root: &Path, cue_stems: &[&str]) -> std::io::Result<()> {
+    let mut s = String::new();
+    s.push_str("Circle Brawl / 圆圈之战 本地音频包说明\n");
+    s.push_str("========================================\n\n");
+    s.push_str("每个子目录 = 一个音频包，结构：\n");
+    s.push_str("  <包名>/\n");
+    s.push_str("    circle_brawl_pack.ini   # 可选：name / author / version / type=(sound|music|both)\n");
+    s.push_str("    sfx/<音效名>.<wav|ogg|flac|mp3>   # 音效（推荐 WAV）\n");
+    s.push_str("    bgm/<场景>.<ogg|flac|wav|mp3>     # BGM（推荐 Ogg Vorbis）\n\n");
+    s.push_str("扩展名优先级：\n  音效 wav > ogg > flac > mp3\n  BGM  ogg > flac > wav > mp3\n");
+    s.push_str("注意：不支持 Opus（.opus 会被忽略）。\n\n");
+    s.push_str("BGM 场景名：\n");
+    for scene in MusicScene::ALL {
+        s.push_str(&format!("  {}\n", scene.key()));
+    }
+    s.push_str("\n音效文件名（sfx/ 下，扩展名任选）：\n");
+    for c in cue_stems {
+        s.push_str(&format!("  {c}\n"));
+    }
+    s.push_str("\n放好后回游戏「设置 → 音效包 / BGM 包」选择，改包即时生效。\n");
+    std::fs::write(root.join("README.txt"), s)
 }
 
 /// 从任意可执行文件路径**向上找 `steamapps`**，其父目录即 Steam 库根。
@@ -480,6 +517,20 @@ mod tests {
         assert!(s.description.contains("sound"));
         assert_eq!(publish_meta(&mk(PackKind::Music)).tags, vec!["Music"]);
         assert_eq!(publish_meta(&mk(PackKind::Both)).tags, vec!["Sound", "Music"]);
+    }
+
+    #[test]
+    fn write_readme_lists_cues_and_scenes() {
+        let root = tmp_root("readme");
+        write_readme(&root, &["combat_hit", "ui_confirm"]).unwrap();
+        let t = std::fs::read_to_string(root.join("README.txt")).unwrap();
+        assert!(t.contains("combat_hit"), "应列出音效名");
+        assert!(t.contains("ui_confirm"));
+        for scene in MusicScene::ALL {
+            assert!(t.contains(scene.key()), "应列出场景 {}", scene.key());
+        }
+        assert!(t.contains("Opus"), "应提示 Opus 不支持");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
