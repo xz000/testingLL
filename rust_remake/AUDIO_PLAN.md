@@ -282,7 +282,8 @@
   sfx/<cue>.<ext>           # 文件名 = AudioCue 的 stem（如 combat_hit）
   bgm/<scene>.<ext>         # 文件名 = 场景（menu/lobby/battle/result）
 ```
-- `type = sound | music | both`（缺省按目录推断：有 `sfx/`→sound，有 `bgm/`→music，两者→both）。
+- `type = sound | music | both`（**仅作提示/校验**；包的**能力以实际目录为准**：有 `sfx/`→音效、有 `bgm/`→BGM，
+  两者→both。清单与目录不一致时打日志，不改变能力——避免“有 bgm 却不列出”或“列出却放不出”）。
 - 仅含 `sfx/` 或 `bgm/` 的目录才会被识别为包（避免杂物目录被当包）。
 - **演示包生成器**：`python tools/gen_demo_audio_pack.py [输出目录]` —— 从 `client/src/audio.rs` 读全部 cue 名，
   生成覆盖全部音效 + 4 场景 BGM 的演示包（默认 `%APPDATA%/warlock_brawl/audio/DemoPack`，全 WAV）用于本机验证。
@@ -307,7 +308,7 @@
 
 ### 8.5 设置 UX（主菜单「设置」）
 音频页行：`音效包`（内置 / 各音效包）、`BGM 包`（关闭 / 各 BGM 包）、`浏览创意工坊`（覆盖层打开本作工坊页）、
-`发布本地包`（发布当前选中的**本地包**：音效优先，否则 BGM；显示上传进度）、
+`要发布的包`（自动（音效优先）/ 各**本地包**）、`发布本地包`（发当前发布目标；显示上传进度）、
 `发布时复用物品 id`（开=更新上次发布的物品，关=每次新建）、`发布可见性`（公开 / 私有）、
 `打开音频包目录`（创建 `%APPDATA%/warlock_brawl/audio` + 写 `README.txt` + 系统文件管理器打开）、
 `试听当前音效包`（播一个代表性 cue）。选中即生效并写回；改包后自动重扫 + 热重载（旧 BGM 淡出）。

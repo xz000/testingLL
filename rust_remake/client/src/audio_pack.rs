@@ -193,7 +193,9 @@ pub fn preview_path(root: &Path) -> Option<PathBuf> {
 ///
 /// 规则：
 /// - 只认**含 `sfx/` 或 `bgm/` 子目录**的目录（无音频内容则跳过，避免误把杂物当包）。
-/// - 类型优先取清单 `type`；否则按目录布局推断（有 sfx+有 bgm → `Both`）。
+/// - **能力（kind）以实际目录为准**：有 `sfx/` → 提供音效；有 `bgm/` → 提供 BGM；两者→`Both`。
+///   清单 `type` 只作**校验/提示**（与目录不一致时打日志），不再“覆盖”真实能力
+///   （否则会出现“有 bgm 却不出现在 BGM 列表”或“列在 BGM 列表却放不出 BGM”）。
 /// - 清单缺失/损坏 → 用目录名当显示名。
 pub fn discover_root(root: &Path, out: &mut Vec<Pack>) {
     let Ok(rd) = std::fs::read_dir(root) else {
@@ -219,7 +221,15 @@ pub fn discover_root(root: &Path, out: &mut Vec<Pack>) {
             (false, true) => PackKind::Music,
             _ => PackKind::Sound,
         };
-        let kind = manifest.kind.unwrap_or(inferred);
+        // 清单 type 与目录不一致时提示（不改变能力）。
+        if let Some(declared) = manifest.kind {
+            if declared != inferred {
+                eprintln!(
+                    "[audio] 包 {dir:?} 清单 type={declared:?} 与目录 {inferred:?} 不一致 → 以目录为准"
+                );
+            }
+        }
+        let kind = inferred;
         let id = dir
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
@@ -489,6 +499,30 @@ mod tests {
         let pb = find(&packs, "PackB").unwrap();
         assert_eq!(pb.kind, PackKind::Music);
         assert_eq!(pb.name, "MusicPack");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 能力**以目录为准**：清单 `type` 与目录不一致时不影响能力（仅日志）。
+    #[test]
+    fn discover_capability_follows_dirs_not_manifest_type() {
+        let root = tmp_root("kind_cap");
+        // 清单写 sound，但目录里同时有 bgm/ → 能力应为 Both（bgm 可见）。
+        let a = root.join("A");
+        write(&a.join("sfx/x.wav"), b"x");
+        write(&a.join("bgm/menu.ogg"), b"x");
+        write(&a.join(MANIFEST_NAME), b"name=A\ntype=sound\n");
+        // 清单写 both，但目录里只有 sfx/ → 能力应为 Sound（不放 BGM 列表）。
+        let b = root.join("B");
+        write(&b.join("sfx/y.wav"), b"x");
+        write(&b.join(MANIFEST_NAME), b"name=B\ntype=both\n");
+
+        let packs = discover(&[root.clone()]);
+        let pa = find(&packs, "A").unwrap();
+        assert_eq!(pa.kind, PackKind::Both, "有 bgm/ 就应提供 BGM（清单 type 不覆盖）");
+        assert!(pa.kind.has_bgm() && pa.kind.has_sfx());
+        let pb = find(&packs, "B").unwrap();
+        assert_eq!(pb.kind, PackKind::Sound, "无 bgm/ 就不应提供 BGM");
+        assert!(!pb.kind.has_bgm());
         let _ = std::fs::remove_dir_all(&root);
     }
 

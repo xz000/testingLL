@@ -26,6 +26,8 @@ pub struct LocalSettings {
     pub workshop_public: bool,
     /// 包 id → 已发布的创意工坊物品 id（持久化为 `published.<id>=<fileid>` 行）。
     pub published: Vec<(String, u64)>,
+    /// 发布目标：`auto`（音效包优先，否则 BGM 包）或某个**本地**包 id。
+    pub publish_pack: String,
 }
 
 impl Default for LocalSettings {
@@ -41,6 +43,7 @@ impl Default for LocalSettings {
             workshop_reuse: true,
             workshop_public: true,
             published: Vec::new(),
+            publish_pack: "auto".to_string(),
         }
     }
 }
@@ -138,6 +141,7 @@ pub fn parse(text: &str) -> LocalSettings {
             }
             "sfx_pack" => s.sfx_pack = v.to_string(),
             "music_pack" => s.music_pack = v.to_string(),
+            "publish_pack" => s.publish_pack = v.to_string(),
             "workshop_reuse" => {
                 s.workshop_reuse = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
             }
@@ -158,7 +162,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -167,7 +171,8 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.sfx_pack,
         s.music_pack,
         if s.workshop_reuse { 1 } else { 0 },
-        if s.workshop_public { 1 } else { 0 }
+        if s.workshop_public { 1 } else { 0 },
+        s.publish_pack
     );
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -227,6 +232,7 @@ mod tests {
             workshop_reuse: false,
             workshop_public: false,
             published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],
+            publish_pack: "MyPack".to_string(),
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);

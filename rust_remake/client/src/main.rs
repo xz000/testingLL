@@ -342,6 +342,9 @@ enum WorkshopPublish {
     Finished(String),
 }
 
+/// 发布目标选择值：自动（音效包优先，否则 BGM 包）。
+const PUBLISH_AUTO: &str = "auto";
+
 /// 发布时是否附带创意工坊 tag（`Sound` / `Music`）。
 ///
 /// **现为开启**：Steamworks 的 Workshop 标签配置可要求“至少一个 tag”；未带 tag 时
@@ -368,6 +371,7 @@ enum SetRow {
     Music,
     MusicPack,
     Workshop,
+    PublishTarget,
     PublishPack,
     PublishReuse,
     PublishVisibility,
@@ -377,13 +381,14 @@ enum SetRow {
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 13] = [
+const SETTINGS_ROWS: [(SetRow, &str); 14] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
     (SetRow::Music, "音乐音量"),
     (SetRow::MusicPack, "BGM 包"),
     (SetRow::Workshop, "浏览创意工坊"),
+    (SetRow::PublishTarget, "要发布的包"),
     (SetRow::PublishPack, "发布本地包"),
     (SetRow::PublishReuse, "发布时复用物品 id"),
     (SetRow::PublishVisibility, "发布可见性"),
@@ -8114,6 +8119,12 @@ impl Game {
             Some(SetRow::Workshop) => {
                 self.open_workshop();
             }
+            Some(SetRow::PublishTarget) => {
+                let ids: Vec<String> =
+                    self.publish_pack_options().into_iter().map(|(v, _)| v).collect();
+                self.local_settings.publish_pack =
+                    audio_pack::cycle_id(&ids, &self.local_settings.publish_pack, delta);
+            }
             Some(SetRow::PublishPack) => {
                 #[cfg(feature = "steam")]
                 {
@@ -8148,6 +8159,7 @@ impl Game {
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::Workshop
+                    | SetRow::PublishTarget
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
@@ -8168,6 +8180,7 @@ impl Game {
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::Workshop
+                    | SetRow::PublishTarget
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
@@ -8211,6 +8224,37 @@ impl Game {
             .find(|(v, _)| v == cur)
             .map(|(_, label)| label.clone())
             .unwrap_or_else(|| cur.to_string())
+    }
+
+    /// 可选发布目标：`(值, 显示名)`。首项“自动（音效优先）”；其余为**本地包**（音效/BGM/都含）。
+    fn publish_pack_options(&self) -> Vec<(String, String)> {
+        let local = audio_pack::local_root();
+        let mut v = vec![(PUBLISH_AUTO.to_string(), i18n::t("自动（音效优先）").to_string())];
+        for p in &self.audio_packs {
+            if audio_pack::is_under(&local, &p.root) {
+                v.push((p.id.clone(), p.display()));
+            }
+        }
+        v
+    }
+
+    /// 当前发布目标包：`publish_pack` 指定（且仍为本地包）优先；否则“音效包 → BGM 包”的本地包。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    fn publish_target(&self) -> Option<&audio_pack::Pack> {
+        let local = audio_pack::local_root();
+        if self.local_settings.publish_pack != PUBLISH_AUTO {
+            if let Some(p) = audio_pack::find(&self.audio_packs, &self.local_settings.publish_pack) {
+                if audio_pack::is_under(&local, &p.root) {
+                    return Some(p);
+                }
+            }
+        }
+        audio_pack::find(&self.audio_packs, &self.local_settings.sfx_pack)
+            .filter(|p| audio_pack::is_under(&local, &p.root) && p.kind.has_sfx())
+            .or_else(|| {
+                audio_pack::find(&self.audio_packs, &self.local_settings.music_pack)
+                    .filter(|p| audio_pack::is_under(&local, &p.root) && p.kind.has_bgm())
+            })
     }
 
     /// 在 Steam 覆盖层打开本作创意工坊页（订阅音频包）。非 Steam 构建只记日志。
@@ -8267,7 +8311,10 @@ impl Game {
                 Some(WorkshopPublish::Creating { .. }) => i18n::t("创建中…").to_string(),
                 Some(WorkshopPublish::Uploading { text, .. }) => text.clone(),
                 Some(WorkshopPublish::Finished(t)) => t.clone(),
-                None => i18n::t("[发布]").to_string(),
+                None => match self.publish_target() {
+                    Some(p) => i18n::tf("将发布：{name}", &[("name", p.display())]),
+                    None => i18n::t("无可发布的本地包").to_string(),
+                },
             }
         }
         #[cfg(not(feature = "steam"))]
@@ -8276,23 +8323,13 @@ impl Game {
         }
     }
 
-    /// 发布当前选中的**本地**包（音效或 BGM）到创意工坊（仅 Steam 构建）。
+    /// 发布当前**发布目标**（见 `publish_target`）到创意工坊（仅 Steam 构建）。
     #[cfg(feature = "steam")]
     fn start_workshop_publish(&mut self) {
-        // 目标包：优先「音效包」里选中的本地音效包；否则「BGM 包」里选中的本地 BGM 包。
-        let local = audio_pack::local_root();
-        let ok_local = |p: &audio_pack::Pack, need_sfx: bool| {
-            audio_pack::is_under(&local, &p.root)
-                && if need_sfx { p.kind.has_sfx() } else { p.kind.has_bgm() }
-        };
-        let pack = audio_pack::find(&self.audio_packs, &self.local_settings.sfx_pack)
-            .filter(|p| ok_local(p, true))
-            .or_else(|| {
-                audio_pack::find(&self.audio_packs, &self.local_settings.music_pack)
-                    .filter(|p| ok_local(p, false))
-            });
-        let Some(pack) = pack else {
-            eprintln!("[workshop] 没有可发布的本地包：请先在「音效包」或「BGM 包」里选一个本地包");
+        let Some(pack) = self.publish_target() else {
+            eprintln!(
+                "[workshop] 没有可发布的本地包：请在「要发布的包」或「音效包/BGM 包」里选一个本地包"
+            );
             return;
         };
         let pack_id = pack.id.clone();
@@ -8497,6 +8534,9 @@ impl Game {
                 }
                 None => i18n::t("需要 Steam").to_string(),
             },
+            Some(SetRow::PublishTarget) => {
+                Self::pack_label(&self.publish_pack_options(), &self.local_settings.publish_pack)
+            }
             Some(SetRow::PublishPack) => self.publish_status_text(),
             Some(SetRow::PublishReuse) => {
                 if self.local_settings.workshop_reuse {
