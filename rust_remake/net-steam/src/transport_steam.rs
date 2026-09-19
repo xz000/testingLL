@@ -270,8 +270,14 @@ impl SteamTransport {
         let update = update
             .content_path(&content_path)
             .title(&title)
-            .description(&description)
-            .tags(tags, false);
+            .description(&description);
+        // 标签可选：Steam 会在**提交时**校验 tag 是否在后台已定义，未定义会 `k_EResultInvalidParam`。
+        // 故仅在调用方明确传入非空 tag 时才设。（见 `SEND_WORKSHOP_TAGS`）
+        let update = if tags.is_empty() {
+            update
+        } else {
+            update.tags(tags, false)
+        };
         let update = match preview {
             Some(p) => update.preview_path(&p),
             None => update,

@@ -338,6 +338,14 @@ enum WorkshopPublish {
     Finished(String),
 }
 
+/// 发布时是否附带创意工坊 tag（`Sound` / `Music`）。
+///
+/// **默认关**：Steam 会在**提交更新时**校验 tag 是否在 Steamworks 后台已定义；
+/// 未定义会返回 `k_EResultInvalidParam`（“a parameter is invalid”）。
+/// 待后台把 `Sound`/`Music` 配好后改为 `true` 即可启用分类。
+#[cfg(feature = "steam")]
+const SEND_WORKSHOP_TAGS: bool = false;
+
 /// 主菜单「设置」（本机音量/静音）界面的鼠标动作。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SettingsAction {
@@ -8272,21 +8280,25 @@ impl Game {
             eprintln!("[workshop] Steam 不可用，无法发布");
             return;
         };
+        let tags = if SEND_WORKSHOP_TAGS { meta.tags.clone() } else { Vec::new() };
         eprintln!(
             "[workshop] 创建物品：app_id={} 已安装={} title={:?} tags={:?} content={}",
             t.app_id(),
             t.app_installed(),
             meta.title,
-            meta.tags,
+            tags,
             content.display()
         );
+        if tags.is_empty() {
+            eprintln!("[workshop] 未附带 tag（后台未配置 tag 时会导致 InvalidParam；可在代码里开启 SEND_WORKSHOP_TAGS）");
+        }
         let rx = t.create_workshop_item();
         self.workshop_publish = Some(WorkshopPublish::Creating {
             rx,
             content,
             title: meta.title,
             description: meta.description,
-            tags: meta.tags,
+            tags,
         });
     }
 
