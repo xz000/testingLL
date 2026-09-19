@@ -5599,6 +5599,8 @@ impl event::EventHandler for Game {
                         self.menu_hint.clear();
                         self.settings_open = true;
                         self.settings_row = 0;
+                        // 打开设置时重扫音频包（新订阅的创意工坊物品/新放的本地包能立即出现在列表里）。
+                        self.pending_audio_reload = true;
                         self.audio.play(audio::AudioCue::UiConfirm);
                     }
                     _ => {}

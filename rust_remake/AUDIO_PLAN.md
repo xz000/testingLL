@@ -297,6 +297,9 @@
 ### 8.4 目录来源（优先级：本地 > 创意工坊 > 内置）
 - 本地：`%APPDATA%/warlock_brawl/audio/<id>/`（玩家手动放，**不依赖 Steam**）。
 - 创意工坊：`<Steam>/steamapps/workshop/content/908660/<id>/`（文件落地由其 Steam 客户端自动完成）。
+  Steam 根由 `audio_pack::detect_steam_root` 定位：① 从当前 exe 向上找 `steamapps`（Steam 启动时最准，
+  自动匹配游戏所在库）→ ② 环境变量 `STEAM_PATH` → ③ `%ProgramFiles(x86)%/Steam` 等常规路径。
+  探测失败则静默跳过（非 Steam 启动/开发构建不受影响）。
 - 同 id 以本地优先（`audio_pack::discover` 去重）。
 
 ### 8.5 设置 UX（主菜单「设置」）
@@ -310,8 +313,9 @@
 ### 8.7 落地状态
 - ✅ **A0**：本地目录扫描 + 音效包整包覆盖 + 设置页两行选择 + 启动/改包热重载（`audio_pack.rs`、`audio.rs`、`local_settings.rs`）。
 - ✅ **B0**：BGM 场景系统（`menu/lobby/battle/result` + 循环 + 交叉淡入淡出 + `music_volume` 接线）。
-- ⏳ **A1**：追加创意工坊目录扫描 + 定位 Steam 根目录（探测失败静默）。
-- ⏳ **暂缓**：游戏内「浏览创意工坊」按钮 / 订阅进度 / 游戏内上传（需先在 Steamworks 后台启用 Workshop）。
+- ✅ **A1**：创意工坊目录扫描 + `detect_steam_root` 定位（exe 祖先 `steamapps` / `STEAM_PATH` / 常规路径；失败静默）。
+  打开设置时重扫（新订阅物品即时出现）。
+- ⏳ **暂缓**：游戏内「浏览创意工坊」按钮 / 订阅进度 / 游戏内上传（需 UGC API；需后台启用 Workshop）。
 
 
 ## 7. 记录

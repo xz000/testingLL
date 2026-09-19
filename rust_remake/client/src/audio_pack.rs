@@ -8,7 +8,7 @@
 //!
 //! 目录来源：
 //! - 本地：`%APPDATA%/warlock_brawl/audio/<id>/`（玩家手动放，**不依赖 Steam**）
-//! - 创意工坊：`<Steam>/steamapps/workshop/content/908660/<id>/`（A1 阶段接入）
+//! - 创意工坊：`<Steam>/steamapps/workshop/content/908660/<id>/`（`detect_steam_root` 定位，不需 Steamworks API）
 
 use std::path::{Path, PathBuf};
 
@@ -231,6 +231,9 @@ pub fn discover(roots: &[PathBuf]) -> Vec<Pack> {
     out
 }
 
+/// 本作 Steam AppID（与 `steam::APP_ID` 一致）：创意工坊内容目录用。
+pub const APP_ID: &str = "908660";
+
 /// 本地音频包根目录：`%APPDATA%/warlock_brawl/audio`（取不到 APPDATA 则退回当前目录）。
 pub fn local_root() -> PathBuf {
     if let Ok(appdata) = std::env::var("APPDATA") {
@@ -240,9 +243,61 @@ pub fn local_root() -> PathBuf {
     }
 }
 
-/// A0 阶段的根目录：仅本地。A1 会追加创意工坊目录。
+/// 从任意可执行文件路径**向上找 `steamapps`**，其父目录即 Steam 库根。
+///
+/// 例：`X:/Steam/steamapps/common/CircleBrawl/client.exe` → `X:/Steam`。
+/// 这样能自动匹配**游戏被安装到哪个库**（Linux/Windows 通用）。
+pub fn steam_root_from_exe(exe: &Path) -> Option<PathBuf> {
+    for anc in exe.ancestors() {
+        if anc.file_name().is_some_and(|n| n.eq_ignore_ascii_case("steamapps")) {
+            return anc.parent().map(Path::to_path_buf);
+        }
+    }
+    None
+}
+
+/// 给定 Steam 库根，返回本作创意工坊内容目录：`<root>/steamapps/workshop/content/908660`。
+pub fn workshop_content_root(steam_root: &Path) -> PathBuf {
+    steam_root
+        .join("steamapps")
+        .join("workshop")
+        .join("content")
+        .join(APP_ID)
+}
+
+/// 探测 Steam 库根（全部基于文件系统/环境变量，**不需要 Steamworks API**）：
+/// 1. 从当前可执行文件向上找 `steamapps`（Steam 启动的游戏最常见）；
+/// 2. 环境变量 `STEAM_PATH`（玩家自定义）；
+/// 3. 常规安装路径 `%ProgramFiles(x86)%/Steam`、`%ProgramFiles%/Steam`。
+pub fn detect_steam_root() -> Option<PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(root) = steam_root_from_exe(&exe) {
+            return Some(root);
+        }
+    }
+    if let Ok(p) = std::env::var("STEAM_PATH") {
+        if !p.is_empty() {
+            return Some(PathBuf::from(p));
+        }
+    }
+    for key in ["ProgramFiles(x86)", "ProgramFiles", "ProgramW6432"] {
+        if let Ok(pf) = std::env::var(key) {
+            let cand = PathBuf::from(pf).join("Steam");
+            if cand.is_dir() {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
+/// 音频包根目录列表（优先级顺序：**本地 > 创意工坊**；后者不存在/探测失败则省略）。
 pub fn default_roots() -> Vec<PathBuf> {
-    vec![local_root()]
+    let mut roots = vec![local_root()];
+    if let Some(sr) = detect_steam_root() {
+        roots.push(workshop_content_root(&sr));
+    }
+    roots
 }
 
 /// 按 id 找包。
@@ -348,6 +403,28 @@ mod tests {
         assert_eq!(scene_for(false, true, false), Lobby, "开局配置 → lobby");
         assert_eq!(scene_for(false, false, false), Battle, "对局中 → battle");
         assert_eq!(scene_for(false, true, true), Result, "结束优先于配置");
+    }
+
+    #[test]
+    fn steam_paths_detected_from_exe() {
+        let exe = PathBuf::from("A")
+            .join("Steam")
+            .join("steamapps")
+            .join("common")
+            .join("CircleBrawl")
+            .join("client.exe");
+        let root = steam_root_from_exe(&exe).expect("应能从 steamapps 祖先推出库根");
+        assert_eq!(root, PathBuf::from("A").join("Steam"));
+        assert!(steam_root_from_exe(Path::new("not/under/steam.exe")).is_none());
+        let ws = workshop_content_root(&root);
+        assert!(ws.ends_with(Path::new("steamapps").join("workshop").join("content").join("908660")));
+    }
+
+    #[test]
+    fn default_roots_start_with_local() {
+        let roots = default_roots();
+        assert!(!roots.is_empty());
+        assert_eq!(roots[0], local_root(), "本地根必须排在最前（优先级最高）");
     }
 
     #[test]

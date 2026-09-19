@@ -102,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 77 / game-core 261 / net 39 / net-steam 9（合计 386）；steam client 84 |
+| 测试基线 | client 79 / game-core 261 / net 39 / net-steam 9（合计 388）；steam client 86 |
 
 ## 四、待办（按建议优先级）
 
@@ -112,8 +112,9 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
    ⬜ 待接：战斗事件信号（Hattrick/Vampire/Silencer/Pancake/Burnout/Denied/LastSecondSave）。
    已接：命中/治疗/死亡/击杀、首杀、连杀 3..10/>10、多重击杀 2..6（9s 窗口）、Ludicrous、
    学习/升级、胜利；**不接** 缩圈/出界/倒计时/回合流程/买卖（098c 无）。
-   ✅ **外部音频包 A0+B0（2026-09-19）**：音效包整包覆盖 + BGM 分场景（menu/lobby/battle/result，循环+交叉淡出）
-   + 设置页两行选择 + 本地目录热重载；方案与包格式见 `AUDIO_PLAN.md` §8。待办：创意工坊目录扫描（A1）。
+   ✅ **外部音频包 A0+B0+A1（2026-09-19）**：音效包整包覆盖 + BGM 分场景（menu/lobby/battle/result，循环+交叉淡出）
+   + 设置页两行选择 + 本地/创意工坊目录热重载（Steam 根探测不需 UGC API）；方案与包格式见 `AUDIO_PLAN.md` §8。
+   待办：游戏内浏览工坊/订阅进度/上传（UGC）。
 2. **表现层 P1 扩展**：Hattrick / Vampire / Denied / Burnout / Silencer / Pancake / Last-Second-Save 等事件横幅
    （需额外战斗信号）—— 与 P2 的播报音共用信号（098c 触发条件已录入 `AUDIO_PLAN.md` §1）。
 3. **死代码清理**（详细分段见 `DEAD_CODE_CLEANUP.md`）：
