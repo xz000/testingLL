@@ -5415,7 +5415,14 @@ impl event::EventHandler for Game {
         let scene = audio_pack::scene_for(is_menu, self.pre_game_config, finished);
         self.audio.update(ctx, dt as f32, scene);
         #[cfg(feature = "steam")]
-        self.poll_workshop_publish();
+        {
+            // 每帧泵一次 Steam 回调：保证创意工坊「创建物品/上传」回调在任何界面都能推进
+            // （不依赖主菜单分支里的 `steam_poll_join_requests`）。
+            if let Some(t) = self.steam_transport() {
+                t.run_callbacks();
+            }
+            self.poll_workshop_publish();
+        }
 
         // S12：进行中的大厅操作（建厅/加入）是帧驱动异步，由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 推进。
         // 连接期间跳过其余菜单/房间输入（也不应被认为已进房），只泵回调 + 推进，完成后才落地进房。
