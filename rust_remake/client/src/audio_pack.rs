@@ -189,6 +189,62 @@ pub fn preview_path(root: &Path) -> Option<PathBuf> {
     None
 }
 
+/// 该包提供的**音效数量**（`stems` 中能在 `sfx/` 解析到的个数；用于设置页详情）。
+pub fn sfx_coverage(root: &Path, stems: &[&str]) -> usize {
+    stems.iter().filter(|s| resolve_sfx(root, s).is_some()).count()
+}
+
+/// 该包提供的 **BGM 场景列表**（只列实际有文件的场景，用于设置页详情）。
+pub fn bgm_scenes(root: &Path) -> Vec<&'static str> {
+    MusicScene::ALL
+        .iter()
+        .filter(|s| resolve_bgm(root, **s).is_some())
+        .map(|s| s.key())
+        .collect()
+}
+
+/// 生成一个**示例包**（结构 + 清单 + README + 两个静音 WAV），返回包目录。
+/// 便于玩家照拄；已有则覆盖文件（不删目录）。
+pub fn write_example_pack(root: &Path) -> std::io::Result<PathBuf> {
+    let dir = root.join("ExamplePack");
+    std::fs::create_dir_all(dir.join("sfx"))?;
+    std::fs::create_dir_all(dir.join("bgm"))?;
+    std::fs::write(
+        dir.join(MANIFEST_NAME),
+        "name=Example Pack\nauthor=You\nversion=1\ntype=both\ndescription=示例包：把 sfx/ 与 bgm/ 里的文件换成你的音频。\n",
+    )?;
+    // 两个静音 WAV 占位（换成你自己的文件即可；推荐音效 WAV、BGM Ogg）。
+    std::fs::write(dir.join("sfx/ui_confirm.wav"), silent_wav(0.1))?;
+    std::fs::write(dir.join("bgm/menu.wav"), silent_wav(0.5))?;
+    std::fs::write(
+        dir.join("README.txt"),
+        "ExamplePack（示例音频包）\n\n  sfx/<音效名>.wav  音效（推荐 WAV，回退 ogg/flac/mp3）\n  bgm/<场景>.ogg    场景：menu / lobby / battle / result（推荐 Ogg Vorbis）\n\n清单 type 仅作提示，能力以目录为准。\n",
+    )?;
+    Ok(dir)
+}
+
+/// 生成一个静音 WAV（16-bit PCM，单声道）的最小字节串（占位用）。
+fn silent_wav(secs: f32) -> Vec<u8> {
+    let rate = 44100u32;
+    let samples = (rate as f32 * secs.max(0.0)) as u32;
+    let data_len = samples * 2;
+    let mut v = Vec::with_capacity(44 + data_len as usize);
+    v.extend_from_slice(b"RIFF");
+    v.extend_from_slice(&(36 + data_len).to_le_bytes());
+    v.extend_from_slice(b"WAVEfmt ");
+    v.extend_from_slice(&16u32.to_le_bytes());
+    v.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    v.extend_from_slice(&1u16.to_le_bytes()); // mono
+    v.extend_from_slice(&rate.to_le_bytes());
+    v.extend_from_slice(&(rate * 2).to_le_bytes()); // byte rate
+    v.extend_from_slice(&2u16.to_le_bytes()); // block align
+    v.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    v.extend_from_slice(b"data");
+    v.extend_from_slice(&data_len.to_le_bytes());
+    v.resize(44 + data_len as usize, 0);
+    v
+}
+
 /// 扫描一个根目录下的所有子目录，识别为音频包。
 ///
 /// 规则：
@@ -633,6 +689,36 @@ mod tests {
         assert!(preview_path(&root).is_none());
         write(&root.join("preview.png"), b"x");
         assert!(preview_path(&root).unwrap().ends_with("preview.png"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn coverage_counts_sfx_and_scenes() {
+        let root = tmp_root("coverage");
+        write(&root.join("sfx/combat_hit.wav"), b"x");
+        write(&root.join("sfx/ui_confirm.ogg"), b"x");
+        write(&root.join("bgm/battle.ogg"), b"x");
+        assert_eq!(sfx_coverage(&root, &["combat_hit", "ui_confirm", "missing"]), 2);
+        assert_eq!(bgm_scenes(&root), vec!["battle"]);
+        assert_eq!(sfx_coverage(&root, &[]), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_example_pack_creates_discoverable_pack() {
+        let root = tmp_root("example");
+        let dir = write_example_pack(&root).unwrap();
+        assert!(dir.ends_with("ExamplePack"));
+        assert!(dir.join(MANIFEST_NAME).is_file());
+        assert!(dir.join("sfx/ui_confirm.wav").is_file());
+        assert!(dir.join("bgm/menu.wav").is_file());
+        // 能被发现，且能力为 Both（有 sfx/ 与 bgm/）。
+        let packs = discover(&[root.clone()]);
+        let p = find(&packs, "ExamplePack").unwrap();
+        assert_eq!(p.kind, PackKind::Both);
+        // 静音 WAV 能解出（至少能被 resolve 解析到）。
+        assert!(resolve_sfx(&dir, "ui_confirm").is_some());
+        assert!(resolve_bgm(&dir, MusicScene::Menu).is_some());
         let _ = std::fs::remove_dir_all(&root);
     }
 

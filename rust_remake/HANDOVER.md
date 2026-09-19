@@ -102,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 84 / game-core 261 / net 39 / net-steam 9（合计 393）；steam client 91 |
+| 测试基线 | client 86 / game-core 261 / net 39 / net-steam 9（合计 395）；steam client 93 |
 
 ## 四、待办（按建议优先级）
 

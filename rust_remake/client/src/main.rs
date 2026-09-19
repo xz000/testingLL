@@ -377,11 +377,13 @@ enum SetRow {
     PublishVisibility,
     OpenAudioDir,
     Audition,
+    AuditionBgm,
+    GenerateExample,
     Mute,
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 14] = [
+const SETTINGS_ROWS: [(SetRow, &str); 16] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -394,6 +396,8 @@ const SETTINGS_ROWS: [(SetRow, &str); 14] = [
     (SetRow::PublishVisibility, "发布可见性"),
     (SetRow::OpenAudioDir, "打开音频包目录"),
     (SetRow::Audition, "试听当前音效包"),
+    (SetRow::AuditionBgm, "试听 BGM 场景"),
+    (SetRow::GenerateExample, "生成示例包"),
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
 ];
@@ -414,6 +418,17 @@ fn open_in_file_manager(path: &std::path::Path) {
 #[cfg(all(unix, not(target_os = "macos")))]
 fn open_in_file_manager(path: &std::path::Path) {
     let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+}
+
+/// BGM 场景的中文标签 key（供 i18n）。
+fn music_scene_label(s: audio_pack::MusicScene) -> &'static str {
+    use audio_pack::MusicScene::*;
+    match s {
+        Menu => "菜单",
+        Lobby => "大厅",
+        Battle => "对局",
+        Result => "结算",
+    }
 }
 
 /// 房间设置编辑器（建房 / 房内 `O`）的鼠标动作。
@@ -510,6 +525,8 @@ struct Game {
     pending_audio_reload: bool,
     /// 创意工坊订阅状态缓存（`(已订阅, 已就绪)`；`None` = Steam 不可用）。打开设置时刷新。
     workshop_counts: Option<(usize, usize)>,
+    /// 设置页「试听 BGM 场景」的临时场景覆盖（`None` = 跟随游戏状态）；关设置时清除。
+    audition_scene: Option<audio_pack::MusicScene>,
     /// 创意工坊发布状态（仅 Steam 构建）。
     #[cfg(feature = "steam")]
     workshop_publish: Option<WorkshopPublish>,
@@ -1194,6 +1211,7 @@ impl Game {
             audio_packs,
             pending_audio_reload: false,
             workshop_counts: None,
+            audition_scene: None,
             #[cfg(feature = "steam")]
             workshop_publish: None,
             settings_open: false,
@@ -5433,7 +5451,9 @@ impl event::EventHandler for Game {
         }
         let is_menu = self.app == AppState::MainMenu;
         let finished = self.meta.phase == game_core::meta::MatchPhase::Finished;
-        let scene = audio_pack::scene_for(is_menu, self.pre_game_config, finished);
+        let scene = self
+            .audition_scene
+            .unwrap_or_else(|| audio_pack::scene_for(is_menu, self.pre_game_config, finished));
         self.audio.update(ctx, dt as f32, scene);
         #[cfg(feature = "steam")]
         {
@@ -8047,6 +8067,7 @@ impl Game {
 
         if back || q || pressed(NamedKey::Escape) {
             self.settings_open = false;
+            self.audition_scene = None;
             self.audio.play(audio::AudioCue::UiCancel);
             return;
         }
@@ -8141,6 +8162,21 @@ impl Game {
             Some(SetRow::Audition) => {
                 self.audition_pack();
             }
+            Some(SetRow::AuditionBgm) => {
+                use audio_pack::MusicScene;
+                let order = [
+                    None,
+                    Some(MusicScene::Menu),
+                    Some(MusicScene::Lobby),
+                    Some(MusicScene::Battle),
+                    Some(MusicScene::Result),
+                ];
+                let idx = order.iter().position(|s| *s == self.audition_scene).unwrap_or(0);
+                self.audition_scene = order[(idx + 1) % order.len()];
+            }
+            Some(SetRow::GenerateExample) => {
+                self.generate_example_pack();
+            }
             Some(SetRow::PublishReuse) => {
                 self.local_settings.workshop_reuse = !self.local_settings.workshop_reuse;
             }
@@ -8164,7 +8200,9 @@ impl Game {
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
                     | SetRow::OpenAudioDir
-                    | SetRow::Audition => 0.0,
+                    | SetRow::Audition
+                    | SetRow::AuditionBgm
+                    | SetRow::GenerateExample => 0.0,
                 };
                 let mut v = cur + step;
                 if wrap && v > 1.0 + 1e-4 {
@@ -8185,7 +8223,9 @@ impl Game {
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
                     | SetRow::OpenAudioDir
-                    | SetRow::Audition => {}
+                    | SetRow::Audition
+                    | SetRow::AuditionBgm
+                    | SetRow::GenerateExample => {}
                 }
             }
             None => {}
@@ -8236,6 +8276,51 @@ impl Game {
             }
         }
         v
+    }
+
+    /// 当前选中的“可查看详情”的包：包行→对应该包；发布行→发布目标。
+    fn selected_pack(&self) -> Option<&audio_pack::Pack> {
+        match SETTINGS_ROWS.get(self.settings_row).map(|r| r.0) {
+            Some(SetRow::SfxPack) => {
+                audio_pack::find(&self.audio_packs, &self.local_settings.sfx_pack)
+            }
+            Some(SetRow::MusicPack) => {
+                audio_pack::find(&self.audio_packs, &self.local_settings.music_pack)
+            }
+            Some(SetRow::PublishTarget) => self.publish_target(),
+            _ => None,
+        }
+    }
+
+    /// 选中包的详情文本（作者 / 覆盖多少音效 / 含哪些 BGM 场景）；非包行返回 `None`。
+    fn pack_detail_text(&self) -> Option<String> {
+        let pack = self.selected_pack()?;
+        let stems: Vec<&str> = audio::AudioCue::ALL
+            .iter()
+            .map(|c| c.file().trim_end_matches(".wav"))
+            .collect();
+        let total = stems.len();
+        let n = audio_pack::sfx_coverage(&pack.root, &stems);
+        let scenes = audio_pack::bgm_scenes(&pack.root);
+        let author = if pack.author.is_empty() {
+            "—".to_string()
+        } else {
+            pack.author.clone()
+        };
+        let scenes_txt = if scenes.is_empty() {
+            "—".to_string()
+        } else {
+            scenes.join(", ")
+        };
+        Some(i18n::tf(
+            "作者 {author} ｜ 音效 {n}/{total} ｜ BGM：{scenes}",
+            &[
+                ("author", author),
+                ("n", n.to_string()),
+                ("total", total.to_string()),
+                ("scenes", scenes_txt),
+            ],
+        ))
     }
 
     /// 当前发布目标包：`publish_pack` 指定（且仍为本地包）优先；否则“音效包 → BGM 包”的本地包。
@@ -8301,6 +8386,20 @@ impl Game {
     /// 试听当前选中的音效包（播一个代表性 cue）。
     fn audition_pack(&mut self) {
         self.audio.play(audio::AudioCue::CombatHit);
+    }
+
+    /// 生成本地**示例包**（结构+清单+静音占位），并用文件管理器打开。
+    fn generate_example_pack(&self) {
+        match audio_pack::ensure_local_root() {
+            Ok(root) => match audio_pack::write_example_pack(&root) {
+                Ok(dir) => {
+                    eprintln!("[audio] 已生成示例包：{}", dir.display());
+                    open_in_file_manager(&dir);
+                }
+                Err(e) => eprintln!("[audio] 生成示例包失败：{e}"),
+            },
+            Err(e) => eprintln!("[audio] 创建音频包目录失败：{e}"),
+        }
     }
 
     /// 发布行显示文本。
@@ -8554,6 +8653,11 @@ impl Game {
             }
             Some(SetRow::OpenAudioDir) => i18n::t("[打开]").to_string(),
             Some(SetRow::Audition) => i18n::t("[试听]").to_string(),
+            Some(SetRow::AuditionBgm) => match self.audition_scene {
+                Some(s) => i18n::t(music_scene_label(s)).to_string(),
+                None => i18n::t("跟随场景").to_string(),
+            },
+            Some(SetRow::GenerateExample) => i18n::t("[生成]").to_string(),
             None => String::new(),
         }
     }
@@ -8570,7 +8674,7 @@ impl Game {
         ui::text_center(&mut canvas, ctx, i18n::t("设置（本机）"), 34.0, ui::theme::accent(), cx, sh * 0.13)?;
         ui::text_center(&mut canvas, ctx, i18n::t("音量与静音仅影响本机，不影响联机"), 17.0, ui::theme::text_dim(), cx, sh * 0.13 + 32.0)?;
 
-        let panel = layout::centered_panel(sw, sh, 0.66, 0.6);
+        let panel = layout::centered_panel(sw, sh, 0.66, 0.74);
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
         let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
         for (i, (kind, label)) in SETTINGS_ROWS.iter().enumerate() {
@@ -8609,11 +8713,21 @@ impl Game {
         )?;
         self.settings_hitboxes.push((br, SettingsAction::Back));
 
-        ui::text_center(
-            &mut canvas, ctx,
-            i18n::t("↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回"),
-            ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
-        )?;
+        match self.pack_detail_text() {
+            Some(detail) => {
+                ui::text_center(
+                    &mut canvas, ctx, &detail, ui::theme::SMALL, ui::theme::text_dim(),
+                    cx, py + ph - 22.0,
+                )?;
+            }
+            None => {
+                ui::text_center(
+                    &mut canvas, ctx,
+                    i18n::t("↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回"),
+                    ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
+                )?;
+            }
+        }
         if self.local_settings.muted {
             ui::text_center(&mut canvas, ctx, i18n::t("当前：已静音（F10 切换）"), ui::theme::SMALL, ui::theme::warn(), cx, py + ph + 22.0)?;
         } else {
