@@ -206,6 +206,17 @@ impl SteamTransport {
         self.client.ugc()
     }
 
+    /// 当前进程的 AppID（来自 `steam_appid.txt`/Steam）。
+    pub fn app_id(&self) -> u32 {
+        self.client.utils().app_id().0
+    }
+
+    /// 该 App 是否被 Steam 视为“已安装”（从仓库直跑、非 Steam 安装时为 false）。
+    pub fn app_installed(&self) -> bool {
+        let a = self.client.utils().app_id();
+        self.client.apps().is_app_installed(a)
+    }
+
     /// 在 Steam 覆盖层打开一个网页（如本作创意工坊页）。
     pub fn open_url(&self, url: &str) {
         self.client.friends().activate_game_overlay_to_web_page(url);

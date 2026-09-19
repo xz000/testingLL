@@ -8272,6 +8272,14 @@ impl Game {
             eprintln!("[workshop] Steam 不可用，无法发布");
             return;
         };
+        eprintln!(
+            "[workshop] 创建物品：app_id={} 已安装={} title={:?} tags={:?} content={}",
+            t.app_id(),
+            t.app_installed(),
+            meta.title,
+            meta.tags,
+            content.display()
+        );
         let rx = t.create_workshop_item();
         self.workshop_publish = Some(WorkshopPublish::Creating {
             rx,
@@ -8280,7 +8288,6 @@ impl Game {
             description: meta.description,
             tags: meta.tags,
         });
-        eprintln!("[workshop] 开始创建创意工坊物品…");
     }
 
     /// 每帧推进发布状态机（Steam 回调 + 上传进度）。
@@ -8294,6 +8301,9 @@ impl Game {
             WorkshopPublish::Creating { rx, content, title, description, tags } => {
                 match rx.try_recv() {
                     Ok(Ok((id, needs_agreement))) => {
+                        eprintln!(
+                            "[workshop] create_item 成功：id={id} 需同意协议={needs_agreement}"
+                        );
                         if needs_agreement {
                             self.workshop_publish = Some(WorkshopPublish::Finished(
                                 i18n::t("需先在 Steam 同意 Workshop 协议").to_string(),
@@ -8301,6 +8311,7 @@ impl Game {
                         } else if let Some(t) = self.steam_transport() {
                             let (handle, done) =
                                 t.submit_workshop_update(id, content, title, description, tags, None);
+                            eprintln!("[workshop] 开始上传 id={id}…");
                             self.workshop_publish = Some(WorkshopPublish::Uploading {
                                 handle,
                                 done,
@@ -8312,8 +8323,9 @@ impl Game {
                         }
                     }
                     Ok(Err(e)) => {
+                        eprintln!("[workshop] create_item 失败：{e}");
                         self.workshop_publish =
-                            Some(WorkshopPublish::Finished(format!("发布失败：{e}")))
+                            Some(WorkshopPublish::Finished(format!("创建失败：{e}")))
                     }
                     Err(TryRecvError::Empty) => {
                         self.workshop_publish = Some(WorkshopPublish::Creating {
@@ -8333,12 +8345,14 @@ impl Game {
             }
             WorkshopPublish::Uploading { handle, done, .. } => match done.try_recv() {
                 Ok(Ok(id)) => {
+                    eprintln!("[workshop] 上传完成：id={id}");
                     self.workshop_publish =
                         Some(WorkshopPublish::Finished(format!("已发布 (id {id})")))
                 }
                 Ok(Err(e)) => {
+                    eprintln!("[workshop] 上传失败：{e}");
                     self.workshop_publish =
-                        Some(WorkshopPublish::Finished(format!("发布失败：{e}")))
+                        Some(WorkshopPublish::Finished(format!("上传失败：{e}")))
                 }
                 Err(TryRecvError::Empty) => {
                     let (status, progress, total) = handle.progress();
