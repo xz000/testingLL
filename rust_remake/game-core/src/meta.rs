@@ -1199,6 +1199,29 @@ mod tests {
     }
 
     #[test]
+    fn po_gold_requires_damage_and_reward_enabled() {
+        // 零伤害回合：098c `if ZR>0` → 不发 po（只有参与奖 `qo`）。
+        let mut m = MatchState::new(MatchConfig::default(), &[0, 1], 8);
+        let before: Vec<i32> = m.profiles.iter().map(|p| p.gold).collect();
+        m.finish_round(vec![0, 1]);
+        for (i, b) in before.iter().enumerate() {
+            assert_eq!(m.profiles[i].gold, b + m.config.gold_per_round, "无伤害只发参与奖，不发 po");
+        }
+        // 关奖励总开关（098c `-no reward` → `po=0`）：最高伤害者也不拿 po。
+        let mut m = MatchState::new(
+            MatchConfig { gold_rewards_enabled: false, ..Default::default() },
+            &[0, 1],
+            8,
+        );
+        m.register_damage_score(0, 50.0);
+        m.register_damage_score(1, 10.0);
+        let before: Vec<i32> = m.profiles.iter().map(|p| p.gold).collect();
+        m.finish_round(vec![0, 1]);
+        assert_eq!(m.profiles[0].gold, before[0] + m.config.gold_per_round, "关奖励后最高伤害者只拿参与奖");
+        assert_eq!(m.profiles[1].gold, before[1] + m.config.gold_per_round);
+    }
+
+    #[test]
     fn grant_gold_direct_reward() {
         let mut m = MatchState::new(MatchConfig { game_mode: 3, ..Default::default() }, &[0, 1], 8);
         let before = m.profiles[0].gold;

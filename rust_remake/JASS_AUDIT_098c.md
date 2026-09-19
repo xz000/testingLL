@@ -777,7 +777,7 @@ endfunction
 - 我方奖励是**常量/配置**（`MatchConfig`、`grant_gold`、`register_kill`/`register_assists`/`finish_round`），
   未按上述 7 项区分"点数 vs 金币"。
 - **待办**：逐项确认 ① 击杀/助攻金币是否可配（含"两者兼得 `lo+Lo`"这一情形）；
-  ② **"伤害金币"`po` 我方是否实现**（本次未能确认到对应常量，需再查）；
+  ~~② **"伤害金币"`po` 我方是否实现**（本次未能确认到对应常量，需再查）~~ → **已实现**（2026-09-19，见下）：
   ③ 胜利/名次金币 `Mo` 与"参与金"的关系；④ 点数（`ko/Ko/mo`）与记分板分数的对应。
 - 已确认无需改动：物品回收价（`ED` ↔ `item.rs` 的 `sell`）✅。
 
@@ -792,17 +792,10 @@ endfunction
 19010  set po=S2I(dd)                     ← 房主可在设置里改（设置 id 16「Damage Gold Reward」）
 ```
 
-**与我方对照**：我方 `MatchState::give_round_gold()` 每回合给 `config.gold_per_round`，
-语义与 `po` **一致**（回合结算金、按设置可调）✅ —— 但**默认值不同**：
-
-| | 我方 | 098c |
-|---|---|---|
-| 回合结算金 | `gold_per_round` 默认 **10** | `po` 默认 **1** |
-
-**判定：候选差异，暂不改动**。理由：098c 的多数奖励（`lo`/`Lo`/`Mo` 等）默认值来自
-**对话框默认项**而非全局初始化（`po` 是唯一能在全局声明处看到默认值的），
-单凭 `po=1` 就改我方的 10 会引入新的不确定。**待办**：找出设置对话框里 12–16 号项的**默认值来源**
-（`dd`/`Dd` 的初值），再一次性对齐全部 7 项默认值。
+**与我方对照（2026-09-19 更正）**：此处先前误把 `po` 当成“回合结算金”，其实 `po` 是**回合末「最高伤害者」独占奖**；
+每轮**参与金**是另一项 `qo`（设置 17，默认 10）。二者我方分别由 `gold_per_most_damage`（=1）
+与 `gold_per_round`（=10）承载，**均已对齐** ✅（见 ⑤ 结案）。
+先前“`po` ≡ `give_round_gold`、默认值 10 vs 1”的候选差异**不成立**（两者是不同项）。
 
 **⑤ 小结**：
 - 结构对齐 ✅（击杀/助攻/回合/胜利四条线都在；`ED` 物品回收价一致 ✅）
@@ -924,8 +917,10 @@ endfunction
 **教训（已记）**：读设置项时必须取**行尾变量名**，不能只取标签文本 —— 标签与变量的对应关系
 （`qo` vs `po`、`Po` vs `po`、`Ko` vs `ko`）正是容易混淆之处。
 
-**待办更新**：`po`（设置 16「伤害金」）我方**尚未作为独立项实装**（当前只把它错当成每轮金）。
-需确认它的实际发放规则（4380 一带的回合结算处 `+po` 是否与伤害量挂钩），再决定是否接入。
+**已结案（2026-09-19）**：`po`（设置 16「伤害金」）我方**已作为独立项实装**：
+`MatchConfig::gold_per_most_damage`（默认 1）+ `MatchState::finish_round` 发给**本回合伤害最高者**
+（并列者都发）；`client::settle_round` 每回合用 `world.round_damage_of` 上报到 `PlayerProfile::damage_this_round`。
+规则实证见下方「奖励规则（`po` / `qo`）复核」。
 
 ---
 
@@ -983,7 +978,7 @@ endfunction
 ### 7. 结论 / 待办
 - 上述均已实装 + 回归单测；`Tether.beam_dps` 入快照 → **协议 20→21**。
 - `ProjectileKind::Beam` 无创建点，已作为死代码删除（`LineBeam` 遗留 SkillId 仍保留）。
-- 仍存疑（未改）：`po`（伤害金）发放规则；其他 on-hit 时长逐条对照。
+- 仍存疑（未改）：其他 on-hit 时长逐条对照。（`po` 伤害金已于 2026-09-19 定性并实装，见下。）
 
 
 ## 逐级效果审计（伤害 / 冷却 / 时长 / 射程）—— 2026-09-19
@@ -1008,3 +1003,33 @@ endfunction
 
 **仍无 tooltip 可校的技能**：S009/S014/S016（w3a_parsed 无 `aub1` 或 damage 字段）、S017（tooltip 无 Damage），
 其伤害仍以 consolidated/JASS 为准（见各自 `sXXX_matches_spec`）。
+
+
+## 奖励规则（`po` / `qo`）复核 —— 2026-09-19
+
+### `po`（设置 16 Damage Gold Reward）= **回合末「最高伤害者」独占奖**
+
+```
+213    integer po=1                       ← 默认 1（0 = 关）
+5343-5354  ZR = max(Rn[i])（仅 bn[i] 参战玩家）
+5364   if ZR>0 then
+5372     if bn[i] then
+5374       if Rn[i]>=ZR then            ← 并列最高者也都发（>=）
+5376         EX(name+" has dealt the most damage in this round (N).")
+5378         ...GOLD + po                 ← 发 po 金
+```
+
+- 四个 `+po` 点（5378/5469/5670/5761）= 四种模式的回合结算，逻辑相同；`Rn[i]` 为本回合伤害（`6957 Rn[jI]=Rn[jI]+HX`），回合末清零。
+- **与伤害量无关**（不是比例），是固定 `po` 金发给并列最高的所有玩家。
+- `-no reward`（18609）会 `set po=0`。
+
+**我方实装（已对齐）**：
+- `MatchConfig::gold_per_most_damage`（默认 1）；`gold_rewards_enabled=false` 时 `damage_gold()` 返回 0（对应 `-no reward`）。
+- `MatchState::finish_round`：`most=max(damage_this_round)`，`if most>0` 给所有 `>= most` 者 `+damage_gold()`，随后清零。
+- `client::settle_round` 每回合把 `world.round_damage_of(p)` 上报到 `PlayerProfile::damage_this_round`（**所有模式**）。
+- 回归：`most_damage_in_round_gets_po_gold`（含并列）、`no_reward_disables_kill_win_damage_gold_only`。
+
+### `qo`（设置 17）= **每轮参与金**（默认 10），与 `po` 是两项
+
+- 我方 `gold_per_round`（默认 10）；`-no reward` **不改**它（18609 只改 `Mo/po/lo`）。
+- 因此“回合结算”实际 = 参与者个个 `+qo` + 最高伤害者额外 `+po`。
