@@ -301,6 +301,7 @@
 - 创意工坊：`<Steam>/steamapps/workshop/content/908660/<id>/`（文件落地由其 Steam 客户端自动完成）。
   Steam 根由 `audio_pack::detect_steam_root` 定位：① 从当前 exe 向上找 `steamapps`（Steam 启动时最准，
   自动匹配游戏所在库）→ ② 环境变量 `STEAM_PATH` → ③ `%ProgramFiles(x86)%/Steam` 等常规路径。
+  再由 `libraryfolders.vdf` 枚举**所有库**（支持游戏装在 `D:\SteamLibrary` 等非默认盘），逐一扫描其工坊内容目录。
   探测失败则静默跳过（非 Steam 启动/开发构建不受影响）。
 - 同 id 以本地优先（`audio_pack::discover` 去重）。
 

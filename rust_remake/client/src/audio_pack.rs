@@ -315,6 +315,44 @@ pub fn workshop_content_root(steam_root: &Path) -> PathBuf {
         .join(APP_ID)
 }
 
+/// 从 `libraryfolders.vdf` 文本解析所有 Steam **库根**（处理 `\\` 转义）。
+///
+/// 形如：`"path"\t\t"D:\\SteamLibrary"`。
+pub fn parse_library_paths(vdf: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for line in vdf.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("\"path\"") else {
+            continue;
+        };
+        let rest = rest.trim();
+        let Some(inner) = rest.strip_prefix('"').and_then(|s| s.rsplit_once('"')) else {
+            continue;
+        };
+        let p = inner.0.replace("\\\\", "\\");
+        if !p.is_empty() {
+            out.push(PathBuf::from(p));
+        }
+    }
+    out
+}
+
+/// 所有已安装 Steam 库的**本作工坊内容根**（含 `steam_root` 自身 + `libraryfolders.vdf` 里的其它库）。
+///
+/// 这样即使游戏装在非默认盘（如 `D:\SteamLibrary`）也能找到订阅内容。
+pub fn workshop_roots(steam_root: &Path) -> Vec<PathBuf> {
+    let mut libs = vec![steam_root.to_path_buf()];
+    let vdf = steam_root.join("steamapps").join("libraryfolders.vdf");
+    if let Ok(text) = std::fs::read_to_string(&vdf) {
+        for p in parse_library_paths(&text) {
+            if !libs.contains(&p) {
+                libs.push(p);
+            }
+        }
+    }
+    libs.into_iter().map(|l| workshop_content_root(&l)).collect()
+}
+
 /// 探测 Steam 库根（全部基于文件系统/环境变量，**不需要 Steamworks API**）：
 /// 1. 从当前可执行文件向上找 `steamapps`（Steam 启动的游戏最常见）；
 /// 2. 环境变量 `STEAM_PATH`（玩家自定义）；
@@ -345,7 +383,7 @@ pub fn detect_steam_root() -> Option<PathBuf> {
 pub fn default_roots() -> Vec<PathBuf> {
     let mut roots = vec![local_root()];
     if let Some(sr) = detect_steam_root() {
-        roots.push(workshop_content_root(&sr));
+        roots.extend(workshop_roots(&sr));
     }
     roots
 }
@@ -512,6 +550,15 @@ mod tests {
         let roots = default_roots();
         assert!(!roots.is_empty());
         assert_eq!(roots[0], local_root(), "本地根必须排在最前（优先级最高）");
+    }
+
+    #[test]
+    fn parse_libraryfolders_vdf_paths() {
+        let vdf = "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"C:\\\\Program Files (x86)\\\\Steam\"\n\t}\n\t\"1\"\n\t{\n\t\t\"path\"\t\t\"D:\\\\SteamLibrary\"\n\t}\n}\n";
+        let paths = parse_library_paths(vdf);
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0], PathBuf::from("C:\\Program Files (x86)\\Steam"));
+        assert_eq!(paths[1], PathBuf::from("D:\\SteamLibrary"));
     }
 
     #[test]
