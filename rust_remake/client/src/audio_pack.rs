@@ -316,6 +316,43 @@ pub fn cycle_id(ids: &[String], cur: &str, delta: i32) -> String {
     ids[ni as usize].clone()
 }
 
+/// 发布到创意工坊所需的元数据（由本地包推导）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishMeta {
+    pub title: String,
+    pub description: String,
+    /// 工坊标签：`Sound` / `Music`（合集包两个都有）。
+    pub tags: Vec<String>,
+}
+
+/// 由包信息推导发布元数据（纯函数，便于单测）。非 Steam 构建下暂未使用。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub fn publish_meta(pack: &Pack) -> PublishMeta {
+    let mut tags = Vec::new();
+    if pack.kind.has_sfx() {
+        tags.push("Sound".to_string());
+    }
+    if pack.kind.has_bgm() {
+        tags.push("Music".to_string());
+    }
+    let what = match (pack.kind.has_sfx(), pack.kind.has_bgm()) {
+        (true, true) => "sound + music",
+        (false, true) => "music",
+        _ => "sound",
+    };
+    PublishMeta {
+        title: pack.name.clone(),
+        description: format!("{} — Circle Brawl audio pack ({what}).", pack.name),
+        tags,
+    }
+}
+
+/// 该包根是否位于 `root` 下（用于判断“本地包”，创意工坊包不可再发布）。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub fn is_under(root: &Path, pack_root: &Path) -> bool {
+    pack_root.starts_with(root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +462,24 @@ mod tests {
         let roots = default_roots();
         assert!(!roots.is_empty());
         assert_eq!(roots[0], local_root(), "本地根必须排在最前（优先级最高）");
+    }
+
+    #[test]
+    fn publish_meta_tags_match_kind() {
+        let mk = |kind| Pack {
+            id: "P".into(),
+            root: PathBuf::from("P"),
+            name: "Neon".into(),
+            author: String::new(),
+            version: String::new(),
+            kind,
+        };
+        let s = publish_meta(&mk(PackKind::Sound));
+        assert_eq!(s.tags, vec!["Sound"]);
+        assert_eq!(s.title, "Neon");
+        assert!(s.description.contains("sound"));
+        assert_eq!(publish_meta(&mk(PackKind::Music)).tags, vec!["Music"]);
+        assert_eq!(publish_meta(&mk(PackKind::Both)).tags, vec!["Sound", "Music"]);
     }
 
     #[test]

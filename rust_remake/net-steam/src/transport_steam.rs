@@ -201,6 +201,79 @@ impl SteamTransport {
         self.client.user_stats()
     }
 
+    /// UGC（创意工坊）句柄：查询/订阅/发布音频包。
+    pub fn ugc(&self) -> steamworks::UGC {
+        self.client.ugc()
+    }
+
+    /// 在 Steam 覆盖层打开一个网页（如本作创意工坊页）。
+    pub fn open_url(&self, url: &str) {
+        self.client.friends().activate_game_overlay_to_web_page(url);
+    }
+
+    /// 已订阅物品数 + 其中已安装（可扫描）数：设置页显示「已订阅 N（就绪 M）」。
+    pub fn subscribed_item_counts(&self) -> (usize, usize) {
+        let ugc = self.client.ugc();
+        let items = ugc.subscribed_items(false);
+        let installed = items
+            .iter()
+            .filter(|id| ugc.item_state(**id).contains(steamworks::ItemState::INSTALLED))
+            .count();
+        (items.len(), installed)
+    }
+
+    /// 创意工坊发布①：创建空白物品。回调里把 `(PublishedFileId, 需先同意协议?)` 写回 channel。
+    /// **必须**在主线程调 `run_callbacks` 后通过 channel 拿到结果（`create_item` 是异步 API）。
+    pub fn create_workshop_item(&self) -> std::sync::mpsc::Receiver<Result<(u64, bool), String>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_id = self.client.utils().app_id();
+        self.client
+            .ugc()
+            .create_item(app_id, steamworks::FileType::Community, move |res| {
+                let _ = tx.send(match res {
+                    Ok((id, needs_agreement)) => Ok((id.0, needs_agreement)),
+                    Err(e) => Err(format!("{e}")),
+                });
+            });
+        rx
+    }
+
+    /// 创意工坊发布②：对给定物品开始一次更新并提交（内容 = `content_path` 目录）。
+    /// 返回可轮询进度的 `UpdateWatchHandle` 与“完成/失败”通知的 channel。
+    pub fn submit_workshop_update(
+        &self,
+        file_id: u64,
+        content_path: std::path::PathBuf,
+        title: String,
+        description: String,
+        tags: Vec<String>,
+        preview: Option<std::path::PathBuf>,
+    ) -> (
+        steamworks::UpdateWatchHandle,
+        std::sync::mpsc::Receiver<Result<u64, String>>,
+    ) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let app_id = self.client.utils().app_id();
+        let ugc = self.client.ugc();
+        let update = ugc.start_item_update(app_id, steamworks::PublishedFileId(file_id));
+        let update = update
+            .content_path(&content_path)
+            .title(&title)
+            .description(&description)
+            .tags(tags, false);
+        let update = match preview {
+            Some(p) => update.preview_path(&p),
+            None => update,
+        };
+        let handle = update.submit(None, move |res| {
+            let _ = tx.send(match res {
+                Ok((id, _)) => Ok(id.0),
+                Err(e) => Err(format!("{e}")),
+            });
+        });
+        (handle, rx)
+    }
+
     /// 注册一个 Steam 回调并**持有句柄**（句柄存活期间回调有效；`run_callbacks` 时触发）。
     /// 用于好友邀请/加入请求（`GameLobbyJoinRequested` / `GameRichPresenceJoinRequested`）等。
     pub fn register_callback<C, F>(&mut self, f: F)

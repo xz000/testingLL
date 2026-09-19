@@ -355,6 +355,22 @@ impl Game {
         self.steam_sess.as_ref().map(|s| &s.transport)
     }
 
+    /// 在覆盖层打开本作创意工坊页（订阅音频包）。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_open_workshop(&self) {
+        const WORKSHOP_URL: &str = "https://steamcommunity.com/app/908660/workshop/";
+        match self.steam_transport() {
+            Some(t) => t.open_url(WORKSHOP_URL),
+            None => eprintln!("[workshop] Steam 未初始化，无法打开创意工坊"),
+        }
+    }
+
+    /// 已订阅/已就绪物品数（`None` = Steam 不可用）。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_subscribed_counts(&self) -> Option<(usize, usize)> {
+        self.steam_transport().map(|t| t.subscribed_item_counts())
+    }
+
     /// 写 Rich Presence（内容变化立即写；不变则按 `STEAM_PRESENCE_INTERVAL_SECS` 节流，Steam 对频繁 set 有限速）。
     #[cfg(feature = "steam")]
     pub(crate) fn steam_set_presence(&mut self, now: f64, status: &str, connect: Option<&str>) {

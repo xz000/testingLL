@@ -317,6 +317,27 @@ enum LobbyListAction {
     MenuBack,
 }
 
+/// 创意工坊发布状态机（仅 `steam` 构建）。
+#[cfg(feature = "steam")]
+enum WorkshopPublish {
+    /// 等待 `create_item` 回调返回物品 id。
+    Creating {
+        rx: std::sync::mpsc::Receiver<Result<(u64, bool), String>>,
+        content: std::path::PathBuf,
+        title: String,
+        description: String,
+        tags: Vec<String>,
+    },
+    /// 上传中（轮询 `progress`）。
+    Uploading {
+        handle: net_steam::steamworks::UpdateWatchHandle,
+        done: std::sync::mpsc::Receiver<Result<u64, String>>,
+        text: String,
+    },
+    /// 结束（成功/失败/需同意协议），保留文本供设置页显示。
+    Finished(String),
+}
+
 /// 主菜单「设置」（本机音量/静音）界面的鼠标动作。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SettingsAction {
@@ -334,16 +355,20 @@ enum SetRow {
     SfxPack,
     Music,
     MusicPack,
+    Workshop,
+    PublishPack,
     Mute,
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 7] = [
+const SETTINGS_ROWS: [(SetRow, &str); 9] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
     (SetRow::Music, "音乐音量"),
     (SetRow::MusicPack, "BGM 包"),
+    (SetRow::Workshop, "浏览创意工坊"),
+    (SetRow::PublishPack, "发布本地音效包"),
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
 ];
@@ -440,6 +465,11 @@ struct Game {
     audio_packs: Vec<audio_pack::Pack>,
     /// 待重载音频（改包后置位，`update` 里带 `ctx` 重载）。
     pending_audio_reload: bool,
+    /// 创意工坊订阅状态缓存（`(已订阅, 已就绪)`；`None` = Steam 不可用）。打开设置时刷新。
+    workshop_counts: Option<(usize, usize)>,
+    /// 创意工坊发布状态（仅 Steam 构建）。
+    #[cfg(feature = "steam")]
+    workshop_publish: Option<WorkshopPublish>,
     /// 本机设置界面是否打开（主菜单 4 号入口）。
     settings_open: bool,
     /// 设置界面当前选中行。
@@ -1120,6 +1150,9 @@ impl Game {
             audio,
             audio_packs,
             pending_audio_reload: false,
+            workshop_counts: None,
+            #[cfg(feature = "steam")]
+            workshop_publish: None,
             settings_open: false,
             settings_row: 0,
             settings_hitboxes: ui::HitRegistry::new(),
@@ -5359,6 +5392,8 @@ impl event::EventHandler for Game {
         let finished = self.meta.phase == game_core::meta::MatchPhase::Finished;
         let scene = audio_pack::scene_for(is_menu, self.pre_game_config, finished);
         self.audio.update(ctx, dt as f32, scene);
+        #[cfg(feature = "steam")]
+        self.poll_workshop_publish();
 
         // S12：进行中的大厅操作（建厅/加入）是帧驱动异步，由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 推进。
         // 连接期间跳过其余菜单/房间输入（也不应被认为已进房），只泵回调 + 推进，完成后才落地进房。
@@ -5601,6 +5636,7 @@ impl event::EventHandler for Game {
                         self.settings_row = 0;
                         // 打开设置时重扫音频包（新订阅的创意工坊物品/新放的本地包能立即出现在列表里）。
                         self.pending_audio_reload = true;
+                        self.refresh_workshop_counts();
                         self.audio.play(audio::AudioCue::UiConfirm);
                     }
                     _ => {}
@@ -8030,6 +8066,19 @@ impl Game {
                     audio_pack::cycle_id(&ids, &self.local_settings.music_pack, delta);
                 self.pending_audio_reload = true;
             }
+            Some(SetRow::Workshop) => {
+                self.open_workshop();
+            }
+            Some(SetRow::PublishPack) => {
+                #[cfg(feature = "steam")]
+                {
+                    self.start_workshop_publish();
+                }
+                #[cfg(not(feature = "steam"))]
+                {
+                    eprintln!("[workshop] 本构建未启用 Steam，无法发布");
+                }
+            }
             Some(kind) => {
                 // 音量行：`wrap` 时满则回 0（点击/回车步进一格）；否则按 delta 微调。
                 let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
@@ -8037,7 +8086,12 @@ impl Game {
                     SetRow::Master => self.local_settings.master_volume,
                     SetRow::Sfx => self.local_settings.sfx_volume,
                     SetRow::Music => self.local_settings.music_volume,
-                    SetRow::Mute | SetRow::Lang | SetRow::SfxPack | SetRow::MusicPack => 0.0,
+                    SetRow::Mute
+                    | SetRow::Lang
+                    | SetRow::SfxPack
+                    | SetRow::MusicPack
+                    | SetRow::Workshop
+                    | SetRow::PublishPack => 0.0,
                 };
                 let mut v = cur + step;
                 if wrap && v > 1.0 + 1e-4 {
@@ -8048,7 +8102,12 @@ impl Game {
                     SetRow::Master => self.local_settings.master_volume = v,
                     SetRow::Sfx => self.local_settings.sfx_volume = v,
                     SetRow::Music => self.local_settings.music_volume = v,
-                    SetRow::Mute | SetRow::Lang | SetRow::SfxPack | SetRow::MusicPack => {}
+                    SetRow::Mute
+                    | SetRow::Lang
+                    | SetRow::SfxPack
+                    | SetRow::MusicPack
+                    | SetRow::Workshop
+                    | SetRow::PublishPack => {}
                 }
             }
             None => {}
@@ -8089,6 +8148,158 @@ impl Game {
             .unwrap_or_else(|| cur.to_string())
     }
 
+    /// 在 Steam 覆盖层打开本作创意工坊页（订阅音频包）。非 Steam 构建只记日志。
+    fn open_workshop(&self) {
+        #[cfg(feature = "steam")]
+        {
+            self.steam_open_workshop();
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            eprintln!("[workshop] 本构建未启用 Steam（需 --features client/steam）");
+        }
+    }
+
+    /// 刷新创意工坊订阅计数缓存（打开设置时调一次，避免每帧调 Steam API）。
+    fn refresh_workshop_counts(&mut self) {
+        #[cfg(feature = "steam")]
+        {
+            self.workshop_counts = self.steam_subscribed_counts();
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            self.workshop_counts = None;
+        }
+    }
+
+    /// 发布行显示文本。
+    fn publish_status_text(&self) -> String {
+        #[cfg(feature = "steam")]
+        {
+            match &self.workshop_publish {
+                Some(WorkshopPublish::Creating { .. }) => i18n::t("创建中…").to_string(),
+                Some(WorkshopPublish::Uploading { text, .. }) => text.clone(),
+                Some(WorkshopPublish::Finished(t)) => t.clone(),
+                None => i18n::t("[发布]").to_string(),
+            }
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            i18n::t("需要 Steam").to_string()
+        }
+    }
+
+    /// 发布当前选中的**本地**音效包到创意工坊（仅 Steam 构建）。
+    #[cfg(feature = "steam")]
+    fn start_workshop_publish(&mut self) {
+        let local = audio_pack::local_root();
+        let Some(pack) = audio_pack::find(&self.audio_packs, &self.local_settings.sfx_pack) else {
+            eprintln!("[workshop] 当前音效包不可发布：请先在「音效包」里选一个本地包");
+            return;
+        };
+        if !audio_pack::is_under(&local, &pack.root) {
+            eprintln!(
+                "[workshop] 只能发布本地包（{} 不在 {} 下）",
+                pack.root.display(),
+                local.display()
+            );
+            return;
+        }
+        let meta = audio_pack::publish_meta(pack);
+        let content = pack.root.clone();
+        let Some(t) = self.steam_transport() else {
+            eprintln!("[workshop] Steam 不可用，无法发布");
+            return;
+        };
+        let rx = t.create_workshop_item();
+        self.workshop_publish = Some(WorkshopPublish::Creating {
+            rx,
+            content,
+            title: meta.title,
+            description: meta.description,
+            tags: meta.tags,
+        });
+        eprintln!("[workshop] 开始创建创意工坊物品…");
+    }
+
+    /// 每帧推进发布状态机（Steam 回调 + 上传进度）。
+    #[cfg(feature = "steam")]
+    fn poll_workshop_publish(&mut self) {
+        use std::sync::mpsc::TryRecvError;
+        let Some(state) = self.workshop_publish.take() else {
+            return;
+        };
+        match state {
+            WorkshopPublish::Creating { rx, content, title, description, tags } => {
+                match rx.try_recv() {
+                    Ok(Ok((id, needs_agreement))) => {
+                        if needs_agreement {
+                            self.workshop_publish = Some(WorkshopPublish::Finished(
+                                i18n::t("需先在 Steam 同意 Workshop 协议").to_string(),
+                            ));
+                        } else if let Some(t) = self.steam_transport() {
+                            let (handle, done) =
+                                t.submit_workshop_update(id, content, title, description, tags, None);
+                            self.workshop_publish = Some(WorkshopPublish::Uploading {
+                                handle,
+                                done,
+                                text: format!("准备上传… (id {id})"),
+                            });
+                        } else {
+                            self.workshop_publish =
+                                Some(WorkshopPublish::Finished(i18n::t("Steam 不可用").to_string()));
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        self.workshop_publish =
+                            Some(WorkshopPublish::Finished(format!("发布失败：{e}")))
+                    }
+                    Err(TryRecvError::Empty) => {
+                        self.workshop_publish = Some(WorkshopPublish::Creating {
+                            rx,
+                            content,
+                            title,
+                            description,
+                            tags,
+                        });
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        self.workshop_publish = Some(WorkshopPublish::Finished(
+                            i18n::t("发布失败：通道断开").to_string(),
+                        ));
+                    }
+                }
+            }
+            WorkshopPublish::Uploading { handle, done, .. } => match done.try_recv() {
+                Ok(Ok(id)) => {
+                    self.workshop_publish =
+                        Some(WorkshopPublish::Finished(format!("已发布 (id {id})")))
+                }
+                Ok(Err(e)) => {
+                    self.workshop_publish =
+                        Some(WorkshopPublish::Finished(format!("发布失败：{e}")))
+                }
+                Err(TryRecvError::Empty) => {
+                    let (status, progress, total) = handle.progress();
+                    let pct = if total > 0 { progress * 100 / total } else { 0 };
+                    self.workshop_publish = Some(WorkshopPublish::Uploading {
+                        handle,
+                        done,
+                        text: format!("上传中 {pct}% ({status:?})"),
+                    });
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.workshop_publish = Some(WorkshopPublish::Finished(
+                        i18n::t("发布失败：通道断开").to_string(),
+                    ));
+                }
+            },
+            WorkshopPublish::Finished(t) => {
+                self.workshop_publish = Some(WorkshopPublish::Finished(t))
+            }
+        }
+    }
+
     /// 设置行的值文本（音量百分比 / 静音开关 / 语言名 / 音频包名）。
     fn settings_value_text(&self, row: usize) -> String {
         match SETTINGS_ROWS.get(row).map(|r| r.0) {
@@ -8109,6 +8320,13 @@ impl Game {
             Some(SetRow::MusicPack) => {
                 Self::pack_label(&self.music_pack_options(), &self.local_settings.music_pack)
             }
+            Some(SetRow::Workshop) => match self.workshop_counts {
+                Some((n, ok)) => {
+                    i18n::tf("已订阅 {n}（就绪 {ok}）", &[("n", n.to_string()), ("ok", ok.to_string())])
+                }
+                None => i18n::t("需要 Steam").to_string(),
+            },
+            Some(SetRow::PublishPack) => self.publish_status_text(),
             None => String::new(),
         }
     }

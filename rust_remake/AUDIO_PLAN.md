@@ -303,7 +303,8 @@
 - 同 id 以本地优先（`audio_pack::discover` 去重）。
 
 ### 8.5 设置 UX（主菜单「设置」）
-音频页新增两行循环选择：`音效包`（内置 / 各音效包）、`BGM 包`（关闭 / 各 BGM 包）；
+音频页行：`音效包`（内置 / 各音效包）、`BGM 包`（关闭 / 各 BGM 包）、`浏览创意工坊`（覆盖层打开本作工坊页）、
+`发布本地音效包`（将当前选中的**本地**音效包上传到创意工坊，显示上传进度）。
 选中即生效并写回；改包后自动重扫 + 热重载（旧 BGM 淡出）。
 
 ### 8.6 创意工坊 tag
@@ -311,11 +312,13 @@
 **游戏内分类的事实来源是目录布局/manifest `type`**（tag 打错不影响游戏内识别）。
 
 ### 8.7 落地状态
-- ✅ **A0**：本地目录扫描 + 音效包整包覆盖 + 设置页两行选择 + 启动/改包热重载（`audio_pack.rs`、`audio.rs`、`local_settings.rs`）。
+- ✅ **A0**：本地目录扫描 + 音效包整包覆盖 + 设置页选择 + 启动/改包热重载（`audio_pack.rs`、`audio.rs`、`local_settings.rs`）。
 - ✅ **B0**：BGM 场景系统（`menu/lobby/battle/result` + 循环 + 交叉淡入淡出 + `music_volume` 接线）。
 - ✅ **A1**：创意工坊目录扫描 + `detect_steam_root` 定位（exe 祖先 `steamapps` / `STEAM_PATH` / 常规路径；失败静默）。
   打开设置时重扫（新订阅物品即时出现）。
-- ⏳ **暂缓**：游戏内「浏览创意工坊」按钮 / 订阅进度 / 游戏内上传（需 UGC API；需后台启用 Workshop）。
+- ✅ **B2-A/B（基础）**：`SteamTransport::{ugc, open_url, subscribed_item_counts, create_workshop_item, submit_workshop_update}`；
+  设置页「浏览创意工坊」（覆盖层开页）与「发布本地音效包」（创建物品 → 上传，显示进度）。
+  ⚠️ Steam 部分**只能在真机验证**（需 Steam 客户端 + 登录 + 已启用 Workshop）；逻辑层（元数据/标签/路径）已单测。
 
 
 ## 7. 记录
