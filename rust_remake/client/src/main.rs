@@ -323,16 +323,19 @@ enum WorkshopPublish {
     /// 等待 `create_item` 回调返回物品 id。
     Creating {
         rx: std::sync::mpsc::Receiver<Result<(u64, bool), String>>,
+        pack_id: String,
         content: std::path::PathBuf,
         title: String,
         description: String,
         tags: Vec<String>,
         preview: Option<std::path::PathBuf>,
+        public: bool,
     },
     /// 上传中（轮询 `progress`）。
     Uploading {
         handle: net_steam::steamworks::UpdateWatchHandle,
         done: std::sync::mpsc::Receiver<Result<u64, String>>,
+        pack_id: String,
         text: String,
     },
     /// 结束（成功/失败/需同意协议），保留文本供设置页显示。
@@ -366,20 +369,24 @@ enum SetRow {
     MusicPack,
     Workshop,
     PublishPack,
+    PublishReuse,
+    PublishVisibility,
     OpenAudioDir,
     Audition,
     Mute,
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 11] = [
+const SETTINGS_ROWS: [(SetRow, &str); 13] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
     (SetRow::Music, "音乐音量"),
     (SetRow::MusicPack, "BGM 包"),
     (SetRow::Workshop, "浏览创意工坊"),
-    (SetRow::PublishPack, "发布本地音效包"),
+    (SetRow::PublishPack, "发布本地包"),
+    (SetRow::PublishReuse, "发布时复用物品 id"),
+    (SetRow::PublishVisibility, "发布可见性"),
     (SetRow::OpenAudioDir, "打开音频包目录"),
     (SetRow::Audition, "试听当前音效包"),
     (SetRow::Mute, "静音"),
@@ -8123,6 +8130,12 @@ impl Game {
             Some(SetRow::Audition) => {
                 self.audition_pack();
             }
+            Some(SetRow::PublishReuse) => {
+                self.local_settings.workshop_reuse = !self.local_settings.workshop_reuse;
+            }
+            Some(SetRow::PublishVisibility) => {
+                self.local_settings.workshop_public = !self.local_settings.workshop_public;
+            }
             Some(kind) => {
                 // 音量行：`wrap` 时满则回 0（点击/回车步进一格）；否则按 delta 微调。
                 let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
@@ -8136,6 +8149,8 @@ impl Game {
                     | SetRow::MusicPack
                     | SetRow::Workshop
                     | SetRow::PublishPack
+                    | SetRow::PublishReuse
+                    | SetRow::PublishVisibility
                     | SetRow::OpenAudioDir
                     | SetRow::Audition => 0.0,
                 };
@@ -8154,6 +8169,8 @@ impl Game {
                     | SetRow::MusicPack
                     | SetRow::Workshop
                     | SetRow::PublishPack
+                    | SetRow::PublishReuse
+                    | SetRow::PublishVisibility
                     | SetRow::OpenAudioDir
                     | SetRow::Audition => {}
                 }
@@ -8259,32 +8276,47 @@ impl Game {
         }
     }
 
-    /// 发布当前选中的**本地**音效包到创意工坊（仅 Steam 构建）。
+    /// 发布当前选中的**本地**包（音效或 BGM）到创意工坊（仅 Steam 构建）。
     #[cfg(feature = "steam")]
     fn start_workshop_publish(&mut self) {
+        // 目标包：优先「音效包」里选中的本地音效包；否则「BGM 包」里选中的本地 BGM 包。
         let local = audio_pack::local_root();
-        let Some(pack) = audio_pack::find(&self.audio_packs, &self.local_settings.sfx_pack) else {
-            eprintln!("[workshop] 当前音效包不可发布：请先在「音效包」里选一个本地包");
+        let ok_local = |p: &audio_pack::Pack, need_sfx: bool| {
+            audio_pack::is_under(&local, &p.root)
+                && if need_sfx { p.kind.has_sfx() } else { p.kind.has_bgm() }
+        };
+        let pack = audio_pack::find(&self.audio_packs, &self.local_settings.sfx_pack)
+            .filter(|p| ok_local(p, true))
+            .or_else(|| {
+                audio_pack::find(&self.audio_packs, &self.local_settings.music_pack)
+                    .filter(|p| ok_local(p, false))
+            });
+        let Some(pack) = pack else {
+            eprintln!("[workshop] 没有可发布的本地包：请先在「音效包」或「BGM 包」里选一个本地包");
             return;
         };
-        if !audio_pack::is_under(&local, &pack.root) {
-            eprintln!(
-                "[workshop] 只能发布本地包（{} 不在 {} 下）",
-                pack.root.display(),
-                local.display()
-            );
-            return;
-        }
-        let meta = audio_pack::publish_meta(pack);
+        let pack_id = pack.id.clone();
         let content = pack.root.clone();
+        let meta = audio_pack::publish_meta(pack);
+        let preview = audio_pack::preview_path(&content);
+        let public = self.local_settings.workshop_public;
+        let reuse_id = if self.local_settings.workshop_reuse {
+            self.local_settings.published_id(&pack_id)
+        } else {
+            None
+        };
+        let tags = if SEND_WORKSHOP_TAGS { meta.tags.clone() } else { Vec::new() };
         let Some(t) = self.steam_transport() else {
             eprintln!("[workshop] Steam 不可用，无法发布");
             return;
         };
-        let tags = if SEND_WORKSHOP_TAGS { meta.tags.clone() } else { Vec::new() };
-        let preview = audio_pack::preview_path(&pack.root);
+        let vis = if public {
+            net_steam::steamworks::PublishedFileVisibility::Public
+        } else {
+            net_steam::steamworks::PublishedFileVisibility::Private
+        };
         eprintln!(
-            "[workshop] 创建物品：app_id={} 已安装={} title={:?} tags={:?} preview={:?} content={}",
+            "[workshop] 发布包 {pack_id}：app_id={} 已安装={} title={:?} tags={:?} preview={:?} public={public} content={}",
             t.app_id(),
             t.app_installed(),
             meta.title,
@@ -8292,18 +8324,36 @@ impl Game {
             preview,
             content.display()
         );
-        if tags.is_empty() {
-            eprintln!("[workshop] 警告：未附带 tag；若后台要求至少一个 tag，提交会报 InvalidParam");
+        if let Some(id) = reuse_id {
+            eprintln!("[workshop] 复用上次物品 id={id}（更新）");
+            let (handle, done) = t.submit_workshop_update(net_steam::WorkshopUpdate {
+                file_id: id,
+                content_path: content,
+                title: meta.title,
+                description: meta.description,
+                tags,
+                preview,
+                visibility: vis,
+            });
+            self.workshop_publish = Some(WorkshopPublish::Uploading {
+                handle,
+                done,
+                pack_id,
+                text: format!("更新中… (id {id})"),
+            });
+        } else {
+            let rx = t.create_workshop_item();
+            self.workshop_publish = Some(WorkshopPublish::Creating {
+                rx,
+                pack_id,
+                content,
+                title: meta.title,
+                description: meta.description,
+                tags,
+                preview,
+                public,
+            });
         }
-        let rx = t.create_workshop_item();
-        self.workshop_publish = Some(WorkshopPublish::Creating {
-            rx,
-            content,
-            title: meta.title,
-            description: meta.description,
-            tags,
-            preview,
-        });
     }
 
     /// 每帧推进发布状态机（Steam 回调 + 上传进度）。
@@ -8314,7 +8364,16 @@ impl Game {
             return;
         };
         match state {
-            WorkshopPublish::Creating { rx, content, title, description, tags, preview } => {
+            WorkshopPublish::Creating {
+                rx,
+                pack_id,
+                content,
+                title,
+                description,
+                tags,
+                preview,
+                public,
+            } => {
                 match rx.try_recv() {
                     Ok(Ok((id, needs_agreement))) => {
                         eprintln!(
@@ -8325,13 +8384,25 @@ impl Game {
                                 i18n::t("需先在 Steam 同意 Workshop 协议").to_string(),
                             ));
                         } else if let Some(t) = self.steam_transport() {
-                            let (handle, done) = t.submit_workshop_update(
-                                id, content, title, description, tags, preview,
-                            );
+                            let vis = if public {
+                                net_steam::steamworks::PublishedFileVisibility::Public
+                            } else {
+                                net_steam::steamworks::PublishedFileVisibility::Private
+                            };
+                            let (handle, done) = t.submit_workshop_update(net_steam::WorkshopUpdate {
+                                file_id: id,
+                                content_path: content,
+                                title,
+                                description,
+                                tags,
+                                preview,
+                                visibility: vis,
+                            });
                             eprintln!("[workshop] 开始上传 id={id}…");
                             self.workshop_publish = Some(WorkshopPublish::Uploading {
                                 handle,
                                 done,
+                                pack_id,
                                 text: format!("准备上传… (id {id})"),
                             });
                         } else {
@@ -8347,11 +8418,13 @@ impl Game {
                     Err(TryRecvError::Empty) => {
                         self.workshop_publish = Some(WorkshopPublish::Creating {
                             rx,
+                            pack_id,
                             content,
                             title,
                             description,
                             tags,
                             preview,
+                            public,
                         });
                     }
                     Err(TryRecvError::Disconnected) => {
@@ -8361,14 +8434,18 @@ impl Game {
                     }
                 }
             }
-            WorkshopPublish::Uploading { handle, done, .. } => match done.try_recv() {
+            WorkshopPublish::Uploading { handle, done, pack_id, .. } => match done.try_recv() {
                 Ok(Ok(id)) => {
                     eprintln!("[workshop] 上传完成：id={id}");
+                    self.local_settings.set_published(&pack_id, id);
+                    local_settings::save(&self.local_settings_path, &self.local_settings);
                     self.workshop_publish =
                         Some(WorkshopPublish::Finished(format!("已发布 (id {id})")))
                 }
                 Ok(Err(e)) => {
-                    eprintln!("[workshop] 上传失败：{e}");
+                    eprintln!("[workshop] 上传失败：{e}（清除该包的复用记录，下次将新建）");
+                    self.local_settings.clear_published(&pack_id);
+                    local_settings::save(&self.local_settings_path, &self.local_settings);
                     self.workshop_publish =
                         Some(WorkshopPublish::Finished(format!("上传失败：{e}")))
                 }
@@ -8378,6 +8455,7 @@ impl Game {
                     self.workshop_publish = Some(WorkshopPublish::Uploading {
                         handle,
                         done,
+                        pack_id,
                         text: format!("上传中 {pct}% ({status:?})"),
                     });
                 }
@@ -8420,6 +8498,20 @@ impl Game {
                 None => i18n::t("需要 Steam").to_string(),
             },
             Some(SetRow::PublishPack) => self.publish_status_text(),
+            Some(SetRow::PublishReuse) => {
+                if self.local_settings.workshop_reuse {
+                    i18n::t("复用（更新）").to_string()
+                } else {
+                    i18n::t("新建").to_string()
+                }
+            }
+            Some(SetRow::PublishVisibility) => {
+                if self.local_settings.workshop_public {
+                    i18n::t("公开").to_string()
+                } else {
+                    i18n::t("私有").to_string()
+                }
+            }
             Some(SetRow::OpenAudioDir) => i18n::t("[打开]").to_string(),
             Some(SetRow::Audition) => i18n::t("[试听]").to_string(),
             None => String::new(),

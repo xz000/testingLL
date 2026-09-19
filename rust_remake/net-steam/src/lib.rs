@@ -27,7 +27,7 @@ pub mod transport_steam;
 pub mod session;
 
 #[cfg(feature = "steam")]
-pub use transport_steam::SteamTransport;
+pub use transport_steam::{SteamTransport, WorkshopUpdate};
 #[cfg(feature = "steam")]
 pub extern crate steamworks;
 

@@ -47,6 +47,17 @@ pub struct SteamTransport {
     recv_queue: VecDeque<(u64, Vec<u8>)>,
 }
 
+/// 创意工坊物品更新参数（项多，打包成结构以避免 `too_many_arguments`）。
+pub struct WorkshopUpdate {
+    pub file_id: u64,
+    pub content_path: std::path::PathBuf,
+    pub title: String,
+    pub description: String,
+    pub tags: Vec<String>,
+    pub preview: Option<std::path::PathBuf>,
+    pub visibility: steamworks::PublishedFileVisibility,
+}
+
 impl SteamTransport {
     /// 初始化 Steam（连当前登录账号 + 强制 AppID）+ 注册自动接受入站会话。
     /// 注意：一个进程只应有一个 `Client`，故应全局单例持有。
@@ -253,12 +264,7 @@ impl SteamTransport {
     /// 返回可轮询进度的 `UpdateWatchHandle` 与“完成/失败”通知的 channel。
     pub fn submit_workshop_update(
         &self,
-        file_id: u64,
-        content_path: std::path::PathBuf,
-        title: String,
-        description: String,
-        tags: Vec<String>,
-        preview: Option<std::path::PathBuf>,
+        u: WorkshopUpdate,
     ) -> (
         steamworks::UpdateWatchHandle,
         std::sync::mpsc::Receiver<Result<u64, String>>,
@@ -266,19 +272,19 @@ impl SteamTransport {
         let (tx, rx) = std::sync::mpsc::channel();
         let app_id = self.client.utils().app_id();
         let ugc = self.client.ugc();
-        let update = ugc.start_item_update(app_id, steamworks::PublishedFileId(file_id));
+        let update = ugc.start_item_update(app_id, steamworks::PublishedFileId(u.file_id));
         let update = update
-            .content_path(&content_path)
-            .title(&title)
-            .description(&description);
+            .content_path(&u.content_path)
+            .title(&u.title)
+            .description(&u.description)
+            .visibility(u.visibility);
         // 标签可选：Steam 会在**提交时**校验 tag 是否在后台已定义，未定义会 `k_EResultInvalidParam`。
-        // 故仅在调用方明确传入非空 tag 时才设。（见 `SEND_WORKSHOP_TAGS`）
-        let update = if tags.is_empty() {
+        let update = if u.tags.is_empty() {
             update
         } else {
-            update.tags(tags, false)
+            update.tags(u.tags, false)
         };
-        let update = match preview {
+        let update = match u.preview {
             Some(p) => update.preview_path(&p),
             None => update,
         };

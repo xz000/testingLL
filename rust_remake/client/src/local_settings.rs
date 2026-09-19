@@ -20,6 +20,12 @@ pub struct LocalSettings {
     pub sfx_pack: String,
     /// BGM 包选择：`off`（关闭）/ `builtin` / 包 id（单包内含分场景）。
     pub music_pack: String,
+    /// 发布到创意工坊时是否**复用上次的物品 id**（更新而非新建）。默认开。
+    pub workshop_reuse: bool,
+    /// 发布可见性：`true`=公开（Public），`false`=私有（Private）。默认公开。
+    pub workshop_public: bool,
+    /// 包 id → 已发布的创意工坊物品 id（持久化为 `published.<id>=<fileid>` 行）。
+    pub published: Vec<(String, u64)>,
 }
 
 impl Default for LocalSettings {
@@ -32,6 +38,9 @@ impl Default for LocalSettings {
             lang: LangPref::Auto,
             sfx_pack: "builtin".to_string(),
             music_pack: "off".to_string(),
+            workshop_reuse: true,
+            workshop_public: true,
+            published: Vec::new(),
         }
     }
 }
@@ -68,6 +77,28 @@ impl LocalSettings {
     pub fn toggle_mute(&mut self) -> bool {
         self.muted = !self.muted;
         self.muted
+    }
+
+    /// 某包上次发布到的创意工坊物品 id（无则 `None`）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    pub fn published_id(&self, pack_id: &str) -> Option<u64> {
+        self.published.iter().find(|(k, _)| k == pack_id).map(|(_, v)| *v)
+    }
+
+    /// 记录某包已发布到的物品 id。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    pub fn set_published(&mut self, pack_id: &str, file_id: u64) {
+        if let Some(e) = self.published.iter_mut().find(|(k, _)| k == pack_id) {
+            e.1 = file_id;
+        } else {
+            self.published.push((pack_id.to_string(), file_id));
+        }
+    }
+
+    /// 清除某包的发布记录（复用失败/想重建时）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    pub fn clear_published(&mut self, pack_id: &str) {
+        self.published.retain(|(k, _)| k != pack_id);
     }
 }
 
@@ -107,6 +138,17 @@ pub fn parse(text: &str) -> LocalSettings {
             }
             "sfx_pack" => s.sfx_pack = v.to_string(),
             "music_pack" => s.music_pack = v.to_string(),
+            "workshop_reuse" => {
+                s.workshop_reuse = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+            }
+            "workshop_public" => {
+                s.workshop_public = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+            }
+            k if k.starts_with("published.") => {
+                if let Ok(id) = v.parse::<u64>() {
+                    s.published.push((k["published.".len()..].to_string(), id));
+                }
+            }
             _ => {}
         }
     }
@@ -115,16 +157,22 @@ pub fn parse(text: &str) -> LocalSettings {
 
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
-    format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\n",
+    let mut out = format!(
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
         if s.muted { 1 } else { 0 },
         s.lang.code(),
         s.sfx_pack,
-        s.music_pack
-    )
+        s.music_pack,
+        if s.workshop_reuse { 1 } else { 0 },
+        if s.workshop_public { 1 } else { 0 }
+    );
+    for (id, fid) in &s.published {
+        out.push_str(&format!("published.{id}={fid}\n"));
+    }
+    out
 }
 
 /// 默认存储路径：`%APPDATA%/warlock_brawl/settings.txt`，取不到则退回当前目录。
@@ -176,6 +224,9 @@ mod tests {
             lang: LangPref::Fixed(crate::i18n::Lang::En),
             sfx_pack: "MyPack".to_string(),
             music_pack: "BigMusic".to_string(),
+            workshop_reuse: false,
+            workshop_public: false,
+            published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
