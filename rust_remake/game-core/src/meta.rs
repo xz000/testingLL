@@ -351,6 +351,16 @@ pub struct PlayerProfile {
 }
 
 impl PlayerProfile {
+    /// 098c 开局默认技能：**火球(S000, G) + 天罚(S001, F)**（唯一的两个固定技能，
+    /// 开局即 1 级、已绑定、免费）。证据：初始化 `kn[7*i]='S000'`；F 槽不在 `kn` 的
+    /// 7 个可学槽（C/D/E/R/T/Y/G）内，属先天自带。
+    fn default_key_slots() -> [Option<crate::skill::SkillId>; 8] {
+        let mut slots: [Option<crate::skill::SkillId>; 8] = [None; 8];
+        slots[crate::skill::CastKey::G.as_u32() as usize] = Some(crate::skill::SkillId::S000);
+        slots[crate::skill::CastKey::F.as_u32() as usize] = Some(crate::skill::SkillId::S001);
+        slots
+    }
+
     pub fn new(player_id: u32, skill_count: usize) -> Self {
         // 等级数组统一覆盖全部技能槽，避免越界（调用方传的 skill_count 可能 < 全槽数）
         let n = skill_count.max(crate::MAX_SKILL_SLOTS);
@@ -365,7 +375,7 @@ impl PlayerProfile {
             rounds_survived: 0,
             best_placement: 0,
             skill_levels: vec![1; n],
-            key_slots: [None; 8],
+            key_slots: Self::default_key_slots(),
             items: Vec::new(),
             gold_spent: 0,
             mastery: Mastery::default(),
@@ -394,7 +404,12 @@ impl PlayerProfile {
     /// 故 098c **无**「买越多越贵」的功能性涨价（"Purchase cost..." 为遗留提示）。
     /// 各技能价格即 `SkillId::learn_cost`，不随已购数量变化。
     pub fn purchased_spell_count(&self) -> usize {
-        self.key_slots.iter().filter(|s| s.is_some()).count()
+        // 不计**开局默认技能**（火球 S000 / 天罚 S001，它们免费自带，不算“已购”）。
+        self.key_slots
+            .iter()
+            .flatten()
+            .filter(|id| **id != crate::skill::SkillId::S000 && **id != crate::skill::SkillId::S001)
+            .count()
     }
 
     /// 花钱购买某键（树）下的一个技能：扣金币、置 1 级、锁定该树其余技能。
@@ -1432,6 +1447,17 @@ mod tests {
         m.profiles[1].score = 3;
         m.finish_round(vec![0, 1]);
         assert_eq!(m.phase, MatchPhase::Finished);
+    }
+
+    /// 回归：098c 开局默认技能 = 火球(S000,G) + 天罚(S001,F)，1 级、免费（不计入“已购”）。
+    #[test]
+    fn new_profile_has_default_fireball_and_smite() {
+        let p = PlayerProfile::new(0, 8);
+        assert_eq!(p.bound_skill(CastKey::G), Some(SkillId::S000), "默认应有火球(S000,G)");
+        assert_eq!(p.bound_skill(CastKey::F), Some(SkillId::S001), "默认应有天罚(S001,F)");
+        assert_eq!(p.skill_level(SkillId::S000), 1);
+        assert_eq!(p.skill_level(SkillId::S001), 1);
+        assert_eq!(p.purchased_spell_count(), 0, "默认技能不应计为“已购”");
     }
 
     #[test]
