@@ -262,6 +262,58 @@
 
 ---
 
+## 8. 外部音频包 / 创意工坊方案（2026-09-19）
+
+> 目标：让玩家用**自制音效与 BGM**，通过 Steam 创意工坊或本地目录选择性替换。
+> **纯客户端**：不进 `World`/快照、不影响帧同步；缺素材/解码失败静默降级（沿用现有纪律）。
+
+### 8.1 模型
+- **音效包：整包覆盖**（单槽）。**BGM：单包内含分场景**。两者**独立选择**。
+- 选择存于本机设置 `%APPDATA%/warlock_brawl/settings.txt`：
+  - `sfx_pack=builtin|<id>`（默认 `builtin`）
+  - `music_pack=off|<id>`（默认 `off`）
+- BGM 场景：`menu`（主菜单/设置）、`lobby`（开局配置期）、`battle`（对局中/轮间）、
+  `result`（对局结束）。推导见 `audio_pack::scene_for`。
+
+### 8.2 包结构 + 清单
+```
+<包根>/
+  circle_brawl_pack.ini     # 可选清单：name/author/version/type/description
+  sfx/<cue>.<ext>           # 文件名 = AudioCue 的 stem（如 combat_hit）
+  bgm/<scene>.<ext>         # 文件名 = 场景（menu/lobby/battle/result）
+```
+- `type = sound | music | both`（缺省按目录推断：有 `sfx/`→sound，有 `bgm/`→music，两者→both）。
+- 仅含 `sfx/` 或 `bgm/` 的目录才会被识别为包（避免杂物目录被当包）。
+
+### 8.3 格式（引擎实证）
+音频栈 = `ggez 0.10 → rodio 0.22.2 → Symphonia 0.5.5`。支持：**WAV / Ogg Vorbis / FLAC / MP3**；
+**不支持 Opus**（rodio 无 `opus` feature，依赖树亦无 `symphonia-codec-opus`）。
+- **SFX 推荐 WAV**（16-bit PCM）：播放期零解码、延迟最低；回退 `.ogg/.flac/.mp3`。
+- **BGM 推荐 Ogg Vorbis**（`.ogg`）：只驻留压缩字节、无缝循环；回退 `.flac/.wav/.mp3`。
+  （MP3 因帧填充不适合 BGM 循环。）
+- 搜索优先级：SFX `wav→ogg→flac→mp3`；BGM `ogg→flac→wav→mp3`。
+- 建议采样率 44.1/48kHz（免重采样），SFX 单声道、BGM 立体声。
+
+### 8.4 目录来源（优先级：本地 > 创意工坊 > 内置）
+- 本地：`%APPDATA%/warlock_brawl/audio/<id>/`（玩家手动放，**不依赖 Steam**）。
+- 创意工坊：`<Steam>/steamapps/workshop/content/908660/<id>/`（文件落地由其 Steam 客户端自动完成）。
+- 同 id 以本地优先（`audio_pack::discover` 去重）。
+
+### 8.5 设置 UX（主菜单「设置」）
+音频页新增两行循环选择：`音效包`（内置 / 各音效包）、`BGM 包`（关闭 / 各 BGM 包）；
+选中即生效并写回；改包后自动重扫 + 热重载（旧 BGM 淡出）。
+
+### 8.6 创意工坊 tag
+后台定义 `Sound` / `Music`，要求**至少选一**（合集包两个都打）。tag 仅用于工坊页/后续 B 阶段的游戏内查询；
+**游戏内分类的事实来源是目录布局/manifest `type`**（tag 打错不影响游戏内识别）。
+
+### 8.7 落地状态
+- ✅ **A0**：本地目录扫描 + 音效包整包覆盖 + 设置页两行选择 + 启动/改包热重载（`audio_pack.rs`、`audio.rs`、`local_settings.rs`）。
+- ✅ **B0**：BGM 场景系统（`menu/lobby/battle/result` + 循环 + 交叉淡入淡出 + `music_volume` 接线）。
+- ⏳ **A1**：追加创意工坊目录扫描 + 定位 Steam 根目录（探测失败静默）。
+- ⏳ **暂缓**：游戏内「浏览创意工坊」按钮 / 订阅进度 / 游戏内上传（需先在 Steamworks 后台启用 Workshop）。
+
+
 ## 7. 记录
 - 2026-09-13：初版（通用清单 + 架构 + 设置界面）。
 - 2026-09-13：**按 098c JASS 实证重写** —— 查明 098c 自定义音效**几乎全是播报语音**（§1），

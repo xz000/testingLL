@@ -8,6 +8,7 @@
 //! 播放采用「每个 cue 一个 `Source`，重复触发即重头播放」的简单策略
 //! （重叠播放会让 rodio 的 `Sink` 生命周期难以管理；此游戏短音效足够）。
 
+use crate::audio_pack;
 use crate::local_settings::LocalSettings;
 use ggez::audio::{SoundData, SoundSource, Source};
 use ggez::Context;
@@ -219,52 +220,133 @@ impl AudioCue {
 
 /// 素材目录候选（可执行文件相对路径随启动目录不同，逐个探测）。
 const AUDIO_DIRS: &[&str] = &["assets/audio", "client/assets/audio", "../client/assets/audio"];
+/// 内置 BGM 目录候选（当前无内置 BGM，找到就用）。
+const BGM_DIRS: &[&str] = &["assets/bgm", "client/assets/bgm", "../client/assets/bgm"];
 
 fn find_asset(file: &str) -> Option<PathBuf> {
     AUDIO_DIRS.iter().map(|d| Path::new(d).join(file)).find(|p| p.exists())
 }
 
+/// 内置 BGM：`<dir>/<scene>.<ext>`（按 [`audio_pack::BGM_EXTS`] 顺序）。
+fn find_builtin_bgm(scene: audio_pack::MusicScene) -> Option<PathBuf> {
+    for d in BGM_DIRS {
+        for ext in audio_pack::BGM_EXTS {
+            let p = Path::new(d).join(format!("{}.{ext}", scene.key()));
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// 读文件 → 解码 → `Source`；任一步失败返回 `None`（只记一行日志，不 panic）。
+fn load_source(ctx: &Context, path: &Path) -> Option<Source> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[audio] 读取 {path:?} 失败（忽略）：{e}");
+            return None;
+        }
+    };
+    let data = match SoundData::from_bytes(&bytes) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("[audio] 解码 {path:?} 失败（忽略，可能是 Opus 等不支持的格式）：{e}");
+            return None;
+        }
+    };
+    match Source::from_data(ctx, data) {
+        Ok(src) => Some(src),
+        Err(e) => {
+            eprintln!("[audio] 创建音源 {path:?} 失败（忽略）：{e}");
+            None
+        }
+    }
+}
+
+/// BGM 播放状态（支持交叉淡入淡出）。
+struct Music {
+    source: Source,
+    scene: audio_pack::MusicScene,
+    cur: f32,
+    target: f32,
+}
+
+/// BGM 淡入淡出速率（音量/秒）。
+const FADE_PER_SEC: f32 = 1.5;
+
 /// 音量：`set_volume` 取值会被 rodio 夹到 `0.0..=1.0`。
 pub struct AudioBank {
+    /// 音效：cue → 音频源（来源可为内置占位或选定音频包）。
     sources: HashMap<AudioCue, Source>,
+    /// 当前 BGM（None = 无）。
+    music: Option<Music>,
+    /// 正在淡出的旧 BGM（交叉淡出用）。
+    music_out: Vec<Music>,
     settings: LocalSettings,
+    /// 当前生效的音效包根（None = 内置）。
+    sfx_pack_root: Option<PathBuf>,
+    /// 当前生效的 BGM 包根（None = 内置）。
+    music_pack_root: Option<PathBuf>,
 }
 
 impl AudioBank {
     /// 加载全部素材；缺失的 cue 静默跳过（只记一行日志）。
-    pub fn new(ctx: &Context, settings: &LocalSettings) -> Self {
-        let mut sources = HashMap::new();
-        for &cue in AudioCue::ALL {
-            let Some(path) = find_asset(cue.file()) else {
-                continue; // 无素材（占位未生成 / 未替换）：静默
-            };
-            let bytes = match std::fs::read(&path) {
-                Ok(b) => b,
-                Err(e) => {
-                    eprintln!("[audio] 读取 {path:?} 失败（忽略）：{e}");
-                    continue;
-                }
-            };
-            let data = match SoundData::from_bytes(&bytes) {
-                Ok(d) => d,
-                Err(e) => {
-                    eprintln!("[audio] 解码 {path:?} 失败（忽略）：{e}");
-                    continue;
-                }
-            };
-            match Source::from_data(ctx, data) {
-                Ok(src) => {
-                    sources.insert(cue, src);
-                }
-                Err(e) => eprintln!("[audio] 创建音源 {path:?} 失败（忽略）：{e}"),
-            }
-        }
+    ///
+    /// 若 `settings.sfx_pack` 指向一个有效音效包，则**整包覆盖**内置素材；否则用内置。
+    pub fn new(ctx: &Context, settings: &LocalSettings, packs: &[audio_pack::Pack]) -> Self {
         let mut bank = Self {
-            sources,
-            settings: *settings,
+            sources: HashMap::new(),
+            music: None,
+            music_out: Vec::new(),
+            settings: settings.clone(),
+            sfx_pack_root: None,
+            music_pack_root: None,
         };
+        bank.resolve_packs(packs);
+        bank.load_sfx(ctx);
         bank.apply_volumes();
         bank
+    }
+
+    /// 根据当前选择解析出音效/BGM 包的根目录（无效/类型不匹配 → None）。
+    fn resolve_packs(&mut self, packs: &[audio_pack::Pack]) {
+        self.sfx_pack_root = audio_pack::find(packs, &self.settings.sfx_pack)
+            .filter(|p| p.kind.has_sfx())
+            .map(|p| p.root.clone());
+        self.music_pack_root = audio_pack::find(packs, &self.settings.music_pack)
+            .filter(|p| p.kind.has_bgm())
+            .map(|p| p.root.clone());
+    }
+
+    /// 重新应用包选择并重载（设置里改包后调用）。旧 BGM 会淡出。
+    pub fn reload(&mut self, ctx: &Context, settings: &LocalSettings, packs: &[audio_pack::Pack]) {
+        self.settings = settings.clone();
+        self.resolve_packs(packs);
+        self.load_sfx(ctx);
+        self.apply_volumes();
+        if let Some(m) = self.music.take() {
+            self.music_out.push(Music { target: 0.0, ..m });
+        }
+    }
+
+    /// 加载音效（先试音频包，再回退内置）。
+    fn load_sfx(&mut self, ctx: &Context) {
+        self.sources.clear();
+        for &cue in AudioCue::ALL {
+            let stem = cue.file().trim_end_matches(".wav");
+            let path = self
+                .sfx_pack_root
+                .as_ref()
+                .and_then(|r| audio_pack::resolve_sfx(r, stem))
+                .or_else(|| find_asset(cue.file()));
+            if let Some(p) = path {
+                if let Some(src) = load_source(ctx, &p) {
+                    self.sources.insert(cue, src);
+                }
+            }
+        }
     }
 
     /// 已成功加载的 cue 数量（无素材时为 0，用于日志/诊断）。
@@ -274,7 +356,7 @@ impl AudioBank {
 
     /// 应用本地设置（音量 / 静音）。
     pub fn apply(&mut self, settings: &LocalSettings) {
-        self.settings = *settings;
+        self.settings = settings.clone();
         self.apply_volumes();
     }
 
@@ -299,6 +381,58 @@ impl AudioBank {
             src.set_volume(vol);
             src.play();
         }
+    }
+
+    /// 每帧推进 BGM：场景切换 + 交叉淡入淡出。`scene` 由 [`audio_pack::scene_for`] 推导。
+    pub fn update(&mut self, ctx: &Context, dt: f32, scene: audio_pack::MusicScene) {
+        let target = self.settings.effective_music();
+        let same = self.music.as_ref().map(|m| m.scene) == Some(scene);
+        if !same {
+            if let Some(m) = self.music.take() {
+                self.music_out.push(Music { target: 0.0, ..m });
+            }
+            if target > 0.0 {
+                if let Some(src) = self.start_music(ctx, scene) {
+                    self.music = Some(Music { source: src, scene, cur: 0.0, target });
+                }
+            }
+        }
+        if let Some(m) = self.music.as_mut() {
+            m.target = target;
+        }
+        ramp_music(self.music.as_mut(), dt);
+        for m in self.music_out.iter_mut() {
+            m.target = 0.0;
+            ramp_music(Some(m), dt);
+        }
+        self.music_out.retain(|m| m.cur > 0.0 || m.target > 0.0);
+    }
+
+    /// 为某场景创建循环 BGM 音源（先试 BGM 包，再回退内置；都没有 → None）。
+    fn start_music(&self, ctx: &Context, scene: audio_pack::MusicScene) -> Option<Source> {
+        let path = self
+            .music_pack_root
+            .as_ref()
+            .and_then(|r| audio_pack::resolve_bgm(r, scene))
+            .or_else(|| find_builtin_bgm(scene))?;
+        let mut src = load_source(ctx, &path)?;
+        src.set_repeat(true);
+        src.set_volume(0.0);
+        src.play();
+        Some(src)
+    }
+}
+
+/// 把一个 BGM 的音量向 `target` 逼近（线性淡入淡出）。
+fn ramp_music(m: Option<&mut Music>, dt: f32) {
+    if let Some(m) = m {
+        let step = FADE_PER_SEC * dt.max(0.0);
+        if m.cur < m.target {
+            m.cur = (m.cur + step).min(m.target);
+        } else if m.cur > m.target {
+            m.cur = (m.cur - step).max(m.target);
+        }
+        m.source.set_volume(m.cur);
     }
 }
 

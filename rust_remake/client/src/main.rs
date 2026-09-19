@@ -44,6 +44,8 @@ mod local_settings;
 mod i18n;
 
 mod audio;
+/// 外部音频包（音效/BGM 的外部目录选择）：纯逻辑，见 `audio_pack.rs`。
+mod audio_pack;
 /// 表现层 P3：客户端本地特效（命中闪光/火花）——纯客户端、不进快照。
 mod fx;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
@@ -329,15 +331,19 @@ enum SettingsAction {
 enum SetRow {
     Master,
     Sfx,
+    SfxPack,
     Music,
+    MusicPack,
     Mute,
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 5] = [
+const SETTINGS_ROWS: [(SetRow, &str); 7] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
+    (SetRow::SfxPack, "音效包"),
     (SetRow::Music, "音乐音量"),
+    (SetRow::MusicPack, "BGM 包"),
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
 ];
@@ -430,6 +436,10 @@ struct Game {
     lang_override: Option<i18n::LangPref>,
     /// 音效播放（缺素材/无声卡静默降级）。
     audio: audio::AudioBank,
+    /// 已发现的音频包（本地 + 创意工坊目录；启动与改包时重扫）。
+    audio_packs: Vec<audio_pack::Pack>,
+    /// 待重载音频（改包后置位，`update` 里带 `ctx` 重载）。
+    pending_audio_reload: bool,
     /// 本机设置界面是否打开（主菜单 4 号入口）。
     settings_open: bool,
     /// 设置界面当前选中行。
@@ -1091,12 +1101,14 @@ impl Game {
         // 启动即按本地设置确定语言（此时尚未连 Steam，`Auto` 先回退中文；
         // 进主菜单后会 `steam_ensure_session` 拿到 Steam 语言再刷新，见 `steam_sync_language`）。
         i18n::set_lang(local_settings.lang.resolve(None));
-        let audio = audio::AudioBank::new(ctx, &local_settings);
+        let audio_packs = audio_pack::discover(&audio_pack::default_roots());
+        let audio = audio::AudioBank::new(ctx, &local_settings, &audio_packs);
         eprintln!(
-            "[audio] 已加载 {}/{} 个音效素材（静音={}）",
+            "[audio] 已加载 {}/{} 个音效素材（静音={}）；发现 {} 个音频包",
             audio.loaded_count(),
             audio::AudioCue::ALL.len(),
-            local_settings.muted
+            local_settings.muted,
+            audio_packs.len()
         );
         Ok(Game {
             world,
@@ -1106,6 +1118,8 @@ impl Game {
             steam_lang: None,
             lang_override: None,
             audio,
+            audio_packs,
+            pending_audio_reload: false,
             settings_open: false,
             settings_row: 0,
             settings_hitboxes: ui::HitRegistry::new(),
@@ -5335,6 +5349,17 @@ impl event::EventHandler for Game {
             );
         }
 
+        // 音频包/BGM（纯客户端）：改包后重扫重载（需 `ctx`）；每帧推进 BGM 场景 + 淡入淡出。
+        if self.pending_audio_reload {
+            self.pending_audio_reload = false;
+            self.audio_packs = audio_pack::discover(&audio_pack::default_roots());
+            self.audio.reload(ctx, &self.local_settings, &self.audio_packs);
+        }
+        let is_menu = self.app == AppState::MainMenu;
+        let finished = self.meta.phase == game_core::meta::MatchPhase::Finished;
+        let scene = audio_pack::scene_for(is_menu, self.pre_game_config, finished);
+        self.audio.update(ctx, dt as f32, scene);
+
         // S12：进行中的大厅操作（建厅/加入）是帧驱动异步，由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 推进。
         // 连接期间跳过其余菜单/房间输入（也不应被认为已进房），只泵回调 + 推进，完成后才落地进房。
         #[cfg(feature = "steam")]
@@ -7990,6 +8015,19 @@ impl Game {
                 self.local_settings.lang = next;
                 i18n::set_lang(next.resolve(self.steam_lang));
             }
+            Some(SetRow::SfxPack) => {
+                let ids: Vec<String> = self.sfx_pack_options().into_iter().map(|(v, _)| v).collect();
+                self.local_settings.sfx_pack =
+                    audio_pack::cycle_id(&ids, &self.local_settings.sfx_pack, delta);
+                self.pending_audio_reload = true;
+            }
+            Some(SetRow::MusicPack) => {
+                let ids: Vec<String> =
+                    self.music_pack_options().into_iter().map(|(v, _)| v).collect();
+                self.local_settings.music_pack =
+                    audio_pack::cycle_id(&ids, &self.local_settings.music_pack, delta);
+                self.pending_audio_reload = true;
+            }
             Some(kind) => {
                 // 音量行：`wrap` 时满则回 0（点击/回车步进一格）；否则按 delta 微调。
                 let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
@@ -7997,7 +8035,7 @@ impl Game {
                     SetRow::Master => self.local_settings.master_volume,
                     SetRow::Sfx => self.local_settings.sfx_volume,
                     SetRow::Music => self.local_settings.music_volume,
-                    SetRow::Mute | SetRow::Lang => 0.0,
+                    SetRow::Mute | SetRow::Lang | SetRow::SfxPack | SetRow::MusicPack => 0.0,
                 };
                 let mut v = cur + step;
                 if wrap && v > 1.0 + 1e-4 {
@@ -8008,7 +8046,7 @@ impl Game {
                     SetRow::Master => self.local_settings.master_volume = v,
                     SetRow::Sfx => self.local_settings.sfx_volume = v,
                     SetRow::Music => self.local_settings.music_volume = v,
-                    SetRow::Mute | SetRow::Lang => {}
+                    SetRow::Mute | SetRow::Lang | SetRow::SfxPack | SetRow::MusicPack => {}
                 }
             }
             None => {}
@@ -8018,7 +8056,38 @@ impl Game {
         self.audio.play(audio::AudioCue::UiConfirm);
     }
 
-    /// 设置行的值文本（音量百分比 / 静音开关 / 语言名）。
+    /// 可用音效包选项：`(值, 显示名)`。首项为“内置”。
+    fn sfx_pack_options(&self) -> Vec<(String, String)> {
+        let mut v = vec![(audio_pack::PACK_BUILTIN.to_string(), i18n::t("内置").to_string())];
+        for p in &self.audio_packs {
+            if p.kind.has_sfx() {
+                v.push((p.id.clone(), p.display()));
+            }
+        }
+        v
+    }
+
+    /// 可用 BGM 包选项：`(值, 显示名)`。首项为“关闭”。
+    fn music_pack_options(&self) -> Vec<(String, String)> {
+        let mut v = vec![(audio_pack::PACK_OFF.to_string(), i18n::t("关闭").to_string())];
+        for p in &self.audio_packs {
+            if p.kind.has_bgm() {
+                v.push((p.id.clone(), p.display()));
+            }
+        }
+        v
+    }
+
+    /// 在选项列表中取当前值的显示名（未找到那么回退显示原 id）。
+    fn pack_label(options: &[(String, String)], cur: &str) -> String {
+        options
+            .iter()
+            .find(|(v, _)| v == cur)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_else(|| cur.to_string())
+    }
+
+    /// 设置行的值文本（音量百分比 / 静音开关 / 语言名 / 音频包名）。
     fn settings_value_text(&self, row: usize) -> String {
         match SETTINGS_ROWS.get(row).map(|r| r.0) {
             Some(SetRow::Master) => format!("{}%", (self.local_settings.master_volume * 100.0).round() as i32),
@@ -8032,6 +8101,12 @@ impl Game {
                 }
             }
             Some(SetRow::Lang) => i18n::t(self.lang_pref().display()).to_string(),
+            Some(SetRow::SfxPack) => {
+                Self::pack_label(&self.sfx_pack_options(), &self.local_settings.sfx_pack)
+            }
+            Some(SetRow::MusicPack) => {
+                Self::pack_label(&self.music_pack_options(), &self.local_settings.music_pack)
+            }
             None => String::new(),
         }
     }

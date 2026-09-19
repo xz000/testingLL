@@ -1,0 +1,362 @@
+//! 外部音频包（音效 / BGM）发现与解析：**纯 `std`，不依赖 ggez / Steam，可单测**。
+//!
+//! 设计约定（见 `AUDIO_PLAN.md` §7）：
+//! - 一个「音频包」= 一个目录，内含 `sfx/<cue>.<ext>`（音效）与/或 `bgm/<scene>.<ext>`（BGM）。
+//! - 可选清单 `circle_brawl_pack.ini`（`name/author/version/type/description`）；缺失则按目录布局推断类型。
+//! - **音效包整包覆盖**（单槽）；**BGM 单包内含分场景**（场景：`menu/lobby/battle/result`）。
+//! - 选择在 `LocalSettings`（`sfx_pack` / `music_pack`），值 = `builtin` / `off` / 包 id。
+//!
+//! 目录来源：
+//! - 本地：`%APPDATA%/warlock_brawl/audio/<id>/`（玩家手动放，**不依赖 Steam**）
+//! - 创意工坊：`<Steam>/steamapps/workshop/content/908660/<id>/`（A1 阶段接入）
+
+use std::path::{Path, PathBuf};
+
+/// 包清单文件名。
+pub const MANIFEST_NAME: &str = "circle_brawl_pack.ini";
+/// 音效扩展名搜索优先级（WAV 优先，见 `AUDIO_PLAN.md` §7.2）。
+pub const SFX_EXTS: &[&str] = &["wav", "ogg", "flac", "mp3"];
+/// BGM 扩展名搜索优先级（Ogg Vorbis 优先，无缝循环）。
+pub const BGM_EXTS: &[&str] = &["ogg", "flac", "wav", "mp3"];
+
+/// 选择值：跟随内置占位素材。
+pub const PACK_BUILTIN: &str = "builtin";
+/// 选择值：关闭该路音频（BGM 常用）。
+pub const PACK_OFF: &str = "off";
+
+/// 包类型。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PackKind {
+    Sound,
+    Music,
+    Both,
+}
+
+impl PackKind {
+    pub fn has_sfx(self) -> bool {
+        matches!(self, PackKind::Sound | PackKind::Both)
+    }
+
+    pub fn has_bgm(self) -> bool {
+        matches!(self, PackKind::Music | PackKind::Both)
+    }
+}
+
+/// BGM 场景（单 BGM 包内按此命名文件）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MusicScene {
+    Menu,
+    Lobby,
+    Battle,
+    Result,
+}
+
+impl MusicScene {
+    /// 文件名（无扩展名）。
+    pub fn key(self) -> &'static str {
+        match self {
+            MusicScene::Menu => "menu",
+            MusicScene::Lobby => "lobby",
+            MusicScene::Battle => "battle",
+            MusicScene::Result => "result",
+        }
+    }
+}
+
+/// 由顶层状态推导当前 BGM 场景（纯函数，便于单测）。
+///
+/// - 主菜单（含其上的设置界面）→ [`MusicScene::Menu`]
+/// - 对局已结束（`MatchPhase::Finished`）→ [`MusicScene::Result`]
+/// - 开局配置期（尚未开始第一轮 / 首次商店）→ [`MusicScene::Lobby`]
+/// - 其余（对局进行中、轮间商店）→ [`MusicScene::Battle`]
+pub fn scene_for(is_menu: bool, pre_game_config: bool, finished: bool) -> MusicScene {
+    if is_menu {
+        MusicScene::Menu
+    } else if finished {
+        MusicScene::Result
+    } else if pre_game_config {
+        MusicScene::Lobby
+    } else {
+        MusicScene::Battle
+    }
+}
+
+/// 一个已发现的音频包。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pack {
+    /// 稳定 id（目录名；创意工坊即 PublishedFileId）。
+    pub id: String,
+    pub root: PathBuf,
+    pub name: String,
+    pub author: String,
+    pub version: String,
+    pub kind: PackKind,
+}
+
+impl Pack {
+    /// UI 显示名：`名称 (作者)`，无作者则只显示名称。
+    pub fn display(&self) -> String {
+        if self.author.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{} ({})", self.name, self.author)
+        }
+    }
+}
+
+/// 清单位（解析结果；缺失项为默认空串 / `None` 类型）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Manifest {
+    pub name: String,
+    pub author: String,
+    pub version: String,
+    pub kind: Option<PackKind>,
+    pub description: String,
+}
+
+/// 解析清单文本（宽松）：`key=value` 行，`#`/`;` 注释，未知键忽略，大小写不敏感。
+pub fn parse_manifest(text: &str) -> Manifest {
+    let mut m = Manifest::default();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let k = k.trim().to_ascii_lowercase();
+        let v = v.trim().to_string();
+        match k.as_str() {
+            "name" => m.name = v,
+            "author" => m.author = v,
+            "version" => m.version = v,
+            "description" => m.description = v,
+            "type" | "kind" => {
+                m.kind = match v.to_ascii_lowercase().as_str() {
+                    "sound" | "sfx" => Some(PackKind::Sound),
+                    "music" | "bgm" => Some(PackKind::Music),
+                    "both" | "audio" => Some(PackKind::Both),
+                    _ => None,
+                }
+            }
+            _ => {}
+        }
+    }
+    m
+}
+
+/// 该目录下是否存在子目录 `name`。
+fn has_subdir(root: &Path, name: &str) -> bool {
+    root.join(name).is_dir()
+}
+
+/// 在 `root/<subdir>/<stem>.<ext>` 中按 `exts` 顺序找第一个存在的文件。
+pub fn resolve(root: &Path, subdir: &str, stem: &str, exts: &[&str]) -> Option<PathBuf> {
+    for ext in exts {
+        let p = root.join(subdir).join(format!("{stem}.{ext}"));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// 解析某包内的音效文件（`<root>/sfx/<stem>.<ext>`，WAV 优先）。
+pub fn resolve_sfx(root: &Path, stem: &str) -> Option<PathBuf> {
+    resolve(root, "sfx", stem, SFX_EXTS)
+}
+
+/// 解析某包内的 BGM 文件（`<root>/bgm/<scene>.<ext>`，Ogg Vorbis 优先）。
+pub fn resolve_bgm(root: &Path, scene: MusicScene) -> Option<PathBuf> {
+    resolve(root, "bgm", scene.key(), BGM_EXTS)
+}
+
+/// 扫描一个根目录下的所有子目录，识别为音频包。
+///
+/// 规则：
+/// - 只认**含 `sfx/` 或 `bgm/` 子目录**的目录（无音频内容则跳过，避免误把杂物当包）。
+/// - 类型优先取清单 `type`；否则按目录布局推断（有 sfx+有 bgm → `Both`）。
+/// - 清单缺失/损坏 → 用目录名当显示名。
+pub fn discover_root(root: &Path, out: &mut Vec<Pack>) {
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return;
+    };
+    let mut entries: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    entries.sort(); // 稳定顺序（UI 列表可预期）
+    for dir in entries {
+        let has_sfx = has_subdir(&dir, "sfx");
+        let has_bgm = has_subdir(&dir, "bgm");
+        if !has_sfx && !has_bgm {
+            continue;
+        }
+        let manifest = std::fs::read_to_string(dir.join(MANIFEST_NAME))
+            .map(|t| parse_manifest(&t))
+            .unwrap_or_default();
+        let inferred = match (has_sfx, has_bgm) {
+            (true, true) => PackKind::Both,
+            (false, true) => PackKind::Music,
+            _ => PackKind::Sound,
+        };
+        let kind = manifest.kind.unwrap_or(inferred);
+        let id = dir
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "?".to_string());
+        let name = if manifest.name.is_empty() { id.clone() } else { manifest.name };
+        out.push(Pack {
+            id,
+            root: dir,
+            name,
+            author: manifest.author,
+            version: manifest.version,
+            kind,
+        });
+    }
+}
+
+/// 扫描多个根目录（后者可为空/不存在，静默跳过）。同名 id 以**先出现的根**为准（本地优先）。
+pub fn discover(roots: &[PathBuf]) -> Vec<Pack> {
+    let mut out = Vec::new();
+    for root in roots {
+        discover_root(root, &mut out);
+    }
+    // 去重：同 id 只保留第一个（本地根在前 → 本地覆盖工坊）。
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|p| seen.insert(p.id.clone()));
+    out
+}
+
+/// 本地音频包根目录：`%APPDATA%/warlock_brawl/audio`（取不到 APPDATA 则退回当前目录）。
+pub fn local_root() -> PathBuf {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        PathBuf::from(appdata).join("warlock_brawl").join("audio")
+    } else {
+        PathBuf::from("audio")
+    }
+}
+
+/// A0 阶段的根目录：仅本地。A1 会追加创意工坊目录。
+pub fn default_roots() -> Vec<PathBuf> {
+    vec![local_root()]
+}
+
+/// 按 id 找包。
+pub fn find<'a>(packs: &'a [Pack], id: &str) -> Option<&'a Pack> {
+    packs.iter().find(|p| p.id == id)
+}
+
+/// 在选项 id 列表中循环移动（找不到当前项时从头算）。空列表返回 `cur`。
+pub fn cycle_id(ids: &[String], cur: &str, delta: i32) -> String {
+    if ids.is_empty() {
+        return cur.to_string();
+    }
+    let idx = ids.iter().position(|v| v == cur).unwrap_or(0) as i32;
+    let n = ids.len() as i32;
+    let ni = (idx + delta).rem_euclid(n);
+    ids[ni as usize].clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_root(tag: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("cb_audio_test_{}_{}", std::process::id(), tag));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn write(path: &Path, bytes: &[u8]) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn parse_manifest_reads_fields_and_kind() {
+        let m = parse_manifest("# c\nname=Neon\nauthor=Alice\nversion=2\ntype=both\ndescription=x\ny=z\n");
+        assert_eq!(m.name, "Neon");
+        assert_eq!(m.author, "Alice");
+        assert_eq!(m.version, "2");
+        assert_eq!(m.kind, Some(PackKind::Both));
+        assert_eq!(m.description, "x");
+        // 宽松：未知键忽略、非法 type → None
+        assert_eq!(parse_manifest("junk\ntype=weird\n").kind, None);
+    }
+
+    #[test]
+    fn discover_infers_kind_and_skips_empty_dirs() {
+        let root = tmp_root("discover");
+        let a = root.join("PackA");
+        write(&a.join("sfx/ui_confirm.wav"), b"x");
+        let b = root.join("PackB");
+        write(&b.join("bgm/battle.ogg"), b"x");
+        write(&b.join(MANIFEST_NAME), b"name=MusicPack\ntype=music\n");
+        let c = root.join("Junk");
+        std::fs::create_dir_all(&c).unwrap(); // 无音频子目录 → 跳过
+
+        let packs = discover(&[root.clone()]);
+        assert_eq!(packs.len(), 2, "只应识别含音频的两包");
+        let pa = find(&packs, "PackA").unwrap();
+        assert_eq!(pa.kind, PackKind::Sound, "有 sfx 推断为音效包");
+        assert_eq!(pa.name, "PackA", "无清单用目录名");
+        let pb = find(&packs, "PackB").unwrap();
+        assert_eq!(pb.kind, PackKind::Music);
+        assert_eq!(pb.name, "MusicPack");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_prefers_wav_for_sfx_and_ogg_for_bgm() {
+        let root = tmp_root("resolve");
+        let pack = root.join("P");
+        write(&pack.join("sfx/combat_hit.ogg"), b"x");
+        write(&pack.join("sfx/combat_hit.wav"), b"x");
+        write(&pack.join("bgm/battle.wav"), b"x");
+        write(&pack.join("bgm/battle.ogg"), b"x");
+        assert!(resolve_sfx(&pack, "combat_hit").unwrap().ends_with("combat_hit.wav"));
+        assert!(resolve_bgm(&pack, MusicScene::Battle).unwrap().ends_with("battle.ogg"));
+        assert!(resolve_sfx(&pack, "missing").is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn later_roots_do_not_override_earlier_same_id() {
+        let local = tmp_root("local");
+        let ws = tmp_root("ws");
+        write(&local.join("Same/sfx/ui_move.wav"), b"x");
+        write(&ws.join("Same/sfx/ui_move.wav"), b"x");
+        let packs = discover(&[local.clone(), ws.clone()]);
+        assert_eq!(packs.len(), 1, "同 id 去重");
+        assert!(packs[0].root.starts_with(&local), "本地根优先");
+        let _ = std::fs::remove_dir_all(&local);
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn scene_for_maps_states() {
+        use MusicScene::*;
+        assert_eq!(scene_for(true, false, false), Menu, "主菜单 → menu");
+        assert_eq!(scene_for(true, true, false), Menu, "主菜单优先");
+        assert_eq!(scene_for(false, false, true), Result, "结束 → result");
+        assert_eq!(scene_for(false, true, false), Lobby, "开局配置 → lobby");
+        assert_eq!(scene_for(false, false, false), Battle, "对局中 → battle");
+        assert_eq!(scene_for(false, true, true), Result, "结束优先于配置");
+    }
+
+    #[test]
+    fn cycle_id_wraps_and_handles_unknown() {
+        let ids = vec!["builtin".to_string(), "A".to_string(), "B".to_string()];
+        assert_eq!(cycle_id(&ids, "builtin", 1), "A");
+        assert_eq!(cycle_id(&ids, "B", 1), "builtin", "环绕");
+        assert_eq!(cycle_id(&ids, "builtin", -1), "B", "反向环绕");
+        assert_eq!(cycle_id(&ids, "gone", 1), "A", "未知当前值 → 从下一个算");
+        assert_eq!(cycle_id(&[], "x", 1), "x", "空列表保持原值");
+    }
+}

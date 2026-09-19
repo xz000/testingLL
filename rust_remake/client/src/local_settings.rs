@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::i18n::LangPref;
 
 /// 本地设置。音量内部用 `0.0..=1.0`（UI 展示为 0–100）。
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LocalSettings {
     pub master_volume: f32,
     pub sfx_volume: f32,
@@ -16,6 +16,10 @@ pub struct LocalSettings {
     pub muted: bool,
     /// 语言偏好：`Auto`（跟随 Steam）默认；也可手动固定为某语言。
     pub lang: LangPref,
+    /// 音效包选择：`builtin`（内置占位素材）或包 id（整包覆盖）。见 `audio_pack.rs`。
+    pub sfx_pack: String,
+    /// BGM 包选择：`off`（关闭）/ `builtin` / 包 id（单包内含分场景）。
+    pub music_pack: String,
 }
 
 impl Default for LocalSettings {
@@ -26,6 +30,8 @@ impl Default for LocalSettings {
             music_volume: 1.0,
             muted: false,
             lang: LangPref::Auto,
+            sfx_pack: "builtin".to_string(),
+            music_pack: "off".to_string(),
         }
     }
 }
@@ -99,6 +105,8 @@ pub fn parse(text: &str) -> LocalSettings {
             "lang" => {
                 s.lang = LangPref::from_code(v);
             }
+            "sfx_pack" => s.sfx_pack = v.to_string(),
+            "music_pack" => s.music_pack = v.to_string(),
             _ => {}
         }
     }
@@ -108,12 +116,14 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
         if s.muted { 1 } else { 0 },
-        s.lang.code()
+        s.lang.code(),
+        s.sfx_pack,
+        s.music_pack
     )
 }
 
@@ -164,6 +174,8 @@ mod tests {
             music_volume: 0.0,
             muted: true,
             lang: LangPref::Fixed(crate::i18n::Lang::En),
+            sfx_pack: "MyPack".to_string(),
+            music_pack: "BigMusic".to_string(),
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);

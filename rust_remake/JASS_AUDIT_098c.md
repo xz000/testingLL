@@ -1033,3 +1033,6 @@ endfunction
 
 - 我方 `gold_per_round`（默认 10）；`-no reward` **不改**它（18609 只改 `Mo/po/lo`）。
 - 因此“回合结算”实际 = 参与者个个 `+qo` + 最高伤害者额外 `+po`。
+
+**已知差异（推迟，先记录）**：098c 会聊天播报 `"<玩家> has dealt the most damage in this round (N)."`（5376），
+我方**尚未发**这条文字（HUD/日志待做）。
