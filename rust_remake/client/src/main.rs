@@ -241,11 +241,13 @@ const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
 
-/// 学习页里被**系统固定占用**的字符（固定键优先）：页签 `j/k/l`、数字选行、商店分类 `b/n/m`。
-/// 若玩家把可改键改到这些字符上，**学习页固定键会优先**（选树会跳过该字符），
+/// 学习页里**系统固定占用**的字符（页签 `j/k/l`、数字选行）。
+/// 若玩家把技能键改到这些字符上，**学习页固定键会优先**（选树会跳过该字符），
 /// 因此绑定时会给出一条明确提醒（见 `keybinds_update`），而不是默不作声。
+/// 注：`b/n/m` 已不再是“固定键”，而是 **学习期动作的默认绑定**（形态切换 / 商店三类）；
+/// 它们与技能键的重叠由 `learn_key_taken` 动态判断。
 const LEARN_RESERVED: &[char] =
-    &['j', 'k', 'l', 'b', 'n', 'm', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    &['j', 'k', 'l', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 /// 联网多局：学习阶段结束后、进入下一局前的“配置同步”阶段。
 #[derive(Clone, Copy, PartialEq)]
@@ -1878,10 +1880,10 @@ impl Game {
             return;
         }
 
-        // 字母键：选中技能树（**跟随自定义技能键**；与学习页固定键冲突时固定键优先 → 跳过）
+        // 字母键：选中技能树（**跟随自定义技能键**；与学习页固定键/学习期动作重叠时跳过 → 固定/动作优先）
         for key in game_core::skill::CastKey::ALL {
             let letter = self.local_settings.skill_key(key.as_u32() as usize);
-            if LEARN_RESERVED.contains(&letter) {
+            if self.learn_key_taken(letter) {
                 continue;
             }
             if Self::char_just(ctx, &letter.to_string()) {
@@ -1916,9 +1918,9 @@ impl Game {
             self.buy_or_upgrade_selected();
         }
 
-        // 形态切换（098c sC，B4/D13 #7）：B 键 = 把「当前选中」技能切到另一形态（免费、配置期）。
+        // 形态切换（098c sC，B4/D13 #7）：默认 `B`（可在「按键设置」改）= 把「当前选中」技能切到另一形态。
         // 跟随数字键选中的技能（learn_skill_index），不再只看已绑定技能——这样选中但未购买的技能也能切形态。
-        if Self::char_just(ctx, "b") {
+        if self.bind_just(ctx, local_settings::BindAction::FormSwitch) {
             if let Some(key) = learn_key {
                 if let Some(i) = self.learn_skill_index {
                     if let Some(&skill) = key.tree().skills_in_tree().get(i) {
@@ -2127,17 +2129,13 @@ impl Game {
         }
         let me = self.self_index();
 
-        // B/N/M：切换三大类（§3），切换时重置滚动。
-        if Self::char_just(ctx, "b") || Self::char_just(ctx, "n") || Self::char_just(ctx, "m") {
-            self.shop_category = if Self::char_just(ctx, "b") {
-                0
-            } else if Self::char_just(ctx, "n") {
-                1
-            } else {
-                2
-            };
-            self.shop_scroll = 0;
-            self.learn_shop_sel = None; // 换分类后原选中可能已不在列表里
+        // B/N/M（默认，可在「按键设置」改）：切换三大类（§3），切换时重置滚动。
+        for i in 0..3usize {
+            if self.bind_just(ctx, local_settings::BindAction::ShopCat(i)) {
+                self.shop_category = i as u8;
+                self.shop_scroll = 0;
+                self.learn_shop_sel = None; // 换分类后原选中可能已不在列表里
+            }
         }
 
         // 行列表（买 + 卖两区）——与绘制共用 `shop_rows`。
@@ -4883,9 +4881,17 @@ impl Game {
                 // 底部快捷键提示（面板之外，避免与商店滚动指示重叠）：**按当前页给出**，
                 // 否则在商店/成长页会显示技能页的键，造成误导。键位跟随自定义绑定。
                 let (hi, si) = (self.confirm_hint(), self.sell_hint());
+                let form = self.local_settings.bind_key(local_settings::BindAction::FormSwitch).label();
+                let cats = self
+                    .local_settings
+                    .key_shop_cat
+                    .iter()
+                    .map(|k| k.label())
+                    .collect::<Vec<_>>()
+                    .join("/");
                 let hint = match self.learn_page {
-                    0 => format!("字母选树 · 数字选技能看详情 · {hi} 购买/升级/乔丹突破 · B 切形态 · J/K/L 翻页"),
-                    1 => format!("B/N/M 选分类 · 数字选中 · {hi} 购买/升级 · {si} 卖出 · 滚轮/↑↓ 滚动 · J/K/L 翻页"),
+                    0 => format!("字母选树 · 数字选技能看详情 · {hi} 购买/升级/乔丹突破 · {form} 切形态 · J/K/L 翻页"),
+                    1 => format!("{cats} 选分类 · 数字选中 · {hi} 购买/升级 · {si} 卖出 · 滚轮/↑↓ 滚动 · J/K/L 翻页"),
                     _ => format!("数字选精通 · {hi} 购买 · J/K/L 翻页（技能上限突破在「技能」页）"),
                 };
                 ui::text_center(
@@ -8556,6 +8562,71 @@ impl Game {
         )
     }
 
+    /// 该字符在学习页是否已被它用（页签 `J/K/L`、数字、或学习期动作的当前绑定）。
+    fn learn_key_taken(&self, c: char) -> bool {
+        self.learn_key_taken_excluding(None, c)
+    }
+
+    /// 同上，但忽略某个动作**自己**（用于改键时的自我判定，避免“绑回默认键也报警”）。
+    fn learn_key_taken_excluding(&self, me: Option<local_settings::BindAction>, c: char) -> bool {
+        use local_settings::{BindKey, BindScope};
+        if LEARN_RESERVED.contains(&c) {
+            return true;
+        }
+        let is_learn = |s: BindScope| {
+            matches!(s, BindScope::Learn | BindScope::LearnSkill | BindScope::LearnShop)
+        };
+        local_settings::BIND_ACTIONS.iter().any(|b| {
+            Some(*b) != me
+                && is_learn(b.scope())
+                && self.local_settings.bind_key(*b) == BindKey::Char(c)
+        })
+    }
+
+    /// 键位导出文件路径（与云端 `keybinds.txt` 同格式，便于分享/备份）。
+    fn keybinds_export_path(&self) -> std::path::PathBuf {
+        self.local_settings_path.with_file_name("keybinds.txt")
+    }
+
+    /// 导出当前键位到 `keybinds.txt`（仅键位，不含音量/包选择）。
+    fn export_keybinds(&self) -> Result<std::path::PathBuf, String> {
+        let path = self.keybinds_export_path();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        std::fs::write(&path, self.keybinds_payload()).map_err(|e| e.to_string())?;
+        Ok(path)
+    }
+
+    /// 从 `keybinds.txt` 导入键位（仅键位字段），返回实际变更的动作数。
+    fn import_keybinds(&mut self) -> Result<usize, String> {
+        let path = self.keybinds_export_path();
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let parsed = local_settings::parse(&text);
+        let before: Vec<local_settings::BindKey> = local_settings::BIND_ACTIONS
+            .iter()
+            .map(|a| self.local_settings.bind_key(*a))
+            .collect();
+        self.local_settings.skill_keys = parsed.skill_keys;
+        self.local_settings.key_stop = parsed.key_stop;
+        self.local_settings.key_cam_center = parsed.key_cam_center;
+        self.local_settings.key_cam_self = parsed.key_cam_self;
+        self.local_settings.key_cam_follow = parsed.key_cam_follow;
+        self.local_settings.key_buy = parsed.key_buy;
+        self.local_settings.key_sell = parsed.key_sell;
+        self.local_settings.key_mute = parsed.key_mute;
+        self.local_settings.key_form_switch = parsed.key_form_switch;
+        self.local_settings.key_shop_cat = parsed.key_shop_cat;
+        local_settings::save(&self.local_settings_path, &self.local_settings);
+        self.upload_keybinds();
+        let changed = local_settings::BIND_ACTIONS
+            .iter()
+            .zip(before)
+            .filter(|(a, old)| self.local_settings.bind_key(**a) != *old)
+            .count();
+        Ok(changed)
+    }
+
     /// 键位云端同步文件名。
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
     const KEYBINDS_CLOUD_FILE: &str = "keybinds.txt";
@@ -8571,14 +8642,16 @@ impl Game {
             .collect::<Vec<_>>()
             .join(",");
         format!(
-            "skill_keys={keys}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\n",
+            "skill_keys={keys}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_form_switch={}\nkey_shop_cat={}\n",
             self.local_settings.key_stop.code(),
             self.local_settings.key_cam_center.code(),
             self.local_settings.key_cam_self.code(),
             self.local_settings.key_cam_follow.code(),
             self.local_settings.key_buy.code(),
             self.local_settings.key_sell.code(),
-            self.local_settings.key_mute.code()
+            self.local_settings.key_mute.code(),
+            self.local_settings.key_form_switch.code(),
+            self.local_settings.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
         )
     }
 
@@ -8626,6 +8699,8 @@ impl Game {
         self.local_settings.key_buy = parsed.key_buy;
         self.local_settings.key_sell = parsed.key_sell;
         self.local_settings.key_mute = parsed.key_mute;
+        self.local_settings.key_form_switch = parsed.key_form_switch;
+        self.local_settings.key_shop_cat = parsed.key_shop_cat;
         local_settings::save(&self.local_settings_path, &self.local_settings);
         eprintln!("[keybinds] applied cloud keybinds (cloud={cloud_ts} > local={local_ts})");
     }
@@ -8900,7 +8975,14 @@ impl Game {
                 None => i18n::t("跟随场景").to_string(),
             },
             Some(SetRow::GenerateExample) => i18n::t("[生成]").to_string(),
-            Some(SetRow::Keybinds) => i18n::t("[改键]").to_string(),
+            Some(SetRow::Keybinds) => {
+                let n = self.local_settings.non_default_binds();
+                if n == 0 {
+                    i18n::t("默认").to_string()
+                } else {
+                    i18n::tf("已自定义 {n} 项", &[("n", n.to_string())])
+                }
+            }
             None => String::new(),
         }
     }
@@ -9081,6 +9163,8 @@ impl Game {
             CamFollow => i18n::t("镜头跟随开关").to_string(),
             Buy => i18n::t("购买 / 升级").to_string(),
             Sell => i18n::t("卖出 / 取消").to_string(),
+            FormSwitch => i18n::t("切换技能形态").to_string(),
+            ShopCat(i) => i18n::tf("商店分类 {n}", &[("n", (i + 1).to_string())]),
             Mute => i18n::t("静音").to_string(),
         }
     }
@@ -9120,9 +9204,15 @@ impl Game {
                         "已改：{name} → {key}",
                         &[("name", name), ("key", k.label())],
                     );
-                    // Q1-b：可改键落在学习页固定键上 → 固定键优先，**必须明示**（不能沉默）。
+                    // Q1-b：可改键落在学习页已用字符上 → 固定键/学习期动作优先，**必须明示**（不能沉默）。
                     if let local_settings::BindKey::Char(c) = k {
-                        if LEARN_RESERVED.contains(&c) {
+                        let taken = if action.char_only() {
+                            // 技能键还要避开学习期动作的绑定（如默认的 `b/n/m`）
+                            self.learn_key_taken_excluding(Some(action), c)
+                        } else {
+                            LEARN_RESERVED.contains(&c)
+                        };
+                        if taken {
                             msg.push_str(i18n::t("（注意：学习页该键已作它用）"));
                         }
                     }
@@ -9156,6 +9246,23 @@ impl Game {
             self.audio.play(audio::AudioCue::UiConfirm);
             return;
         }
+        // E：导出键位到文件（便于备份/分享）；I：从该文件导入。
+        if Self::char_just(ctx, "e") {
+            self.keybinds_msg = match self.export_keybinds() {
+                Ok(p) => i18n::tf("已导出键位：{path}", &[("path", p.display().to_string())]),
+                Err(e) => i18n::tf("导出失败：{err}", &[("err", e)]),
+            };
+            self.audio.play(audio::AudioCue::UiConfirm);
+            return;
+        }
+        if Self::char_just(ctx, "i") {
+            self.keybinds_msg = match self.import_keybinds() {
+                Ok(n) => i18n::tf("已导入键位（{n} 项已变）", &[("n", n.to_string())]),
+                Err(e) => i18n::tf("导入失败：{err}", &[("err", e)]),
+            };
+            self.audio.play(audio::AudioCue::UiConfirm);
+            return;
+        }
         if pressed(NamedKey::Enter) {
             self.keybinds_capture = true;
             self.keybinds_msg.clear();
@@ -9172,9 +9279,24 @@ impl Game {
         ui::text_center(
             &mut canvas, ctx, i18n::t("按键设置"), 34.0, ui::theme::accent(), cx, sh * 0.1,
         )?;
-        let panel = layout::centered_panel(sw, sh, 0.7, 0.86);
+        let n_custom = self.local_settings.non_default_binds();
+        let overview = if n_custom == 0 {
+            i18n::t("全部为默认").to_string()
+        } else {
+            i18n::tf(
+                "已自定义 {n} / {total} 项",
+                &[
+                    ("n", n_custom.to_string()),
+                    ("total", local_settings::BIND_ACTIONS.len().to_string()),
+                ],
+            )
+        };
+        ui::text_center(
+            &mut canvas, ctx, &overview, ui::theme::SMALL, ui::theme::text_dim(), cx, sh * 0.155,
+        )?;
+        let panel = layout::centered_panel(sw, sh, 0.72, 0.94);
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
-        let content = graphics::Rect::new(px + 24.0, py + 16.0, pw - 48.0, ph - 96.0);
+        let content = graphics::Rect::new(px + 24.0, py + 14.0, pw - 48.0, ph - 92.0);
         let rows = keybind_rows();
         let sel_row = keybind_sel_to_row(self.keybinds_sel);
         for (i, row) in rows.iter().enumerate() {
@@ -9183,7 +9305,7 @@ impl Game {
                 KeybindRow::Header(title) => {
                     ui::text_left(
                         &mut canvas, ctx, i18n::t(title), ui::theme::SMALL, ui::theme::accent(),
-                        r.x + 6.0, r.y + 8.0,
+                        r.x + 6.0, r.y + 4.0,
                     )?;
                 }
                 KeybindRow::Action(a) => {
@@ -9191,15 +9313,15 @@ impl Game {
                     ui::paint_row(&mut canvas, ctx, r, sel, false)?;
                     let col = if sel { ui::theme::accent() } else { ui::theme::text() };
                     ui::text_left(
-                        &mut canvas, ctx, &Self::bind_action_label(*a), ui::theme::BODY, col,
-                        r.x + 26.0, r.y + 7.0,
+                        &mut canvas, ctx, &Self::bind_action_label(*a), ui::theme::SMALL, col,
+                        r.x + 26.0, r.y + 4.0,
                     )?;
                     let right = if sel && self.keybinds_capture {
                         i18n::t("按新键…").to_string()
                     } else {
                         self.bind_action_value(*a)
                     };
-                    ui::text_right(&mut canvas, ctx, &right, ui::theme::BODY, col, r.x + r.w - 14.0, r.y + 7.0)?;
+                    ui::text_right(&mut canvas, ctx, &right, ui::theme::SMALL, col, r.x + r.w - 14.0, r.y + 4.0)?;
                 }
             }
         }
@@ -9217,7 +9339,7 @@ impl Game {
         )?;
         ui::text_center(
             &mut canvas, ctx,
-            i18n::t("↑/↓ 选择 · 回车 改键 · R 恢复默认 · Esc/Q 返回"),
+            i18n::t("↑/↓ 选择 · 回车 改键 · R 恢复默认 · E 导出 · I 导入 · Esc/Q 返回"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 18.0,
         )?;
         canvas.finish(ctx)?;
@@ -9951,7 +10073,9 @@ fn keybind_group_title(a: local_settings::BindAction) -> &'static str {
     match a {
         Skill(_) => "战斗 · 技能",
         Stop | CamCenter | CamSelf | CamFollow => "战斗 · 镜头与停止",
-        Buy | Sell => "商店",
+        Buy | Sell => "学习期 · 通用",
+        FormSwitch => "学习期 · 技能页",
+        ShopCat(_) => "学习期 · 商店页",
         Mute => "系统",
     }
 }
@@ -10703,9 +10827,9 @@ mod tests {
             })
             .collect();
         assert_eq!(actions, local_settings::BIND_ACTIONS.to_vec(), "每个可绑动作都应出现且顺序一致");
-        assert_eq!(actions.len(), 15, "（8 技能 + 停止 + 3 镜头 + 买 + 卖 + 静音）");
+        assert_eq!(actions.len(), 19, "（8 技能 + 停止 + 3 镜头 + 买 + 卖 + 形态 + 商店 3 类 + 静音）");
         let headers = rows.iter().filter(|r| matches!(r, KeybindRow::Header(_))).count();
-        assert_eq!(headers, 4, "应有 4 个分组标题");
+        assert_eq!(headers, 6, "应有 6 个分组标题");
         // 选择下标 ↔ 显示行号一致，导航不会错位。
         for (i, a) in local_settings::BIND_ACTIONS.iter().enumerate() {
             assert_eq!(rows[keybind_sel_to_row(i)], KeybindRow::Action(*a), "选择 {i} 应指向 {a:?}");

@@ -193,7 +193,7 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "space", action: "镜头回场地中心（可改）" },
             Binding { key: "1", action: "镜头跳到自己（可改）" },
             Binding { key: "2", action: "镜头跟随自身开关（可改；缩放不解除，平移/回中心解除）" },
-            Binding { key: "设置→按键设置", action: "自定义 15 个动作键（技能/停止/镜头/买卖/静音）" },
+            Binding { key: "设置→按键设置", action: "自定义 19 个动作键（技能/停止/镜头/学习期/静音）" },
             Binding { key: "esc", action: "返回主菜单" },
         ],
         LearnConfig => &[
@@ -201,8 +201,12 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "k", action: "页签：商店" },
             Binding { key: "l", action: "页签：成长" },
             Binding { key: "tab", action: "循环页签" },
+            Binding { key: "1-9/0", action: "选行 / 选技能 / 选精通（固定）" },
+            Binding { key: "b/n/m", action: "形态切换 / 商店三大类（可改）" },
             Binding { key: "enter", action: "确认（购买/升级/突破/执行）" },
             Binding { key: "=", action: "确认（等价回车）" },
+            Binding { key: "退格", action: "卖出（可改）" },
+            Binding { key: "设置→按键设置", action: "自定义学习期动作键" },
             Binding { key: "esc", action: "返回" },
         ],
     }
@@ -489,14 +493,24 @@ mod source_scan_tests {
         );
     }
 
-    /// 回归：全局静音用 `F10`，**不能**用裸 `M`（`M` 是学习期商店的分类切换键 B/N/M）。
+    /// 回归：全局静音用 `F10`，**不能**用裸 `M`（`M` 是学习期商店的分类切换键）。
+    /// 学习期动作自 Tier 4 起改为可绑定（`ShopCat`），所以这里的“不冲突”用**默认值**断言，
+    /// 而不再扫源码字面量。
     #[test]
     fn mute_uses_f10_not_m() {
-        assert!(SRC.contains("NamedKey::F10"), "全局静音应绑定 F10");
-        assert!(
-            SRC.contains("char_just(ctx, \"m\")"),
-            "商店分类键 M 应保留（B/N/M），不得被静音占用"
+        use crate::local_settings::{BindKey, NamedBind, DEFAULT_KEY_MUTE, DEFAULT_KEY_SHOP_CAT};
+        assert!(SRC.contains("NamedKey::F10"), "全局静音默认应绑 F10（命名键映射）");
+        assert_eq!(
+            DEFAULT_KEY_MUTE,
+            BindKey::Named(NamedBind::F10),
+            "静音默认键应为 F10"
         );
+        assert_eq!(
+            DEFAULT_KEY_SHOP_CAT[2],
+            BindKey::Char('m'),
+            "商店第 3 类默认键应为 M（B/N/M），不得被静音占用"
+        );
+        assert_ne!(DEFAULT_KEY_MUTE, BindKey::Char('m'));
         // 设置界面应存在（主菜单入口）。
         assert!(SRC.contains("SETTINGS_ROWS"), "应有本机设置界面");
         assert!(SRC.contains("fn draw_settings"), "应绘制设置界面");

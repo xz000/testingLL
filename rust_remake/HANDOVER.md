@@ -189,6 +189,11 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
     - 改键 UI 分组显示 + 只读固定键说明；学习页固定键冲突改为**明示提醒**（Q1-b），不再静默或直接拒绝。
     - 购买/卖出/静音提示、设置页静音提示、学习页底部提示、对局底部视角提示**全部跟随当前绑定**。
     - 旧 `settings.txt` / 云端 `keybinds.txt` 向后兼容（缺行/空值 → 默认）。
+12. ✅ **改键 Tier 4+5（2026-09-20）**：学习页动作可改 + 键位导入导出/概览（见 `KEYBINDS_PLAN.md` §11）。
+    - 新增 4 个动作 → **19 个**：**切换技能形态**（默认 `B`）、**商店分类 1/2/3**（默认 `B`/`N`/`M`）。
+    - 作用域细化 `LearnSkill` / `LearnShop` → `B` 在技能页=切形态、商店页=第 1 类，**不同子域不冲突**。
+    - 学习页“固定键”收窄为 `J/K/L` + 数字；`B/N/M` 降为可改默认值；选树跳过规则改为动态 `learn_key_taken`。
+    - `E` 导出 / `I` 导入键位文件（`%APPDATA%/warlock_brawl/keybinds.txt`）；设置页显示 `已自定义 N 项`。
 
 ## 五、文档索引（读哪个）
 
