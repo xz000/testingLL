@@ -701,6 +701,8 @@ struct Game {
     cam: Point2<f32>,
     /// 中键拖拽平移时的上一帧鼠标位置（`None` = 未拖拽）。
     pan_drag: Option<Point2<f32>>,
+    /// 镜头跟随自身开关（`2` 切换；手动平移/回中心解除，缩放不解除）。
+    cam_follow: bool,
     /// 用户缩放倍数（1.0 = 基准缩放；滚轮调整，持久化；窗口 resize 不影响）。
     zoom: f32,
     /// 本帧累积的滚轮增量（对战阶段用于光标锚点缩放），`update_camera` 消费后清零。
@@ -1327,6 +1329,7 @@ impl Game {
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
             cam: Point2 { x: 0.0, y: 0.0 },
             pan_drag: None,
+            cam_follow: false,
             zoom: 1.0,
             wheel: 0.0,
             net_link,
@@ -1564,6 +1567,8 @@ impl Game {
             }
 
             let dt = ctx.time.delta().as_secs_f32().clamp(0.0, 0.1);
+            // 本帧是否发生「手动镜头操作」（平移/中键拖拽/回中心）→ 解除跟随（缩放不算）。
+            let mut manual = false;
             let mut dx = 0.0_f32;
             let mut dy = 0.0_f32;
             if ctx.keyboard.is_logical_key_pressed(&Key::Named(winit::keyboard::NamedKey::ArrowLeft)) {
@@ -1581,12 +1586,14 @@ impl Game {
             if dx != 0.0 || dy != 0.0 {
                 self.cam.x += dx * (sw / self.scale) * PAN_SPEED * dt;
                 self.cam.y += dy * (sh / self.scale) * PAN_SPEED * dt;
+                manual = true; // 手动平移 → 解除跟随
             }
 
             // 中键拖拽：世界随光标移动（保持光标下的世界点不动）
             let m = ui::mouse_design(ctx);
             if ctx.mouse.button_just_pressed(MouseButton::Middle) {
                 self.pan_drag = Some(m);
+                manual = true; // 中键拖拽 → 解除跟随
             }
             if ctx.mouse.button_just_released(MouseButton::Middle) {
                 self.pan_drag = None;
@@ -1603,6 +1610,7 @@ impl Game {
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Home))
             {
                 self.cam = Point2 { x: 0.0, y: 0.0 };
+                manual = true; // 回中心 → 解除跟随
             }
             // 镜头跳到自身：1（推荐，**仅 Fighting**，避免与学习/商店的数字选择冲突）/ End（别名）
             let to_self = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::End))
@@ -1623,6 +1631,23 @@ impl Game {
                 let k = max_r / r;
                 self.cam.x *= k;
                 self.cam.y *= k;
+            }
+
+            // 镜头跟随开关：`2`（`F1` 在学习页被占为 J/K/L 的别名，故改用 `2`）；
+            // 手动操作优先级高于开关（同一帧平移 → 直接解除，不被 `2` 重新打开）。
+            let was_follow = self.cam_follow;
+            self.cam_follow = next_cam_follow(self.cam_follow, Self::char_just(ctx, "2"), manual);
+            if self.cam_follow != was_follow {
+                eprintln!("[camera] 跟随自身 -> {}", self.cam_follow);
+            }
+            // 跟随自身：每帧把相机中心贴到自己身上（**缩放不解除**；平移/中键拖拽/回中心解除）。
+            if self.cam_follow {
+                if let Some(p) = self.world.players.get(self.self_index() as usize) {
+                    self.cam = Point2 {
+                        x: p.pos.x.to_num::<f32>(),
+                        y: p.pos.y.to_num::<f32>(),
+                    };
+                }
             }
         }
 
@@ -3475,14 +3500,15 @@ impl Game {
             self.draw_scoreboard(&mut canvas, ctx)?;
         }
 
-        // 视角平移提示（仅对战阶段显示）
+        // 视角提示（仅对战阶段显示）：跟随中时换成状态提示。
         if !self.pre_game_config {
             let (_, sh) = (ui::UI_W, ui::UI_H);
-            ui::text_left(
-                &mut canvas, ctx,
-                "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Space/Home 场地中心 · 1/End 跳到自己",
-                15.0, Color::from_rgb(150, 165, 185), 12.0, sh - 14.0,
-            )?;
+            let hint = if self.cam_follow {
+                "视角: 跟随自身中（按 2 解除 / 手动平移或回中心也会解除）· 滚轮缩放保持 · Space/Home 场地中心 · 1/End 跳到自己"
+            } else {
+                "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Space/Home 场地中心 · 1/End 跳到自己 · 2 跟随自身"
+            };
+            ui::text_left(&mut canvas, ctx, hint, 15.0, Color::from_rgb(150, 165, 185), 12.0, sh - 14.0)?;
         }
 
         canvas.finish(ctx)?;
@@ -9795,6 +9821,20 @@ fn health_delta_text(prev: f32, cur: f32) -> Option<String> {
     }
 }
 
+/// 镜头跟随状态推进（纯函数，便于单测）：
+/// - `manual` = 本帧有手动镜头操作（平移/中键拖拽/回中心），**优先**且一定解除；
+/// - 否则 `toggle` = 本帧按了跟随键 `2` → 翻转；
+/// - 滚轮缩放**不算**手动，不解除。
+fn next_cam_follow(cur: bool, toggle: bool, manual: bool) -> bool {
+    if manual {
+        false
+    } else if toggle {
+        !cur
+    } else {
+        cur
+    }
+}
+
 /// P4-1 就绪脉冲边沿：绑定同一技能、由「未就绪」变为「就绪」时才闪。纯函数，便于单测。
 fn ready_pulse_edge(prev_bound: Option<u32>, prev_ready: bool, bound: Option<u32>, ready: bool) -> bool {
     bound.is_some() && prev_bound == bound && ready && !prev_ready
@@ -10477,6 +10517,20 @@ mod tests {
     }
 
     /// P4-3：无状态时无图标；关键状态（招架就绪 / 燃烧）出现对应图标。
+    #[test]
+    fn next_cam_follow_toggle_and_manual_release() {
+        use super::next_cam_follow;
+        // 按跟随键 → 翻转
+        assert!(next_cam_follow(false, true, false));
+        assert!(!next_cam_follow(true, true, false));
+        // 无输入 → 保持
+        assert!(!next_cam_follow(false, false, false));
+        assert!(next_cam_follow(true, false, false));
+        // 手动操作优先：同一帧「平移 + 按键」也解除（不会被重新打开）
+        assert!(!next_cam_follow(true, true, true));
+        assert!(!next_cam_follow(false, false, true));
+    }
+
     #[test]
     fn active_status_icons_reflects_player_state() {
         use game_core::fix::{Fix64, Vec2};

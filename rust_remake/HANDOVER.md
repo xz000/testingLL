@@ -177,6 +177,10 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
     - **Steam Cloud 同步键位**：`ISteamRemoteStorage` 的 `keybinds.txt`（**只同步键位**）；启动取较新（云端新→覆盖本地），
       改动即上传；非 Steam 构建纯本地。需后台 Steam Cloud 启用。
     - 镜头键：`Space`=回中心 / `1`=跳到自己（`Home/End` 别名；`1` 仅 Fighting）。
+    - **镜头跟随自身（`2`）**：切换开启后相机每帧贴到自己身上；**滚轮缩放不解除**，
+      手动平移（方向键/中键拖拽）或回中心（`Space/Home`）即解除；底部提示会显示「跟随自身中」。
+      为什么不是 `F1`：`F1/F2/F3` 在学习页已是 `J/K/L`（技能/商店/成长）的别名，故改用 `2`（对战内空闲）。
+      纯函数 `next_cam_follow(cur, toggle, manual)` + 单测。
 
 ## 五、文档索引（读哪个）
 

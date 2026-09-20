@@ -213,7 +213,8 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "s", action: "停止移动 + 清空队列" },
             Binding { key: "space/home", action: "镜头回场地中心" },
             Binding { key: "1/end", action: "镜头跳到自己（1 仅对战中）" },
-            Binding { key: "设置→按键设置", action: "自定义 8 个技能键（默认 c/r/e/d/y/t/f/g）" },
+            Binding { key: "2", action: "镜头跟随自身开关（缩放不解除；平移/回中心解除）" },
+            Binding { key: "设置→按键设置", action: "自定义技能/买卖/静音键" },
             Binding { key: "esc", action: "返回主菜单" },
         ],
         LearnConfig => &[
