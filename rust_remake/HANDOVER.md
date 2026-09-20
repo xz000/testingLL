@@ -102,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 | `CONFIG_VERSION` | 15 |
 | UI 设计分辨率 | `UI_W=1280 / UI_H=720`（`ui::design_rect` 自适应） |
 | 房间设置串 | `MatchConfig::to_meta_string()`，单键 `room_cfg`（`ROOM_SETTINGS_KEY`） |
-| 测试基线 | client 87 / game-core 261 / net 39 / net-steam 9（合计 396）；steam client 94 |
+| 测试基线 | client 88 / game-core 261 / net 39 / net-steam 9（合计 397）；steam client 95 |
 
 ## 四、待办（按建议优先级）
 
@@ -167,6 +167,13 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
    S012A 撞敌自伤 + `xi>0` 的 `SI` AoE；凤凰弹门控改为只看 B 形态。协议 15→16。
    **招架击退**：量级（4.5→125）与**方向**（双方互相推开）已修正。
    **风步接触吸血已删除**（对齐 098c，其无此机制）→ 协议 16→17。
+10. ✅ **自定义键位 Tier 1（2026-09-19）**：8 个技能键可在「设置 → 按键设置」自定义。
+    - 存 `settings.txt` 的 `skill_keys=c,r,e,d,y,t,f,g`（下标 = `CastKey::as_u32`）；仅接受字母/数字；
+      同槽冲突拒绝并提示；`R` 恢复默认。
+    - **显示跟随**：HUD 槽字母、学习页 `[C] 火球` 都读当前绑定；**技能名/描述不含键**，无需改文案。
+    - **学习页固定键优先**：自定义键若落在 `j/k/l/数字/b/n/m/-`，学习页选树跳过它（不影响对战施法）。
+    - 镜头键已改 **`Space`=回中心 / `1`=跳到自己**（`Home/End` 保留别名；`1` 仅 Fighting）。
+    - **待做**：Tier 2（购买/卖出/静音）+ **Steam Cloud 同步键位**（`ISteamRemoteStorage`）。
 
 ## 五、文档索引（读哪个）
 

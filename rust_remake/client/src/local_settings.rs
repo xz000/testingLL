@@ -28,7 +28,12 @@ pub struct LocalSettings {
     pub published: Vec<(String, u64)>,
     /// 发布目标：`auto`（音效包优先，否则 BGM 包）或某个**本地**包 id。
     pub publish_pack: String,
+    /// 8 个技能槽的自定义按键（下标 = `CastKey::as_u32`，顺序 C/R/E/D/Y/T/F/G）。
+    pub skill_keys: [char; 8],
 }
+
+/// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
+pub const DEFAULT_SKILL_KEYS: [char; 8] = ['c', 'r', 'e', 'd', 'y', 't', 'f', 'g'];
 
 impl Default for LocalSettings {
     fn default() -> Self {
@@ -44,6 +49,7 @@ impl Default for LocalSettings {
             workshop_public: true,
             published: Vec::new(),
             publish_pack: "auto".to_string(),
+            skill_keys: DEFAULT_SKILL_KEYS,
         }
     }
 }
@@ -103,6 +109,34 @@ impl LocalSettings {
     pub fn clear_published(&mut self, pack_id: &str) {
         self.published.retain(|(k, _)| k != pack_id);
     }
+
+    /// 某槽当前绑定键。
+    pub fn skill_key(&self, idx: usize) -> char {
+        self.skill_keys.get(idx).copied().unwrap_or('?')
+    }
+
+    /// 设置某槽绑定键（归一为小写）。
+    pub fn set_skill_key(&mut self, idx: usize, ch: char) {
+        if idx < self.skill_keys.len() {
+            self.skill_keys[idx] = ch.to_ascii_lowercase();
+        }
+    }
+
+    /// 恢复全部技能键为默认。
+    pub fn reset_skill_keys(&mut self) {
+        self.skill_keys = DEFAULT_SKILL_KEYS;
+    }
+
+    /// 若 `ch` 已被**其它**技能槽占用，返回那个槽下标。
+    pub fn skill_key_conflict(&self, idx: usize, ch: char) -> Option<usize> {
+        let ch = ch.to_ascii_lowercase();
+        self.skill_keys.iter().enumerate().find(|(i, c)| *i != idx && **c == ch).map(|(i, _)| i)
+    }
+
+    /// 键位是否合法：仅单字符字母/数字。
+    pub fn valid_bind_char(ch: char) -> bool {
+        ch.is_ascii_alphanumeric()
+    }
 }
 
 /// 解析 `key=value` 文本；未知键 / 非法值忽略，缺失项用默认。
@@ -142,6 +176,16 @@ pub fn parse(text: &str) -> LocalSettings {
             "sfx_pack" => s.sfx_pack = v.to_string(),
             "music_pack" => s.music_pack = v.to_string(),
             "publish_pack" => s.publish_pack = v.to_string(),
+            "skill_keys" => {
+                let mut it = v.split(',').map(|t| t.trim());
+                for slot in s.skill_keys.iter_mut() {
+                    if let Some(t) = it.next() {
+                        if let Some(c) = t.chars().next().filter(|c| LocalSettings::valid_bind_char(*c)) {
+                            *slot = c.to_ascii_lowercase();
+                        }
+                    }
+                }
+            }
             "workshop_reuse" => {
                 s.workshop_reuse = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
             }
@@ -162,7 +206,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -172,7 +216,8 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.music_pack,
         if s.workshop_reuse { 1 } else { 0 },
         if s.workshop_public { 1 } else { 0 },
-        s.publish_pack
+        s.publish_pack,
+        s.skill_keys.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",")
     );
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -233,9 +278,35 @@ mod tests {
             workshop_public: false,
             published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],
             publish_pack: "MyPack".to_string(),
+            skill_keys: ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f'],
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn skill_keys_parse_validate_and_conflict() {
+        // 默认
+        let d = LocalSettings::default();
+        assert_eq!(d.skill_key(0), 'c');
+        assert_eq!(d.skill_key(7), 'g');
+        // 非法字符/缺项 → 保持默认对应槽
+        let s = parse("skill_keys=q,1,@,x\n");
+        assert_eq!(s.skill_key(0), 'q');
+        assert_eq!(s.skill_key(1), '1');
+        assert_eq!(s.skill_key(2), 'e', "非法字符 @ → 该槽保持默认");
+        assert_eq!(s.skill_key(3), 'x');
+        assert_eq!(s.skill_key(4), 'y', "缺项 → 默认");
+        // 冲突检测
+        let mut s = LocalSettings::default();
+        s.set_skill_key(0, 'k');
+        assert_eq!(s.skill_key_conflict(1, 'k'), Some(0));
+        assert_eq!(s.skill_key_conflict(0, 'k'), None, "自己不算冲突");
+        assert!(LocalSettings::valid_bind_char('a') && LocalSettings::valid_bind_char('7'));
+        assert!(!LocalSettings::valid_bind_char('@') && !LocalSettings::valid_bind_char(' '));
+        // 重置
+        s.reset_skill_keys();
+        assert_eq!(s.skill_keys, DEFAULT_SKILL_KEYS);
     }
 
     #[test]

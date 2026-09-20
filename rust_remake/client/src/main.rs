@@ -241,18 +241,10 @@ const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
 
-/// 学习阶段里，数字键 1..N 用于从“选中的树”选择/绑定技能。
-/// 这里定义 8 个键字母 → CastKey 的映射。
-const KEY_LETTERS: [(&str, game_core::skill::CastKey); 8] = [
-    ("c", game_core::skill::CastKey::C),
-    ("r", game_core::skill::CastKey::R),
-    ("e", game_core::skill::CastKey::E),
-    ("d", game_core::skill::CastKey::D),
-    ("y", game_core::skill::CastKey::Y),
-    ("t", game_core::skill::CastKey::T),
-    ("f", game_core::skill::CastKey::F),
-    ("g", game_core::skill::CastKey::G),
-];
+/// 学习页里被**系统固定占用**的字符（固定键优先）：页签 `j/k/l`、数字选行、商店分类 `b/n/m`、`-`。
+/// 若玩家把技能键改到这些字符上，**学习页的选树会跳过它**（不影响对战施法）。
+const LEARN_RESERVED: &[char] =
+    &['j', 'k', 'l', 'b', 'n', 'm', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-'];
 
 /// 联网多局：学习阶段结束后、进入下一局前的“配置同步”阶段。
 #[derive(Clone, Copy, PartialEq)]
@@ -379,11 +371,12 @@ enum SetRow {
     Audition,
     AuditionBgm,
     GenerateExample,
+    Keybinds,
     Mute,
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 16] = [
+const SETTINGS_ROWS: [(SetRow, &str); 17] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -398,6 +391,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 16] = [
     (SetRow::Audition, "试听当前音效包"),
     (SetRow::AuditionBgm, "试听 BGM 场景"),
     (SetRow::GenerateExample, "生成示例包"),
+    (SetRow::Keybinds, "按键设置"),
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
 ];
@@ -548,6 +542,14 @@ struct Game {
     workshop_counts: Option<(usize, usize)>,
     /// 设置页「试听 BGM 场景」的临时场景覆盖（`None` = 跟随游戏状态）；关设置时清除。
     audition_scene: Option<audio_pack::MusicScene>,
+    /// 设置页内是否打开「按键设置」子界面。
+    keybinds_open: bool,
+    /// 按键设置选中槽。
+    keybinds_sel: usize,
+    /// 是否处于“按新键”捕获态。
+    keybinds_capture: bool,
+    /// 按键设置提示（已改 / 冲突 / 无效）。
+    keybinds_msg: String,
     /// 设置页内是否打开「创意工坊物品」一屏概览。
     workshop_open: bool,
     /// 概览选中行。
@@ -1240,6 +1242,10 @@ impl Game {
             pending_audio_reload: false,
             workshop_counts: None,
             audition_scene: None,
+            keybinds_open: false,
+            keybinds_sel: 0,
+            keybinds_capture: false,
+            keybinds_msg: String::new(),
             workshop_open: false,
             workshop_sel: 0,
             #[cfg(feature = "steam")]
@@ -1834,9 +1840,13 @@ impl Game {
             return;
         }
 
-        // 字母键：选中技能树
-        for (letter, key) in KEY_LETTERS {
-            if Self::char_just(ctx, letter) {
+        // 字母键：选中技能树（**跟随自定义技能键**；与学习页固定键冲突时固定键优先 → 跳过）
+        for key in game_core::skill::CastKey::ALL {
+            let letter = self.local_settings.skill_key(key.as_u32() as usize);
+            if LEARN_RESERVED.contains(&letter) {
+                continue;
+            }
+            if Self::char_just(ctx, &letter.to_string()) {
                 eprintln!("[learn] select tree '{letter}' (key=Key::Character)");
                 self.learn_tree_key = Some(key);
                 self.learn_skill_index = None;
@@ -2370,7 +2380,8 @@ impl Game {
 
         // 1) 技能键：按下 → 施放该键绑定的技能（shift 时入列）
         // 注意：winit 对 shift+字母会给大写逻辑字符，故按大小写都匹配，否则 shift+技能无法触发。
-        for (letter, key) in KEY_LETTERS {
+        for key in game_core::skill::CastKey::ALL {
+            let letter = self.local_settings.skill_key(key.as_u32() as usize);
             let lower = letter.to_string();
             let upper = letter.to_uppercase().to_string();
             let just = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(lower.into()))
@@ -4176,7 +4187,7 @@ impl Game {
                             Some(s) => game_core::skill::DefTable::neutral_name(s),
                             None => "—",
                         };
-                        draw_text(canvas, ctx, key.letter(), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
+                        draw_text(canvas, ctx, &self.key_label(*key), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
                         draw_text(canvas, ctx, label, 15.0, Color::WHITE, slot_center, true)?;
                         // 形态角标（右下）：该技能有第二形态且当前为 B 时标出形态名后缀
                         // —— 中性名会剥掉「·形态」，否则对局中看不出自己是 A 还是 B。
@@ -4357,8 +4368,8 @@ impl Game {
                     let bound = me.bound_skill(key);
                     let lv = bound.map(|s| me.skill_level(s)).unwrap_or(0);
                     let txt = match bound {
-                        Some(s) => format!("[{}] {} Lv{}", key.letter(), i18n::t(game_core::skill::DefTable::neutral_name(s)), lv),
-                        None => i18n::tf("[{key}] 未绑定", &[("key", key.letter().to_string())]),
+                        Some(s) => format!("[{}] {} Lv{}", self.key_label(key), i18n::t(game_core::skill::DefTable::neutral_name(s)), lv),
+                        None => i18n::tf("[{key}] 未绑定", &[("key", self.key_label(key))]),
                     };
                     let sel = self.learn_tree_key == Some(key);
                     let r = graphics::Rect::new(left_x + 4.0, ly, left_w - 8.0, ui::theme::ROW_H);
@@ -8089,6 +8100,10 @@ impl Game {
             self.workshop_list_update(ctx);
             return;
         }
+        if self.keybinds_open {
+            self.keybinds_update(ctx);
+            return;
+        }
         let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
         let q = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
@@ -8110,6 +8125,7 @@ impl Game {
             self.settings_open = false;
             self.audition_scene = None;
             self.workshop_open = false;
+            self.keybinds_open = false;
             self.audio.play(audio::AudioCue::UiCancel);
             return;
         }
@@ -8219,6 +8235,12 @@ impl Game {
             Some(SetRow::GenerateExample) => {
                 self.generate_example_pack();
             }
+            Some(SetRow::Keybinds) => {
+                self.keybinds_open = true;
+                self.keybinds_sel = 0;
+                self.keybinds_capture = false;
+                self.keybinds_msg.clear();
+            }
             Some(SetRow::PublishReuse) => {
                 self.local_settings.workshop_reuse = !self.local_settings.workshop_reuse;
             }
@@ -8244,7 +8266,8 @@ impl Game {
                     | SetRow::OpenAudioDir
                     | SetRow::Audition
                     | SetRow::AuditionBgm
-                    | SetRow::GenerateExample => 0.0,
+                    | SetRow::GenerateExample
+                    | SetRow::Keybinds => 0.0,
                 };
                 let mut v = cur + step;
                 if wrap && v > 1.0 + 1e-4 {
@@ -8267,7 +8290,8 @@ impl Game {
                     | SetRow::OpenAudioDir
                     | SetRow::Audition
                     | SetRow::AuditionBgm
-                    | SetRow::GenerateExample => {}
+                    | SetRow::GenerateExample
+                    | SetRow::Keybinds => {}
                 }
             }
             None => {}
@@ -8700,6 +8724,7 @@ impl Game {
                 None => i18n::t("跟随场景").to_string(),
             },
             Some(SetRow::GenerateExample) => i18n::t("[生成]").to_string(),
+            Some(SetRow::Keybinds) => i18n::t("[改键]").to_string(),
             None => String::new(),
         }
     }
@@ -8841,9 +8866,142 @@ impl Game {
         Ok(())
     }
 
+    /// 技能槽当前绑定键（大写显示）。
+    fn key_label(&self, key: game_core::skill::CastKey) -> String {
+        self.local_settings
+            .skill_key(key.as_u32() as usize)
+            .to_ascii_uppercase()
+            .to_string()
+    }
+
+    /// 捕获“刚按下的可绑定字符”（a-z/0-9），无则 `None`。
+    fn capture_char(ctx: &Context) -> Option<char> {
+        for b in b'a'..=b'z' {
+            let c = b as char;
+            if Self::char_just(ctx, &c.to_string()) {
+                return Some(c);
+            }
+        }
+        for b in b'0'..=b'9' {
+            let c = b as char;
+            if Self::char_just(ctx, &c.to_string()) {
+                return Some(c);
+            }
+        }
+        None
+    }
+
+    /// 「按键设置」子界面的键盘输入。
+    fn keybinds_update(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
+        if self.keybinds_capture {
+            if pressed(NamedKey::Escape) {
+                self.keybinds_capture = false;
+                self.keybinds_msg = i18n::t("已取消").to_string();
+                return;
+            }
+            if let Some(ch) = Self::capture_char(ctx) {
+                let idx = self.keybinds_sel;
+                if !local_settings::LocalSettings::valid_bind_char(ch) {
+                    self.keybinds_msg = i18n::t("无效键（用字母/数字）").to_string();
+                } else if let Some(other) = self.local_settings.skill_key_conflict(idx, ch) {
+                    let slot = game_core::skill::CastKey::ALL[other].letter();
+                    self.keybinds_msg =
+                        i18n::tf("冲突：已被 {slot} 槽占用", &[("slot", slot.to_string())]);
+                } else {
+                    self.local_settings.set_skill_key(idx, ch);
+                    local_settings::save(&self.local_settings_path, &self.local_settings);
+                    let slot = game_core::skill::CastKey::ALL[idx].letter();
+                    self.keybinds_msg = i18n::tf(
+                        "已改：{slot} 槽 → {key}",
+                        &[("slot", slot.to_string()), ("key", ch.to_ascii_uppercase().to_string())],
+                    );
+                    self.keybinds_capture = false;
+                }
+            }
+            return;
+        }
+        if Self::char_just(ctx, "q") || pressed(NamedKey::Escape) {
+            self.keybinds_open = false;
+            self.keybinds_msg.clear();
+            self.audio.play(audio::AudioCue::UiCancel);
+            return;
+        }
+        let n = game_core::skill::CastKey::ALL.len();
+        if pressed(NamedKey::ArrowDown) {
+            self.keybinds_sel = (self.keybinds_sel + 1) % n;
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        if pressed(NamedKey::ArrowUp) {
+            self.keybinds_sel = (self.keybinds_sel + n - 1) % n;
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        if Self::char_just(ctx, "r") {
+            self.local_settings.reset_skill_keys();
+            local_settings::save(&self.local_settings_path, &self.local_settings);
+            self.keybinds_msg = i18n::t("已恢复默认").to_string();
+            self.audio.play(audio::AudioCue::UiConfirm);
+            return;
+        }
+        if pressed(NamedKey::Enter) {
+            self.keybinds_capture = true;
+            self.keybinds_msg.clear();
+            self.audio.play(audio::AudioCue::UiConfirm);
+        }
+    }
+
+    /// 「按键设置」子界面：8 个技能槽的改键。
+    fn draw_keybinds(&mut self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        ui::set_design_coordinates(&mut canvas, ctx);
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        ui::text_center(
+            &mut canvas, ctx, i18n::t("按键设置"), 34.0, ui::theme::accent(), cx, sh * 0.13,
+        )?;
+        let panel = layout::centered_panel(sw, sh, 0.66, 0.74);
+        let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
+        let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
+        let keys = game_core::skill::CastKey::ALL;
+        for (i, key) in keys.iter().enumerate() {
+            let r = layout::row_in(content, i, keys.len());
+            let sel = i == self.keybinds_sel;
+            ui::paint_row(&mut canvas, ctx, r, sel, false)?;
+            let col = if sel { ui::theme::accent() } else { ui::theme::text() };
+            ui::text_left(
+                &mut canvas, ctx, &format!("{} 槽", key.letter()), ui::theme::BODY, col,
+                r.x + 14.0, r.y + 8.0,
+            )?;
+            let right = if sel && self.keybinds_capture {
+                i18n::t("按新键…").to_string()
+            } else {
+                self.key_label(*key)
+            };
+            ui::text_right(&mut canvas, ctx, &right, ui::theme::BODY, col, r.x + r.w - 14.0, r.y + 8.0)?;
+        }
+        if !self.keybinds_msg.is_empty() {
+            ui::text_center(
+                &mut canvas, ctx, &self.keybinds_msg, ui::theme::SMALL, ui::theme::warn(),
+                cx, py + ph - 46.0,
+            )?;
+        }
+        ui::text_center(
+            &mut canvas, ctx,
+            i18n::t("↑/↓ 选择 · 回车 改键 · R 恢复默认 · Esc/Q 返回"),
+            ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
+        )?;
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+
     fn draw_settings(&mut self, ctx: &mut Context) -> GameResult {
         if self.workshop_open {
             return self.draw_workshop_list(ctx);
+        }
+        if self.keybinds_open {
+            return self.draw_keybinds(ctx);
         }
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
@@ -8855,7 +9013,7 @@ impl Game {
         ui::text_center(&mut canvas, ctx, i18n::t("设置（本机）"), 34.0, ui::theme::accent(), cx, sh * 0.13)?;
         ui::text_center(&mut canvas, ctx, i18n::t("音量与静音仅影响本机，不影响联机"), 17.0, ui::theme::text_dim(), cx, sh * 0.13 + 32.0)?;
 
-        let panel = layout::centered_panel(sw, sh, 0.66, 0.74);
+        let panel = layout::centered_panel(sw, sh, 0.66, 0.80);
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
         let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
         for (i, (kind, label)) in SETTINGS_ROWS.iter().enumerate() {
