@@ -176,11 +176,19 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
       技能键落这些字符则学习页选树跳过（不影响对战）。`R` 恢复默认。
     - **Steam Cloud 同步键位**：`ISteamRemoteStorage` 的 `keybinds.txt`（**只同步键位**）；启动取较新（云端新→覆盖本地），
       改动即上传；非 Steam 构建纯本地。需后台 Steam Cloud 启用。
-    - 镜头键：`Space`=回中心 / `1`=跳到自己（`Home/End` 别名；`1` 仅 Fighting）。
+    - 镜头键：`Space`=回中心 / `1`=跳到自己（当时 `Home/End` 为别名；**Tier 3 起改为可重映射默认值，见 #11**）。
     - **镜头跟随自身（`2`）**：切换开启后相机每帧贴到自己身上；**滚轮缩放不解除**，
       手动平移（方向键/中键拖拽）或回中心（`Space/Home`）即解除；底部提示会显示「跟随自身中」。
       为什么不是 `F1`：`F1/F2/F3` 在学习页已是 `J/K/L`（技能/商店/成长）的别名，故改用 `2`（对战内空闲）。
       纯函数 `next_cam_follow(cur, toggle, manual)` + 单测。
+11. ✅ **改键 Tier 3（2026-09-20，见 `KEYBINDS_PLAN.md`）**：从 11 个可改动作扩到 **15** 个，并升级绑定模型。
+    - `BindKey = Char | Named`（space/enter/delete/backspace/f10/home/end）——命名键不再是“写死别名”，可真正重映射。
+    - 新增动作：**停止移动**（默认 `S`）、**镜头回中心**（Space）、**镜头跳到自己**（`1`）、**镜头跟随开关**（`2`）；
+      原有的 `Home/End` 别名已移除（默认值 = 旧行为，所以老玩家手感不变）。
+    - 冲突按**作用域**（Global/Battle/Learn）：同域唯一，跨域允许重叠（`bind_conflict`）。
+    - 改键 UI 分组显示 + 只读固定键说明；学习页固定键冲突改为**明示提醒**（Q1-b），不再静默或直接拒绝。
+    - 购买/卖出/静音提示、设置页静音提示、学习页底部提示、对局底部视角提示**全部跟随当前绑定**。
+    - 旧 `settings.txt` / 云端 `keybinds.txt` 向后兼容（缺行/空值 → 默认）。
 
 ## 五、文档索引（读哪个）
 

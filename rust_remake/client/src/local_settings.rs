@@ -30,30 +30,171 @@ pub struct LocalSettings {
     pub publish_pack: String,
     /// 8 个技能槽的自定义按键（下标 = `CastKey::as_u32`，顺序 C/R/E/D/Y/T/F/G）。
     pub skill_keys: [char; 8],
-    /// 购买/升级的额外绑定字符（默认 `=`；`回车` 恒为固定别名）。空串 = 未绑。
-    pub key_buy: String,
-    /// 卖出/取消的额外绑定字符（默认未绑；`退格/Delete` 恒为固定别名）。
-    pub key_sell: String,
-    /// 静音的额外绑定字符（默认未绑；`F10` 恒为固定别名）。
-    pub key_mute: String,
+    /// 停止移动 + 清空指令队列（默认 `S`）。
+    pub key_stop: BindKey,
+    /// 镜头回场地中心（默认 `Space`）。
+    pub key_cam_center: BindKey,
+    /// 镜头跳到自己（默认 `1`）。
+    pub key_cam_self: BindKey,
+    /// 镜头跟随自身开关（默认 `2`）。
+    pub key_cam_follow: BindKey,
+    /// 购买/升级（默认 `=`；`回车` 是全局确认键，另计）。
+    pub key_buy: BindKey,
+    /// 卖出/取消（默认 `退格`）。
+    pub key_sell: BindKey,
+    /// 静音（默认 `F10`）。
+    pub key_mute: BindKey,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
 pub const DEFAULT_SKILL_KEYS: [char; 8] = ['c', 'r', 'e', 'd', 'y', 't', 'f', 'g'];
-/// 购买/升级默认键。
-pub const DEFAULT_KEY_BUY: char = '=';
 
-/// 可绑动作（Tier 1+2）：8 技能槽 + 购买/升级 + 卖出/取消 + 静音。
+/// 可绑定的**命名键**白名单：字符无法表达、但确实需要可重映射的功能键。
+///
+/// `Esc`/`Q`/`Tab`/方向键/鼠标/`Shift` 属于**界面固定键**，不进白名单（见 `KEYBINDS_PLAN.md` §1.2）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum NamedBind {
+    Space,
+    Enter,
+    Delete,
+    Backspace,
+    F10,
+    Home,
+    End,
+}
+
+impl NamedBind {
+    /// 全部命名键（改键捕获时逐一试探）。
+    pub const ALL: [NamedBind; 7] = [
+        NamedBind::Space,
+        NamedBind::Enter,
+        NamedBind::Delete,
+        NamedBind::Backspace,
+        NamedBind::F10,
+        NamedBind::Home,
+        NamedBind::End,
+    ];
+
+    /// 持久化代号（写入 `settings.txt`）。
+    pub fn code(self) -> &'static str {
+        match self {
+            NamedBind::Space => "space",
+            NamedBind::Enter => "enter",
+            NamedBind::Delete => "delete",
+            NamedBind::Backspace => "backspace",
+            NamedBind::F10 => "f10",
+            NamedBind::Home => "home",
+            NamedBind::End => "end",
+        }
+    }
+
+    /// 由持久化代号解析。
+    pub fn parse(s: &str) -> Option<Self> {
+        NamedBind::ALL
+            .into_iter()
+            .find(|n| n.code().eq_ignore_ascii_case(s.trim()))
+    }
+
+    /// 界面显示名（键帽文字，中英通用）。
+    pub fn label(self) -> &'static str {
+        match self {
+            NamedBind::Space => "SPACE",
+            NamedBind::Enter => "ENTER",
+            NamedBind::Delete => "DELETE",
+            NamedBind::Backspace => "BACKSPACE",
+            NamedBind::F10 => "F10",
+            NamedBind::Home => "HOME",
+            NamedBind::End => "END",
+        }
+    }
+}
+
+/// 一个绑定值：字符键或命名键。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BindKey {
+    Char(char),
+    Named(NamedBind),
+}
+
+impl BindKey {
+    /// 持久化代号（字符小写单字符；命名键见 `NamedBind::code`）。
+    pub fn code(self) -> String {
+        match self {
+            BindKey::Char(c) => c.to_ascii_lowercase().to_string(),
+            BindKey::Named(n) => n.code().to_string(),
+        }
+    }
+
+    /// 界面显示名。
+    pub fn label(self) -> String {
+        match self {
+            BindKey::Char(c) => c.to_ascii_uppercase().to_string(),
+            BindKey::Named(n) => n.label().to_string(),
+        }
+    }
+
+    /// 由持久化代号解析（非法 → `None`）。
+    pub fn parse(s: &str) -> Option<Self> {
+        let t = s.trim();
+        if t.is_empty() {
+            return None;
+        }
+        if let Some(n) = NamedBind::parse(t) {
+            return Some(BindKey::Named(n));
+        }
+        t.chars()
+            .next()
+            .filter(|c| LocalSettings::valid_bind_char(*c))
+            .map(|c| BindKey::Char(c.to_ascii_lowercase()))
+    }
+}
+
+/// 绑定的**作用域**：同域内键位唯一，跨域允许重叠（界面固定键永远优先）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BindScope {
+    /// 全局（任何界面都生效）。
+    Global,
+    /// 对战（施法、停止、镜头）。
+    Battle,
+    /// 学习期（购买/卖出/成长）。
+    Learn,
+}
+
+/// 可绑动作：8 技能槽 + 停止移动 + 镜头 3 项 + 购买 + 卖出 + 静音。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BindAction {
     Skill(usize),
+    Stop,
+    CamCenter,
+    CamSelf,
+    CamFollow,
     Buy,
     Sell,
     Mute,
 }
 
-/// 全部可绑动作（UI 列表顺序）。
-pub const BIND_ACTIONS: [BindAction; 11] = [
+impl BindAction {
+    /// 该动作的作用域（冲突判定按域划分）。
+    pub fn scope(self) -> BindScope {
+        match self {
+            BindAction::Skill(_)
+            | BindAction::Stop
+            | BindAction::CamCenter
+            | BindAction::CamSelf
+            | BindAction::CamFollow => BindScope::Battle,
+            BindAction::Buy | BindAction::Sell => BindScope::Learn,
+            BindAction::Mute => BindScope::Global,
+        }
+    }
+
+    /// 是否只能绑字符键（技能槽要在学习页用来选技能树，不支持命名键）。
+    pub fn char_only(self) -> bool {
+        matches!(self, BindAction::Skill(_))
+    }
+}
+
+/// 全部可绑动作（UI 列表顺序：技能 → 对战 → 镜头 → 商店 → 系统）。
+pub const BIND_ACTIONS: [BindAction; 15] = [
     BindAction::Skill(0),
     BindAction::Skill(1),
     BindAction::Skill(2),
@@ -62,10 +203,23 @@ pub const BIND_ACTIONS: [BindAction; 11] = [
     BindAction::Skill(5),
     BindAction::Skill(6),
     BindAction::Skill(7),
+    BindAction::Stop,
+    BindAction::CamCenter,
+    BindAction::CamSelf,
+    BindAction::CamFollow,
     BindAction::Buy,
     BindAction::Sell,
     BindAction::Mute,
 ];
+
+/// 各动作默认键 —— **与改动前完全一致**，保证老玩家零迁移。
+pub const DEFAULT_KEY_STOP: BindKey = BindKey::Char('s');
+pub const DEFAULT_KEY_CAM_CENTER: BindKey = BindKey::Named(NamedBind::Space);
+pub const DEFAULT_KEY_CAM_SELF: BindKey = BindKey::Char('1');
+pub const DEFAULT_KEY_CAM_FOLLOW: BindKey = BindKey::Char('2');
+pub const DEFAULT_KEY_BUY: BindKey = BindKey::Char('=');
+pub const DEFAULT_KEY_SELL: BindKey = BindKey::Named(NamedBind::Backspace);
+pub const DEFAULT_KEY_MUTE: BindKey = BindKey::Named(NamedBind::F10);
 
 impl Default for LocalSettings {
     fn default() -> Self {
@@ -82,9 +236,13 @@ impl Default for LocalSettings {
             published: Vec::new(),
             publish_pack: "auto".to_string(),
             skill_keys: DEFAULT_SKILL_KEYS,
-            key_buy: DEFAULT_KEY_BUY.to_string(),
-            key_sell: String::new(),
-            key_mute: String::new(),
+            key_stop: DEFAULT_KEY_STOP,
+            key_cam_center: DEFAULT_KEY_CAM_CENTER,
+            key_cam_self: DEFAULT_KEY_CAM_SELF,
+            key_cam_follow: DEFAULT_KEY_CAM_FOLLOW,
+            key_buy: DEFAULT_KEY_BUY,
+            key_sell: DEFAULT_KEY_SELL,
+            key_mute: DEFAULT_KEY_MUTE,
         }
     }
 }
@@ -150,50 +308,70 @@ impl LocalSettings {
         self.skill_keys.get(idx).copied().unwrap_or('?')
     }
 
-    /// 某可绑动作当前的键（`None` = 未绑）。
-    pub fn bind_char(&self, a: BindAction) -> Option<char> {
+    /// 某可绑动作当前的键。
+    pub fn bind_key(&self, a: BindAction) -> BindKey {
         match a {
-            BindAction::Skill(i) => self.skill_keys.get(i).copied(),
-            BindAction::Buy => self.key_buy.chars().next(),
-            BindAction::Sell => self.key_sell.chars().next(),
-            BindAction::Mute => self.key_mute.chars().next(),
+            BindAction::Skill(i) => BindKey::Char(self.skill_key(i)),
+            BindAction::Stop => self.key_stop,
+            BindAction::CamCenter => self.key_cam_center,
+            BindAction::CamSelf => self.key_cam_self,
+            BindAction::CamFollow => self.key_cam_follow,
+            BindAction::Buy => self.key_buy,
+            BindAction::Sell => self.key_sell,
+            BindAction::Mute => self.key_mute,
         }
     }
 
-    /// 设置某可绑动作的键（`None` = 解绑）。
-    pub fn set_bind(&mut self, a: BindAction, ch: Option<char>) {
-        let s = ch
-            .map(|c| c.to_ascii_lowercase().to_string())
-            .unwrap_or_default();
+    /// 设置某可绑动作的键（技能槽只接受字符键，命名键会被忽略）。
+    pub fn set_bind(&mut self, a: BindAction, k: BindKey) {
         match a {
             BindAction::Skill(i) => {
-                if let Some(c) = ch {
+                if let BindKey::Char(c) = k {
                     if i < self.skill_keys.len() {
                         self.skill_keys[i] = c.to_ascii_lowercase();
                     }
                 }
             }
-            BindAction::Buy => self.key_buy = s,
-            BindAction::Sell => self.key_sell = s,
-            BindAction::Mute => self.key_mute = s,
+            BindAction::Stop => self.key_stop = k,
+            BindAction::CamCenter => self.key_cam_center = k,
+            BindAction::CamSelf => self.key_cam_self = k,
+            BindAction::CamFollow => self.key_cam_follow = k,
+            BindAction::Buy => self.key_buy = k,
+            BindAction::Sell => self.key_sell = k,
+            BindAction::Mute => self.key_mute = k,
         }
     }
 
-    /// 若 `ch` 已被**其它**可绑动作占用，返回那个动作。
-    pub fn bind_conflict(&self, a: BindAction, ch: char) -> Option<BindAction> {
-        let ch = ch.to_ascii_lowercase();
+    /// 该动作是否接受这个绑定值（技能槽不接受命名键；字符键需在白名单内）。
+    pub fn accepts(a: BindAction, k: BindKey) -> bool {
+        match k {
+            BindKey::Char(c) => Self::valid_bind_char(c),
+            BindKey::Named(_) => !a.char_only(),
+        }
+    }
+
+    /// 若 `k` 已被**同一作用域**内的其它可绑动作占用，返回那个动作。
+    ///
+    /// 跨作用域允许重叠（例：对战的 `c` 与大厅的 `c` 互不影响），
+    /// 界面**固定键**不在此表内（它们永远优先，见 `KEYBINDS_PLAN.md` §5）。
+    pub fn bind_conflict(&self, a: BindAction, k: BindKey) -> Option<BindAction> {
+        let scope = a.scope();
         BIND_ACTIONS
             .iter()
             .copied()
-            .find(|b| *b != a && self.bind_char(*b) == Some(ch))
+            .find(|b| *b != a && b.scope() == scope && self.bind_key(*b) == k)
     }
 
     /// 恢复全部可绑键为默认。
     pub fn reset_binds(&mut self) {
         self.skill_keys = DEFAULT_SKILL_KEYS;
-        self.key_buy = DEFAULT_KEY_BUY.to_string();
-        self.key_sell = String::new();
-        self.key_mute = String::new();
+        self.key_stop = DEFAULT_KEY_STOP;
+        self.key_cam_center = DEFAULT_KEY_CAM_CENTER;
+        self.key_cam_self = DEFAULT_KEY_CAM_SELF;
+        self.key_cam_follow = DEFAULT_KEY_CAM_FOLLOW;
+        self.key_buy = DEFAULT_KEY_BUY;
+        self.key_sell = DEFAULT_KEY_SELL;
+        self.key_mute = DEFAULT_KEY_MUTE;
     }
 
     /// 键位是否合法：字母/数字，或几个常用符号（便于绑 `=`/`-` 等）。
@@ -205,13 +383,6 @@ impl LocalSettings {
 /// 解析 `key=value` 文本；未知键 / 非法值忽略，缺失项用默认。
 pub fn parse(text: &str) -> LocalSettings {
     let mut s = LocalSettings::default();
-    let norm_bind = |v: &str| -> String {
-        v.chars()
-            .next()
-            .filter(|c| LocalSettings::valid_bind_char(*c))
-            .map(|c| c.to_ascii_lowercase().to_string())
-            .unwrap_or_default()
-    };
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -246,12 +417,41 @@ pub fn parse(text: &str) -> LocalSettings {
             "sfx_pack" => s.sfx_pack = v.to_string(),
             "music_pack" => s.music_pack = v.to_string(),
             "publish_pack" => s.publish_pack = v.to_string(),
-            "key_buy" => {
-                let t = norm_bind(v);
-                s.key_buy = if t.is_empty() { DEFAULT_KEY_BUY.to_string() } else { t };
+            "key_stop" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_stop = k;
+                }
             }
-            "key_sell" => s.key_sell = norm_bind(v),
-            "key_mute" => s.key_mute = norm_bind(v),
+            "key_cam_center" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_cam_center = k;
+                }
+            }
+            "key_cam_self" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_cam_self = k;
+                }
+            }
+            "key_cam_follow" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_cam_follow = k;
+                }
+            }
+            "key_buy" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_buy = k;
+                }
+            }
+            "key_sell" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_sell = k;
+                }
+            }
+            "key_mute" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_mute = k;
+                }
+            }
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -282,7 +482,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -294,9 +494,13 @@ pub fn serialize(s: &LocalSettings) -> String {
         if s.workshop_public { 1 } else { 0 },
         s.publish_pack,
         s.skill_keys.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","),
-        s.key_buy,
-        s.key_sell,
-        s.key_mute
+        s.key_stop.code(),
+        s.key_cam_center.code(),
+        s.key_cam_self.code(),
+        s.key_cam_follow.code(),
+        s.key_buy.code(),
+        s.key_sell.code(),
+        s.key_mute.code()
     );
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -358,9 +562,13 @@ mod tests {
             published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],
             publish_pack: "MyPack".to_string(),
             skill_keys: ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f'],
-            key_buy: "=".to_string(),
-            key_sell: "z".to_string(),
-            key_mute: "m".to_string(),
+            key_stop: BindKey::Char('x'),
+            key_cam_center: BindKey::Named(NamedBind::Home),
+            key_cam_self: BindKey::Char('3'),
+            key_cam_follow: BindKey::Char('4'),
+            key_buy: BindKey::Char('='),
+            key_sell: BindKey::Named(NamedBind::Delete),
+            key_mute: BindKey::Char('m'),
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -368,36 +576,81 @@ mod tests {
 
     #[test]
     fn skill_keys_parse_validate_and_conflict() {
-        // 默认
+        // 默认：与改动前一致（老玩家零迁移）。
         let d = LocalSettings::default();
         assert_eq!(d.skill_key(0), 'c');
         assert_eq!(d.skill_key(7), 'g');
-        assert_eq!(d.bind_char(BindAction::Buy), Some('='));
-        assert_eq!(d.bind_char(BindAction::Sell), None, "卖出默认未绑（仍可用退格/Delete）");
-        assert_eq!(d.bind_char(BindAction::Mute), None, "静音默认未绑（仍可用 F10）");
-        // 非法字符/缺项 → 保持默认对应槽
-        let s = parse("skill_keys=q,1,@,x\nkey_sell=k\nkey_buy=@\n");
+        assert_eq!(d.bind_key(BindAction::Stop), BindKey::Char('s'));
+        assert_eq!(d.bind_key(BindAction::CamCenter), BindKey::Named(NamedBind::Space));
+        assert_eq!(d.bind_key(BindAction::CamSelf), BindKey::Char('1'));
+        assert_eq!(d.bind_key(BindAction::CamFollow), BindKey::Char('2'));
+        assert_eq!(d.bind_key(BindAction::Buy), BindKey::Char('='));
+        assert_eq!(d.bind_key(BindAction::Sell), BindKey::Named(NamedBind::Backspace));
+        assert_eq!(d.bind_key(BindAction::Mute), BindKey::Named(NamedBind::F10));
+        // 非法字符 / 缺项 → 对应槽/字段保持默认
+        let s = parse("skill_keys=q,1,@,x\nkey_sell=k\nkey_buy=@\nkey_stop=space\n");
         assert_eq!(s.skill_key(0), 'q');
         assert_eq!(s.skill_key(1), '1');
         assert_eq!(s.skill_key(2), 'e', "非法字符 @ → 该槽保持默认");
         assert_eq!(s.skill_key(3), 'x');
         assert_eq!(s.skill_key(4), 'y', "缺项 → 默认");
-        assert_eq!(s.bind_char(BindAction::Sell), Some('k'));
-        assert_eq!(s.bind_char(BindAction::Buy), Some('='), "非法 key_buy 回退默认 =");
-        // 冲突检测（跨全部可绑动作）
+        assert_eq!(s.bind_key(BindAction::Sell), BindKey::Char('k'));
+        assert_eq!(s.bind_key(BindAction::Buy), BindKey::Char('='), "非法 key_buy 回退默认 =");
+        assert_eq!(s.bind_key(BindAction::Stop), BindKey::Named(NamedBind::Space), "命名键可作绑定值");
+        // 冲突：**同作用域**内唯一，跨作用域允许重叠
         let mut s = LocalSettings::default();
-        s.set_bind(BindAction::Skill(0), Some('k'));
-        assert_eq!(s.bind_conflict(BindAction::Skill(1), 'k'), Some(BindAction::Skill(0)));
-        assert_eq!(s.bind_conflict(BindAction::Skill(0), 'k'), None, "自己不算冲突");
-        assert_eq!(s.bind_conflict(BindAction::Sell, '='), Some(BindAction::Buy), "与购买键冲突");
+        s.set_bind(BindAction::Skill(0), BindKey::Char('k'));
+        assert_eq!(
+            s.bind_conflict(BindAction::Skill(1), BindKey::Char('k')),
+            Some(BindAction::Skill(0))
+        );
+        assert_eq!(s.bind_conflict(BindAction::Skill(0), BindKey::Char('k')), None, "自己不算冲突");
+        assert_eq!(
+            s.bind_conflict(BindAction::Sell, BindKey::Char('=')),
+            Some(BindAction::Buy),
+            "与购买键冲突（同为 Learn 域）"
+        );
+        assert_eq!(
+            s.bind_conflict(BindAction::Stop, BindKey::Char('k')),
+            Some(BindAction::Skill(0)),
+            "技能与停止同属 Battle 域 → 冲突"
+        );
+        assert_eq!(
+            s.bind_conflict(BindAction::Mute, BindKey::Char('c')),
+            None,
+            "静音是 Global 域 → 跨域不冲突"
+        );
+        assert_eq!(
+            s.bind_conflict(BindAction::Buy, BindKey::Char('c')),
+            None,
+            "购买是 Learn 域 → 跨域不冲突"
+        );
         assert!(LocalSettings::valid_bind_char('a') && LocalSettings::valid_bind_char('7'));
         assert!(LocalSettings::valid_bind_char('=') && LocalSettings::valid_bind_char('-'));
         assert!(!LocalSettings::valid_bind_char('@') && !LocalSettings::valid_bind_char(' '));
+        // 技能槽不接受命名键；其它动作可以
+        assert!(!LocalSettings::accepts(BindAction::Skill(0), BindKey::Named(NamedBind::Space)));
+        assert!(LocalSettings::accepts(BindAction::CamCenter, BindKey::Named(NamedBind::Space)));
         // 重置
         s.reset_binds();
         assert_eq!(s.skill_keys, DEFAULT_SKILL_KEYS);
-        assert_eq!(s.bind_char(BindAction::Buy), Some('='));
-        assert_eq!(s.bind_char(BindAction::Sell), None);
+        assert_eq!(s.bind_key(BindAction::Buy), BindKey::Char('='));
+        assert_eq!(s.bind_key(BindAction::Sell), DEFAULT_KEY_SELL);
+        assert_eq!(s.bind_key(BindAction::Mute), DEFAULT_KEY_MUTE);
+        assert_eq!(s.bind_key(BindAction::Stop), DEFAULT_KEY_STOP);
+    }
+
+    #[test]
+    fn legacy_settings_without_new_keys_keeps_defaults() {
+        // 旧版本 settings.txt（无 key_stop/key_cam_* 行，且 key_sell/key_mute 为空）
+        let old = "master_volume=0.5\nskill_keys=q,w,e,r,a,s,d,f\nkey_buy=\nkey_sell=\nkey_mute=\n";
+        let s = parse(old);
+        assert_eq!(s.bind_key(BindAction::Buy), BindKey::Char('='), "空 key_buy → 默认 =");
+        assert_eq!(s.bind_key(BindAction::Sell), DEFAULT_KEY_SELL, "空 key_sell → 默认退格");
+        assert_eq!(s.bind_key(BindAction::Mute), DEFAULT_KEY_MUTE, "空 key_mute → 默认 F10");
+        assert_eq!(s.bind_key(BindAction::Stop), DEFAULT_KEY_STOP, "缺行 → 默认 S");
+        assert_eq!(s.bind_key(BindAction::CamCenter), DEFAULT_KEY_CAM_CENTER);
+        assert_eq!(s.skill_key(0), 'q', "旧技能键仍应保留");
     }
 
     #[test]

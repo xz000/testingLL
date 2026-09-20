@@ -12,24 +12,13 @@ use ggez::input::keyboard::Key;
 use ggez::Context;
 use winit::keyboard::NamedKey;
 
-/// 「确认」操作的界面提示文案（技能 / 商店 / 成长三页统一）。
-/// 改这里就等于改三处显示；`tests` 会校验主界面源码里出现的提示就是它。
-pub const CONFIRM_HINT: &str = "[= / 回车]";
-
-/// 「卖出」操作的界面提示文案（商店详情「卖出」按钮，与键盘退格/Delete 对应）。
-pub const SELL_HINT: &str = "[退格 / Delete]";
-
 /// 「确认」键是否在本帧被按下：`=` 或 回车（含小键盘回车）。
 ///
 /// 三个页面（技能/商店/成长）的确认一律走这里，避免再次出现"某页少接一个键"。
+/// 注意：这是**全局固定**确认键；购买/升级的**可改绑定**由 `local_settings::BindAction::Buy` 提供。
 pub fn confirm_just(ctx: &Context) -> bool {
     // 注：winit 的 `NamedKey` 只有 `Enter`（主键盘与小键盘回车都归一到这里）。
     confirm_char_just(ctx, "=") || named_just(ctx, NamedKey::Enter)
-}
-
-/// 「卖出」键是否在本帧被按下：退格 或 Delete（商店详情卖出按钮的键盘入口）。
-pub fn sell_just(ctx: &Context) -> bool {
-    named_just(ctx, NamedKey::Backspace) || named_just(ctx, NamedKey::Delete)
 }
 
 fn confirm_char_just(ctx: &Context, s: &str) -> bool {
@@ -48,38 +37,30 @@ fn named_just(ctx: &Context, n: NamedKey) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn confirm_hint_matches_accepted_keys() {
-        assert_eq!(CONFIRM_HINT, "[= / 回车]", "提示文案被改动时此测试会提醒同步文档");
-        assert!(CONFIRM_HINT.contains('='), "文案应承诺 `=` 键");
-        assert!(CONFIRM_HINT.contains("回车"), "文案应承诺回车键");
-    }
-
-    #[test]
-    fn sell_hint_matches_accepted_keys() {
-        assert!(SELL_HINT.contains("退格"), "文案应承诺退格键");
-        assert!(SELL_HINT.contains("Delete"), "文案应承诺 Delete 键");
-    }
-
-    /// 主界面必须**引用**共享文案与共享判定，而不是各写各的。
+    /// 主界面必须**引用**共享判定，而不是各写各的。
     /// （`include_str!` 让"文案与实现脱节"这种问题在 CI 就红，而不是等玩家发现。）
     #[test]
     fn main_wires_shared_confirm_contract() {
         let src = include_str!("main.rs");
-        assert!(
-            src.contains("CONFIRM_HINT"),
-            "主界面应使用 keys::CONFIRM_HINT 作为确认提示文案"
-        );
         let n = src.matches("self.confirm_just(ctx)").count();
         assert!(n >= 3, "技能/商店/成长三页都应用 self.confirm_just 判定，当前只有 {n} 处");
         assert!(
             src.contains("keys::confirm_just(ctx)"),
             "self.confirm_just 应包一层 keys::confirm_just（固定 `=`/回车）"
         );
-        // 不应再留下写死的、与 CONFIRM_HINT 不一致的确认提示。
-        for bad in ["[= / 回车 ]", "[=/回车]", "[= / Enter]"] {
-            assert!(!src.contains(bad), "发现与共享文案不一致的写死提示：{bad}");
-        }
+        // 卖出/静音/镜头等已改为**绑定驱动**：必须走 bind_just / bind_pressed，不得再写死。
+        assert!(
+            src.contains("self.sell_just(ctx)"),
+            "商店应经 self.sell_just（绑定驱动）判定"
+        );
+        assert!(
+            src.contains("BindAction::CamCenter") && src.contains("BindAction::CamSelf"),
+            "镜头回中心/跳自己应走可绑定动作，不得写死 Space/Home/1/End"
+        );
+        assert!(
+            !src.contains("Self::char_just(ctx, \" \")"),
+            "镜头回中心不应再写死空格（已改为 BindAction::CamCenter）"
+        );
     }
 }
 
@@ -210,11 +191,11 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "t", action: "施放 T 槽技能" },
             Binding { key: "f", action: "施放 F 槽技能" },
             Binding { key: "g", action: "施放 G 槽技能" },
-            Binding { key: "s", action: "停止移动 + 清空队列" },
-            Binding { key: "space/home", action: "镜头回场地中心" },
-            Binding { key: "1/end", action: "镜头跳到自己（1 仅对战中）" },
-            Binding { key: "2", action: "镜头跟随自身开关（缩放不解除；平移/回中心解除）" },
-            Binding { key: "设置→按键设置", action: "自定义技能/买卖/静音键" },
+            Binding { key: "s", action: "停止移动 + 清空队列（可改）" },
+            Binding { key: "space", action: "镜头回场地中心（可改）" },
+            Binding { key: "1", action: "镜头跳到自己（可改）" },
+            Binding { key: "2", action: "镜头跟随自身开关（可改；缩放不解除，平移/回中心解除）" },
+            Binding { key: "设置→按键设置", action: "自定义 15 个动作键（技能/停止/镜头/买卖/静音）" },
             Binding { key: "esc", action: "返回主菜单" },
         ],
         LearnConfig => &[
