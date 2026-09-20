@@ -1588,11 +1588,16 @@ impl Game {
                 self.pan_drag = Some(m);
             }
 
-            // Home：镜头挪到场地中心；End：镜头挪到自身（一次性，不跟随）
-            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Home)) {
+            // 镜头回中心：Space（推荐）/ Home（别名）
+            if Self::char_just(ctx, " ")
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::Home))
+            {
                 self.cam = Point2 { x: 0.0, y: 0.0 };
             }
-            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::End)) {
+            // 镜头跳到自身：1（推荐，**仅 Fighting**，避免与学习/商店的数字选择冲突）/ End（别名）
+            let to_self = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::End))
+                || (self.meta.phase == game_core::meta::MatchPhase::Fighting && Self::char_just(ctx, "1"));
+            if to_self {
                 if let Some(p) = self.world.players.get(self.self_index() as usize) {
                     self.cam = Point2 {
                         x: p.pos.x.to_num::<f32>(),
@@ -3460,7 +3465,7 @@ impl Game {
             let (_, sh) = (ui::UI_W, ui::UI_H);
             ui::text_left(
                 &mut canvas, ctx,
-                "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Home 场地中心 · End 跳到自己",
+                "视角: 方向键/中键拖拽 平移 · 滚轮缩放 · Space/Home 场地中心 · 1/End 跳到自己",
                 15.0, Color::from_rgb(150, 165, 185), 12.0, sh - 14.0,
             )?;
         }
