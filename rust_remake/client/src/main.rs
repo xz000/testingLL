@@ -3837,8 +3837,9 @@ impl Game {
         // 行列表
         let rows = settings_ui::SettingId::rows(self.room_cfg_group);
         let row_w = pw - 48.0;
-        // 行在"内容区"内等分（内容区 = 面板去掉标题/页签/底部提示）
-        let content = graphics::Rect::new(px + 24.0, py + 80.0, row_w, ph - 80.0 - 76.0);
+        // 行在"内容区"内等分（内容区 = 面板去掉标题/页签/底部提示）；
+        // 底部预留 **96px**：够放「说明行 + 快捷键提示行 + 30px 按钮行」三段互不重叠。
+        let content = graphics::Rect::new(px + 24.0, py + 80.0, row_w, ph - 80.0 - 96.0);
         for (i, &id) in rows.iter().enumerate() {
             let row_rect = layout::row_in(content, i, rows.len().max(1));
             let y = row_rect.y;
@@ -3897,7 +3898,7 @@ impl Game {
                 ui::theme::SMALL,
                 ui::theme::text_dim(),
                 sw / 2.0,
-                py + ph - 52.0,
+                py + ph - 90.0,
             )?;
         }
         let hint_line = if read_only {
@@ -3921,7 +3922,7 @@ impl Game {
             ui::theme::SMALL,
             col,
             sw / 2.0,
-            py + ph - 26.0,
+            py + ph - 68.0,
         )?;
         // 右下角操作按钮（按模式不同）：
         // - 建房：创建房间 / 取消；- 房内（房主）：保存 / 不保存；- 只读（客户端）：关闭。
@@ -3940,7 +3941,8 @@ impl Game {
         };
         let bw = 150.0;
         let bh = 30.0;
-        let by = py + ph - 46.0;
+        // 按钮行独占最底一段（上两行是说明/快捷键提示），不再压住文字提示。
+        let by = py + ph - 44.0;
         let mut bx = px + pw - 24.0 - bw;
         for (label, act, primary, hint) in buttons.iter() {
             let r = graphics::Rect::new(bx, by, bw, bh);
@@ -4383,7 +4385,9 @@ impl Game {
                 ui::text_center(canvas, ctx, &info, 19.0, ui::theme::text(), sw / 2.0, sh * 0.10)?;
 
                 // 页签（顶部居中一行，当前页高亮，可点击）
-                let tab_y = sh * 0.145;
+                // `0.16` 而非 `0.145`：上方信息行在 `sh*0.10`（字号 19），页签顶边 = tab_y-16，
+                // 0.145 时两者几乎贴在一起，下移后与上方文字拉开距离且仍远高于面板（`sh*0.20`）。
+                let tab_y = sh * 0.16;
                 // 页签标签写**实际按键**（J/K/L；F1-F3 为别名）——此前写 [1]/[2]/[3] 与实际按键不符。
                 let pages = [("[J]技能", 0u8), ("[K]商店", 1u8), ("[L]成长", 2u8)];
                 let tab_w = 150.0;
