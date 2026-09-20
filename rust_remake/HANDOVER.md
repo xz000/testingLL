@@ -194,6 +194,8 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
     - 作用域细化 `LearnSkill` / `LearnShop` → `B` 在技能页=切形态、商店页=第 1 类，**不同子域不冲突**。
     - 学习页“固定键”收窄为 `J/K/L` + 数字；`B/N/M` 降为可改默认值；选树跳过规则改为动态 `learn_key_taken`。
     - `E` 导出 / `I` 导入键位文件（`%APPDATA%/warlock_brawl/keybinds.txt`）；设置页显示 `已自定义 N 项`。
+    - **解绑**：列表选中行按 `Delete` 解除绑定（导航层，不进捕获）；可解 = 停止/镜头/卖出/静音/形态/商店分类，
+      **不可解** = 技能槽 + 购买（玩法必需 / 有全局确认键兜底）；存档写 `none` 表示解绑，**空值仍 = 保留默认**（旧档零迁移）。
 
 ## 五、文档索引（读哪个）
 

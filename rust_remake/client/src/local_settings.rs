@@ -113,35 +113,51 @@ impl NamedBind {
     }
 }
 
-/// 一个绑定值：字符键或命名键。
+/// 一个绑定值：字符键 / 命名键 / **未绑定**。
+///
+/// `Unbound` 只允许用于 `BindAction::can_unbind()` 为真的动作（技能槽与购买恒必绑）。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BindKey {
     Char(char),
     Named(NamedBind),
+    Unbound,
 }
 
 impl BindKey {
-    /// 持久化代号（字符小写单字符；命名键见 `NamedBind::code`）。
+    /// 持久化代号（字符小写单字符；命名键见 `NamedBind::code`；未绑 = `none`）。
     pub fn code(self) -> String {
         match self {
             BindKey::Char(c) => c.to_ascii_lowercase().to_string(),
             BindKey::Named(n) => n.code().to_string(),
+            BindKey::Unbound => "none".to_string(),
         }
     }
 
-    /// 界面显示名。
+    /// 界面显示名（未绑在 UI 层会换成 i18n 文案，这里给个中性占位）。
     pub fn label(self) -> String {
         match self {
             BindKey::Char(c) => c.to_ascii_uppercase().to_string(),
             BindKey::Named(n) => n.label().to_string(),
+            BindKey::Unbound => "—".to_string(),
         }
     }
 
-    /// 由持久化代号解析（非法 → `None`）。
+    /// 是否已解除绑定。
+    pub fn is_unbound(self) -> bool {
+        matches!(self, BindKey::Unbound)
+    }
+
+    /// 由持久化代号解析（非法 → `None`；空串 → `None`，表示“保留默认”）。
+    ///
+    /// 注意：**空值不等于解绑**——空值继续按“保留默认”处理，以兼容旧存档；
+    /// 解绑必须显式写 `none`。
     pub fn parse(s: &str) -> Option<Self> {
         let t = s.trim();
         if t.is_empty() {
             return None;
+        }
+        if matches!(t.to_ascii_lowercase().as_str(), "none" | "off" | "unbound") {
+            return Some(BindKey::Unbound);
         }
         if let Some(n) = NamedBind::parse(t) {
             return Some(BindKey::Named(n));
@@ -204,6 +220,15 @@ impl BindAction {
     /// 是否只能绑字符键（技能槽要在学习页用来选技能树，不支持命名键）。
     pub fn char_only(self) -> bool {
         matches!(self, BindAction::Skill(_))
+    }
+
+    /// 是否允许**解除绑定**。
+    ///
+    /// - 技能槽：不可 —— 技能只能靠键施放，且学习页用技能键选树（没键=该技能整局用不了）。
+    /// - 购买/升级：不可 —— `=`/回车 是全局固定确认键，解绑了也还是能买，只会自相矛盾。
+    /// - 其余（停止/镜头/卖出/静音/形态/商店分类）：可以。
+    pub fn can_unbind(self) -> bool {
+        !matches!(self, BindAction::Skill(_) | BindAction::Buy)
     }
 }
 
@@ -348,8 +373,11 @@ impl LocalSettings {
         }
     }
 
-    /// 设置某可绑动作的键（技能槽只接受字符键，命名键会被忽略）。
+    /// 设置某可绑动作的键（技能槽只接受字符键；不可解绑的动作忽略 `Unbound`）。
     pub fn set_bind(&mut self, a: BindAction, k: BindKey) {
+        if k.is_unbound() && !a.can_unbind() {
+            return;
+        }
         match a {
             BindAction::Skill(i) => {
                 if let BindKey::Char(c) = k {
@@ -374,11 +402,12 @@ impl LocalSettings {
         }
     }
 
-    /// 该动作是否接受这个绑定值（技能槽不接受命名键；字符键需在白名单内）。
+    /// 该动作是否接受这个绑定值（技能槽不接受命名键；不可解绑的动作不接受 `Unbound`）。
     pub fn accepts(a: BindAction, k: BindKey) -> bool {
         match k {
             BindKey::Char(c) => Self::valid_bind_char(c),
             BindKey::Named(_) => !a.char_only(),
+            BindKey::Unbound => a.can_unbind(),
         }
     }
 
@@ -387,6 +416,9 @@ impl LocalSettings {
     /// 跨作用域允许重叠（例：对战的 `c` 与大厅的 `c` 互不影响），
     /// 界面**固定键**不在此表内（它们永远优先，见 `KEYBINDS_PLAN.md` §5）。
     pub fn bind_conflict(&self, a: BindAction, k: BindKey) -> Option<BindAction> {
+        if k.is_unbound() {
+            return None; // 未绑不占用任何键，自然不会冲突
+        }
         let scope = a.scope();
         BIND_ACTIONS
             .iter()
@@ -728,6 +760,24 @@ mod tests {
         // 技能槽不接受命名键；其它动作可以
         assert!(!LocalSettings::accepts(BindAction::Skill(0), BindKey::Named(NamedBind::Space)));
         assert!(LocalSettings::accepts(BindAction::CamCenter, BindKey::Named(NamedBind::Space)));
+        // 解绑：技能/购买不可，其余可以
+        assert!(!BindAction::Skill(0).can_unbind() && !BindAction::Buy.can_unbind());
+        assert!(BindAction::Stop.can_unbind() && BindAction::Sell.can_unbind());
+        assert!(!LocalSettings::accepts(BindAction::Skill(0), BindKey::Unbound));
+        assert!(!LocalSettings::accepts(BindAction::Buy, BindKey::Unbound));
+        assert!(LocalSettings::accepts(BindAction::Sell, BindKey::Unbound));
+        let mut u = LocalSettings::default();
+        u.set_bind(BindAction::Skill(0), BindKey::Unbound); // 无效应被忽略
+        assert_eq!(u.bind_key(BindAction::Skill(0)), BindKey::Char('c'));
+        u.set_bind(BindAction::Sell, BindKey::Unbound);
+        assert_eq!(u.bind_key(BindAction::Sell), BindKey::Unbound);
+        // 未绑不占用键 → 不冲突，也不计入“占用”
+        assert_eq!(u.bind_conflict(BindAction::Buy, BindKey::Unbound), None);
+        assert_eq!(
+            u.bind_conflict(BindAction::Sell, BindKey::Char('=')),
+            Some(BindAction::Buy),
+            "解绑后与购买键的冲突仍按当前绑定算"
+        );
         // 重置
         s.reset_binds();
         assert_eq!(s.skill_keys, DEFAULT_SKILL_KEYS);
@@ -752,6 +802,28 @@ mod tests {
         assert_eq!(s.bind_key(BindAction::FormSwitch), DEFAULT_KEY_FORM_SWITCH, "缺行 → 默认 B");
         assert_eq!(s.key_shop_cat, DEFAULT_KEY_SHOP_CAT, "缺行 → 默认 B/N/M");
         assert_eq!(s.skill_key(0), 'q', "旧技能键仍应保留");
+    }
+
+    #[test]
+    fn unbind_serialization_uses_none_sentinel() {
+        // 解绑必须显式写 `none`（空值仍 = “保留默认”，旧档零迁移）
+        let s = parse("key_sell=none\nkey_stop=off\nkey_mute=unbound\n");
+        assert_eq!(s.bind_key(BindAction::Sell), BindKey::Unbound);
+        assert_eq!(s.bind_key(BindAction::Stop), BindKey::Unbound);
+        assert_eq!(s.bind_key(BindAction::Mute), BindKey::Unbound);
+        // roundtrip：解绑态能被序列化再读回
+        let back = parse(&serialize(&s));
+        assert_eq!(back.bind_key(BindAction::Sell), BindKey::Unbound);
+        assert_eq!(back.bind_key(BindAction::Stop), BindKey::Unbound);
+        // 空值不是解绑
+        let d = parse("key_sell=\nkey_stop=\n");
+        assert_eq!(d.bind_key(BindAction::Sell), DEFAULT_KEY_SELL);
+        assert_eq!(d.bind_key(BindAction::Stop), DEFAULT_KEY_STOP);
+        // 解绑计作“已自定义”（与默认不同）
+        let mut u = LocalSettings::default();
+        u.set_bind(BindAction::Mute, BindKey::Unbound);
+        assert_eq!(u.non_default_binds(), 1);
+        assert_eq!(BindKey::Unbound.code(), "none");
     }
 
     #[test]

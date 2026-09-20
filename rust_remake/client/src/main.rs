@@ -8526,7 +8526,7 @@ impl Game {
         self.bind_just(ctx, local_settings::BindAction::Mute)
     }
 
-    /// 某可绑动作是否刚按下（字符键 / 命名键统一判定）。
+    /// 某可绑动作是否刚按下（字符键 / 命名键统一判定；未绑定恒为 false）。
     fn bind_just(&self, ctx: &Context, a: local_settings::BindAction) -> bool {
         use ggez::input::keyboard::Key;
         match self.local_settings.bind_key(a) {
@@ -8534,6 +8534,7 @@ impl Game {
             local_settings::BindKey::Named(n) => {
                 ctx.keyboard.is_logical_key_just_pressed(&Key::Named(named_key(n)))
             }
+            local_settings::BindKey::Unbound => false,
         }
     }
 
@@ -8545,21 +8546,26 @@ impl Game {
             local_settings::BindKey::Named(n) => {
                 ctx.keyboard.is_logical_key_pressed(&Key::Named(named_key(n)))
             }
+            local_settings::BindKey::Unbound => false,
         }
     }
 
     /// 购买/升级提示：`[当前键 / 回车]`（跟随自定义绑定）。
     fn confirm_hint(&self) -> String {
-        let key = self.local_settings.bind_key(local_settings::BindAction::Buy).label();
-        i18n::tf("[{key} / 回车]", &[("key", key)])
+        let key = self.local_settings.bind_key(local_settings::BindAction::Buy);
+        if key.is_unbound() {
+            return String::new();
+        }
+        i18n::tf("[{key} / 回车]", &[("key", key.label())])
     }
 
-    /// 卖出提示：`[当前键]`（跟随自定义绑定）。
+    /// 卖出提示：`[当前键]`（跟随自定义绑定；已解除绑定则不显示）。
     fn sell_hint(&self) -> String {
-        format!(
-            "[{}]",
-            self.local_settings.bind_key(local_settings::BindAction::Sell).label()
-        )
+        let key = self.local_settings.bind_key(local_settings::BindAction::Sell);
+        if key.is_unbound() {
+            return String::new();
+        }
+        format!("[{}]", key.label())
     }
 
     /// 该字符在学习页是否已被它用（页签 `J/K/L`、数字、或学习期动作的当前绑定）。
@@ -9171,7 +9177,12 @@ impl Game {
 
     /// 可绑动作当前键的显示（右列）。
     fn bind_action_value(&self, a: local_settings::BindAction) -> String {
-        self.local_settings.bind_key(a).label()
+        let k = self.local_settings.bind_key(a);
+        if k.is_unbound() {
+            i18n::t("未绑定").to_string()
+        } else {
+            k.label()
+        }
     }
 
     /// 「按键设置」子界面的键盘输入。
@@ -9263,6 +9274,22 @@ impl Game {
             self.audio.play(audio::AudioCue::UiConfirm);
             return;
         }
+        // Delete：解除当前选中动作的绑定（**导航层命令**，不进捕获模式，避免与“想绑 Delete”歧义）。
+        if pressed(NamedKey::Delete) {
+            let action = local_settings::BIND_ACTIONS[self.keybinds_sel];
+            if !action.can_unbind() {
+                self.keybinds_msg = i18n::t("该动作不支持解除绑定（技能/购买必绑）").to_string();
+            } else {
+                self.local_settings
+                    .set_bind(action, local_settings::BindKey::Unbound);
+                local_settings::save(&self.local_settings_path, &self.local_settings);
+                let name = Self::bind_action_label(action);
+                self.keybinds_msg = i18n::tf("已解除绑定：{name}", &[("name", name)]);
+                self.upload_keybinds();
+            }
+            self.audio.play(audio::AudioCue::UiConfirm);
+            return;
+        }
         if pressed(NamedKey::Enter) {
             self.keybinds_capture = true;
             self.keybinds_msg.clear();
@@ -9339,7 +9366,7 @@ impl Game {
         )?;
         ui::text_center(
             &mut canvas, ctx,
-            i18n::t("↑/↓ 选择 · 回车 改键 · R 恢复默认 · E 导出 · I 导入 · Esc/Q 返回"),
+            i18n::t("↑/↓ 选择 · 回车 改键 · Delete 解除 · R 恢复默认 · E 导出 · I 导入 · Esc/Q 返回"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 18.0,
         )?;
         canvas.finish(ctx)?;
