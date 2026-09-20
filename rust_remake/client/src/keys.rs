@@ -35,8 +35,6 @@ fn named_just(ctx: &Context, n: NamedKey) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     /// 主界面必须**引用**共享判定，而不是各写各的。
     /// （`include_str!` 让"文案与实现脱节"这种问题在 CI 就红，而不是等玩家发现。）
     #[test]
