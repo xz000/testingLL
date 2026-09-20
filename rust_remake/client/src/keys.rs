@@ -493,6 +493,24 @@ mod source_scan_tests {
         );
     }
 
+    /// 「按键设置」子界面应支持鼠标（与设置编辑器同级要求）。
+    #[test]
+    fn keybinds_screen_supports_mouse() {
+        let draw = fn_body("fn draw_keybinds");
+        assert!(
+            draw.contains("keybinds_hitboxes.push"),
+            "按键设置应登记行/返回命中盒"
+        );
+        assert!(
+            draw.contains("KeybindsAction::Row") && draw.contains("KeybindsAction::Back"),
+            "应登记可点行与可点返回按钮"
+        );
+        let upd = fn_body("fn keybinds_update");
+        assert!(upd.contains("hits_at"), "应按命中盒派发鼠标点击");
+        assert!(upd.contains("MouseButton::Left"), "应处理左键（选中/改键）");
+        assert!(upd.contains("MouseButton::Right"), "右键应可解除绑定");
+    }
+
     /// 回归：全局静音用 `F10`，**不能**用裸 `M`（`M` 是学习期商店的分类切换键）。
     /// 学习期动作自 Tier 4 起改为可绑定（`ShopCat`），所以这里的“不冲突”用**默认值**断言，
     /// 而不再扫源码字面量。

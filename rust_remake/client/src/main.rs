@@ -357,6 +357,15 @@ enum SettingsAction {
     Back,
 }
 
+/// 「按键设置」子界面的鼠标动作。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum KeybindsAction {
+    /// 点击第 i 个可绑动作（`BIND_ACTIONS` 下标）：选中；再点一次已选行则开始改键。
+    Row(usize),
+    /// 点击底部「返回」。
+    Back,
+}
+
 /// 设置界面行：`(行类型, 标签 key)`。标签为中文原文，绘制时过 [`i18n::t`]。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SetRow {
@@ -572,6 +581,8 @@ struct Game {
     settings_row: usize,
     /// 设置界面鼠标命中盒。
     settings_hitboxes: ui::HitRegistry<SettingsAction>,
+    /// 「按键设置」子界面的可点区域（鼠标支持）。
+    keybinds_hitboxes: ui::HitRegistry<KeybindsAction>,
     /// 玩家本人待发送的移动目标（右键设置；成功发给 World 后由 World 保留）
     player_target: Option<Vec2>,
     /// 世界是否已接受当前 `player_target`（本机角色的 `move_target` 曾等于它）。
@@ -1264,6 +1275,7 @@ impl Game {
             settings_open: false,
             settings_row: 0,
             settings_hitboxes: ui::HitRegistry::new(),
+            keybinds_hitboxes: ui::HitRegistry::new(),
             player_target: None,
             player_target_accepted: false,
             pending_cast: None,
@@ -4387,7 +4399,10 @@ impl Game {
                     )?;
                     canvas.draw(&fill, graphics::DrawParam::new());
                     let color = if active { ui::theme::accent() } else if hover { ui::theme::text() } else { ui::theme::text_dim() };
-                    ui::text_center(canvas, ctx, label, 20.0, color, tx, tab_y)?;
+                    // 文字**垂直居中**：`text_center` 的 y 是文本**上缘**（不是中心），
+                    // 所以取 `r.y + (r.h - 字号)/2`；之前直接传 `tab_y`（= r 的中心）
+                    // 会让整行字整体下移半个字高，底部溢出按钮。
+                    ui::text_center(canvas, ctx, label, 20.0, color, tx, r.y + (r.h - 20.0) / 2.0)?;
                     if !active {
                         self.learn_hitboxes.push((r, LearnAction::Page(pi)));
                     }
@@ -9188,6 +9203,7 @@ impl Game {
     /// 「按键设置」子界面的键盘输入。
     fn keybinds_update(&mut self, ctx: &Context) {
         use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
         use winit::keyboard::NamedKey;
         let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
         if self.keybinds_capture {
@@ -9240,6 +9256,47 @@ impl Game {
             self.audio.play(audio::AudioCue::UiCancel);
             return;
         }
+        // ——— 鼠标（点击=选中，再点已选行=改键；右键=解除绑定；返回按钮=关闭）———
+        let mut start_capture = false;
+        let mut unbind_now = false;
+        let mut back = false;
+        let m = ui::mouse_design(ctx);
+        let hits = self.keybinds_hitboxes.hits_at(m);
+        let right_click = ctx.mouse.button_just_pressed(MouseButton::Right);
+        if ctx.mouse.button_just_pressed(MouseButton::Left) || right_click {
+            for a in hits {
+                match a {
+                    KeybindsAction::Row(i) => {
+                        if right_click {
+                            self.keybinds_sel = i;
+                            unbind_now = true;
+                        } else if self.keybinds_sel == i {
+                            start_capture = true; // 再点一次已选行 → 改键
+                        } else {
+                            self.keybinds_sel = i;
+                            self.audio.play(audio::AudioCue::UiMove);
+                        }
+                    }
+                    KeybindsAction::Back => back = true,
+                }
+            }
+        }
+        if back {
+            self.keybinds_open = false;
+            self.keybinds_msg.clear();
+            self.audio.play(audio::AudioCue::UiCancel);
+            return;
+        }
+        if unbind_now {
+            self.unbind_selected();
+            return;
+        }
+        if start_capture {
+            self.keybinds_capture = true;
+            self.keybinds_msg.clear();
+            self.audio.play(audio::AudioCue::UiConfirm);
+            return;
+        }
         let n = local_settings::BIND_ACTIONS.len();
         if pressed(NamedKey::ArrowDown) {
             self.keybinds_sel = (self.keybinds_sel + 1) % n;
@@ -9276,18 +9333,7 @@ impl Game {
         }
         // Delete：解除当前选中动作的绑定（**导航层命令**，不进捕获模式，避免与“想绑 Delete”歧义）。
         if pressed(NamedKey::Delete) {
-            let action = local_settings::BIND_ACTIONS[self.keybinds_sel];
-            if !action.can_unbind() {
-                self.keybinds_msg = i18n::t("该动作不支持解除绑定（技能/购买必绑）").to_string();
-            } else {
-                self.local_settings
-                    .set_bind(action, local_settings::BindKey::Unbound);
-                local_settings::save(&self.local_settings_path, &self.local_settings);
-                let name = Self::bind_action_label(action);
-                self.keybinds_msg = i18n::tf("已解除绑定：{name}", &[("name", name)]);
-                self.upload_keybinds();
-            }
-            self.audio.play(audio::AudioCue::UiConfirm);
+            self.unbind_selected();
             return;
         }
         if pressed(NamedKey::Enter) {
@@ -9297,10 +9343,28 @@ impl Game {
         }
     }
 
+    /// 解除当前选中动作的绑定（键盘 `Delete` 与鼠标右键共用）。
+    fn unbind_selected(&mut self) {
+        let action = local_settings::BIND_ACTIONS[self.keybinds_sel];
+        if !action.can_unbind() {
+            self.keybinds_msg = i18n::t("该动作不支持解除绑定（技能/购买必绑）").to_string();
+        } else {
+            self.local_settings
+                .set_bind(action, local_settings::BindKey::Unbound);
+            local_settings::save(&self.local_settings_path, &self.local_settings);
+            let name = Self::bind_action_label(action);
+            self.keybinds_msg = i18n::tf("已解除绑定：{name}", &[("name", name)]);
+            self.upload_keybinds();
+        }
+        self.audio.play(audio::AudioCue::UiConfirm);
+    }
+
     /// 「按键设置」子界面：分组展示全部可绑动作（技能/停止/镜头/商店/系统）+ 只读固定键说明。
     fn draw_keybinds(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
+        self.keybinds_hitboxes.clear();
+        let mouse = ui::mouse_design(ctx);
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
         ui::text_center(
@@ -9325,7 +9389,7 @@ impl Game {
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
         let content = graphics::Rect::new(px + 24.0, py + 14.0, pw - 48.0, ph - 92.0);
         let rows = keybind_rows();
-        let sel_row = keybind_sel_to_row(self.keybinds_sel);
+        let hoverable = !self.keybinds_capture;
         for (i, row) in rows.iter().enumerate() {
             let r = layout::row_in(content, i, rows.len());
             match row {
@@ -9336,8 +9400,13 @@ impl Game {
                     )?;
                 }
                 KeybindRow::Action(a) => {
-                    let sel = i == sel_row;
-                    ui::paint_row(&mut canvas, ctx, r, sel, false)?;
+                    // 显示行 → `BIND_ACTIONS` 下标（鼠标动作用下标，与键盘导航一致）。
+                    let Some(sel_idx) = keybind_row_action(*row) else {
+                        continue;
+                    };
+                    let sel = sel_idx == self.keybinds_sel;
+                    let hover = hoverable && r.contains(mouse);
+                    ui::paint_row(&mut canvas, ctx, r, sel, hover)?;
                     let col = if sel { ui::theme::accent() } else { ui::theme::text() };
                     ui::text_left(
                         &mut canvas, ctx, &Self::bind_action_label(*a), ui::theme::SMALL, col,
@@ -9349,6 +9418,7 @@ impl Game {
                         self.bind_action_value(*a)
                     };
                     ui::text_right(&mut canvas, ctx, &right, ui::theme::SMALL, col, r.x + r.w - 14.0, r.y + 4.0)?;
+                    self.keybinds_hitboxes.push((r, KeybindsAction::Row(sel_idx)));
                 }
             }
         }
@@ -9364,9 +9434,21 @@ impl Game {
             i18n::t("固定键（不可改）：Esc/Q 返回 · ↑↓←→ 选择/平移 · 回车 确认 · Tab 页签 · Shift 预输入 · 鼠标左/右/中 · 滚轮"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 38.0,
         )?;
+        // 底部「返回」按钮（鼠标入口）。
+        let bw = 110.0;
+        let bh = 30.0;
+        let br = graphics::Rect::new(px + 12.0, py + ph - bh - 8.0, bw, bh);
+        let br_hover = br.contains(mouse);
+        ui::paint_row(&mut canvas, ctx, br, false, br_hover)?;
+        ui::text_center(
+            &mut canvas, ctx, i18n::t("返回  [Esc]"), ui::theme::SMALL,
+            if br_hover { ui::theme::text() } else { ui::theme::text_dim() },
+            br.x + bw / 2.0, br.y + 7.0,
+        )?;
+        self.keybinds_hitboxes.push((br, KeybindsAction::Back));
         ui::text_center(
             &mut canvas, ctx,
-            i18n::t("↑/↓ 选择 · 回车 改键 · Delete 解除 · R 恢复默认 · E 导出 · I 导入 · Esc/Q 返回"),
+            i18n::t("↑/↓ 选择 · 回车/点击 改键 · Delete/右键 解除 · R 恢复默认 · E 导出 · I 导入 · Esc/Q 返回"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 18.0,
         )?;
         canvas.finish(ctx)?;
@@ -10122,13 +10204,12 @@ fn keybind_rows() -> Vec<KeybindRow> {
     rows
 }
 
-/// `keybinds_sel`（`BIND_ACTIONS` 下标）→ 显示行号。
-fn keybind_sel_to_row(sel: usize) -> usize {
-    let want = local_settings::BIND_ACTIONS.get(sel).copied();
-    keybind_rows()
-        .iter()
-        .position(|r| matches!(r, KeybindRow::Action(a) if Some(*a) == want))
-        .unwrap_or(0)
+/// 显示行 → `BIND_ACTIONS` 下标（UI 鼠标判定用；分组标题返回 `None`）。纯函数，便于单测。
+fn keybind_row_action(row: KeybindRow) -> Option<usize> {
+    match row {
+        KeybindRow::Action(a) => local_settings::BIND_ACTIONS.iter().position(|b| *b == a),
+        KeybindRow::Header(_) => None,
+    }
 }
 
 /// `NamedBind` → winit 命名键（改键捕获与判定共用，避免两处映射分叉）。
@@ -10844,7 +10925,7 @@ mod tests {
 
     #[test]
     fn keybind_rows_cover_all_actions_with_groups() {
-        use super::{keybind_rows, keybind_sel_to_row, KeybindRow};
+        use super::{keybind_row_action, keybind_rows, KeybindRow};
         let rows = keybind_rows();
         let actions: Vec<_> = rows
             .iter()
@@ -10858,9 +10939,21 @@ mod tests {
         let headers = rows.iter().filter(|r| matches!(r, KeybindRow::Header(_))).count();
         assert_eq!(headers, 6, "应有 6 个分组标题");
         // 选择下标 ↔ 显示行号一致，导航不会错位。
-        for (i, a) in local_settings::BIND_ACTIONS.iter().enumerate() {
-            assert_eq!(rows[keybind_sel_to_row(i)], KeybindRow::Action(*a), "选择 {i} 应指向 {a:?}");
+        let mut seen = 0usize;
+        for row in &rows {
+            match row {
+                KeybindRow::Header(_) => assert_eq!(keybind_row_action(*row), None),
+                KeybindRow::Action(_) => {
+                    assert_eq!(
+                        keybind_row_action(*row),
+                        Some(seen),
+                        "第 {seen} 个动作应映到 BIND_ACTIONS[{seen}]"
+                    );
+                    seen += 1;
+                }
+            }
         }
+        assert_eq!(seen, local_settings::BIND_ACTIONS.len());
     }
 
     #[test]
