@@ -109,14 +109,15 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 1. **表现层 P2 · 音效（进行中）**：`AUDIO_PLAN.md` —— 后端 `ggez::audio`；**占位素材已生成**。
    ✅ P2-0 占位素材（`tools/gen_placeholder_audio.py`）· P2-1 `local_settings`+`AudioBank` ·
    P2-2 主菜单「设置」界面（滑条+键鼠）+ `F10` 全局静音（`M` 已被商店分类键占用）。
-   ⬜ 待接：战斗事件信号（Hattrick/Vampire/Silencer/Pancake/Burnout/Denied/LastSecondSave）。
+   ✅ 战斗事件信号（Hattrick/Vampire/Silencer/Pancake/Burnout/Denied/LastSecondSave）**已接**：
+   音效 + 头顶漂字（`main.rs` 4992-5015 / 5292；信号源 `World.combat_events`）。
    已接：命中/治疗/死亡/击杀、首杀、连杀 3..10/>10、多重击杀 2..6（9s 窗口）、Ludicrous、
    学习/升级、胜利；**不接** 缩圈/出界/倒计时/回合流程/买卖（098c 无）。
    ✅ **外部音频包 A0+B0+A1+B2（2026-09-19）**：音效包整包覆盖 + BGM 分场景（menu/lobby/battle/result，循环+交叉淡出）
    + 设置页选择/浏览工坊/发布本地包 + 本地/创意工坊目录热重载；方案与包格式见 `AUDIO_PLAN.md` §8。
    Steam 发布/浏览部分需真机验证（UGC，`SteamTransport::{create_workshop_item, submit_workshop_update}`）。
-2. **表现层 P1 扩展**：Hattrick / Vampire / Denied / Burnout / Silencer / Pancake / Last-Second-Save 等事件横幅
-   （需额外战斗信号）—— 与 P2 的播报音共用信号（098c 触发条件已录入 `AUDIO_PLAN.md` §1）。
+2. ✅ **表现层 P1 扩展（已完成）**：Hattrick / Vampire / Denied / Burnout / Silencer / Pancake / Last-Second-Save
+   等事件已接**音效 + 头顶漂字**（共用 `World.combat_events`；098c 触发条件见 `AUDIO_PLAN.md` §1）。
 3. **死代码清理**（详细分段见 `DEAD_CODE_CLEANUP.md`）：
    - ✅ **段 1**：已删旧建房界面 `draw_steam_create_lobby` / `CreateAction` / `create_hitboxes` / `create_step_field`
      / `create_dispatch` + 鼠标命中块（净 −207 行）。`layout.rs` 遗留表单项暂 `#[allow(dead_code)]`，待段 2 删。
@@ -179,7 +180,7 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 | `ROOM_SETTINGS_PLAN.md` | 房间设置 17 项与 098c 对照、档位/自定义设计 |
 | `LOBBY_UI_PLAN.md` | 大厅重构动机（已被 UI_MASTER_PLAN 取代，保留来龙去脉） |
 | `PRESENTATION_PLAN.md` | 表现层 P1–P6 |
-| `AUDIO_PLAN.md` | **音效清单（098c 实证）+ 本地设置 + 主菜单设置界面规划（P2）** |
+| `AUDIO_PLAN.md` | **音效清单（098c 实证）+ 本地设置 + 设置界面（P2）+ 外部音频包/创意工坊方案（§8）** |
 | `AUDIO_SCRIPT.md` | **占位音用途清单 + 播报台词（中文/English）—— 录制用** |
 | `I18N.md` | **多语言（i18n）设计与用法**：中文 key + 英文表、Steam 语言驱动、如何加新语言 |
 | `FRAME_SYNC_ANALYSIS.md` | **联机卡顿分析**（房间信息轮询 + 帧同步；快照队头阻塞等） |
@@ -194,14 +195,10 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
 
 ## 六、最近提交（新→旧）
 
-`50daa58` HANDOVER 补 Steam 发布流程 ← `2cec2a2` publish 默认只上传 ← `fa79b17` publish SetLive 默认 `default` + `-NoSetLive` ←
-`66473e7` publish `-SteamUser` + 不硬卡 loginusers.vdf ← `5e98f75` 发布版 GUI 子系统 feature `gui` ←
-`bc17ed2` 头顶状态字下移 3px ← `eb88e47` 头顶状态框描边 1.0 ← `918d7c8` 头顶状态框描边调细 ←
-`83bc962` 换字体 LXGW 文楷 ← `b615abd` 删内联 168k 字体回退 ← `9d176cc` HUD 显示熔岩靴 CD ←
-`8590df4` 施法结束疾风步 ← `02891d5` 局间同步 mastery/forms + 敌方隐身不可见 ←
-`746e946` Blast 固定半径（回退动画）← `a240469` 虔诚治疗环 + 主菜单溢出修复 ←
-`f9a0a64` Blast 中心扩散 ← `0defc16` 天罚/虔诚距离衰减 ← `d636f6a` 队列移动标记改青色 ←
-`0f6fb2a` 队列标记读模拟队列（修空）← `c813e43` 冲锋/燃烧接触 AoE + 虔诚治疗半径特效 ←
-`42dcf02` 爆炸按真实半径绘制 ← `7743711` 状态图标/自身面板/队列标记/商店音效 ←
-`a4d042b` P4-2 施法条 + P4-4 自机环/目标标记 ← `d75c769` P4-3 状态图标行 + P3-3 柱子碎裂/爆炸
-（更早的提交见 `git log`）
+（本节不再逐条维护——以 `git log --oneline` 为准。）最近一批（2026-09-19，音频/创意工坊）：
+`c1020af` 工坊物品一屏概览 · `61103fe` 增强项取舍记档 · `42a3455` A3/A4/A5（包详情/示例包/逐场景试听） ·
+`87025d0` 能力以目录为准 + 发布目标选择 · `01b2750` 发布 BGM 包/复用 id/可见性 · `daf68a7` 首次上传成功记档 ·
+`0a63621` 多库工坊扫描 · `bc08ed0` 发布带 tag + 预览图 · `9a29eba` tag 可选 · `380992f` 发布分步日志 ·
+`f1e2b4a` 全局泵回调 · `1555da5` 演示包生成器 · `b53a7ef` 本地包易用性 · `306d6a8` 工坊浏览/发布 ·
+`db0d425` 工坊目录扫描 · `4ac1078` 外部音频包 A0+B0；再往前：`f0045bd` po 结案 · `85356ce` S003 伤害 ·
+`368ca13` 价格模型校正 · `e157367`/`b4b84bd` 默认技能；更早见 `git log`。
