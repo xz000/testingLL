@@ -30,10 +30,42 @@ pub struct LocalSettings {
     pub publish_pack: String,
     /// 8 个技能槽的自定义按键（下标 = `CastKey::as_u32`，顺序 C/R/E/D/Y/T/F/G）。
     pub skill_keys: [char; 8],
+    /// 购买/升级的额外绑定字符（默认 `=`；`回车` 恒为固定别名）。空串 = 未绑。
+    pub key_buy: String,
+    /// 卖出/取消的额外绑定字符（默认未绑；`退格/Delete` 恒为固定别名）。
+    pub key_sell: String,
+    /// 静音的额外绑定字符（默认未绑；`F10` 恒为固定别名）。
+    pub key_mute: String,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
 pub const DEFAULT_SKILL_KEYS: [char; 8] = ['c', 'r', 'e', 'd', 'y', 't', 'f', 'g'];
+/// 购买/升级默认键。
+pub const DEFAULT_KEY_BUY: char = '=';
+
+/// 可绑动作（Tier 1+2）：8 技能槽 + 购买/升级 + 卖出/取消 + 静音。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BindAction {
+    Skill(usize),
+    Buy,
+    Sell,
+    Mute,
+}
+
+/// 全部可绑动作（UI 列表顺序）。
+pub const BIND_ACTIONS: [BindAction; 11] = [
+    BindAction::Skill(0),
+    BindAction::Skill(1),
+    BindAction::Skill(2),
+    BindAction::Skill(3),
+    BindAction::Skill(4),
+    BindAction::Skill(5),
+    BindAction::Skill(6),
+    BindAction::Skill(7),
+    BindAction::Buy,
+    BindAction::Sell,
+    BindAction::Mute,
+];
 
 impl Default for LocalSettings {
     fn default() -> Self {
@@ -50,6 +82,9 @@ impl Default for LocalSettings {
             published: Vec::new(),
             publish_pack: "auto".to_string(),
             skill_keys: DEFAULT_SKILL_KEYS,
+            key_buy: DEFAULT_KEY_BUY.to_string(),
+            key_sell: String::new(),
+            key_mute: String::new(),
         }
     }
 }
@@ -115,33 +150,68 @@ impl LocalSettings {
         self.skill_keys.get(idx).copied().unwrap_or('?')
     }
 
-    /// 设置某槽绑定键（归一为小写）。
-    pub fn set_skill_key(&mut self, idx: usize, ch: char) {
-        if idx < self.skill_keys.len() {
-            self.skill_keys[idx] = ch.to_ascii_lowercase();
+    /// 某可绑动作当前的键（`None` = 未绑）。
+    pub fn bind_char(&self, a: BindAction) -> Option<char> {
+        match a {
+            BindAction::Skill(i) => self.skill_keys.get(i).copied(),
+            BindAction::Buy => self.key_buy.chars().next(),
+            BindAction::Sell => self.key_sell.chars().next(),
+            BindAction::Mute => self.key_mute.chars().next(),
         }
     }
 
-    /// 恢复全部技能键为默认。
-    pub fn reset_skill_keys(&mut self) {
-        self.skill_keys = DEFAULT_SKILL_KEYS;
+    /// 设置某可绑动作的键（`None` = 解绑）。
+    pub fn set_bind(&mut self, a: BindAction, ch: Option<char>) {
+        let s = ch
+            .map(|c| c.to_ascii_lowercase().to_string())
+            .unwrap_or_default();
+        match a {
+            BindAction::Skill(i) => {
+                if let Some(c) = ch {
+                    if i < self.skill_keys.len() {
+                        self.skill_keys[i] = c.to_ascii_lowercase();
+                    }
+                }
+            }
+            BindAction::Buy => self.key_buy = s,
+            BindAction::Sell => self.key_sell = s,
+            BindAction::Mute => self.key_mute = s,
+        }
     }
 
-    /// 若 `ch` 已被**其它**技能槽占用，返回那个槽下标。
-    pub fn skill_key_conflict(&self, idx: usize, ch: char) -> Option<usize> {
+    /// 若 `ch` 已被**其它**可绑动作占用，返回那个动作。
+    pub fn bind_conflict(&self, a: BindAction, ch: char) -> Option<BindAction> {
         let ch = ch.to_ascii_lowercase();
-        self.skill_keys.iter().enumerate().find(|(i, c)| *i != idx && **c == ch).map(|(i, _)| i)
+        BIND_ACTIONS
+            .iter()
+            .copied()
+            .find(|b| *b != a && self.bind_char(*b) == Some(ch))
     }
 
-    /// 键位是否合法：仅单字符字母/数字。
+    /// 恢复全部可绑键为默认。
+    pub fn reset_binds(&mut self) {
+        self.skill_keys = DEFAULT_SKILL_KEYS;
+        self.key_buy = DEFAULT_KEY_BUY.to_string();
+        self.key_sell = String::new();
+        self.key_mute = String::new();
+    }
+
+    /// 键位是否合法：字母/数字，或几个常用符号（便于绑 `=`/`-` 等）。
     pub fn valid_bind_char(ch: char) -> bool {
-        ch.is_ascii_alphanumeric()
+        ch.is_ascii_alphanumeric() || matches!(ch, '=' | '-' | '[' | ']' | ';' | '\'' | ',' | '.' | '/')
     }
 }
 
 /// 解析 `key=value` 文本；未知键 / 非法值忽略，缺失项用默认。
 pub fn parse(text: &str) -> LocalSettings {
     let mut s = LocalSettings::default();
+    let norm_bind = |v: &str| -> String {
+        v.chars()
+            .next()
+            .filter(|c| LocalSettings::valid_bind_char(*c))
+            .map(|c| c.to_ascii_lowercase().to_string())
+            .unwrap_or_default()
+    };
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -176,6 +246,12 @@ pub fn parse(text: &str) -> LocalSettings {
             "sfx_pack" => s.sfx_pack = v.to_string(),
             "music_pack" => s.music_pack = v.to_string(),
             "publish_pack" => s.publish_pack = v.to_string(),
+            "key_buy" => {
+                let t = norm_bind(v);
+                s.key_buy = if t.is_empty() { DEFAULT_KEY_BUY.to_string() } else { t };
+            }
+            "key_sell" => s.key_sell = norm_bind(v),
+            "key_mute" => s.key_mute = norm_bind(v),
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -206,7 +282,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -217,7 +293,10 @@ pub fn serialize(s: &LocalSettings) -> String {
         if s.workshop_reuse { 1 } else { 0 },
         if s.workshop_public { 1 } else { 0 },
         s.publish_pack,
-        s.skill_keys.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",")
+        s.skill_keys.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","),
+        s.key_buy,
+        s.key_sell,
+        s.key_mute
     );
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -279,6 +358,9 @@ mod tests {
             published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],
             publish_pack: "MyPack".to_string(),
             skill_keys: ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f'],
+            key_buy: "=".to_string(),
+            key_sell: "z".to_string(),
+            key_mute: "m".to_string(),
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -290,23 +372,32 @@ mod tests {
         let d = LocalSettings::default();
         assert_eq!(d.skill_key(0), 'c');
         assert_eq!(d.skill_key(7), 'g');
+        assert_eq!(d.bind_char(BindAction::Buy), Some('='));
+        assert_eq!(d.bind_char(BindAction::Sell), None, "卖出默认未绑（仍可用退格/Delete）");
+        assert_eq!(d.bind_char(BindAction::Mute), None, "静音默认未绑（仍可用 F10）");
         // 非法字符/缺项 → 保持默认对应槽
-        let s = parse("skill_keys=q,1,@,x\n");
+        let s = parse("skill_keys=q,1,@,x\nkey_sell=k\nkey_buy=@\n");
         assert_eq!(s.skill_key(0), 'q');
         assert_eq!(s.skill_key(1), '1');
         assert_eq!(s.skill_key(2), 'e', "非法字符 @ → 该槽保持默认");
         assert_eq!(s.skill_key(3), 'x');
         assert_eq!(s.skill_key(4), 'y', "缺项 → 默认");
-        // 冲突检测
+        assert_eq!(s.bind_char(BindAction::Sell), Some('k'));
+        assert_eq!(s.bind_char(BindAction::Buy), Some('='), "非法 key_buy 回退默认 =");
+        // 冲突检测（跨全部可绑动作）
         let mut s = LocalSettings::default();
-        s.set_skill_key(0, 'k');
-        assert_eq!(s.skill_key_conflict(1, 'k'), Some(0));
-        assert_eq!(s.skill_key_conflict(0, 'k'), None, "自己不算冲突");
+        s.set_bind(BindAction::Skill(0), Some('k'));
+        assert_eq!(s.bind_conflict(BindAction::Skill(1), 'k'), Some(BindAction::Skill(0)));
+        assert_eq!(s.bind_conflict(BindAction::Skill(0), 'k'), None, "自己不算冲突");
+        assert_eq!(s.bind_conflict(BindAction::Sell, '='), Some(BindAction::Buy), "与购买键冲突");
         assert!(LocalSettings::valid_bind_char('a') && LocalSettings::valid_bind_char('7'));
+        assert!(LocalSettings::valid_bind_char('=') && LocalSettings::valid_bind_char('-'));
         assert!(!LocalSettings::valid_bind_char('@') && !LocalSettings::valid_bind_char(' '));
         // 重置
-        s.reset_skill_keys();
+        s.reset_binds();
         assert_eq!(s.skill_keys, DEFAULT_SKILL_KEYS);
+        assert_eq!(s.bind_char(BindAction::Buy), Some('='));
+        assert_eq!(s.bind_char(BindAction::Sell), None);
     }
 
     #[test]

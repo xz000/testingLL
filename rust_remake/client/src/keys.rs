@@ -70,8 +70,12 @@ mod tests {
             src.contains("CONFIRM_HINT"),
             "主界面应使用 keys::CONFIRM_HINT 作为确认提示文案"
         );
-        let n = src.matches("keys::confirm_just(ctx)").count();
-        assert!(n >= 3, "技能/商店/成长三页都应用 keys::confirm_just 判定，当前只有 {n} 处");
+        let n = src.matches("self.confirm_just(ctx)").count();
+        assert!(n >= 3, "技能/商店/成长三页都应用 self.confirm_just 判定，当前只有 {n} 处");
+        assert!(
+            src.contains("keys::confirm_just(ctx)"),
+            "self.confirm_just 应包一层 keys::confirm_just（固定 `=`/回车）"
+        );
         // 不应再留下写死的、与 CONFIRM_HINT 不一致的确认提示。
         for bad in ["[= / 回车 ]", "[=/回车]", "[= / Enter]"] {
             assert!(!src.contains(bad), "发现与共享文案不一致的写死提示：{bad}");

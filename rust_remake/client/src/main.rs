@@ -550,6 +550,9 @@ struct Game {
     keybinds_capture: bool,
     /// 按键设置提示（已改 / 冲突 / 无效）。
     keybinds_msg: String,
+    /// 键位是否已从 Steam Cloud 同步过一次。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    keybinds_cloud_synced: bool,
     /// 设置页内是否打开「创意工坊物品」一屏概览。
     workshop_open: bool,
     /// 概览选中行。
@@ -1246,6 +1249,7 @@ impl Game {
             keybinds_sel: 0,
             keybinds_capture: false,
             keybinds_msg: String::new(),
+            keybinds_cloud_synced: false,
             workshop_open: false,
             workshop_sel: 0,
             #[cfg(feature = "steam")]
@@ -1873,7 +1877,7 @@ impl Game {
         // `=` 键 / 回车：购买/升级当前选中的技能（第一次=购买，之后=升级，满级=乔丹之石突破）。
         // 三个页签（技能/商店/成长）的确认键必须一致——按钮文案写的是 `[= / 回车]`，
         // 此前技能页只接了 `=`，回车无反应（与文案不符）。
-        if keys::confirm_just(ctx) {
+        if self.confirm_just(ctx) {
             eprintln!("[learn] confirm (='/'Enter'), learn_tree_key={learn_key:?} idx={:?}", self.learn_skill_index);
             self.buy_or_upgrade_selected();
         }
@@ -1927,7 +1931,7 @@ impl Game {
                 self.learn_growth_sel = Some(i);
             }
         }
-        let confirm = keys::confirm_just(ctx);
+        let confirm = self.confirm_just(ctx);
         if confirm {
             self.growth_confirm();
         }
@@ -2139,7 +2143,7 @@ impl Game {
             self.learn_shop_sel = row.select_id();
         }
         // **退格 / Delete：卖出**（选中行持有该家族物品则卖它；否则回退到第一件可卖物）。
-        if keys::sell_just(ctx) {
+        if self.sell_just(ctx) {
             match Self::shop_sell_target(&rows, self.learn_shop_sel) {
                 Some(sid) => {
                     eprintln!("[shop] 退格：卖出 {}", sid.def().name);
@@ -2152,7 +2156,7 @@ impl Game {
             }
         }
         // `=`/回车：只走**购买/升级**（行无购买目标时提示，不误卖出）。
-        if keys::confirm_just(ctx) {
+        if self.confirm_just(ctx) {
             let row = self
                 .learn_shop_sel
                 .and_then(|sel| rows.iter().find(|r| r.contains(sel)));
@@ -5476,11 +5480,8 @@ impl event::EventHandler for Game {
         self.frame = self.frame.wrapping_add(1);
         let dt = ctx.time.delta().as_secs_f64();
 
-        // F10：全机静音开关，任何界面都生效（F10 不是文本字符，无需焦点守卫）。
-        if ctx
-            .keyboard
-            .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::F10))
-        {
+        // F10 / 自定义静音键：全机静音开关，任何界面都生效（无需焦点守卫）。
+        if self.mute_just(ctx) {
             let muted = self.local_settings.toggle_mute();
             self.audio.apply(&self.local_settings);
             local_settings::save(&self.local_settings_path, &self.local_settings);
@@ -5511,6 +5512,11 @@ impl event::EventHandler for Game {
                 t.run_callbacks();
             }
             self.poll_workshop_publish();
+            // 键位云同步：会话可用后仅做一次（云端较新则覆盖本地）。
+            if !self.keybinds_cloud_synced && self.steam_transport().is_some() {
+                self.sync_keybinds_from_cloud();
+                self.keybinds_cloud_synced = true;
+            }
         }
 
         // S12：进行中的大厅操作（建厅/加入）是帧驱动异步，由 `update` 每帧 `run_callbacks` 后 `tick_lobby` 推进。
@@ -8454,6 +8460,96 @@ impl Game {
         self.audio.play(audio::AudioCue::CombatHit);
     }
 
+    /// 购买/升级：固定 `=`/回车 + 自定义键。
+    fn confirm_just(&self, ctx: &Context) -> bool {
+        keys::confirm_just(ctx) || self.custom_bind_just(ctx, local_settings::BindAction::Buy)
+    }
+
+    /// 卖出/取消：固定 `退格/Delete` + 自定义键。
+    fn sell_just(&self, ctx: &Context) -> bool {
+        keys::sell_just(ctx) || self.custom_bind_just(ctx, local_settings::BindAction::Sell)
+    }
+
+    /// 静音：固定 `F10` + 自定义键。
+    fn mute_just(&self, ctx: &Context) -> bool {
+        ctx.keyboard
+            .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(
+                winit::keyboard::NamedKey::F10,
+            )) || self.custom_bind_just(ctx, local_settings::BindAction::Mute)
+    }
+
+    /// 某可绑动作的自定义字符是否刚按下。
+    fn custom_bind_just(&self, ctx: &Context, a: local_settings::BindAction) -> bool {
+        self.local_settings
+            .bind_char(a)
+            .map(|c| Self::char_just(ctx, &c.to_string()))
+            .unwrap_or(false)
+    }
+
+    /// 键位云端同步文件名。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    const KEYBINDS_CLOUD_FILE: &str = "keybinds.txt";
+
+    /// 仅含键位的同步载荷（不同步音量/包选择等本机相关项）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    fn keybinds_payload(&self) -> String {
+        let keys: String = self
+            .local_settings
+            .skill_keys
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "skill_keys={keys}\nkey_buy={}\nkey_sell={}\nkey_mute={}\n",
+            self.local_settings.key_buy, self.local_settings.key_sell, self.local_settings.key_mute
+        )
+    }
+
+    /// 上传键位到 Steam Cloud（Steam 构建且云可用时）。
+    fn upload_keybinds(&self) {
+        #[cfg(feature = "steam")]
+        if let Some(t) = self.steam_transport() {
+            if t.cloud_enabled() {
+                let ok = t.cloud_write(Self::KEYBINDS_CLOUD_FILE, &self.keybinds_payload());
+                eprintln!("[keybinds] cloud upload -> {ok}");
+            }
+        }
+    }
+
+    /// 启动时从 Steam Cloud 拉键位（云端较新则覆盖本地）。仅 Steam 构建。
+    #[cfg(feature = "steam")]
+    fn sync_keybinds_from_cloud(&mut self) {
+        let Some(t) = self.steam_transport() else { return };
+        if !t.cloud_enabled() {
+            return;
+        }
+        let cloud_ts = t.cloud_timestamp(Self::KEYBINDS_CLOUD_FILE);
+        if cloud_ts <= 0 {
+            // 云端无档 → 用本地上传一次建立基线
+            let payload = self.keybinds_payload();
+            let _ = t.cloud_write(Self::KEYBINDS_CLOUD_FILE, &payload);
+            return;
+        }
+        let local_ts = std::fs::metadata(&self.local_settings_path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if cloud_ts <= local_ts {
+            return;
+        }
+        let Some(text) = t.cloud_read(Self::KEYBINDS_CLOUD_FILE) else { return };
+        let parsed = local_settings::parse(&text);
+        self.local_settings.skill_keys = parsed.skill_keys;
+        self.local_settings.key_buy = parsed.key_buy;
+        self.local_settings.key_sell = parsed.key_sell;
+        self.local_settings.key_mute = parsed.key_mute;
+        local_settings::save(&self.local_settings_path, &self.local_settings);
+        eprintln!("[keybinds] applied cloud keybinds (cloud={cloud_ts} > local={local_ts})");
+    }
+
     /// 生成本地**示例包**（结构+清单+静音占位），并用文件管理器打开。
     fn generate_example_pack(&self) {
         match audio_pack::ensure_local_root() {
@@ -8874,21 +8970,29 @@ impl Game {
             .to_string()
     }
 
-    /// 捕获“刚按下的可绑定字符”（a-z/0-9），无则 `None`。
+    /// 捕获“刚按下的可绑定字符”（字母/数字/几个符号），无则 `None`。
     fn capture_char(ctx: &Context) -> Option<char> {
-        for b in b'a'..=b'z' {
-            let c = b as char;
-            if Self::char_just(ctx, &c.to_string()) {
-                return Some(c);
-            }
+        const CHARS: &str = "abcdefghijklmnopqrstuvwxyz0123456789=-[];',./";
+        CHARS.chars().find(|c| Self::char_just(ctx, &c.to_string()))
+    }
+
+    /// 可绑动作的显示名（左列）。
+    fn bind_action_label(a: local_settings::BindAction) -> String {
+        use local_settings::BindAction::*;
+        match a {
+            Skill(i) => format!("{} 槽", game_core::skill::CastKey::ALL[i].letter()),
+            Buy => i18n::t("购买 / 升级").to_string(),
+            Sell => i18n::t("卖出 / 取消").to_string(),
+            Mute => i18n::t("静音").to_string(),
         }
-        for b in b'0'..=b'9' {
-            let c = b as char;
-            if Self::char_just(ctx, &c.to_string()) {
-                return Some(c);
-            }
-        }
-        None
+    }
+
+    /// 可绑动作当前键的显示（右列）。
+    fn bind_action_value(&self, a: local_settings::BindAction) -> String {
+        self.local_settings
+            .bind_char(a)
+            .map(|c| c.to_ascii_uppercase().to_string())
+            .unwrap_or_else(|| i18n::t("未绑定").to_string())
     }
 
     /// 「按键设置」子界面的键盘输入。
@@ -8903,22 +9007,25 @@ impl Game {
                 return;
             }
             if let Some(ch) = Self::capture_char(ctx) {
-                let idx = self.keybinds_sel;
+                let action = local_settings::BIND_ACTIONS[self.keybinds_sel];
+                let extra = !matches!(action, local_settings::BindAction::Skill(_));
                 if !local_settings::LocalSettings::valid_bind_char(ch) {
                     self.keybinds_msg = i18n::t("无效键（用字母/数字）").to_string();
-                } else if let Some(other) = self.local_settings.skill_key_conflict(idx, ch) {
-                    let slot = game_core::skill::CastKey::ALL[other].letter();
-                    self.keybinds_msg =
-                        i18n::tf("冲突：已被 {slot} 槽占用", &[("slot", slot.to_string())]);
+                } else if extra && LEARN_RESERVED.contains(&ch) {
+                    self.keybinds_msg = i18n::t("该键被界面固定占用").to_string();
+                } else if let Some(other) = self.local_settings.bind_conflict(action, ch) {
+                    let name = Self::bind_action_label(other);
+                    self.keybinds_msg = i18n::tf("冲突：已被 {name} 占用", &[("name", name)]);
                 } else {
-                    self.local_settings.set_skill_key(idx, ch);
+                    self.local_settings.set_bind(action, Some(ch));
                     local_settings::save(&self.local_settings_path, &self.local_settings);
-                    let slot = game_core::skill::CastKey::ALL[idx].letter();
+                    let name = Self::bind_action_label(action);
                     self.keybinds_msg = i18n::tf(
-                        "已改：{slot} 槽 → {key}",
-                        &[("slot", slot.to_string()), ("key", ch.to_ascii_uppercase().to_string())],
+                        "已改：{name} → {key}",
+                        &[("name", name), ("key", ch.to_ascii_uppercase().to_string())],
                     );
                     self.keybinds_capture = false;
+                    self.upload_keybinds();
                 }
             }
             return;
@@ -8929,7 +9036,7 @@ impl Game {
             self.audio.play(audio::AudioCue::UiCancel);
             return;
         }
-        let n = game_core::skill::CastKey::ALL.len();
+        let n = local_settings::BIND_ACTIONS.len();
         if pressed(NamedKey::ArrowDown) {
             self.keybinds_sel = (self.keybinds_sel + 1) % n;
             self.audio.play(audio::AudioCue::UiMove);
@@ -8939,9 +9046,10 @@ impl Game {
             self.audio.play(audio::AudioCue::UiMove);
         }
         if Self::char_just(ctx, "r") {
-            self.local_settings.reset_skill_keys();
+            self.local_settings.reset_binds();
             local_settings::save(&self.local_settings_path, &self.local_settings);
             self.keybinds_msg = i18n::t("已恢复默认").to_string();
+            self.upload_keybinds();
             self.audio.play(audio::AudioCue::UiConfirm);
             return;
         }
@@ -8952,7 +9060,7 @@ impl Game {
         }
     }
 
-    /// 「按键设置」子界面：8 个技能槽的改键。
+    /// 「按键设置」子界面：8 技能槽 + 购买/卖出/静音 的改键。
     fn draw_keybinds(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
@@ -8961,23 +9069,23 @@ impl Game {
         ui::text_center(
             &mut canvas, ctx, i18n::t("按键设置"), 34.0, ui::theme::accent(), cx, sh * 0.13,
         )?;
-        let panel = layout::centered_panel(sw, sh, 0.66, 0.74);
+        let panel = layout::centered_panel(sw, sh, 0.66, 0.8);
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
         let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
-        let keys = game_core::skill::CastKey::ALL;
-        for (i, key) in keys.iter().enumerate() {
-            let r = layout::row_in(content, i, keys.len());
+        let actions = local_settings::BIND_ACTIONS;
+        for (i, a) in actions.iter().enumerate() {
+            let r = layout::row_in(content, i, actions.len());
             let sel = i == self.keybinds_sel;
             ui::paint_row(&mut canvas, ctx, r, sel, false)?;
             let col = if sel { ui::theme::accent() } else { ui::theme::text() };
             ui::text_left(
-                &mut canvas, ctx, &format!("{} 槽", key.letter()), ui::theme::BODY, col,
+                &mut canvas, ctx, &Self::bind_action_label(*a), ui::theme::BODY, col,
                 r.x + 14.0, r.y + 8.0,
             )?;
             let right = if sel && self.keybinds_capture {
                 i18n::t("按新键…").to_string()
             } else {
-                self.key_label(*key)
+                self.bind_action_value(*a)
             };
             ui::text_right(&mut canvas, ctx, &right, ui::theme::BODY, col, r.x + r.w - 14.0, r.y + 8.0)?;
         }

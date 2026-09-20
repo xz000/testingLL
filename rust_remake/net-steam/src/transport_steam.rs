@@ -281,6 +281,36 @@ impl SteamTransport {
         self.client.ugc().download_item(steamworks::PublishedFileId(id), true)
     }
 
+    /// Steam Cloud 是否可用（应用 + 账号都启用）。
+    pub fn cloud_enabled(&self) -> bool {
+        let rs = self.client.remote_storage();
+        rs.is_cloud_enabled_for_app() && rs.is_cloud_enabled_for_account()
+    }
+
+    /// 读 Steam Cloud 文本文件（不存在/读取失败 → `None`）。
+    pub fn cloud_read(&self, name: &str) -> Option<String> {
+        use std::io::Read;
+        let f = self.client.remote_storage().file(name);
+        if !f.exists() {
+            return None;
+        }
+        let mut s = String::new();
+        f.read().read_to_string(&mut s).ok().map(|_| s)
+    }
+
+    /// 写 Steam Cloud 文本文件；返回是否写入成功。
+    pub fn cloud_write(&self, name: &str, data: &str) -> bool {
+        use std::io::Write;
+        let f = self.client.remote_storage().file(name);
+        let mut w = f.write();
+        w.write_all(data.as_bytes()).is_ok()
+    }
+
+    /// Steam Cloud 文件时间戳（`0` = 不存在）。
+    pub fn cloud_timestamp(&self, name: &str) -> i64 {
+        self.client.remote_storage().file(name).timestamp()
+    }
+
     /// 创意工坊发布①：创建空白物品。回调里把 `(PublishedFileId, 需先同意协议?)` 写回 channel。
     /// **必须**在主线程调 `run_callbacks` 后通过 channel 拿到结果（`create_item` 是异步 API）。
     pub fn create_workshop_item(&self) -> std::sync::mpsc::Receiver<Result<(u64, bool), String>> {
