@@ -278,6 +278,13 @@ pub enum ProjectileKind {
         pillar_bounce: bool,
         /// 红链（S019B）附加闪电伤害（098c `sc`：目标为友军/柱子时引发，1.0→3.4）；其余技能为 0。
         lightning_dmg: Fix64,
+        /// S014B（削弱）的 `bv`/`Nv` 两位（098c 中两者始终同值，故合一）：
+        /// · 生成时 `false` → `Av[+2]` 虽为 true，但**同队/自己**的碰撞被 `Nv=false` 挡住（只能打敌人/弹体）；
+        /// · 首段寿命（`(1+.1ei)×.12` 秒）到期时 `ic`(13242) 置 `bv=Nv=true` 并续命 `(1+.1ei)` 秒；
+        /// · 此时可命中**友军与施法者本人**（`including yourself`）→ `Gn×1.1` + 转向最近敌人，
+        ///   同时把 `bv=Nv` 重新置回 `false`（每 cast 最多增益一次，之后不再碰同队）；
+        /// · 次段到期 → `IA(nr)` 销毁。其余技能恒 `false`（不参与这套门控）。
+        weaken_armed: bool,
     },
     /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
     /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
@@ -916,6 +923,7 @@ impl World {
                     pillar_bounce: false,
                     pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
+                    weaken_armed: false,
                 },
                 pos,
                 alive: true,
@@ -1737,7 +1745,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 走三阶段状态机（见下）。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -1791,6 +1799,20 @@ impl World {
                                     pr.alive = true; // 不销毁，直线飞完这段寿命
                                 }
                             }
+                        }
+                        // S014B（削弱）两段寿命（098c `ic` 13242，注册为 B 的 `Gv=pi`）：
+                        //   首段到期 → 置 `bv=Nv=true`（此后才能命中**友军与施法者本人**“…including yourself”）
+                        //   并续命 `(1+.1ei)` 秒（`set ev[nr]=(1+.1*ei[Vv[nr]])`）；
+                        //   次段到期 → `call IA(nr)` 销毁（保持 `pr.alive=false`）。
+                        if *on_hit == crate::skill::W098bOnHit::Weaken && !*weaken_armed {
+                            let ei = self
+                                .players
+                                .get(pr.owner as usize)
+                                .map(|p| p.mastery[2] as f64)
+                                .unwrap_or(0.0);
+                            *weaken_armed = true; // `bv/Nv=true`
+                            *remaining = Fix64::from_num(1.0 + 0.1 * ei);
+                            pr.alive = true;
                         }
                         if let Some(br) = blast {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
@@ -2088,6 +2110,9 @@ impl World {
         let mut drain_orbs: Vec<(u32, Vec2, Fix64)> = Vec::new();
         // S014 重定向队列 (proj 下标, 排除的玩家, 速度, 新寿命s, 只要敌方=true)。
         let mut re_aims: Vec<(usize, u32, f64, f64, bool)> = Vec::new();
+        // S014B：命中友军后要把 `bv/Nv` 置回 false（每 cast 只增益一次）——命中段是 `&pr.kind`
+        // 不可变借用，故延后到 2c 段写回。
+        let mut weaken_disarm: Vec<usize> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量, 时长 s)
         let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
@@ -2423,7 +2448,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2446,11 +2471,18 @@ impl World {
                         // 搬运弹体（S013B `pB`）：**不碰术士**（`Av[+1]=false`）→ 飞抵落点后传送施法者；
                         // 但 `Av[+3]=true` → 撞 class-3 障碍（柱子）会互换（见撞柱分支）。
                         None
-                    } else if *on_hit == crate::skill::W098bOnHit::DrainSlow
-                        || *on_hit == crate::skill::W098bOnHit::Weaken
-                    {
-                        // S014 汲取（A/B）：**可命中友军**（098c `vc`/`oc` 都对 `cn[Vv[Vr]]==cn[...]` 分友/敌两支）。
+                    } else if *on_hit == crate::skill::W098bOnHit::DrainSlow {
+                        // S014A 汲取·减速（`vc`）：生成时 `Nv[Nb]=true`、`bv` 默认 false →
+                        // **可命中任意队伍（但排除施法者本人）**（`vc` 按 `cn[Vv[Vr]]==cn[...]` 分友/敌两支）。
                         nearest_hit_any(&self.players, pr.pos, pr.owner, *radius)
+                    } else if *on_hit == crate::skill::W098bOnHit::Weaken {
+                        // S014B 汲取·削弱（`oc`）：`Nv`/`bv` 初始 **false** → 首段只能碰敌人（同队碰撞被 `Nv` 挡住）；
+                        // 首段到期 `ic` 置位后（= 我们的 `weaken_armed`）→ **连友军与施法者本人都能碰**。
+                        if *weaken_armed {
+                            nearest_hit_any_incl_owner(&self.players, pr.pos, pr.owner, *radius)
+                        } else {
+                            nearest_hit(&self.players, pr.pos, pr.owner, *radius)
+                        }
                     } else if *on_hit == crate::skill::W098bOnHit::DrainOrb {
                         None // 回血球不与任何人碰撞（抵达施法者由运动分支持）
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
@@ -2572,15 +2604,18 @@ impl World {
                                 }
                             }
                             crate::skill::W098bOnHit::Weaken => {
-                                // S014B 汲取·削弱（098c `oc`）：
-                                //  敌 → `Gn ×0.5`（时长 `(6+1.5L)×jn[攻]/jn[受]`）+ 真伤 `4+L` + 回血球
-                                //  友 → `Gn ×1.1` + **转向最近的敌方对象**（600/s 瞬转）继续飞
+                                // S014B 汲取·削弱（098c `oc` 13048）：
+                                //  敌 → `Gn ×0.5`（时长 `(6+1.5L)×jn[攻]/jn[受]`）+ 真伤 `4+L` + 回血球；弹体销毁
+                                //  友（含施法者本人）→ `Gn ×1.1` + **转向最近的敌方对象**（600/s 瞬转）继续飞，
+                                //    并把 `bv/Nv` 清回 false（`oc`：`set bv[nr]=false` / `set Nv[nr]=false`）→ 每 cast 只增益一次。
                                 let dur = debuff_dur.to_num::<f64>();
                                 if same_team {
                                     gn_mults.push((victim, 1.1, dur));
                                     // 098c `oc` 友军分支：`set ev[nr]=(1+.1*ei[Vv[nr]])` → 续命并转向最近的**敌方**对象。
                                     let ei = self.players.get(pr.owner as usize).map(|o| o.mastery[2] as f64).unwrap_or(0.0);
                                     re_aims.push((pi, victim, REEAIM_SPEED, REEAIM_LIFE * (1.0 + 0.1 * ei), true));
+                                    // 本段是 `&pr.kind` 不可变借用 → `bv/Nv=false` 延后到 2c 段写回。
+                                    weaken_disarm.push(pi);
                                 } else {
                                     gn_mults.push((victim, 0.5, dur));
                                     let gn = self.players.get(pr.owner as usize).map(|o| o.gn_factor()).unwrap_or(1.0);
@@ -2851,6 +2886,7 @@ impl World {
                         pillar_bounce: false,
                         pillar_rest: Fix64::ZERO,
                         lightning_dmg: Fix64::ZERO,
+                        weaken_armed: false,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -2998,6 +3034,14 @@ impl World {
                 }
             }
         }
+        // S014B：命中友军后清 `bv/Nv`（`oc`：`set bv[nr]=false` / `set Nv[nr]=false`）。
+        for pi in weaken_disarm.drain(..) {
+            if let Some(pr) = ps.get_mut(pi) {
+                if let ProjectileKind::W098b { weaken_armed, .. } = &mut pr.kind {
+                    *weaken_armed = false;
+                }
+            }
+        }
         // 禁锢·沉默（B4-Y）：禁施法（可移动）
         for (victim, dur) in silences.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
@@ -3079,6 +3123,7 @@ impl World {
                     pillar_bounce: false,
                     pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
+                    weaken_armed: false,
                 },
                 pos,
                 alive: true,
@@ -3145,6 +3190,7 @@ impl World {
                     pillar_bounce: false,
                     pillar_rest: Fix64::ONE,
                     lightning_dmg: Fix64::ZERO,
+                    weaken_armed: false,
                 },
                 pos,
                 alive: true,
@@ -3872,9 +3918,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // S014 汲取（098c `ac` 13263）：
                 //   A（`vc` 13308）：射程 = `Xr=(1+.1*ei[ri])*700`，`ev=Rr/700`（`Rr`=到点击点的距离，
                 //      若 Rr>Xr 则取 Xr）→ **飞到点击点就到期**，由 `Gv=Mi=rc`（13173）触发「拐弯」重定向。
-                //   B（`oc` 13346）：`ev=(1+.1*ei)*.12`，到期 `Gv=pi=ic`（13242）第一次续 `(1+.1*ei)` 秒、
-                //      第二次销毁 → 用等价**单段总时长** `(1+.1*ei)*(.12+1)` 实现（轨迹完全相同）。
-                //   （差异：098c 两段之间 `ic` 会置 `bv/Nv=true`（此后才可命中友军）；本实现不加该位。）
+                //   B（`oc` 13346）：**首段寿命 = `(1+.1*ei)*.12`**（0.12s ≈ 108 距离），
+                //      到期由 `Gv=pi=ic`（13242）置 `bv/Nv=true` 并续命 `(1+.1*ei)` 秒，次段到期才销毁。
                 if id == crate::skill::SkillId::S014 {
                     let eim = 1.0 + 0.1 * ei;
                     if !alt {
@@ -3885,7 +3930,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             }
                         }
                     } else {
-                        life = Fix64::from_num(eim * 1.12);
+                        life = Fix64::from_num(0.12 * eim);
                     }
                 }
                 // 远程精通（R00I xi，B1）：xi>0 火球获得落点爆炸——仅到点/撞柱触发，
@@ -4025,6 +4070,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             pillar_rest: crate::skill::pillar_restitution(id),
                             // 红链闪电伤害（098c `sc`：仅 S019B 用，其余 0）。
                             lightning_dmg: if on_hit == crate::skill::W098bOnHit::RedChain { stats.extra } else { Fix64::ZERO },
+                            // S014B（削弱）：`bv`/`Nv` 两位初始为 false（098c 生成时 `set Nv[Nb]=false`，`bv` 默认 false）。
+                            weaken_armed: false,
                         },
                         pos: ppos,
                         alive: true,
@@ -5134,9 +5181,22 @@ fn nearest_hit(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Opti
 
 /// 同 `nearest_hit`，但**不排除友军**（红链 S019B：链到友军/柱子时引发闪电，098c `sc`）。
 fn nearest_hit_any(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Option<(u32, Vec2)> {
+    nearest_hit_any_opt(players, pos, owner, radius, false)
+}
+
+/// `nearest_hit_any` 的**含施法者本人**版本。
+///
+/// 098c 里只有 S014B（削弱）在 `ic` 置位 `bv/Nv` 后能命中**自己**（碰撞条件
+/// `(bv[gX] and nv[fA]==1) or (bv[fA] and nv[gX]==1)` 允许同主碰撞；tooltip：
+/// “If the missile hits friendly units, **including yourself**…”）——其余技能均排除施法者。
+fn nearest_hit_any_incl_owner(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Option<(u32, Vec2)> {
+    nearest_hit_any_opt(players, pos, owner, radius, true)
+}
+
+fn nearest_hit_any_opt(players: &[Player], pos: Vec2, owner: u32, radius: Fix64, incl_owner: bool) -> Option<(u32, Vec2)> {
     let mut best: Option<(Fix64, u32)> = None;
     for p in players.iter() {
-        if !p.alive || p.id == owner {
+        if !p.alive || (!incl_owner && p.id == owner) {
             continue;
         }
         let d = p.pos - pos;
@@ -9660,6 +9720,101 @@ mod tests {
         assert!(
             (speed_after - speed_before - SPEED_DRAIN).abs() < 1.5,
             "友军移速应 +70：before={speed_before} after={speed_after}"
+        );
+    }
+
+    /// S014B 首段（`ic` 未置位）**不能命中同队**：098c 生成时 `Nv[Nb]=false`（且 `bv` 默认 false）→
+    /// 碰撞过滤 `(cn[Vv[gX]]!=cn[Vv[fA]] or (Nv[gX] and Nv[fA]))` 挡住同队。
+    /// 本测试把友军**直接放在施法者身上**（距离 0）——若首段能命中，第 0 帧就会吃到 `Gn×1.1`。
+    #[test]
+    fn s014b_first_leg_cannot_hit_friendly() {
+        let mut world = World::new(3, 1204);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S014.as_u32() as usize] = true; // B 形态
+        world.players[1].team = 0; // 友军：与施法者重叠
+        world.players[1].pos = Vec2::ZERO;
+        world.players[1].move_target = None;
+        world.players[2].team = 1; // 敌人：远
+        world.players[2].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let hp_ally = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        let mut saw_first_leg = false;
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+            for pr in world.projectiles.iter() {
+                if let ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::Weaken, weaken_armed, .. } = &pr.kind {
+                    if !*weaken_armed {
+                        saw_first_leg = true;
+                        assert!(
+                            !world.players[1].has_buff(BuffKind::GnMult(1.0)),
+                            "首段（`Nv=false`）不应命中同队"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(saw_first_leg, "应观察到未置位的首段");
+        assert!(
+            !world.players[1].has_buff(BuffKind::GnMult(1.0)),
+            "友军始终不应被增益（镖已飞远，后来也碰不到）"
+        );
+        assert_eq!(world.players[1].hp, hp_ally, "友军不应受伤");
+    }
+
+    /// S014B `ic` 置位后（= `bv/Nv` 真）能命中**施法者本人**（tooltip：
+    /// “If the missile hits friendly units, **including yourself**…”；碰撞条件允许同主相碰）。
+    #[test]
+    fn s014b_armed_bolt_can_hit_its_own_caster() {
+        let mut world = World::new(2, 1205);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S014.as_u32() as usize] = true; // B 形态
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(40.0), Fix64::ZERO); // 远处敌人（重定向目标）
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut armed_pos: Option<Vec2> = None;
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+            if let Some(pr) = world.projectiles.iter().find(|pr| {
+                matches!(&pr.kind, ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::Weaken, weaken_armed: true, .. })
+            }) {
+                armed_pos = Some(pr.pos);
+                break;
+            }
+        }
+        let ppos = armed_pos.expect("应观察到置位后的第二段");
+        // 把施法者“送到”镖上（等价于真实里被柱/墙反弹回来的镖撞到自己）
+        world.players[0].pos = ppos;
+        for _ in 0..4 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.players[0].has_buff(BuffKind::GnMult(1.0)),
+            "置位后的削弱镖应能命中施法者本人（tooltip: including yourself）"
+        );
+        assert!(
+            !world.players[1].has_buff(BuffKind::GnMult(1.0)),
+            "只命中了一人（自己），敌人不应被增益"
         );
     }
 

@@ -2292,8 +2292,9 @@ impl DefTable {
                 },
             },
             // S014B 汲取·削弱（098c `oc` 13048）——900/s、半径 35、`xv=1`；命中目标输出 ×0.5 持续 (6+1.5L)×jn。
-            // 寿命（098c `ev=(1+.1*ei)*.12` + 到期 `Gv=pi=ic` 第一次续 `(1+.1*ei)`）：
-            // 两段合计 `(1+.1ei)×1.12` 秒（≈1008 距离 @L1）—— 本作以**单段总时长**等价实现（见 world.rs）。
+            // 寿命：**首段 `(1+.1ei)×.12` 秒**（≈108 距离），到期 `Gv=pi=ic`(13242) 置 `bv/Nv=true` 并续 `(1+.1ei)` 秒，
+            // 次段到期销毁；期间命中友军（含自己）→ `Gn×1.1` + 转向最近敌人（见 world.rs `weaken_armed`）。
+            // `life` 仅作**无点目标时的回退**。
             SkillId::S014 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -2303,7 +2304,7 @@ impl DefTable {
                     proj: W098bProjKind::Straight,
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(35.0),
-                    life: Fix64::from_num(1.12),
+                    life: Fix64::from_num(0.12),
                     kb_ji: Fix64::from_num(0.6), // 098c `mI(nr,Vr,ZO,.6)`（13132）→ 60% 击退
                     ignite: None,
                     blast: None,
@@ -3780,8 +3781,8 @@ mod tests {
                 assert!(near(speed, 900.0, 1e-3) && near(radius, 35.0, 1e-3));
                 // 098c `oc` 敌方分支 `mI(nr,Vr,ZO,.6)`（13132）→ 60% 击退（与 S015 簇射的 65% 同一套 `lI` 语义）
                 assert!(near(kb_ji, 0.6, 1e-3), "S014B 击退系数应为 0.6，got {kb_ji:?}");
-                // 098c `ev=(1+.1ei)*.12` → 到期 `ic` 续 `(1+.1ei)` → 等价单段 0.12+1.0=1.12s
-                assert!(near(life, 1.12, 1e-3), "S014B 寿命应为 1.12s，got {life:?}");
+                // 098c `ev=(1+.1ei)*.12` → 到期 `ic` 续 `(1+.1ei)` → **首段 0.12s**（world.rs 两段状态机实现）
+                assert!(near(life, 0.12, 1e-3), "S014B 首段寿命应为 0.12s，got {life:?}");
             }
             ref e => panic!("S014B effect 错：{e:?}"),
         }
