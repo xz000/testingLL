@@ -1544,9 +1544,16 @@ impl DefTable {
     fn warlock098b_def(id: SkillId) -> Option<SkillDef> {
         use SkillEffect::*;
         let def = match id {
-            // S000 火球（G 键）——spec: CD 4.8 恒定 24 级；speed 1000 / radius 25 / life (1+.1*oi)=1.0s；
-            // 伤害 gX = 6.3+.7*Xv（consolidated S000 行），JI = 1.1*eb（M1 eb=1）；
-            // 点燃 xc：总量 (6+1.5*等级+xi)*jn²，时长 2.5*jn（M1 xi=0, jn=1, L1 总量 7.5）。
+            // S000 火球（098c `Ab` 10537；命中 `Vi=ib` 10283；带杖 `Xi=ab` 10323 / `Oi=Eb` 10394；
+            // 销毁 `Ri=Xb` 10465 / `Ii=Ob` 10489；到期 `Ei=Rb` 10513 / `Ai=Ib` 10525）
+            // · 弹体：speed 1000 / radius 25 / `ev=(1+.1*ei)` —— **时间精通 +10%/级，不是 +15%**。
+            // · 命中（无杖）：`mI(nr,Vr, 6.3+0.7*Xv, 1)` → 伤害 6.3+0.7L、**击退 100%**、**无点燃**。
+            // · 带**火焰法杖**（物品 13：`iV[$D+24*ri]`；`$D`=13）：命中改用 `ab`：
+            //   直伤 **5+0.5L**，并附加燃烧：总伤 `2.5*(1.2+0.2L)` = **3+0.5L**、时长 `2.5*jn`
+            //   （`yO` 存 `de=总量/时长*.25`，`oR` 每 0.25s 跳一次 → 总量准确）。
+            // · 远程精通 `xi>0`：弹体被**打掉**时（命中/撞柱 → `IA` → `Jv=Xb`）在命中点 AoE：
+            //   半径 `pe*(1+.12xi)` = **160×(1+0.12xi)**、伤害同直伤、衰减 `×(0.15xi+(1-0.15xi)*(1-d/r))`；
+            //   **自然到寿（`Gv=Rb`）不炸**（`Gv`/`Jv` 是两回事）。
             SkillId::S000 => SkillDef {
                 id,
                 tree: SkillTree::G,
@@ -1557,21 +1564,21 @@ impl DefTable {
                     speed: Fix64::from_num(1000.0),
                     radius: Fix64::from_num(25.0),
                     life: Fix64::from_num(1.0),
-                    kb_ji: Fix64::from_num(1.1),
-                    ignite: Some(Fix64::from_num(7.5)),
-                    blast: None,
+                    kb_ji: Fix64::ONE, // 098c `mI(nr,Vr,...,1)`
+                    ignite: None,      // 098c：无杖火球**不点燃**（点燃是火焰法杖专属）
+                    blast: None,       // 运行时按 `xi` 注入（见 world.rs 生成处）
                     count: 1,
                     spread_step: 0.0,
                     on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
                     cooldown_base: 4.8,
-                    // growth 语义 = base + delta×(L-1)，base 填 L1 值：gX = 6.3+0.7×L（L 从 1 起）→ L1=7.0。
+                    // growth 语义 = base + delta×(L-1)：gX = 6.3+0.7×L（L 从 1 起）→ L1=7.0。
                     damage_base: 7.0,
                     damage_delta: 0.7,
-                    // 点燃总量 = 6+1.5×L → L1=7.5。
-                    extra_base: 7.5,
-                    extra_delta: 1.5,
+                    // 火焰法杖燃烧总量 = 2.5*(1.2+0.2L) = 3+0.5L（`ab` 的 `ZO`）→ L1=3.5。
+                    extra_base: 3.5,
+                    extra_delta: 0.5,
                     ..DEF_ZERO
                 },
             },
@@ -3244,7 +3251,9 @@ const DEF_ZERO: SkillGrowth = SkillGrowth {
 pub fn pillar_restitution(id: SkillId) -> Fix64 {
     match id {
         SkillId::S008 => Fix64::from_num(0.75),
-        SkillId::S000 | SkillId::S004 | SkillId::S009 | SkillId::S014 | SkillId::S016 | SkillId::S018 => Fix64::ONE,
+        // Only skills whose spawn code does `set xv[Nb]=1`: S004(Ub 11497)/S014A(13306)/S014B(13344)/S016(13742).
+        // S000(`Ab`)/S009/S018 never set xv -> default -1 -> destroyed by pillars (JASS-verified).
+        SkillId::S004 | SkillId::S014 | SkillId::S016 => Fix64::ONE,
         _ => Fix64::ZERO,
     }
 }
@@ -3262,11 +3271,11 @@ mod tests {
     #[test]
     fn pillar_bounce_matches_xv_set() {
         assert_eq!(pillar_restitution(SkillId::S008).to_num::<f64>(), 0.75);
-        for id in [SkillId::S000, SkillId::S004, SkillId::S009, SkillId::S014, SkillId::S016, SkillId::S018] {
+        for id in [SkillId::S004, SkillId::S014, SkillId::S016] {
             assert_eq!(pillar_restitution(id), Fix64::ONE, "{id:?} 应满反弹");
             assert!(pillar_bounce_for(id));
         }
-        for id in [SkillId::S002, SkillId::S003, SkillId::S019] {
+        for id in [SkillId::S000, SkillId::S002, SkillId::S003, SkillId::S009, SkillId::S013, SkillId::S018, SkillId::S019] {
             assert_eq!(pillar_restitution(id), Fix64::ZERO, "{id:?} 未设 xv → 应被柱挡下");
             assert!(!pillar_bounce_for(id));
         }
@@ -3400,14 +3409,16 @@ mod tests {
         let s10 = def.stats_at(10);
         assert!(near(s10.cooldown, 4.8, 1e-3), "L10 CD 应仍 4.8（恒定），实际 {:?}", s10.cooldown);
         assert!(near(s10.damage, 6.3 + 0.7 * 10.0, 1e-3), "L10 gX 应 6.3+0.7×10，实际 {:?}", s10.damage);
-        assert!(near(s10.extra, 6.0 + 1.5 * 10.0, 1e-3), "L10 点燃总量应 6+1.5×10，实际 {:?}", s10.extra);
+        assert!(near(s10.extra, 3.0 + 0.5 * 10.0, 1e-3), "L10 燃烧总量应 3+0.5×10（098c `ab`：ZO=2.5*(1.2+0.2L)），实际 {:?}", s10.extra);
         match def.effect {
             SkillEffect::Warlock098b { proj: W098bProjKind::Straight, speed, radius, life, kb_ji, ignite, .. } => {
                 assert!(near(speed, 1000.0, 1e-3), "speed 应 1000（spec），实际 {speed:?}");
                 assert!(near(radius, 25.0, 1e-3), "radius 应 25（spec），实际 {radius:?}");
-                assert!(near(life, 1.0, 1e-3), "life 应 (1+.1*oi)=1.0，实际 {life:?}");
-                assert!(near(kb_ji, 1.1, 1e-3), "JI 应 1.1*eb=1.1，实际 {kb_ji:?}");
-                assert!(ignite.is_some(), "火球应带点燃");
+                assert!(near(life, 1.0, 1e-3), "life 应 (1+.1*ei)=1.0，实际 {life:?}");
+                // 098c `ib`(10283)：`mI(nr,Vr,6.3+.7*Xv[nr],1)` → 击退系数 1.0（不是 1.1）。
+                assert!(near(kb_ji, 1.0, 1e-3), "JI 应 1.0（098c mI(...,1)），实际 {kb_ji:?}");
+                // 098c：无杖火球不点燃（点燃是火焰法杖专属，`Ab` 里按 `iV[$D+24*ri]` 分两支）。
+                assert!(ignite.is_none(), "无杖火球不应带点燃");
             }
             ref e => panic!("S000 effect 应为 Warlock098b(Straight)，实际 {e:?}"),
         }

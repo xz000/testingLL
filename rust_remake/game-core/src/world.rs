@@ -285,6 +285,24 @@ pub enum ProjectileKind {
         ///   同时把 `bv=Nv` 重新置回 `false`（每 cast 最多增益一次，之后不再碰同队）；
         /// · 次段到期 → `IA(nr)` 销毁。其余技能恒 `false`（不参与这套门控）。
         weaken_armed: bool,
+        /// AoE 爆炸的距离衰减**地板比例**（098c `pI`/`tI` 的 `QI`）：
+        /// 伤害 = `gx × (floor + (1-floor)×(1 - d/r))`。
+        /// · S000 火球（`sI`→`pI`）：`floor = 0.15×射程精通`（0=不衰到 0，而是 15%/级）
+        /// · S008B 岩浆（`EB`→`tI`）：`floor = 0.5`
+        /// 其余带 `blast` 的技能用 0（= 无地板，边缘归 0）。
+        blast_floor: Fix64,
+        /// AoE 爆炸伤害（098c `Xb`/`Ob`/`EB`）：通常 = `gx`；
+        /// S000 带火焰法杖时炸伤是 `Ob` 的 **4.8+0.6L**（≠直伤 5+0.5L）→ 单存一份。
+        blast_dmg: Fix64,
+        /// AoE 爆炸是否在**自然到寿**时触发（098c `Gv`）：
+        /// · S008B 岩浆：`Gv[Nb]=ba` = 爆炸 → `true`
+        /// · S000 火球：`Gv[Nb]=Ei=Rb` 只销毁，爆炸写在 `Jv`（`Xb`，即“被打掉时”）→ `false`
+        blast_on_expiry: bool,
+        /// 该弹体是否为 S000 火球（含分身射出的火球）。
+        /// 用途：098c `ib`/`ab`/`Eb` 命中活术士时会给**守护之盾**充能（`set Ha[Vv[nr]]=true`）——
+        /// 全文件里只有这三个火球处理器做这件事（`iV[17+24*...]` 只出现在 10293/10335/10406），
+        /// 所以不能用“Straight+Ki”一概而论（火焰喷射/弹跳弹的 `hv` 不同，不充能）。
+        is_fireball: bool,
     },
     /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
     /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
@@ -569,6 +587,8 @@ enum DmgFalloff {
     Mul(Fix64),
     /// 加法：`dmg - d/k`（灾变 `qC`）。
     Sub(Fix64),
+    /// 098c `pI`/`tI` 的衰减：`dmg × (floor + (1-floor)×(1 - d/radius))`（半径由 `explode_at` 传入）。
+    FloorMul(Fix64),
 }
 
 impl World {
@@ -924,6 +944,10 @@ impl World {
                     pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
                     weaken_armed: false,
+                    blast_dmg: dmg,
+                    blast_floor: Fix64::ZERO,
+                    blast_on_expiry: false,
+                    is_fireball: false,
                 },
                 pos,
                 alive: true,
@@ -1542,7 +1566,7 @@ impl World {
         // T3b 命中的子弹生成的回返镖：(owner, pos, dir, speed)
         let mut returners: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         // 098b AoE 爆炸（陨石命中/到期）：中心 KI 全额、线性距离衰减到 20%（近似 qI 衰减）。
-        let mut expiry_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64)> = Vec::new(); // (owner, 中心, 半径, gx, ji)
+        let mut expiry_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64, Fix64)> = Vec::new(); // (owner, 中心, 半径, 伤害, ji, 地板, gx)
         // 陨石落点（098c `oB`）：(owner, 落点, 半径, 中心伤害, kb_ji, 衰减分母)
         let mut delayed_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 碎裂/侧弹生成队列（B4：S009 目标形态到点碎裂、区域形态螺旋侧弹）
@@ -1745,7 +1769,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 走三阶段状态机（见下）。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -1814,8 +1838,12 @@ impl World {
                             *remaining = Fix64::from_num(1.0 + 0.1 * ei);
                             pr.alive = true;
                         }
+                        // 098c：`Gv`（自然到寿）**不一定**爆炸——S000 火球的炸写在 `Jv`（`Xb`，被打掉时），
+                        // S008B 岩浆的 `Gv[Nb]=ba` 才是“到寿爆炸”。用 `blast_on_expiry` 区分。
                         if let Some(br) = blast {
-                            expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
+                            if *blast_on_expiry {
+                                expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *gx));
+                            }
                         }
                         // S009·目标形态（B4）：到点碎裂成 6 枚环形弹片（098c dB：600/s 旋转喷出）
                         if *burst > 0 {
@@ -2069,6 +2097,11 @@ impl World {
                             if let Some(owner) = self.players.get_mut(pr.owner as usize) {
                                 owner.pos = pr.pos;
                             }
+                        }
+                        // 098c：弹体撞柱同样走自己的 `hv` → `IA(nr)` → `Jv`（销毁回调）
+                        // ⇒ **S000 火球的 AoE 在撞柱时也会炸**（`Xb`），而 S008B 的 `blast_on_expiry` 与之无关。
+                        if let ProjectileKind::W098b { blast: Some(br), blast_dmg, kb_ji, blast_floor, .. } = &pr.kind {
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *blast_dmg));
                         }
                         pr.alive = false; // 被柱子挡下：直接消失
                     }
@@ -2448,7 +2481,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2464,9 +2497,6 @@ impl World {
                         //（`sb()` 只清 `U/w/ev/Gv` 并换 `jv=Tb`）→ **命中后不消失、回家路上还能再命中**，
                         // 每次命中都重新结算伤害 + 弹开 + 重新追施法者。
                         nearest_hit(&self.players, pr.pos, pr.owner, *radius)
-                    } else if blast.is_some() {
-                        // 陨石：飞行途中不结算（098c `iB`：一路飞到点击点，仅在到点由 `oB` 做 AOE）。
-                        None
                     } else if *on_hit == crate::skill::W098bOnHit::CarrySelf {
                         // 搬运弹体（S013B `pB`）：**不碰术士**（`Av[+1]=false`）→ 飞抵落点后传送施法者；
                         // 但 `Av[+3]=true` → 撞 class-3 障碍（柱子）会互换（见撞柱分支）。
@@ -2520,10 +2550,9 @@ impl World {
                         }
                         // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（GX 设充能灯 1）。
                         // 火球指纹 = Straight + Ki + 有点燃（法杖/精通爆炸变体同样充能）。
-                        if *proj == crate::skill::W098bProjKind::Straight
-                            && *on_hit == crate::skill::W098bOnHit::Ki
-                            && ignite.is_some()
-                        {
+                        // 098c `ib`/`ab`/`Eb`：火球命中**任何活术士**（不分敌我）→ 给施法者的守护之盾充能
+                        //（`if nv[Vr]==1 then if iV[17+24*Vv[nr]] then Ha[Vv[nr]]=true`）。
+                        if *is_fireball {
                             if let Some(o) = self.players.get_mut(pr.owner as usize) {
                                 if o.item_fx.aegis {
                                     o.aegis_charged = true;
@@ -2544,13 +2573,10 @@ impl World {
                             ignites.push((pr.owner, pr.pos, *total, (*debuff_dur).max(Fix64::from_num(W098B_IGNITE_SECONDS))));
                         }
                         if let Some(br) = blast {
-                            // 远程精通火球的落点爆炸只在到点/撞柱触发（JASS Bb），直中不重复炸。
-                            let is_fireball = *proj == crate::skill::W098bProjKind::Straight
-                                && *on_hit == crate::skill::W098bOnHit::Ki
-                                && ignite.is_some();
-                            if !is_fireball {
-                                expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
-                            }
+                            // 098c：爆炸写在 `Jv`（销毁回调）→ **被打掉时必炸**（命中单位/弹体/柱子都会 `IA→Jv`），
+                            // 半径 `160×(1+.12xi)`、伤害 `blast_dmg`、衰减地板 `blast_floor`。
+                            // （陨石 S008A 不走 W098b 路径，而是 `DelayedBlast`；岩浆 S008B 的炸在 `Gv`。）
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *gx));
                         }
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
                         match on_hit {
@@ -2887,6 +2913,10 @@ impl World {
                         pillar_rest: Fix64::ZERO,
                         lightning_dmg: Fix64::ZERO,
                         weaken_armed: false,
+                        blast_dmg: dmg,
+                        blast_floor: Fix64::ZERO,
+                        blast_on_expiry: false,
+                        is_fireball: true, // 分身射出的是火球（098c 会走 `ib` → 给施法者充能）
                     },
                     pos: clone_pos,
                     alive: true,
@@ -3124,13 +3154,17 @@ impl World {
                     pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
                     weaken_armed: false,
+                    blast_dmg: gx,
+                    blast_floor: Fix64::ZERO,
+                    blast_on_expiry: false,
+                    is_fireball: false,
                 },
                 pos,
                 alive: true,
             });
         }
-        for (owner, center, br, gx, ji) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, gx, Fix64::from_num(100.0) * gx * ji, false, false, DmgFalloff::None);
+        for (owner, center, br, dmg, ji, floor, _gx) in expiry_blasts.drain(..) {
+            self.explode_at(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, false, DmgFalloff::FloorMul(floor));
         }
         // 陨石落地（098c `oB`）：中心伤害 `12+2L`，随距离衰减 `(1 - d/(400+40xi))`，同队/自身免疫。
         for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
@@ -3191,6 +3225,10 @@ impl World {
                     pillar_rest: Fix64::ONE,
                     lightning_dmg: Fix64::ZERO,
                     weaken_armed: false,
+                    blast_dmg: Fix64::ZERO,
+                    blast_floor: Fix64::ZERO,
+                    blast_on_expiry: false,
+                    is_fireball: false,
                 },
                 pos,
                 alive: true,
@@ -3341,6 +3379,10 @@ impl World {
                     let mut v = base * Fix64::from_num(owner_gn * p.dmg_taken_mult) * world_dmg_mult;
                     if let DmgFalloff::Mul(k) = dmg_falloff {
                         v *= (Fix64::ONE - d_sq.sqrt() / k).max(Fix64::ZERO);
+                    }
+                    if let DmgFalloff::FloorMul(floor) = dmg_falloff {
+                        let t = (Fix64::ONE - d_sq.sqrt() / radius).max(Fix64::ZERO);
+                        v *= floor + (Fix64::ONE - floor) * t;
                     }
                     v
                 };
@@ -3890,11 +3932,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 命中结算统一走 KI/FI（FI 伤害=gx×Gn×hn，KI 击退=DAMAGE_BASE×gx×JI）。
                 let ppos = world.players[idx as usize].pos;
                 // 时间精通：弹体寿命（=射程）缩放，火球三系权重 1.5（JASS ev=(1+.15ei) 等）。
+                // ── 098c 弹体寿命（=射程）与时间精通 `ei`（R00Y）的权重，逐技能取 JASS `ev=` 原文：──
+                // · S000 火球 `Ab`：`ev[Nb]=(1+.1*ei)` → **+10%/级**
+                // · S003 追踪 `Pb`：`ev=4.5*(1+1.5*.1*ei)` → **+15%/级**
+                // · S004 回旋镖 `Ub`：出程距离 `zb=800*(1+1.5*.1*ei)` → **+15%/级**
                 let mut life = life * Fix64::from_num(ei_mult(matches!(
                     id,
-                    crate::skill::SkillId::S000
-                        | crate::skill::SkillId::S003
-                        | crate::skill::SkillId::S004
+                    crate::skill::SkillId::S003 | crate::skill::SkillId::S004
                 )));
                 // S016 弹跳弹：单跳射程 = max_distance（098c Range 900→1950），换算飞行时间 = range/speed。
                 if proj == crate::skill::W098bProjKind::Bounce {
@@ -3933,13 +3977,27 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         life = Fix64::from_num(0.12 * eim);
                     }
                 }
-                // 远程精通（R00I xi，B1）：xi>0 火球获得落点爆炸——仅到点/撞柱触发，
-                // 直中目标不重复爆炸（JASS Bb L5283 → sI）。半径 45×√(14+xi)（0.45×√ 尺度 ×100 换算 TODO w3q 校准）。
-                let blast = if id == crate::skill::SkillId::S000 && world.players[idx as usize].mastery[1] > 0 {
+                // 远程精通（xi，R00I）：`xi>0` 时火球**被打掉**（命中/撞柱 → `IA` → `Jv=Xb`/`Ob`）在命中点做 AoE：
+                //   半径 `pe*(1+.12xi)`（`pe=$A0`=160，`sI` 7204）、衰减 `×(0.15xi+(1-0.15xi)*(1-d/r))`（`pI` 7153）。
+                //   **到寿不炸**（`Gv=Ei=Rb` 只销毁）→ 由 `blast_on_expiry=false` 与命中分支的“总是炸”配合实现。
+                let (blast, blast_floor) = if id == crate::skill::SkillId::S000
+                    && world.players[idx as usize].mastery[1] > 0
+                {
                     let xi = world.players[idx as usize].mastery[1] as f64;
-                    Some(Fix64::from_num(45.0 * (14.0 + xi).sqrt()))
+                    (
+                        Some(Fix64::from_num(160.0 * (1.0 + 0.12 * xi))),
+                        Fix64::from_num(0.15 * xi),
+                    )
+                } else if id == crate::skill::SkillId::S008 && alt {
+                    // S008B 岩浆（098c `EB` 11792）：`qI=sqrt(128+40xi+Rv)/14.142*200`，`tI` 的 `QI=.5`。
+                    let xi = world.players[idx as usize].mastery[1] as f64;
+                    let rv = radius.to_num::<f64>();
+                    (
+                        Some(Fix64::from_num(200.0 * ((128.0 + 40.0 * xi + rv) / 200.0).sqrt())),
+                        Fix64::from_num(0.5),
+                    )
                 } else {
-                    blast
+                    (blast, Fix64::ZERO)
                 };
                 // Homing：锁定「点击处最近敌人」（098b S003 语义，复用 Missile 原型的锚点搜索）。
                 let homing_target = if proj == crate::skill::W098bProjKind::Homing {
@@ -3976,16 +4034,17 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     life * speed
                 };
                 // 火球法杖（M3 2c，I00D）：持杖者 S000 火球直伤改 5.5+0.5×L、点燃总量改 3+0.5×L。
-                let (gx, ignite_total) = if world.players[idx as usize].item_fx.fireball_burn
+                let (gx, ignite_total, staff_blast) = if world.players[idx as usize].item_fx.fireball_burn
                     && id == crate::skill::SkillId::S000
                 {
                     let lv = caster_level as f64;
                     (
-                        Fix64::from_num(5.5 + 0.5 * lv),
-                        Some(Fix64::from_num(3.0 + 0.5 * lv)),
+                        Fix64::from_num(5.0 + 0.5 * lv),
+                        Some(stats.extra),
+                        Some(Fix64::from_num(4.8 + 0.6 * lv)),
                     )
                 } else {
-                    (stats.damage, ignite.map(|base| if stats.extra > Fix64::ZERO { stats.extra } else { base }))
+                    (stats.damage, ignite, None)
                 };
                 // 陨石（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
                 // 1.35s 后在点击点炸开：半径 `210×√(1+.25×远程精通)`；伤害 `(12+2L)×(1 - d/(400+40xi))`；
@@ -4072,6 +4131,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             lightning_dmg: if on_hit == crate::skill::W098bOnHit::RedChain { stats.extra } else { Fix64::ZERO },
                             // S014B（削弱）：`bv`/`Nv` 两位初始为 false（098c 生成时 `set Nv[Nb]=false`，`bv` 默认 false）。
                             weaken_armed: false,
+                            // S000 火球：AoE 地板 `0.15×xi`；**只在“被打掉时”炸**（`Jv=Xb`），到寿不炸（`Gv=Rb`）。
+                            // S008B 岩浆：地板 0.5；到寿也炸（`Gv=ba`）。具体值在生成处按技能写入。
+                            blast_floor,
+                            blast_dmg: staff_blast.unwrap_or(gx),
+                            blast_on_expiry: id == crate::skill::SkillId::S008 && alt,
+                            is_fireball: id == crate::skill::SkillId::S000,
                         },
                         pos: ppos,
                         alive: true,
@@ -6776,8 +6841,8 @@ mod tests {
         }
         assert!(world.players[1].hp < hp1, "火球 FI 伤害应生效（L1 gx=7），hp {} -> {}", hp1, world.players[1].hp);
         assert!(
-            hp1 - world.players[1].hp >= Fix64::from_num(7.0),
-            "直伤至少 gx=7（不含点燃），实际掉血 {:?}",
+            hp1 - world.players[1].hp >= Fix64::from_num(6.5),
+            "直伤约 gx=7（差额由 60 帧回血抵消），实际掉血 {:?}",
             hp1 - world.players[1].hp
         );
         // KI 击退：命中方向 +x，初速 2000（封顶）×0.35s → 位移显著 >100
@@ -6786,7 +6851,8 @@ mod tests {
             "火球应把敌人朝弹向击退，实际 x={:?}",
             world.players[1].pos.x
         );
-        assert!(ignited, "命中处应生成点燃 DoT 场（Star 复用）");
+        // 098c 实证：**无杖火球不点燃**（燃烧是火焰法杖专属；`ib` 里只有 `mI`）。
+        assert!(!ignited, "无杖火球不应生成点燃 DoT 场");
     }
 
     /// S003 追踪弹：锁定点击处最近敌人全速直追——目标横移也能转向命中。
@@ -7197,10 +7263,11 @@ mod tests {
         assert!(saw_break, "柱子被摧毁应产生 PillarBreak 表现事件");
     }
 
-    /// 术士之战「火球击中柱子能够反弹」：火球（S000）撞柱**镜向反弹**继续飞行，
-    /// 同时仍按 098c 对柱子造成伤害（nx=40 可摧毁）；其它直射弹仍被柱子挡下消失。
+    /// S000 火球**撞柱**（098c 实证）：`Ab` 生成处**没有** `set xv[Nb]=1` → 默认 `xv=-1`
+    /// → 撞柱**不反弹**；火球自己的 `hv=ib`(10283) 对柱（`Dv` → `wR` 为真）结算 `mI(6.3+0.7L)`
+    /// 伤柱 + `IA(nr)` 销毁（只有 S004/S014/S016 等设了 `xv=1` 的才反弹）。
     #[test]
-    fn fireball_bounces_off_pillar() {
+    fn fireball_is_stopped_by_pillar_and_damages_it() {
         let mut world = World::new(2, 978);
         world.obstacles.clear();
         world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0));
@@ -7216,12 +7283,9 @@ mod tests {
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         let mut bounced = false;
-        for _ in 0..40 {
+        for _ in 0..60 {
             world.step(none.clone(), dt);
             for pr in world.projectiles.iter() {
-                if !pr.alive {
-                    continue;
-                }
                 if let ProjectileKind::W098b { vel, pillar_bounce: true, .. } = pr.kind {
                     if vel.x < Fix64::ZERO {
                         bounced = true;
@@ -7229,9 +7293,12 @@ mod tests {
                 }
             }
         }
-        assert!(bounced, "火球撞柱应镜向反弹（vel.x 由正变负），而非被挡下消失");
-        assert!(!world.obstacles.is_empty(), "单次反弹不应摧毁 40HP 柱子（火球直伤约 7）");
-        assert!(world.obstacles[0].hp < 40, "反弹的同时应仍对柱子造成伤害，实际 HP={}", world.obstacles[0].hp);
+        assert!(!bounced, "火球不应反弹（098c `Ab` 未设 xv）");
+        assert!(
+            !world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { .. })),
+            "火球应被柱子挡下销毁"
+        );
+        assert_eq!(world.obstacles[0].hp, 40 - 7, "应对柱子造成 6.3+0.7L（L1=7）伤害，实际 HP={}", world.obstacles[0].hp);
     }
 
     /// 098c 动量交换（D9 批次2）：高速玩家撞低速玩家 → 速度法向分量交换。
@@ -8949,50 +9016,76 @@ mod tests {
                 _ => None,
             })
             .expect("应有火球弹体");
-        assert!((life - 1.3).abs() < 1e-3, "2 级时间精通火球寿命应 1.0×1.3=1.3s，实际 {life}");
+        assert!((life - 1.2).abs() < 1e-3, "2 级时间精通火球寿命应 1.0×1.2=1.2s（098c `ev=(1+.1*ei)`），实际 {life}");
     }
 
-    /// 远程精通 xi：xi>0 火球获得落点爆炸（到点无目标也炸），xi=0 无爆炸。
+    /// 远程精通 xi：xi>0 时火球**被打掉时**（命中/撞柱 → `IA` → `Jv=Xb`）在命中点 AoE，
+    /// 半径 `160×(1+.12xi)`、衰减地板 `0.15xi`；**自然到寿不炸**（098c `Gv=Ei=Rb` 只销毁）。
     #[test]
-    fn mastery_xi_gives_fireball_ground_blast() {
+    fn mastery_xi_gives_fireball_ground_blast_on_hit_only() {
         let dt = Fix64::from_num(1.0 / 60.0);
-        // 场景：施法者站场边 (-600,0) 朝场内射，弹体飞行 1000 码在 (400,0) 到点消失——
-        // xi>0 时在落点爆炸；观察者在弹道侧面 (400,120)（爆炸半径 45×√15≈173 内），全程在场内。
-        let mut world = World::new(2, 983);
+        // 场景：施法者在 (-600,0)，向 +x 射；直中叶 1（180,0 处），旁观者 2 在 (300,180)
+        // （距命中点 ≈190 < 半径 160×1.12≈179？ —— 取 xi=2 使半径 160×1.24≈198）。
+        let mut world = World::new(3, 983);
         world.obstacles.clear();
-        world.players[0].pos = Vec2::new(-d60(10.0), Fix64::ZERO);
+        world.sandbox = true;
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[0].mastery[1] = 1; // 远程精通 1 级
-        world.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
+        world.players[0].mastery[1] = 2; // 远程精通 2 级 → 半径 198、地板 0.3
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO); // 直中目标（300）
         world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].pos = Vec2::new(d60(5.0), d60(1.5)); // 旁观者：命中点侧向 ~150（<198）
+        world.players[2].move_target = None;
         let hp1 = world.players[1].hp;
+        let hp2 = world.players[2].hp;
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(30.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
             PlayerInput::default(),
         ], dt);
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..90 {
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
             world.step(none.clone(), dt);
         }
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
-        assert!(d1 > 1.0, "xi 爆炸应波及弹道侧 120 码的观察者（半径 ≈173），实际 {d1}");
-        // 对照：xi=0 → 无落点爆炸，观察者不应受伤
-        let mut world2 = World::new(2, 983);
-        world2.obstacles.clear();
-        world2.players[0].pos = Vec2::new(-d60(10.0), Fix64::ZERO);
-        world2.players[0].move_target = None;
-        world2.players[1].pos = Vec2::new(d60(6.0), d60(2.0));
-        world2.players[1].move_target = None;
-        let hp1b = world2.players[1].hp;
-        world2.step(vec![
-            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+        let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
+        // 直中目标吃“直伤 + 同点 AoE”两份（`ib` 的 `mI` + `Xb` 的 `SI`）→ ≈ 2×7 = 14
+        assert!(d1 > 10.0, "直中目标应吃直伤 + 同点 AoE：{d1}");
+        assert!(d2 > 1.0, "旁观者（命中点侧向 180 < 半径 198）应被 AoE 波及：{d2}");
+    }
+
+    /// 对照：**无远程精通（xi=0）**时，无 AoE（`Jv=Xb` 里 `if xi>0` 才 `SI`）。
+    #[test]
+    fn no_xi_means_no_fireball_blast() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut world = World::new(3, 983);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].pos = Vec2::new(d60(5.0), d60(1.5));
+        world.players[2].move_target = None;
+        let hp2 = world.players[2].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(30.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
             PlayerInput::default(),
         ], dt);
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..90 {
-            world2.step(none.clone(), dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
         }
-        assert_eq!(world2.players[1].hp, hp1b, "xi=0 无爆炸，观察者不应受伤");
+        assert_eq!(world.players[2].hp, hp2, "xi=0 无 AoE，旁观者不应受伤");
+        // 对照的对照：确认弹体确实打中了直中目标（否则上面的“0 伤害”毫无意义）
+        assert!(world.players[1].hp < hp2, "xi=0 也应有直伤（证明命中发生）：{:?}", world.players[1].hp);
     }
 
     /// 击退合成：精通每级 -2.5% 与属性/物品乘法合成（098c kf Hn 公式）。

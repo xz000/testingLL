@@ -46,4 +46,4 @@ pub fn version() -> &'static str {
 /// v19（2026-09-13）：天罚（S001）/虔诚（S021）伤害距离衰减改为 `×(1-d/1000)`（对齐 098c `mI(...,1-cO/$3E8)`）。
 /// v20（2026-09-14）：疾风步期间施放技能会提前结束风步（`Player::end_windwalk`，对齐 098c）。
 /// v21（2026-09-19）：`Tether.beam_dps`（红链沿线切割伤害，098c `YI`）入快照（序列化布局变更）。
-pub const PROTOCOL_VERSION: u32 = 24;
+pub const PROTOCOL_VERSION: u32 = 25;
