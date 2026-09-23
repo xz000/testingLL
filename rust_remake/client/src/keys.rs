@@ -55,9 +55,17 @@ mod tests {
             src.contains("BindAction::CamCenter") && src.contains("BindAction::CamSelf"),
             "镜头回中心/跳自己应走可绑定动作，不得写死 Space/Home/1/End"
         );
+        // 镜头的空格/1/2 不得再写死：`update_camera` 里不能出现字符判定（训练场面板用空格开始，属例外）。
+        let cam_start = src.find("fn update_camera(").expect("找不到 update_camera");
+        let cam_end = src[cam_start..].find("fn screen_to_world(").expect("找不到 update_camera 的结束") + cam_start;
+        let cam = &src[cam_start..cam_end];
         assert!(
-            !src.contains("Self::char_just(ctx, \" \")"),
+            !cam.contains("char_just(ctx, \" \")"),
             "镜头回中心不应再写死空格（已改为 BindAction::CamCenter）"
+        );
+        assert!(
+            !cam.contains("char_just(ctx, \"1\")") && !cam.contains("char_just(ctx, \"2\")"),
+            "镜头跳自己/跟随不应再写死 1/2（已改为可绑定动作）"
         );
     }
 }

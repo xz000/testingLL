@@ -48,6 +48,10 @@ pub struct LocalSettings {
     pub key_form_switch: BindKey,
     /// 商店三大类切换（默认 `B`/`N`/`M`）。
     pub key_shop_cat: [BindKey; 3],
+    /// 训练场：靶子数量（1..=5，默认 3）。
+    pub training_bots: u8,
+    /// 训练场：靶子移动方式（默认漫游）。
+    pub training_move: TrainingMove,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
@@ -292,6 +296,8 @@ impl Default for LocalSettings {
             key_mute: DEFAULT_KEY_MUTE,
             key_form_switch: DEFAULT_KEY_FORM_SWITCH,
             key_shop_cat: DEFAULT_KEY_SHOP_CAT,
+            training_bots: DEFAULT_TRAINING_BOTS,
+            training_move: TrainingMove::Wander,
         }
     }
 }
@@ -475,6 +481,47 @@ impl LocalSettings {
     }
 }
 
+/// 训练场靶子的移动方式。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TrainingMove {
+    /// 不动（纯靶子）。
+    Still,
+    /// 场地内随机漫游（出界时目标点指向场内 → 会自己走回来）。
+    Wander,
+}
+
+impl TrainingMove {
+    /// 持久化代号。
+    pub fn code(self) -> &'static str {
+        match self {
+            TrainingMove::Still => "still",
+            TrainingMove::Wander => "wander",
+        }
+    }
+
+    /// 由代号解析（未知 → 默认漫游）。
+    pub fn from_code(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "still" | "static" | "0" => TrainingMove::Still,
+            _ => TrainingMove::Wander,
+        }
+    }
+
+    /// 下一个选项（UI 左右切换用）。
+    pub fn next(self) -> Self {
+        match self {
+            TrainingMove::Still => TrainingMove::Wander,
+            TrainingMove::Wander => TrainingMove::Still,
+        }
+    }
+}
+
+/// 训练场靶子数量的合法范围。
+pub const TRAINING_BOTS_MIN: u8 = 1;
+pub const TRAINING_BOTS_MAX: u8 = 5;
+/// 训练场默认靶子数。
+pub const DEFAULT_TRAINING_BOTS: u8 = 3;
+
 /// 解析 `key=value` 文本；未知键 / 非法值忽略，缺失项用默认。
 pub fn parse(text: &str) -> LocalSettings {
     let mut s = LocalSettings::default();
@@ -562,6 +609,12 @@ pub fn parse(text: &str) -> LocalSettings {
                     }
                 }
             }
+            "training_bots" => {
+                if let Ok(n) = v.parse::<u8>() {
+                    s.training_bots = n.clamp(TRAINING_BOTS_MIN, TRAINING_BOTS_MAX);
+                }
+            }
+            "training_move" => s.training_move = TrainingMove::from_code(v),
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -614,6 +667,11 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_form_switch.code(),
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
+    out.push_str(&format!(
+        "training_bots={}\ntraining_move={}\n",
+        s.training_bots,
+        s.training_move.code()
+    ));
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
     }
@@ -683,6 +741,8 @@ mod tests {
             key_mute: BindKey::Char('m'),
             key_form_switch: BindKey::Char('v'),
             key_shop_cat: [BindKey::Char('n'), BindKey::Named(NamedBind::Enter), BindKey::Char('q')],
+            training_bots: 4,
+            training_move: TrainingMove::Still,
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -851,6 +911,32 @@ mod tests {
         assert_eq!(s.key_shop_cat[0], BindKey::Char('q'));
         assert_eq!(s.key_shop_cat[1], DEFAULT_KEY_SHOP_CAT[1]);
         assert_eq!(s.key_shop_cat[2], DEFAULT_KEY_SHOP_CAT[2]);
+    }
+
+    #[test]
+    fn training_settings_parse_clamp_and_roundtrip() {
+        let d = LocalSettings::default();
+        assert_eq!(d.training_bots, DEFAULT_TRAINING_BOTS);
+        assert_eq!(d.training_move, TrainingMove::Wander, "默认漫游");
+        // 超范围夹紧
+        assert_eq!(parse("training_bots=9\n").training_bots, TRAINING_BOTS_MAX);
+        assert_eq!(parse("training_bots=0\n").training_bots, TRAINING_BOTS_MIN);
+        assert_eq!(parse("training_bots=abc\n").training_bots, DEFAULT_TRAINING_BOTS, "非法值→默认");
+        assert_eq!(parse("training_bots=2\n").training_bots, 2);
+        // 移动方式
+        assert_eq!(parse("training_move=still\n").training_move, TrainingMove::Still);
+        assert_eq!(parse("training_move=wander\n").training_move, TrainingMove::Wander);
+        assert_eq!(parse("training_move=\n").training_move, TrainingMove::Wander);
+        assert_eq!(TrainingMove::Still.next(), TrainingMove::Wander);
+        // roundtrip
+        let s = parse("training_bots=5\ntraining_move=still\n");
+        let back = parse(&serialize(&s));
+        assert_eq!(back.training_bots, 5);
+        assert_eq!(back.training_move, TrainingMove::Still);
+        // 旧档（无这两行）→ 默认
+        let old = parse("master_volume=0.5\n");
+        assert_eq!(old.training_bots, DEFAULT_TRAINING_BOTS);
+        assert_eq!(old.training_move, TrainingMove::Wander);
     }
 
     #[test]

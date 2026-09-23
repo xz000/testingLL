@@ -190,23 +190,57 @@ const AVATAR_SLAY_REWARD: i32 = 1;
 const STEAM_DEFAULT_REGEN: f64 = 0.5;
 /// 单机试验场固定种子（世界生成确定性；与 `--solo` 一致）。
 const SOLO_SEED: u64 = 20260812;
-/// 单机试验场的开局金币：一次给足，便于把技能/物品试个遍。
+/// 单机试验场的开局金币：一次给足，便于把技能/物品试个遍（**不**每轮补回）。
 const SOLO_STARTING_GOLD: i32 = 9999;
+/// 训练场总轮数：设得足够大 = **不终局**（到顶会进终结结算画面，训练场不想要）。
+const SOLO_TOTAL_ROUNDS: u32 = 9999;
+/// 靶子重选目标的周期（帧，60Hz → 2.5s）：防卡柱子、防“到了/没到”抖动。
+const BOT_RETARGET_FRAMES: u32 = 150;
 
-/// 单机试验场（Solo / 主菜单）的 World + MatchState。
+/// 单机训练场（Solo / 主菜单占位）的 World + MatchState。
 ///
 /// **必须由全部入口共用**（`App::new` 启动、菜单「单机试验场」、`reset_to_main_menu` 退回菜单）：
 /// 曾经「退回主菜单」用 `MatchConfig::default()`（`starting_gold = 20`）重建，
 /// 而菜单入口又直接复用它 → **退回菜单再进 Solo 时金币变成 30**（而不是 9999）。
-fn solo_world_and_meta() -> (game_core::world::World, game_core::meta::MatchState) {
-    let mut w = game_core::world::World::new(2, SOLO_SEED); // player0=你, player1=不动靶子
-    w.sandbox = true;
+///
+/// `bots` = **靶子数量**（玩家恒为 0 号位）。训练场**不用 `sandbox`**：
+/// 出界/岩浆、缩圈、回合结算全走**真实对战机制**（这样熔岩靴/出界机制才能实测）；
+/// 仅额外加一条规则：**玩家阵亡 → 本轮结束**（见 `training_round_over`）。
+fn solo_world_and_meta(bots: u8) -> (game_core::world::World, game_core::meta::MatchState) {
+    let bots = bots.clamp(
+        local_settings::TRAINING_BOTS_MIN,
+        local_settings::TRAINING_BOTS_MAX,
+    ) as u32;
+    let w = game_core::world::World::new(1 + bots, SOLO_SEED); // player0=你，其余=靶子
     let cfg = game_core::meta::MatchConfig {
         starting_gold: SOLO_STARTING_GOLD,
+        total_rounds: SOLO_TOTAL_ROUNDS,
         ..Default::default()
     };
     let m = game_core::meta::MatchState::new(cfg, &[0], 8);
     (w, m)
+}
+
+/// 靶子下一个目标点（纯函数，便于单测）：
+///
+/// - `out_of_arena = true`（自身已到场地边缘外）→ 指回内圈（半径 `0.25*arena`）→ **会被推回场内**；
+/// - 否则在内圈随机取点（半径 ≤ `0.8*arena`，直接取半径会让点偏中心，故乘一次随机数保均匀）。
+fn bot_pick_target(arena: Fix64, out_of_arena: bool, rng: &mut Rng) -> Vec2 {
+    let (max_frac, scale_by_rng) = if out_of_arena { (0.25, false) } else { (0.8, true) };
+    let mut r = arena * Fix64::from_num(max_frac);
+    if scale_by_rng {
+        r *= rng.next_fix();
+    }
+    let a = rng.next_fix() * Fix64::from_num(std::f64::consts::TAU);
+    Vec2::new(r * cos(a), r * sin(a))
+}
+
+/// 训练场本轮是否结束：正常回合结束，**或玩家（0 号位）已阵亡**。
+///
+/// 为什么要后者：FFA 下每人自成一队 → `round_over()` 实际要求“只剩 ≤1 人”。
+/// 玩家死了但仍有 2 个以上靶子存活时，靶子之间不会打，本轮将永远不结束 → 卡着干等。
+fn training_round_over(world_over: bool, is_solo: bool, self_alive: bool) -> bool {
+    world_over || (is_solo && !self_alive)
 }
 
 
@@ -365,6 +399,20 @@ enum KeybindsAction {
     /// 点击底部「返回」。
     Back,
 }
+
+/// 「训练场设置」面板的鼠标动作。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum TrainingAction {
+    /// 点击第 i 行（0=靶子数量，1=靶子移动）。
+    Row(usize),
+    /// 点击「开始训练」。
+    Start,
+    /// 点击底部「返回」。
+    Back,
+}
+
+/// 训练场设置面板的行数（靶子数量 / 靶子移动）。
+const TRAINING_ROWS: usize = 2;
 
 /// 设置界面行：`(行类型, 标签 key)`。标签为中文原文，绘制时过 [`i18n::t`]。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -634,6 +682,14 @@ struct Game {
     bot_targets: Vec<Option<Vec2>>,
     /// 机器人的确定性随机源
     bot_rngs: Vec<Rng>,
+    /// 靶子重选目标的倒计时（帧）；与 `bot_targets` 同长。
+    bot_retarget: Vec<u32>,
+    /// 「训练场设置」面板是否打开（主菜单「单机试验场」先经过它）。
+    training_open: bool,
+    /// 训练场设置面板当前选中行。
+    training_row: usize,
+    /// 训练场设置面板鼠标命中盒。
+    training_hitboxes: ui::HitRegistry<TrainingAction>,
     /// 累计未消费的模拟时间
     accumulator: f64,
     /// 每帧递增的帧计数（用于 IME 去重，见 `last_ime_commit_frame`）。
@@ -1184,13 +1240,19 @@ impl Game {
             }
         }
         let seed = 20260812u64;
-        // Solo 试验场（含主菜单入口）：世界含「你 + 1 个不动靶子」→ 不判结束；meta 只记录你。
-        // 这样无论从菜单按 1 进 Solo 还是 --solo 直通，世界都已是 sandbox。
-        // 单机试验场与主菜单共用同一份构造（见 `solo_world_and_meta` 注释：分开写曾导致金币不一致）。
+        let local_settings_path = local_settings::default_path();
+        let local_settings = local_settings::load(&local_settings_path);
+        // Solo 训练场（含主菜单占位）：世界 = 「你 + N 个靶子」（靶子数来自训练场设置）→
+        // 不再用 sandbox：出界/缩圈/回合结算全走真实机制；meta 只记录你（靶子无 profile）。
         let is_solo_app = matches!(app, AppState::Solo | AppState::MainMenu);
         let (mut world, mut meta) = if is_solo_app {
-            let (w, m) = solo_world_and_meta();
-            eprintln!("[solo] world players={} sandbox={}", w.players.len(), w.sandbox);
+            let (w, m) = solo_world_and_meta(local_settings.training_bots);
+            eprintln!(
+                "[solo] world players={} sandbox={} training_bots={}",
+                w.players.len(),
+                w.sandbox,
+                local_settings.training_bots
+            );
             (w, m)
         } else {
             let mut w = World::new(player_count.max(1), seed);
@@ -1231,14 +1293,12 @@ impl Game {
         // 开局不带任何默认技能：完全由玩家在配置/学习界面按字母选树 + 数字绑技能（4.6b/从零选择）。
 
         // 当前所有模式（Solo/Lan）都不带本地 AI 机器人：Solo 无对手，Lan 是真人玩家。
+        // 注：靶子 AI 数据现在是**懒初始化**的（见 `bot_inputs`），这里不用预先建。
         let bot_rngs: Vec<Rng> = Vec::new();
         let bot_targets: Vec<Option<Vec2>> = Vec::new();
+        let bot_retarget: Vec<u32> = Vec::new();
 
         let (w, h) = (ui::UI_W, ui::UI_H);
-        let local_settings_path = local_settings::default_path();
-        let local_settings = local_settings::load(&local_settings_path);
-        // 启动即按本地设置确定语言（此时尚未连 Steam，`Auto` 先回退中文；
-        // 进主菜单后会 `steam_ensure_session` 拿到 Steam 语言再刷新，见 `steam_sync_language`）。
         i18n::set_lang(local_settings.lang.resolve(None));
         let audio_packs = audio_pack::discover(&audio_pack::default_roots());
         let audio = audio::AudioBank::new(ctx, &local_settings, &audio_packs);
@@ -1302,6 +1362,10 @@ impl Game {
             room_cfg_snapshot: None,
             bot_targets,
             bot_rngs,
+            bot_retarget,
+            training_open: false,
+            training_row: 0,
+            training_hitboxes: ui::HitRegistry::new(),
             accumulator: 0.0,
             frame: 0,
             // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
@@ -2645,7 +2709,61 @@ impl Game {
         }
     }
 
-    /// 生成本（模拟）帧内所有玩家的输入（单机：本机玩家 + 本地 AI 机器人）。
+    /// 靶子/机器人的确定性 AI：为**非本机**槽位生成移动输入（`set_target`）。
+    ///
+    /// 行为由 `local_settings.training_move` 控制：
+    /// - `Still`：直接返回（不动靶子）；
+    /// - `Wander`：在场地内随机漫游；**自身出界时目标点指向场内** → 被打出界会自己走回去。
+    ///
+    /// 随机源为 seeded `Rng`（每个靶子一条）→ 同一套输入可复现，可写单测。
+    fn bot_inputs(&mut self, inputs: &mut [PlayerInput]) {
+        let n = inputs.len();
+        if n <= 1 {
+            return;
+        }
+        if self.local_settings.training_move == local_settings::TrainingMove::Still {
+            return;
+        }
+        // 懒初始化：世界重建（进 Solo / 退菜单 / 开新一轮）后自动补齐。
+        let bot_slots = n - 1;
+        if self.bot_targets.len() < bot_slots {
+            self.bot_targets.resize(bot_slots, None);
+        }
+        if self.bot_retarget.len() < bot_slots {
+            self.bot_retarget.resize(bot_slots, 0);
+        }
+        while self.bot_rngs.len() < bot_slots {
+            // 每个靶子一条独立随机源（种子与靶子下标绑定 → 确定性）。
+            let idx = self.bot_rngs.len() as u64;
+            self.bot_rngs
+                .push(Rng::new(SOLO_SEED ^ 0xA5A5_5A5A_1234_5678u64.wrapping_mul(idx + 1)));
+        }
+
+        let arena = self.world.arena_radius;
+        // `i` = 世界里的玩家下标（0 号位是本机），`bot_idx` = 靶子数组下标（0 起）。
+        for (i, input) in inputs.iter_mut().enumerate().skip(1) {
+            let bot_idx = i - 1;
+            // 周期强制换目标（防卡柱/防抖）。
+            self.bot_retarget[bot_idx] = self.bot_retarget[bot_idx].saturating_sub(1);
+            let reached = match self.bot_targets[bot_idx] {
+                None => true,
+                Some(t) => (self.world.players[i].pos - t).length_squared() <= Fix64::from_num(0.1),
+            };
+            let out_of_arena = self.world.players[i].pos.length() > arena * Fix64::from_num(0.9);
+            if reached || out_of_arena || self.bot_retarget[bot_idx] == 0 {
+                // 出界 → 目标点直接指回内圈（走回去）；否则在内圈随机取点。
+                self.bot_targets[bot_idx] = Some(bot_pick_target(
+                    arena,
+                    out_of_arena,
+                    &mut self.bot_rngs[bot_idx],
+                ));
+                self.bot_retarget[bot_idx] = BOT_RETARGET_FRAMES;
+            }
+            input.set_target = self.bot_targets[bot_idx];
+        }
+    }
+
+    /// 生成本（模拟）帧内所有玩家的输入（单机：本机玩家 + 靶子 AI）。
     fn compute_inputs(&mut self) -> Vec<PlayerInput> {
         let n = self.world.players.len();
         let mut inputs: Vec<PlayerInput> = vec![PlayerInput::default(); n];
@@ -2658,36 +2776,7 @@ impl Game {
         if (PLAYER_ID as usize) < n {
             inputs[PLAYER_ID as usize] = me;
         }
-
-        // 机器人确定性 AI：仅在机器人状态已初始化时才驱动。
-        // `bot_targets`/`bot_rngs` 目前恒为空（从未填充），此处守卫避免在
-        // “CLI Steam 取消/失败后 app 未回主菜单”等 limbo 路径上索引越界崩溃；
-        // 未初始化时退化为「其余槽位保持 default（原地不动）」，与既有实际行为一致。
-        let bot_slots = n.saturating_sub(1);
-        if self.bot_targets.len() < bot_slots || self.bot_rngs.len() < bot_slots {
-            return inputs;
-        }
-
-        // 机器人确定性 AI：需要新目标时从自身随机源挑一个场地内的点。
-        let arena = self.world.arena_radius;
-        for (i, input) in inputs.iter_mut().enumerate().skip(1) {
-            let bot_idx = i - 1;
-            let needs_new = match self.bot_targets[bot_idx] {
-                None => true,
-                Some(t) => {
-                    let d = self.world.players[i].pos - t;
-                    d.length_squared() <= Fix64::from_num(0.1)
-                }
-            };
-            if needs_new {
-                let r = arena * Fix64::from_num(0.8);
-                let a = self.bot_rngs[bot_idx].next_fix() * Fix64::from_num(std::f64::consts::TAU);
-                let t = Vec2::new(r * cos(a), r * sin(a));
-                self.bot_targets[bot_idx] = Some(t);
-            }
-            input.set_target = self.bot_targets[bot_idx];
-        }
-
+        self.bot_inputs(&mut inputs);
         inputs
     }
 
@@ -5669,6 +5758,12 @@ impl event::EventHandler for Game {
                 self.accumulator = 0.0;
                 return Ok(());
             }
+            // 训练场设置面板（主菜单 1 号入口）独占输入。
+            if self.training_open {
+                self.training_update(ctx);
+                self.accumulator = 0.0;
+                return Ok(());
+            }
             // 大厅子界面（主/建房设置/房间列表）内不响应主菜单的方向键/数字。
             #[cfg(feature = "steam")]
             let in_lobby_menu = self.steam_lobby_menu || self.steam_lobby_create || self.steam_lobby_list;
@@ -5771,22 +5866,12 @@ impl event::EventHandler for Game {
             if let Some(sel) = act {
                 match sel {
                     0 => {
-                        // 单机试验场：**重建**为干净的试验场世界/meta。
-                        // （此前只切 `app` 状态、复用菜单占位的 meta —— 从对局退回菜单后
-                        //  其金币/回合等是残留值，正是「退回主菜单再进 Solo 金币不对」的来源。）
-                        eprintln!("[menu] -> Solo");
+                        // 单机训练场：先开「训练场设置」面板（靶子数量/移动），面板里按回车/点「开始训练」才真正进。
+                        // （此前直接入场，没有设置入口；`--solo` 直通仍然直接开始。）
+                        eprintln!("[menu] -> 训练场设置");
                         self.menu_hint.clear();
-                        let (mut w, m) = solo_world_and_meta();
-                        // 单机路径同样应用房间设置（与建房/入房共用同一份 `MatchConfig`）。
-                        w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
-                        w.configure_regen(self.match_cfg.base_regen);
-                        w.configure_mults(self.match_cfg.damage_mult, self.match_cfg.knockback_mult, self.match_cfg.lava_damage_mult);
-                        w.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
-                        self.world = w;
-                        self.meta = m;
-                        self.app = AppState::Solo;
-                        self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
-                        self.pre_game_config = true;
+                        self.training_open = true;
+                        self.training_row = 0;
                     }
                     1 => {
                         // 局域网对战尚未在 GUI 内接通：提示用户改用命令行启动（避免只 eprintln 看不到）。
@@ -6522,7 +6607,7 @@ impl event::EventHandler for Game {
                         self.accumulator = 0.0;
                         return Ok(());
                     }
-                    // 单机：Solo 试验场用「本机输入 + 其余(靶子)默认」；否则带 AI 机器人。
+        // 单机：Solo 训练场用「本机输入 + 靶子 AI」；否则带 AI 机器人。
                     let is_solo = self.app == AppState::Solo;
                     while self.accumulator >= TICK {
                         if is_solo {
@@ -6532,6 +6617,7 @@ impl event::EventHandler for Game {
                             if (me as usize) < n {
                                 inputs[me as usize] = self.local_player_input();
                             }
+                            self.bot_inputs(&mut inputs); // 靶子漫游
                             self.step_sim(inputs, ticking);
                             self.note_self_cast();
                         } else {
@@ -6580,8 +6666,11 @@ impl event::EventHandler for Game {
                         self.meta.finish_round(placement);
                     }
                 }
-                // 本局结束 → 结算并进入学习阶段
-                if self.world.round_over() {
+                // 本局结束 → 结算并进入学习/技能配置阶段。
+                // 训练场（Solo）额外规则：**玩家阵亡也算本轮结束**（否则靶子互不打，会卡着干等）。
+                let is_solo = self.app == AppState::Solo;
+                let self_alive = self.world.players.first().map(|p| p.alive).unwrap_or(false);
+                if training_round_over(self.world.round_over(), is_solo, self_alive) {
                     self.settle_round();
                 }
                 Ok(())
@@ -6737,10 +6826,10 @@ impl Game {
         }
     }
 
-    /// 把整场对抗（Finished）退回主菜单：放弃当前网络连接，重建为 MainMenu 的沙盒世界/meta，并清空所有运行状态。
+    /// 把整场对抗（Finished）退回主菜单：放弃当前网络连接，重建为 MainMenu 的训练场占位世界/meta，并清空所有运行状态。
     fn reset_to_main_menu(&mut self) {
-        // 主菜单与 Solo 共用同一份试验场世界/配置（不判结束 / 不缩圈；金币必须是试验场值）。
-        let (w, m) = solo_world_and_meta();
+        // 主菜单与 Solo 共用同一份训练场世界/配置（金币 9999 / 轮数不终局）。
+        let (w, m) = solo_world_and_meta(self.local_settings.training_bots);
         self.world = w;
         self.meta = m;
         // 开局不带默认技能：玩家从零在配置界面选。
@@ -6828,6 +6917,7 @@ impl Game {
         self.learn_tree_key = game_core::skill::CastKey::ALL.first().copied();
         self.bot_targets = Vec::new();
         self.bot_rngs = Vec::new();
+        self.bot_retarget = Vec::new();
         self.player_target = None;
         self.pending_cast = None;
         self.pending_skill = None;
@@ -9548,9 +9638,187 @@ impl Game {
         Ok(())
     }
 
+    /// 进入单机训练场：按当前「训练场设置」重建世界/meta，并进首局配置阶段（单机手动开始）。
+    fn enter_solo(&mut self) {
+        eprintln!(
+            "[menu] -> Solo (training, bots={}, move={:?})",
+            self.local_settings.training_bots, self.local_settings.training_move
+        );
+        self.menu_hint.clear();
+        let (mut w, m) = solo_world_and_meta(self.local_settings.training_bots);
+        // 单机路径同样应用房间设置（与建房/入房共用同一份 `MatchConfig`）。
+        w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
+        w.configure_regen(self.match_cfg.base_regen);
+        w.configure_mults(
+            self.match_cfg.damage_mult,
+            self.match_cfg.knockback_mult,
+            self.match_cfg.lava_damage_mult,
+        );
+        w.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
+        self.world = w;
+        self.meta = m;
+        self.app = AppState::Solo;
+        self.meta.begin_first_round_config(); // 进首局配置学习（单机手动开始）
+        self.pre_game_config = true;
+        // 靶子 AI 状态清空 → 下一帧懒初始化，避免沿用上一局的旧目标点。
+        self.bot_targets.clear();
+        self.bot_rngs.clear();
+        self.bot_retarget.clear();
+        self.audio.play(audio::AudioCue::UiConfirm);
+    }
+
+    /// 训练场设置面板的当前值文本（右列）。
+    fn training_value_text(&self, row: usize) -> String {
+        match row {
+            0 => i18n::tf("{n} 个", &[("n", self.local_settings.training_bots.to_string())]),
+            _ => match self.local_settings.training_move {
+                local_settings::TrainingMove::Still => i18n::t("静止（纯靶子）").to_string(),
+                local_settings::TrainingMove::Wander => i18n::t("漫游").to_string(),
+            },
+        }
+    }
+
+    /// 调整训练场设置（`delta` 仅用于数量行；移动行左右任一方向都切换）。
+    fn training_adjust(&mut self, delta: i32) {
+        match self.training_row {
+            0 => {
+                let cur = self.local_settings.training_bots as i32;
+                let n = (cur + delta).clamp(
+                    local_settings::TRAINING_BOTS_MIN as i32,
+                    local_settings::TRAINING_BOTS_MAX as i32,
+                ) as u8;
+                self.local_settings.training_bots = n;
+            }
+            _ => {
+                self.local_settings.training_move = self.local_settings.training_move.next();
+            }
+        }
+        local_settings::save(&self.local_settings_path, &self.local_settings);
+        self.audio.play(audio::AudioCue::UiMove);
+    }
+
+    /// 「训练场设置」面板输入：↑↓ 选行 · ←→/回车 调值 · 空格/P 开始 · Esc/Q 返回（鼠标可点）。
+    fn training_update(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use ggez::input::mouse::MouseButton;
+        use winit::keyboard::NamedKey;
+        let pressed = |nm: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(nm));
+        let m = ui::mouse_design(ctx);
+        let mut start = false;
+        let mut back = false;
+        let mut click_adjust = false;
+        if ctx.mouse.button_just_pressed(MouseButton::Left) {
+            for a in self.training_hitboxes.hits_at(m) {
+                match a {
+                    TrainingAction::Row(i) => {
+                        self.training_row = i;
+                        click_adjust = true;
+                    }
+                    TrainingAction::Start => start = true,
+                    TrainingAction::Back => back = true,
+                }
+            }
+        }
+        if back || Self::char_just(ctx, "q") || pressed(NamedKey::Escape) {
+            self.training_open = false;
+            self.audio.play(audio::AudioCue::UiCancel);
+            return;
+        }
+        if start || Self::char_just(ctx, " ") || Self::char_just(ctx, "p") {
+            self.training_open = false;
+            self.enter_solo();
+            return;
+        }
+        if pressed(NamedKey::ArrowUp) {
+            self.training_row = (self.training_row + TRAINING_ROWS - 1) % TRAINING_ROWS;
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        if pressed(NamedKey::ArrowDown) {
+            self.training_row = (self.training_row + 1) % TRAINING_ROWS;
+            self.audio.play(audio::AudioCue::UiMove);
+        }
+        let mut delta = 0i32;
+        if pressed(NamedKey::ArrowLeft) {
+            delta -= 1;
+        }
+        if pressed(NamedKey::ArrowRight) || pressed(NamedKey::Enter) || click_adjust {
+            delta += 1;
+        }
+        if delta != 0 {
+            self.training_adjust(delta);
+        }
+    }
+
+    /// 「训练场设置」面板（进入 Solo 前的极简配置：靶子数量 / 靶子移动）。
+    fn draw_training(&mut self, ctx: &mut Context) -> GameResult {
+        let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
+        ui::set_design_coordinates(&mut canvas, ctx);
+        self.training_hitboxes.clear();
+        let mouse = ui::mouse_design(ctx);
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        ui::text_center(
+            &mut canvas, ctx, i18n::t("训练场设置"), 34.0, ui::theme::accent(), cx, sh * 0.22,
+        )?;
+        let panel = layout::centered_panel(sw, sh, 0.62, 0.42);
+        let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
+        let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
+        for i in 0..TRAINING_ROWS {
+            let r = layout::row_in(content, i, TRAINING_ROWS);
+            let sel = i == self.training_row;
+            let hover = r.contains(mouse);
+            ui::paint_row(&mut canvas, ctx, r, sel, hover)?;
+            let col = if sel { ui::theme::accent() } else { ui::theme::text() };
+            let label = if i == 0 {
+                i18n::t("靶子数量")
+            } else {
+                i18n::t("靶子移动")
+            };
+            ui::text_left(&mut canvas, ctx, label, ui::theme::BODY, col, r.x + 14.0, r.y + 8.0)?;
+            ui::text_right(
+                &mut canvas, ctx, &self.training_value_text(i), ui::theme::BODY, col,
+                r.x + r.w - 14.0, r.y + 8.0,
+            )?;
+            self.training_hitboxes.push((r, TrainingAction::Row(i)));
+        }
+        // 底部：开始（主） / 返回
+        let bwe = 150.0;
+        let bh = 32.0;
+        let start_r = graphics::Rect::new(cx - bwe - 8.0, py + ph - bh - 16.0, bwe, bh);
+        let back_r = graphics::Rect::new(cx + 8.0, py + ph - bh - 16.0, bwe, bh);
+        for (r, label, act, primary) in [
+            (start_r, i18n::t("开始训练"), TrainingAction::Start, true),
+            (back_r, i18n::t("返回  [Esc]"), TrainingAction::Back, false),
+        ] {
+            let hover = r.contains(mouse);
+            ui::paint_row(&mut canvas, ctx, r, primary && !hover, hover)?;
+            let col = if primary {
+                ui::theme::accent()
+            } else if hover {
+                ui::theme::text()
+            } else {
+                ui::theme::text_dim()
+            };
+            ui::text_center(
+                &mut canvas, ctx, label, ui::theme::SMALL, col, r.x + bwe / 2.0, r.y + 8.0,
+            )?;
+            self.training_hitboxes.push((r, act));
+        }
+        ui::text_center(
+            &mut canvas, ctx,
+            i18n::t("↑/↓ 选择 · ←/→ 或 回车 调整 · 空格 开始 · Esc/Q 返回"),
+            ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 30.0,
+        )?;
+        canvas.finish(ctx)?;
+        Ok(())
+    }
+
     fn draw_menu(&mut self, ctx: &mut Context) -> GameResult {
         if self.settings_open {
             return self.draw_settings(ctx);
+        }
+        if self.training_open {
+            return self.draw_training(ctx);
         }
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
@@ -10974,6 +11242,88 @@ mod tests {
         assert_eq!(BindKey::parse("Q"), Some(BindKey::Char('q')));
         assert_eq!(BindKey::parse("@"), None);
         assert_eq!(BindKey::parse(""), None);
+    }
+
+    #[test]
+    fn training_round_over_rule() {
+        use super::training_round_over;
+        // 正常回合结束 → 结束（任何模式）
+        assert!(training_round_over(true, true, true));
+        assert!(training_round_over(true, false, true));
+        // Solo：玩家阵亡 → 本轮结束（即使世界层还没判结束）
+        assert!(training_round_over(false, true, false), "玩家挂了就该进下一轮配置");
+        // Solo：玩家还活着且世界也没结束 → 继续打
+        assert!(!training_round_over(false, true, true));
+        // 非 Solo（联机）不能因本机玩家死就结束本轮
+        assert!(!training_round_over(false, false, false));
+    }
+
+    #[test]
+    fn solo_world_has_configured_bots_and_no_sandbox() {
+        use super::solo_world_and_meta;
+        // 默认 3 靶子；**不用 sandbox**（出界/缩圈/回合结算走真实机制）
+        let (w, m) = solo_world_and_meta(3);
+        assert_eq!(w.players.len(), 4, "1 玩家 + 3 靶子");
+        assert!(!w.sandbox, "训练场不再豁免出界/缩圈，否则熔岩靴/出界机制没法测");
+        assert_eq!(m.config.starting_gold, 9999);
+        assert!(
+            m.config.total_rounds > 100,
+            "训练场不应几轮就终局（actual {}）",
+            m.config.total_rounds
+        );
+        // 数量夹紧（含非法输入）
+        assert_eq!(solo_world_and_meta(0).0.players.len(), 2);
+        assert_eq!(solo_world_and_meta(99).0.players.len(), 6);
+    }
+
+    #[test]
+    fn bot_targets_stay_inside_arena_and_return_when_out() {
+        use super::bot_pick_target;
+        use game_core::fix::Fix64;
+        use game_core::rng::Rng;
+        let arena = Fix64::from_num(100.0);
+        let mut rng = Rng::new(7);
+        for _ in 0..200 {
+            let wander = bot_pick_target(arena, false, &mut rng);
+            assert!(
+                wander.length() <= arena * Fix64::from_num(0.81),
+                "漫游目标必须落在场地内（否则靶子会自己走出去）"
+            );
+            let back = bot_pick_target(arena, true, &mut rng);
+            assert!(
+                back.length() <= arena * Fix64::from_num(0.26),
+                "出界时应把目标点指回内圈（这样被打出界会自己走回来）"
+            );
+            assert!(back.length() > Fix64::ZERO, "目标点不应是原点（避免不动）");
+        }
+        // 确定性：同种子 → 同序列
+        let mut a = Rng::new(99);
+        let mut b = Rng::new(99);
+        assert_eq!(bot_pick_target(arena, false, &mut a), bot_pick_target(arena, false, &mut b));
+    }
+
+    #[test]
+    fn training_round_then_next_round_revives_dummies() {
+        use super::{solo_world_and_meta, training_round_over};
+        let (mut w, mut m) = solo_world_and_meta(3);
+        // 首局配置 → 开打
+        m.begin_first_round_config();
+        m.finish_first_round_config();
+        assert_eq!(m.round, 1);
+        // 玩家阵亡 + 一个靶子被打死
+        w.players[0].alive = false;
+        w.players[1].alive = false;
+        // FFA 下世界层还不会结束（其余靶子不同队、彼此不打）→ 正是训练场规则要补的空白
+        assert!(!w.round_over(), "FFA 下还有 2 个靶子活着时世界不会判结束");
+        assert!(training_round_over(w.round_over(), true, w.players[0].alive), "玩家挂了就结束本轮");
+        // 进下一轮：meta 推进 + world.reset_round 全员复活
+        let placement = w.placement();
+        m.finish_round(placement);
+        m.start_next_round();
+        w.reset_round();
+        assert_eq!(m.round, 2, "已进入下一轮");
+        assert!(w.players.iter().all(|p| p.alive), "下一轮所有靶子复活");
+        assert_eq!(w.players.len(), 4, "靶子数量不变");
     }
 
     #[test]

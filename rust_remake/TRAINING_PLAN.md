@@ -125,6 +125,38 @@
 
 ---
 
+## 11. 已实施：P0（2026-09-20）
+
+用户拍板：**不复活**（复用对战机制：都死完/玩家阵亡 → 进下一轮技能配置）；**玩家保留真实掉血**；
+**出界掉血开着**（要用来测熔岩靴）；**保留真实缩圈**；金币 9999 不每轮补；**默认 3 个靶子**；**默认漫游、不做反击**；
+设置入口放菜单里（进入前一个极简面板）。
+
+### 关键认知（写下来避免后人重复挖）
+
+- `round_over() → settle_round() → MatchPhase::Learning` 对 Solo **早就接好了**（`main.rs` 中该判定在「非 Steam 分支」之外，
+  且 Learning 分支里 Solo 专用路径明确写了“首局配置与局间配置同一条路径”）。
+  Solo 之所以从没进过下一轮，**唯一原因**是 `sandbox = true` 让 `round_over()` 恒为 `false`。
+- 所以**不需要动 game-core**：Solo 改成 `sandbox = false` 就“免费”拿到了出界掉血/缩圈/回合结算。
+- `sandbox` 的语义**保持不变**（20+ 个单测把它当“干净测试台”：不缩圈/不出界掉血/不判回合结束）。
+
+### 实际改动
+
+| 项 | 实现 |
+|---|---|
+| 世界 | `solo_world_and_meta(bots)` = `World::new(1 + bots, SOLO_SEED)`，**不再** `sandbox = true`；靶子数夹在 1..=5 |
+| 不终局 | `meta.config.total_rounds = SOLO_TOTAL_ROUNDS (9999)`（否则默认 3 轮就进结算画面） |
+| 本轮结束 | 新增纯函数 `training_round_over(world_over, is_solo, self_alive)`：**玩家阵亡也算本轮结束**（FFA 下靶子互不打，否则会卡着干等） |
+| 靶子 AI | 新增 `bot_inputs()`（复活了原先**从未启用**的 `bot_targets`/`bot_rngs`），并在 Solo 分支也调用；新增 `bot_retarget` 周期换目标防卡柱；`bot_pick_target()` 为纯函数 + 单测 |
+| 出界自己走回来 | 自身超出 `0.9*arena` → 目标点改指内圈（`0.25*arena`） |
+| 设置入口 | 主菜单 1 号入口 → 先开「训练场设置」面板（靶子数量 / 靶子移动 · 空格/P 开始 · Esc/Q 返回 · 可鼠标）；`--solo` 仍直通 |
+| 持久化 | `settings.txt` 新增 `training_bots=` / `training_move=`（0=still/漫游），旧档自动取默认 |
+| 测试 | `training_round_over_rule`、`solo_world_has_configured_bots_and_no_sandbox`、`training_round_then_next_round_revives_dummies`、`bot_targets_stay_inside_arena_and_return_when_out`、`training_settings_parse_clamp_and_roundtrip` |
+| 未做（按用户意思） | 靶子反击、每轮补金、固定场地大小、统计 HUD、重置键 |
+
+> 协议/快照未动（`PROTOCOL_VERSION` 不变）：所有 AI 与轮次规则都在客户端。
+
+---
+
 ## 7. 需要你拍板（决定 P0 范围）
 
 - **Q1 靶子数量**：默认几个？（建议 **3**；可 1/2/3/5 可选）
