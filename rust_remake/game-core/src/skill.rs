@@ -1733,7 +1733,7 @@ impl DefTable {
                     speed: Fix64::from_num(700.0),
                     radius: Fix64::from_num(27.0),
                     life: Fix64::from_num(1.0),
-                    kb_ji: Fix64::from_num(0.8),
+                    kb_ji: Fix64::from_num(0.2), // 098c `mI(nr,Vr,ZO,.2)`（13009）→ 20% 击退
                     ignite: None,
                     blast: None,
                     count: 1,
@@ -2304,7 +2304,7 @@ impl DefTable {
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(35.0),
                     life: Fix64::from_num(1.12),
-                    kb_ji: Fix64::from_num(0.8),
+                    kb_ji: Fix64::from_num(0.6), // 098c `mI(nr,Vr,ZO,.6)`（13132）→ 60% 击退
                     ignite: None,
                     blast: None,
                     count: 1,
@@ -3769,15 +3769,17 @@ mod tests {
         assert!(near(d.stats_at(8).cooldown, 16.5, 1e-1), "L8 CD should be ~16.5, got {:?}", d.stats_at(8).cooldown);
         match d.effect {
             SkillEffect::Warlock098b { speed, radius, kb_ji, life, .. } => {
-                assert!(near(speed, 700.0, 1e-3) && near(radius, 27.0, 1e-3) && near(kb_ji, 0.8, 1e-3));
+                assert!(near(speed, 700.0, 1e-3) && near(radius, 27.0, 1e-3) && near(kb_ji, 0.2, 1e-3));
                 // 098c `ev=Rr/700`（射程上限 700×(1+.1ei)）→ 无点目标时回退 700/700=1.0s
                 assert!(near(life, 1.0, 1e-3), "S014A 回退寿命应为 1.0s，got {life:?}");
             }
             ref e => panic!("S014 effect 错：{e:?}"),
         }
         match alt14.effect {
-            SkillEffect::Warlock098b { speed, radius, life, .. } => {
+            SkillEffect::Warlock098b { speed, radius, life, kb_ji, .. } => {
                 assert!(near(speed, 900.0, 1e-3) && near(radius, 35.0, 1e-3));
+                // 098c `oc` 敌方分支 `mI(nr,Vr,ZO,.6)`（13132）→ 60% 击退（与 S015 簇射的 65% 同一套 `lI` 语义）
+                assert!(near(kb_ji, 0.6, 1e-3), "S014B 击退系数应为 0.6，got {kb_ji:?}");
                 // 098c `ev=(1+.1ei)*.12` → 到期 `ic` 续 `(1+.1ei)` → 等价单段 0.12+1.0=1.12s
                 assert!(near(life, 1.12, 1e-3), "S014B 寿命应为 1.12s，got {life:?}");
             }

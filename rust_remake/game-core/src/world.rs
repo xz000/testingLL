@@ -2478,6 +2478,11 @@ impl World {
                         let is_ally_support = same_team
                             && (*on_hit == crate::skill::W098bOnHit::DrainSlow
                                 || *on_hit == crate::skill::W098bOnHit::Weaken);
+                        // 只有 S014B（削弱）命中友军才**不销毁**弹体：098c `oc` 友军分支没有 `IA(nr)`，
+                        // 而是续命 + 转向最近敌人继续飞；`vc`（A 形态）的 `IA(nr)` 在 `if nv[Vr]==1` 块**末尾**
+                        // （敌/友分支共用）→ A 命中友军同样销毁。
+                        let weaken_ally_keep =
+                            same_team && *on_hit == crate::skill::W098bOnHit::Weaken;
                         if !is_chain && !is_ally_support {
                             events.push((victim, *gx, Some(pr.owner)));
                         }
@@ -2676,7 +2681,7 @@ impl World {
                                 }
                                 None => pr.alive = false, // 无下一目标：消失
                             }
-                        } else if *proj != crate::skill::W098bProjKind::Boomerang && !is_ally_support {
+                        } else if *proj != crate::skill::W098bProjKind::Boomerang && !weaken_ally_keep {
                             // S014B 命中**友军**（098c `oc` 友军分支）**不销毁**弹体：改为增益 + 转向最近的敌人继续飞；
                             // 其余情形（含 S014A 命中友军、S014B 命中敌人）都在 `vc`/`oc` 末尾 `IA(nr)` 销毁。
                             pr.alive = false;
@@ -9606,6 +9611,56 @@ mod tests {
             "重定向应 600/s 指向最近的敌方对象：got {v1:?} want {want:?}"
         );
         assert!((l1 - 7.0 / 6.0).abs() < 0.02, "重定向后寿命 = (1+.1ei)×7/6：{l1}");
+    }
+
+    /// S014A 汲取·减速命中**友军**（098c `vc` · 12962 友军分支）：不是伤害，而是治疗 `5+L` + 友军移速 `+70`；
+    /// 且 `vc` 的 `IA(nr)` 在 `if nv[Vr]==1` 块**末尾**（敌/友分支共用）→ **弹体命中友军也销毁**。
+    #[test]
+    fn s014a_ally_hit_heals_and_consumes_bolt() {
+        let mut world = World::new(3, 1203);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0; // 施法者
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 0; // 友军（弹道上 120 处）
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[1].hp = world.players[1].max_hp - Fix64::from_num(20.0);
+        world.players[2].team = 1; // 敌人放远，避开
+        world.players[2].pos = Vec2::new(d60(-10.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        let hp_ally = world.players[1].hp;
+        let speed_before = world.players[1].base_speed_for_test().to_num::<f64>();
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        let mut bolt_gone = false;
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            let alive = world.projectiles.iter().any(|pr| {
+                pr.alive && matches!(&pr.kind, ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::DrainSlow, .. })
+            });
+            if !alive {
+                bolt_gone = true;
+                break;
+            }
+        }
+        assert!(bolt_gone, "命中友军后弹体应销毁（098c `vc` 末尾 `IA(nr)`）");
+        assert!(world.players[1].hp > hp_ally, "友军应被治疗（098c `PX(Vr,ZO)`，ZO=5+L=6）");
+        assert!(
+            world.players[1].has_buff(BuffKind::SpeedSteal(0.0)),
+            "友军应获移速 +70（098c `gR(Vr,hR(Vr)+Kr)`）"
+        );
+        let speed_after = world.players[1].base_speed_for_test().to_num::<f64>();
+        assert!(
+            (speed_after - speed_before - SPEED_DRAIN).abs() < 1.5,
+            "友军移速应 +70：before={speed_before} after={speed_after}"
+        );
     }
 
     /// S014B 汲取·削弱命中**友军**（098c `oc` 13048 友军分支）：不是伤害——给友军 `Gn ×1.1`，
