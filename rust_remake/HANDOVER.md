@@ -220,6 +220,19 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
     - 已实测：`publish.ps1 -BuildOnly -Target demo` → `target/steam-pipe-demo/content/` 只含 exe/dll/字体/LICENSE（**无** appid.txt），且不影响正式版 staging。
     - **Steam 大厅天然按 AppID 隔离** → demo 玩家只与 demo 匹配（与正式版不互通），**零代码**；云不互通（自动退化为本地）。
     - 待真机验证：demo 起服 appid=1042120 / 入口提示 / 大厅隔离 / 覆盖层直跑。
+16. ✅ **技能严格对齐 098c（回旋镖 S004 + 移形换位撞柱）（2026-09-20）**
+    - **回旋镖 S004**：旧实现是错的（“飞行不结算 + 回程 210 AOE”）。按 098c 实码重写：
+      `Sb`（命中处理器，`hv=Ni=Condition(Sb)`）→ 命中敌人**立即**结算 `6.4+0.8×等级`（L1=7.2，与 tooltip 完全吻合）+ 弹开
+      → `call sb()` → 转 `jv=Tb`：**以 1000/s 飞回施法者、距 75 内销毁**（施法者已死→再飞 1.5s 消失）。
+      **删除回程 AOE**（那是陨石 `oB`/`Zb` 的公式误用）。新增 `BoomerangPhase{Out,Return,Home}` 三阶段
+      （取代 `returning: bool` → **协议 21→22**）；`Out` 时长 = `ev`、`Return` 时长 = `ev-0.15s`（098c `gv`）。
+      〖审计更正：`oB` 是**陨石**的 `Gv` 回调（`iB` 里 `Gv[Nb]=ti`），`JASS_AUDIT_098c.md` 旧结论已修〗
+    - **移形换位 → 可与柱子互换位置**：098c `LB`（`hv=qi`）里 `if nv[Vr]==3 then SetUnitX/Y(F[Vr], 施法者原位)` →
+      命中 class-3 对象（地图里的柱子是单位）时**连柱子一起搬到施法者原位**。
+      我们：柱子是静态圆 → **交换 `Player.pos` ↔ `Obstacle.pos`**（`s013a_swaps_with_pillar` 单测）。
+      同时查清 A/B 差别：回调注册完全相同，差别在碰撞掩码（A `Av[+1]=true` 可撞术士；B `Av[+1]=false` 穿术士）；
+      到期 `KB` 两者都把施法者传到落点，A 也已补上。
+    - **数据真值原则**：以 JASS 代码为准（tooltip 可能过时，仅作旁证）。
 
 ## 五、文档索引（读哪个）
 

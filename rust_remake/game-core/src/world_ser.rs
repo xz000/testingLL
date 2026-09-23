@@ -606,7 +606,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining, heal_team } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); wu8(o, *heal_team as u8); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
-        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg } => {
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg } => {
             wu8(o, 17);
             wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3, crate::skill::W098bProjKind::Magma => 4 });
             wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *kb_ji);
@@ -615,7 +615,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wu8(o, blast.is_some() as u8);
             if let Some(v) = blast { wfix(o, *v); }
             wu32(o, target.unwrap_or(u32::MAX));
-            wu8(o, *returning as u8);
+            wu8(o, match bob_phase { crate::world::BoomerangPhase::Out => 0, crate::world::BoomerangPhase::Return => 1, crate::world::BoomerangPhase::Home => 2 });
             wfix(o, *lateral);
             wvec(o, *forward_dir);
             wfix(o, *out_dist);
@@ -689,7 +689,11 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             let blast = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
             let tid = u32at(b, p)?;
             let target = if tid == u32::MAX { None } else { Some(tid) };
-            let returning = u8at(b, p)? != 0;
+            let bob_phase = match u8at(b, p)? {
+        1 => crate::world::BoomerangPhase::Return,
+        2 => crate::world::BoomerangPhase::Home,
+        _ => crate::world::BoomerangPhase::Out,
+    };
             let lateral = fixat(b, p)?;
             let forward_dir = vecat(b, p)?;
             let out_dist = fixat(b, p)?;
@@ -714,7 +718,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             let pillar_bounce = u8at(b, p)? != 0;
             let pillar_rest = fixat(b, p)?;
             let lightning_dmg = fixat(b, p)?;
-            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, returning, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg }
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg }
         }
         18 => PK::Clone {
             owner: u32at(b, p)?,

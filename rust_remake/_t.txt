@@ -1,0 +1,31 @@
+fn s004_boomerang_hits_then_returns_to_caster() {
+        let mut world = World::new(2, 952);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 180 处的敌人（< 800 出程）
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S004, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 098c 机制：回旋镖飞行全程不结算，只在回程到位时对命中半径 qI（210）内敌人 AOE（伤害随距离衰减）。
+        let mut boom_seen = false;
+        let mut hit_while_flying = false;
+        let mut hit_on_return = false;
+        let mut settled = false;
+        for _ in 0..180 {
+            world.step(none.clone(), dt);
+            let boom_now = world
+                .projectiles
+                .iter()
+                .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
+            if boom_now {
+                boom_seen = true;
+            }
+            if world.players[1].hp < hp1 {
+                if boom_now {

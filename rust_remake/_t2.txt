@@ -1,0 +1,35 @@
+fn s013b_relocate_carries_caster() {
+        let mut world = World::new(2, 1008);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S013.as_u32() as usize] = true; // B=搬运
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        // 搬运现在是**弹体**（098c `pB`）：飞抵落点后才把施法者传送过去，故需推进若干帧。
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let d = world.players[0].pos.length().to_num::<f64>();
+        assert!(d > 300.0, "搬运应把施法者搬到远处（>300），实际 {d}");
+        // 对照 A 形态（置换）：点空地时也是自己瞬移，但点敌人时换位——本测试验证 B 后不互换
+    }
+
+    /// S013B 搬运（098c `pB` tooltip）：弹体撞到**非术士障碍物**时，施法者与该障碍物互换位置
+    /// （否则弹体被柱子挡下，施法者永远到不了）。
+    #[test]
+    fn s013b_relocate_bolt_hitting_obstacle_carries_caster() {
+        let mut world = World::new(2, 1011);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.pla

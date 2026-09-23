@@ -254,7 +254,8 @@ pub enum ProjectileKind {
         /// Homing：锁定目标玩家 id；Bounce：上一跳命中的玩家 id（跳过）。
         target: Option<u32>,
         /// Boomerang 是否已转入回程。
-        returning: bool,
+        /// 回旋镖（S004）飞行阶段；非回旋镖恒 `Out`。
+    bob_phase: BoomerangPhase,
         /// 命中副作用（S017 残废 / S019 拉拽；默认 Ki）。
         on_hit: crate::skill::W098bOnHit,
         /// 副作用时长（growth.duration 求值：残废 (4+0.25L)s / 锁链 0.5s）。
@@ -398,6 +399,22 @@ impl ProjectileKind {
             _ => None,
         }
     }
+}
+
+/// S004 回旋镖的飞行阶段（098c：`Ub` 出程 → `ub` 回程弧 → `sb`/`Tb` 飞回施法者）。
+///
+/// 098c 实码：
+/// - 出程（`Out`）：前向匀减速（`yb=-wb²/(2cO)`）+ 侧向匀加速（`Yb=2yb·Wb/wb`，左右交替），时长 `ev`；
+/// - 回程弧（`Return`）：`ev` 到期时评估 `Gv=ub` → **镜像加速度**（`U=Y,w=z`）、时长 `gv=ev-0.15s`；
+/// - 飞回（`Home`）：`gv` 到期时评估 `Gv=sb`→`jv=Tb`：速度/加速度清零，之后**以 1000/s 追施法者**
+///   （转向加速度 1000/s²），**距施法者 <75 即销毁**；施法者已死 → 再飞 1.5s 消失。
+///
+/// 命中敌人（`Sb`）会直接跳到 `Home`（`call sb()`），且**不再造成伤害**。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BoomerangPhase {
+    Out,
+    Return,
+    Home,
 }
 
 /// 静态圆形障碍（原版 demo 里实际用作"墙/柱子"的碰撞体）。
@@ -872,7 +889,7 @@ impl World {
                     ignite: None,
                     blast: None,
                     target: None,
-                    returning: false,
+                    bob_phase: BoomerangPhase::Out,
                     on_hit: crate::skill::W098bOnHit::Ki,
                     debuff_dur: Fix64::ZERO,
                     lateral: Fix64::ZERO,
@@ -1509,7 +1526,7 @@ impl World {
         // (owner, 位置, 速度, gx, 弹半径, 寿命, kb_ji)
         let mut spawn_bullets: Vec<(u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 098c 回旋镖回程到位结算：(owner, 位置, gx, kb_ji) —— 对命中半径 qI 内目标 AOE（距离衰减）。
-        let mut boomerang_settles: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new();
+        let mut bob_home: Vec<(usize, Vec2)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
@@ -1705,10 +1722,15 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, returning, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
-                    // Homing 全速直追锁定目标；Boomerang 出程恒速、过半程后朝施法者当前位置回拉。
+                    // Homing 全速直追锁定目标；Boomerang 走三阶段状态机（见下）。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
+                    //
+                    // 【回旋镖不走通用寿命逻辑】098c 里它的生命周期由自己的回调链控制
+                    // （`ev`出程 → `ub`回程弧 → `sb`/`Tb`飞回），且**没有”到期爆炸“**。
+                    let is_boomerang = *proj == crate::skill::W098bProjKind::Boomerang;
+                    if !is_boomerang {
                     *remaining -= dt;
                     if *remaining <= Fix64::ZERO {
                         pr.alive = false;
@@ -1717,11 +1739,6 @@ impl World {
                             if let Some(o) = self.players.get_mut(pr.owner as usize) {
                                 o.pos = pr.pos;
                             }
-                        }
-                        // 098c `oB`：回旋镖在飞行计时结束时就地做命中半径 qI 内 AOE 结算
-                        //（**不是**靠「回到施法者附近」——玩家一移动就永远回不来了）。
-                        if *proj == crate::skill::W098bProjKind::Boomerang {
-                            boomerang_settles.push((pr.owner, pr.pos, *gx, *kb_ji));
                         }
                         if let Some(br) = blast {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
@@ -1751,6 +1768,7 @@ impl World {
                             spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.7), *kb_ji));
                         }
                     }
+                    } // end !is_boomerang（回旋镖不走通用寿命/到点逻辑）
                     match proj {
                         crate::skill::W098bProjKind::Straight | crate::skill::W098bProjKind::Bounce | crate::skill::W098bProjKind::Magma => {
                             pr.pos += *vel * dt;
@@ -1770,24 +1788,66 @@ impl World {
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Boomerang => {
-                            // 098c 弧线物理（Ub/ub）：出程 = 前向匀减速 + 横向匀加速（横向从 ±300 到 ∓300），
-                            // 前向归零转回程 = 横向加速度反向，沿对称弧线回飞施法者。
+                            // 098c 回旋镖三阶段（`Ub` 出程 → `ub` 回程弧 → `sb`/`Tb` 飞回施法者）；
+                            // 本阶段计时器就是 `remaining`（回旋镖不走通用寿命逻辑）。
                             let dir = *forward_dir;
                             let perp = Vec2::new(-dir.y, dir.x);
-                            // 前向减速度 yb = -speed²/(2·out_dist)；横向加速度 Yb = -speed·lateral/out_dist（098c Ub）。
+                            // 前向减速度 `yb = -speed²/(2·out_dist)`；横向加速度 `Yb = -speed·lateral/out_dist`。
                             let yb = -(*speed * *speed) / (Fix64::from_num(2.0) * *out_dist);
                             let yb_lat = -(*speed * *lateral) / *out_dist;
-                            if !*returning {
-                                *vel += (dir * yb + perp * yb_lat) * dt;
-                                // 098c `ub`：回程镜像在飞行结束前 5 帧（0.15s）开始（`gv = ev - 5*.03`），
-                                // 而不是等前向速度归零。
-                                if *remaining <= Fix64::from_num(0.15) {
-                                    *returning = true;
+                            let out_secs = *out_dist * Fix64::from_num(2.0) / *speed; // `ev`（098c）
+                            match *bob_phase {
+                                BoomerangPhase::Out => {
+                                    *vel += (dir * yb + perp * yb_lat) * dt;
+                                    *remaining -= dt;
+                                    if *remaining <= Fix64::ZERO {
+                                        // 098c `ub`：出程寿命尽 → 镜像加速度（`U=Y,w=z`），时长 `gv = ev-0.15s`。
+                                        *bob_phase = BoomerangPhase::Return;
+                                        *remaining = out_secs - Fix64::from_num(0.15);
+                                    }
                                 }
-                            } else {
-                                // 回程：横向加速度反向（098c ub：U=Y, w=z），前向继续减速朝施法者。
-                                *vel += (dir * yb - perp * yb_lat) * dt;
-                                // 注：结算由 `remaining` 到期触发（098c `oB`），不依赖与施法者的距离。
+                                BoomerangPhase::Return => {
+                                    // 回程弧：横向加速度反向（098c `ub`）。
+                                    *vel += (dir * yb - perp * yb_lat) * dt;
+                                    *remaining -= dt;
+                                    if *remaining <= Fix64::ZERO {
+                                        // 098c `sb`：速度/加速度清零 → `jv=Tb`（追施法者）。
+                                        *bob_phase = BoomerangPhase::Home;
+                                        *vel = Vec2::new(Fix64::ZERO, Fix64::ZERO);
+                                        *remaining = Fix64::ZERO; // Home 阶段不再计时（施法者死时重设）
+                                    }
+                                }
+                                BoomerangPhase::Home => {
+                                    // 098c `Tb`：朝施法者单位（`Xn[施法者]`）以 1000/s 追、转向加速度 1000/s²；
+                                    // 距 75 内销毁；施法者已死 → 再飞 1.5s 消失。
+                                    let owner_alive = self
+                                        .players
+                                        .get(pr.owner as usize)
+                                        .map(|p| p.alive)
+                                        .unwrap_or(false);
+                                    if !owner_alive {
+                                        *remaining += dt; // 复用为“施法者死后存活计时”
+                                        if *remaining >= Fix64::from_num(1.5) {
+                                            pr.alive = false;
+                                        }
+                                    } else {
+                                        let opos = self.players[pr.owner as usize].pos;
+                                        let d = opos - pr.pos;
+                                        let dist = d.length();
+                                        if dist <= Fix64::from_num(75.0) {
+                                            pr.alive = false; // 098c `cO<75 → iO(nr,true)`
+                                        } else {
+                                            let want = d.normalized() * *speed;
+                                            let diff = want - *vel;
+                                            let dv = diff.length();
+                                            if dv > Fix64::ZERO {
+                                                // 每帧速度增量 = 30*0.03 = 0.9（逐帧单位）；换算成每秒尺度
+                                                // = 30/s²×… 実为 1000/s²（从 0 到 1000/s 用 1s）。
+                                                *vel += diff.normalized() * Fix64::from_num(1000.0) * dt;
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             pr.pos += *vel * dt;
                         }
@@ -1819,6 +1879,43 @@ impl World {
                     if let ProjectileKind::Boomerang { vel, .. } = &mut pr.kind {
                         *vel = crate::fix::mirror_by(*vel, normal);
                         pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
+                    } else if let ProjectileKind::W098b {
+                        on_hit: crate::skill::W098bOnHit::SwapTarget,
+                        ..
+                    } = &mut pr.kind
+                    {
+                        // S013A/B 与**柱**互换位置（098c `LB`：`if nv[Vr]==3 then SetUnitX/Y(F[Vr], 施法者原位)`）。
+                        // A（`MB`）与 B（`pB`）注册的是**同一个** `hv=qi=Condition(LB)` → 两者都能与柱子对调。
+                        // 认证：`LB` 里 `if nv[Vr]==3 then SetUnitX/Y(F[Vr], 施法者原位)` →
+                        // 命中 class-3 对象（地图里的“柱子”是单位）时**连它一起搬到施法者原位**，
+                        // 即「施法者 ↔ 柱子」互换；随后 `IA(nr)` 销毁弹体。
+                        // 我们的柱子是静态圆（`Obstacle{pos,radius}`）→ 交换 `pos` 即可。
+                        // 注：玩家当前位置本就不在任何柱内（碰撞解算保证），故被搬过去的柱子不会
+                        // 与其他柱子重叠；即使半径差异导致微叠，下一帧碰撞解算会把玩家推开。
+                        let caster = pr.owner as usize;
+                        if let Some(p) = self.players.get_mut(caster) {
+                            let old = p.pos;
+                            p.pos = o.pos;
+                            p.move_target = None;
+                            p.control = None; // 与 098c `IssueImmediateOrderById` 相近：清移动指令
+                            self.obstacles[oi].pos = old;
+                        }
+                        pr.alive = false;
+                    } else if let ProjectileKind::W098b {
+                        on_hit: crate::skill::W098bOnHit::CarrySelf,
+                        ..
+                    } = &mut pr.kind
+                    {
+                        // S013B（搬运）遇到非术士障碍 → 同样与它换位（098c `LB` 的 `nv[Vr]==3` 分支）。
+                        let caster = pr.owner as usize;
+                        if let Some(p) = self.players.get_mut(caster) {
+                            let old = p.pos;
+                            p.pos = o.pos;
+                            p.move_target = None;
+                            p.control = None;
+                            self.obstacles[oi].pos = old;
+                        }
+                        pr.alive = false;
                     } else if let ProjectileKind::W098b {
                         proj: crate::skill::W098bProjKind::Boomerang,
                         vel,
@@ -2241,20 +2338,29 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, bob_phase, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
                     // Bounce 命中判定排除上一跳受害者（target）——重定向瞬间还贴着旧目标，
                     // 不排除会每帧重复结算同一目标刷伤害。
-                    // 098c 回旋镖：飞行中不结算（oB 在回程寿命耗尽时对命中半径 qI 内目标一次性 AOE 结算）。
+                    
+                    // 098c 回旋镖：**命中敌人即结算**（`Sb`：`mI(…,6.4+0.8×等级,…)`，L1=7.2），
+                    // 结算后弹开并转入「飞回施法者」状态（`sb`→`Tb`），**之后不再造成伤害**。
+                    // 证据：`Ub` 里 `hv[nb]=Ni=Condition(Sb)`；`Sb` 的 `6.4+0.8*Xv[nr]` 与 tooltip 7.2/8.0/… 完全吻合。
+                    // （此前误把它写成“飞行不结算 + 回程 210 AOE”——那是陨石 `oB`/`Zb` 的公式，已纠正。）
                     let hit = if *proj == crate::skill::W098bProjKind::Boomerang {
-                        None
+                        if *bob_phase == BoomerangPhase::Home {
+                            None // 已命中过 → 回程只是飞回去
+                        } else {
+                            nearest_hit(&self.players, pr.pos, pr.owner, *radius)
+                        }
                     } else if blast.is_some() {
                         // 陨石：飞行途中不结算（098c `iB`：一路飞到点击点，仅在到点由 `oB` 做 AOE）。
                         None
                     } else if *on_hit == crate::skill::W098bOnHit::CarrySelf {
-                        // 搬运弹体（098c `pB`）：不与玩家碰撞，飞抵落点后才传送施法者。
+                        // 搬运弹体（S013B `pB`）：**不碰术士**（`Av[+1]=false`）→ 飞抵落点后传送施法者；
+                        // 但 `Av[+3]=true` → 撞 class-3 障碍（柱子）会互换（见撞柱分支）。
                         None
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
                         nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
@@ -2266,6 +2372,10 @@ impl World {
                     };
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
+                        // 回旋镖命中：结算后转入回程（098c `sb`）→ 记录到延迟队列（借用冲突）。
+                        if *proj == crate::skill::W098bProjKind::Boomerang {
+                            bob_home.push((pi, self.players[victim as usize].pos));
+                        }
                         // 锁链的伤害走 Tether 的 `damage_per_sec`（文档 `0.2+0.1×L` 是**每秒**，
                         // 与引力「每秒 0.3+0.2×L」同量级），不再按单发直伤结算（0.2 单发等于没有）。
                         let is_chain = *on_hit == crate::skill::W098bOnHit::ChainPull
@@ -2400,7 +2510,8 @@ impl World {
                                 silence_src.push((pr.owner, victim));
                             }
                             crate::skill::W098bOnHit::SwapTarget => {
-                                // S013A 换位（098c `MB`）：命中敌人 → 施法者与该敌人**互换位置**，弹体销毁。
+                                // S013A 换位（098c `MB`，`Av[+1]=true` → 可命中术士）：命中敌人→互换位置。
+                                // （`CarrySelf` 已在命中检测处被排除——B 形态穿术士。）
                                 let a = pr.owner as usize;
                                 let b = victim as usize;
                                 if a != b {
@@ -2411,11 +2522,9 @@ impl World {
                                 }
                             }
                             crate::skill::W098bOnHit::CarrySelf => {
-                                // S013B 搬运（098c `pB`）：把施法者传送到弹体位置。
-                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
-                                    o.pos = pr.pos;
-                                }
+                                // 预留：B 形态不碰术士（命中检测已返回 `None`），故不会走到这里。
                             }
+
                         }
                         // （098c 回旋镖飞行中不命中、不转回程：回程由运动学前向归零触发、到位时 AOE 结算。）
                         // Bounce（S016 弹跳弹）：命中不消失——伤害 ×0.8（下限 0.2），
@@ -2545,27 +2654,30 @@ impl World {
                 *remaining = *life; // 单跳寿命重置（ev 语义）
             }
         }
-        // 2c2) 回旋镖回程到位结算（098c oB）：对命中半径 qI = $D2×√(1+0.25xi) 内敌人
-        // 造成伤害（Zb 随命中距离衰减：因子 = 1 − d/(400+40xi)）+ KI 击退。
-        for (owner, pos, gx, kb_ji) in boomerang_settles {
-            let xi = self.players.get(owner as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
-            let q_i = Fix64::from_num(210.0 * (1.0 + 0.25 * xi).sqrt());
-            for j in 0..n {
-                let p = &self.players[j];
-                if !p.alive || p.id == owner {
-                    continue;
-                }
-                let d = (p.pos - pos).length();
-                if d <= q_i + p.radius {
-                    let factor = (Fix64::ONE - d / Fix64::from_num(400.0 + 40.0 * xi)).max(Fix64::ZERO);
-                    events.push((p.id, gx * factor, Some(owner)));
-                    if d > Fix64::ZERO {
-                        let atk_gn = self.players.get(owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
-                        let kb = warlock_ki_knockback(p.mana, gx, kb_ji, atk_gn, p.dmg_taken_mult);
-                        pushes.push((p.id, (p.pos - pos).normalized() * kb, W098B_KB_TIME, true));
-                    }
-                }
+        // 2c2) 回旋镖命中后的「弹开 + 飞回施法者」（098c `Sb` 末尾 `call sb()`）：
+        //   · 速度反向（098c：`tb = 1.5×|自身到原点|+15`，`Q/S = -tb/100 × 方向`）；
+        //   · 位置推到目标半径外（`Rv[nr]+Rv[Vr]+10`）；
+        //   · 进入 `Home` 阶段（`jv=Tb`：追施法者，**之后不再造成伤害**）。
+        for (pi, victim_pos) in bob_home {
+            let (cur_pos, radius) = match &ps[pi].kind {
+                ProjectileKind::W098b { radius, .. } => (ps[pi].pos, *radius),
+                _ => continue,
+            };
+            let away = cur_pos - victim_pos;
+            let dir = if away.length_squared() > Fix64::ZERO {
+                away.normalized()
+            } else {
+                Vec2::new(Fix64::ONE, Fix64::ZERO)
+            };
+            let kick = (Fix64::from_num(1.5) * cur_pos.length() + Fix64::from_num(15.0))
+                / Fix64::from_num(100.0);
+            let new_pos = victim_pos + dir * (radius + Fix64::from_num(10.0));
+            if let ProjectileKind::W098b { vel, bob_phase, remaining, .. } = &mut ps[pi].kind {
+                *vel = dir * kick;
+                *bob_phase = BoomerangPhase::Home;
+                *remaining = Fix64::ZERO;
             }
+            ps[pi].pos = new_pos;
         }
 
         // 2c3) 镜像分身开火：重置开火倒计时，并从分身位置射出火球。
@@ -2594,7 +2706,7 @@ impl World {
                         ignite: None,
                         blast: None,
                         target: None,
-                        returning: false,
+                        bob_phase: BoomerangPhase::Out,
                         on_hit: crate::skill::W098bOnHit::Ki,
                         debuff_dur: Fix64::ZERO,
                         lateral: Fix64::ZERO,
@@ -2779,7 +2891,7 @@ impl World {
                     ignite: None,
                     blast: None,
                     target: None,
-                    returning: false,
+                    bob_phase: BoomerangPhase::Out,
                     on_hit: crate::skill::W098bOnHit::Ki,
                     debuff_dur: Fix64::ZERO,
                     lateral: Fix64::ZERO,
@@ -3664,7 +3776,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             ignite: ignite_total,
                             blast,
                             target: homing_target,
-                            returning: false,
+                            bob_phase: BoomerangPhase::Out,
                             on_hit,
                             debuff_dur: stats.duration,
                             // 回旋镖横向侧偏速度（见上方 lat_val；非回旋镖恒 0）。
@@ -6425,7 +6537,7 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 180 处的敌人（< 800 出程）
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 180 处的敌人（< 800 射程）
         world.players[1].move_target = None;
         let hp1 = world.players[1].hp;
         world.step(vec![
@@ -6433,36 +6545,90 @@ mod tests {
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
-        // 098c 机制：回旋镖飞行全程不结算，只在回程到位时对命中半径 qI（210）内敌人 AOE（伤害随距离衰减）。
+        // 098c 实码（`Sb` → `sb` → `Tb`）：**命中敌人即结算** `6.4+0.8×等级`（L1=7.2），
+        // 随后弹开并转入「飞回施法者」；距施法者 <75 销毁；**没有回程 AOE**。
+        // 证据：`Ub` 的 `hv[Nb]=Ni=Condition(Sb)`，`Sb` 里 `mI(nr,Vr,6.4+.8*Xv[nr],…)`；
+        // tooltip「which will return to its caster … 7.2」只是旁证。
         let mut boom_seen = false;
-        let mut hit_while_flying = false;
-        let mut hit_on_return = false;
-        let mut settled = false;
-        for _ in 0..180 {
+        let mut damaged_while_alive = false;
+        let mut home_phase_seen = false;
+        let mut boom_gone = false;
+        for _ in 0..300 {
             world.step(none.clone(), dt);
-            let boom_now = world
-                .projectiles
-                .iter()
-                .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }));
-            if boom_now {
-                boom_seen = true;
-            }
-            if world.players[1].hp < hp1 {
-                if boom_now {
-                    hit_while_flying = true; // 不应发生：飞行途中不结算
-                } else {
-                    hit_on_return = true;
+            let boom_now = world.projectiles.iter().find(|pr| {
+                matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. })
+            });
+            match boom_now {
+                Some(pr) => {
+                    boom_seen = true;
+                    if matches!(&pr.kind, ProjectileKind::W098b { bob_phase: BoomerangPhase::Home, .. }) {
+                        home_phase_seen = true;
+                    }
+                    if world.players[1].hp < hp1 {
+                        damaged_while_alive = true;
+                    }
+                }
+                None => {
+                    if boom_seen {
+                        boom_gone = true;
+                        break;
+                    }
                 }
             }
-            if hit_on_return && !boom_now {
-                settled = true;
-                break;
-            }
         }
-        assert!(boom_seen, "回旋镖应至少存在若干帧（飞行中）");
-        assert!(!hit_while_flying, "098c：回旋镖飞行途中不应结算伤害");
-        assert!(hit_on_return, "回程到位应对 210 半径内敌人造成伤害");
-        assert!(settled, "结算后回旋镖消失");
+        assert!(boom_seen, "回旋镖应当飞出去（至少一帧存在）");
+        assert!(damaged_while_alive, "命中敌人应**立即**结算伤害");
+        assert!(home_phase_seen, "命中后应转入「飞回施法者」阶段（098c `sb`→`Tb`）");
+        assert!(boom_gone, "回旋镖最终应消失（飞回施法者附近销毁，不是回程 AOE）");
+    }
+
+    /// S013A 移形换位：**可与柱子互换位置**（098c `MB`/`LB`：`if nv[Vr]==3 then SetUnitX/Y(...)`）。
+    #[test]
+    fn s013a_swaps_with_pillar() {
+        let mut world = World::new(2, 4242);
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle {
+            pos: Vec2::new(d60(4.0), Fix64::ZERO),
+            radius: Fix64::from_num(40.0),
+            hp: 400,
+        });
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO); // 敌人放远，避免先命中人
+        world.players[1].move_target = None;
+        world.players[0].skill_levels[SkillId::S013.as_u32() as usize] = 1;
+        let caster_start = world.players[0].pos;
+        let pillar_start = world.obstacles[0].pos;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S013, Some(pillar_start))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..180 {
+            world.step(none.clone(), dt);
+        }
+        let d_to_pillar_old = (world.players[0].pos - pillar_start).length();
+        let d_pillar_to_caster_old = (world.obstacles[0].pos - caster_start).length();
+        assert!(
+            d_to_pillar_old < Fix64::from_num(90.0),
+            "施法者应被换到柱子处，实际距离 {d_to_pillar_old}"
+        );
+        assert!(
+            d_pillar_to_caster_old < Fix64::from_num(90.0),
+            "柱子应被搬到施法者原位，实际距离 {d_pillar_to_caster_old}"
+        );
+        assert!(
+            !world.projectiles.iter().any(|pr| matches!(
+                pr.kind,
+                ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::SwapTarget, .. }
+            )),
+            "交换后弹体应销毁"
+        );
     }
 
     /// 弹体互撞（098c `Av`→ 简化互毁）：两队火球对飞应互毁、不伤及玩家。
