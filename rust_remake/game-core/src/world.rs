@@ -1846,7 +1846,17 @@ impl World {
                             }
                         }
                         // S009·目标形态（B4）：到点碎裂成 6 枚环形弹片（098c dB：600/s 旋转喷出）
+                        // S009·目标形态：到点时分出碎片（098c `DB` 12304 调 `dB` 12150）——
+                        // 碎片本体速度 **250/s**、寿命 `ev=.12*4=0.48s`、半径 50；它每 0.12s 再螺旋喷 2 枚
+                        // 小子弹（`CB` 12070）：速度 600、半径 `Rv=21`、寿命 `1.2*(1+.1ei)`、
+                        // `hv=Ti=BB` → 伤害 `2.5+0.5L`（L1=3√、L8=6.5√ tooltip “Damage per missile”），击退 .65。
+                        // 本作把“碎片+小子弹”压缩为到点一次喷出 N 枚小子弹（保持每枚伤害/速度/寿命/击退）。
                         if *burst > 0 {
+                            let eim_s009 = self
+                                .players
+                                .get(pr.owner as usize)
+                                .map(|p| 1.0 + 0.1 * p.mastery[2] as f64)
+                                .unwrap_or(1.0);
                             let n = *burst as i64;
                             let base = std::f64::consts::TAU / n as f64;
                             for k in 0..n {
@@ -1854,12 +1864,19 @@ impl World {
                                 // 三角函数走 CORDIC（crate::fix），避免平台 libm 差异导致帧同步 desync。
                                 let ang = Fix64::from_num(base * k as f64 + *emit_angle);
                                 let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
-                                spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.8), *kb_ji));
+                                spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(21.0), Fix64::from_num(1.2 * eim_s009), Fix64::from_num(0.65)));
                             }
                         }
                     }
                     // S009·区域形态（B4）：飞行中每 0.12s 沿旋转角撒一枚侧弹（098c cB 螺旋）
+                    // S009·区域形态：飞行中每 0.12s 沿旋转角撇一枚侧弹（098c `cB` 12002：`jv=Ui=cB`）；
+                    // 严格说 098c 每 tick 喷的是 **2 枚**（一顺一逆），本作撒 1 枚作近似。
                     if *emit_cooldown > Fix64::ZERO {
+                        let eim_s009 = self
+                            .players
+                            .get(pr.owner as usize)
+                            .map(|p| 1.0 + 0.1 * p.mastery[2] as f64)
+                            .unwrap_or(1.0);
                         *emit_cooldown -= dt;
                         if *emit_cooldown <= Fix64::ZERO {
                             *emit_cooldown = Fix64::from_num(0.12);
@@ -1867,7 +1884,7 @@ impl World {
                             // 确定性三角：走 CORDIC（见上）。
                             let ang = Fix64::from_num(*emit_angle);
                             let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
-                            spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(15.0), Fix64::from_num(0.7), *kb_ji));
+                            spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(21.0), Fix64::from_num(1.2 * eim_s009), Fix64::from_num(0.65)));
                         }
                     }
                     } // end !is_boomerang（回旋镖不走通用寿命/到点逻辑）
@@ -4013,12 +4030,23 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         speed = d / Fix64::from_num(1.35);
                     }
                 }
-                // S009·目标形态（B4）：寿命截断到点击距离 → 在目标点碎裂（JASS GB 飞抵目标点分裂）。
+                // S009·目标形态（098c `GB` 12314 A 分支）：`hB=700*(1+.1*ei)`，`ev=min(点击距离,hB)/700`
+                // → 飞抵点击点就碎（`Gv=yi=DB` 调 `dB` 喷碎片）。**射程上限 700×(1+.1ei)**（之前没封顶）。
                 if id == crate::skill::SkillId::S009 && !alt {
                     if let Some(t) = target {
                         let dist = (t - ppos).length();
-                        life = life.min(dist / speed);
+                        let cap = Fix64::from_num(700.0 * (1.0 + 0.1 * ei));
+                        let d = dist.min(cap);
+                        if speed > Fix64::ZERO {
+                            life = d / speed;
+                        }
                     }
+                }
+                // S009·区域形态（098c `GB` B 分支，`Da[ri]` 为真）：速度 **280/s**，
+                // `ev=hB/280 = 2.5*(1+.1ei)` 秒；半径 50；`xv=1`；`jv=Ui=cB` 每 0.12s 螺旋喷小子弹。
+                if id == crate::skill::SkillId::S009 && alt {
+                    speed = Fix64::from_num(280.0);
+                    life = Fix64::from_num(2.5 * (1.0 + 0.1 * ei));
                 }
                 // S014 汲取（098c `ac` 13263）：
                 //   A（`vc` 13308）：射程 = `Xr=(1+.1*ei[ri])*700`，`ev=Rr/700`（`Rr`=到点击点的距离，
