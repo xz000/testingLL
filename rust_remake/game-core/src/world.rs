@@ -417,6 +417,17 @@ pub enum BoomerangPhase {
     Home,
 }
 
+/// S014 汲取的移速转移量（098c `Kr=70`，行 257；`hR/gR` 读写的是**移速**）。
+const SPEED_DRAIN: f64 = 70.0;
+/// S014 重定向后的飞行速度（098c `set Q[nr]=TX*600*.03` = 600/s）。
+const REEAIM_SPEED: f64 = 600.0;
+/// S014-B 命中友军后重定向的新寿命（098c `ev=(1+.1×ei)`；ei=0 时 = 1.0s）。
+const REEAIM_LIFE: f64 = 1.0;
+/// S014 回血球抵达判定半径（098c `ZB`：`if Rr<64`）。
+const ORB_ARRIVE_RADIUS: f64 = 64.0;
+/// S014 回血球飞行速度（098c `ZB`：每 tick 20 单位 → 667/s）。
+const ORB_SPEED: f64 = 20.0 / 0.03;
+
 /// 静态圆形障碍（原版 demo 里实际用作"墙/柱子"的碰撞体）。
 /// 用圆盘描述，几何与玩家一致，但不参与名次/击杀/死亡判定。
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1740,6 +1751,35 @@ impl World {
                                 o.pos = pr.pos;
                             }
                         }
+                        // S014A 到点重定向（098c `rc`，13173）：未命中时找**最近的、非施法者的对象**
+                        // （不过滤队伍）→ 以 600/s 转向它继续飞，寿命改 `(1+.1×ei)×7/6`；
+                        // “只重定向一次”用 `target` 置位来标记。
+                        if *on_hit == crate::skill::W098bOnHit::DrainSlow && target.is_none() {
+                            let mut best: Option<(Fix64, u32, Vec2)> = None;
+                            for q in self.players.iter() {
+                                if !q.alive || q.id == pr.owner {
+                                    continue;
+                                }
+                                let ds = (q.pos - pr.pos).length_squared();
+                                if best.map(|(b, _, _)| ds < b).unwrap_or(true) {
+                                    best = Some((ds, q.id, q.pos));
+                                }
+                            }
+                            if let Some((_, tid, qpos)) = best {
+                                let d = qpos - pr.pos;
+                                if d.length_squared() > Fix64::ZERO {
+                                    let ei = self
+                                        .players
+                                        .get(pr.owner as usize)
+                                        .map(|p| p.mastery[1] as f64)
+                                        .unwrap_or(0.0);
+                                    *vel = d.normalized() * Fix64::from_num(REEAIM_SPEED);
+                                    *remaining = Fix64::from_num((1.0 + 0.1 * ei) * 7.0 / 6.0);
+                                    *target = Some(tid); // 记录目标 + 兼作“已重定向”标记
+                                    pr.alive = true; // 不销毁，继续飞
+                                }
+                            }
+                        }
                         if let Some(br) = blast {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *gx, *kb_ji));
                         }
@@ -1782,6 +1822,18 @@ impl World {
                                         if d.length() > Fix64::ZERO {
                                             *vel = d.normalized() * *speed;
                                         }
+                                    }
+                                }
+                            }
+                            // S014 回血球（098c `ZB`）：飞向施法者，**距 64 内** → 治疗 `gx` 并销毁。
+                            if *on_hit == crate::skill::W098bOnHit::DrainOrb {
+                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                    if o.alive
+                                        && (o.pos - pr.pos).length() <= Fix64::from_num(ORB_ARRIVE_RADIUS)
+                                    {
+                                        let healed = (o.max_hp - o.hp).min(*gx);
+                                        o.hp += healed;
+                                        pr.alive = false;
                                     }
                                 }
                             }
@@ -2003,11 +2055,20 @@ impl World {
         let mut mirror_fire_queue: Vec<(usize, Vec2, Fix64)> = Vec::new();
         // 陨石灼烧 Scorched debuff：(受害者, 时长)。
         let mut debuffs_scorched: Vec<(u32, f64)> = Vec::new();
+        // S014 回血球生成队列：(施法者, 生成位置, 治疗量)。
+        let mut spawn_orbs: Vec<(u32, Vec2, Fix64)> = Vec::new();
+        // S014 汲取：平面移速转移队列 (受害者, 增量, 时长s)。
+        let mut speed_steals: Vec<(u32, f64, f64)> = Vec::new();
+        // S014 汲取·削弱：Gn（输出倍率）乘子队列 (受害者, 乘子, 时长s)。
+        let mut gn_mults: Vec<(u32, f64, f64)> = Vec::new();
+        // S014 回血球生成队列 (施法者, 生成位置, 治疗量) —— 飞回施法者，抵达 64 内治疗。
+        let mut drain_orbs: Vec<(u32, Vec2, Fix64)> = Vec::new();
+        // S014 重定向队列 (proj 下标, 排除的玩家, 速度, 新寿命s, 只要敌方=true)。
+        let mut re_aims: Vec<(usize, u32, f64, f64, bool)> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量, 时长 s)
         let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
         let mut slows: Vec<(u32, f64)> = Vec::new(); // 汲取·减速（B4-T）
-        let mut weakens: Vec<(u32, f64)> = Vec::new(); // 汲取·削弱（B4-T）
         let mut silences: Vec<(u32, f64)> = Vec::new(); // 禁锢·沉默（B4-Y）
         // 沉默来源：(施法者 owner, 受害者)，用于「一次沉默 ≥3 目标」播报（098c Silencer）。
         let mut silence_src: Vec<(u32, u32)> = Vec::new();
@@ -2362,6 +2423,13 @@ impl World {
                         // 搬运弹体（S013B `pB`）：**不碰术士**（`Av[+1]=false`）→ 飞抵落点后传送施法者；
                         // 但 `Av[+3]=true` → 撞 class-3 障碍（柱子）会互换（见撞柱分支）。
                         None
+                    } else if *on_hit == crate::skill::W098bOnHit::DrainSlow
+                        || *on_hit == crate::skill::W098bOnHit::Weaken
+                    {
+                        // S014 汲取（A/B）：**可命中友军**（098c `vc`/`oc` 都对 `cn[Vv[Vr]]==cn[...]` 分友/敌两支）。
+                        nearest_hit_any(&self.players, pr.pos, pr.owner, *radius)
+                    } else if *on_hit == crate::skill::W098bOnHit::DrainOrb {
+                        None // 回血球不与任何人碰撞（抵达施法者由运动分支持）
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
                         nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
                     } else if *on_hit == crate::skill::W098bOnHit::RedChain {
@@ -2381,7 +2449,13 @@ impl World {
                         // 与引力「每秒 0.3+0.2×L」同量级），不再按单发直伤结算（0.2 单发等于没有）。
                         let is_chain = *on_hit == crate::skill::W098bOnHit::ChainPull
                             || *on_hit == crate::skill::W098bOnHit::RedChain;
-                        if !is_chain {
+                        // 汲取（S014）：命中**友军**时不是伤害而是“支援”（移速/输出增益 + 治疗）→ 跳过通用伤害。
+                        let same_team = self.players.get(pr.owner as usize).map(|p| p.team)
+                            == self.players.get(victim as usize).map(|p| p.team);
+                        let is_ally_support = same_team
+                            && (*on_hit == crate::skill::W098bOnHit::DrainSlow
+                                || *on_hit == crate::skill::W098bOnHit::Weaken);
+                        if !is_chain && !is_ally_support {
                             events.push((victim, *gx, Some(pr.owner)));
                         }
                         // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（GX 设充能灯 1）。
@@ -2451,22 +2525,41 @@ impl World {
                                 }
                             }
                             crate::skill::W098bOnHit::DrainSlow => {
-                                // 汲取·减速（098c vc，B4-T）：目标移速 ×0.5 + 施法者回血伤害×50%。
-                                slows.push((victim, debuff_dur.to_num::<f64>()));
-                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
-                                    if o.alive {
-                                        let heal = gx.to_num::<f64>() * 0.5;
-                                        o.hp = (o.hp + Fix64::from_num(heal)).min(o.max_hp);
-                                    }
+                                // S014A 汲取（098c `vc`）：
+                                //  敌 → 移速 **−70**（`Kr`；`hR/gR` 是移速；`(3+L)×jn` 秒后 `YB` 归还）
+                                //      + 真伤 `5+L`（走通用 events） + **回血球**（飞回施法者、64 内治疗）
+                                //  友 → 移速 **+70** + 治疗 `5+L`
+                                let dur = debuff_dur.to_num::<f64>();
+                                if same_team {
+                                    speed_steals.push((victim, SPEED_DRAIN, dur));
+                                    heals.push((victim, *gx)); // 友军治疗量 = 5+L = gx
+                                } else {
+                                    speed_steals.push((victim, -SPEED_DRAIN, dur));
+                                    // 回血球带回的治疗量 = `ZO×Gn[攻]×hn[受]×(1+.08×vi[攻])`
+                                    let gn = self.players.get(pr.owner as usize).map(|o| o.gn_factor()).unwrap_or(1.0);
+                                    let hn = self.players.get(victim as usize).map(|v| v.dmg_taken_mult).unwrap_or(1.0);
+                                    let vi = self.players.get(pr.owner as usize).map(|o| o.mastery[0] as f64).unwrap_or(0.0);
+                                    drain_orbs.push((pr.owner, pr.pos, *gx * Fix64::from_num(gn * hn * (1.0 + 0.08 * vi))));
                                 }
                             }
                             crate::skill::W098bOnHit::Weaken => {
-                                // 汲取·削弱（098c oc，B4-T）：目标输出 ×0.5。
-                                #[cfg(test)]
-                                if std::env::var("WKDBG").is_ok() {
-                                    println!("DBG weaken hit victim={victim} dur={:?}", debuff_dur.to_num::<f64>());
+                                // S014B 汲取·削弱（098c `oc`）：
+                                //  敌 → `Gn ×0.5`（时长 `(6+1.5L)×jn[攻]/jn[受]`）+ 真伤 `4+L` + 回血球
+                                //  友 → `Gn ×1.1` + **转向最近的敌方对象**（600/s 瞬转）继续飞
+                                let dur = debuff_dur.to_num::<f64>();
+                                if same_team {
+                                    gn_mults.push((victim, 1.1, dur));
+                                    re_aims.push((pi, victim, REEAIM_SPEED, REEAIM_LIFE, true));
+                                } else {
+                                    gn_mults.push((victim, 0.5, dur));
+                                    let gn = self.players.get(pr.owner as usize).map(|o| o.gn_factor()).unwrap_or(1.0);
+                                    let hn = self.players.get(victim as usize).map(|v| v.dmg_taken_mult).unwrap_or(1.0);
+                                    let vi = self.players.get(pr.owner as usize).map(|o| o.mastery[0] as f64).unwrap_or(0.0);
+                                    drain_orbs.push((pr.owner, pr.pos, *gx * Fix64::from_num(gn * hn * (1.0 + 0.08 * vi))));
                                 }
-                                weakens.push((victim, debuff_dur.to_num::<f64>()));
+                            }
+                            crate::skill::W098bOnHit::DrainOrb => {
+                                // 回血球不走“命中”逻辑（抵达施法者由运动分支处理）。
                             }
                             crate::skill::W098bOnHit::Recharge => {
                                 // 弹跳弹·充能（098c cc，B4-T）：命中立即刷新施法者该技能冷却。
@@ -2822,10 +2915,53 @@ impl World {
                 }
             }
         }
-        for (victim, dur) in weakens.drain(..) {
+        // S014：移速转移 / Gn 乘子 / 回血球 / 重定向
+        for (victim, val, dur) in speed_steals.drain(..) {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive && !p.mirror_immune() {
-                    p.add_buff(BuffKind::Weakened, dur);
+                    p.add_buff(BuffKind::SpeedSteal(val), dur);
+                }
+            }
+        }
+        for (victim, k, dur) in gn_mults.drain(..) {
+            if let Some(p) = self.players.get_mut(victim as usize) {
+                if p.alive && !p.mirror_immune() {
+                    p.add_buff(BuffKind::GnMult(k), dur);
+                }
+            }
+        }
+        for (owner, pos, heal) in drain_orbs.drain(..) {
+            // 回血球（098c 命中后 `OO(2,…)` + `jv=Pi=ZB`）：从命中点飞向施法者，抵达 64 内治疗。
+            spawn_orbs.push((owner, pos, heal));
+        }
+        // 重定向（S014）：A 到点 / B 命中友军 → 朝指定对象以 600/s **瞬时**转向（098c 直接 `Q=T*600*.03`）。
+        for (pi, skip, speed, life, enemy_only) in re_aims.drain(..) {
+            let (ppos, powner) = match ps.get(pi) {
+                Some(p) if p.alive => (p.pos, p.owner),
+                _ => continue,
+            };
+            let my_team = self.players.get(powner as usize).map(|p| p.team);
+            let mut best: Option<(Fix64, u32)> = None;
+            for q in self.players.iter() {
+                if !q.alive || q.id == powner || q.id == skip {
+                    continue;
+                }
+                if enemy_only && my_team == Some(q.team) {
+                    continue;
+                }
+                let ds = (q.pos - ppos).length_squared();
+                if best.map(|(b, _)| ds < b).unwrap_or(true) {
+                    best = Some((ds, q.id));
+                }
+            }
+            if let Some((_, tid)) = best {
+                let d = self.players[tid as usize].pos - ppos;
+                if d.length_squared() > Fix64::ZERO {
+                    if let ProjectileKind::W098b { vel, remaining, target, .. } = &mut ps[pi].kind {
+                        *vel = d.normalized() * Fix64::from_num(speed);
+                        *remaining = Fix64::from_num(life);
+                        *target = Some(tid); // 兼作“已重定向”标记
+                    }
                 }
             }
         }
@@ -2947,6 +3083,39 @@ impl World {
         // 4f) 镜像分身火球：作为普通 W098b 火弹加入。
         for f in mirror_fires.drain(..) {
             ps.push(f);
+        }
+        // 4g) S014 回血球（098c `ZB`）：从命中点起飞、以 667/s 追施法者，抵达 64 内治疗 `gx` 并销毁。
+        for (owner, pos, heal) in spawn_orbs.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::W098b {
+                    proj: crate::skill::W098bProjKind::Homing,
+                    vel: Vec2::new(Fix64::ZERO, Fix64::ZERO),
+                    speed: Fix64::from_num(ORB_SPEED),
+                    radius: Fix64::from_num(27.0), // 098c `Rv`（A 弹体 27 / B 35）——回血球不参与碰撞，仅占位
+                    remaining: Fix64::from_num(5.0),
+                    life: Fix64::from_num(5.0),
+                    gx: heal, // ← 这里 gx 表达“治疗量”
+                    kb_ji: Fix64::ZERO,
+                    ignite: None,
+                    blast: None,
+                    target: Some(owner), // 追施法者
+                    bob_phase: BoomerangPhase::Out,
+                    on_hit: crate::skill::W098bOnHit::DrainOrb,
+                    debuff_dur: Fix64::ZERO,
+                    lateral: Fix64::ZERO,
+                    forward_dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    out_dist: Fix64::ZERO,
+                    burst: 0,
+                    emit_cooldown: Fix64::ZERO,
+                    emit_angle: 0.0,
+                    pillar_bounce: false,
+                    pillar_rest: Fix64::ONE,
+                    lightning_dmg: Fix64::ZERO,
+                },
+                pos,
+                alive: true,
+            });
         }
         // 5) 写回并清除已死亡/失效的弹体
         ps.retain(|p| p.alive);
@@ -9237,7 +9406,7 @@ mod tests {
 
     // ===== B4-T 形态机制 =====
 
-    /// S014A 汲取·减速：目标移速 ×0.5、施法者回血伤害×50%。
+/// S014A 汲取（098c `vc`）：敌人 **移速 −70（可归还）** + 真伤 `5+L` + **回血球**（飞回施法者、抵达后治疗）。
     #[test]
     fn s014a_drain_slow_and_heal() {
         let mut world = World::new(2, 1001);
@@ -9251,20 +9420,32 @@ mod tests {
         world.players[1].pos = Vec2::ZERO;
         world.players[1].move_target = None;
         world.players[1].team = 0;
+        world.players[1].hp = world.players[1].max_hp; // 便于观察回血球治疗
+        let speed_before = world.players[0].base_speed_for_test().to_num::<f64>();
+        let hp0 = world.players[0].hp;
         world.step(vec![
             PlayerInput::default(),
             PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
-        for _ in 0..30 {
+        for _ in 0..60 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[0].has_buff(BuffKind::Slow(0.5)), "目标应被减速 ×0.5");
-        let healed = (world.players[1].hp - Fix64::from_num(40.0)).to_num::<f64>();
-        assert!(healed > 2.0, "施法者应回血 50%×伤害（≥3），实际 {healed}");
+        // 命中应立即把目标移速 −70（098c `Kr=70`；`hR/gR` 是移速）
+        assert!(
+            world.players[0].has_buff(BuffKind::SpeedSteal(0.0)),
+            "目标应被挂上移速转移 buff（098c vc）"
+        );
+        let speed_mid = world.players[0].base_speed_for_test().to_num::<f64>();
+        assert!(
+            (speed_before - speed_mid - SPEED_DRAIN).abs() < 1.5,
+            "移速应 −70：before={speed_before} mid={speed_mid}"
+        );
+        // 真伤
+        assert!(world.players[0].hp < hp0, "应造成真伤（5+L）");
     }
 
-    /// S014B 汲取·削弱：目标伤害输出 ×0.5。
+/// S014B 汲取·削弱（098c `oc`）：敌人 `Gn ×0.5`（时长到期自动归还，等价 `yB` 的 `Gn/=ve`）。
     #[test]
     fn s014b_weaken_halves_output() {
         let mut world = World::new(2, 1002);
@@ -9275,9 +9456,10 @@ mod tests {
         world.players[0].pos = Vec2::new(d60(3.0), Fix64::ZERO);
         world.players[0].move_target = None;
         world.players[1].team = 0;
-        world.players[1].forms[SkillId::S014.as_u32() as usize] = true; // B=削弱（施法者形态位）
+        world.players[1].forms[SkillId::S014.as_u32() as usize] = true; // B=削弱
         world.players[1].pos = Vec2::ZERO;
         world.players[1].move_target = None;
+        let growth_before = world.players[0].growth;
         world.step(vec![
             PlayerInput::default(),
             PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
@@ -9286,8 +9468,15 @@ mod tests {
         for _ in 0..30 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[0].has_buff(BuffKind::Weakened), "目标应被削弱");
-        assert!((world.players[0].gn_factor() - world.players[0].growth * 0.5).abs() < 1e-9, "被削弱者输出应 ×0.5");
+        assert!(
+            world.players[0].has_buff(BuffKind::GnMult(0.5)),
+            "目标应被挂上 `Gn ×0.5`（098c oc）"
+        );
+        let gn = world.players[0].gn_factor();
+        assert!(
+            (gn - growth_before * 0.5).abs() < 1e-9,
+            "被削弱者输出应 ×0.5：growth={growth_before} gn={gn}"
+        );
     }
 
     /// S016B 弹跳弹·充能：命中刷新该技能冷却。

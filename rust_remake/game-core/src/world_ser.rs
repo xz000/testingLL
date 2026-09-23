@@ -1,4 +1,4 @@
-﻿//! 确定性 World 序列化（重连快照 / 存档用）。
+//! 确定性 World 序列化（重连快照 / 存档用）。
 //!
 //! 纯手写、大端、长度前缀，逐字段覆盖 World（含 Player / Caster / Projectile / Obstacle 等）。
 //! 保证 `to_bytes` ↔ `from_bytes` 后逐位一致，供重连端重建整场 World 后继续 lockstep。
@@ -629,7 +629,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *lateral);
             wvec(o, *forward_dir);
             wfix(o, *out_dist);
-            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::RedChain => 7, crate::skill::W098bOnHit::Silence => 8, crate::skill::W098bOnHit::SwapTarget => 9, crate::skill::W098bOnHit::CarrySelf => 10 });
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::RedChain => 7, crate::skill::W098bOnHit::Silence => 8, crate::skill::W098bOnHit::SwapTarget => 9, crate::skill::W098bOnHit::CarrySelf => 10, crate::skill::W098bOnHit::DrainOrb => 11 });
             wfix(o, *debuff_dur);
             wu8(o, *burst);
             wfix(o, *emit_cooldown);
@@ -719,6 +719,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
                 8 => crate::skill::W098bOnHit::Silence,
         9 => crate::skill::W098bOnHit::SwapTarget,
         10 => crate::skill::W098bOnHit::CarrySelf,
+        11 => crate::skill::W098bOnHit::DrainOrb,
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;
