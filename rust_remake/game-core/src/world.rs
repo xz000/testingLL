@@ -1837,12 +1837,13 @@ impl World {
                                         if dist <= Fix64::from_num(75.0) {
                                             pr.alive = false; // 098c `cO<75 → iO(nr,true)`
                                         } else {
-                                            let want = d.normalized() * *speed;
+                                            // 098c `Tb`：期望速度是**固定 1000/s**（`vx=$3E8*.03*dx/cO - Q[nr]`，
+                                            // $3E8=1000），**不是镖自身的 speed(1500)**；
+                                            // 加速度 = 30*0.03 = 0.9/tick → 1000/s²（每秒尺度）。
+                                            let want = d.normalized() * Fix64::from_num(1000.0);
                                             let diff = want - *vel;
                                             let dv = diff.length();
                                             if dv > Fix64::ZERO {
-                                                // 每帧速度增量 = 30*0.03 = 0.9（逐帧单位）；换算成每秒尺度
-                                                // = 30/s²×… 実为 1000/s²（从 0 到 1000/s 用 1s）。
                                                 *vel += diff.normalized() * Fix64::from_num(1000.0) * dt;
                                             }
                                         }
