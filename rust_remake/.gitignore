@@ -17,3 +17,6 @@
 
 # \u4e34\u65f6\u63a2\u9488\u4ea7\u7269\uff08ASCII \u951a\u70b9\u8f93\u51fa\uff09
 /_*.txt
+
+# \u626b\u63cf\u4ea7\u7269\uff08\u53ef\u91cd\u8dd1 tools/scan_skill_dispatch.py\uff09
+/tools/skill_dispatch.txt
