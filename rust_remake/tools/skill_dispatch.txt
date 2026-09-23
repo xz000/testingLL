@@ -1,0 +1,48 @@
+=== 技能 → 施法函数（二分 if 链：if SC==Sx then A() else B()，B 属于链中的邻居技能）===
+S000: then=Ab(L10537)  else=mC(L15468)   [dispatch L16346]
+S002: then=jb(L10899)  else=Pb(L11215)   [dispatch L16358]
+S004: then=Ub(L11455)  else=gC(L15227)   [dispatch L16374]
+S006: then=GC(L15276)  else=KR(L5129)   [dispatch L16386]
+S008: then=OB(L11814)  else=iB(L11614)   [dispatch L16406]
+S010: then=IB(L11890)  else=RB(L11866)   [dispatch L16426]
+S012: then=WB(L12852)  else=AB(L11916)   [dispatch L16450]
+S014: then=ac(L13266)  else=Ac(L13507)   [dispatch L16478]
+S016: then=Dc(L13720)  else=Gc(L13896)   [dispatch L16502]
+S018: then=Mc(L14120)  else=Jc(L13996)   [dispatch L16530]
+S020: then=qC(L15664)  else=QC(L15878)   [dispatch L16562]
+S022: then=None(L-)  else=None(L-)   [dispatch L16574]
+S024: then=None(L-)  else=None(L-)   [dispatch L16588]
+S026: then=None(L-)  else=None(L-)   [dispatch L16637]
+S028: then=None(L-)  else=None(L-)   [dispatch L16758]
+S030: then=None(L-)  else=None(L-)   [dispatch L16796]
+S031: then=None(L-)  else=None(L-)   [dispatch L16888]
+S032: then=None(L-)  else=None(L-)   [dispatch L16070]
+S033: then=None(L-)  else=None(L-)   [dispatch L16119]
+S034: then=None(L-)  else=None(L-)   [dispatch L16168]
+S035: then=None(L-)  else=None(L-)   [dispatch L16217]
+
+=== 已知的奇数技能反向映射（from else branches）===
+AB  <- else of ['S012']
+Ac  <- else of ['S014']
+Gc  <- else of ['S016']
+Jc  <- else of ['S018']
+KR  <- else of ['S006']
+Pb  <- else of ['S002']
+QC  <- else of ['S020']
+RB  <- else of ['S010']
+gC  <- else of ['S004']
+iB  <- else of ['S008']
+mC  <- else of ['S000']
+
+=== 函数行号（用于逐技能读代码）===
+S000: Ab()  line 10537
+S002: jb()  line 10899
+S004: Ub()  line 11455
+S006: GC()  line 15276
+S008: OB()  line 11814
+S010: IB()  line 11890
+S012: WB()  line 12852
+S014: ac()  line 13266
+S016: Dc()  line 13720
+S018: Mc()  line 14120
+S020: qC()  line 15664
