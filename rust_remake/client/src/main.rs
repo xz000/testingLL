@@ -3357,10 +3357,48 @@ impl Game {
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(120, 230, 220))?;
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
-                game_core::world::ProjectileKind::Tether { .. } => {
-                    // 回拉线：蓝紫节点
-                    let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(120, 140, 255))?;
-                    canvas.draw(&dot, graphics::DrawParam::new());
+                game_core::world::ProjectileKind::Tether { owner, target, beam, .. } => {
+                    // 锁链（S019）：098c 用 War3 闪电 `AFOD` 连「施法者↔目标」（每 tick `MoveLightningEx` 刷新）；
+                    // 红链（B）额外用 `CLSB` 画"沿线切割"。这里以折线闪电近似：
+                    //   蓝链（A，`beam=false`）= 淡蓝细闪电；红链（B，`beam=true`）= 粗红闪电 + 亮芯（切割感）。
+                    let op = self.world.players.get(owner as usize).map(|p| p.pos);
+                    let tp = self.world.players.get(target as usize).map(|p| p.pos);
+                    if let (Some(o), Some(t)) = (op, tp) {
+                        let to_screen = |v: Vec2| Point2 {
+                            x: v.x.to_num::<f32>() * self.scale + self.offset.x,
+                            y: v.y.to_num::<f32>() * self.scale + self.offset.y,
+                        };
+                        let (a, b) = (to_screen(o), to_screen(t));
+                        let time = ctx.time.time_since_start().as_secs_f32();
+                        if beam {
+                            // 红链：外圈粗闪电 + 内芯亮线（近似 `CLSB` 切割）。
+                            draw_lightning_polyline(
+                                &mut canvas, ctx, a, b, 4.5,
+                                Color::from_rgba(255, 70, 60, 225), 10.0, owner as f32 * 3.1, time,
+                            )?;
+                            draw_lightning_polyline(
+                                &mut canvas, ctx, a, b, 1.8,
+                                Color::from_rgba(255, 225, 210, 240), 7.0,
+                                owner as f32 * 3.1 + 7.7, time * 1.6,
+                            )?;
+                        } else {
+                            // 蓝链：淡蓝闪电。
+                            draw_lightning_polyline(
+                                &mut canvas, ctx, a, b, 3.0,
+                                Color::from_rgba(130, 170, 255, 220), 8.0, owner as f32 * 3.1, time,
+                            )?;
+                        }
+                        // 两端锚点（锁链的“结点”）。
+                        let anchor = if beam {
+                            Color::from_rgb(255, 110, 100)
+                        } else {
+                            Color::from_rgb(140, 170, 255)
+                        };
+                        for p in [a, b] {
+                            let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), p, 4.0, 0.5, anchor)?;
+                            canvas.draw(&dot, graphics::DrawParam::new());
+                        }
+                    }
                 }
                 game_core::world::ProjectileKind::Gravity { radius, .. } => {
                     // 引力·暗物质：填充伤害盘(274) + 拉拽外圈(600) + 大核心点。
@@ -10279,6 +10317,42 @@ impl Game {
     }
 }
 
+
+/// 画一条「闪电」折线：`N` 段、沿法线做**确定性抖动**（`seed` 固定、`t` 随时间缓慢流动）。
+///
+/// 用途：锁链（S019）的连线——098c 用 War3 闪电 `AddLightningEx("AFOD")`（每 tick `MoveLightningEx` 更新）
+/// 与红链切割用的 `"CLSB"`；这里用折线近似。两端不抖、中间抖（更接近闪电外观）。
+#[allow(clippy::too_many_arguments)]
+fn draw_lightning_polyline(
+    canvas: &mut Canvas,
+    ctx: &Context,
+    a: Point2<f32>,
+    b: Point2<f32>,
+    width: f32,
+    color: Color,
+    jag: f32,
+    seed: f32,
+    t: f32,
+) -> GameResult {
+    const N: usize = 7;
+    let d = Point2 { x: b.x - a.x, y: b.y - a.y };
+    let len = (d.x * d.x + d.y * d.y).sqrt().max(1.0);
+    let normal = Point2 { x: -d.y / len, y: d.x / len };
+    let mut pts: Vec<Point2<f32>> = Vec::with_capacity(N);
+    for i in 0..N {
+        let f = i as f32 / (N - 1) as f32;
+        let amp = if i == 0 || i == N - 1 { 0.0 } else { jag };
+        let phase = seed * 12.9898 + i as f32 * 78.233 + t * 9.0;
+        let off = (phase.sin() * 0.7 + (phase * 1.7).sin() * 0.3) * amp;
+        pts.push(Point2 {
+            x: a.x + d.x * f + normal.x * off,
+            y: a.y + d.y * f + normal.y * off,
+        });
+    }
+    let line = Mesh::new_line(&ctx.gfx, &pts, width, color)?;
+    canvas.draw(&line, graphics::DrawParam::new());
+    Ok(())
+}
 
 fn player_color(id: u32, me: u32) -> Color {
     if id == me {

@@ -2338,7 +2338,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, bob_phase, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2350,11 +2350,10 @@ impl World {
                     // 证据：`Ub` 里 `hv[nb]=Ni=Condition(Sb)`；`Sb` 的 `6.4+0.8*Xv[nr]` 与 tooltip 7.2/8.0/… 完全吻合。
                     // （此前误把它写成“飞行不结算 + 回程 210 AOE”——那是陨石 `oB`/`Zb` 的公式，已纠正。）
                     let hit = if *proj == crate::skill::W098bProjKind::Boomerang {
-                        if *bob_phase == BoomerangPhase::Home {
-                            None // 已命中过 → 回程只是飞回去
-                        } else {
-                            nearest_hit(&self.players, pr.pos, pr.owner, *radius)
-                        }
+                        // 098c：回旋镖的碰撞处理器 `hv=Ni=Condition(Sb)` **从不被清除**
+                        //（`sb()` 只清 `U/w/ev/Gv` 并换 `jv=Tb`）→ **命中后不消失、回家路上还能再命中**，
+                        // 每次命中都重新结算伤害 + 弹开 + 重新追施法者。
+                        nearest_hit(&self.players, pr.pos, pr.owner, *radius)
                     } else if blast.is_some() {
                         // 陨石：飞行途中不结算（098c `iB`：一路飞到点击点，仅在到点由 `oB` 做 AOE）。
                         None
@@ -2372,7 +2371,8 @@ impl World {
                     };
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
-                        // 回旋镖命中：结算后转入回程（098c `sb`）→ 记录到延迟队列（借用冲突）。
+                        // 回旋镖命中：结算后弹开 + 重新追施法者（098c `Sb`→`sb`）→ 记录到延迟队列（借用冲突）。
+                        // 注意：每命中一次都会重施弹开与 Homing（多次命中 → 多次结算）。
                         if *proj == crate::skill::W098bProjKind::Boomerang {
                             bob_home.push((pi, self.players[victim as usize].pos));
                         }
@@ -6577,6 +6577,13 @@ mod tests {
             }
         }
         assert!(boom_seen, "回旋镖应当飞出去（至少一帧存在）");
+        // 098c：`hv` 从不被清除（`sb()` 只清 U/w/ev/Gv）→ 回程/贴身时会**反复命中**。
+        // 单次命中 7.2（L1），再减去 0.5/s 的回复：若总掉血明显超过一次命中，即证明多段命中生效。
+        let lost = (hp1 - world.players[1].hp).to_num::<f64>();
+        assert!(
+            lost > 7.2 * 1.5,
+            "回旋镖命中后应可再次命中（098c `Sb` 不清 `hv`），实际总掉血 {lost:.1}（单次命中约 7.2）"
+        );
         assert!(damaged_while_alive, "命中敌人应**立即**结算伤害");
         assert!(home_phase_seen, "命中后应转入「飞回施法者」阶段（098c `sb`→`Tb`）");
         assert!(boom_gone, "回旋镖最终应消失（飞回施法者附近销毁，不是回程 AOE）");
