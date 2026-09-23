@@ -14,3 +14,6 @@
 /_g*.txt
 /_s*.txt
 /_mojibake.txt
+
+# \u4e34\u65f6\u63a2\u9488\u4ea7\u7269\uff08ASCII \u951a\u70b9\u8f93\u51fa\uff09
+/_*.txt
