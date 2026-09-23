@@ -116,6 +116,15 @@ pub enum BuffKind {
     Slow(f64),
     /// 汲取·削弱（B4-T）：伤害输出 ×0.5。
     Weakened,
+    /// **S014A 汲取：平面移速转移**（正=给友军 / 负=抽敌人），单位同 `BASE_SPEED`。
+    ///
+    /// 098c `vc`：`gR(目标, hR(目标)±70)`（`Kr=70`，`hR/gR` = **移速**），并在 `(3+L)×jn` 秒后
+    /// 由 `YB`(12902) 回调加回/扣回。我们用 buff 承担“临时修改 + 到期自动恢复”，语义等价。
+    SpeedSteal(f64),
+    /// **S014B 汲取·削弱：伤害成长/输出倍率乘子**（敌方 0.5 / 友方 1.1）。
+    ///
+    /// 098c `oc`：`Gn[目标] *= 0.5`（友军 `*=1.1`），到期 `yB`(12894) 回调 `Gn /= ve` 还原。
+    GnMult(f64),
     /// 禁锢·沉默（B4-Y）：禁施法（可移动）。
     Silenced,
     /// 镜像分身（文档 C 栏）：生效期间施法者免疫锁链与减益（「否决锁链和负面效果」）。
@@ -564,7 +573,16 @@ impl Player {
         // 缠绕（B4-Y）：被禁锢期间输出 ÷3（098c wc Hn/3）
         let tied = if self.has_buff(BuffKind::Tied) { 1.0 / 3.0 } else { 1.0 };
         let weakened = if self.has_buff(BuffKind::Weakened) { 0.5 } else { 1.0 };
-        self.growth * tied * weakened * if self.healing_blocked() { 0.1 } else { 1.0 }
+        // 汲取·削弱（S014B）：`Gn *= k`（敌方 .5 / 友方 1.1）；buff 到期自然恢复（等价 `yB` 的 `Gn/=ve`）。
+        let gn_mult: f64 = self
+            .buffs
+            .iter()
+            .filter(|b| b.remaining > Fix64::ZERO && b.kind.same_variant(&BuffKind::GnMult(1.0)))
+            .fold(1.0, |acc, b| match b.kind {
+                BuffKind::GnMult(k) => acc * k,
+                _ => acc,
+            });
+        self.growth * tied * weakened * gn_mult * if self.healing_blocked() { 0.1 } else { 1.0 }
     }
 
     /// 沉默（B4-Y）：禁施法但可移动。
@@ -613,7 +631,17 @@ impl Player {
             0.0
         };
         let flat = self.item_fx.speed_add - self.item_fx.speed_penalty + s007_flat;
-        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat)) * Fix64::from_num(mult)
+        // 汲取（S014A）：**平面**移速转移（可正可负）；buff 到期自动恢复（等价 098c `YB` 归还）。
+        let steal: f64 = self
+            .buffs
+            .iter()
+            .filter(|b| b.remaining > Fix64::ZERO && b.kind.same_variant(&BuffKind::SpeedSteal(0.0)))
+            .map(|b| match b.kind {
+                BuffKind::SpeedSteal(v) => v,
+                _ => 0.0,
+            })
+            .sum();
+        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat + steal)) * Fix64::from_num(mult)
     }
 
     /// 测试用：当前基础移速（含物品平加）。

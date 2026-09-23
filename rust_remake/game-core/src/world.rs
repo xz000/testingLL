@@ -1811,9 +1811,9 @@ impl World {
                                     *vel += (dir * yb - perp * yb_lat) * dt;
                                     *remaining -= dt;
                                     if *remaining <= Fix64::ZERO {
-                                        // 098c `sb`：速度/加速度清零 → `jv=Tb`（追施法者）。
+                                        // 098c `sb`：只清**加速度**（`U=0,w=0`）、切 `jv=Tb`；
+                                        // **速度 `Q/S` 保留** → 之后以 1000/s² 向施法者平滑转向（不是瞬转）。
                                         *bob_phase = BoomerangPhase::Home;
-                                        *vel = Vec2::new(Fix64::ZERO, Fix64::ZERO);
                                         *remaining = Fix64::ZERO; // Home 阶段不再计时（施法者死时重设）
                                     }
                                 }

@@ -164,6 +164,14 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         }
         BuffKind::Weakened => wu8(o, 10),
         BuffKind::Silenced => wu8(o, 11),
+        BuffKind::SpeedSteal(v) => {
+            wu8(o, 15);
+            wu64(o, v.to_bits());
+        }
+        BuffKind::GnMult(v) => {
+            wu8(o, 16);
+            wu64(o, v.to_bits());
+        }
         BuffKind::Mirror => wu8(o, 13),
         BuffKind::Haste => wu8(o, 14),
     }
@@ -183,6 +191,8 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         9 => BuffKind::Slow(f64::from_bits(u64at(b, p)?)),
         10 => BuffKind::Weakened,
         11 => BuffKind::Silenced,
+        15 => BuffKind::SpeedSteal(f64::from_bits(u64at(b, p)?)),
+        16 => BuffKind::GnMult(f64::from_bits(u64at(b, p)?)),
         13 => BuffKind::Mirror,
         14 => BuffKind::Haste,
         _ => return None,
