@@ -269,7 +269,7 @@ const EN: &[(&str, &str)] = &[
     ("漫游", "Wander"),
     ("{n} 个", "{n}"),
     ("开始训练", "Start training"),
-    ("↑/↓ 选择 · ←/→ 或 回车 调整 · 空格 开始 · Esc/Q 返回", "↑/↓ select · ←/→ or Enter adjust · Space start · Esc/Q back"),
+    ("↑/↓ 选择 · ←/→ 或点击 调整 · **回车** 开始训练 · Esc/Q 返回", "↑/↓ select · ←/→ or click adjust · **Enter** start · Esc/Q back"),
     ("战斗 · 技能", "Battle · Skills"),
     ("战斗 · 镜头与停止", "Battle · Camera & Stop"),
     ("学习期 · 通用", "Learn · General"),

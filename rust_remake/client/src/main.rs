@@ -5989,7 +5989,7 @@ impl event::EventHandler for Game {
                 if solo_config {
                     use ggez::input::keyboard::Key;
                     use winit::keyboard::NamedKey;
-                    let done = ctx.keyboard.is_logical_key_just_pressed(&Key::Character(" ".into()))
+                    let done = space_just(ctx)
                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("p".into()))
                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("P".into()))
                         || ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
@@ -9782,7 +9782,9 @@ impl Game {
             self.audio.play(audio::AudioCue::UiCancel);
             return;
         }
-        if start || Self::char_just(ctx, " ") || Self::char_just(ctx, "p") {
+        // 开始：**回车**（主）/ 空格（别名）。
+        // 注：winit 的空格是 `NamedKey::Space`，不是字符 `" "` → 旧写法 `char_just(ctx, " ")` 永远不成立（这就是“按空格没反应”的根因）。
+        if start || pressed(NamedKey::Enter) || space_just(ctx) {
             self.training_open = false;
             self.enter_solo();
             return;
@@ -9795,11 +9797,12 @@ impl Game {
             self.training_row = (self.training_row + 1) % TRAINING_ROWS;
             self.audio.play(audio::AudioCue::UiMove);
         }
+        // 调值：←/→ 或 鼠标点击行（**不用回车**，回车留给“开始”）。
         let mut delta = 0i32;
         if pressed(NamedKey::ArrowLeft) {
             delta -= 1;
         }
-        if pressed(NamedKey::ArrowRight) || pressed(NamedKey::Enter) || click_adjust {
+        if pressed(NamedKey::ArrowRight) || click_adjust {
             delta += 1;
         }
         if delta != 0 {
@@ -9864,7 +9867,7 @@ impl Game {
         }
         ui::text_center(
             &mut canvas, ctx,
-            i18n::t("↑/↓ 选择 · ←/→ 或 回车 调整 · 空格 开始 · Esc/Q 返回"),
+            i18n::t("↑/↓ 选择 · ←/→ 或点击 调整 · **回车** 开始训练 · Esc/Q 返回"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 30.0,
         )?;
         canvas.finish(ctx)?;
@@ -10540,6 +10543,17 @@ fn keybind_row_action(row: KeybindRow) -> Option<usize> {
         KeybindRow::Action(a) => local_settings::BIND_ACTIONS.iter().position(|b| *b == a),
         KeybindRow::Header(_) => None,
     }
+}
+
+/// 判断空格是否刚按下。
+///
+/// **坑**：winit 把空格归入 `NamedKey::Space`，不是 `Key::Character(" ")` →
+/// `char_just(ctx, " ")` 永远不成立（曾导致“按空格开始训练没反应”）。
+fn space_just(ctx: &Context) -> bool {
+    ctx.keyboard
+        .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(
+            winit::keyboard::NamedKey::Space,
+        ))
 }
 
 /// `NamedBind` → winit 命名键（改键捕获与判定共用，避免两处映射分叉）。
