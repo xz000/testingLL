@@ -1526,7 +1526,7 @@ impl World {
         // (owner, 位置, 速度, gx, 弹半径, 寿命, kb_ji)
         let mut spawn_bullets: Vec<(u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 098c 回旋镖回程到位结算：(owner, 位置, gx, kb_ji) —— 对命中半径 qI 内目标 AOE（距离衰减）。
-        let mut bob_home: Vec<(usize, Vec2)> = Vec::new();
+        let mut bob_home: Vec<(usize, u32)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
 
         // 1) 推进整帧：倒计时 / 生命周期 / 弹体飞行
@@ -2374,7 +2374,7 @@ impl World {
                         // 回旋镖命中：结算后弹开 + 重新追施法者（098c `Sb`→`sb`）→ 记录到延迟队列（借用冲突）。
                         // 注意：每命中一次都会重施弹开与 Homing（多次命中 → 多次结算）。
                         if *proj == crate::skill::W098bProjKind::Boomerang {
-                            bob_home.push((pi, self.players[victim as usize].pos));
+                            bob_home.push((pi, victim));
                         }
                         // 锁链的伤害走 Tether 的 `damage_per_sec`（文档 `0.2+0.1×L` 是**每秒**，
                         // 与引力「每秒 0.3+0.2×L」同量级），不再按单发直伤结算（0.2 单发等于没有）。
@@ -2658,22 +2658,28 @@ impl World {
         //   · 速度反向（098c：`tb = 1.5×|自身到原点|+15`，`Q/S = -tb/100 × 方向`）；
         //   · 位置推到目标半径外（`Rv[nr]+Rv[Vr]+10`）；
         //   · 进入 `Home` 阶段（`jv=Tb`：追施法者，**之后不再造成伤害**）。
-        for (pi, victim_pos) in bob_home {
+        for (pi, victim) in bob_home {
+            // 098c `Sb` 的弹开（关键：`Q/S` 是**每 tick（0.03s）位移**，换算成每秒要 ÷0.03）：
+            //   `tb = 1.5×|自身到原点| + 15`；`Q/S = -tb/100 × dir`（dir = 自己→目标）
+            //   → 每秒速度 = `tb/3`（例：距心 200 → tb=315 → 105/s 向**远离目标**侧）
+            //   位置 = 目标 − (Rv[自己]+Rv[目标]+10) × dir（自己这一侧、刚好脱出碰撞半径）
             let (cur_pos, radius) = match &ps[pi].kind {
                 ProjectileKind::W098b { radius, .. } => (ps[pi].pos, *radius),
                 _ => continue,
             };
-            let away = cur_pos - victim_pos;
-            let dir = if away.length_squared() > Fix64::ZERO {
-                away.normalized()
+            let Some(vp) = self.players.get(victim as usize) else { continue };
+            let (vpos, vradius) = (vp.pos, vp.radius);
+            let to_target = vpos - cur_pos;
+            let dir = if to_target.length_squared() > Fix64::ZERO {
+                to_target.normalized()
             } else {
                 Vec2::new(Fix64::ONE, Fix64::ZERO)
             };
-            let kick = (Fix64::from_num(1.5) * cur_pos.length() + Fix64::from_num(15.0))
-                / Fix64::from_num(100.0);
-            let new_pos = victim_pos + dir * (radius + Fix64::from_num(10.0));
+            let tb = Fix64::from_num(1.5) * cur_pos.length() + Fix64::from_num(15.0);
+            let kick_per_sec = tb / Fix64::from_num(100.0) / Fix64::from_num(0.03);
+            let new_pos = vpos - dir * (radius + vradius + Fix64::from_num(10.0));
             if let ProjectileKind::W098b { vel, bob_phase, remaining, .. } = &mut ps[pi].kind {
-                *vel = dir * kick;
+                *vel = -dir * kick_per_sec; // 向**远离目标**方向弹开
                 *bob_phase = BoomerangPhase::Home;
                 *remaining = Fix64::ZERO;
             }
@@ -6550,22 +6556,20 @@ mod tests {
         // 证据：`Ub` 的 `hv[Nb]=Ni=Condition(Sb)`，`Sb` 里 `mI(nr,Vr,6.4+.8*Xv[nr],…)`；
         // tooltip「which will return to its caster … 7.2」只是旁证。
         let mut boom_seen = false;
-        let mut damaged_while_alive = false;
-        let mut home_phase_seen = false;
+        let mut hit_state: Option<(Vec2, Vec2, bool)> = None; // (命中瞬间位置, 速度, 是否 Home)
         let mut boom_gone = false;
         for _ in 0..300 {
             world.step(none.clone(), dt);
-            let boom_now = world.projectiles.iter().find(|pr| {
+            let boom = world.projectiles.iter().find(|pr| {
                 matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. })
             });
-            match boom_now {
+            match boom {
                 Some(pr) => {
                     boom_seen = true;
-                    if matches!(&pr.kind, ProjectileKind::W098b { bob_phase: BoomerangPhase::Home, .. }) {
-                        home_phase_seen = true;
-                    }
-                    if world.players[1].hp < hp1 {
-                        damaged_while_alive = true;
+                    if world.players[1].hp < hp1 && hit_state.is_none() {
+                        if let ProjectileKind::W098b { vel, bob_phase, .. } = &pr.kind {
+                            hit_state = Some((pr.pos, *vel, *bob_phase == BoomerangPhase::Home));
+                        }
                     }
                 }
                 None => {
@@ -6577,16 +6581,28 @@ mod tests {
             }
         }
         assert!(boom_seen, "回旋镖应当飞出去（至少一帧存在）");
-        // 098c：`hv` 从不被清除（`sb()` 只清 U/w/ev/Gv）→ 回程/贴身时会**反复命中**。
-        // 单次命中 7.2（L1），再减去 0.5/s 的回复：若总掉血明显超过一次命中，即证明多段命中生效。
+        let (pos, vel, is_home) = hit_state.expect("回旋镖应命中敌人");
+        assert!(is_home, "命中后应立即转入 Home（098c `Sb` 末尾 `call sb()` → `jv=Tb`）");
+        // 098c `Sb` 的弹开几何：位置 = 目标 − (Rv[镖]+Rv[目标]+10)×dir（**目标朝施法者一侧**、
+        // 刚好脱出碰撞半径），速度 = −tb/100×dir（**远离目标**、即朝施法者）→ 顺势飞回家。
+        let me_pos = world.players[0].pos;
+        let victim_pos = world.players[1].pos;
+        let d_me = (pos - me_pos).length();
+        let d_victim = (victim_pos - me_pos).length();
+        assert!(
+            d_me < d_victim,
+            "命中后弹体应被弹到「施法者与目标之间」：d_me={d_me} 应 < d_victim={d_victim}"
+        );
+        assert!(
+            vel.dot(me_pos - pos) > Fix64::ZERO,
+            "弹开后速度应指向施法者（远离目标），实际 vel={vel:?}"
+        );
+        assert!(boom_gone, "最终应飞回施法者附近（<75）销毁");
         let lost = (hp1 - world.players[1].hp).to_num::<f64>();
         assert!(
-            lost > 7.2 * 1.5,
-            "回旋镖命中后应可再次命中（098c `Sb` 不清 `hv`），实际总掉血 {lost:.1}（单次命中约 7.2）"
+            (6.0..=9.0).contains(&lost),
+            "单次命中伤害约 7.2（L1，含回复前），实际总掉血 {lost:.1}"
         );
-        assert!(damaged_while_alive, "命中敌人应**立即**结算伤害");
-        assert!(home_phase_seen, "命中后应转入「飞回施法者」阶段（098c `sb`→`Tb`）");
-        assert!(boom_gone, "回旋镖最终应消失（飞回施法者附近销毁，不是回程 AOE）");
     }
 
     /// S013A 移形换位：**可与柱子互换位置**（098c `MB`/`LB`：`if nv[Vr]==3 then SetUnitX/Y(...)`）。
