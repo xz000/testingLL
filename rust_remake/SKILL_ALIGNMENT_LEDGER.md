@@ -159,6 +159,22 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 > `Gn` 用本作的**输出/伤害成长倍率**承载（`Gn×.5`↔时长内降伤、`Gn×1.1`↔提升）；
 > HP 直扣 `players[i].hp -= 70`（不涨 `Gn`、走死亡判定）。
 
+### ✅ 已实施（2026-09-20，commit `fb478e1`）
+
+| 项 | 实现 |
+|---|---|
+| A 命中敌人 | `SpeedSteal(−70)` buff（时长=spec duration，到期自动归还）+ 真伤 `5+L`（通用 events）+ 回血球 |
+| A 命中友军 | `SpeedSteal(+70)` + 治疗 `gx`（=5+L） |
+| A 到点未命中 | 重定向到最近的非施法者对象（不过滤队伍）→ 600/s 瞬转、寿命 `(1+.1×ei)×7/6`、只一次（用 `target` 标记） |
+| B 命中敌人 | `GnMult(0.5)` buff（到期自动归还）+ 真伤 `4+L` + 回血球 |
+| B 命中友军 | `GnMult(1.1)` + 重定向到最近**敌方**对象（600/s 瞬转） |
+| 回血球 | 新 `W098bOnHit::DrainOrb`：667/s 追施法者，距 **64** 内治疗 `gx` 并销毁（复刻 `ZB`） |
+| 命中检测 | `DrainSlow`/`Weaken` 改用 `nearest_hit_any`（可命中友军，按队伍分支）；友军命中**不算伤害** |
+| 协议 | `PROTOCOL_VERSION` 22→**23**（新 `on_hit` 变体 + 两个 buff discriminant） |
+| 测试 | 重写 `s014a_drain_slow_and_heal`（移速 −70/真伤）/ `s014b_weaken_halves_output`（`Gn×0.5`） |
+
+> 简化点：移速“归还”用 **buff 到期自动恢复**实现（与 098c 的 `YB` 到时改回等价）；`PX` 的**扣蓝**略去（本作无蓝量系统）；回血球治疗量用 `VI=生命精通(mastery[0])` 近似 098c 的 `vi`。
+
 ---
 
 ## 5. 复核记录格式（每条做完在此追加）
