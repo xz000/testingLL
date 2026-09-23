@@ -388,7 +388,11 @@ impl ProjectileKind {
         const C3: u8 = 1 << 2; // 场/块（岩浆等）
         match self {
             ProjectileKind::W098b { proj, .. } => match proj {
-                crate::skill::W098bProjKind::Boomerang => Some((2, C1 | C3)),
+                // 098c `Ub`（11481）只设 `Av[Nb*3+1]=true`（类 1 = 术士）与 `Av[Nb*3+3]=true`（类 3 = 障碍/柱子），
+                // **没有** `Av[Nb*3+2]`（类 2 = 弹体）→ 回旋镖**从不与其他弹体互撞**。
+                // （注意：098c 的 1/3 类分别是「术士/障碍」，与本模拟的 C1/C3（弹/场）不是同一套编号：
+                //   术士命中走 `Sb`、障碍命中走撞柱分支，所以这里的“弹体互撞”类别应为空。）
+                crate::skill::W098bProjKind::Boomerang => Some((2, 0)),
                 crate::skill::W098bProjKind::Magma => None, // 岩浆走 magma_absorb
                 _ => Some((1, C1 | C2 | C3)),
             },
@@ -1753,8 +1757,15 @@ impl World {
                         }
                         // S014A 到点重定向（098c `rc`，13173）：未命中时找**最近的、非施法者的对象**
                         // （不过滤队伍）→ 以 600/s 转向它继续飞，寿命改 `(1+.1×ei)×7/6`；
-                        // “只重定向一次”用 `target` 置位来标记。
+                        // “只重定向一次”用 `target` 置位来标记（对应 098c `rc` 里的 `set Gv[nr]=null`）。
+                        // 若一个别的对象都没有（`zO==0`）：098c 不销毁弹体，只把寿命续 `(1+.1×ei)×9/8`，
+                        // 且 **不清空 `Gv`** → 到期还会再试一次。
                         if *on_hit == crate::skill::W098bOnHit::DrainSlow && target.is_none() {
+                            let ei = self
+                                .players
+                                .get(pr.owner as usize)
+                                .map(|p| p.mastery[2] as f64) // ei = 时间精通（第三项）
+                                .unwrap_or(0.0);
                             let mut best: Option<(Fix64, u32, Vec2)> = None;
                             for q in self.players.iter() {
                                 if !q.alive || q.id == pr.owner {
@@ -1765,18 +1776,19 @@ impl World {
                                     best = Some((ds, q.id, q.pos));
                                 }
                             }
-                            if let Some((_, tid, qpos)) = best {
-                                let d = qpos - pr.pos;
-                                if d.length_squared() > Fix64::ZERO {
-                                    let ei = self
-                                        .players
-                                        .get(pr.owner as usize)
-                                        .map(|p| p.mastery[1] as f64)
-                                        .unwrap_or(0.0);
-                                    *vel = d.normalized() * Fix64::from_num(REEAIM_SPEED);
-                                    *remaining = Fix64::from_num((1.0 + 0.1 * ei) * 7.0 / 6.0);
-                                    *target = Some(tid); // 记录目标 + 兼作“已重定向”标记
-                                    pr.alive = true; // 不销毁，继续飞
+                            match best {
+                                Some((_, tid, qpos)) => {
+                                    let d = qpos - pr.pos;
+                                    if d.length_squared() > Fix64::ZERO {
+                                        *vel = d.normalized() * Fix64::from_num(REEAIM_SPEED);
+                                        *remaining = Fix64::from_num((1.0 + 0.1 * ei) * 7.0 / 6.0);
+                                        *target = Some(tid); // 记录目标 + 兼作“已重定向”标记
+                                        pr.alive = true; // 不销毁，继续飞
+                                    }
+                                }
+                                None => {
+                                    *remaining = Fix64::from_num((1.0 + 0.1 * ei) * 9.0 / 8.0);
+                                    pr.alive = true; // 不销毁，直线飞完这段寿命
                                 }
                             }
                         }
@@ -1930,7 +1942,8 @@ impl World {
                 if dist > Fix64::ZERO && dist < min {
                     let normal = delta / dist;
                     if let ProjectileKind::Boomerang { vel, .. } = &mut pr.kind {
-                        *vel = crate::fix::mirror_by(*vel, normal);
+                        // D2 原型回旋镖：按 098c 柱面反射式（法向取反、切向保留）反弹。
+                        *vel = crate::fix::bounce_off(*vel, normal, Fix64::ONE);
                         pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
                     } else if let ProjectileKind::W098b {
                         on_hit: crate::skill::W098bOnHit::SwapTarget,
@@ -1972,20 +1985,30 @@ impl World {
                     } else if let ProjectileKind::W098b {
                         proj: crate::skill::W098bProjKind::Boomerang,
                         vel,
+                        bob_phase,
+                        remaining,
                         ..
                     } = &mut pr.kind
                     {
-                        // 098b 回旋镖撞柱反弹（与 D2 原型同手感）；Straight/Homing 被柱子挡下消失。
-                        *vel = crate::fix::mirror_by(*vel, normal);
-                        pr.pos = o.pos + normal * min;
+                        // S004 回旋镖撞柱（098c，两件事同时发生）：
+                        // 1) 柱子的 `hv=IN`→`WA()`（8980）：先把弹体推到柱面外（`K[Vr]=K[nr]-Xr*dx`），
+                        //    再做**沿接触法线的弹性反射** `v' = v − (1+xv)(v·n)·n`（`xv[镖]=1` → 法向取反、切向保留）。
+                        //    ⚠ 不是 `mirror_by`（那是「沿法线直线」镜向：保留法向、翻转切向）——
+                        //    正面撞柱会 v 不变→直接穿柱，正是此前的 bug。
+                        // 2) 回旋镖自己的 `hv=Sb`（11342）末尾 `call sb()`（11326）：`U=w=0`（清加速度）、
+                        //    `jv=Tb`、`ev=0`、`Gv=null` → **立即转入回程**（此后 1000/s² 追施法者，<75 销毁）。
+                        //    注意 `Sb` 只在 `nv[Vr]==1`（命中**术士**）时结算伤害/弹开；撞柱**不造成伤害**。
+                        *vel = crate::fix::bounce_off(*vel, normal, Fix64::ONE); // xv=1 → 满反弹
+                        *bob_phase = BoomerangPhase::Home;
+                        *remaining = Fix64::ZERO;
+                        pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
                     } else if let ProjectileKind::W098b { vel, pillar_bounce: true, pillar_rest, .. } = &mut pr.kind {
                         // 术士之战：火球击中柱子能够反弹（Straight 运动由 vel 驱动）。
                         // 反弹同时仍按 098c 对柱子造成伤害（nx=40 可摧毁），与「被挡下消失」分支一致。
-                        // 注意：柱面是「面」，反弹应沿切向反射（v' = v − 2(v·n)n）。
+                        // 弹道遵循 098c `WA()`：`v' = v − (1+xv)(v·n)·n` —— 只缩放**法向分量**
+                        // （Xv=1 → 法向取反、切向保留；Xv=.75 → 法向 ×(−.75)、切向保留）。
                         // `mirror_by` 是「沿法线所在直线」反射（保留法向、翻转切向），正面撞击时 v 不变，故这里不用它。
-                        let dot = vel.dot(normal); // normal 已是单位向量（delta/dist）
-                        *vel -= normal * (dot * Fix64::from_num(2));
-                        *vel = *vel * *pillar_rest; // 098c `xv`：1=满反弹、.75=衰减（S008）
+                        *vel = crate::fix::bounce_off(*vel, normal, *pillar_rest); // 098c `v − (1+xv)(v·n)n`
                         pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
                         let dmg = match &pr.kind {
                             ProjectileKind::W098b { gx, .. } => gx.to_num::<f64>(),
@@ -2471,8 +2494,9 @@ impl World {
                             }
                         }
                         // 锁链（蓝链拉目标 / 红链拉施法者）以拉拽为主：跳过 KI 击退
-                        //（击退 700 位移会盖过 300 的拉拽）。
-                        if !is_chain && dd.length_squared() > Fix64::ZERO {
+                        //（击退 700 位移会盖过 300 的拉拽）；汲取命中**友军**时 098c `vc`/`oc` 友军分支
+                        // 根本没有 `mI`（只有治疗/增益）→ 不产生击退。
+                        if !is_chain && !is_ally_support && dd.length_squared() > Fix64::ZERO {
                             let vmana = self.players[victim as usize].mana;
                             let atk_gn = self.players.get(pr.owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
                             let vic_hn = self.players[victim as usize].dmg_taken_mult;
@@ -2549,7 +2573,9 @@ impl World {
                                 let dur = debuff_dur.to_num::<f64>();
                                 if same_team {
                                     gn_mults.push((victim, 1.1, dur));
-                                    re_aims.push((pi, victim, REEAIM_SPEED, REEAIM_LIFE, true));
+                                    // 098c `oc` 友军分支：`set ev[nr]=(1+.1*ei[Vv[nr]])` → 续命并转向最近的**敌方**对象。
+                                    let ei = self.players.get(pr.owner as usize).map(|o| o.mastery[2] as f64).unwrap_or(0.0);
+                                    re_aims.push((pi, victim, REEAIM_SPEED, REEAIM_LIFE * (1.0 + 0.1 * ei), true));
                                 } else {
                                     gn_mults.push((victim, 0.5, dur));
                                     let gn = self.players.get(pr.owner as usize).map(|o| o.gn_factor()).unwrap_or(1.0);
@@ -2650,7 +2676,9 @@ impl World {
                                 }
                                 None => pr.alive = false, // 无下一目标：消失
                             }
-                        } else if *proj != crate::skill::W098bProjKind::Boomerang {
+                        } else if *proj != crate::skill::W098bProjKind::Boomerang && !is_ally_support {
+                            // S014B 命中**友军**（098c `oc` 友军分支）**不销毁**弹体：改为增益 + 转向最近的敌人继续飞；
+                            // 其余情形（含 S014A 命中友军、S014B 命中敌人）都在 `vc`/`oc` 末尾 `IA(nr)` 销毁。
                             pr.alive = false;
                         }
                     }
@@ -3834,6 +3862,25 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     if let Some(t) = target {
                         let dist = (t - ppos).length();
                         life = life.min(dist / speed);
+                    }
+                }
+                // S014 汲取（098c `ac` 13263）：
+                //   A（`vc` 13308）：射程 = `Xr=(1+.1*ei[ri])*700`，`ev=Rr/700`（`Rr`=到点击点的距离，
+                //      若 Rr>Xr 则取 Xr）→ **飞到点击点就到期**，由 `Gv=Mi=rc`（13173）触发「拐弯」重定向。
+                //   B（`oc` 13346）：`ev=(1+.1*ei)*.12`，到期 `Gv=pi=ic`（13242）第一次续 `(1+.1*ei)` 秒、
+                //      第二次销毁 → 用等价**单段总时长** `(1+.1*ei)*(.12+1)` 实现（轨迹完全相同）。
+                //   （差异：098c 两段之间 `ic` 会置 `bv/Nv=true`（此后才可命中友军）；本实现不加该位。）
+                if id == crate::skill::SkillId::S014 {
+                    let eim = 1.0 + 0.1 * ei;
+                    if !alt {
+                        if let Some(t) = target {
+                            let range = (t - ppos).length().min(Fix64::from_num(700.0 * eim));
+                            if speed > Fix64::ZERO {
+                                life = range / speed;
+                            }
+                        }
+                    } else {
+                        life = Fix64::from_num(eim * 1.12);
                     }
                 }
                 // 远程精通（R00I xi，B1）：xi>0 火球获得落点爆炸——仅到点/撞柱触发，
@@ -6775,6 +6822,65 @@ mod tests {
         );
     }
 
+    /// S004 回旋镖**撞柱**（098c 两件事同时发生）：
+    /// 1) 柱子的 `hv=IN`→`WA()`（8980）：推出柱面 + **沿接触法线的弹性反射** `v' = v − (1+xv)(v·n)n`（xv=1）；
+    /// 2) 回旋镖的 `hv=Sb`（11342）末尾 `call sb()`（11326）：`U=w=0`、`jv=Tb`、`ev=0` → **立即转入 Home 回程**。
+    /// 撞柱**不造成伤害**（`Sb` 只在 `nv[Vr]==1` 分支结算）。
+    #[test]
+    fn s004_boomerang_bounces_off_pillar_then_returns_home() {
+        let mut world = World::new(2, 995);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(30.0), Fix64::ZERO); // 敌人放远，避开
+        world.players[1].move_target = None;
+        let pillar = Vec2::new(d60(5.0), Fix64::ZERO); // 300 处的柱子（半径 40）
+        world.obstacles.push(Obstacle { pos: pillar, radius: Fix64::from_num(40.0), hp: 400 });
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S004, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut after: Option<(Vec2, Vec2, Fix64)> = None; // (撞前速度, 撞后速度, 距柱心)
+        for _ in 0..240 {
+            let before = world
+                .projectiles
+                .iter()
+                .find(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Boomerang, .. }))
+                .and_then(|pr| match &pr.kind {
+                    ProjectileKind::W098b { vel, .. } => Some(*vel),
+                    _ => None,
+                });
+            world.step(none.clone(), dt);
+            let mut hit = None;
+            for pr in world.projectiles.iter() {
+                if let ProjectileKind::W098b { vel, bob_phase, .. } = &pr.kind {
+                    if *bob_phase == BoomerangPhase::Home {
+                        hit = Some((before.unwrap_or(*vel), *vel, (pr.pos - pillar).length()));
+                    }
+                }
+            }
+            if let Some(h) = hit {
+                after = Some(h);
+                break;
+            }
+        }
+        let (v0, v1, d) = after.expect("回旋镖应撞上柱子");
+        let f = |v: Vec2| (v.x.to_num::<f64>(), v.y.to_num::<f64>());
+        let (x0, y0) = f(v0);
+        let (x1, y1) = f(v1);
+        assert!(x0 > 100.0, "撞前应朝 +x 飞出：{v0:?}");
+        assert!(x1 < 0.0, "柱面法线≈−x → 沿法线的弹性反射应把 vx 翻为负：{v1:?}");
+        let s0 = (x0 * x0 + y0 * y0).sqrt();
+        let s1 = (x1 * x1 + y1 * y1).sqrt();
+        // 满反弹（xv=1）速率不变；容差含「本帧前向减速度」≈1875/s²×dt ≈ 31
+        assert!((s0 - s1).abs() < s0 * 0.08 + 40.0, "xv=1 → 满反弹（速率基本不变）：{s0:.1} → {s1:.1}");
+        assert!(d >= Fix64::from_num(77.0), "应被推出柱面（半径 38+40）：{d}");
+        assert_eq!(world.obstacles[0].hp, 400, "回旋镖撞柱不应造成柱子伤害（098c `Sb`）");
+    }
+
     /// S013A 移形换位：**可与柱子互换位置**（098c `MB`/`LB`：`if nv[Vr]==3 then SetUnitX/Y(...)`）。
     #[test]
     fn s013a_swaps_with_pillar() {
@@ -9443,6 +9549,121 @@ mod tests {
         );
         // 真伤
         assert!(world.players[0].hp < hp0, "应造成真伤（5+L）");
+    }
+
+    /// S014A 汲取：**到点「拐弯」**（098c `rc` 13173）——飞到点击点后若没命中任何人，
+    /// 立刻以 600/s 转向**最近的、非施法者的对象**（`gX!=Er`，**不过滤队伍**），寿命改 `(1+.1ei)×7/6`。
+    /// 同时验证射程：`ev = min(点击距离, 700×(1+.1ei))/700`（098c `Xr=(1+.1*ei[ri])*700`）。
+    #[test]
+    fn s014a_bolt_reaims_to_nearest_object_at_range_end() {
+        let mut world = World::new(3, 1201);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人放在**侧向**（不挡路）：到点后它是最近的“对象”（距离 ~190）
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(4.0), d60(3.0)); // (240,180)
+        world.players[1].move_target = None;
+        // 远处的队友：`rc` 只排除施法者、不过滤队伍 → 不应入选（距离 ~1500）
+        world.players[2].team = 0;
+        world.players[2].pos = Vec2::new(d60(-20.0), Fix64::ZERO);
+        world.players[2].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        let mut first: Option<(Vec2, f64)> = None;
+        let mut reaimed: Option<(Vec2, Vec2, f64)> = None; // (位置, 速度, 寿命)
+        for _ in 0..200 {
+            world.step(none.clone(), dt);
+            for pr in world.projectiles.iter() {
+                if let ProjectileKind::W098b { vel, remaining, target, on_hit: crate::skill::W098bOnHit::DrainSlow, .. } = &pr.kind {
+                    if first.is_none() {
+                        first = Some((*vel, remaining.to_num::<f64>()));
+                    }
+                    if target.is_some() {
+                        reaimed = Some((pr.pos, *vel, remaining.to_num::<f64>()));
+                    }
+                }
+            }
+            if reaimed.is_some() {
+                break;
+            }
+        }
+        let (v0, l0) = first.expect("弹体应生成");
+        let (x0, y0) = (v0.x.to_num::<f64>(), v0.y.to_num::<f64>());
+        assert!((x0 - 700.0).abs() < 5.0 && y0.abs() < 5.0, "初速应朝点击点 +x 700/s：{v0:?}");
+        assert!((l0 - 300.0 / 700.0).abs() < 0.05, "寿命应为 `点击距离/700`（微调后 {l0}，期望 ~0.4286）");
+        let (ppos, v1, l1) = reaimed.expect("到点后应重定向（098c `rc`）");
+        let want = (Vec2::new(d60(4.0), d60(3.0)) - ppos).normalized() * Fix64::from_num(600.0);
+        assert!(
+            (v1 - want).length() < Fix64::from_num(1.0),
+            "重定向应 600/s 指向最近的敌方对象：got {v1:?} want {want:?}"
+        );
+        assert!((l1 - 7.0 / 6.0).abs() < 0.02, "重定向后寿命 = (1+.1ei)×7/6：{l1}");
+    }
+
+    /// S014B 汲取·削弱命中**友军**（098c `oc` 13048 友军分支）：不是伤害——给友军 `Gn ×1.1`，
+    /// 且**弹体不销毁**（`IA(nr)` 只在敌方/弹体分支），以 600/s **转向最近的敌方对象**继续飞，寿命改 `(1+.1ei)`。
+    #[test]
+    fn s014b_ally_hit_buffs_and_reaims_at_enemy() {
+        let mut world = World::new(3, 1202);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0; // 施法者
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S014.as_u32() as usize] = true; // B 形态
+        world.players[1].team = 0; // 友军（在弹道上，120 处）
+        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].team = 1; // 最近的敌人（侧向 240）：重定向目标
+        world.players[2].pos = Vec2::new(Fix64::ZERO, d60(4.0));
+        world.players[2].move_target = None;
+        let hp_ally = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S014, Some(Vec2::new(d60(7.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        let mut alive_after_hit = false;
+        let mut reaimed: Option<(Vec2, Vec2, f64)> = None;
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            for pr in world.projectiles.iter() {
+                if let ProjectileKind::W098b { vel, remaining, target, on_hit: crate::skill::W098bOnHit::Weaken, .. } = &pr.kind {
+                    if world.players[1].has_buff(BuffKind::GnMult(1.0)) {
+                        alive_after_hit = true;
+                    }
+                    if target.is_some() {
+                        reaimed = Some((pr.pos, *vel, remaining.to_num::<f64>()));
+                    }
+                }
+            }
+            if reaimed.is_some() {
+                break;
+            }
+        }
+        assert!(
+            world.players[1].has_buff(BuffKind::GnMult(1.1)),
+            "友军应被增益 `Gn ×1.1`（098c `oc`：`Gn[Vv[Vr]]=Gn[Vv[Vr]]*1.1`）"
+        );
+        assert_eq!(world.players[1].hp, hp_ally, "命中友军不应造成伤害");
+        assert!(alive_after_hit, "命中友军后弹体**不应销毁**（098c `oc` 友军分支无 `IA(nr)`）");
+        let (ppos, v1, l1) = reaimed.expect("友军命中后应转向最近的敌方对象");
+        let want = (Vec2::new(Fix64::ZERO, d60(4.0)) - ppos).normalized() * Fix64::from_num(600.0);
+        assert!(
+            (v1 - want).length() < Fix64::from_num(1.0),
+            "应 600/s 转向最近的敌方对象：got {v1:?} want {want:?}"
+        );
+        assert!((l1 - 1.0).abs() < 0.02, "友军分支续命 = (1+.1ei)×1.0：{l1}");
     }
 
 /// S014B 汲取·削弱（098c `oc`）：敌人 `Gn ×0.5`（时长到期自动归还，等价 `yB` 的 `Gn/=ve`）。

@@ -138,14 +138,27 @@ pub fn rotate_ccw(v: Vec2, angle: Fix64) -> Vec2 {
     Vec2::new(v.x * c + v.y * s, v.y * c - v.x * s)
 }
 
-/// 按法线 `normal` 镜向反射 `origin`（原版 `MirrorBy`）。
+/// 按法线 `normal` 镜向反射 `origin`（原版 D2 原型 `MirrorBy`）。
 ///
-/// 用法：护盾反弹、回旋镖撞墙。`origin` 是被反射的速度/方向，`normal` 是表面法线（会被归一化）。
+/// ⚠ 这是「沿**法线所在直线**」镜向：**保留法向分量、翻转切向分量**。
+/// 用途：D2 原型直射弹（`ProjectileKind::Bullet`）的护盾反弹。
+/// **不是** 098c 的柱面/墙反弹公式（那是一个面反射，用 [`bounce_off`]）：
+/// 正面撞柱时本函数会原速穿柱（法向未反），这正是曾经的回旋镖 bug。
 #[inline]
 pub fn mirror_by(origin: Vec2, normal: Vec2) -> Vec2 {
     let mn = normal.normalized();
     let pl = origin.dot(mn);
     mn * (pl * Fix64::from_num(2)) - origin
+}
+
+/// 沿**接触法线** `normal` 的面反弹（098c `WA()`，8980：`v' = v − (1+xv)(v·n)·n`）。
+///
+/// `restitution` 即 098c 的 `xv`：`1` = 满反弹（法向取反、切向不变）；
+/// `0.75` = 法向 ×(−0.75)、切向不变；`0` = 只消掉法向分量（沿表面滑行）。
+#[inline]
+pub fn bounce_off(v: Vec2, normal: Vec2, restitution: Fix64) -> Vec2 {
+    let n = normal.normalized();
+    v - n * (v.dot(n) * (Fix64::ONE + restitution))
 }
 
 #[cfg(test)]
@@ -157,6 +170,25 @@ mod tests {
     }
     fn approxv(a: Vec2, x: f64, y: f64, tol: f64) -> bool {
         approx(a.x, x, tol) && approx(a.y, y, tol)
+    }
+
+    /// 098c `WA()` 的面反弹：**法向取反/缩放、切向保留**（与 `mirror_by` 恰好相反）。
+    #[test]
+    fn bounce_off_flips_normal_and_keeps_tangential() {
+        let nx = Vec2::new(-Fix64::ONE, Fix64::ZERO); // 面法线指向 −x
+        // 正面撞击（v ∥ n）：满反弹 → 原路返回
+        let r = bounce_off(Vec2::new(Fix64::from_num(3.0), Fix64::ZERO), nx, Fix64::ONE);
+        assert!(approxv(r, -3.0, 0.0, 1e-6), "满反弹应反向：{r:?}");
+        // 45°：法向分量（x）取反、切向（y）保留（不是 mirror_by 的“保留法向”）
+        let v = Vec2::new(Fix64::from_num(1.0), Fix64::from_num(1.0));
+        let r = bounce_off(v, nx, Fix64::ONE);
+        assert!(approxv(r, -1.0, 1.0, 1e-6), "切向应保留：{r:?}");
+        // xv=.75：法向 ×(−.75)、切向不变
+        let r = bounce_off(v, nx, Fix64::from_num(0.75));
+        assert!(approxv(r, -0.75, 1.0, 1e-6), "衰减只作用于法向分量：{r:?}");
+        // xv=0：只消掉法向分量（沿表面滑行）
+        let r = bounce_off(v, nx, Fix64::ZERO);
+        assert!(approxv(r, 0.0, 1.0, 1e-6), "xv=0 应沿表面滑行：{r:?}");
     }
 
     #[test]

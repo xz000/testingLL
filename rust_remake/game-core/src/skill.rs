@@ -1718,9 +1718,11 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S014 汲取·减速（A 形态，098c ac/vc）——speed 700 / radius 27；
-            // 命中：伤害(drain) + 目标移速 ×0.5（debuff_dur 近似 4+1.0L）+ 施法者回血伤害×50%。
-            // 数值见下方 growth（098c Drain 原斜率）。
+            // S014 汲取·减速（A 形态，098c `vc` 13308 / 生成 `ac` 13263）——speed 700 / radius 27 / `xv=1`；
+            // 命中：`vc`（本文件 world.rs 的 DrainSlow 分支）——敌：移速 −70（Kr，到期归还）+ 真伤 5+L + 回血球；友：+70 移速 + 治疗。
+            // 射程（098c `Xr=(1+.1*ei[ri])*700`、`ev=Rr/700`）：**飞到点击点就到期**（最远 700×(1+.1ei)），
+            // 到期由 `Gv=Mi=rc`（13173）重定向到最近的非施法者对象，以 600/s 继续飞 `(1+.1ei)×7/6` 秒。
+            // `life` 仅作**无点目标时的回退**（正常生成时由 world.rs 按点击距离重算）；1.0 = 700/700。
             SkillId::S014 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -1730,7 +1732,7 @@ impl DefTable {
                     proj: W098bProjKind::Straight,
                     speed: Fix64::from_num(700.0),
                     radius: Fix64::from_num(27.0),
-                    life: Fix64::from_num(3.0),
+                    life: Fix64::from_num(1.0),
                     kb_ji: Fix64::from_num(0.8),
                     ignite: None,
                     blast: None,
@@ -2289,7 +2291,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S014B 汲取·削弱（098c oc）：900/s 半径 35；命中目标输出 ×0.5 持续 6s。
+            // S014B 汲取·削弱（098c `oc` 13048）——900/s、半径 35、`xv=1`；命中目标输出 ×0.5 持续 (6+1.5L)×jn。
+            // 寿命（098c `ev=(1+.1*ei)*.12` + 到期 `Gv=pi=ic` 第一次续 `(1+.1*ei)`）：
+            // 两段合计 `(1+.1ei)×1.12` 秒（≈1008 距离 @L1）—— 本作以**单段总时长**等价实现（见 world.rs）。
             SkillId::S014 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -2299,7 +2303,7 @@ impl DefTable {
                     proj: W098bProjKind::Straight,
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(35.0),
-                    life: Fix64::from_num(3.0),
+                    life: Fix64::from_num(1.12),
                     kb_ji: Fix64::from_num(0.8),
                     ignite: None,
                     blast: None,
@@ -3764,10 +3768,20 @@ mod tests {
         assert!(near(d.stats_at(1).cooldown, 22.0, 1e-3));
         assert!(near(d.stats_at(8).cooldown, 16.5, 1e-1), "L8 CD should be ~16.5, got {:?}", d.stats_at(8).cooldown);
         match d.effect {
-            SkillEffect::Warlock098b { speed, radius, kb_ji, .. } => {
+            SkillEffect::Warlock098b { speed, radius, kb_ji, life, .. } => {
                 assert!(near(speed, 700.0, 1e-3) && near(radius, 27.0, 1e-3) && near(kb_ji, 0.8, 1e-3));
+                // 098c `ev=Rr/700`（射程上限 700×(1+.1ei)）→ 无点目标时回退 700/700=1.0s
+                assert!(near(life, 1.0, 1e-3), "S014A 回退寿命应为 1.0s，got {life:?}");
             }
             ref e => panic!("S014 effect 错：{e:?}"),
+        }
+        match alt14.effect {
+            SkillEffect::Warlock098b { speed, radius, life, .. } => {
+                assert!(near(speed, 900.0, 1e-3) && near(radius, 35.0, 1e-3));
+                // 098c `ev=(1+.1ei)*.12` → 到期 `ic` 续 `(1+.1ei)` → 等价单段 0.12+1.0=1.12s
+                assert!(near(life, 1.12, 1e-3), "S014B 寿命应为 1.12s，got {life:?}");
+            }
+            ref e => panic!("S014B effect 错：{e:?}"),
         }
         // S015 火焰喷射·流射（A 形态）——**098c 校准（w3a 完整 8 档）**：单发 2.6→4.0、
         // missiles 6→13、CD 16→9。（旧值取自 spells.json 采样的 7 档 2.6→3.8 / [6,12] / [16,10]，已按 w3a 更正）
