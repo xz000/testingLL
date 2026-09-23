@@ -8,6 +8,11 @@
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan  # 【推荐】编译+上传构建（不改线上）
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -BuildOnly        # 只编译+收集产物，不上传
 #     powershell -ExecutionPolicy Bypass -File publish.ps1 -SetLive <branch> # 上传并把构建设为 <branch> 上线
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -Target demo      # 【demo】试玩版：AppID 1042120 / Depot 1042121
+#     powershell -ExecutionPolicy Bypass -File publish.ps1 -Target demo -BuildOnly   # 只看 demo 的 staging 内容
+#
+#  -Target full（默认）/ demo 只差：AppID、DepotID、编译期 feature（`client/demo` → AppID 1042120 且关工坊/成就/天梯）。
+#  两个版本应用同一个 commit 出包（协议一致）；具体差异见 STEAM_DEMO_PLAN.md。
 #
 #  默认只上传、不设分支上线（本 app 的 `default` 分支拒绝 steamcmd SetLive，会报 Failure）：
 #  上传后到 Steamworks「Builds」页用下拉把新构建设到 default 上线（owner 在网页可操作）。
@@ -41,7 +46,7 @@ param(
     # Steam 登录账号（非交互用；留空则读 $env:STEAM_USER，再留空则交互询问）。
     [string]$SteamUser = '',
     # 可选：覆盖默认的 steamcmd.exe 路径。
-    [string]$SteamCmdExe = ''
+    [ValidateSet('full', 'demo')] [string]$Target = 'full'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,10 +55,23 @@ Push-Location $PSScriptRoot
 # ----------------------------------------------------------------------------
 # 配置节（需自行填写 / 覆盖）
 # ----------------------------------------------------------------------------
-$AppId    = 908660
-# Depot ID = 908661「Circle Brawl Content」（当前仅 Windows，语言 = 所有语言）。
-# 未来加 Linux 等平台：为每个平台各新建一个 depot，并在 VDF 的 Depots 里列出多个。
-$DepotId  = 908661
+# demo / 正式版只差三样：AppID、DepotID、编译期 feature（`client/demo` → AppID 1042120 + 关工坊/成就/天梯）。
+# Steamworks 后台前提（demo）：1042120 下建好 Depot（1042121）、并与 908660 建立 “Demo of app” 关联。
+if ($Target -eq 'demo') {
+    $AppId        = 1042120
+    $DepotId      = 1042121
+    $Features     = 'client/demo,client/gui'
+    $StagingName  = 'steam-pipe-demo'
+    $BuildLabel   = 'demo'
+} else {
+    $AppId        = 908660
+    # Depot ID = 908661「Circle Brawl Content」（当前仅 Windows，语言 = 所有语言）。
+    # 未来加 Linux 等平台：为每个平台各新建一个 depot，并在 VDF 的 Depots 里列出多个。
+    $DepotId      = 908661
+    $Features     = 'client/steam,client/gui'
+    $StagingName  = 'steam-pipe'
+    $BuildLabel   = 'full'
+}
 
 # Steam 登录账号（带 bot 的账号）。
 # 出于安全考虑，本脚本不再把密码写进命令行（同机任意进程可读命令行参数）。
@@ -77,16 +95,16 @@ if (-not (Test-Path $SteamCmdConfigDir)) {
 }
 # ----------------------------------------------------------------------------
 
-$Staging = Join-Path $PSScriptRoot 'target\steam-pipe'
+$Staging = Join-Path $PSScriptRoot "target\$StagingName"
 $Content = Join-Path $Staging 'content'
 $OutDir  = Join-Path $Staging 'output'
 $Vdf     = Join-Path $Staging "app_build_$AppId.vdf"
 
-Write-Host '== 1/4 cargo build --release (client + steam + gui) ==' -ForegroundColor Cyan
+Write-Host "== 1/4 cargo build --release (client + $Features) [target=$Target] ==" -ForegroundColor Cyan
 # 注意：native 命令的 stderr（如 cargo 编译进度）在 PS5.1+$ErrorActionPreference='Stop' 下若被
 # 2>&1 重定向会误报为 NativeCommandError。这里不重定向，让输出直接透传，失败靠 $LASTEXITCODE 判断。
 # `client/gui` = 发布版 GUI 子系统（不弹命令行窗口）；详见 client/Cargo.toml 的 gui feature 注释。
-& cargo build --release -p client --features client/steam,client/gui
+& cargo build --release -p client --features $Features
 if ($LASTEXITCODE -ne 0) { Write-Host '[FAIL] build 失败' -ForegroundColor Red; Pop-Location; exit 1 }
 
 # ----------------------------------------------------------------------------
@@ -192,7 +210,7 @@ $vdfBody = @"
 "AppBuild"
 {
 	"AppID" "$AppId"
-	"Desc" "rust_remake build ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
+	"Desc" "rust_remake $BuildLabel build ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
 	"BuildOutput" "$outRoot"
 	"ContentRoot" "$contentRoot"
 $setLiveLine

@@ -314,8 +314,10 @@ pub fn discover(roots: &[PathBuf]) -> Vec<Pack> {
     out
 }
 
-/// 本作 Steam AppID（与 `steam::APP_ID` 一致）：创意工坊内容目录用。
-pub const APP_ID: &str = "908660";
+/// 本作 Steam AppID 字符串（由 `appid.rs` 按 feature 决定：正式版 908660 / demo 1042120）。
+pub fn app_id_str() -> String {
+    crate::appid::app_id_str()
+}
 
 /// 本地音频包根目录：`%APPDATA%/warlock_brawl/audio`（取不到 APPDATA 则退回当前目录）。
 pub fn local_root() -> PathBuf {
@@ -372,13 +374,13 @@ pub fn steam_root_from_exe(exe: &Path) -> Option<PathBuf> {
     None
 }
 
-/// 给定 Steam 库根，返回本作创意工坊内容目录：`<root>/steamapps/workshop/content/908660`。
+/// 给定 Steam 库根，返回本作创意工坊内容目录：`<root>/steamapps/workshop/content/<AppID>`。
 pub fn workshop_content_root(steam_root: &Path) -> PathBuf {
     steam_root
         .join("steamapps")
         .join("workshop")
         .join("content")
-        .join(APP_ID)
+        .join(app_id_str())
 }
 
 /// 从 `libraryfolders.vdf` 文本解析所有 Steam **库根**（处理 `\\` 转义）。
@@ -632,7 +634,13 @@ mod tests {
         assert_eq!(root, PathBuf::from("A").join("Steam"));
         assert!(steam_root_from_exe(Path::new("not/under/steam.exe")).is_none());
         let ws = workshop_content_root(&root);
-        assert!(ws.ends_with(Path::new("steamapps").join("workshop").join("content").join("908660")));
+        // AppID 由 feature 决定（正式版 908660 / demo 1042120）→ 不写死具体数字。
+        assert!(ws.ends_with(
+            Path::new("steamapps")
+                .join("workshop")
+                .join("content")
+                .join(app_id_str())
+        ));
     }
 
     #[test]

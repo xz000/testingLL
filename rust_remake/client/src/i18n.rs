@@ -287,6 +287,8 @@ const EN: &[(&str, &str)] = &[
     ("无效键", "Invalid key"),
     ("（注意：学习页该键已作它用）", " (note: the learn page already uses that key)"),
     ("[{key} / 回车]", "[{key} / Enter]"),
+    ("demo 不支持", "demo: n/a"),
+    ("demo 版不支持创意工坊（正式版可用）", "Not available in the demo (full version only)"),
     ("↑/↓ 选择 · 回车/点击 改键 · Delete/右键 解除 · R 恢复默认 · E 导出 · I 导入 · Esc/Q 返回", "↑/↓ select · Enter/click rebind · Delete/right-click unbind · R reset · E export · I import · Esc/Q back"),
     ("该动作不支持解除绑定（技能/购买必绑）", "This action cannot be unbound (skills and buy are mandatory)"),
     ("已解除绑定：{name}", "Unbound: {name}"),

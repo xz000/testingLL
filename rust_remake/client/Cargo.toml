@@ -12,6 +12,10 @@ steam = ["dep:net-steam", "net-steam/steam"]
 # 不能靠 `not(debug_assertions)` 判断——release profile 为帧同步确定性强制开了
 # `debug-assertions = true`，导致 release 也带 debug_assertions → 旧判定恒假、发布版弹黑框。
 gui = []
+# demo 构建：AppID 换成 1042120，并关闭创意工坊 / 成就 / 天梯（见 `src/appid.rs`）。
+# 用法：cargo build --release -p client --features client/demo,client/gui
+# `demo` 会连带启用 `steam`；大厅/训练场/PvP 与正式版一致，仅少了工坊与统计类功能。
+demo = ["steam"]
 
 [dependencies]
 game-core = { path = "../game-core" }

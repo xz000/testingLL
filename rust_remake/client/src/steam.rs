@@ -358,9 +358,9 @@ impl Game {
     /// 在覆盖层打开本作创意工坊页（订阅音频包）。
     #[cfg(feature = "steam")]
     pub(crate) fn steam_open_workshop(&self) {
-        const WORKSHOP_URL: &str = "https://steamcommunity.com/app/908660/workshop/";
+        let url = crate::appid::workshop_url();
         match self.steam_transport() {
-            Some(t) => t.open_url(WORKSHOP_URL),
+            Some(t) => t.open_url(&url),
             None => eprintln!("[workshop] Steam 未初始化，无法打开创意工坊"),
         }
     }
@@ -520,6 +520,9 @@ impl Game {
     /// 建房后待在房间时就会查好，整场结束要用时直接取。
     #[cfg(feature = "steam")]
     pub(crate) fn steam_ensure_leaderboard(&mut self) {
+        if !crate::appid::stats_enabled() {
+            return; // demo：不提供排行榜（也不发无谓的异步请求）
+        }
         if self.steam_lb_requested {
             return;
         }
@@ -532,6 +535,12 @@ impl Game {
     /// 统计/成就/排行榜都要在 Steamworks 后台先定义 key，没配置时只会打日志、不影响游戏。
     #[cfg(feature = "steam")]
     pub(crate) fn steam_record_match_result(&mut self, now: f64) {
+        if !crate::appid::stats_enabled() {
+            // demo：不上报统计/成就/天梯。**在“生产端”早退**（而不是改绘制）：
+            // `steam_stats_snapshot` 保持 `None` → 结算画面的“统计 + 天梯 TOP5”整块自然不画，
+            // 也不会弹成就提示、不会出现“暂无数据（需在 Steamworks 后台创建）”这类脏文案。
+            return;
+        }
         if self.steam_stats_recorded {
             return;
         }

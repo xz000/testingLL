@@ -40,6 +40,9 @@ mod keys;
 
 mod local_settings;
 
+/// Steam AppID 与版本能力开关（正式版 / demo 由 feature 区分）：编译期常量，见 `appid.rs`。
+mod appid;
+
 /// 多语言（i18n）：以中文原文为 key 查英文表；语言可由 Steam 设置或本地设置决定。
 mod i18n;
 
@@ -140,9 +143,10 @@ const CLIENT_STALE_TICKS: u64 = 180;
 #[cfg(feature = "steam")]
 const MIGRATE_PROBE_TICKS: u64 = 60;/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
-/// Steamworks 应用 AppID（对应根目录 `steam_appid.txt` = 908660）。
+/// Steamworks 应用 AppID —— 由 `appid.rs` 按 **feature** 决定（正式版 908660 / demo 1042120）。
+/// 曾经在这里写死 908660；demo 版必须换 AppID，否则会以正式版身份初始化（云/工坊/统计全作用到正式版上）。
 #[cfg(feature = "steam")]
-const APP_ID: u32 = 908660;/// Steam P2P 虚拟端口（host/peer 约定一致）。
+use appid::APP_ID;/// Steam P2P 虚拟端口（host/peer 约定一致）。
 #[cfg(feature = "steam")]
 const STEAM_VIRTUAL_PORT: i32 = 1337;
 /// Steam 对局确定性世界种子（各端一致，重建 world 用）。
@@ -399,6 +403,9 @@ enum KeybindsAction {
     /// 点击底部「返回」。
     Back,
 }
+
+/// 设置页反馈提示的显示帧数（≈3s @60fps）。
+const SETTINGS_MSG_FRAMES: u64 = 180;
 
 /// 「训练场设置」面板的鼠标动作。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -688,6 +695,10 @@ struct Game {
     training_open: bool,
     /// 训练场设置面板当前选中行。
     training_row: usize,
+    /// 设置页底部一闪而过的反馈（demo 拦截提示等）。
+    settings_msg: String,
+    /// 上述提示的过期帧号（`frame` 超过它就不再画）。
+    settings_msg_until: u64,
     /// 训练场设置面板鼠标命中盒。
     training_hitboxes: ui::HitRegistry<TrainingAction>,
     /// 累计未消费的模拟时间
@@ -1365,6 +1376,8 @@ impl Game {
             bot_retarget,
             training_open: false,
             training_row: 0,
+            settings_msg: String::new(),
+            settings_msg_until: 0,
             training_hitboxes: ui::HitRegistry::new(),
             accumulator: 0.0,
             frame: 0,
@@ -8336,6 +8349,22 @@ impl Game {
 
     /// 调整设置行并应用/保存。`wrap` = 满则回 0（点击/回车）；否则夹到 0..1（方向键）。
     fn settings_adjust(&mut self, row: usize, delta: i32, wrap: bool) {
+        // demo 构建：创意工坊相关行**保留可见但不可用**（比隐藏行简单，且玩家知道“买了正式版能用”）。
+        // 行结构（`SETTINGS_ROWS` 定长数组 + 行号被 layout/键位索引引用）不动，只在这里早退。
+        if let Some(r) = SETTINGS_ROWS.get(row).map(|r| r.0) {
+            let workshop_row = matches!(
+                r,
+                SetRow::Workshop
+                    | SetRow::PublishTarget
+                    | SetRow::PublishPack
+                    | SetRow::PublishReuse
+                    | SetRow::PublishVisibility
+            );
+            if workshop_row && !appid::workshop_enabled() {
+                self.settings_flash(i18n::t("demo 版不支持创意工坊（正式版可用）").to_string());
+                return;
+            }
+        }
         match SETTINGS_ROWS.get(row).map(|r| r.0) {
             Some(SetRow::Mute) => {
                 self.local_settings.toggle_mute();
@@ -9041,6 +9070,21 @@ impl Game {
 
     /// 设置行的值文本（音量百分比 / 静音开关 / 语言名 / 音频包名）。
     fn settings_value_text(&self, row: usize) -> String {
+        // demo 构建：创意工坊相关行的值列直接标“demo 不支持”（行仍可见，点击会给出提示）。
+        if !appid::workshop_enabled() {
+            if let Some(r) = SETTINGS_ROWS.get(row).map(|r| r.0) {
+                if matches!(
+                    r,
+                    SetRow::Workshop
+                        | SetRow::PublishTarget
+                        | SetRow::PublishPack
+                        | SetRow::PublishReuse
+                        | SetRow::PublishVisibility
+                ) {
+                    return i18n::t("demo 不支持").to_string();
+                }
+            }
+        }
         match SETTINGS_ROWS.get(row).map(|r| r.0) {
             Some(SetRow::Master) => format!("{}%", (self.local_settings.master_volume * 100.0).round() as i32),
             Some(SetRow::Sfx) => format!("{}%", (self.local_settings.sfx_volume * 100.0).round() as i32),
@@ -9605,19 +9649,27 @@ impl Game {
         )?;
         self.settings_hitboxes.push((br, SettingsAction::Back));
 
-        match self.pack_detail_text() {
-            Some(detail) => {
-                ui::text_center(
-                    &mut canvas, ctx, &detail, ui::theme::SMALL, ui::theme::text_dim(),
-                    cx, py + ph - 22.0,
-                )?;
-            }
-            None => {
-                ui::text_center(
-                    &mut canvas, ctx,
-                    i18n::t("↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回"),
-                    ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
-                )?;
+        // 底部一行：优先显示一闪而过的反馈（demo 拦截提示），否则是当前包详情/快捷键提示。
+        if !self.settings_msg.is_empty() && self.frame < self.settings_msg_until {
+            ui::text_center(
+                &mut canvas, ctx, &self.settings_msg, ui::theme::SMALL, ui::theme::warn(),
+                cx, py + ph - 22.0,
+            )?;
+        } else {
+            match self.pack_detail_text() {
+                Some(detail) => {
+                    ui::text_center(
+                        &mut canvas, ctx, &detail, ui::theme::SMALL, ui::theme::text_dim(),
+                        cx, py + ph - 22.0,
+                    )?;
+                }
+                None => {
+                    ui::text_center(
+                        &mut canvas, ctx,
+                        i18n::t("↑/↓ 选择 · ←/→ 调值 · 回车/点击 调整 · Esc/Q 返回"),
+                        ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph - 22.0,
+                    )?;
+                }
             }
         }
         let mute_key = self.local_settings.bind_key(local_settings::BindAction::Mute).label();
@@ -9665,6 +9717,12 @@ impl Game {
         self.bot_rngs.clear();
         self.bot_retarget.clear();
         self.audio.play(audio::AudioCue::UiConfirm);
+    }
+
+    /// 设置页底部一闪而过的反馈（如 demo 拦截），用**帧数**计时，不引额外时间状态。
+    fn settings_flash(&mut self, msg: String) {
+        self.settings_msg = msg;
+        self.settings_msg_until = self.frame + SETTINGS_MSG_FRAMES;
     }
 
     /// 训练场设置面板的当前值文本（右列）。

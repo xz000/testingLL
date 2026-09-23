@@ -208,6 +208,18 @@ powershell -ExecutionPolicy Bypass -File publish.ps1 -SteamUser xvzan   :: 只�
       **被打出界会自己走回来**（超出 `0.9*arena` → 目标点指回内圈）。
     - **设置入口**：主菜单 1 号 → 「训练场设置」面板（靶子数量/移动，空格开始，可鼠标）；`--solo` 仍直通。
     - 金币 9999 不补；`total_rounds=9999`（不终局）；协议/快照未动。
+15. ✅ **Steam Demo（试玩版，AppID 1042120 / Depot 1042121，2026-09-20，见 `STEAM_DEMO_PLAN.md`）**
+    - **硬编码 AppID + 编译期能力开关**：新增 `client/src/appid.rs`；`client/Cargo.toml` 新增 feature `demo = ["steam"]`；
+      原先散落的 908660（`main.rs` / `audio_pack.rs` / `steam.rs` / 测试）全部改为引用它。
+    - **demo 能力降级（“给提示”而非隐藏）**：设置页 5 行工坊相关行保留，点击提示“demo 版不支持创意工坊（正式版可用）”，
+      值列显示 `demo 不支持`；新增 `settings_msg`（按帧号计时 ≈3s）画在设置页底部。
+    - **结算画面用最简单策略**：在**生产端**早退（`steam_record_match_result` / `steam_ensure_leaderboard` 开头判 `stats_enabled()`），
+      数据不产生 → 统计/天梯块自然不画、成就 toast 不弹，**绘制代码一行未改**。
+    - **脚本双版本**：`publish.ps1 -Target full|demo`（切 AppId/DepotId/feature/staging/VDF）、
+      `run-steam.ps1 -Target full|demo`（切 feature，并**按目标写入** `steam_appid.txt`）。
+    - 已实测：`publish.ps1 -BuildOnly -Target demo` → `target/steam-pipe-demo/content/` 只含 exe/dll/字体/LICENSE（**无** appid.txt），且不影响正式版 staging。
+    - **Steam 大厅天然按 AppID 隔离** → demo 玩家只与 demo 匹配（与正式版不互通），**零代码**；云不互通（自动退化为本地）。
+    - 待真机验证：demo 起服 appid=1042120 / 入口提示 / 大厅隔离 / 覆盖层直跑。
 
 ## 五、文档索引（读哪个）
 
