@@ -1794,7 +1794,8 @@ impl DefTable {
             },
             // S016 弹跳弹（T 键）——098c（w3a_strings.txt Bouncer）：CD 20→13（逐档表）、伤害 6→13（+1/级，8 级）、
             // range 750+150L（L1=900、L8=1950）。max_level=8，delta 取原斜率。
-            // speed 900 / radius 38（098c Gc） / life 1s；每跳 ×0.8。
+            // speed 900 / radius 38（098c `Gc` 13896 `Rv[Nb]=38`）/ 每跳重置射程；每跳衰减 **×0.75**（`gc` 13833 的 `set gv[nr]=.75*gv[nr]`）。
+            // 注：tooltip 写 “reduced by 20%” 但代码是 ×0.75（20% vs 25%）——**代码是真值**。
             // detailed gc（基础形态）：KI(gv×(5+Xv))（gv 未解码取 1 → gX=5+L，L1=6，与 098c 每级 +1 完全吻合）。
             SkillId::S016 => SkillDef {
                 id,
@@ -1806,7 +1807,7 @@ impl DefTable {
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(38.0), // 098c Gc: r38
                     life: Fix64::from_num(1.0),
-                    kb_ji: Fix64::ONE,
+                    kb_ji: Fix64::from_num(1.15), // 098c `gc`：`mI(nr,Vr,gv*(5+L),1.15)`
                     ignite: None,
                     blast: None,
                     count: 1,

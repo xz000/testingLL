@@ -2522,7 +2522,12 @@ impl World {
                     } else if *on_hit == crate::skill::W098bOnHit::DrainOrb {
                         None // 回血球不与任何人碰撞（抵达施法者由运动分支持）
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
-                        nearest_hit_with_skip(&self.players, pr.pos, pr.owner, *radius, target.unwrap_or(pr.owner))
+                        // 首跳：只打敌人（`Nv/bv` 默认 false）；首跳后 `gc` 置 `Nv=bv=true`
+                        // → 之后可命中同队与施法者自己（排除上一跳目标）。
+                        match *target {
+                            Some(last) => nearest_hit_any_opt_skip(&self.players, pr.pos, pr.owner, *radius, true, Some(last)),
+                            None => nearest_hit(&self.players, pr.pos, pr.owner, *radius),
+                        }
                     } else if *on_hit == crate::skill::W098bOnHit::RedChain {
                         // 红链可命中友军（触发闪电，098c sc）。
                         nearest_hit_any(&self.players, pr.pos, pr.owner, *radius)
@@ -2746,16 +2751,33 @@ impl World {
 
                         }
                         // （098c 回旋镖飞行中不命中、不转回程：回程由运动学前向归零触发、到位时 AOE 结算。）
-                        // Bounce（S016 弹跳弹）：命中不消失——伤害 ×0.8（下限 0.2），
-                        // 重定向到**全场**最近的「非 owner、非上一跳目标」敌人（不限判定半径——
-                        // 半径内扫描会因 or_else 兜底重新选中贴脸的旧目标，弹永远到不了下一家）；
-                        // 无新目标才消失。（重定向经 bounce_redirs 在 2c 段统一写回。）
+                        // Bounce（S016 弹跳弹，098c A 形态 = `Gc` 13896 + `gc` 13833 + `Jv=Fc`）：
+                        // · 衰减 **×0.75**（代码真值；tooltip 写 20% 但 `set gv[nr]=.75*gv[nr]`），下限 0.2；
+                        // · **到下限后**（`gv<=.2`）若弹体还剩 >0.75s 寿命 → 只 `MI`（**不伤只推**）；
+                        // · 首次命中后 `Nv=bv=true` → 之后的跳可以命中同队甚至施法者自己；
+                        // · 重定向到全场最近的非 owner、非上一跳目标（`Fc` 排除 `Fv[nr]`）；无新目标才消失。
                         if *proj == crate::skill::W098bProjKind::Bounce {
-                            let new_gx = (*gx * Fix64::from_num(0.8)).max(Fix64::from_num(0.2));
+                            let at_floor = *gx <= Fix64::from_num(0.2);
+                            let new_gx = (*gx * Fix64::from_num(0.75)).max(Fix64::from_num(0.2));
+                            // 098c `gc`：`if ev[nr]>.75 and gv[nr]<=.2 then MI(...) else mI(...)`
+                            // → 伤害已到地板、且还有寿命 → **不伤只推**（本处直接抹掉伤害事件）。
+                            if at_floor && *remaining > Fix64::from_num(0.75) {
+                                // 撤掉本次命中刚 push 的伤害（保留击退）
+                                if let Some(last) = events.last() {
+                                    if last.0 == victim {
+                                        events.pop();
+                                    }
+                                }
+                            }
                             let skip_id = skip.unwrap_or(victim);
+                            // 首跳后 `Nv/bv=true` → 可打同队/自己（`target` 已被前一次重定向置位 = “已弹过”）。
+                            let post_first = skip.is_some();
                             let mut best: Option<(Fix64, u32)> = None;
                             for q in self.players.iter() {
-                                if !q.alive || q.id == pr.owner || q.id == skip_id {
+                                if !q.alive || q.id == skip_id {
+                                    continue;
+                                }
+                                if !post_first && q.id == pr.owner {
                                     continue;
                                 }
                                 let ds = (q.pos - pr.pos).length_squared();
@@ -5311,9 +5333,21 @@ fn nearest_hit_any_incl_owner(players: &[Player], pos: Vec2, owner: u32, radius:
 }
 
 fn nearest_hit_any_opt(players: &[Player], pos: Vec2, owner: u32, radius: Fix64, incl_owner: bool) -> Option<(u32, Vec2)> {
+    nearest_hit_any_opt_skip(players, pos, owner, radius, incl_owner, None)
+}
+
+/// 全参数版：`incl_owner` = 是否也允许撞施法者本人；`skip` = 排除的 id（弹跳弹的“上一跳目标”）。
+fn nearest_hit_any_opt_skip(
+    players: &[Player],
+    pos: Vec2,
+    owner: u32,
+    radius: Fix64,
+    incl_owner: bool,
+    skip: Option<u32>,
+) -> Option<(u32, Vec2)> {
     let mut best: Option<(Fix64, u32)> = None;
     for p in players.iter() {
-        if !p.alive || (!incl_owner && p.id == owner) {
+        if !p.alive || (!incl_owner && p.id == owner) || Some(p.id) == skip {
             continue;
         }
         let d = p.pos - pos;
@@ -8720,8 +8754,9 @@ mod tests {
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
         assert!((d1 - 6.0).abs() < 0.3, "第一跳应全额 6，实际 {d1}");
-        // 098c 成长（D9）：第一跳命中后施法者 Gn=1.1 → 第二跳 = 6×0.8×1.1≈5.28
-        assert!((d2 - 6.0 * 0.8 * 1.1).abs() < 0.3, "第二跳应 ×0.8×Gn1.1≈5.28，实际 {d2}");
+        // 098c A 形态（`gc` 13833）：`set gv[nr]=.75*gv[nr]` → 衰减 **×0.75**（**不是** tooltip 写的 20%）；
+        // 再乘施法者 Gn=1.1（首次命中后成长）→ 第二跳 = 6×0.75×1.1 ≈ 4.95。
+        assert!((d2 - 6.0 * 0.75 * 1.1).abs() < 0.3, "第二跳应 ×0.75×Gn1.1≈4.95，实际 {d2}");
         // 末跳命中时寿命重置（~0.94s），到 2.2s 时必已耗尽（3 跳上限由全场扫描+飞程自然保证）。
         for _ in 0..40 {
             world.step(none.clone(), dt);
