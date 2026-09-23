@@ -2146,6 +2146,8 @@ impl World {
         // S014B：命中友军后要把 `bv/Nv` 置回 false（每 cast 只增益一次）——命中段是 `&pr.kind`
         // 不可变借用，故延后到 2c 段写回。
         let mut weaken_disarm: Vec<usize> = Vec::new();
+        // S003 自撞 “Burn out”（098c `lb`：`set Q[Vr]=.2*Q[Vr]`）——命中段是 `&pr.kind` 不可变借用，延后写回。
+        let mut homing_burnouts: Vec<u32> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量, 时长 s)
         let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
@@ -2481,7 +2483,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, life, remaining, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2505,6 +2507,10 @@ impl World {
                         // S014A 汲取·减速（`vc`）：生成时 `Nv[Nb]=true`、`bv` 默认 false →
                         // **可命中任意队伍（但排除施法者本人）**（`vc` 按 `cn[Vv[Vr]]==cn[...]` 分友/敌两支）。
                         nearest_hit_any(&self.players, pr.pos, pr.owner, *radius)
+                    } else if *proj == crate::skill::W098bProjKind::Homing {
+                        // S003 追踪弹：`Nv=true` 且 `bv=true` → **同队与施法者本人都能撞**（098c 碰撞条件
+                        // `(Vv[fA]!=Vv[gX] or (bv[gX] and nv[fA]==1) or (bv[fA] and nv[gX]==1)) and (... or (Nv[gX] and Nv[fA]))`）。
+                        nearest_hit_any_incl_owner(&self.players, pr.pos, pr.owner, *radius)
                     } else if *on_hit == crate::skill::W098bOnHit::Weaken {
                         // S014B 汲取·削弱（`oc`）：`Nv`/`bv` 初始 **false** → 首段只能碰敌人（同队碰撞被 `Nv` 挡住）；
                         // 首段到期 `ic` 置位后（= 我们的 `weaken_armed`）→ **连友军与施法者本人都能碰**。
@@ -2525,6 +2531,17 @@ impl World {
                     };
                     if let Some((victim, dd)) = hit {
                         let skip = *target;
+                        // ── S003 追踪弹特例（098c `lb` 10961 / `kb` 10941）─────────────────────────
+                        // `Nv[Nb]=true` **且** `bv[Nb]=true` → 可撞同队、也可撞自己（施法者）；
+                        // 命中术士时本体**不直伤**，而是 AoE；伤害随飞行时间增长：
+                        // `Kb = 总寿命-2.25-剩余`，`kb = (6+L) + 2.5*Kb/2.25`（Kb>0 时）——我们的 `gx` 即 `6+L`。
+                        let homing = *proj == crate::skill::W098bProjKind::Homing;
+                        let homing_self = homing && victim == pr.owner;
+                        let hit_dmg = if homing {
+                            homing_missile_damage(*gx, *life, *remaining)
+                        } else {
+                            *gx
+                        };
                         // 回旋镖命中：结算后弹开 + 重新追施法者（098c `Sb`→`sb`）→ 记录到延迟队列（借用冲突）。
                         // 注意：每命中一次都会重施弹开与 Homing（多次命中 → 多次结算）。
                         if *proj == crate::skill::W098bProjKind::Boomerang {
@@ -2545,8 +2562,8 @@ impl World {
                         // （敌/友分支共用）→ A 命中友军同样销毁。
                         let weaken_ally_keep =
                             same_team && *on_hit == crate::skill::W098bOnHit::Weaken;
-                        if !is_chain && !is_ally_support {
-                            events.push((victim, *gx, Some(pr.owner)));
+                        if !is_chain && !is_ally_support && !homing {
+                            events.push((victim, hit_dmg, Some(pr.owner)));
                         }
                         // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（GX 设充能灯 1）。
                         // 火球指纹 = Straight + Ki + 有点燃（法杖/精通爆炸变体同样充能）。
@@ -2562,11 +2579,11 @@ impl World {
                         // 锁链（蓝链拉目标 / 红链拉施法者）以拉拽为主：跳过 KI 击退
                         //（击退 700 位移会盖过 300 的拉拽）；汲取命中**友军**时 098c `vc`/`oc` 友军分支
                         // 根本没有 `mI`（只有治疗/增益）→ 不产生击退。
-                        if !is_chain && !is_ally_support && dd.length_squared() > Fix64::ZERO {
+                        if !is_chain && !is_ally_support && !homing && dd.length_squared() > Fix64::ZERO {
                             let vmana = self.players[victim as usize].mana;
                             let atk_gn = self.players.get(pr.owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
                             let vic_hn = self.players[victim as usize].dmg_taken_mult;
-                            let kb = warlock_ki_knockback(vmana, *gx, *kb_ji, atk_gn, vic_hn);
+                            let kb = warlock_ki_knockback(vmana, hit_dmg, *kb_ji, atk_gn, vic_hn);
                             pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
                         }
                         if let Some(total) = ignite {
@@ -2576,7 +2593,23 @@ impl World {
                             // 098c：爆炸写在 `Jv`（销毁回调）→ **被打掉时必炸**（命中单位/弹体/柱子都会 `IA→Jv`），
                             // 半径 `160×(1+.12xi)`、伤害 `blast_dmg`、衰减地板 `blast_floor`。
                             // （陨石 S008A 不走 W098b 路径，而是 `DelayedBlast`；岩浆 S008B 的炸在 `Gv`。）
-                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *gx));
+                            // S003：伤害 = 飞行时间成长的 `hit_dmg`；自撞时半径改用 `.45√(14+xi)`（= ×.45/.39）。
+                            let (r, dmg) = if homing {
+                                (if homing_self { *br * Fix64::from_num(0.45 / 0.39) } else { *br }, hit_dmg)
+                            } else {
+                                (*br, *blast_dmg)
+                            };
+                            expiry_blasts.push((pr.owner, pr.pos, r, dmg, *kb_ji, *blast_floor, hit_dmg));
+                            // S003 命中术士后的移速变化（098c `lb`）：
+                            //   自撞 → 施法者 +100 移速（`LO(Jb,4*jn)` 4s 后归还）+ 速度 ×.2（下方延迟处理）
+                            //   其他 → 目标 +50 移速（4*jn 秒）
+                            let dur = 4.0 * debuff_dur.to_num::<f64>().max(1.0);
+                            if homing && homing_self {
+                                speed_steals.push((pr.owner, 100.0, 4.0));
+                                homing_burnouts.push(pr.owner);
+                            } else if homing {
+                                speed_steals.push((victim, 50.0, dur));
+                            }
                         }
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
                         match on_hit {
@@ -3062,6 +3095,12 @@ impl World {
                         *target = Some(tid); // 兼作“已重定向”标记
                     }
                 }
+            }
+        }
+        // S003 自撞 Burn out：施法者速度 ×0.2（098c `lb`：`Q[Vr]=.2*Q[Vr]; S[Vr]=.2*S[Vr]`）。
+        for pid in homing_burnouts.drain(..) {
+            if let Some(p) = self.players.get_mut(pid as usize) {
+                p.cur_vel = p.cur_vel * Fix64::from_num(0.2);
             }
         }
         // S014B：命中友军后清 `bv/Nv`（`oc`：`set bv[nr]=false` / `set Nv[nr]=false`）。
@@ -3996,6 +4035,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         Some(Fix64::from_num(200.0 * ((128.0 + 40.0 * xi + rv) / 200.0).sqrt())),
                         Fix64::from_num(0.5),
                     )
+                } else if id == crate::skill::SkillId::S003 {
+                    // S003 追踪弹（098c `lb` 10961 的 `tI(nr, kb(nr), 1.3, 200*.39*√(14+xi))`）：
+                    // 命中**术士**时本体不直伤，而是以弹体为中心的 AoE（半径 `78*√(14+xi)`，
+                    // `tI` 的地板 `QI=.5`），伤害 = `kb(nr)`（随飞行时间增长，见命中分支）。
+                    let xi = world.players[idx as usize].mastery[1] as f64;
+                    let r = 78.0 * (14.0 + xi).sqrt();
+                    (Some(Fix64::from_num(r)), Fix64::from_num(0.5))
                 } else {
                     (blast, Fix64::ZERO)
                 };
@@ -4138,7 +4184,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             blast_on_expiry: id == crate::skill::SkillId::S008 && alt,
                             is_fireball: id == crate::skill::SkillId::S000,
                         },
-                        pos: ppos,
+                        // S003 追踪弹：从施法者前方 `qb = 2 + Rv[施法者] + Cr` 处生成（098c `Pb` 11215）
+                        // ——不影响则会**生成瞬间就碰到施法者自己**（因为它的 `bv=true` 允许自撞）。
+                        pos: if proj == crate::skill::W098bProjKind::Homing {
+                            ppos + dir * (Fix64::from_num(2.0) + world.players[idx as usize].radius + radius)
+                        } else {
+                            ppos
+                        },
                         alive: true,
                     });
                 }
@@ -5278,6 +5330,14 @@ fn nearest_hit_any_opt(players: &[Player], pos: Vec2, owner: u32, radius: Fix64,
 }
 
 /// 同 `nearest_hit`，但额外排除一个 `skip` id（供链镖跳跃：不命中上一个目标）。
+/// 098c `kb(gX)`(10941): S003 homing-missile damage **grows with flight time**.
+/// `Kb = total_life - 2.25 - remaining` (orig `4.5*(1+1.5*.1*ei)-2.25-ev`); if `Kb>0` return
+/// `base + 2.5*Kb/2.25`, else `base` (= 6+L, i.e. our `gx`). Max bonus +2.5 near end of life.
+pub fn homing_missile_damage(base: Fix64, life_total: Fix64, remaining: Fix64) -> Fix64 {
+    let kb_win = (life_total - Fix64::from_num(2.25) - remaining).max(Fix64::ZERO);
+    base + Fix64::from_num(2.5) * kb_win / Fix64::from_num(2.25)
+}
+
 fn nearest_hit_with_skip(
     players: &[Player],
     pos: Vec2,
@@ -6853,6 +6913,99 @@ mod tests {
         );
         // 098c 实证：**无杖火球不点燃**（燃烧是火焰法杖专属；`ib` 里只有 `mI`）。
         assert!(!ignited, "无杖火球不应生成点燃 DoT 场");
+    }
+
+    /// S003 追踪弹：伤害**随飞行时间增长**（098c `kb` 10941）——基础 = gx（6+L），
+    /// 飞行 2.25s 后开始加伤，到寿前最多 +2.5。
+    #[test]
+    fn s003_damage_grows_with_flight_time() {
+        let base = Fix64::from_num(7.0); // L1 = 6+1
+        let life = Fix64::from_num(4.5); // 4.5*(1+.15ei)，ei=0
+        // 刚射出（剩余 = 总寿命）→ 基础伤害
+        assert!(near(homing_missile_damage(base, life, life), 7.0, 1e-6));
+        // 飞了 2.25s（剩余 = 总寿命-2.25）→ 刚好开始加伤（加 0）
+        let at = life - Fix64::from_num(2.25);
+        assert!(near(homing_missile_damage(base, life, at), 7.0, 1e-6));
+        // 到寿（剩余 0）→ 7 + 2.5*(4.5-2.25)/2.25 = 7 + 2.5 = 9.5
+        assert!(near(
+            homing_missile_damage(base, life, Fix64::ZERO),
+            9.5,
+            1e-6
+        ));
+    }
+
+    /// S003 追踪弹：`Nv`/`bv` 均为 true → **能撞施法者自己**；自撞触发 098c “Burn out”：
+    /// 施法者移速 +100（4s），且速度 ×0.2（`set Q[Vr]=.2*Q[Vr]`），并且**不自伤**。
+    #[test]
+    fn s003_hitting_own_caster_burns_out() {
+        let mut world = World::new(3, 1151);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(40.0), Fix64::ZERO); // 远处目标（作为锁定对象）
+        world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].pos = Vec2::new(Fix64::ZERO, d60(40.0));
+        world.players[2].move_target = None;
+        let hp0 = world.players[0].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S003, Some(Vec2::new(d60(40.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        // 等弹体飞出去（保证已过 2.25s 阈值之外的稳定性），然后把施法者“送”到弹上模拟绕回自撞
+        let mut hit_self = false;
+        for _ in 0..80 {
+            world.step(none.clone(), dt);
+            if let Some(pr) = world.projectiles.iter().find(|p| matches!(p.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Homing, .. })) {
+                world.players[0].pos = pr.pos;
+            }
+            if world.players[0].has_buff(BuffKind::SpeedSteal(0.0)) {
+                hit_self = true;
+                break;
+            }
+        }
+        assert!(hit_self, "追踪弹应能撞到施法者自己并触发 Burn out（+100 移速 buff）");
+        assert_eq!(world.players[0].hp, hp0, "自撞不应自伤");
+    }
+
+    /// S003 追踪弹：**能命中队友**（098c `Nv[Nb]=true`）——但命中队友＝**+50 移速 buff**（`gR(Vr,hR+50)`），
+    /// **不是伤害**（因为它的伤害走 `tI` AoE，而 `tI` 同样过滤 `cn[id]!=cn[施法者]` → 队友不受 AoE 伤）。
+    #[test]
+    fn s003_can_hit_teammate_for_speed_buff() {
+        let mut world = World::new(3, 1152);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 0; // 队友挡在弹道上
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].pos = Vec2::new(d60(10.0), Fix64::ZERO); // 锁定目标
+        world.players[2].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S003, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.players[1].has_buff(BuffKind::SpeedSteal(0.0)),
+            "命中队友应给 +50 移速（098c `gR(Vr,hR(Vr)+50)`）"
+        );
+        assert_eq!(world.players[1].hp, hp1, "命中队友不应造成伤害（AoE 也过滤同队）");
     }
 
     /// S003 追踪弹：锁定点击处最近敌人全速直追——目标横移也能转向命中。
