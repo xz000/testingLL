@@ -334,6 +334,9 @@ pub enum ProjectileKind {
         is_fireball: bool,
         /// S005 反射盾用的逐弹体反射类别（098c `Ev` 等价物）。
         class: ProjClass,
+        /// **直伤**覆盖（098c `FB` 12220：S009 父弹命中固定 `mI(nr,Vr,3,1.4)`，
+        /// 而 `gx` 是分级伤害、供碎裂出的碎片用）。`None` = 直伤用 `gx`。
+        direct_dmg: Option<Fix64>,
     },
     /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
     /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
@@ -993,6 +996,7 @@ impl World {
                     blast_on_expiry: false,
                     is_fireball: false,
                     class: ProjClass::ReflectTransfer, // 凤凰弹（`tB` 未设 Ev）
+                    direct_dmg: None,
                 },
                 pos,
                 alive: true,
@@ -2547,7 +2551,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, life, remaining, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, direct_dmg, life, remaining, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2619,7 +2623,8 @@ impl World {
                         let hit_dmg = if homing {
                             homing_missile_damage(*gx, *life, *remaining)
                         } else {
-                            *gx
+                            // S009 父弹直伤固定 3（`direct_dmg`），碎片用分级 `gx`。
+                            direct_dmg.unwrap_or(*gx)
                         };
                         // 回旋镖命中：结算后弹开 + 重新追施法者（098c `Sb`→`sb`）→ 记录到延迟队列（借用冲突）。
                         // 注意：每命中一次都会重施弹开与 Homing（多次命中 → 多次结算）。
@@ -3102,6 +3107,7 @@ impl World {
                         blast_on_expiry: false,
                         is_fireball: true, // 分身射出的是火球（098c 会走 `ib` → 给施法者充能）
                         class: ProjClass::ReflectTransfer,
+                        direct_dmg: None,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -3351,6 +3357,7 @@ impl World {
                     blast_on_expiry: false,
                     is_fireball: false,
                     class: ProjClass::NoReflect, // S009 分裂子弹（Ev==9）
+                    direct_dmg: None, // 碎片用分级 `gx`（098c `CB`：`2.5+.5*Xv`）
                 },
                 pos,
                 alive: true,
@@ -3424,6 +3431,7 @@ impl World {
                     blast_on_expiry: false,
                     is_fireball: false,
                     class: ProjClass::Inert, // S014 回血球不与玩家碰撞
+                    direct_dmg: None,
                 },
                 pos,
                 alive: true,
@@ -4375,6 +4383,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 ProjClass::Twin
                             } else {
                                 ProjClass::ReflectTransfer
+                            },
+                            // 098c `FB`(12220)：S009 父弹命中固定 `3`（`mI(nr,Vr,3,1.4)`）；
+                            // 碎裂出的碎片仍用分级的 `gx`（`2.5+.5*L`，上方 spawn 处传 `*gx`）。
+                            direct_dmg: if id == crate::skill::SkillId::S009 {
+                                Some(Fix64::from_num(3.0))
+                            } else {
+                                None
                             },
                         },
                         // S003 追踪弹：从施法者前方 `qb = 2 + Rv[施法者] + Cr` 处生成（098c `Pb` 11215）
@@ -6510,6 +6525,7 @@ mod tests {
                 blast_on_expiry: false,
                 is_fireball: true,
                 class: ProjClass::ReflectTransfer,
+                direct_dmg: None,
             },
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
@@ -6575,6 +6591,7 @@ mod tests {
                 blast_on_expiry: false,
                 is_fireball: false,
                 class: ProjClass::NoReflect,
+                direct_dmg: None,
             },
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
@@ -10128,6 +10145,43 @@ mod tests {
             max_bullets2 = max_bullets2.max(alive_now);
         }
         assert!(max_bullets2 >= 3, "区域形态应持续撒出侧弹（主弹+侧弹），窗口内峰值 {max_bullets2}");
+    }
+
+    /// S009 父弹**直伤固定 3**（098c `FB` 12220：`mI(nr,Vr,3,1.4)`）——不随等级增长；
+    /// 只有碎裂出的碎片用分级伤害（`2.5+.5*L`）。
+    #[test]
+    fn s009_parent_direct_hit_is_fixed_3() {
+        let damage_at = |lvl: u32| -> f64 {
+            let mut world = World::new(2, 1201);
+            world.obstacles.clear();
+            world.sandbox = true;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            world.players[0].team = 0;
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[0].set_skill_level(SkillId::S009, lvl);
+            world.players[1].team = 1;
+            world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+            world.players[1].move_target = None;
+            let hp = world.players[1].hp;
+            let aim = world.players[1].pos;
+            world.step(
+                vec![
+                    PlayerInput { cast: Some((SkillId::S009, Some(aim))), ..Default::default() },
+                    PlayerInput::default(),
+                ],
+                dt,
+            );
+            let none = vec![PlayerInput::default(), PlayerInput::default()];
+            for _ in 0..30 {
+                world.step(none.clone(), dt);
+            }
+            (hp - world.players[1].hp).to_num::<f64>()
+        };
+        let d1 = damage_at(1);
+        let d8 = damage_at(8);
+        assert!(d1 > 0.0, "S009 父弹应命中并造成伤害");
+        assert!((d1 - d8).abs() < 1e-3, "S009 父弹直伤应固定 3（不随等级）：L1={d1} vs L8={d8}");
     }
 
     /// S008 岩浆滚石（B 形态）：接触敌人施加「肉饼」减速，寿命尽爆炸。
