@@ -522,9 +522,12 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 ⇒ **同一个技能的不同弹体可以有不同的 `xv`**：S009 的**父弹 A 形态未设 xv（撞柱即毁）**，而它的**碎片与 B 形态都有 `xv=1`**。
 我方 `pillar_restitution(SkillId)` 是**逐技能**的 → **S009/S018 都需要改成“逐弹体角色”**（列入 P0 复审清单）。
 
+> 状态（`0baea5d`）：**S009 已完成**（碎片与 B 形态父弹在生成处逐弹体设 `pillar_rest=1`，A 形态仍被柱挡）；
+> **S018A/B 仍未做**——S018 走 `ProjectileKind::Gravity`，其运动分支**没有柱碰撞**（直穿），需先给 `Gravity` 加障碍碰撞才能实现 `xv=1` 反弹。
 
 
-### S005 反射盾（入口 `gC` 15227 / 跟随 `FC` 15210 / 反射 `fC` 15016 / 到期 `DC` 15002）✅ 已普查（未动代码）
+
+### S005 反射盾（入口 `gC` 15227 / 跟随 `FC` 15210 / 反射 `fC` **15054**（旧写 15016 有误）/ 到期 `DC` 15002）✅ **已实施（commit `0baea5d`）**
 
 **入口**：`gC`(15227)；跟随每帧 `jv=Zi=FC`(15210)；命中反射 `hv=zi=fC`(15016)；到期 `DC`(15002)
 
@@ -532,7 +535,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 |---|---|---|---|
 | 形态 | 生成一个 **class-3 对象**（`rO(3)`）跟在施法者身上：`K/L/Q/S` 初次同步；`jv=FC` 每帧 `K/L/Q/S[盾]=K/L/Q/S[施法者]`（纯跟随）；`Av[+1]=true`（与术士撞）、`Av[+2]=true`（与弹体撞）、`Av[+3]=false`；`cv=2`；`Rv[gX]='x'`=**120**；`Pr[施法者]`=该对象；`nV`/地形检查（已在危险地形则放不出）。失败时仅 `IssueImmediateOrderById` | 我方 = 一个 `BuffKind::Reflect` buff | ⚠ 结构不同（效果近似） |
 | 持续 | `LO(function DC, (2.6+.2*zr[ri])*jn[ri], ...)` → 到期 `DC` 仅 `DestroyEffect` + `iO(Pr[Yv],false)` 删掉盾 | 我方按 def 时长 | 📋 对账 `zr` 映射 |
-| **反射（`fC`）** | ① 排除：`Ev[Vr]==9 or na` 或 `(nv[Vr]==1 and not Hr[Vr])` → 直接 `return false`；② 重叠则把被撞对象推到盾面外（`K[Vr]=K[nr]-r*dx`，`r=Rv[盾]+Rv[目标]`）；③ **沿法线镜面反射** `cO=(Q*dx+S*dy)*2; Q-=cO*dx; S-=cO*dy`（即 `v'=v−2(v·n)n`）；④ **把弹体归属改成盾主**：`Vv[Vr]=Vv[nr]` + `SetUnitOwner(...,Player(Vv[nr]))`（`Ev!=2/16/Xa/17` 且 `nv!=1` 时）⇒ 反弹出去的弹体**变成你的**；⑤ `Ev[Vr]==2`（回旋镖）→ 反射后直接置成**回程**（`U=w=0, jv=ci=Tb, ev=0, Gv=null`）；⑥ `Ev[Vr]==3` → 把弹体颜色改成盾主的 | 我方用 `mirror_by`（**保留法向/翻转切向**）⇒ **数学错了**（应是 `v−2(v·n)n`）；无“改归属”；无回旋镖转回程 | ⚠ **差异候选（大）** |
+| **反射（`fC`）** | ① 排除：`Ev[Vr]==9 or na` 或 `(nv[Vr]==1 and not Hr[Vr])` → 直接 `return false`；② 重叠则把被撞对象推到盾面外（`K[Vr]=K[nr]-r*dx`，`r=Rv[盾]+Rv[目标]`）；③ **沿法线镜面反射** `cO=(Q*dx+S*dy)*2; Q-=cO*dx; S-=cO*dy`（即 `v'=v−2(v·n)n`）；④ **把弹体归属改成盾主**：`Vv[Vr]=Vv[nr]` + `SetUnitOwner(...,Player(Vv[nr]))`（`Ev!=2/16/Xa/17` 且 `nv!=1` 时）⇒ 反弹出去的弹体**变成你的**；⑤ `Ev[Vr]==2`（回旋镖）→ 反射后直接置成**回程**（`U=w=0, jv=ci=Tb, ev=0, Gv=null`）；⑥ `Ev[Vr]==3` → 把弹体颜色改成盾主的 | ✅ 已实现（`0baea5d`）：`Bullet`/`W098b` 两路都改 `fix::bounce_off(v,n,1)`；改归属；`ProjClass` 实现②①④⑤（回旋镖→`Home`，岩浆/链弹/双生弹保留归属，S009/S018 类不反射）；推出重叠 | ✅ 已修（残余：`nv==1` 英雄撞盾与 `Ev==3` 换色纯表现未做） |
 
 ### S006 回溯（Time Shift）✅ 已普查（未动代码）
 
