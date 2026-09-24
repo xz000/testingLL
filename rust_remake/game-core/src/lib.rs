@@ -55,4 +55,5 @@ pub fn version() -> &'static str {
 /// v31（2026-09-24）：S016B 充能改为「命中生成魂→回飞→距 64 内清 CD」（`dc`/`cc`）；`W098bOnHit::SoulReturn` 入快照。
 /// v32（2026-09-24）：经济默认值对齐 098c 模式初始化——奖励金默认全 0（lo/Lo/Mo/po）、胜利点数 mo=1；
 /// 精通/技能每级增量改为 w3q `gglm`(=1)（旧误用 `glvl`=10）。
-pub const PROTOCOL_VERSION: u32 = 32;
+/// v33（2026-09-24）：移除不可获得物品 Aegis2(I00I)（098c `bD` 从不创建）→ `ITEMS` 索引映射变更。
+pub const PROTOCOL_VERSION: u32 = 33;

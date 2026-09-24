@@ -18,7 +18,7 @@
 //! 买价取自 098c `war3map_pretty.j` 商店训练价 `bD`（10579+，`ID(id,AD,..)` 的 AD，
 //! 同家族每档同价）；卖出价取自 `ED` 回收金（10413+）。
 //! 早期版本曾按 098b 文档（`术士之战技能说明整理.md`）「价格」字段占位，与 098c 系统性
-//! 不符，本次已纠正。GuardianShield2(I00I) 在 098c `bD` 中无购买分支（死数据），买价沿用 9。
+//! 不符，本次已纠正。（另：098c `UnitAddItemById`/`bD` 从不创建 I00I(Aegis 2) ⇒ 不可获得，已从表移除。）
 
 use crate::balance::Balance;
 
@@ -59,8 +59,6 @@ pub enum ItemId {
     BloodSword2,
     /// I00H
     GuardianShield1,
-    /// I00I
-    GuardianShield2,
     /// I00J
     LavaBoots1,
     /// I00K
@@ -211,8 +209,7 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::BloodSword2, family: ItemFamily::BloodSword, tier: 2, cost: 8, sell: 24, name: "鲜血之剑 2", desc: "天罚伤害 +2；命中每敌回 3 血", fx: ItemEffects { smite_bonus: 2.0, on_damage_heal: 3.0, ..fx() } },
     // I00H 守护之盾：火球命中充能 → 天罚释放 5s 内受伤-25% 击退-50%（HC 实证）；HP 上限-10（买 13 @bD 10758）
     ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 13, sell: 12, name: "守护之盾", desc: "火球命中充能：天罚后5s 受伤-25% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.25, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
-    // I00I 守护之盾 2：同机制，窗口减伤 75%（098c 商店 bD 无购买分支，疑似残留；买价沿用 9，卖 24 @ED 10512）
-    ItemDef { id: ItemId::GuardianShield2, family: ItemFamily::GuardianShield, tier: 2, cost: 9, sell: 24, name: "守护之盾 2", desc: "火球命中充能：天罚后5s 受伤-75% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.75, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
+    // I00I 守护之盾 2：098c **不可获得**（`UnitAddItemById`/`bD` 全图从不创建，JASS 核实）⇒ 已移除。
     // I00J 熔岩靴 1：+15 移速 / 熔岩上用天罚激活抵抗 87.5%×3s / -0.1 回复惩罚（激活式，D8；买 7 @bD 10784）
     ItemDef { id: ItemId::LavaBoots1, family: ItemFamily::LavaBoots, tier: 1, cost: 7, sell: 5, name: "熔岩靴 1", desc: "移速+15；熔岩上天罚激活：熔岩伤-87.5%×3s CD25s；回复-0.1/s；可升 2 次", fx: ItemEffects { speed_add: 15.0, lava_resist_frac: 0.875, lava_resist_secs: 3.0, regen_penalty: 0.1, ..fx() } },
     // I00K 熔岩靴 2：+27 移速（买 7；卖 10 @ED 10526）/ 4s
@@ -390,7 +387,8 @@ mod tests {
     fn w3t_crosscheck_item_bonuses() {
         // 生命加成（w3a 物品能力 `Ilif`）：
         //   A007=+10 → Helm1/Amulet1；A00D=+15 → Helm2；A004=+20 → Helm3/Amulet2；
-        //   A00H=+30 → Amulet3；A000=-10 → GuardianShield1/2。
+        //   A00H=+30 → Amulet3；A000=-10 → GuardianShield1。
+        // （坠饰的 +hp 与头盔同源：物品自带能力 `Ilif`，引擎自动施加；`bD` 只额外给 I00C `In+0.01`。）
         let hp = [
             (ItemId::Helm1, 10.0),
             (ItemId::Helm2, 15.0),
@@ -399,7 +397,6 @@ mod tests {
             (ItemId::Amulet2, 20.0),
             (ItemId::Amulet3, 30.0),
             (ItemId::GuardianShield1, -10.0),
-            (ItemId::GuardianShield2, -10.0),
         ];
         for (id, want) in hp {
             assert_eq!(id.def().fx.hp_add, want, "{id:?} 生命加成不符 w3a Ilif");
@@ -424,14 +421,14 @@ mod tests {
 
     #[test]
     fn catalog_has_unique_dense_ids() {
-        // 乔丹之石（I00E）已**不占物品栏**（改为技能页的一次性突破），故表为 23 件。
-        assert_eq!(ITEMS.len(), 23);
+        // 乔丹之石（I00E）不占物品栏（技能页一次性突破）；Aegis2（I00I）098c 不可获得 ⇒ 表为 22 件。
+        assert_eq!(ITEMS.len(), 22);
         for (i, d) in ITEMS.iter().enumerate() {
             assert_eq!(d.id.as_u32(), i as u32, "密集索引应与表序一致");
             assert!(!d.name.is_empty());
         }
-        assert_eq!(ItemId::from_u32(22), Some(ItemId::PocketWatch2));
-        assert_eq!(ItemId::from_u32(23), None);
+        assert_eq!(ItemId::from_u32(21), Some(ItemId::PocketWatch2));
+        assert_eq!(ItemId::from_u32(22), None);
     }
 
     #[test]
@@ -445,7 +442,7 @@ mod tests {
             (ItemFamily::LavaBoots, 3),
             (ItemFamily::PocketWatch, 2),
             (ItemFamily::BloodSword, 2),
-            (ItemFamily::GuardianShield, 2),
+            (ItemFamily::GuardianShield, 1),
         ] {
             let chain = ItemDef::chain(family);
             assert_eq!(chain.len(), tiers, "{family:?} 链长度");
