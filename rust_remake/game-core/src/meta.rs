@@ -25,16 +25,16 @@ pub struct MatchConfig {
     pub total_rounds: u32,
     /// 每轮为每位玩家固定发放的金币（参与奖）
     pub gold_per_round: i32,
-    /// 击杀金币（098c `lo`，全局默认 **1** —— `war3map_pretty.j` 209）。
-    /// 助攻金币（098c `Lo`，默认 **1**；6060 `register_assists`）。
+    /// 助攻金币（098c `Lo`，**默认 0**：模式初始化 `war3map.j` 9131 置 0）。
     pub gold_per_assist: i32,
-    /// 胜利金币（098c `Mo`，默认 **2**）。
+    /// 胜利金币（098c `Mo`，**默认 0**：`war3map.j` 9133 置 0）。
     pub gold_per_round_win: i32,
-    /// 每一个击杀奖励的金币
+    /// 击杀金币（098c `lo`，**默认 0**：`war3map.j` 9130 置 0）。
     pub gold_per_kill: i32,
-    /// **伤害金**（098c 设置 16 `po`，全局默认 1）：回合结束时发给**本回合伤害最高**的玩家
-    /// （并列者都发）。实证 `war3map_pretty.j` 5364-5379：`if Rn[i] >= ZR then ... + po`，
-    /// 并播报 "X has dealt the most damage in this round (N)."。**与伤害量无关**，是"最高者独占"奖。
+    /// **伤害金**（098c 设置 16 `po`，**默认 0**：`war3map.j` 9134 置 0）：回合结束时发给
+    /// **本回合伤害最高**的玩家（并列者都发）。实证 `war3map_pretty.j` 5364-5379：
+    /// `if Rn[i] >= ZR then ... + po`，并播报 "X has dealt the most damage in this round (N)."。
+    /// **与伤害量无关**，是"最高者独占"奖。
     pub gold_per_most_damage: i32,
     /// 开局（第一小局开始前）为每位玩家一次性发放的初始金币；与每轮参与奖 `gold_per_round` 相互独立、叠加。
     /// 房主可设置；098c 全局 `Qo=20`。
@@ -230,25 +230,23 @@ impl MatchConfig {
 
 impl Default for MatchConfig {
     fn default() -> Self {
-        // 经济默认值对齐 **098c 全局声明 + 设置对话框**（`war3map_pretty.j` 205-224 / 18799-18813）：
-        //   设置 10 ko=1 / 11 Ko=1 / 14 mo=2        ← 点数
-        //   设置 12 lo=1 / 13 Lo=1 / 15 Mo=2        ← 金币（击杀/助攻/胜利）
-        //   设置 16 po=1（Damage Gold Reward，回合结算时另加）
-        //   设置 17 qo=10（**Gold per round** = 每轮基础金币）← 注意是 `qo` 不是 `po`
-        //   Qo=20（初始金币）
+        // 经济默认值对齐 **098c 模式初始化**（`war3map.j` 9129-9137；同上 pretty.j 18123-18137）：
+        //   `ko=1 / lo=0 / Lo=0 / mo=1 / Mo=0 / po=0 / Po=0 / qo=$A / Qo=20`
+        //   ！globals（pretty.j 205-224）里的 `lo=1/Lo=1/Mo=2/po=1/mo=2` 只是**未生效占位值**，
+        //     被上面的模式初始化覆盖 ⇒ **默认几乎没有击杀/助攻/胜利/伤害金币**。
+        //   主要收入 = 初始金 `Qo=20`（开局一次）+ 每回合金 `qo=10`。
         MatchConfig {
             total_rounds: 3,
-            gold_per_round: 10, // 设置 17 `qo`（此前误按 `po=1` 改成 1，已改回）
-            gold_per_assist: 1,
-            gold_per_round_win: 2,
-            gold_per_kill: 1,
-            gold_per_most_damage: 1, // 098c 设置 16 `po`
-            starting_gold: 20,
-            // 098c 计分（JASS 实证；globals ko=1/Ko=1/mo=2）：胜利 2 分、击杀 1 分、助攻 1 分。
-            // 注：MECHANICS.md §5「击杀 2 分」是笔误，实际 ko=1（war3map_pretty.j:2 / :9028 / :10292）。
+            gold_per_round: 10, // `qo`（每回合；`-c17`/`-gr`）
+            gold_per_assist: 0, // `Lo`（默认 0；`-c13`）
+            gold_per_round_win: 0, // `Mo`（默认 0；`-c15`）
+            gold_per_kill: 0,   // `lo`（默认 0；`-c12`）
+            gold_per_most_damage: 0, // `po`（默认 0；`-c16`）
+            starting_gold: 20,  // `Qo`（`-gold`）
+            // 098c 计分（`war3map.j` 9129/9132）：`ko=1` / `Ko=1` / `mo=1` ⇒ 击杀/助攻/胜利各 1 分。
             score_per_kill: 1,
             score_per_assist: 1,
-            score_per_round_win: 2,
+            score_per_round_win: 1,
             game_mode: 1,
             base_regen: 0.5,
             team_count: 1,
@@ -288,9 +286,10 @@ pub struct Mastery {
 impl Mastery {
     /// 购买价（**w3q `gglb` 实证**：生命 R00D=6 / 范围 R00I=7 / 射程 R00Y=5 / 背包 R000=3）。
     pub const COSTS: [i32; 4] = [6, 7, 5, 3];
-    /// **每级增量**：w3q `glvl` 实证（R00D=6 / R00I=6 / R00Y=6 / R000=3）。
-    /// 研究价 = `gglb + glvl × 已购级`，故精通**越买越贵**（生命 6/12/18…，背包 3/6/9）。
-    pub const COST_PER_LEVEL: [i32; 4] = [6, 6, 6, 3];
+    /// **每级增量**：w3q `gglm`（金币 mod/级）实测 = **1**（R00D/R00I/R00Y 均 1）。
+    /// 研究价 = `gglb + gglm × 已购级`（生命 6/7/8…，背包 3/4/5…）；
+    /// （旧值误把 `glvl`（最大等级 6）当增量，属误读 `UpgradeMetaData.slk`：`glvl`=maxlevel。）
+    pub const COST_PER_LEVEL: [i32; 4] = [1, 1, 1, 1];
     /// 级数上限：三精通各 **6**（w3q tooltip「Life steal Mastery 1..6」+ `glvl=6` 实证；
     /// R017 合成科技 glvl=20 → 6+6+6=18 ≤ 20 亦相符）；背包 **3**（098c `alev=3` 为 2 次，
     /// 本作放开 1 次到 L4 = 10 格，突破 war3 的 6 格上限）。
@@ -569,21 +568,31 @@ impl PlayerProfile {
         self.skill_levels[idx] += 1;
         true
     }
-    /// 因「已购买法术数」造成的**购买**涨价档数（098c `oi[id] > 2` → 每买一个触发一次 `Jf`，最多到 `oi == 6`）。
+    /// 因「已购买法术数」造成的**购买**涨价档数（098c `oi[id] > 2` → 每买一个触发一次 `Jf`；`oi == 6` 显式跳过）。
     ///
-    /// `spell_buys` 为 3/4/5 时各已触发一次（买第 6 个法术时 `oi == 6`，JASS 显式跳过不触发）。
+    /// `Jf` 给**每个购买研究** `AddPlayerTechResearched(+1)`，成本按 `gglm`(=1 金/级) 上升。
+    /// 触发点：`oi` 变 3/4/5 各一次，6 跳过，7 及以后每买一个各一次。
     /// 注意：`Jf` 抬的是**购买研究**，故只影响[`Self::purchase_cost`]，不影响升级价。
     pub fn spell_cost_step(&self) -> i32 {
-        self.spell_buys.saturating_sub(2).min(3) as i32
+        let b = self.spell_buys as i32;
+        if b < 3 {
+            0
+        } else if b <= 5 {
+            b - 2 // 第 3/4/5 个各触发一次
+        } else if b == 6 {
+            3 // 买第 6 个时 `oi==6` 跳过，不新增
+        } else {
+            b - 3 // 第 7 个起每次触发
+        }
     }
 
-    /// 该技能的**当前购买价**：`gglb + 涨价档 × glvl`（购买研究 `glvl` 全为 10）。
+    /// 该技能的**当前购买价**：`gglb + 涨价档 × gglm(=1)`。
     pub fn purchase_cost(&self, skill: SkillId) -> i32 {
         skill.learn_cost() + self.spell_cost_step() * SkillId::PURCHASE_COST_PER_LEVEL
     }
 
-    /// 该技能**当前**的升级价：基础升级价 + 该技能**自身已升级次数** × `glvl`
-    /// （098c war3 升级金价公式 `gglb + glvl × 已研究等级`；火球 `glvl=11`、其余 10）。
+    /// 该技能**当前**的升级价：基础升级价 + 该技能**自身已升级次数** × `gglm`(=1)
+    /// （098c war3 升级金价公式 `gglb + gglm × 已研究等级`；`glvl` 是最大等级，不是增量）。
     pub fn upgrade_cost_escalated(&self, skill: SkillId) -> i32 {
         let owned_upgrades = self.skill_level(skill).saturating_sub(1) as i32;
         skill.upgrade_cost() + owned_upgrades * skill.upgrade_cost_per_level()
@@ -1111,8 +1120,8 @@ mod tests {
     }
 
     /// 技能涨价（098c `oi[id]` + `Jf`）：买第 3/4/5 个法术各触发一次，每次让所有**尚未购买**
-    /// 法术的**购买价** +`glvl`（w3q 购买研究 `glvl` 实证 = 10）；第 6 个不再触发。
-    /// 升级价不随购买数变化，而随**该技能自身已升级次数** × `glvl` 递涨（火球 `glvl`=11）。
+    /// 法术的**购买价** +`gglm`（w3q 金币 mod/级 实测 = **1**）；第 6 个不再触发，第 7 起恢复触发。
+    /// 升级价不随购买数变化，而随**该技能自身已升级次数** × `gglm`(=1) 递涨。
     #[test]
     fn spell_costs_escalate_per_098c() {
         use crate::skill::SkillId;
@@ -1122,8 +1131,19 @@ mod tests {
         p.gold = 100_000;
         let buy_base = SkillId::S002.learn_cost();
 
-        // 购买价档位（098c：`oi[id] > 2` 起每买一个触发一次 `Jf`，`oi == 6` 时 JASS 显式跳过）
-        let step = |buys: u8| (buys.saturating_sub(2).min(3)) as i32;
+        // 购买价档位（098c：`oi>2` 触发一次 `Jf`；`oi==6` 跳过；`oi>=7` 恢复触发）
+        let step = |buys: u8| -> i32 {
+            let b = buys as i32;
+            if b < 3 {
+                0
+            } else if b <= 5 {
+                b - 2
+            } else if b == 6 {
+                3
+            } else {
+                b - 3
+            }
+        };
         for buys in 0u8..=8 {
             p.spell_buys = buys;
             assert_eq!(p.spell_cost_step(), step(buys), "buys={buys} 的涨价档");
@@ -1134,21 +1154,21 @@ mod tests {
             );
         }
 
-        // 升级价按**该技能自身等级**递涨：S002 glvl=10，S000（火球）glvl=11。
+        // 升级价按**该技能自身等级**递涨：gglm 全为 1（火球也一样）。
         p.spell_buys = 0;
         assert_eq!(p.upgrade_cost_escalated(SkillId::S002), SkillId::S002.upgrade_cost());
         assert_eq!(p.upgrade_cost_escalated(SkillId::S000), SkillId::S000.upgrade_cost());
         p.skill_levels[SkillId::S002.as_u32() as usize] = 4; // 升了 3 次
         assert_eq!(
             p.upgrade_cost_escalated(SkillId::S002),
-            SkillId::S002.upgrade_cost() + 3 * 10,
-            "S002 升级 3 次后每级 +10"
+            SkillId::S002.upgrade_cost() + 3,
+            "S002 升级 3 次后每级 +1（gglm）"
         );
         p.skill_levels[SkillId::S000.as_u32() as usize] = 2; // 升了 1 次
         assert_eq!(
             p.upgrade_cost_escalated(SkillId::S000),
-            SkillId::S000.upgrade_cost() + 11,
-            "火球升级研究 glvl=11"
+            SkillId::S000.upgrade_cost() + 1,
+            "火球升级每级 +1（gglm）"
         );
 
         // 真实购买也要计数（098c `oi[id] = oi[id] + 1`）
@@ -1182,8 +1202,13 @@ mod tests {
     /// 伤害金（098c 设置 16 `po`）：回合结束时**伤害最高者**得金，并列都拿，随后清零。
     #[test]
     fn most_damage_in_round_gets_po_gold() {
-        let mut m = MatchState::new(MatchConfig::default(), &[0, 1, 2], 8);
-        assert_eq!(m.config.gold_per_most_damage, 1, "098c `po` 默认 1");
+        // `po` 098c 默认 0；房主用 `-c16` 开启。
+        let mut m = MatchState::new(
+            MatchConfig { gold_per_most_damage: 1, ..Default::default() },
+            &[0, 1, 2],
+            8,
+        );
+        assert_eq!(m.config.gold_per_most_damage, 1, "显式开启 po（默认 0）");
         let before: Vec<i32> = m.profiles.iter().map(|p| p.gold).collect();
         // 玩家 0 打 50、玩家 1 打 50（并列最高）、玩家 2 打 10
         m.register_damage_score(0, 50.0);
@@ -1280,16 +1305,16 @@ mod tests {
             &[0, 1],
             34,
         );
-        // 打两轮（每轮胜者 0 得 击杀 1 分 + 轮胜 2 分）
+        // 打两轮（每轮胜者 0 得 击杀 1 分 + 轮胜 1 分）
         for _ in 0..2 {
             m.register_kill(0);
             m.register_round_win(0);
             m.finish_round(vec![0, 1]);
         }
-        // score = 2 轮 × (杀 1 + 胜 2) = 6 ≥ 3 → 已提前终局
+        // score = 2 轮 × (杀 1 + 胜 1) = 4 ≥ 3 → 已提前终局
         assert_eq!(m.phase, MatchPhase::Finished, "En2 达到胜利分应提前终局");
         let ranking = m.final_ranking();
-        assert_eq!(ranking[0], (0, 6), "按分数降序，实际 {ranking:?}");
+        assert_eq!(ranking[0], (0, 4), "按分数降序，实际 {ranking:?}");
         // En1 同分数时按 best_placement 升序
         let mut m1 = MatchState::new(MatchConfig::default(), &[0, 1], 34);
         m1.finish_round(vec![0, 1]);
@@ -1317,19 +1342,17 @@ mod tests {
     }
 
     #[test]
-    fn d6_economy_defaults_match_098b() {
-        // PORT_098B_DECISIONS.md D6：So=20 / so=10 / 击杀金 0（只给分）/ 名次奖默认空。
+    fn economy_defaults_match_098c() {
+        // 对齐 098c **模式初始化**（`wartmap.j` 9129-9137）：奖励金默认全 0、点数 1/1/1、qo=10/Qo=20。
         let config = MatchConfig::default();
-        // 098c 全局默认 + 设置项（`war3map_pretty.j` 205-224 / 18799-18813）：
-        // Qo=20 初始金、qo=10 每轮金（设置 17）、lo=1/Lo=1/Mo=2 击杀/助攻/胜利金。
         assert_eq!(config.starting_gold, 20, "初始金币 Qo");
-        assert_eq!(config.gold_per_round, 10, "每轮金币 = 设置 17 `qo`");
-        assert_eq!(config.gold_per_kill, 1, "击杀金 lo");
-        assert_eq!(config.gold_per_assist, 1, "助攻金 Lo");
-        assert_eq!(config.gold_per_round_win, 2, "胜利金 Mo");
-        // 098c 无名次金（奖励走 lo/Lo/Mo/po + ko/Ko/mo）
-        // 098c 计分（JASS 实证 globals ko=1/Ko=1/mo=2）：胜 2 / 杀 1 / 助 1
-        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 2));
+        assert_eq!(config.gold_per_round, 10, "每回合金币 qo");
+        assert_eq!(config.gold_per_kill, 0, "击杀金 lo 默认 0");
+        assert_eq!(config.gold_per_assist, 0, "助攻金 Lo 默认 0");
+        assert_eq!(config.gold_per_round_win, 0, "胜利金 Mo 默认 0");
+        assert_eq!(config.gold_per_most_damage, 0, "伤害金 po 默认 0");
+        // 098c 计分（`war3map.j` 9129/9132）：ko=1 / Ko=1 / mo=1 ⇒ 杀/助/胜各 1 分。
+        assert_eq!((config.score_per_kill, config.score_per_assist, config.score_per_round_win), (1, 1, 1));
         // 首轮商店 Uo=40 / 局间 uo=30（D6/M4 En 批）
         assert_eq!(config.first_round_time_secs, 40.0);
         assert_eq!(config.between_rounds_time_secs, 30.0);
@@ -1338,17 +1361,17 @@ mod tests {
         assert_eq!(m.profiles[0].gold, 0, "构造时尚未开局，不应发钱");
         m.enter_first_round();
         assert_eq!(m.profiles[0].gold, 20, "开局只发 Qo=20（qo 在回合结束发）");
-        // 击杀：发分 + 发金（098c `ko=1` / `lo=1`）
+        // 击杀：发分，但默认**不发金**（`ko=1` / `lo=0`）。
         m.register_kill(0);
-        assert_eq!(m.profiles[0].gold, 20 + 1, "击杀金 lo=1（基线 20 = Qo）");
-        assert_eq!(m.profiles[0].score, 1, "098c 击杀 1 分（globals ko=1）");
+        assert_eq!(m.profiles[0].gold, 20, "默认击杀不发金（lo=0）");
+        assert_eq!(m.profiles[0].score, 1, "098c 击杀 1 分（ko=1）");
         assert_eq!(m.profiles[0].current_streak, 1);
         // 助攻
         m.register_assists(1, 0, &[0, 1]);
         assert_eq!(m.profiles[0].score, 1, "击杀者不算助攻");
-        // 轮胜分
+        // 轮胜分（mo=1）
         m.register_round_win(0);
-        assert_eq!(m.profiles[0].score, 3, "098c 轮胜 2 分（1 击杀 + 2 轮胜）");
+        assert_eq!(m.profiles[0].score, 2, "098c 轮胜 1 分（1 击杀 + 1 轮胜）");
         // 连杀标签
         assert_eq!(MatchState::streak_label(2), None);
         assert_eq!(MatchState::streak_label(3), Some("大杀特杀"));
@@ -1359,11 +1382,17 @@ mod tests {
     /// 点数、助攻金、每轮金、初始金不变。
     #[test]
     fn no_reward_disables_kill_win_damage_gold_only() {
-        let mut c = MatchConfig::default();
-        assert_eq!((c.kill_gold(), c.win_gold(), c.damage_gold()), (1, 2, 1), "默认全开");
+        // 默认全 0；先显式设为非 0（等价房主用 `-c12/-c15/-c16` 开启）再验证总开关。
+        let mut c = MatchConfig {
+            gold_per_kill: 3,
+            gold_per_round_win: 4,
+            gold_per_most_damage: 2,
+            ..Default::default()
+        };
+        assert_eq!((c.kill_gold(), c.win_gold(), c.damage_gold()), (3, 4, 2), "设置值生效");
         c.gold_rewards_enabled = false;
         assert_eq!((c.kill_gold(), c.win_gold(), c.damage_gold()), (0, 0, 0), "关闭三项");
-        assert_eq!(c.gold_per_assist, 1, "助攻金 Lo 不受影响");
+        assert_eq!(c.gold_per_assist, 0, "助攻金 Lo 不受影响（默认 0）");
         assert_eq!(c.gold_per_round, 10, "每轮金 qo 不受影响");
         // 集成：关闭后击杀不再给金，但给分；开局初始金照发。
         let mut m = MatchState::new(c, &[0, 1], 8);
@@ -1540,10 +1569,10 @@ mod tests {
         assert_eq!(p.purchased_spell_count(), 3);
         assert_eq!(p.spell_cost_step(), 1, "买下第 3 个后 Jf 抬一档");
 
-        // 098c 有功能性涨价：第 4 个技能 = S014 基础价 14 + 1 档×10 = 24
+        // 098c 涨价 = +`gglm`(=1)/档：第 4 个技能 = S014 基础价 14 + 1 档×1 = 15
         let before = p.gold;
         assert!(p.purchase_skill(CastKey::T, SkillId::S014));
-        assert_eq!(p.gold, before - 24);
+        assert_eq!(p.gold, before - 15);
         assert_eq!(p.purchased_spell_count(), 4);
     }
 
@@ -1690,16 +1719,18 @@ mod tests {
         // 经济（设置 10-17 + 初始金）
         assert_eq!(c.starting_gold, 20, "初始金 Qo=20");
         assert_eq!(c.gold_per_round, 10, "设置 17 qo=10");
-        assert_eq!(c.gold_per_kill, 1, "设置 12 lo=1");
-        assert_eq!(c.gold_per_assist, 1, "设置 13 Lo=1");
-        assert_eq!(c.gold_per_round_win, 2, "设置 15 Mo=2");
-        assert_eq!(c.gold_per_most_damage, 1, "设置 16 po=1");
+        // 模式初始化（`war3map.j` 9129-9137）：奖励金默认全 0，仅点数 1/1/1。
+        assert_eq!(c.gold_per_kill, 0, "设置 12 lo 默认 0");
+        assert_eq!(c.gold_per_assist, 0, "设置 13 Lo 默认 0");
+        assert_eq!(c.gold_per_round_win, 0, "设置 15 Mo 默认 0");
+        assert_eq!(c.gold_per_most_damage, 0, "设置 16 po 默认 0");
         assert_eq!(
             (c.score_per_kill, c.score_per_assist, c.score_per_round_win),
-            (1, 1, 2),
-            "设置 10/11/14 ko/Ko/mo=1/1/2"
+            (1, 1, 1),
+            "设置 10/11/14 ko/Ko/mo=1/1/1"
         );
-        assert!(c.gold_rewards_enabled, "默认开启金币奖励（等价未使用 -no reward）");
+        // 奖励总开关默认开（但各项值 0 → 实际不发奖），等价 098c 默认。
+        assert!(c.gold_rewards_enabled, "默认开总开关（值均为 0）");
         // 玩法（设置 1-6/8/9）
         assert_eq!(c.damage_mult, 1.0, "设置 2 默认 1.0 倍");
         assert_eq!(c.knockback_mult, 1.0, "设置 3 默认 1.0 倍");
@@ -1719,8 +1750,8 @@ mod tests {
     fn mastery_costs_and_caps_match_w3q() {
         // 顺序：0=生命汲取 1=范围 2=射程 3=背包（与 `Mastery::at` 一致）。
         assert_eq!(Mastery::COSTS, [6, 7, 5, 3], "w3q gglb：R00D/R00I/R00Y/R000");
-        assert_eq!(Mastery::COST_PER_LEVEL, [6, 6, 6, 3], "w3q glvl（每级金价增量）");
-        assert_eq!(Mastery::CAPS, [6, 6, 6, 3], "级数上限：生命/范围/射程 6、背包 3（非 glvl）");
+        assert_eq!(Mastery::COST_PER_LEVEL, [1, 1, 1, 1], "w3q gglm（金币 mod/级）=1");
+        assert_eq!(Mastery::CAPS, [6, 6, 6, 3], "级数上限 = w3q glvl：生命/范围/射程 6、背包 3");
     }
 
     #[test]
@@ -1732,12 +1763,12 @@ mod tests {
         assert!(pr.buy_mastery(0) && pr.buy_mastery(1) && pr.buy_mastery(2) && pr.buy_mastery(3));
         assert_eq!(pr.gold, 79, "精通应扣费 21 金");
         assert_eq!((pr.mastery.life, pr.mastery.range, pr.mastery.time, pr.mastery.backpack), (1, 1, 1, 1));
-        // 递涨（098c 研究价 gglb + glvl×已购级）：生命已 1 级 → 下一级 6+6=12；背包 3+3=6。
-        assert_eq!(pr.mastery_cost(0), 12);
-        assert_eq!(pr.mastery_cost(3), 6);
+        // 递涨（098c 研究价 gglb + gglm×已购级，gglm=1）：生命已 1 级 → 下一级 6+1=7；背包 3+1=4。
+        assert_eq!(pr.mastery_cost(0), 7);
+        assert_eq!(pr.mastery_cost(3), 4);
         // 金币不足失败
         pr.gold = 2;
-        assert!(!pr.buy_mastery(0), "余 2 金买不起（现价 12）生命精通");
+        assert!(!pr.buy_mastery(0), "余 2 金买不起（现价 7）生命精通");
         // 上限（w3q glvl/tooltip 实证：生命/范围/射程各 6 级；背包 3）
         pr.gold = 1000;
         assert!(pr.buy_mastery(3), "背包第 2 级");

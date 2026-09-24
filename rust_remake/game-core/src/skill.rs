@@ -315,14 +315,14 @@ impl SkillId {
         }
     }
 
-    /// **购买**研究的每级增量（w3q `glvl`）：098c 18 条法术购买研究 `R009`…`R008` 的 `glvl` 全为 10。
+    /// **购买**研究的每级增量 = w3q `gglm`（金币 mod/级）= **1**。
     ///
-    /// war3 研究价 = `gglb + glvl × 已研究等级`。JASS `Jf`（`war3map_pretty.j` 25493）在玩家
-    /// 买下第 3/4/5 个法术时，对**全部购买研究** `AddPlayerTechResearched(+1)`（调用点 25849-25858，
-    /// `oi>2 && oi!=6`）。注意它升的是**购买**研究（`R009` 等；尚未买的法术其研究仍可研、价格随之上涨），
-    /// 因此 `"Purchase cost of spells has increased"`（25856）抬的是**未购法术的购买价**，每档 +10，
-    /// 而**不是**升级价（升级另用 `R00P` 等一套研究，见 [`Self::upgrade_cost_per_level`]）。
-    pub const PURCHASE_COST_PER_LEVEL: i32 = 10;
+    /// war3 研究价 = `gglb + gglm × 已研究等级`（`glvl` 是**最大等级**不是增量：18 条购买研究
+    /// `R009`…`R008` 的 `glvl` 多为 10）。JASS `Jf`（`war3map.j` 12680 / pretty.j 25493）在玩家
+    /// 买下第 3/4/5（及第 7 起）个法术时，对**全部购买研究** `AddPlayerTechResearched(+1)`
+    /// （`kf` 调用点 `war3map.j` 12867/12898，`oi>2 && oi!=6`）。它升的是**购买**研究，
+    /// 使未购法术的购买价每档 **+1 金**（不是 +10）。
+    pub const PURCHASE_COST_PER_LEVEL: i32 = 1;
 
     /// 技能**升级价**（L1→L2 的基价 = 该技能升级研究的 `gglb`；之后每级 + [`Self::upgrade_cost_per_level`]）。
     /// 来源：098c `war3map.w3q` 的「升级研究」条目 `gglb`（JASS `kf` 中 `Kf=='R00P'` 等分支）。
@@ -356,14 +356,9 @@ impl SkillId {
         }
     }
 
-    /// 该技能**升级研究**的每级增量（w3q `glvl`）：直接作用于技能自己的升级研究
-    /// （`kf` 中 `Kf=='R002'/'R00P'…` 分支）。除火球 `R002` 的 `glvl=11` 外，其余升级研究均为 10。
+    /// 该技能**升级研究**的每级增量 = w3q `gglm` = **1**（所有升级研究一致；`glvl` 是最大等级）。
     pub fn upgrade_cost_per_level(&self) -> i32 {
-        if matches!(self, SkillId::S000) {
-            11
-        } else {
-            10
-        }
+        1
     }
 
     pub fn as_u32(self) -> u32 {
