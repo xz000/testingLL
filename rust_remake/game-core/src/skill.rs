@@ -1498,14 +1498,15 @@ impl DefTable {
         }
     }
 
-    /// 098b 升级上限（物体数据 `alev`；consolidated 总表「等级」列）。乔丹之石 +2 在此之上。
-    /// 未列入的（Unity 版遗留技能）沿用统一上限 20。
+    /// 技能**等级上限**（098c）= `1`（购买授予）+ **升级研究上限 N**。
+    /// N 取 JASS `kf` 里 `SetPlayerTechMaxAllowed(uO,'R00P'…)` 的**运行时**值（6/5/4/…），
+    /// **不是** w3q 的 `glvl`——脚本会覆盖对象默认（例：`R002` 对象 `glvl=11`，但 init `SetPlayerTechMaxAllowed('R002',9)`）。
+    /// 乔丹之石（`T000`–`T006`，`Hf`）每次给对应槽研究上限 **+2**；由 `PlayerProfile.cap_bonus_for_skill`
+    /// 追加到 base 之上（`cap_bonus = 2 × jordan_breaks[slot]`）。
+    /// 详见 `ECONOMY_RECHECK.md` §4「已解决：glvl vs 实际上限」。未列入者（旧版遗留）按 20。
     pub fn max_level(id: SkillId) -> u32 {
-        // 098c **基础上限** = 1（购买时授予）+ 升级研究上限 N（w3q/JASS `SetPlayerTechMaxAllowed` 实证）。
-        // 乔丹之石（`T000`–`T006`，`Hf`）每次给对应槽研究上限 +2；由 `PlayerProfile.cap_bonus_for_skill`
-        // 追加到 base 之上（`cap_bonus = 2 × jordan_breaks[slot]`）。
         match id {
-            // 火球：R002 研究上限 9（+乔丹 T000 +2）→ base 10。
+            // 火球：init `SetPlayerTechMaxAllowed('R002',9)`（war3map.j 9960）→ base 10。
             SkillId::S000 => 10,
             // 研究上限 6 → base 7（S002/S003/S004/S011/S012/S019）。
             SkillId::S002 => 7,
