@@ -78,6 +78,24 @@ pub struct Control {
     pub decay: bool,
 }
 
+/// S006 时光回溯快照（098c `GC` 存 `K/L/Q/S/U/w/Y/z/G/ev/Hr` + `Fn/gn/facing`）。
+/// 我方等价：位置、HP、张力 `mana`、**动量**（`cur_vel` 自走 + `control` 强制位移）、硬体 `burning`；
+/// `mana_keep` = 回溯时张力保留系数（`RR` 的 `.8-.1L`）。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Rewind {
+    pub pos: Vec2,
+    pub hp: Fix64,
+    pub mana: f64,
+    pub mana_keep: f64,
+    /// 动量（098c `Q/S`）：自走速度。
+    pub cur_vel: Vec2,
+    /// 强制位移状态（098c `Q/S/U/w` 的给定速度分量）。
+    pub control: Option<Control>,
+    /// 硬体状态（098c `Hr`）。
+    pub burning: bool,
+    pub remaining: Fix64,
+}
+
 /// 一个带计时器/强度的自效果。
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Buff {
@@ -243,10 +261,8 @@ pub struct Player {
     pub parry_cd: Fix64,
     /// 瞬态（**不进快照**）：本 tick 与本人**接触的敌人** id，供招架判定（我们以「接触」代 098c 的「被近战攻击」）。
     pub contact_by_enemy: Option<u32>,
-    /// S006 时光回溯（098c `GC`/`RR`）：到点闪回 `pos`、`hp = max(当前, 快照)`（不覆盖窗口内回血），
-    /// 并把挨打累积的**张力 `mana`** 削到 `快照 + keep×(当前-快照)`（`keep = (.8-.1L).max(0)`，L=等级）。
-    /// 元组 = (锚点, 锚点 HP, 锚点 mana, mana keep 系数, 剩余秒)。
-    pub rewind: Option<(Vec2, Fix64, f64, f64, Fix64)>,
+    /// S006 时光回溯（098c `GC`/`RR`）快照。
+    pub rewind: Option<Rewind>,
     /// S020 灾变（098b MC）三级递进阶段：0→1→2 循环（每放一次 +1）；半径 300/300/400。
     pub catastrophe_stage: u8,
     /// 熔岩靴激活 CD（098b 25s；熔岩上用天罚触发，D8/M5）。随快照同步。
@@ -480,6 +496,15 @@ impl Player {
     pub fn clear_buffs(&mut self) {
         for slot in self.buffs.iter_mut() {
             *slot = Buff::new(BuffKind::Speed(1.0), 0.0);
+        }
+    }
+
+    /// 清除全部**减益** buff（098c S006 时光回溯 tooltip「Dispels link and negative buffs」）。
+    pub fn clear_debuffs(&mut self) {
+        for slot in self.buffs.iter_mut() {
+            if slot.remaining > Fix64::ZERO && slot.kind.is_debuff() {
+                slot.remaining = Fix64::ZERO;
+            }
         }
     }
 

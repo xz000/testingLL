@@ -808,6 +808,8 @@ impl World {
         // 3) 移动：本帧流程 = 清 pull → 场效应累加 pull → 合成速度推进 + buff 计时
         let mut new_deaths = Vec::new();
         let mut new_kills = Vec::new();
+        // 本 tick 完成回溯的玩家（用于延迟清除指向他们的链 Tether，避开 borrow）。
+        let mut rewind_done: Vec<u32> = Vec::new();
         for p in self.players.iter_mut() {
             p.reset_pull();
         }
@@ -869,21 +871,34 @@ impl World {
                     p.doom = 0.0;
                 }
             }
-            // S006 时光回溯（098c `GC`/`RR`）：倒计时到点闪回锚点、`hp = max(当前, 快照)`，
-            // 并把窗口内累积的**张力 `mana`** 削到 `快照 + keep×(当前-快照)`（`RR`：`gn=ee+(.8-.1zr)(gn-ee)`）。
-            if let Some((pos, hp, mana, mana_keep, rem)) = p.rewind {
-                let rem = rem - dt;
+            // S006 时光回溯（098c `RR` 2609）：到点闪回锚点，恢复**位置/HP/动量(Q/S)/硬体(Hr)**，
+            // 张力 `mana` 削到 `快照 + keep×(当前-快照)`（`gn=ee+(.8-.1zr)(gn-ee)`），
+            // 并「Dispels link and negative buffs」（断链由循环后处理，减益立即清）。
+            if let Some(rw) = p.rewind {
+                let rem = rw.remaining - dt;
                 if rem <= Fix64::ZERO {
-                    p.pos = pos;
-                    p.hp = p.hp.max(hp);
-                    if p.mana > mana {
-                        p.mana = mana + mana_keep * (p.mana - mana);
+                    p.pos = rw.pos;
+                    p.hp = p.hp.max(rw.hp);
+                    if p.mana > rw.mana {
+                        p.mana = rw.mana + rw.mana_keep * (p.mana - rw.mana);
                     }
+                    p.cur_vel = rw.cur_vel;
+                    p.control = rw.control;
+                    p.burning = rw.burning;
+                    p.clear_debuffs();
+                    rewind_done.push(p.id);
                     p.rewind = None;
                 } else {
-                    p.rewind = Some((pos, hp, mana, mana_keep, rem));
+                    p.rewind = Some(crate::player::Rewind { remaining: rem, ..rw });
                 }
             }
+        }
+
+        // 3b) S006 回溯收尾：断掉所有绑定到回溯者的链（098c `RR` 的 `aR`/`VR`：Dispels link）。
+        for id in rewind_done {
+            self.projectiles.retain(|pr| {
+                !matches!(&pr.kind, ProjectileKind::Tether { owner, target, .. } if *owner == id || *target == id)
+            });
         }
 
         // 4) 场地收缩（随时间）—— 试验场不缩圈
@@ -4680,11 +4695,21 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Rewind => {
-                        // 标记当前 pos/HP/mana，3.6s 后闪回（098c `GC` 存 `ve/ee/xe`=hp/mana/facing；
-                        // `RR` 回溯时把 mana 张力削到 70%/60%/…（`keep=.8-.1L`））。
+                        // 快照 pos/HP/mana/**动量(cur_vel+control)**/**硬体(burning)**（098c `GC` 存
+                        // `K/L/Q/S/U/w/Y/z/G/ev/Hr` + `Fn/gn/facing`）；3.6s 后 `RR` 回滚，
+                        // 张力按 `keep=.8-.1L` 削减。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             let keep = (0.8 - 0.1 * caster_level as f64).max(0.0);
-                            p.rewind = Some((p.pos, p.hp, p.mana, keep, stats.duration));
+                            p.rewind = Some(crate::player::Rewind {
+                                pos: p.pos,
+                                hp: p.hp,
+                                mana: p.mana,
+                                mana_keep: keep,
+                                cur_vel: p.cur_vel,
+                                control: p.control,
+                                burning: p.burning,
+                                remaining: stats.duration,
+                            });
                         }
                     }
                     crate::skill::W098bUtilKind::Haste => {
@@ -9027,22 +9052,53 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
+        // 施法前赋予动量（monentum，098c `Q/S`）。
+        world.players[0].cur_vel = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
         // 施放回溯（锚点=(0,0), HP=100）
         world.step(vec![PlayerInput { cast: Some((SkillId::S006, None)), ..Default::default() }, PlayerInput::default()], dt);
-        assert!(world.players[0].rewind.is_some(), "施放后应记录锚点");
-        // 走远 + 掉血 + 累积张力（mana）
+        let snap_vel = world.players[0].rewind.as_ref().expect("施放后应记录锚点").cur_vel;
+        // 走远 + 掉血 + 累积张力（mana）+ 新动量 + 减益 + 被链
         world.players[0].hp = Fix64::from_num(40.0);
         world.players[0].pos = Vec2::new(d60(8.0), Fix64::ZERO);
         world.players[0].mana = 100.0; // 窗口内挨打累积的张力（快照=0）
+        world.players[0].cur_vel = Vec2::new(Fix64::ZERO, Fix64::from_num(200.0));
+        world.players[0].add_buff(crate::player::BuffKind::Tied, 30.0);
+        world.projectiles.push(Projectile {
+            owner: 1,
+            kind: ProjectileKind::Tether {
+                owner: 1,
+                target: 0,
+                damage_per_sec: Fix64::ZERO,
+                beam_dps: Fix64::ZERO,
+                pull_speed: Fix64::ZERO,
+                remaining: Fix64::from_num(60.0),
+                beam: false,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
         let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 记录回溯完成那一帧的 pos/动量（之后恢复的动量会让玩家继续漂移、并被刹车衰减）。
+        let mut rewound = None;
         for _ in 0..240 {
             world.step(none.clone(), dt); // 4s > 3.6s
+            if rewound.is_none() && world.players[0].rewind.is_none() {
+                rewound = Some((world.players[0].pos, world.players[0].cur_vel));
+            }
         }
         assert!(world.players[0].rewind.is_none(), "到点后应清锚点");
-        assert!(near(world.players[0].pos.x, 0.0, 1.0) && near(world.players[0].pos.y, 0.0, 1.0), "应闪回锚点，实际 {:?}", world.players[0].pos);
+        let (rp, rv) = rewound.expect("应在窗口内回溯完成");
+        assert!(near(rp.x, 0.0, 1.0) && near(rp.y, 0.0, 1.0), "应闪回锚点，实际 {rp:?}");
+        assert_eq!(rv, snap_vel, "应回滚动量 cur_vel");
         assert!(near(world.players[0].hp, 100.0, 0.01), "应还原 HP，实际 {:?}", world.players[0].hp);
         // 098c `RR`：`gn = ee + (.8-.1L)(gn-ee)` → L1 削到 70%。
         assert!((world.players[0].mana - 70.0).abs() < 0.01, "回溯应把张力削到 70%（L1），实际 {}", world.players[0].mana);
+        // Dispels link + negative buffs
+        assert!(!world.players[0].has_buff(crate::player::BuffKind::Tied), "应清减益（Tied）");
+        assert!(
+            !world.projectiles.iter().any(|pr| matches!(&pr.kind, ProjectileKind::Tether { target, .. } if *target == 0)),
+            "应断掉绑定到回溯者的链"
+        );
     }
 
     /// S011 闪现：L1 瞬移至多 770。

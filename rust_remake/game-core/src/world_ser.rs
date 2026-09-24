@@ -234,15 +234,23 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wfix(o, p.radius);
     wfix(o, p.hp);
     wfix(o, p.max_hp);
-    // rewind（S006 时光回溯）：开关 + (pos, hp, mana, mana_keep, remaining)
+    // rewind（S006 时光回溯）：开关 + pos/hp/mana/mana_keep/cur_vel/control/burning/remaining
     match p.rewind {
-        Some((pos, hp, mana, mana_keep, rem)) => {
+        Some(rw) => {
             wu8(o, 1);
-            wvec(o, pos);
-            wfix(o, hp);
-            wu64(o, mana.to_bits());
-            wu64(o, mana_keep.to_bits());
-            wfix(o, rem);
+            wvec(o, rw.pos);
+            wfix(o, rw.hp);
+            wu64(o, rw.mana.to_bits());
+            wu64(o, rw.mana_keep.to_bits());
+            wvec(o, rw.cur_vel);
+            wu8(o, rw.control.is_some() as u8);
+            if let Some(c) = rw.control {
+                wvec(o, c.vel);
+                wfix(o, c.remaining);
+                wu8(o, c.decay as u8);
+            }
+            wu8(o, rw.burning as u8);
+            wfix(o, rw.remaining);
         }
         None => wu8(o, 0),
     }
@@ -389,13 +397,31 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let hp = fixat(b, p)?;
     let max_hp = fixat(b, p)?;
     let rewind = if u8at(b, p)? != 0 {
-        Some((
-            vecat(b, p)?,
-            fixat(b, p)?,
-            f64::from_bits(u64at(b, p)?),
-            f64::from_bits(u64at(b, p)?),
-            fixat(b, p)?,
-        ))
+        let pos = vecat(b, p)?;
+        let hp = fixat(b, p)?;
+        let mana = f64::from_bits(u64at(b, p)?);
+        let mana_keep = f64::from_bits(u64at(b, p)?);
+        let cur_vel = vecat(b, p)?;
+        let control = if u8at(b, p)? != 0 {
+            let vel = vecat(b, p)?;
+            let remaining = fixat(b, p)?;
+            let decay = u8at(b, p)? != 0;
+            Some(crate::player::Control { vel, remaining, decay })
+        } else {
+            None
+        };
+        let burning = u8at(b, p)? != 0;
+        let remaining = fixat(b, p)?;
+        Some(crate::player::Rewind {
+            pos,
+            hp,
+            mana,
+            mana_keep,
+            cur_vel,
+            control,
+            burning,
+            remaining,
+        })
     } else {
         None
     };

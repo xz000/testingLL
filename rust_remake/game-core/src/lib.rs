@@ -63,4 +63,6 @@ pub fn version() -> &'static str {
 /// 鲜血之剑回血仅天罚（`on_damage_heal` 不再进通用伤害路径）。
 /// v37（2026-09-24）：S006 时光回溯存 mana 张力快照并在回溯时按 `keep=.8-.1L` 削减（`RR`）；
 /// `Player.rewind` 元组加 mana/mana_keep（快照布局变更）。
-pub const PROTOCOL_VERSION: u32 = 37;
+/// v38（2026-09-24）：S006 完整复刻 `RR`：`Player.rewind` 改结构体，快照**动量** `cur_vel`/`control`
+/// 与**硬体** `burning`，回溯时一并恢复 + 清减益 + 断链。
+pub const PROTOCOL_VERSION: u32 = 38;
