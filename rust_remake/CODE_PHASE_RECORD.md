@@ -135,7 +135,16 @@ S001/S021 击退 `1-d/1000`、S020 固定 1。
   drain 时走 `add_debuff`；`BindLine` 束缚同理。
 - 测试：`jn_scales_buff_and_debuff_durations`。
 
-**遗留**（HANDOFF §5 同项）：`Bv`（撞一切）/`Hr`（硬体）/`cv`（碰撞优先级）仍未实现。
+### 8b. `Hr`/`Bv`/`cv`（通用碰撞标志）
+
+- ✅ **`Hr`（硬体）已实现**（`8a8c647`）：`AB`(6123) S012 冲刺 `set Hr[ii]=true`；`WA`(4671)
+  `if not Hr then cO=cO*(1+xv) else cO=0` ⇒ **硬体撞柱只被推开、不反弹**。
+  我方 `resolve_obstacles`：`Player.burning` 时跳过速度反弹（仅位置分离）。
+- **`Bv`（撞一切）**：JASS 仅由地形碎石 `eN`（RuinsTrash，`fv/rx`）置位，为通用 3D 对象服务；
+  我方无碎石实体 ⇒ **不适用**（不影响英雄/技能）。
+- **`cv`（碰撞优先级）**：通用对象 solver 用 `cv>=` 决定先调谁的 `hv`（盾 `cv=2`）。
+  我方按弹体种类显式处理碰撞（护盾反射在命中路径里已优先）⇒ **已等价**，不引入通用优先级。
+  （`Cv`（双向 solid 推开）仅碎石/柱，我方柱体静态分离已覆盖。）
 
 ---
 
