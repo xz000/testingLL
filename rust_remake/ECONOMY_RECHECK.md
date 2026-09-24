@@ -3,9 +3,11 @@
 > 日期：2026-09-24 ｜ 状态：**核对完成，发现 4 处需修**（未改代码，待确认）
 >
 > **来源**：`../098c_20260924/`（AI 逆向产物，主文档 `WARLOCK_ECONOMY.md`）。
-> **方法**：不盲信新文档——凡结论都在**本仓库真值源**上复核：
-> - `../098c/out/war3map_pretty.j`（用 `Select-String`，勿用 `findstr`，后者行号错乱）；
-> - `../098c_20260924/Warlock098c/war3map.w3q` 原始字节（24 字节 mod 布局，值在 id+16）。
+> **方法**：不盲信新文档——凡结论都在**两份 JASS 与对象数据**上直接复核：
+> - **新文件夹自带的 JASS**：`../098c_20260924/Warlock098c/scripts/war3map.j`（13616 行，本文 **§1b** 的行号）；
+> - **本仓库解包**：`../098c/out/war3map_pretty.j`（用 `Select-String`，勿用 `findstr`，后者行号错乱）；
+> - `../098c_20260924/Warlock098c/war3map.w3q`（升级，24 字节 mod，值在 id+16）与 `war3map.w3u`（单位 `ugol`）。
+> 两条 JASS 独立解包、行号不同，但结论完全一致。
 >
 > ⚠ 新目录的 `war3map.j` 是同一张图的另一次解包（13616 行），与 `war3map_pretty.j`（27329 行）
 > 逻辑一致，随机命名相同（`Qo/qo/lo/Mo/po` 等可跨文件对照）。
@@ -34,6 +36,29 @@
 | 16 | `ED` = 卖出处理器 | pretty.j 20759 `function ED`；`-sell`@24942 | 我方也按卖出 | ✅ 一致 |
 | 17 | `bD` = 购买处理器 | pretty.j 21068 `GetTrainedUnitType()` | 我方按购买 | ✅ 一致 |
 | 18 | 技能价经 `kf`（`GetResearched`） | 25537 | 我方按 w3q 建模 | ✅ 一致 |
+
+---
+
+### 1b. 英文版 JASS（`098c_20260924/.../war3map.j`）直接证据
+
+| 事实 | 新 JASS 行 | 原文 |
+|---|---|---|
+| 开局默认经济 | **9129–9137** | `set ko=1 / lo=0 / Lo=0 / mo=1 / Mo=0 / po=0 / Po=0 / qo=$A / Qo=20` |
+| 每回合发金 | **11433 / 11516 / 11997 / 12303** | `...,GOLD, 当前+qo)` |
+| 开局设初始金 | **11479 / 11673 / 11772 / 12046 / 12348 / 12538** | `...,GOLD, Qo)` |
+| 击杀/助攻金 | **3330–3331 / 3342 / 3361–3365** 等 | `...+lo` / `+Lo` |
+| 胜利/伤害金 | **2881 / 2910 / 2925 … 3095** | `...+Mo` / `+po` |
+| 卖出返还 | **10403–10512** | `+4/+8/+$C`（靴）、`+3/+6/+9`（斗篷）……与 `item.rs` 一致 |
+| 背包退款 | **10538** | `...+AD` |
+| 涨价 `Jf` | **12680–12698** | 对 18 个购买研究逐个 `AddPlayerTechResearched(+1)` |
+| 涨价触发 | **12867 / 12898** | `oi[id]=oi[id]+1`；`if oi==6 then elseif oi>2 then …Jf` |
+| 购买处理器 | **10544** `function bD`（`GetTrainedUnitType`） | 训练隐藏单位 → 给物品 |
+| 卖出处理器 | **10401** `function ED`（`-sell`） | 移除物品 + 返还金 + 反扣被动 |
+| `-no reward` | **9357–9359** | `set Mo=0 / po=0 / lo=0`（**不动 `Lo`**） |
+
+**物品买价（直接读 `war3map.w3u` 的 `ugol`）**：Pendant 5 / Boots 5 / Mask 12 / Cape 4 / Helm 9 /
+Staff 7 / Stone 5 / Blood 8 / Aegis 13 / Lava 7 / Pocket 7 / Sell 0 —— **与 `item.rs` 逐项一致**。
+（`w3t` 的 `igol` 未被脚本读取；全图无 `SetItemGoldCost`/`AddUnitToStock`。）
 
 ---
 
