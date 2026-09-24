@@ -17,7 +17,7 @@
 | 2 | `ProjClass`（`Ev` 等价）+ 逐弹体 `xv` | ✅ 部分 | `0baea5d` | 26 | §「ProjClass/xv」|
 | 3 | 击退系数 5 处 + S001/S021 距离衰减 | ✅ | `b3a0a97` | 26→27 | `KNOCKBACK_ALIGNMENT.md` |
 | 4 | S009 父弹固定 3 | ✅ | `06cee9e` | 27→28 | §「S009 父弹」|
-| 5 | S003 继承施法者速度 | ⬜ | — | — | — |
+| 5 | S003 继承施法者速度 | ✅ | `5d1f6c1` | 28→29 | §「S003 速度」|
 | 6 | S016 提前量解算 + 跳后制导 | ⬜ | — | — | — |
 | 7 | S016B 魂回飞清 CD | ⬜ | — | — | — |
 | 8 | `jn` 状态时长倍率 | ⬜ | — | — | — |
@@ -70,7 +70,21 @@ S001/S021 击退 `1-d/1000`、S020 固定 1。
 
 ---
 
+## 5. S003 继承施法者前向速度（`5d1f6c1`，协议 29）
+
+**对齐 098c `Pb`（11285）：`bO(Nb, 900*.03 + Qb, K[Nb]+dx, L[Nb]+dy)`。**
+
+- `Qb = dx*Q[ii] + dy*S[ii]`（施法者速度在**开火方向**上的投影），`if Qb<0 then Qb=0`
+  ⇒ 只算**前向**分量（后退不减速）。
+- `900*.03` 是每 tick 距离（= 900/s）⇒ 弹速（每秒）= **900 + 前向速度**。
+- **改法**：S003 生成时 `speed += max(0, caster_vel·dir)`；施法者速度取
+  `dash_vel`（冲刺）/ `control.vel`（击退/强制位移）/ `cur_vel`（自走）+ `pull`（场效应）。
+- 只对 **S003** 生效（`proj==Homing` 还包含 S014 回血球，后者不应继承）。
+- 测试：`s003_inherits_caster_forward_speed`（注入 `cur_vel=(210,0)`，断言弹速 > 900）。
+
+---
+
 ## 提交与基线
 
-- 基线：`check.ps1` 全绿（client 100 / game-core 278 / net 39 / net-steam 9 / steam+gui 107）。
+- 基线：`check.ps1` 全绿（最新：client 100 / game-core 279 / net 39 / net-steam 9 / steam+gui 107）。
 - 提交：代码走 pre-commit 钩子（= `check.ps1`）；纯文档用 `--no-verify`（仍先跑过一次 `check.ps1`）。
