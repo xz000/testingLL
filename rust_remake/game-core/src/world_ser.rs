@@ -6,7 +6,7 @@
 use crate::fix::{Fix64, Vec2};
 use crate::player::{Buff, BuffKind, Cmd, Control, Kick, Player, SweepState, MAX_CMDS};
 use crate::skill::{CastPhase, Caster, SkillId};
-use crate::world::{Obstacle, Projectile, ProjectileKind, ScatterKind, World};
+use crate::world::{Obstacle, ProjClass, Projectile, ProjectileKind, ScatterKind, World};
 
 fn wf64(o: &mut Vec<u8>, v: f64) {
     o.extend_from_slice(&v.to_bits().to_be_bytes());
@@ -616,7 +616,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining, heal_team } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); wu8(o, *heal_team as u8); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
-        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball } => {
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball, class } => {
             wu8(o, 17);
             wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3, crate::skill::W098bProjKind::Magma => 4 });
             wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *kb_ji);
@@ -642,6 +642,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *blast_dmg);
             wu8(o, *blast_on_expiry as u8);
             wu8(o, *is_fireball as u8);
+            wu8(o, match class { ProjClass::ReflectTransfer => 0, ProjClass::NoReflect => 1, ProjClass::Boomerang => 2, ProjClass::Magma => 3, ProjClass::RedChain => 4, ProjClass::Twin => 5, ProjClass::Inert => 6 });
         }
         PK::Clone { owner, offset, fire_timer, fire_cd, fire_dmg, remaining } => {
             wu8(o, 18);
@@ -739,7 +740,17 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             let blast_dmg = fixat(b, p)?;
             let blast_on_expiry = u8at(b, p)? != 0;
             let is_fireball = u8at(b, p)? != 0;
-            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball }
+            let class = match u8at(b, p)? {
+                0 => ProjClass::ReflectTransfer,
+                1 => ProjClass::NoReflect,
+                2 => ProjClass::Boomerang,
+                3 => ProjClass::Magma,
+                4 => ProjClass::RedChain,
+                5 => ProjClass::Twin,
+                6 => ProjClass::Inert,
+                _ => return None,
+            };
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball, class }
         }
         18 => PK::Clone {
             owner: u32at(b, p)?,

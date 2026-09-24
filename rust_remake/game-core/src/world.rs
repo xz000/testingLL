@@ -65,6 +65,35 @@ struct ProjExplosion {
     bomb_force: Fix64,
 }
 
+/// 弹体的「反射类别」——098c `Ev` 的等价物（仅 S005 反射盾用）。
+///
+/// 依据 `fC`(15054)：
+/// ```text
+/// if Ev[Vr]==9 or Ev[Vr]==na or (nv[Vr]==1 and not Hr[Vr]) then return false end
+/// ... v' = v - 2(v·n)n（镜面反射）...
+/// if nv[Vr]!=1 and Ev[Vr]!=2 and Ev[Vr]!=16 and Ev[Vr]!=Xa and Ev[Vr]!=17 then Vv[Vr]=Vv[nr] end
+/// if Ev[Vr]==2 then <转回程> end
+/// ```
+/// （`Ev` 数值映射经 Select-String 核对：`2`=S004 回旋镖、`3`=S003 追踪、`16`=S008B 岩浆、
+///  `Xa=15`=S019 链弹、`17`=S017B 双生弹、`na=14`=S018 引力/力场等；`9`=S009 分裂。）
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ProjClass {
+    /// 默认：可被反射，反射后**归属改为盾主**（如 S000 火球 / S003 追踪 Ev=3）。
+    ReflectTransfer,
+    /// **不反射**：098c `Ev==9`（S009 分裂）与 `Ev==na`(14)（S018 引力/力场等）。
+    NoReflect,
+    /// S004 回旋镖（Ev=2）：反射后转入回程，**不改归属**。
+    Boomerang,
+    /// S008B 岩浆（Ev=16）：可反射但**不改归属**。
+    Magma,
+    /// S019 链弹（Ev=15）：可反射但**不改归属**。
+    RedChain,
+    /// S017B 双生弹（Ev=17）：可反射但**不改归属**。
+    Twin,
+    /// 不参与玩家/盾碰撞的弹体（如 S014 回血球）：不会被反射。
+    Inert,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ProjectileKind {
     /// 延时爆炸的石头：倒计时结束对半径内造成伤害+击退
@@ -303,6 +332,8 @@ pub enum ProjectileKind {
         /// 全文件里只有这三个火球处理器做这件事（`iV[17+24*...]` 只出现在 10293/10335/10406），
         /// 所以不能用“Straight+Ki”一概而论（火焰喷射/弹跳弹的 `hv` 不同，不充能）。
         is_fireball: bool,
+        /// S005 反射盾用的逐弹体反射类别（098c `Ev` 等价物）。
+        class: ProjClass,
     },
     /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
     /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
@@ -948,6 +979,7 @@ impl World {
                     blast_floor: Fix64::ZERO,
                     blast_on_expiry: false,
                     is_fireball: false,
+                    class: ProjClass::ReflectTransfer, // 凤凰弹（`tB` 未设 Ev）
                 },
                 pos,
                 alive: true,
@@ -2137,9 +2169,11 @@ impl World {
         let mut heals: Vec<(u32, Fix64)> = Vec::new(); // 力场治疗（B4-Y）
         let mut explode: Vec<ProjExplosion> = Vec::new();
         let mut pushes: Vec<(u32, Vec2, f64, bool)> = Vec::new(); // (受害者 id, 击退方向, 时长, 098b 衰减模型?)
-        let mut reflect_bullets: Vec<(usize, Vec2)> = Vec::new(); // (proj 下标, 反射后的 dir)
+        let mut reflect_bullets: Vec<(usize, u32, Vec2)> = Vec::new(); // (proj 下标, 盾主, 弹→盾单位法线)
         // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
         let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
+        // S005 反射盾：(proj 下标, 盾主, 弹→盾单位法线)。命中带盾目标且类别可反射时入队，不结算伤害。
+        let mut reflect_projs: Vec<(usize, u32, Vec2)> = Vec::new();
         // 098b on_hit 控制效果：(受害者, Tied 时长)。
         let mut debuffs: Vec<(u32, f64)> = Vec::new();
         // 链体（锁链）生成：命中落地为持久 Tether，逐帧对绑定目标施加每秒伤害并按 pull_speed 符号拉拽。
@@ -2267,7 +2301,7 @@ impl World {
                 continue;
             }
             match &pr.kind {
-                ProjectileKind::Bullet { dir, damage, radius, .. } => {
+                ProjectileKind::Bullet { damage, radius, .. } => {
                     // 直射弹：命中最近的目标 → 若无反弹护盾则消耗弹体并结算伤害；有护盾则反射弹体。
                     let mut best: Option<(Fix64, u32, bool)> = None; // (d_sq, victim, has_reflect)
                     for j in 0..n {
@@ -2283,9 +2317,9 @@ impl World {
                     }
                     if let Some((_, victim, has_reflect)) = best {
                         if has_reflect {
-                            // 反射：法线 = (弹体位置 - 受害者位置) 指向受害者，把 dir 镜向。
+                            // 反射：法线 = 从弹体指向受害者（盾心）= 098c `fC` 的 `dx,dy`。
                             let normal = self.players[victim as usize].pos - pr.pos;
-                            reflect_bullets.push((pi, crate::fix::mirror_by(*dir, normal)));
+                            reflect_bullets.push((pi, victim, normal));
                         } else {
                             pr.alive = false;
                             events.push((victim, *damage, Some(pr.owner)));
@@ -2500,7 +2534,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, life, remaining, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, life, remaining, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2552,6 +2586,16 @@ impl World {
                         nearest_hit(&self.players, pr.pos, pr.owner, *radius)
                     };
                     if let Some((victim, dd)) = hit {
+                        // S005 反射盾（098c `fC` 15054）：命中**带盾**目标且弹体类别可反射 →
+                        // 反弹（延迟到 2c2b 应用：镜面反射 + 推出重叠 + 按类别改归属），本帧不结算伤害/爆炸。
+                        // 排除：`Ev==9`（S009 分裂）/`Ev==na`（S018 等）→ 不反射；回血球 `Inert` 本就不会碰撞。
+                        if self.players[victim as usize].shield()
+                            && !matches!(*class, ProjClass::NoReflect | ProjClass::Inert)
+                        {
+                            let normal = self.players[victim as usize].pos - pr.pos;
+                            reflect_projs.push((pi, victim, normal));
+                            continue;
+                        }
                         let skip = *target;
                         // ── S003 追踪弹特例（098c `lb` 10961 / `kb` 10941）─────────────────────────
                         // `Nv[Nb]=true` **且** `bv[Nb]=true` → 可撞同队、也可撞自己（施法者）；
@@ -2842,12 +2886,27 @@ impl World {
             }
         }
 
-        // 2b) 应用反弹护盾对直射弹的反射（改方向，不消耗、不伤害）。
-        for (pi, new_dir) in reflect_bullets {
+        // 2b) 应用反弹护盾对直射弹的反射（改方向 + 改归属，不消耗、不伤害）。
+        // 098c `fC`(15054)：`cO=(Q[Vr]*dx+S[Vr]*dy)*2; Q[Vr]-=cO*dx` = `v' = v − 2(v·n)n`
+        // （n = 弹→盾单位向量）→ 复用一个纯函数 `fix::bounce_off(v, n, 1)`。
+        // 旧实现用 `mirror_by`（数学相反）：正面击中时弹体原速穿盾，是 bug。
+        // 随后 `if nv[Vr]!=1 and ... then Vv[Vr]=Vv[nr]` → 反弹后弹体归属改为盾主。
+        for (pi, shield_owner, normal) in reflect_bullets {
+            let sp = self.players[shield_owner as usize].pos;
+            let (new_dir, proj_r) = match &ps[pi].kind {
+                ProjectileKind::Bullet { dir, radius, .. } => {
+                    (crate::fix::bounce_off(*dir, normal, Fix64::ONE), *radius)
+                }
+                _ => continue,
+            };
             if let ProjectileKind::Bullet { dir, .. } = &mut ps[pi].kind {
                 *dir = new_dir;
-                // 可让被反射的弹体仍归属原施法者（原版弹一次）
             }
+            // 推出重叠（098c `K[Vr]=K[nr]-r*dx`）：把弹体放回盾面外，避免下一帧贴着盾再触发。
+            let n = normal.normalized();
+            let r = self.players[shield_owner as usize].radius + proj_r;
+            ps[pi].pos = sp - n * r;
+            ps[pi].owner = shield_owner;
         }
 
         // 2b2) 应用 098b on_hit 控制效果（Tied debuff / 拉向施法者 / 灼烧 Scorched）。
@@ -2945,6 +3004,43 @@ impl World {
             }
             ps[pi].pos = new_pos;
         }
+        // 2c2b) 应用 S005 反射盾对 098b 弹体的反射（098c `fC` 15054）：
+        //   · 镜面反射 `v' = v − 2(v·n)n`（n = 弹→盾单位向量）→ 纯函数 `fix::bounce_off(v, n, 1)`
+        //     （旧 `Bullet` 路径误用 `mirror_by`，数学相反：正面击中会穿盾）；
+        //   · 推出重叠 `K[Vr]=K[nr]-r*dx`；
+        //   · 改归属 `Vv[Vr]=Vv[nr]`（回旋镖 Ev==2 → 转回程；岩浆/链弹/双生弹保留归属）。
+        for (pi, shield_owner, normal) in reflect_projs {
+            let sp = self.players[shield_owner as usize].pos;
+            let sh_radius = self.players[shield_owner as usize].radius;
+            let (proj_r, is_boomerang, transfer) = match &ps[pi].kind {
+                ProjectileKind::W098b { radius, class, proj, .. } => (
+                    *radius,
+                    *proj == crate::skill::W098bProjKind::Boomerang || *class == ProjClass::Boomerang,
+                    *class == ProjClass::ReflectTransfer,
+                ),
+                _ => continue,
+            };
+            let n = normal.normalized();
+            if let ProjectileKind::W098b { vel, bob_phase, remaining, .. } = &mut ps[pi].kind {
+                if is_boomerang {
+                    // 098c `fC` Ev==2：`U=w=0; jv=ci=Tb; ev=0; Gv=null` → 转入回程、不再带伤害。
+                    *vel = Vec2::new(Fix64::ZERO, Fix64::ZERO);
+                    *bob_phase = BoomerangPhase::Home;
+                    *remaining = Fix64::ZERO;
+                } else {
+                    *vel = crate::fix::bounce_off(*vel, normal, Fix64::ONE);
+                }
+            }
+            // 推出重叠：把弹体放回盾面外（避免下一帧贴着盾反复触发）。
+            ps[pi].pos = sp - n * (sh_radius + proj_r);
+            if transfer {
+                ps[pi].owner = shield_owner;
+                // 归属改变后清掉旧的追踪/跳过目标，避免立刻又追回盾主一方。
+                if let ProjectileKind::W098b { target, .. } = &mut ps[pi].kind {
+                    *target = None;
+                }
+            }
+        }
 
         // 2c3) 镜像分身开火：重置开火倒计时，并从分身位置射出火球。
         for (pi, dir, dmg) in mirror_fire_queue {
@@ -2989,6 +3085,7 @@ impl World {
                         blast_floor: Fix64::ZERO,
                         blast_on_expiry: false,
                         is_fireball: true, // 分身射出的是火球（098c 会走 `ib` → 给施法者充能）
+                        class: ProjClass::ReflectTransfer,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -3228,14 +3325,16 @@ impl World {
                     burst: 0,
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
-                    pillar_bounce: false,
-                    pillar_rest: Fix64::ZERO,
+                    // S009 分裂子弹（098c `dB` 12160：`set xv[Nb]=1`）→ 撞柱反弹。
+                    pillar_bounce: true,
+                    pillar_rest: Fix64::ONE,
                     lightning_dmg: Fix64::ZERO,
                     weaken_armed: false,
                     blast_dmg: gx,
                     blast_floor: Fix64::ZERO,
                     blast_on_expiry: false,
                     is_fireball: false,
+                    class: ProjClass::NoReflect, // S009 分裂子弹（Ev==9）
                 },
                 pos,
                 alive: true,
@@ -3307,6 +3406,7 @@ impl World {
                     blast_floor: Fix64::ZERO,
                     blast_on_expiry: false,
                     is_fireball: false,
+                    class: ProjClass::Inert, // S014 回血球不与玩家碰撞
                 },
                 pos,
                 alive: true,
@@ -4221,8 +4321,14 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             emit_angle: 0.0,
                             // 098c `xv>0` 的技能弹体撞柱**反弹**；其余（默认 `xv=-1`）被柱挡下消失。
                             // 见 `skill::pillar_bounce_for`（依据 JASS 的 `set xv[Nb]=…` 集合）。
-                            pillar_bounce: crate::skill::pillar_bounce_for(id),
-                            pillar_rest: crate::skill::pillar_restitution(id),
+                            // S009 ·区域（B）形态的父弹 `GB` 设 `xv=1`（A 形态不设 → 被柱挡）；
+                            // 碎片（下方生成）也 xv=1。技能级 `pillar_restitution(S009)` 只反映默认，故此处先行。
+                            pillar_bounce: crate::skill::pillar_bounce_for(id) || (id == crate::skill::SkillId::S009 && alt),
+                            pillar_rest: if id == crate::skill::SkillId::S009 && alt {
+                                Fix64::ONE
+                            } else {
+                                crate::skill::pillar_restitution(id)
+                            },
                             // 红链闪电伤害（098c `sc`：仅 S019B 用，其余 0）。
                             lightning_dmg: if on_hit == crate::skill::W098bOnHit::RedChain { stats.extra } else { Fix64::ZERO },
                             // S014B（削弱）：`bv`/`Nv` 两位初始为 false（098c 生成时 `set Nv[Nb]=false`，`bv` 默认 false）。
@@ -4233,6 +4339,20 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             blast_dmg: staff_blast.unwrap_or(gx),
                             blast_on_expiry: id == crate::skill::SkillId::S008 && alt,
                             is_fireball: id == crate::skill::SkillId::S000,
+                            // S005 反射类别（098c `Ev`）：回旋镖反射转回程；岩浆/链弹/双生弹反射保留归属；其余反射改归属。
+                            class: if id == crate::skill::SkillId::S009 {
+                                ProjClass::NoReflect
+                            } else if proj == crate::skill::W098bProjKind::Boomerang {
+                                ProjClass::Boomerang
+                            } else if id == crate::skill::SkillId::S008 && alt {
+                                ProjClass::Magma
+                            } else if on_hit == crate::skill::W098bOnHit::RedChain {
+                                ProjClass::RedChain
+                            } else if id == crate::skill::SkillId::S017 && alt {
+                                ProjClass::Twin
+                            } else {
+                                ProjClass::ReflectTransfer
+                            },
                         },
                         // S003 追踪弹：从施法者前方 `qb = 2 + Rv[施法者] + Cr` 处生成（098c `Pb` 11215）
                         // ——不影响则会**生成瞬间就碰到施法者自己**（因为它的 `bv=true` 允许自撞）。
@@ -6292,24 +6412,153 @@ mod tests {
             pos: Vec2::new(Fix64::from_num(-2.0), Fix64::ZERO),
             alive: true,
         });
-        let mut reflected = false;
+        let mut reflected_dir = None;
+        let mut reflected_owner = None;
         for _ in 0..60 {
             world.step(none.clone(), dt);
             if let Some(p) = world.projectiles.iter().find(|pr| matches!(pr.kind, ProjectileKind::Bullet { .. })) {
                 if let ProjectileKind::Bullet { dir, .. } = p.kind {
                     if dir.x < Fix64::ZERO {
-                        reflected = true;
+                        reflected_dir = Some(dir);
+                        reflected_owner = Some(p.owner);
+                        break;
                     }
                 }
             }
         }
         assert_eq!(world.players[0].hp, hp0, "反弹护盾应弹开直射弹，不扣血");
-        assert!(reflected, "直射弹应被护盾反向反射");
+        let dir = reflected_dir.expect("直射弹应被护盾反向反射");
+        // 正面击中（v ∥ n）应**完全反向** `v'=-v`；旧 `mirror_by` 会保持 +x（穿盾）——这是 §F 的关键修正。
+        let dx = dir.x.to_num::<f64>();
+        let dy = dir.y.to_num::<f64>();
+        assert!((dx + 1.0).abs() < 0.05 && dy.abs() < 0.05, "正面撞击应反向 v'=-v，得到 ({dx},{dy})");
+        // 098c `fC`：`Vv[Vr]=Vv[nr]` —— 反弹后弹体归属改为盾主（受害者 id=0）。
+        assert_eq!(reflected_owner, Some(0), "反弹弹体应改属盾主");
         // 等护盾过期
         for _ in 0..240 {
             world.step(none.clone(), dt);
         }
         assert!(!world.players[0].shield(), "护盾应已过期");
+    }
+
+    /// S005 反射盾对 098b 名册弹体（`W098b`）生效：镜面反射 `v'=v−2(v·n)n` + 改归属（098c `fC`）。
+    #[test]
+    fn shield_reflects_w098b_and_transfers_owner() {
+        let mut world = World::new(2, 77);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(2000.0), Fix64::ZERO);
+        world.players[0].add_buff(crate::player::BuffKind::Reflect, 5.0);
+        let hp0 = world.players[0].hp;
+        // 敌方 p1 的火球（Straight / ReflectTransfer）从 +x 侧飞向原点的 p0。
+        let dir = Vec2::new(-Fix64::ONE, Fix64::ZERO);
+        world.projectiles.push(Projectile {
+            owner: 1,
+            kind: ProjectileKind::W098b {
+                proj: crate::skill::W098bProjKind::Straight,
+                vel: dir * Fix64::from_num(600.0),
+                speed: Fix64::from_num(600.0),
+                radius: Fix64::from_num(35.0),
+                remaining: Fix64::from_num(2.0),
+                life: Fix64::from_num(2.0),
+                gx: Fix64::from_num(5.0),
+                kb_ji: Fix64::ONE,
+                ignite: None,
+                blast: None,
+                target: None,
+                bob_phase: BoomerangPhase::Out,
+                on_hit: crate::skill::W098bOnHit::Ki,
+                debuff_dur: Fix64::ZERO,
+                lateral: Fix64::ZERO,
+                forward_dir: dir,
+                out_dist: Fix64::from_num(1200.0),
+                burst: 0,
+                emit_cooldown: Fix64::ZERO,
+                emit_angle: 0.0,
+                pillar_bounce: false,
+                pillar_rest: Fix64::ZERO,
+                lightning_dmg: Fix64::ZERO,
+                weaken_armed: false,
+                blast_dmg: Fix64::from_num(5.0),
+                blast_floor: Fix64::ZERO,
+                blast_on_expiry: false,
+                is_fireball: true,
+                class: ProjClass::ReflectTransfer,
+            },
+            pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
+            alive: true,
+        });
+        let mut reflected = None;
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            if let Some(p) = world.projectiles.iter().find(|pr| matches!(pr.kind, ProjectileKind::W098b { .. })) {
+                if let ProjectileKind::W098b { vel, .. } = p.kind {
+                    if vel.x > Fix64::ZERO {
+                        reflected = Some((vel.x, p.owner));
+                        break;
+                    }
+                }
+            }
+        }
+        assert_eq!(world.players[0].hp, hp0, "反射盾应弹开火球，盾主不扣血");
+        let (vx, owner) = reflected.expect("火球应被护盾反射（法向反向 → +x）");
+        assert!(vx > Fix64::ZERO, "正面撞击应反向 v'=-v");
+        assert_eq!(owner, 0, "反弹后归属应改为盾主");
+    }
+
+    /// S005 反射盾**不反射** `Ev==9`（S009 分裂）类弹体。
+    #[test]
+    fn shield_does_not_reflect_s009() {
+        let mut world = World::new(2, 78);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(Fix64::from_num(2000.0), Fix64::ZERO);
+        world.players[0].add_buff(crate::player::BuffKind::Reflect, 5.0);
+        let hp0 = world.players[0].hp;
+        let dir = Vec2::new(-Fix64::ONE, Fix64::ZERO);
+        world.projectiles.push(Projectile {
+            owner: 1,
+            kind: ProjectileKind::W098b {
+                proj: crate::skill::W098bProjKind::Straight,
+                vel: dir * Fix64::from_num(600.0),
+                speed: Fix64::from_num(600.0),
+                radius: Fix64::from_num(35.0),
+                remaining: Fix64::from_num(2.0),
+                life: Fix64::from_num(2.0),
+                gx: Fix64::from_num(5.0),
+                kb_ji: Fix64::ONE,
+                ignite: None,
+                blast: None,
+                target: None,
+                bob_phase: BoomerangPhase::Out,
+                on_hit: crate::skill::W098bOnHit::Ki,
+                debuff_dur: Fix64::ZERO,
+                lateral: Fix64::ZERO,
+                forward_dir: dir,
+                out_dist: Fix64::from_num(1200.0),
+                burst: 0,
+                emit_cooldown: Fix64::ZERO,
+                emit_angle: 0.0,
+                pillar_bounce: true,
+                pillar_rest: Fix64::ONE,
+                lightning_dmg: Fix64::ZERO,
+                weaken_armed: false,
+                blast_dmg: Fix64::from_num(5.0),
+                blast_floor: Fix64::ZERO,
+                blast_on_expiry: false,
+                is_fireball: false,
+                class: ProjClass::NoReflect,
+            },
+            pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
+            alive: true,
+        });
+        // S009 不能反射 → 直接命中扣血（与上面反射用例相反）。
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..10 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].hp < hp0, "S009 分裂弹不应被反射，应直接命中扣血");
     }
 
     #[test]
