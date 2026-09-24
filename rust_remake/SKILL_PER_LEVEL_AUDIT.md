@@ -61,12 +61,17 @@ tooltip「you will still take **70%** damage points」是**误译**：`RR`(2609)
 `gn = ee + (.8 − .1×zr)×(gn − ee)`（`ee` = 施法瞬间 mana 快照）→
 **回溯把窗口内累积的张力保留 70%/60%/50%…**（L1/L2/L3…；越高等级保留越少，越好）。
 
-**实现**：`Player.rewind` 元组加 `mana` 快照 + `mana_keep`；施法时存
-`keep=(.8−.1L).max(0)`；回溯时 `hp = max(当前, 快照)`、`mana = 快照 + keep×(当前−快照)`。
-（`/098c20260924` JASS `RR` 2609 / `GC` 7790；`ve/ee/xe` = hp/mana/facing 快照。）
+**实现（`ff7bcd6` 完整复刻 `RR`）**：`Player.rewind` 改为 `Rewind` 结构体，快照
+`pos/hp/mana/cur_vel/control/burning`；回溯时：
+- 位置 = 快照；`hp = max(当前, 快照)`；
+- **动量回滚**：`cur_vel` + `control`（098c `RR`：`Q[ii]=Q[IR]; S[ii]=S[IR]; U/w/Y/z`）；
+- **硬体回滚**：`burning`（098c `RR`：`Hr[ii]=Hr[IR]`）；
+- 张力 `mana = 快照 + keep×(当前−快照)`（`keep=(.8−.1L).max(0)`）；
+- 「Dispels link and negative buffs」：`clear_debuffs()` 清减益 + 移除绑定到回溯者的 `Tether`
+  （098c `RR` 的 `aR`/`VR`）。
 
-**遗留（低优先）**：`momentum`（`Q/S` 速度）在 098c `RR` 也回滚；我方保留当前动量未回滚。
-其余无逐档偏差。
+（`098c` JASS `RR` 2609 / `GC` 7790；`ve/ee/xe` = hp/mana/facing 快照。）
+**无遗留偏差。**
 
 ## 本次改动
 
