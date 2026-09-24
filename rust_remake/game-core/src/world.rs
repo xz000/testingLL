@@ -1388,21 +1388,26 @@ impl World {
                     // 英雄 `nv==1` 且 `xv=0.5`（`FR` 创建时设定）→ 走 `set Q=-Q*xv` 分支，
                     // 即该轴速度**反向 ×0.5（半速反弹）**，另一轴保留 → 斜撞沿墙弹开。
                     // （旧实现“接触即 `control = None`”/“逐轴清零”会整体停死，与 098c 不符。）
-                    let rest = Fix64::from_num(PLAYER_OBS_RESTITUTION);
-                    if let Some(c) = p.control.as_mut() {
-                        if c.vel.x * dir.x < Fix64::ZERO {
-                            c.vel.x = -c.vel.x * rest;
+                    // 098c `WA()`(4671) 的硬体（`Hr`）规则：
+                    //   `if not Hr[Vr] then cO=cO*(1+xv) else cO=0` ⇒ **硬体只被推开、不反弹**。
+                    // S012 燃烧冲刺（`AB` 6123 `set Hr[ii]=true`，= 我方 `Player.burning`）撞柱时不改速度。
+                    if !p.burning {
+                        let rest = Fix64::from_num(PLAYER_OBS_RESTITUTION);
+                        if let Some(c) = p.control.as_mut() {
+                            if c.vel.x * dir.x < Fix64::ZERO {
+                                c.vel.x = -c.vel.x * rest;
+                            }
+                            if c.vel.y * dir.y < Fix64::ZERO {
+                                c.vel.y = -c.vel.y * rest;
+                            }
                         }
-                        if c.vel.y * dir.y < Fix64::ZERO {
-                            c.vel.y = -c.vel.y * rest;
-                        }
-                    }
-                    if p.dash_active {
-                        if p.dash_vel.x * dir.x < Fix64::ZERO {
-                            p.dash_vel.x = -p.dash_vel.x * rest;
-                        }
-                        if p.dash_vel.y * dir.y < Fix64::ZERO {
-                            p.dash_vel.y = -p.dash_vel.y * rest;
+                        if p.dash_active {
+                            if p.dash_vel.x * dir.x < Fix64::ZERO {
+                                p.dash_vel.x = -p.dash_vel.x * rest;
+                            }
+                            if p.dash_vel.y * dir.y < Fix64::ZERO {
+                                p.dash_vel.y = -p.dash_vel.y * rest;
+                            }
                         }
                     }
                 }
@@ -9076,10 +9081,10 @@ mod tests {
             "4 级精通击退应≈×0.9，d4={:?} d0={:?}", d4, d0);
     }
 
-    /// S012 冲撞：正面撞柱 → **半速反弹**（098c 英雄 `nv==1,xv=.5`：`set Q=-Q*xv`，
-    /// war3map_pretty.j:4953/4979/8656），而不是停在障碍前。
+    /// S012 冲撞：燃烧冲刺期间为**硬体 `Hr`**（`AB` 6123），撞柱**不反弹**
+    /// （`WA`：`if not Hr then cO=cO*(1+xv) else cO=0`），只被位置分离推出——不退回。
     #[test]
-    fn s012_dash_bounces_off_obstacle_head_on() {
+    fn s012_dash_does_not_bounce_off_obstacle() {
         let mut world = World::new(2, 9584);
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -9096,7 +9101,6 @@ mod tests {
             PlayerInput::default(),
         ], dt);
         let none = vec![PlayerInput::default(), PlayerInput::default()];
-        // 先推进到刚接触，确认发生了反弹（该轴速度反向）。
         let mut bounced = false;
         let mut max_x = Fix64::ZERO;
         for _ in 0..40 {
@@ -9112,9 +9116,10 @@ mod tests {
         let contact_limit = d60(5.0) - Fix64::from_num(obs_r) - world.players[0].radius;
         assert!(max_x <= contact_limit + Fix64::from_num(3.0),
             "不应钻入障碍，max_x={:?} 上限={:?}", max_x, contact_limit);
-        assert!(bounced, "英雄撞柱应按 098c 逐轴 `-Q*xv` 半速反弹（速度反向）");
-        assert!(world.players[0].pos.x < contact_limit - Fix64::from_num(30.0),
-            "反弹后应明显退回，pos.x={:?}", world.players[0].pos.x);
+        assert!(!bounced, "燃烧冲刺（硬体 Hr）撞柱不应反弹（速度不应反向）");
+        // 不退回：最终应停在柱面附近，而不是被弹回。
+        assert!(world.players[0].pos.x > contact_limit - Fix64::from_num(30.0),
+            "硬体不应被弹回，pos.x={:?}", world.players[0].pos.x);
     }
 
     /// S012 冲撞：**斜撞**障碍 → 法向轴半速反弹、切向保留（098c 逐轴 `-Q*xv`），

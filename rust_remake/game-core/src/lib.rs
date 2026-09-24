@@ -58,4 +58,5 @@ pub fn version() -> &'static str {
 /// v33（2026-09-24）：移除不可获得物品 Aegis2(I00I)（098c `bD` 从不创建）→ `ITEMS` 索引映射变更。
 /// v34（2026-09-24）：实现通用 `jn`（状态时长倍率，怀表 I00M/I00N 1.15/1.25）：
 /// 自身增益 ×jn[自己]、敌方减益 ×jn[攻]/jn[受]（`add_debuff`）。
-pub const PROTOCOL_VERSION: u32 = 34;
+/// v35（2026-09-24）：硬体 `Hr`——S012 燃烧冲刺撞柱不再反弹（`WA`：`Hr` → `cO=0`）。
+pub const PROTOCOL_VERSION: u32 = 35;
