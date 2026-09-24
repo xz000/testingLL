@@ -23,7 +23,7 @@
 | 8 | `jn` 状态时长倍率 | ✅ | `37bc636` | 33→34 | §「jn」|
 | 9 | 道具 24 项对齐 | ✅ | `56cd720` | 35→36 | `ITEM_AUDIT_098c.md` |
 | 10 | 经济默认值对齐 | ✅ | `aa80a80` 等 | 31→34 | `ECONOMY_RECHECK.md` |
-| 11 | 战斗/技能逐档数值复核 | ✅ | `2e14f8d` | — | `SKILL_PER_LEVEL_AUDIT.md` |
+| 11 | 战斗/技能逐档数值复核 | ✅ | `2e14f8d`/`384cb88` | 36→37 | `SKILL_PER_LEVEL_AUDIT.md` |
 
 ---
 
@@ -160,7 +160,7 @@ S001/S021 击退 `1-d/1000`、S020 固定 1。
 详见 **`SKILL_PER_LEVEL_AUDIT.md`**。从 w3a 逐级 tooltip 抽取全部可达等级，与 `stats_at` 对账：
 **无逐档偏差**；新增 `w3a_range_crosscheck` / `w3a_per_tick_damage_crosscheck` 并扩充
 伤害/时长交叉校验。说明：`alev=20` 不等于可达上限（用 `SetPlayerTechMaxAllowed`）；
-S007 的 L11-18 为**死数据**；S006 的「受到伤害%」= JASS 的 mana/momentum 恢复系数（待定）。
+S007 的 L11-18 为**死数据**；S006 的「受到伤害%」= mana 张力保留系数（✅ 已实现 `384cb88`）。
 
 ---
 

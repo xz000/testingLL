@@ -52,12 +52,21 @@
 5. **S014/S016 不在 `w3a_parsed`**（rawcode 非 `S0xx`）：其逐档数值来源为 `w3a_strings.txt` +
    JASS 注释，已由 `s009_s014_s015_s016_match_spec` 等测试守。
 
-## 待办（本项无代码缺口）
+## S006 时光回溯 —— 已解决（`384cb88`，协议 37）
 
-- **S006 时光回溯**：tooltip 的「still take 70%/60%/50% damage」对应 JASS `RR`(2609) 的
-  `(.8 - zr/10)` 系数，实为 **mana/momentum 的恢复系数**（非 HP）；我方回溯还原**位置 + HP**，
-  momentum（`Q/S`）未还原。语义仍待确定，暂记为近似。
-- 其余无逐档偏差。
+**原版 `mana`（`gn[player]`）是什么**：**挨打累积的「张力」**——受伤害时 `dX`(1411) `gn += dmg`，
+它只用于**放大你受到的击退**（`mI` 3715：`LI=('d'+gn[受])×…`）。它不是蓝耗资源。
+
+tooltip「you will still take **70%** damage points」是**误译**：`RR`(2609) 实为
+`gn = ee + (.8 − .1×zr)×(gn − ee)`（`ee` = 施法瞬间 mana 快照）→
+**回溯把窗口内累积的张力保留 70%/60%/50%…**（L1/L2/L3…；越高等级保留越少，越好）。
+
+**实现**：`Player.rewind` 元组加 `mana` 快照 + `mana_keep`；施法时存
+`keep=(.8−.1L).max(0)`；回溯时 `hp = max(当前, 快照)`、`mana = 快照 + keep×(当前−快照)`。
+（`/098c20260924` JASS `RR` 2609 / `GC` 7790；`ve/ee/xe` = hp/mana/facing 快照。）
+
+**遗留（低优先）**：`momentum`（`Q/S` 速度）在 098c `RR` 也回滚；我方保留当前动量未回滚。
+其余无逐档偏差。
 
 ## 本次改动
 
