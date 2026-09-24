@@ -1,6 +1,8 @@
 # 经济系统核对（ECONOMY_RECHECK）—— 用 098c_20260924 复核我们的现状
 
-> 日期：2026-09-24 ｜ 状态：**核对完成，发现 4 处需修**（未改代码，待确认）
+> 日期：2026-09-24 ｜ 状态：✅ **核对完成且已实施**（commit `aa80a80`，协议 31→32）
+> 已改：奖励金默认全 0、胜利点数 mo=1、精通/技能每级增量=gglm=1（详见 §5）。
+> 其余遗留（Aegis2/Pendant/Stone of Jordan/qo 发放口径）见 §4，尚未处理。
 >
 > **来源**：`../098c_20260924/`（AI 逆向产物，主文档 `WARLOCK_ECONOMY.md`）。
 > **方法**：不盲信新文档——凡结论都在**两份 JASS 与对象数据**上直接复核：
@@ -116,17 +118,16 @@ Staff 7 / Stone 5 / Blood 8 / Aegis 13 / Lava 7 / Pocket 7 / Sell 0 —— **与
 
 ---
 
-## 5. 建议的改动（待确认后实施）
+## 5. 已实施的改动（commit `aa80a80`，协议 32）
 
-1. `meta.rs` `MatchConfig::default()`：
+1. ✅ `meta.rs` `MatchConfig::default()`：
    - `gold_per_kill=0`、`gold_per_assist=0`、`gold_per_round_win=0`、`gold_per_most_damage=0`；
-   - `score_per_round_win=1`（`mo`）。
-2. `meta.rs` `Mastery::COST_PER_LEVEL = [1,1,1,/*背包待核*/]`；`mastery_cost = base + 1×已购级`。
-3. `skill.rs`：`PURCHASE_COST_PER_LEVEL = 1`；`upgrade_cost_per_level() = 1`（含火球）。
-4. 更新受影响测试：`d6_economy_defaults_match_098b`、`no_reward_disables_kill_win_damage_gold_only`、
+   - `score_per_round_win=1`（`mo`）；默认几乎无击杀/助攻/胜利/伤害金币。
+2. ✅ `meta.rs` `Mastery::COST_PER_LEVEL = [1,1,1,1]`（背包暂同 1；其 base=3 仍来源不明，列入 §4-1）。
+3. ✅ `skill.rs`：`PURCHASE_COST_PER_LEVEL = 1`；`upgrade_cost_per_level() = 1`（含火球）。
+4. ✅ `spell_cost_step` 改为 JASS 语义（`oi==6` 跳过、`>=7` 恢复触发）。
+5. ✅ 更新受影响测试（`economy_defaults_match_098c`（重命名）、`no_reward_...`、
    `mastery_costs_and_caps_match_w3q`、`mastery_buy_costs_caps_and_backpack`、`spell_costs_escalate_per_098c`、
-   `kill_gives_gold`、`most_damage_in_round_gets_po_gold` 等。
-5. 更正 `P0_RECHECK.md §D` 的“死常量/奖励默认”两处结论，并同步 `HANDOFF.md`。
+   `most_damage_in_round_gets_po_gold`、`en2_deathmatch_early_win_and_ranking` 等）。
 
-> 上述 1–3 会**改变默认手感**（默认几乎无金币奖励、涨价极缓）。因涉及默认值/多项测试，
-> **先出核对结论，待你确认后再动代码**。
+回归：`check.ps1` 全绿（client 100 / game-core 280 / net 39 / net-steam 9 / steam+gui 107）。
