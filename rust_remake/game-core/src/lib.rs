@@ -52,4 +52,5 @@ pub fn version() -> &'static str {
 /// v28（2026-09-24）：`W098b.direct_dmg`（S009 父弹直伤固定 `3`，`FB` 12220）入快照。
 /// v29（2026-09-24）：S003 追踪弹继承施法者前向速度（`Pb` 11285：`900*.03+Qb`，纯数值/生成逻辑，无字段变更）。
 /// v30（2026-09-24）：`W098b.chase`（S016 弹跳弹每帧制导目标 `Fv`）入快照；重定向改用提前量解算（`Fc`）。
-pub const PROTOCOL_VERSION: u32 = 30;
+/// v31（2026-09-24）：S016B 充能改为「命中生成魂→回飞→距 64 内清 CD」（`dc`/`cc`）；`W098bOnHit::SoulReturn` 入快照。
+pub const PROTOCOL_VERSION: u32 = 31;

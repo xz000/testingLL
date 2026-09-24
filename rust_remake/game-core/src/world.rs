@@ -2002,6 +2002,18 @@ impl World {
                                     }
                                 }
                             }
+                            // S016B 魂回飞（098c `cc` 13633）：命中后生成的魂飞回施法者，
+                            // **距 64 内** 才清 `S016` 冷却（`Nc`）并销毁——不是命中瞬间清。
+                            if *on_hit == crate::skill::W098bOnHit::SoulReturn {
+                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                    if o.alive
+                                        && (o.pos - pr.pos).length() <= Fix64::from_num(ORB_ARRIVE_RADIUS)
+                                    {
+                                        o.caster.reset_cooldown(crate::skill::SkillId::S016);
+                                        pr.alive = false;
+                                    }
+                                }
+                            }
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Boomerang => {
@@ -2246,6 +2258,8 @@ impl World {
         let mut gn_mults: Vec<(u32, f64, f64)> = Vec::new();
         // S014 回血球生成队列 (施法者, 生成位置, 治疗量) —— 飞回施法者，抵达 64 内治疗。
         let mut drain_orbs: Vec<(u32, Vec2, Fix64)> = Vec::new();
+        // S016B 魂回飞生成队列 (施法者, 生成位置) —— 飞回施法者，抵达 64 内清 `S016` 冷却（098c `cc`）。
+        let mut recharge_souls: Vec<(u32, Vec2)> = Vec::new();
         // S014 重定向队列 (proj 下标, 排除的玩家, 速度, 新寿命s, 只要敌方=true)。
         let mut re_aims: Vec<(usize, u32, f64, f64, bool)> = Vec::new();
         // S014B：命中友军后要把 `bv/Nv` 置回 false（每 cast 只增益一次）——命中段是 `&pr.kind`
@@ -2624,8 +2638,10 @@ impl World {
                         } else {
                             nearest_hit(&self.players, pr.pos, pr.owner, *radius)
                         }
-                    } else if *on_hit == crate::skill::W098bOnHit::DrainOrb {
-                        None // 回血球不与任何人碰撞（抵达施法者由运动分支持）
+                    } else if *on_hit == crate::skill::W098bOnHit::DrainOrb
+                        || *on_hit == crate::skill::W098bOnHit::SoulReturn
+                    {
+                        None // 回血球 / 回飞的魂不与任何人碰撞（抵达施法者由运动分支持）
                     } else if *proj == crate::skill::W098bProjKind::Bounce {
                         // 首跳：只打敌人（`Nv/bv` 默认 false）；首跳后 `gc` 置 `Nv=bv=true`
                         // → 之后可命中同队与施法者自己（排除上一跳目标）。
@@ -2810,11 +2826,14 @@ impl World {
                             crate::skill::W098bOnHit::DrainOrb => {
                                 // 回血球不走“命中”逻辑（抵达施法者由运动分支处理）。
                             }
+                            crate::skill::W098bOnHit::SoulReturn => {
+                                // 回飞的魂不参与命中（抵达施法者由运动分支处理）。
+                            }
                             crate::skill::W098bOnHit::Recharge => {
-                                // 弹跳弹·充能（098c cc，B4-T）：命中立即刷新施法者该技能冷却。
-                                if let Some(o) = self.players.get_mut(pr.owner as usize) {
-                                    o.caster.reset_cooldown(SkillId::S016);
-                                }
+                                // 弹跳弹·充能（098c `dc` 13679）：命中**任意术士**后，在命中点生成一枚「魂」；
+                                // 魂回飞到施法者**距 64 内**才清 `S016` 冷却（`cc`→`Nc`）——不是命中瞬间清。
+                                let hit_pos = self.players.get(victim as usize).map(|p| p.pos).unwrap_or(pr.pos);
+                                recharge_souls.push((pr.owner, hit_pos));
                             }
                             crate::skill::W098bOnHit::RedChain => {
                                 // 锁链·红链（文档「红链」）：链到敌人 → 把**施法者**拉向目标；
@@ -3488,6 +3507,48 @@ impl World {
                     blast_on_expiry: false,
                     is_fireball: false,
                     class: ProjClass::Inert, // S014 回血球不与玩家碰撞
+                    direct_dmg: None,
+                    chase: None,
+                },
+                pos,
+                alive: true,
+            });
+        }
+        // 4h) S016B 魂（098c `cc` 13633）：从命中点起飞、以 400/s（`$C`=12/tick）飞回施法者，
+        // 抵达 64 内才清 `S016` 冷却（`Nc`）。魂不参与碰撞（`SoulReturn`）。
+        for (owner, pos) in recharge_souls.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::W098b {
+                    proj: crate::skill::W098bProjKind::Homing,
+                    vel: Vec2::new(Fix64::ZERO, Fix64::ZERO),
+                    speed: Fix64::from_num(400.0), // 098c `cc`：`$C`=12/tick ÷ .03 = 400/s
+                    radius: Fix64::from_num(27.0),
+                    remaining: Fix64::from_num(5.0),
+                    life: Fix64::from_num(5.0),
+                    gx: Fix64::ZERO,
+                    kb_ji: Fix64::ZERO,
+                    ignite: None,
+                    blast: None,
+                    target: Some(owner), // 追施法者
+                    bob_phase: BoomerangPhase::Out,
+                    on_hit: crate::skill::W098bOnHit::SoulReturn,
+                    debuff_dur: Fix64::ZERO,
+                    lateral: Fix64::ZERO,
+                    forward_dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                    out_dist: Fix64::ZERO,
+                    burst: 0,
+                    emit_cooldown: Fix64::ZERO,
+                    emit_angle: 0.0,
+                    pillar_bounce: false,
+                    pillar_rest: Fix64::ONE,
+                    lightning_dmg: Fix64::ZERO,
+                    weaken_armed: false,
+                    blast_dmg: Fix64::ZERO,
+                    blast_floor: Fix64::ZERO,
+                    blast_on_expiry: false,
+                    is_fireball: false,
+                    class: ProjClass::Inert, // 魂不参与碰撞
                     direct_dmg: None,
                     chase: None,
                 },
@@ -10778,19 +10839,26 @@ mod tests {
         }
         let cd_after_cast = world.players[0].caster.cooldown_remaining(SkillId::S016).to_num::<f64>();
         assert!(cd_after_cast > 0.0, "施放后应有冷却");
-        // 击中敌人（充能形态命中即刷新）
+        // 击中敌人 → 生成魂 → 魂回飞 → 距 64 内才清 CD（098c `dc`/`cc`），不是命中瞬间清。
         world.players[0].caster = crate::skill::Caster::new();
         world.players[1].team = 1;
-        world.players[1].pos = Vec2::new(d60(2.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(8.0), Fix64::ZERO); // 较远：命中与魂到达之间有明显间隔
         world.players[1].move_target = None;
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(2.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
         ], dt);
-        for _ in 0..30 {
+        // 45 帧（≈0.75s）：弹已命中（8×60/900≈0.53s），但魂还在回飞 → CD 仍未清。
+        for _ in 0..45 {
             world.step(none.clone(), dt);
         }
         assert!(world.players[1].hp < world.players[1].max_hp, "充能弹应命中敌人");
+        let cd_mid = world.players[0].caster.cooldown_remaining(SkillId::S016).to_num::<f64>();
+        assert!(cd_mid > 15.0, "命中瞬间不应立即清 CD（魂还在回飞），实际 {cd_mid}");
+        // 再跑到魂飞回施法者（距 400/s，回程≈1.2s）→ CD 清。
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+        }
         // 刷新后冷却应小于初始 CD 20
         let cd = world.players[0].caster.cooldown_remaining(SkillId::S016).to_num::<f64>();
         assert!(cd < 19.5, "命中应刷新冷却（<19.5），实际 {cd}");

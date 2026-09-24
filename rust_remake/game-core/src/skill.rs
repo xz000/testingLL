@@ -866,8 +866,11 @@ pub enum W098bOnHit {
     Weaken,
     /// S014 回血球（098c `ZB`，`vc`/`oc` 命中后生成）：飞向施法者，**距 64 内**治疗 `gx` 并销毁。
     DrainOrb,
-    /// S016 弹跳弹·充能（形态 B，098c Dc/cc）：命中立即刷新该技能冷却。
+    /// S016 弹跳弹·充能（形态 B，098c `dc`）：命中**任意术士**后生成一枚「魂」（`dc` spawn）。
+    /// 真正的冷却刷新在魂飞回施法者时（见 `SoulReturn`），不是命中瞬间。
     Recharge,
+    /// S016B 回飞的魂（098c `cc` 13633）：飞向施法者，**距 64 内**才清 `S016` 冷却（`Nc`）并销毁。
+    SoulReturn,
     /// S019 锁链·红链（形态 B，文档「红链」）：把**施法者**拉向命中目标
     /// （与蓝链 `ChainPull` 相反——蓝链是拉目标向施法者）。
     /// 注：文档「目标为队友/柱子时，锁链上附加可切割敌人的红色闪电（1.0+0.1×L）」
@@ -2514,7 +2517,7 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S016B 弹跳弹·充能（098c Dc/cc）：900/s 固定射程；命中刷新该技能冷却。
+            // S016B 弹跳弹·充能（098c `dc`/`cc`）：900/s 固定射程；命中生成魂→回飞→距 64 内清 CD。
             SkillId::S016 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -2525,7 +2528,7 @@ impl DefTable {
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(35.0),
                     life: Fix64::from_num(1.0),
-                    kb_ji: Fix64::from_num(0.8),
+                    kb_ji: Fix64::from_num(1.15), // 098c `dc`：`mI(nr,Vr,gv*(5.1+.9*Xv),1.15)`
                     ignite: None,
                     blast: None,
                     count: 1,
