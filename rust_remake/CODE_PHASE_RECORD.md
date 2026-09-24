@@ -22,7 +22,8 @@
 | 7 | S016B 魂回飞清 CD | ✅ | `5cb07b3` | 30→31 | §「S016B」|
 | 8 | `jn` 状态时长倍率 | ✅ | `37bc636` | 33→34 | §「jn」|
 | 9 | 道具 24 项对齐 | ✅ | `56cd720` | 35→36 | `ITEM_AUDIT_098c.md` |
-| 10 | 经济默认值对齐 | ✅ 部分 | `aa80a80` | 31→32 | `ECONOMY_RECHECK.md` |
+| 10 | 经济默认值对齐 | ✅ | `aa80a80` 等 | 31→34 | `ECONOMY_RECHECK.md` |
+| 11 | 战斗/技能逐档数值复核 | ✅ | `2e14f8d` | — | `SKILL_PER_LEVEL_AUDIT.md` |
 
 ---
 
@@ -153,6 +154,13 @@ S001/S021 击退 `1-d/1000`、S020 固定 1。
 - 修正：熔岩靴补**被动 `To`**（.96/.94/.92，激活 87.5% 在其上叠加）；死亡面具去掉无依据的平回；
   鲜血之剑回血仅天罚（`on_damage_heal` 不再进通用伤害）。
 - Aegis2 已移除；Stone 按用户决定保留优化流程；PocketWatch 自带能力 `S030` 为空壳。
+
+## 11. 战斗/技能逐档数值复核（`2e14f8d`）
+
+详见 **`SKILL_PER_LEVEL_AUDIT.md`**。从 w3a 逐级 tooltip 抽取全部可达等级，与 `stats_at` 对账：
+**无逐档偏差**；新增 `w3a_range_crosscheck` / `w3a_per_tick_damage_crosscheck` 并扩充
+伤害/时长交叉校验。说明：`alev=20` 不等于可达上限（用 `SetPlayerTechMaxAllowed`）；
+S007 的 L11-18 为**死数据**；S006 的「受到伤害%」= JASS 的 mana/momentum 恢复系数（待定）。
 
 ---
 
