@@ -61,8 +61,8 @@
 |---|---|---|---|
 | 初始金 `Qo` | `starting_gold` | 20 | ✅ 生效（默认已在 `bd8ae5a` 修正） |
 | 每轮金 `qo` | `gold_per_round` | 10 | ✅ 生效 |
-| 击杀/助攻/胜利/伤害金 `lo/Lo/Mo/po` | `gold_per_kill/assist/round_win/most_damage` | 1/1/2/1 | ⚠️ meta 会读，但**开局被丢弃**（见 S1） |
-| 得分 `ko/Ko/mo` | `score_per_kill/assist/round_win` | 1/1/2 | ⚠️ 同上，**开局被丢弃** |
+| 击杀/助攻/胜利/伤害金 `lo/Lo/Mo/po` | `gold_per_kill/assist/round_win/most_damage` | **0/0/0/0**（`aa80a80` 更正） | meta 会读，但**开局被丢弃**（见 S1） |
+| 得分 `ko/Ko/mo` | `score_per_kill/assist/round_win` | **1/1/1**（`aa80a80` 更正） | 同上，**开局被丢弃** |
 | 首轮时长 `Uo` | `first_round_time_secs`(40) + `shopping_time_secs`(40) | 40 | ⚠️ **冗余**：UI 改 `first_round_time_secs`，但 gameplay 读的是 `shopping_time_secs`（不可编辑、不被搬运）→ UI 行**无效** |
 | 局间时长 `uo` | `between_rounds_time_secs`(30) + `learn_time_secs`(30) | 30 | ⚠️ **冗余**：靠 `between_rounds`→`match_learn_secs`→`learn_time_secs` 间接生效；`learn_time_secs` 不可编辑 |
 | 伤害倍率 `Gn` | `damage_mult` | 1 | ✅ **已接入**（`damage_player`/接触踢击伤害乘它） |
