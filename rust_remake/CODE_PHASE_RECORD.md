@@ -20,7 +20,7 @@
 | 5 | S003 继承施法者速度 | ✅ | `5d1f6c1` | 28→29 | §「S003 速度」|
 | 6 | S016 提前量解算 + 跳后制导 | ✅ | `31b5397` | 29→30 | §「S016」|
 | 7 | S016B 魂回飞清 CD | ✅ | `5cb07b3` | 30→31 | §「S016B」|
-| 8 | `jn` 状态时长倍率 | ⬜ | — | — | — |
+| 8 | `jn` 状态时长倍率 | ✅ | `37bc636` | 33→34 | §「jn」|
 | 9 | 道具 24 项对齐 | ⬜ | — | — | `SKILL_ALIGNMENT_LEDGER §9b` |
 | 10 | 经济默认值对齐 | ✅ 部分 | `aa80a80` | 31→32 | `ECONOMY_RECHECK.md` |
 
@@ -121,9 +121,25 @@ S001/S021 击退 `1-d/1000`、S020 固定 1。
   **Pendant 的 hp 由物品自带能力 w3a `Ilif` 施加（A007/A004/A00H=10/20/30），我方本就对，不改**；
   Stone（每槽 +2）/`qo`（发参战者）与 098c 吻合，不改。
 
+## 8. 通用 `jn` 状态时长倍率（`37bc636`，协议 34）
+
+**098c `jn[player]`**：怀表 `I00M`/`I00N` → 1.15/1.25（`ED`/`bD` 设置；`10747/10753`）；其余 1.0。
+所有技能时长都乘 `jn`：
+- **自身/同队增益**：× `jn[自己]`（如 `(2.6+.2zr)*jn[ri]`、`4*jn[ri]`）。
+- **敌方减益**：× `jn[施法者] / jn[目标]`（如 S017 `(4+.25L)*jn[Zc]/jn[id]`；带怀表的目标受减益更短）。
+
+实现：
+- `Player::jn()` / `add_debuff(kind, dur, source_jn)`；新增 `BuffKind::is_debuff()`；
+  `add_buff` 泛化为“增益 ×jn[自己]”（删掉旧的 silence 特例）；镜像否决 + 化身 `dur_mult` 统一到 `add_buff_scaled`。
+- `world.rs` 减益队列（Tied/Scorched/Pancake/Silence/力场慢/SpeedSteal<0/GnMult<1）携带 **owner**，
+  drain 时走 `add_debuff`；`BindLine` 束缚同理。
+- 测试：`jn_scales_buff_and_debuff_durations`。
+
+**遗留**（HANDOFF §5 同项）：`Bv`（撞一切）/`Hr`（硬体）/`cv`（碰撞优先级）仍未实现。
+
 ---
 
 ## 提交与基线
 
-- 基线：`check.ps1` 全绿（最新：client 100 / game-core 280 / net 39 / net-steam 9 / steam+gui 107）。
+- 基线：`check.ps1` 全绿（最新：client 100 / game-core 281 / net 39 / net-steam 9 / steam+gui 107）。
 - 提交：代码走 pre-commit 钩子（= `check.ps1`）；纯文档用 `--no-verify`（仍先跑过一次 `check.ps1`）。
