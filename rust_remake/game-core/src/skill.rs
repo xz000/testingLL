@@ -1596,7 +1596,9 @@ impl DefTable {
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(29.0),
                     life: Fix64::from_num(4.5),
-                    kb_ji: Fix64::ONE,
+                    // 098c `lb`：命中同主（自撞）为 AoE，`tI(...,1.3,...)`（`Hr` 分支为 `TI(...,1,...)`）。
+                    // 本值即 AoE 击退系数（自撞的 1.0 在 world.rs 里按 `homing_self` 覆盖）。
+                    kb_ji: Fix64::from_num(1.3),
                     ignite: None,
                     blast: None,
                     count: 1,
@@ -1630,7 +1632,7 @@ impl DefTable {
                     speed: Fix64::from_num(1500.0),
                     radius: Fix64::from_num(38.0),
                     life: Fix64::from_num(1.6),
-                    kb_ji: Fix64::ONE,
+                    kb_ji: Fix64::from_num(0.95), // 098c `Sb`：`local real PI=.95`（11352）→ `mI(...,PI)`
                     ignite: None,
                     blast: None,
                     count: 1,
@@ -1654,7 +1656,7 @@ impl DefTable {
                 tree: SkillTree::D,
                 name: "闪电",
                 needs_point: true,
-                effect: W098bBolt { range: Fix64::from_num(600.0), kb_ji: Fix64::ONE },
+                effect: W098bBolt { range: Fix64::from_num(600.0), kb_ji: Fix64::from_num(0.95) }, // 098c `Bb` 命中：`mI(cb,db,cX,.95)`（10821）
                 growth: SkillGrowth {
                     cooldown_base: 16.5,
                     cooldown_delta: -0.5625,
@@ -1677,7 +1679,7 @@ impl DefTable {
                     speed: Fix64::from_num(400.0), // 098c iB: real speed = click_dist/1.35 (see world.rs), 400 fallback
                     radius: Fix64::from_num(72.0),
                     life: Fix64::from_num(1.35),   // 098c iB: ev=1.35
-                    kb_ji: Fix64::from_num(0.8),
+                    kb_ji: Fix64::from_num(0.75), // 098c `oB`: `mI(nr,gX,Zb(...),.75)`（11581）
                     // 陨石落点走 `ProjectileKind::DelayedBlast`（无飞行弹体）：以下字段仅供 `stats` 取值。
                     ignite: None,
                     blast: None,
@@ -2224,7 +2226,8 @@ impl DefTable {
                     speed: Fix64::from_num(400.0),
                     radius: Fix64::from_num(72.0),
                     life: Fix64::from_num(2.0), // 098c OB: ev=2*(1+.1ei)
-                    kb_ji: Fix64::from_num(0.8),
+                    // 098c `EB` 爆炸：`tI(nr,cX,.6,...)`（11798）。撞柱另有 `mI(...,.8)`（11784，未建模）。
+                    kb_ji: Fix64::from_num(0.6),
                     ignite: None,
                     // w3a `aare` B 段 = 70（岩浆 AoE）；但本作爆炸结算半径与 aare 语义未完全对应
                     //（待核），暂保留 200 以维持现有手感与测试。
@@ -3439,11 +3442,13 @@ mod tests {
         assert!(near(s1.damage, 7.0, 1e-3), "L1 基础伤害应 7（6+1*Ur），实际 {:?}", s1.damage);
         assert!(near(s9.damage, 15.0, 1e-2), "L9 基础伤害应 15（6+9*Ur），实际 {:?}", s9.damage);
         match def.effect {
-            SkillEffect::Warlock098b { proj: W098bProjKind::Homing, speed, radius, life, ignite, .. } => {
+            SkillEffect::Warlock098b { proj: W098bProjKind::Homing, speed, radius, life, ignite, kb_ji, .. } => {
                 assert!(near(speed, 900.0, 1e-3), "speed 应 900（spec），实际 {speed:?}");
                 assert!(near(radius, 29.0, 1e-3), "radius 应 Dr=29（spec），实际 {radius:?}");
                 assert!(near(life, 4.5, 1e-3), "life 应 4.5*(1+.15*oi)=4.5，实际 {life:?}");
                 assert!(ignite.is_none(), "追踪弹无点燃");
+                // 098c `lb` 同主分支：`tI(nr,kb(nr),1.3,...)`（自撞 `Hr` 分支为 `TI(...,1,...)`，在 world.rs 覆盖）。
+                assert!(near(kb_ji, 1.3, 1e-3), "S003 AoE 击退系数应 1.3，实际 {kb_ji:?}");
             }
             ref e => panic!("S003 effect 应为 Warlock098b(Homing)，实际 {e:?}"),
         }
@@ -3461,9 +3466,11 @@ mod tests {
         assert!(near(s1.damage, 7.2, 1e-3), "L1 gX 应 7.2，实际 {:?}", s1.damage);
         assert!(near(s9.damage, 7.2 + 0.8 * 8.0, 1e-3), "L9 gX 应 13.6，实际 {:?}", s9.damage);
         match def.effect {
-            SkillEffect::Warlock098b { proj: W098bProjKind::Boomerang, speed, radius, .. } => {
+            SkillEffect::Warlock098b { proj: W098bProjKind::Boomerang, speed, radius, kb_ji, .. } => {
                 assert!(near(radius, 38.0, 1e-3), "radius 应 38（098c Rv），实际 {radius:?}");
                 assert!(near(speed, 1500.0, 1e-3), "前向初速应 1500（098c $5DC），实际 {speed:?}");
+                // 098c `Sb`：`local real PI=.95`（11352）→ `mI(nr,Vr,6.4+.8*Xv,PI)`。
+                assert!(near(kb_ji, 0.95, 1e-3), "S004 击退系数应 0.95，实际 {kb_ji:?}");
             }
             ref e => panic!("S004 effect 应为 Warlock098b(Boomerang)，实际 {e:?}"),
         }
@@ -3689,8 +3696,10 @@ mod tests {
         assert!(near(s1.damage, 7.0, 1e-3), "L1 伤害应 6+1=7，实际 {:?}", s1.damage);
         assert!(near(s9.damage, 6.0 + 9.0, 1e-3), "L9 伤害应 6+9，实际 {:?}", s9.damage);
         match def.effect {
-            SkillEffect::W098bBolt { range, .. } => {
+            SkillEffect::W098bBolt { range, kb_ji } => {
                 assert!(near(range, 600.0, 1e-3), "射程应 600，实际 {range:?}");
+                // 098c `Bb` 命中：`mI(cb,db,cX,.95)`（10821）。
+                assert!(near(kb_ji, 0.95, 1e-3), "S002 击退系数应 0.95，实际 {kb_ji:?}");
             }
             ref e => panic!("S002 effect 应为 W098bBolt，实际 {e:?}"),
         }
@@ -3713,9 +3722,23 @@ mod tests {
             SkillEffect::Warlock098b { kb_ji, ignite, blast, .. } => {
                 // 爆炸改由 `DelayedBlast` 承担，def 不再持有 ignite/blast。
                 assert!(ignite.is_none() && blast.is_none(), "陨石改由 DelayedBlast 承担，def 不应再带 ignite/blast");
-                assert!(near(kb_ji, 0.8, 1e-3));
+                // 098c `oB`：`mI(nr,gX,Zb(...),.75)`（11581）→ 击退系数 0.75（旧 0.8）。
+                assert!(near(kb_ji, 0.75, 1e-3), "S008A 击退系数应 0.75，实际 {kb_ji:?}");
             }
             ref e => panic!("S008 effect 应为 Warlock098b，实际 {e:?}"),
+        }
+    }
+
+    #[test]
+    fn s008b_magma_kb_matches_spec() {
+        // 098c `EB` 爆炸：`tI(nr,cX,.6,...)`（11798）→ 击退系数 0.6（旧值 0.8）。
+        let alt = DefTable::def_alt(SkillId::S008).expect("S008 应有 B 形态");
+        assert_eq!(alt.name, "岩浆");
+        match alt.effect {
+            SkillEffect::Warlock098b { proj: W098bProjKind::Magma, kb_ji, .. } => {
+                assert!(near(kb_ji, 0.6, 1e-3), "S008B 击退系数应 0.6，实际 {kb_ji:?}");
+            }
+            ref e => panic!("S008B effect 应为 Warlock098b(Magma)，实际 {e:?}"),
         }
     }
 

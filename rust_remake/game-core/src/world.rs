@@ -622,6 +622,19 @@ enum DmgFalloff {
     FloorMul(Fix64),
 }
 
+/// `explode_at` 的**击退**距离衰减方式（098c `mI(HI,JR,HX,lI)` 里的 `lI`）。
+/// 关键：`mI` 本身**不含距离项**，击退只乘传入的 `lI`——
+/// 只有 S001/S021 把 `lI = 1 - d/1000` 传进来；其余技能 `lI` 是固定系数。
+#[derive(Copy, Clone, Debug)]
+enum KbAttn {
+    /// 旧近似 `(1 - d/radius).max(0.2)`：仅非名册（石头/导弹）保留。
+    Radius,
+    /// 固定系数（`lI` 与距离无关）。
+    Fixed,
+    /// `lI = 1 - d/k`（S001 天罚 / S021 虔诚：`mI(ii,gX,cX,1-cO/$3E8)`）。
+    Mul(Fix64),
+}
+
 impl World {
     /// 创建一场对局。`player_count` 为玩家人数；`seed` 用于 AI / 初始布局等确定性随机。
     pub fn new(player_count: u32, seed: u64) -> Self {
@@ -2665,7 +2678,10 @@ impl World {
                             } else {
                                 (*br, *blast_dmg)
                             };
-                            expiry_blasts.push((pr.owner, pr.pos, r, dmg, *kb_ji, *blast_floor, hit_dmg));
+                            // 098c `lb`：自撞（`Hr` 分支）用 `TI(...,1,...)` → AoE 击退系数 1.0；
+                            // 其余（同主非 Hr）用 `tI(...,1.3,...)` → `*kb_ji`。
+                            let aoe_kb = if homing_self { Fix64::ONE } else { *kb_ji };
+                            expiry_blasts.push((pr.owner, pr.pos, r, dmg, aoe_kb, *blast_floor, hit_dmg));
                             // S003 命中术士后的移速变化（098c `lb`）：
                             //   自撞 → 施法者 +100 移速（`LO(Jb,4*jn)` 4s 后归还）+ 速度 ×.2（下方延迟处理）
                             //   其他 → 目标 +50 移速（4*jn 秒）
@@ -3095,7 +3111,7 @@ impl World {
 
         // 3) 结算爆炸（石头 / 导弹）
         for e in &explode {
-            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false, DmgFalloff::None);
+            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false, DmgFalloff::None, KbAttn::Radius);
         }
 
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
@@ -3341,11 +3357,12 @@ impl World {
             });
         }
         for (owner, center, br, dmg, ji, floor, _gx) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, false, DmgFalloff::FloorMul(floor));
+            self.explode_at(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, false, DmgFalloff::FloorMul(floor), KbAttn::Fixed);
         }
         // 陨石落地（098c `oB`）：中心伤害 `12+2L`，随距离衰减 `(1 - d/(400+40xi))`，同队/自身免疫。
         for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
-            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, false, DmgFalloff::Mul(denom));
+            // 陨石 `oB`：伤害 `Zb`（含距离），但击退 `mI(...,.75)` 是**固定系数** → `KbAttn::Fixed`。
+            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, false, DmgFalloff::Mul(denom), KbAttn::Fixed);
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -3519,7 +3536,7 @@ impl World {
     /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
     #[allow(clippy::too_many_arguments)]
     /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: DmgFalloff) -> u32 {
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: DmgFalloff, kb_attn: KbAttn) -> u32 {
         // 纯表现：记录一次爆炸（客户端画扩散圆环）。不参与快照/哈希。
         self.combat_events.push(CombatEvent::Explode { pos, radius });
         let r_sq = radius * radius;
@@ -3584,7 +3601,13 @@ impl World {
                 // nova 自伤不伴随自击退（098c 原版：只有被敌人打中才有击退）。
                 if d_sq > Fix64::ZERO && !(is_smite && p.id == owner) {
                     let dist = d_sq.sqrt();
-                    let falloff = (Fix64::ONE - dist / radius).max(Fix64::from_num(0.2));
+                    // 098c `mI(nr,Vr,HX,lI)`：击退 = 常数 × `lI`（mI 无距离项）。
+                    // S001/S021 的 `lI=1-d/1000` 走 `KbAttn::Mul(1000)`；其余为固定系数。
+                    let falloff = match kb_attn {
+                        KbAttn::Radius => (Fix64::ONE - dist / radius).max(Fix64::from_num(0.2)),
+                        KbAttn::Fixed => Fix64::ONE,
+                        KbAttn::Mul(k) => (Fix64::ONE - dist / k).max(Fix64::ZERO),
+                    };
                     let dir = d.normalized();
                     // nova/爆炸击退走 098c 衰减模型（D8/D9）；初速按受击者 mana 动态放大。
                     let vmana = p.mana;
@@ -4393,7 +4416,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚（098c mC，普通局 F 键）：半径 250（按**半径**判定 `cO<=$FA`），
                         // 伤害随距离乘法衰减 `×(1-d/1000)`（mC `mI(...,1.-cO/$3E8)`），伤害 10+血剑。
-                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)));
+                        // 098c `mC`：伤害与击退都乘 `(1-d/1000)`（`mI(ii,gX,cX,1.-cO/$3E8)`）。
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变（098c `qC` 实证）：伤害按阶段 `$B/$C/$E` = **11/12/14**（+血剑 Zr）；
@@ -4408,7 +4432,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let stage_gx = Fix64::from_num(base) + Fix64::from_num(world.players[idx as usize].item_fx.smite_bonus);
                         let r = Fix64::from_num(r);
                         let falloff_div = Fix64::from_num(falloff_div);
-                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true, DmgFalloff::Sub(falloff_div));
+                        // 098c `qC`：伤害为加法衰减，但击退 `mI(ii,gX,cX-cO/60,1)` 系数**固定 1**。
+                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true, DmgFalloff::Sub(falloff_div), KbAttn::Fixed);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
@@ -4416,7 +4441,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     crate::skill::W098bNovaKind::Devotion => {
                         // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚（半径 250、衰减 ×(1-d/1000)）；500 内**队友**
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)));
+                        // 098c `QC`：伤害与击退都乘 `(1-d/1000)`（`mI(ii,gX,cX,1-cO/$3E8)`）。
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
                         let caster_team = world.players[idx as usize].team;
                         let mut healed_any = false;
                         let allies: Vec<u32> = world
@@ -7924,7 +7950,7 @@ mod tests {
         setup(&mut w);
         let n = w.explode_at(
             Vec2::ZERO, 0, Fix64::from_num(3.0), Fix64::from_num(5.0), Fix64::ZERO,
-            true, false, DmgFalloff::None,
+            true, false, DmgFalloff::None, KbAttn::Radius,
         );
         assert_eq!(n, 3, "应命中 3 个敌人");
         assert!(
@@ -7941,7 +7967,7 @@ mod tests {
         v.players[0].set_items(&[crate::item::ItemId::FireMask]);
         let _ = v.explode_at(
             Vec2::ZERO, 0, Fix64::from_num(3.0), Fix64::from_num(5.0), Fix64::ZERO,
-            true, false, DmgFalloff::None,
+            true, false, DmgFalloff::None, KbAttn::Radius,
         );
         assert!(
             v.combat_events.iter().any(|e| matches!(e, CombatEvent::MultiHit { vampire: true, .. })),
@@ -8001,11 +8027,50 @@ mod tests {
             true,
             true,
             DmgFalloff::Mul(Fix64::from_num(1000.0)),
+            KbAttn::Mul(Fix64::from_num(1000.0)),
         );
         let d_center = 100.0 - w.players[1].hp.to_num::<f64>();
         let d_edge = 100.0 - w.players[2].hp.to_num::<f64>();
         assert!(d_center > d_edge, "中心伤害应高于边缘: {d_center} vs {d_edge}");
         assert!((d_edge / d_center - 0.8).abs() < 0.05, "200/1000 → 边缘约 0.8×，实际 {}", d_edge / d_center);
+    }
+
+    /// S001/S021 的**击退**同样是 `lI = 1 - d/1000`（`mI(ii,gX,cX,1-cO/$3E8)`）——
+    /// 不是半径衰减（`(1-d/radius)`），也不是固定系数。
+    #[test]
+    fn smite_knockback_uses_1_minus_d_over_1000() {
+        let mut w = World::new(3, 1301);
+        w.obstacles.clear();
+        w.players[0].team = 0;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[1].team = 1;
+        w.players[1].pos = Vec2::new(Fix64::from_num(100.0), Fix64::ZERO);
+        w.players[2].team = 1;
+        w.players[2].pos = Vec2::new(Fix64::from_num(200.0), Fix64::ZERO);
+        let _ = w.explode_at(
+            Vec2::ZERO,
+            0,
+            Fix64::from_num(250.0),
+            Fix64::from_num(10.0),
+            Fix64::from_num(1000.0),
+            true,
+            true,
+            DmgFalloff::Mul(Fix64::from_num(1000.0)),
+            KbAttn::Mul(Fix64::from_num(1000.0)),
+        );
+        let vel = |i: usize| {
+            w.players[i]
+                .control
+                .as_ref()
+                .map(|c| c.vel.length().to_num::<f64>())
+                .unwrap_or(0.0)
+        };
+        let (v1, v2) = (vel(1), vel(2));
+        assert!(v1 > v2, "近处击退应更强: {v1} vs {v2}");
+        // `1-d/1000`: 100→0.9、200→0.8 → 比值≈0.889；
+        // 若是半径衰减 `(1-d/250)` 则比值≈(0.2/0.6)=0.333，可区分。
+        let ratio = v2 / v1;
+        assert!(ratio > 0.7, "应为 1-d/1000 衰减（比值≈0.89），实际 {ratio}");
     }
 
     #[test]
@@ -8032,7 +8097,7 @@ mod tests {
         w.projectiles.push(tether());
         let n = w.explode_at(
             w.players[1].pos, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
-            true, true, DmgFalloff::None,
+            true, true, DmgFalloff::None, KbAttn::Radius,
         );
         assert_eq!(n, 1);
         assert!(
@@ -8048,7 +8113,7 @@ mod tests {
         w2.projectiles.push(tether());
         let _ = w2.explode_at(
             w2.players[1].pos, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
-            true, true, DmgFalloff::None,
+            true, true, DmgFalloff::None, KbAttn::Radius,
         );
         assert!(!w2.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })));
         assert!(w2.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
@@ -8198,6 +8263,7 @@ mod tests {
                 false,
                 false,
                 DmgFalloff::None,
+                KbAttn::Radius,
             )
         };
         at(&mut a);

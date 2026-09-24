@@ -47,4 +47,6 @@ pub fn version() -> &'static str {
 /// v20（2026-09-14）：疾风步期间施放技能会提前结束风步（`Player::end_windwalk`，对齐 098c）。
 /// v21（2026-09-19）：`Tether.beam_dps`（红链沿线切割伤害，098c `YI`）入快照（序列化布局变更）。
 /// v26（2026-09-24）：`W098b.class`（S005 反射类别，098c `Ev` 等价物）入快照；弹体反射数学修正为 `v'=v−2(v·n)n` 并改归属。
-pub const PROTOCOL_VERSION: u32 = 26;
+/// v27（2026-09-24）：击退系数对齐 098c——S002/S004 `.95`、S008A `.75`、S008B `.6`、S003 AoE `1.3`；
+/// S001/S021 击退改距离衰减 `1-d/1000`（S020 固定）；`explode_at` 新增击退衰减模式（纯数值，无字段变更）。
+pub const PROTOCOL_VERSION: u32 = 27;
