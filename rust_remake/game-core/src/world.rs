@@ -869,15 +869,19 @@ impl World {
                     p.doom = 0.0;
                 }
             }
-            // S006 时光回溯（098b ER）：倒计时到点闪回锚点并还原 HP（不低于 1，避免回溯自杀）。
-            if let Some((pos, hp, rem)) = p.rewind {
+            // S006 时光回溯（098c `GC`/`RR`）：倒计时到点闪回锚点、`hp = max(当前, 快照)`，
+            // 并把窗口内累积的**张力 `mana`** 削到 `快照 + keep×(当前-快照)`（`RR`：`gn=ee+(.8-.1zr)(gn-ee)`）。
+            if let Some((pos, hp, mana, mana_keep, rem)) = p.rewind {
                 let rem = rem - dt;
                 if rem <= Fix64::ZERO {
                     p.pos = pos;
-                    p.hp = hp.max(Fix64::ONE);
+                    p.hp = p.hp.max(hp);
+                    if p.mana > mana {
+                        p.mana = mana + mana_keep * (p.mana - mana);
+                    }
                     p.rewind = None;
                 } else {
-                    p.rewind = Some((pos, hp, rem));
+                    p.rewind = Some((pos, hp, mana, mana_keep, rem));
                 }
             }
         }
@@ -4676,9 +4680,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Rewind => {
-                        // 标记当前位置+HP，3.6s 后闪回（098b fC/ER；已在回溯中则覆盖，M1 不拒绝）。
+                        // 标记当前 pos/HP/mana，3.6s 后闪回（098c `GC` 存 `ve/ee/xe`=hp/mana/facing；
+                        // `RR` 回溯时把 mana 张力削到 70%/60%/…（`keep=.8-.1L`））。
                         if let Some(p) = world.players.get_mut(idx as usize) {
-                            p.rewind = Some((p.pos, p.hp, stats.duration));
+                            let keep = (0.8 - 0.1 * caster_level as f64).max(0.0);
+                            p.rewind = Some((p.pos, p.hp, p.mana, keep, stats.duration));
                         }
                     }
                     crate::skill::W098bUtilKind::Haste => {
@@ -9024,9 +9030,10 @@ mod tests {
         // 施放回溯（锚点=(0,0), HP=100）
         world.step(vec![PlayerInput { cast: Some((SkillId::S006, None)), ..Default::default() }, PlayerInput::default()], dt);
         assert!(world.players[0].rewind.is_some(), "施放后应记录锚点");
-        // 走远 + 掉血
+        // 走远 + 掉血 + 累积张力（mana）
         world.players[0].hp = Fix64::from_num(40.0);
         world.players[0].pos = Vec2::new(d60(8.0), Fix64::ZERO);
+        world.players[0].mana = 100.0; // 窗口内挨打累积的张力（快照=0）
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         for _ in 0..240 {
             world.step(none.clone(), dt); // 4s > 3.6s
@@ -9034,6 +9041,8 @@ mod tests {
         assert!(world.players[0].rewind.is_none(), "到点后应清锚点");
         assert!(near(world.players[0].pos.x, 0.0, 1.0) && near(world.players[0].pos.y, 0.0, 1.0), "应闪回锚点，实际 {:?}", world.players[0].pos);
         assert!(near(world.players[0].hp, 100.0, 0.01), "应还原 HP，实际 {:?}", world.players[0].hp);
+        // 098c `RR`：`gn = ee + (.8-.1L)(gn-ee)` → L1 削到 70%。
+        assert!((world.players[0].mana - 70.0).abs() < 0.01, "回溯应把张力削到 70%（L1），实际 {}", world.players[0].mana);
     }
 
     /// S011 闪现：L1 瞬移至多 770。

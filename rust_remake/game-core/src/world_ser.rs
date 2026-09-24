@@ -234,12 +234,14 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wfix(o, p.radius);
     wfix(o, p.hp);
     wfix(o, p.max_hp);
-    // rewind（S006 时光回溯）：开关 + (pos, hp, remaining)
+    // rewind（S006 时光回溯）：开关 + (pos, hp, mana, mana_keep, remaining)
     match p.rewind {
-        Some((pos, hp, rem)) => {
+        Some((pos, hp, mana, mana_keep, rem)) => {
             wu8(o, 1);
             wvec(o, pos);
             wfix(o, hp);
+            wu64(o, mana.to_bits());
+            wu64(o, mana_keep.to_bits());
             wfix(o, rem);
         }
         None => wu8(o, 0),
@@ -387,7 +389,13 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     let hp = fixat(b, p)?;
     let max_hp = fixat(b, p)?;
     let rewind = if u8at(b, p)? != 0 {
-        Some((vecat(b, p)?, fixat(b, p)?, fixat(b, p)?))
+        Some((
+            vecat(b, p)?,
+            fixat(b, p)?,
+            f64::from_bits(u64at(b, p)?),
+            f64::from_bits(u64at(b, p)?),
+            fixat(b, p)?,
+        ))
     } else {
         None
     };

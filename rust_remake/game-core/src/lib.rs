@@ -61,4 +61,6 @@ pub fn version() -> &'static str {
 /// v35（2026-09-24）：硬体 `Hr`——S012 燃烧冲刺撞柱不再反弹（`WA`：`Hr` → `cO=0`）。
 /// v36（2026-09-24）：道具细项——熔岩靴被动 `To`（.96/.94/.92）；死亡面具去除无依据的平回；
 /// 鲜血之剑回血仅天罚（`on_damage_heal` 不再进通用伤害路径）。
-pub const PROTOCOL_VERSION: u32 = 36;
+/// v37（2026-09-24）：S006 时光回溯存 mana 张力快照并在回溯时按 `keep=.8-.1L` 削减（`RR`）；
+/// `Player.rewind` 元组加 mana/mana_keep（快照布局变更）。
+pub const PROTOCOL_VERSION: u32 = 37;

@@ -243,8 +243,10 @@ pub struct Player {
     pub parry_cd: Fix64,
     /// 瞬态（**不进快照**）：本 tick 与本人**接触的敌人** id，供招架判定（我们以「接触」代 098c 的「被近战攻击」）。
     pub contact_by_enemy: Option<u32>,
-    /// S006 时光回溯（098b fC/ER）：到点闪回 `pos` 并还原 `hp`；元组 = (锚点, 锚点 HP, 剩余秒)。
-    pub rewind: Option<(Vec2, Fix64, Fix64)>,
+    /// S006 时光回溯（098c `GC`/`RR`）：到点闪回 `pos`、`hp = max(当前, 快照)`（不覆盖窗口内回血），
+    /// 并把挨打累积的**张力 `mana`** 削到 `快照 + keep×(当前-快照)`（`keep = (.8-.1L).max(0)`，L=等级）。
+    /// 元组 = (锚点, 锚点 HP, 锚点 mana, mana keep 系数, 剩余秒)。
+    pub rewind: Option<(Vec2, Fix64, f64, f64, Fix64)>,
     /// S020 灾变（098b MC）三级递进阶段：0→1→2 循环（每放一次 +1）；半径 300/300/400。
     pub catastrophe_stage: u8,
     /// 熔岩靴激活 CD（098b 25s；熔岩上用天罚触发，D8/M5）。随快照同步。
