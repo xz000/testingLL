@@ -59,4 +59,6 @@ pub fn version() -> &'static str {
 /// v34（2026-09-24）：实现通用 `jn`（状态时长倍率，怀表 I00M/I00N 1.15/1.25）：
 /// 自身增益 ×jn[自己]、敌方减益 ×jn[攻]/jn[受]（`add_debuff`）。
 /// v35（2026-09-24）：硬体 `Hr`——S012 燃烧冲刺撞柱不再反弹（`WA`：`Hr` → `cO=0`）。
-pub const PROTOCOL_VERSION: u32 = 35;
+/// v36（2026-09-24）：道具细项——熔岩靴被动 `To`（.96/.94/.92）；死亡面具去除无依据的平回；
+/// 鲜血之剑回血仅天罚（`on_damage_heal` 不再进通用伤害路径）。
+pub const PROTOCOL_VERSION: u32 = 36;

@@ -922,8 +922,9 @@ impl World {
                 // 窗口 + CD25s」，激活式 TODO）、-0.1 hp/s 惩罚照常生效。
                 // 熔岩靴激活窗口内 ×12.5%；窗口外吃全额（激活条件见 Nova 臂，D8/M5）。
                 let shielded = p.has_buff(BuffKind::LavaShield);
+                // 熔岩靴：**被动** `To` 倍率（.96/.94/.92）常驻；激活窗口（`kC` 的 `To/=8`）再 ×12.5%。
                 let lava_mult = if shielded { 1.0 - p.item_fx.lava_resist_frac } else { 1.0 };
-                let lava_mult = lava_mult * p.lava_taken_mult;
+                let lava_mult = lava_mult * p.item_fx.lava_passive_mult * p.lava_taken_mult;
                 // 岩浆伤害（098c 解码实证，war3map_pretty.j `nA` 每 0.1s 扣 `To[id]`）：
                 // 每跳恒定 `To[id]≈0.9`，显示 `To[0]*$A`（$A=10 跳/秒）→ **约 9/s 恒定**。
                 // 全 JASS 无「随回合数成长」的缩放（仅国王模式对君主 ±10% 抗岩浆、物品减速等），
@@ -1605,16 +1606,19 @@ impl World {
         // 2026-09-12 修正：098c 的 HX 是**实际造成的伤害**（护甲/法抗/Gn 折算后）→ 用 `dealt` 而非原始 `amount`，
         // 否则对高护甲目标会高估吸血/回血。
         if let Some(f) = from.and_then(|f| self.players.get(f as usize).map(|a| a.id)) {
-            let (lifesteal, odh, vi) = {
+            // 吸血 = `item_fx.lifesteal`（死亡面具 vi+3 = 24%）+ 生命精通 `vi`（8%/级）。
+            // **鲜血之剑的回血是天罚专属**（098c `mC` 的 `DX((Zr+1)*n)`，见 `SkillEffect::W098bNova`），
+            // 不走通用伤害路径，故此处不加 `on_damage_heal`。
+            let (lifesteal, vi) = {
                 let a = &self.players[f as usize];
-                (a.item_fx.lifesteal, a.item_fx.on_damage_heal, a.mastery[0])
+                (a.item_fx.lifesteal, a.mastery[0])
             };
             let dealt_f = dealt.to_num::<f64>();
             let vi_steal = dealt_f * 0.08 * vi as f64;
-            if lifesteal > 0.0 || odh > 0.0 || vi_steal > 0.0 {
+            if lifesteal > 0.0 || vi_steal > 0.0 {
                 if let Some(a) = self.players.get_mut(f as usize) {
                     if a.alive {
-                        let heal = dealt_f * lifesteal + odh + vi_steal;
+                        let heal = dealt_f * lifesteal + vi_steal;
                         a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
                     }
                 }
@@ -8512,6 +8516,57 @@ mod tests {
             w.step(none.clone(), Fix64::from_num(1.0 / 60.0));
         }
         assert_eq!(w.players[0].hp, hp0, "lava_damage_mult=0 应关闭岩浆伤害");
+    }
+
+    /// 熔岩靴**被动** `To` 倍率（098c `bD` h00C：`.96/.94/.92`）：无激活窗口也减伤 4/6/8%。
+    #[test]
+    fn lava_boots_passive_resist() {
+        let run = |item: Option<crate::item::ItemId>| -> f64 {
+            let mut w = World::new(1, 1305);
+            w.obstacles.clear();
+            w.base_regen = 0.0;
+            if let Some(b) = item {
+                w.players[0].set_items(&[b]);
+            }
+            w.players[0].pos = Vec2::new(w.arena_radius + Fix64::from_num(10.0), Fix64::ZERO);
+            let hp0 = w.players[0].hp;
+            let none = vec![PlayerInput::default()];
+            for _ in 0..30 {
+                w.step(none.clone(), Fix64::from_num(1.0 / 60.0));
+            }
+            (hp0 - w.players[0].hp).to_num::<f64>()
+        };
+        let no = run(None);
+        let b1 = run(Some(crate::item::ItemId::LavaBoots1));
+        let b3 = run(Some(crate::item::ItemId::LavaBoots3));
+        assert!(no > 0.0, "出圈应掉血");
+        assert!((b1 / no - 0.96).abs() < 0.05, "靴1 被动应 ≈×.96，实际 {:.3}", b1 / no);
+        assert!((b3 / no - 0.92).abs() < 0.05, "靴3 被动应 ≈×.92，实际 {:.3}", b3 / no);
+    }
+
+    /// 鲜血之剑的回血是**天罚专属**（`mC` 的 `DX((Zr+1)*n)`）：普通伤害不回血。
+    #[test]
+    fn blood_sword_heals_only_on_smite() {
+        let mut w = World::new(2, 1306);
+        w.obstacles.clear();
+        w.base_regen = 0.0;
+        w.players[0].set_items(&[crate::item::ItemId::BloodSword1]);
+        w.players[0].hp = Fix64::from_num(50.0);
+        let hp0 = w.players[0].hp;
+        w.damage_player(1, Fix64::from_num(10.0), Some(0));
+        assert_eq!(w.players[0].hp, hp0, "普通伤害不应触发鲜血之剑回血");
+    }
+
+    #[test]
+    fn item_effects_lava_passive_and_mask() {
+        // 数据面：熔岩靴被动倍率、死亡面具无额外平回。
+        use crate::item::{aggregate, ItemId};
+        assert_eq!(aggregate(&[ItemId::LavaBoots1]).lava_passive_mult, 0.96);
+        assert_eq!(aggregate(&[ItemId::LavaBoots2]).lava_passive_mult, 0.94);
+        assert_eq!(aggregate(&[ItemId::LavaBoots3]).lava_passive_mult, 0.92);
+        assert_eq!(ItemId::FireMask.def().fx.on_damage_heal, 0.0, "死亡面具无平回（098c 仅 vi+3/−0.03回复）");
+        assert_eq!(ItemId::BloodSword1.def().fx.on_damage_heal, 2.0, "鲜血之剑天罚回血 (Zr+1)=2");
+        assert_eq!(ItemId::BloodSword2.def().fx.on_damage_heal, 3.0);
     }
 
     #[test]
