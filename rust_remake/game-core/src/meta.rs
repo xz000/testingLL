@@ -286,10 +286,11 @@ pub struct Mastery {
 impl Mastery {
     /// 购买价（**w3q `gglb` 实证**：生命 R00D=6 / 范围 R00I=7 / 射程 R00Y=5 / 背包 R000=3）。
     pub const COSTS: [i32; 4] = [6, 7, 5, 3];
-    /// **每级增量**：w3q `gglm`（金币 mod/级）实测 = **1**（R00D/R00I/R00Y 均 1）。
-    /// 研究价 = `gglb + gglm × 已购级`（生命 6/7/8…，背包 3/4/5…）；
-    /// （旧值误把 `glvl`（最大等级 6）当增量，属误读 `UpgradeMetaData.slk`：`glvl`=maxlevel。）
-    pub const COST_PER_LEVEL: [i32; 4] = [1, 1, 1, 1];
+    /// **每级增量** = w3q `gglm`（金币 mod/级）：生命/范围/射程 = **1**；
+    /// **背包 `R000` 无 `gglm` 字段 → 0 ⇒ 固定 3 金/次**（w3q 字节实测：R000 gglb=3, gglm=0, glvl=3）。
+    /// 研究价 = `gglb + gglm × 已购级`（生命 6/7/8…；背包恒 3）。
+    /// （旧值误把 `glvl`（最大等级）当增量，属误读 `UpgradeMetaData.slk`：`glvl`=maxlevel。）
+    pub const COST_PER_LEVEL: [i32; 4] = [1, 1, 1, 0];
     /// 级数上限：三精通各 **6**（w3q tooltip「Life steal Mastery 1..6」+ `glvl=6` 实证；
     /// R017 合成科技 glvl=20 → 6+6+6=18 ≤ 20 亦相符）；背包 **3**（098c `alev=3` 为 2 次，
     /// 本作放开 1 次到 L4 = 10 格，突破 war3 的 6 格上限）。
@@ -1750,7 +1751,7 @@ mod tests {
     fn mastery_costs_and_caps_match_w3q() {
         // 顺序：0=生命汲取 1=范围 2=射程 3=背包（与 `Mastery::at` 一致）。
         assert_eq!(Mastery::COSTS, [6, 7, 5, 3], "w3q gglb：R00D/R00I/R00Y/R000");
-        assert_eq!(Mastery::COST_PER_LEVEL, [1, 1, 1, 1], "w3q gglm（金币 mod/级）=1");
+        assert_eq!(Mastery::COST_PER_LEVEL, [1, 1, 1, 0], "w3q gglm：三精通 1、背包 R000 无 gglm=0（固定 3）");
         assert_eq!(Mastery::CAPS, [6, 6, 6, 3], "级数上限 = w3q glvl：生命/范围/射程 6、背包 3");
     }
 
@@ -1763,9 +1764,9 @@ mod tests {
         assert!(pr.buy_mastery(0) && pr.buy_mastery(1) && pr.buy_mastery(2) && pr.buy_mastery(3));
         assert_eq!(pr.gold, 79, "精通应扣费 21 金");
         assert_eq!((pr.mastery.life, pr.mastery.range, pr.mastery.time, pr.mastery.backpack), (1, 1, 1, 1));
-        // 递涨（098c 研究价 gglb + gglm×已购级，gglm=1）：生命已 1 级 → 下一级 6+1=7；背包 3+1=4。
+        // 递涨（098c 研究价 gglb + gglm×已购级）：生命已 1 级 → 6+1=7；背包 gglm=0 → 固定 3。
         assert_eq!(pr.mastery_cost(0), 7);
-        assert_eq!(pr.mastery_cost(3), 4);
+        assert_eq!(pr.mastery_cost(3), 3);
         // 金币不足失败
         pr.gold = 2;
         assert!(!pr.buy_mastery(0), "余 2 金买不起（现价 7）生命精通");
