@@ -217,9 +217,9 @@ pub const ITEMS: &[ItemDef] = &[
     // I00L 熔岩靴 3：+39 移速 / 5s（买 7；卖 15 @ED 10534）
     ItemDef { id: ItemId::LavaBoots3, family: ItemFamily::LavaBoots, tier: 3, cost: 7, sell: 15, name: "熔岩靴 3", desc: "移速+39；熔岩抵抗窗口 5s；回复-0.1/s（满级）", fx: ItemEffects { speed_add: 39.0, lava_resist_frac: 0.875, lava_resist_secs: 5.0, regen_penalty: 0.1, ..fx() } },
     // I00M 怀表 1：jn×1.15（增益/法术时长）；买 7 @bD 10805
-    ItemDef { id: ItemId::PocketWatch1, family: ItemFamily::PocketWatch, tier: 1, cost: 7, sell: 6, name: "怀表 1", desc: "增益时长+15% 受沉默-15%；可升 1 次", fx: ItemEffects { buff_dur_mult: 1.15, debuff_dur_div: 1.15, ..fx() } },
+    ItemDef { id: ItemId::PocketWatch1, family: ItemFamily::PocketWatch, tier: 1, cost: 7, sell: 6, name: "怀表 1", desc: "状态时长 `jn`×1.15（自身增益更长、受减益更短）；可升 1 次", fx: ItemEffects { buff_dur_mult: 1.15, debuff_dur_div: 1.15, ..fx() } },
     // I00N 怀表 2：×1.25（买 7；卖 12 @ED 10547）
-    ItemDef { id: ItemId::PocketWatch2, family: ItemFamily::PocketWatch, tier: 2, cost: 7, sell: 12, name: "怀表 2", desc: "增益时长+25% 受沉默-25%", fx: ItemEffects { buff_dur_mult: 1.25, debuff_dur_div: 1.25, ..fx() } },
+    ItemDef { id: ItemId::PocketWatch2, family: ItemFamily::PocketWatch, tier: 2, cost: 7, sell: 12, name: "怀表 2", desc: "状态时长 `jn`×1.25（自身增益更长、受减益更短）", fx: ItemEffects { buff_dur_mult: 1.25, debuff_dur_div: 1.25, ..fx() } },
 ];
 
 /// 携带上限（098b 英雄 6 格）。

@@ -145,6 +145,22 @@ impl BuffKind {
         // 仅按"种类"比对，不比较携带的数值（Speed / Shield 用值但不代表不同类）。
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
+
+    /// 是否为**减益**（负面效果）：镜像分身期间一律否决，且受 `jn[施法者]/jn[自己]` 影响。
+    pub fn is_debuff(&self) -> bool {
+        match self {
+            BuffKind::Tied
+            | BuffKind::Scorched
+            | BuffKind::Pancake
+            | BuffKind::Slow(_)
+            | BuffKind::Weakened
+            | BuffKind::Silenced => true,
+            // 值相关：`GnMult < 1`（削弱）为减益；`SpeedSteal < 0`（抽敌移速）为减益。
+            BuffKind::GnMult(k) => *k < 1.0,
+            BuffKind::SpeedSteal(v) => *v < 0.0,
+            _ => false,
+        }
+    }
 }
 
 /// T2 扇扫连射的发射状态（施法者上的持久发射器）。
@@ -407,45 +423,33 @@ impl Player {
     // ---- Buff 工具 ----
 
     /// 加一个 buff（同种刷新 / 取更久者，覆盖到一个空闲槽；无空槽则忽略）。
+    /// 098c `jn`（**状态时长倍率**）：怀表 `I00M`/`I00N` → 1.15/1.25，其余 1.0。
+    /// JASS `war3map.j`：所有技能时长都乘 `jn[自己]`（自身增益）或 `jn[施法者]/jn[目标]`（敌方减益）。
+    pub fn jn(&self) -> f64 {
+        self.item_fx.buff_dur_mult.max(1.0)
+    }
+
+    /// 加一个 buff（**自身/同队增益**）：时长 × `jn[自己]`（098c `(2.6+…)*jn[ri]` 等）。
+    /// 敌方减益请用 [`Self::add_debuff`]（需传入施法者的 `jn`）。
     pub fn add_buff(&mut self, kind: BuffKind, remaining: f64) {
+        let mult = if kind.is_debuff() { 1.0 } else { self.jn() };
+        self.add_buff_scaled(kind, remaining * mult);
+    }
+
+    /// 由 `source_jn` 的施法者施加的**减益**：时长 × `jn[施法者] / jn[自己]`
+    /// （098c `jn[Vv[源]]/jn[Vv[目标]]`，如 S017 `(4+.25L)*jn[Zc]/jn[id]`；带怀表的目标受减益更短）。
+    pub fn add_debuff(&mut self, kind: BuffKind, remaining: f64, source_jn: f64) {
+        let mult = source_jn / self.jn();
+        self.add_buff_scaled(kind, remaining * mult);
+    }
+
+    /// 统一的 buff 写入：镜像分身期间否决减益；化身 `dur_mult` 对增益/减益均生效。
+    fn add_buff_scaled(&mut self, kind: BuffKind, remaining: f64) {
         // 镜像分身（C 栏）：期间「否决锁链和负面效果」——束缚与各类减益一律不生效。
-        // （Speed/Boost 等增益照常，故只拦截减益类。）
-        if self.has_buff(BuffKind::Mirror)
-            && matches!(
-                kind,
-                BuffKind::Tied
-                    | BuffKind::Scorched
-                    | BuffKind::Pancake
-                    | BuffKind::Slow(_)
-                    | BuffKind::Weakened
-                    | BuffKind::Silenced
-            )
-        {
+        if self.has_buff(BuffKind::Mirror) && kind.is_debuff() {
             return;
         }
-        // 怀表（M3，098b I00M/I00N）：自身增益时长 ×buff_dur_mult；受到【沉默】时长 ÷debuff_dur_div。
-        // 修正：原实现把 Slow/Pancake/Weakened/Silenced 等减益误当增益、用 buff_dur_mult 延长，
-        // 又把除数错套到 Tied/Scorched 上——与 item.rs 描述「受沉默 -15%」及 skill.rs 注记都不符。
-        let gain_mult = match kind {
-            // 自身增益：受怀表延长。
-            BuffKind::Speed(_)
-            | BuffKind::Reflect
-            | BuffKind::Stealth
-            | BuffKind::Boost
-            | BuffKind::LavaShield
-            | BuffKind::Aegis
-            | BuffKind::Mirror => self.item_fx.buff_dur_mult,
-            // 其余（减益）：怀表不延长。
-            _ => 1.0,
-        };
-        // 只有「沉默」被怀表缩短（098b：受沉默 -15%/-25%）。
-        let silence_div = if matches!(kind, BuffKind::Silenced) {
-            self.item_fx.debuff_dur_div.max(1.0)
-        } else {
-            1.0
-        };
-        // 化身（dur_mult）法术时长 ×1.2 对增益/减益均生效。
-        let adjusted = remaining * gain_mult * self.dur_mult / silence_div;
+        let adjusted = remaining * self.dur_mult;
         self.add_buff_fix(kind, Fix64::from_num(adjusted));
     }
 
@@ -1046,6 +1050,36 @@ mod tests {
             p.tick_buffs(dt);
         }
         assert!(!p.has_buff(BuffKind::Speed(0.0)));
+    }
+
+    /// 098c `jn`（状态时长倍率）：自身增益 ×jn[自己]；敌方减益 ×jn[攻]/jn[受]。
+    #[test]
+    fn jn_scales_buff_and_debuff_durations() {
+        use crate::item::ItemId;
+        let mk = || Player::new(0, Vec2::ZERO, Fix64::from_num(100.0));
+        let remaining = |p: &Player, k: BuffKind| {
+            p.buffs
+                .iter()
+                .find(|b| b.kind.same_variant(&k))
+                .map(|b| b.remaining.to_num::<f64>())
+                .unwrap_or(0.0)
+        };
+        // 自身增益：无怀表 = 原值；怀表 2 → ×1.25。
+        let mut a = mk();
+        a.add_buff(BuffKind::Reflect, 10.0);
+        assert!((remaining(&a, BuffKind::Reflect) - 10.0).abs() < 1e-6, "无怀表应 10");
+        let mut b = mk();
+        b.set_items(&[ItemId::PocketWatch2]);
+        b.add_buff(BuffKind::Reflect, 10.0);
+        assert!((remaining(&b, BuffKind::Reflect) - 12.5).abs() < 1e-6, "怀表2 自身增益应 ×1.25");
+        // 敌方减益：×jn[攻]/jn[受]。
+        let mut vic = mk();
+        vic.add_debuff(BuffKind::Tied, 10.0, 1.25); // 攻方怀表
+        assert!((remaining(&vic, BuffKind::Tied) - 12.5).abs() < 1e-6, "攻方怀表应延长减益");
+        let mut vic2 = mk();
+        vic2.set_items(&[ItemId::PocketWatch2]);
+        vic2.add_debuff(BuffKind::Tied, 10.0, 1.0); // 受方怀表
+        assert!((remaining(&vic2, BuffKind::Tied) - 8.0).abs() < 1e-6, "受方怀表应缩短减益");
     }
 
     #[test]

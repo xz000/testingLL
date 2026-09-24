@@ -2241,21 +2241,21 @@ impl World {
         // S005 反射盾：(proj 下标, 盾主, 弹→盾单位法线)。命中带盾目标且类别可反射时入队，不结算伤害。
         let mut reflect_projs: Vec<(usize, u32, Vec2)> = Vec::new();
         // 098b on_hit 控制效果：(受害者, Tied 时长)。
-        let mut debuffs: Vec<(u32, f64)> = Vec::new();
+        let mut debuffs: Vec<(u32, f64, u32)> = Vec::new(); // (受害者, 时长, 施法者 owner) —— jn 比率用
         // 链体（锁链）生成：命中落地为持久 Tether，逐帧对绑定目标施加每秒伤害并按 pull_speed 符号拉拽。
         let mut tether_spawns: Vec<Projectile> = Vec::new();
         // 镜像分身（C 栏）火球生成：Clone 倒计时到点时朝最近敌人发射的火弹。
         let mut mirror_fires: Vec<Projectile> = Vec::new();
         // 镜像分身开火待写回队列：(分身下标, 方向, 伤害) —— 计时器重置需 &mut，延后到 2c3 段。
         let mut mirror_fire_queue: Vec<(usize, Vec2, Fix64)> = Vec::new();
-        // 陨石灼烧 Scorched debuff：(受害者, 时长)。
-        let mut debuffs_scorched: Vec<(u32, f64)> = Vec::new();
+        // 陨石灼烧 Scorched debuff：(受害者, 时长, 施法者 owner)。
+        let mut debuffs_scorched: Vec<(u32, f64, u32)> = Vec::new();
         // S014 回血球生成队列：(施法者, 生成位置, 治疗量)。
         let mut spawn_orbs: Vec<(u32, Vec2, Fix64)> = Vec::new();
-        // S014 汲取：平面移速转移队列 (受害者, 增量, 时长s)。
-        let mut speed_steals: Vec<(u32, f64, f64)> = Vec::new();
-        // S014 汲取·削弱：Gn（输出倍率）乘子队列 (受害者, 乘子, 时长s)。
-        let mut gn_mults: Vec<(u32, f64, f64)> = Vec::new();
+        // S014 汲取：平面移速转移队列 (受害者, 增量, 时长s, 施法者 owner)。
+        let mut speed_steals: Vec<(u32, f64, f64, u32)> = Vec::new();
+        // S014 汲取·削弱：Gn（输出倍率）乘子队列 (受害者, 乘子, 时长s, 施法者 owner)。
+        let mut gn_mults: Vec<(u32, f64, f64, u32)> = Vec::new();
         // S014 回血球生成队列 (施法者, 生成位置, 治疗量) —— 飞回施法者，抵达 64 内治疗。
         let mut drain_orbs: Vec<(u32, Vec2, Fix64)> = Vec::new();
         // S016B 魂回飞生成队列 (施法者, 生成位置) —— 飞回施法者，抵达 64 内清 `S016` 冷却（098c `cc`）。
@@ -2269,9 +2269,9 @@ impl World {
         let mut homing_burnouts: Vec<u32> = Vec::new();
         // 098b 命中点燃场（S003/S004 无）：命中处生成 2.5s DoT 区域（复用 Star 的区域伤害逻辑）。
         let mut ignites: Vec<(u32, Vec2, Fix64, Fix64)> = Vec::new(); // (owner, 命中点, DoT 总量, 时长 s)
-        let mut pancakes: Vec<(u32, f64)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）
+        let mut pancakes: Vec<(u32, f64, u32)> = Vec::new(); // 「肉饼」减速（B4 岩浆滚石）(受害者,时长,owner)
         let mut slows: Vec<(u32, f64)> = Vec::new(); // 汲取·减速（B4-T）
-        let mut silences: Vec<(u32, f64)> = Vec::new(); // 禁锢·沉默（B4-Y）
+        let mut silences: Vec<(u32, f64, u32)> = Vec::new(); // 禁锢·沉默（B4-Y）(受害者,时长,owner)
         // 沉默来源：(施法者 owner, 受害者)，用于「一次沉默 ≥3 目标」播报（098c Silencer）。
         let mut silence_src: Vec<(u32, u32)> = Vec::new();
         let mut magma_absorb: Vec<(usize, u32, Fix64)> = Vec::new(); // (滚石索引, owner, 半径)
@@ -2530,13 +2530,14 @@ impl World {
                             let dir = if d.length_squared() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
                             dot_events.push((j as u32, dps * dt, Some(owner)));
                             pushes.push((j as u32, dir * Fix64::from_num(300.0), 0.3, false));
-                            pancakes.push((j as u32, 1.5));
+                            pancakes.push((j as u32, 1.5, owner));
                         }
                     }
                     magma_absorb.push((pi, owner, *radius));
                 }
                 ProjectileKind::Star { owner, radius, damage_per_sec, heal_per_sec, remaining: _, heal_team } => {
                     // 星域：范围内敌掉血、对施法者回血
+                    let star_owner_jn = self.players.get(*owner as usize).map(|o| o.jn()).unwrap_or(1.0);
                     for j in 0..n {
                         let p = &self.players[j];
                         if !p.alive {
@@ -2551,7 +2552,7 @@ impl World {
                             // 力场（B4-Y）：范围内敌人减速 45%（098c Lc：降低移速 45%）。
                             // 仅 heal_team（力场形态）施加；每帧刷新短窗避免离开后残留。
                             if *heal_team {
-                                self.players[j].add_buff(BuffKind::Slow(0.55), 0.3);
+                                self.players[j].add_debuff(BuffKind::Slow(0.55), 0.3, star_owner_jn);
                             }
                         }
                     }
@@ -2586,9 +2587,10 @@ impl World {
                             to_bind.push(p.id);
                         }
                     }
+                    let bind_owner_jn = self.players.get(pr.owner as usize).map(|o| o.jn()).unwrap_or(1.0);
                     for id in to_bind {
                         if let Some(pp) = self.players.get_mut(id as usize) {
-                            pp.add_buff(BuffKind::Tied, bind_time.to_num::<f64>());
+                            pp.add_debuff(BuffKind::Tied, bind_time.to_num::<f64>(), bind_owner_jn);
                         }
                     }
                 }
@@ -2745,10 +2747,10 @@ impl World {
                             //   其他 → 目标 +50 移速（4*jn 秒）
                             let dur = 4.0 * debuff_dur.to_num::<f64>().max(1.0);
                             if homing && homing_self {
-                                speed_steals.push((pr.owner, 100.0, 4.0));
+                                speed_steals.push((pr.owner, 100.0, 4.0, pr.owner));
                                 homing_burnouts.push(pr.owner);
                             } else if homing {
-                                speed_steals.push((victim, 50.0, dur));
+                                speed_steals.push((victim, 50.0, dur, pr.owner));
                             }
                         }
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
@@ -2756,16 +2758,16 @@ impl World {
                             crate::skill::W098bOnHit::Ki => {}
                             crate::skill::W098bOnHit::Scorched => {
                                 // 陨石灼烧「烤肉饼」（D7）：输出 ×0.1 + 禁疗，时长 = growth.duration（4s）。
-                                debuffs_scorched.push((victim, debuff_dur.to_num::<f64>()));
+                                debuffs_scorched.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
                             }
                             crate::skill::W098bOnHit::Cripple => {
                                 // 残废：禁施法/禁移动近似为 Tied，时长 (4+0.25L)。
-                                debuffs.push((victim, debuff_dur.to_num::<f64>()));
+                                debuffs.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
                             }
                             crate::skill::W098bOnHit::ChainPull => {
                                 // 锁链（蓝链）：落地为持久 Tether——逐帧对绑定目标施加每秒伤害
                                 //（damage_per_sec=gx=0.2+0.1×L），并把目标拉向施法者（pull_speed 取正）。
-                                debuffs.push((victim, debuff_dur.to_num::<f64>()));
+                                debuffs.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
                                 // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
                                 if !self.players[victim as usize].mirror_immune() {
                                     tether_spawns.push(Projectile {
@@ -2791,10 +2793,10 @@ impl World {
                                 //  友 → 移速 **+70** + 治疗 `5+L`
                                 let dur = debuff_dur.to_num::<f64>();
                                 if same_team {
-                                    speed_steals.push((victim, SPEED_DRAIN, dur));
+                                    speed_steals.push((victim, SPEED_DRAIN, dur, pr.owner));
                                     heals.push((victim, *gx)); // 友军治疗量 = 5+L = gx
                                 } else {
-                                    speed_steals.push((victim, -SPEED_DRAIN, dur));
+                                    speed_steals.push((victim, -SPEED_DRAIN, dur, pr.owner));
                                     // 回血球带回的治疗量 = `ZO×Gn[攻]×hn[受]×(1+.08×vi[攻])`
                                     let gn = self.players.get(pr.owner as usize).map(|o| o.gn_factor()).unwrap_or(1.0);
                                     let hn = self.players.get(victim as usize).map(|v| v.dmg_taken_mult).unwrap_or(1.0);
@@ -2809,14 +2811,14 @@ impl World {
                                 //    并把 `bv/Nv` 清回 false（`oc`：`set bv[nr]=false` / `set Nv[nr]=false`）→ 每 cast 只增益一次。
                                 let dur = debuff_dur.to_num::<f64>();
                                 if same_team {
-                                    gn_mults.push((victim, 1.1, dur));
+                                    gn_mults.push((victim, 1.1, dur, pr.owner));
                                     // 098c `oc` 友军分支：`set ev[nr]=(1+.1*ei[Vv[nr]])` → 续命并转向最近的**敌方**对象。
                                     let ei = self.players.get(pr.owner as usize).map(|o| o.mastery[2] as f64).unwrap_or(0.0);
                                     re_aims.push((pi, victim, REEAIM_SPEED, REEAIM_LIFE * (1.0 + 0.1 * ei), true));
                                     // 本段是 `&pr.kind` 不可变借用 → `bv/Nv=false` 延后到 2c 段写回。
                                     weaken_disarm.push(pi);
                                 } else {
-                                    gn_mults.push((victim, 0.5, dur));
+                                    gn_mults.push((victim, 0.5, dur, pr.owner));
                                     let gn = self.players.get(pr.owner as usize).map(|o| o.gn_factor()).unwrap_or(1.0);
                                     let hn = self.players.get(victim as usize).map(|v| v.dmg_taken_mult).unwrap_or(1.0);
                                     let vi = self.players.get(pr.owner as usize).map(|o| o.mastery[0] as f64).unwrap_or(0.0);
@@ -2868,7 +2870,7 @@ impl World {
                             }
                             crate::skill::W098bOnHit::Silence => {
                                 // 禁锢·沉默（098c CC，B4-Y）：禁施法（可移动）。
-                                silences.push((victim, debuff_dur.to_num::<f64>()));
+                                silences.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
                                 silence_src.push((pr.owner, victim));
                             }
                             crate::skill::W098bOnHit::SwapTarget => {
@@ -3004,17 +3006,19 @@ impl World {
         }
 
         // 2b2) 应用 098b on_hit 控制效果（Tied debuff / 拉向施法者 / 灼烧 Scorched）。
-        for (vid, dur) in debuffs_scorched {
+        for (vid, dur, owner) in debuffs_scorched {
+            let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(vid as usize) {
                 if p.alive && !p.mirror_immune() {
-                    p.add_buff(BuffKind::Scorched, dur);
+                    p.add_debuff(BuffKind::Scorched, dur, ojn);
                 }
             }
         }
-        for (vid, dur) in debuffs {
+        for (vid, dur, owner) in debuffs {
+            let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(vid as usize) {
                 if p.alive && !p.mirror_immune() {
-                    p.add_buff(BuffKind::Tied, dur);
+                    p.add_debuff(BuffKind::Tied, dur, ojn);
                 }
             }
         }
@@ -3262,12 +3266,13 @@ impl World {
         // 「肉饼」减速（B4 岩浆滚石）：Speed ×0.1 buff；同时发 Pancake 表现事件（098c 播报）。
         let pancake_events: Vec<CombatEvent> = pancakes
             .iter()
-            .filter_map(|(v, _)| self.players.get(*v as usize).map(|p| CombatEvent::Pancake { victim: *v, pos: p.pos }))
+            .filter_map(|(v, _, _)| self.players.get(*v as usize).map(|p| CombatEvent::Pancake { victim: *v, pos: p.pos }))
             .collect();
-        for (victim, dur) in pancakes.drain(..) {
+        for (victim, dur, owner) in pancakes.drain(..) {
+            let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
-                    p.add_buff(BuffKind::Pancake, dur);
+                    p.add_debuff(BuffKind::Pancake, dur, ojn);
                 }
             }
         }
@@ -3281,17 +3286,28 @@ impl World {
             }
         }
         // S014：移速转移 / Gn 乘子 / 回血球 / 重定向
-        for (victim, val, dur) in speed_steals.drain(..) {
+        for (victim, val, dur, owner) in speed_steals.drain(..) {
+            // 负值 = 抽敌移速（减益，×jn[攻]/jn[受]）；正值 = 自/友增益（×jn[自己]）。
+            let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive && !p.mirror_immune() {
-                    p.add_buff(BuffKind::SpeedSteal(val), dur);
+                    if val < 0.0 {
+                        p.add_debuff(BuffKind::SpeedSteal(val), dur, ojn);
+                    } else {
+                        p.add_buff(BuffKind::SpeedSteal(val), dur);
+                    }
                 }
             }
         }
-        for (victim, k, dur) in gn_mults.drain(..) {
+        for (victim, k, dur, owner) in gn_mults.drain(..) {
+            let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive && !p.mirror_immune() {
-                    p.add_buff(BuffKind::GnMult(k), dur);
+                    if k < 1.0 {
+                        p.add_debuff(BuffKind::GnMult(k), dur, ojn);
+                    } else {
+                        p.add_buff(BuffKind::GnMult(k), dur);
+                    }
                 }
             }
         }
@@ -3345,10 +3361,11 @@ impl World {
             }
         }
         // 禁锢·沉默（B4-Y）：禁施法（可移动）
-        for (victim, dur) in silences.drain(..) {
+        for (victim, dur, owner) in silences.drain(..) {
+            let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive && !p.mirror_immune() {
-                    p.add_buff(BuffKind::Silenced, dur);
+                    p.add_debuff(BuffKind::Silenced, dur, ojn);
                 }
             }
         }
