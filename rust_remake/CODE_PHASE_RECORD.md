@@ -18,7 +18,7 @@
 | 3 | 击退系数 5 处 + S001/S021 距离衰减 | ✅ | `b3a0a97` | 26→27 | `KNOCKBACK_ALIGNMENT.md` |
 | 4 | S009 父弹固定 3 | ✅ | `06cee9e` | 27→28 | §「S009 父弹」|
 | 5 | S003 继承施法者速度 | ✅ | `5d1f6c1` | 28→29 | §「S003 速度」|
-| 6 | S016 提前量解算 + 跳后制导 | ⬜ | — | — | — |
+| 6 | S016 提前量解算 + 跳后制导 | ✅ | `31b5397` | 29→30 | §「S016」|
 | 7 | S016B 魂回飞清 CD | ⬜ | — | — | — |
 | 8 | `jn` 状态时长倍率 | ⬜ | — | — | — |
 | 9 | 道具 24 项对齐 | ⬜ | — | — | `SKILL_ALIGNMENT_LEDGER §9b` |
@@ -82,9 +82,23 @@ S001/S021 击退 `1-d/1000`、S020 固定 1。
 - 只对 **S003** 生效（`proj==Homing` 还包含 S014 回血球，后者不应继承）。
 - 测试：`s003_inherits_caster_forward_speed`（注入 `cur_vel=(210,0)`，断言弹速 > 900）。
 
+## 6. S016 提前量解算 + 跳后每帧制导（`31b5397`，协议 30）
+
+**对齐 098c `Fc`（13764，重定向）/ `mb`（11118，每帧制导）。**
+
+- **重定向提前量**（`Fc`）：选好新目标后，用目标速度解算拦截速度：
+  `dir = 单位(目标−弹)`；`tvel = 目标当前速度`；`cross = tvel.x*dir.y + tvel.y*dir.x`（照搬 098c 写法）；
+  `disc = speed² − cross²`；若 `disc≥0`：`lead = √disc − tvel·dir`，`vel = tvel + lead*dir`（模长 = speed）；
+  否则回退直瞄（`CO(nr,900*.03,…)`）。旧实现只是直瞄当前位置。
+- **每帧制导**（`mb`）：重定向后每帧 `vel = .98*vel + .02*(speed·dir→目标)`（低通转向）；目标死亡即清。
+- **新增字段** `W098b.chase: Option<u32>`（= 098c `Fv[nr]`），重定向时置为**新目标**；
+  原 `target` 仍作“已命中受害者”（下一跳跳过）。
+- 新增辅助 `player_velocity(&Player)`（冲刺/强制位移/自走 + 场效应）；S003 继承速度也改用它。
+- 测试：`s016_bounce_homes_toward_chase_target`（注入朝 +x 的弹跳弹、目标在 +y，断言一帧后速度向 +y 偏转）。
+
 ---
 
 ## 提交与基线
 
-- 基线：`check.ps1` 全绿（最新：client 100 / game-core 279 / net 39 / net-steam 9 / steam+gui 107）。
+- 基线：`check.ps1` 全绿（最新：client 100 / game-core 280 / net 39 / net-steam 9 / steam+gui 107）。
 - 提交：代码走 pre-commit 钩子（= `check.ps1`）；纯文档用 `--no-verify`（仍先跑过一次 `check.ps1`）。
