@@ -3345,6 +3345,9 @@ mod tests {
             (SkillId::S012, true, &[3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1]),
             (SkillId::S014, false, &[4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]),
             (SkillId::S017, false, &[4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0, 6.25]),
+            (SkillId::S006, false, &[3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6]),
+            (SkillId::S007, false, &[7.0, 7.8, 8.6, 9.4, 10.2, 11.0, 11.8, 12.6]),
+            (SkillId::S018, true, &[5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]),
         ];
         for (id, alt, ds) in table {
             let d = DefTable::def_for(*id, *alt);
@@ -3353,6 +3356,26 @@ mod tests {
                 assert!(
                     (got - want).abs() < 0.06,
                     "{id:?} alt={alt} L{}: got {got}, want {want} (098c w3a duration)",
+                    i + 1
+                );
+            }
+        }
+    }
+
+    /// w3a 逐级**射程**交叉校验（tooltip「Range」，098c w3a）。
+    #[test]
+    fn w3a_range_crosscheck() {
+        let table: &[(SkillId, bool, &[f64])] = &[
+            (SkillId::S011, false, &[770.0, 840.0, 910.0, 980.0, 1050.0, 1120.0, 1190.0, 1260.0, 1330.0]),
+            (SkillId::S012, false, &[700.0, 750.0, 800.0, 850.0, 900.0, 950.0, 1000.0, 1050.0, 1100.0]),
+        ];
+        for (id, alt, rs) in table {
+            let d = DefTable::def_for(*id, *alt);
+            for (i, want) in rs.iter().enumerate() {
+                let got = d.stats_at(i as u32 + 1).max_distance.to_num::<f64>();
+                assert!(
+                    (got - want).abs() < 0.5,
+                    "{id:?} alt={alt} L{}: got {got}, want {want} (098c w3a Range)",
                     i + 1
                 );
             }
@@ -3376,6 +3399,12 @@ mod tests {
             (SkillId::S010, false, &[5.4, 6.2, 7.0, 7.8, 8.6, 9.4]),
             (SkillId::S012, false, &[5.4, 5.8, 6.2, 6.6, 7.0, 7.4, 7.8]),
             (SkillId::S015, false, &[2.6, 2.8, 3.0, 3.2, 3.4, 3.6]),
+            // S008 陨石：tooltip「Damage: 7-14」的**上限 = 中心伤害**（`Zb`=12+2L → L1=14）。
+            (SkillId::S008, false, &[14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0]),
+            // S009 分裂弹：tooltip「Damage per missile」（碎片/子弹出伤，等价我们的 `gx`）。
+            (SkillId::S009, false, &[3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5]),
+            // S018B 力场：tooltip「Damage per second」（非线性逐级表）。
+            (SkillId::S018, true, &[2.25, 3.50, 4.25, 5.00, 5.75, 6.50, 7.25, 8.00]),
         ];
         for (id, alt, ds) in table {
             let d = DefTable::def_for(*id, *alt);
@@ -3384,6 +3413,28 @@ mod tests {
                 assert!(
                     (got - want).abs() < 0.06,
                     "{id:?} alt={alt} L{}: got {got}, want {want} (098c w3a tooltip Damage)",
+                    i + 1
+                );
+            }
+        }
+    }
+
+    /// 098c 部分技能的 tooltip 伤害是**每跳**值，工程侧存每秒 DPS（÷`je` 门控周期 0.18s）——反算校验。
+    #[test]
+    fn w3a_per_tick_damage_crosscheck() {
+        let table: &[(SkillId, bool, &[f64])] = &[
+            // S018A 黑洞：每 tick `0.1+0.2L`（tooltip L1=0.3 → L8=1.7）。
+            (SkillId::S018, false, &[0.3, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7]),
+            // S019A 锁链：每 tick `0.2×L`（tooltip L1=0.2 → L9=1.8）。
+            (SkillId::S019, false, &[0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8]),
+        ];
+        for (id, alt, ds) in table {
+            let d = DefTable::def_for(*id, *alt);
+            for (i, want) in ds.iter().enumerate() {
+                let per_tick = d.stats_at(i as u32 + 1).damage.to_num::<f64>() * 0.18;
+                assert!(
+                    (per_tick - want).abs() < 0.03,
+                    "{id:?} alt={alt} L{}: per-tick {per_tick}, want {want} (098c w3a)",
                     i + 1
                 );
             }
