@@ -337,6 +337,9 @@ pub enum ProjectileKind {
         /// **直伤**覆盖（098c `FB` 12220：S009 父弹命中固定 `mI(nr,Vr,3,1.4)`，
         /// 而 `gx` 是分级伤害、供碎裂出的碎片用）。`None` = 直伤用 `gx`。
         direct_dmg: Option<Fix64>,
+        /// S016 弹跳弹的**当前追踪目标**（098c `Fv[nr]`）：重定向（`Fc`）后置位，
+        /// 每帧由 `mb` 朝它制导 `vel = .98vel + .02*(speed·dir)`。其余技能恒 `None`。
+        chase: Option<u32>,
     },
     /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
     /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
@@ -396,6 +399,19 @@ const PLAYER_OBS_RESTITUTION: f64 = 0.5;
 fn warlock_ki_knockback(victim_mana: f64, gx: Fix64, ji: Fix64, atk_gn: f64, vic_hn: f64) -> Fix64 {
     let raw = Fix64::from_num((100.0 + victim_mana) * atk_gn * vic_hn) * gx * ji;
     raw.min(Fix64::from_num(W098B_KB_MAX_SPEED))
+}
+
+/// 玩家当前实际速度（单位/秒）：冲刺 / 强制位移（击退·冲锋）/ 自走 + 场效应（引力·回拉）。
+/// 对应 098c 的 `(Q[ii],S[ii])`（每 tick 位移）；S003 继承速度与 S016 提前量解算都用它。
+fn player_velocity(p: &crate::player::Player) -> Vec2 {
+    let base = if p.dash_active {
+        p.dash_vel
+    } else if let Some(c) = &p.control {
+        c.vel
+    } else {
+        p.cur_vel
+    };
+    base + p.pull
 }
 
 impl ProjectileKind {
@@ -997,6 +1013,7 @@ impl World {
                     is_fireball: false,
                     class: ProjClass::ReflectTransfer, // 凤凰弹（`tB` 未设 Ev）
                     direct_dmg: None,
+                    chase: None,
                 },
                 pos,
                 alive: true,
@@ -1818,7 +1835,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, chase, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 走三阶段状态机（见下）。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -1938,7 +1955,27 @@ impl World {
                     }
                     } // end !is_boomerang（回旋镖不走通用寿命/到点逻辑）
                     match proj {
-                        crate::skill::W098bProjKind::Straight | crate::skill::W098bProjKind::Bounce | crate::skill::W098bProjKind::Magma => {
+                        crate::skill::W098bProjKind::Straight | crate::skill::W098bProjKind::Magma => {
+                            pr.pos += *vel * dt;
+                        }
+                        crate::skill::W098bProjKind::Bounce => {
+                            // 098c `mb`(11118) 每帧制导：`vel = .98vel + .02*(speed·dir→目标)`。
+                            // `chase`（`Fv[nr]`）在重定向（`Fc`）时置位；目标死亡/不存在则清空（直线飞完）。
+                            if let Some(tid) = *chase {
+                                if let Some(t) = self.players.get(tid as usize) {
+                                    if t.alive {
+                                        let d = t.pos - pr.pos;
+                                        if d.length() > Fix64::ZERO {
+                                            *vel = *vel * Fix64::from_num(0.98)
+                                                + d.normalized() * *speed * Fix64::from_num(0.02);
+                                        }
+                                    } else {
+                                        *chase = None;
+                                    }
+                                } else {
+                                    *chase = None;
+                                }
+                            }
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Homing => {
@@ -2188,7 +2225,7 @@ impl World {
         let mut pushes: Vec<(u32, Vec2, f64, bool)> = Vec::new(); // (受害者 id, 击退方向, 时长, 098b 衰减模型?)
         let mut reflect_bullets: Vec<(usize, u32, Vec2)> = Vec::new(); // (proj 下标, 盾主, 弹→盾单位法线)
         // 098b 弹跳弹重定向：(proj 下标, 本次受害者, 衰减后 gx, 朝下一目标的速度)。
-        let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2)> = Vec::new();
+        let mut bounce_redirs: Vec<(usize, u32, Fix64, Vec2, u32)> = Vec::new(); // (proj, 已命中受害者, 新 gx, 新速度, 新追踪目标)
         // S005 反射盾：(proj 下标, 盾主, 弹→盾单位法线)。命中带盾目标且类别可反射时入队，不结算伤害。
         let mut reflect_projs: Vec<(usize, u32, Vec2)> = Vec::new();
         // 098b on_hit 控制效果：(受害者, Tied 时长)。
@@ -2871,7 +2908,24 @@ impl World {
                                 Some((_, nid)) => {
                                     let ndd = self.players[nid as usize].pos - pr.pos;
                                     if ndd.length_squared() > Fix64::ZERO {
-                                        bounce_redirs.push((pi, victim, new_gx, ndd.normalized() * *speed));
+                                        // 098c `Fc`(13764)：用**提前量**解算朝新目标的速度：
+                                        //   `dir` = 弹→目标单位向量；`tvel` = 目标当前速度；
+                                        //   `cross = tvel.x*dir.y + tvel.y*dir.x`（照搬 098c 的叉项写法）；
+                                        //   `disc = speed² - cross²`；若 `disc>=0`：
+                                        //     `lead = √disc - tvel·dir`，`vel = tvel + lead*dir`（模长 = speed）；
+                                        //   否则回退为直瞄（`CO(nr,900*.03,…)`）。
+                                        // 这样移动中的目标也能被拦截（旧实现是直瞄当前位置）。
+                                        let dir = ndd.normalized();
+                                        let tvel = player_velocity(&self.players[nid as usize]);
+                                        let cross = tvel.x * dir.y + tvel.y * dir.x;
+                                        let disc = *speed * *speed - cross * cross;
+                                        let new_vel = if disc >= Fix64::ZERO {
+                                            let lead = disc.sqrt() - tvel.dot(dir);
+                                            tvel + dir * lead
+                                        } else {
+                                            dir * *speed
+                                        };
+                                        bounce_redirs.push((pi, victim, new_gx, new_vel, nid));
                                         // 不置 alive=false：继续飞向下一目标
                                     } else {
                                         pr.alive = false;
@@ -2986,11 +3040,12 @@ impl World {
         }
         // 2c) 应用 098b 弹跳弹的重定向（衰减后的 gx、朝下一目标的速度、记录上一跳受害者）。
         // 098b 弹跳弹的 life 是**单跳飞行时间**（spec ev），故每跳重置寿命。
-        for (pi, last_victim, new_gx, new_vel) in bounce_redirs {
-            if let ProjectileKind::W098b { gx, vel, target, remaining, life, .. } = &mut ps[pi].kind {
+        for (pi, last_victim, new_gx, new_vel, chase) in bounce_redirs {
+            if let ProjectileKind::W098b { gx, vel, target, chase: ch, remaining, life, .. } = &mut ps[pi].kind {
                 *gx = new_gx;
                 *vel = new_vel;
                 *target = Some(last_victim); // 下一跳跳过本次受害者
+                *ch = Some(chase); // `Fv[nr]=新目标`：`mb` 每帧朝它制导
                 *remaining = *life; // 单跳寿命重置（ev 语义）
             }
         }
@@ -3108,6 +3163,7 @@ impl World {
                         is_fireball: true, // 分身射出的是火球（098c 会走 `ib` → 给施法者充能）
                         class: ProjClass::ReflectTransfer,
                         direct_dmg: None,
+                        chase: None,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -3358,6 +3414,7 @@ impl World {
                     is_fireball: false,
                     class: ProjClass::NoReflect, // S009 分裂子弹（Ev==9）
                     direct_dmg: None, // 碎片用分级 `gx`（098c `CB`：`2.5+.5*Xv`）
+                    chase: None,
                 },
                 pos,
                 alive: true,
@@ -3432,6 +3489,7 @@ impl World {
                     is_fireball: false,
                     class: ProjClass::Inert, // S014 回血球不与玩家碰撞
                     direct_dmg: None,
+                    chase: None,
                 },
                 pos,
                 alive: true,
@@ -4250,17 +4308,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 //   `Qb = dx*Q[ii]+dy*S[ii]`，取 `max(0,·)`；`bO(Nb, 900*.03 + Qb, …)`
                 //   ⇒ 弹速（每秒）= `900 + 前向速度`。施法者前冲时弹速更快。
                 if id == crate::skill::SkillId::S003 {
-                    let cvel = {
-                        let p = &world.players[idx as usize];
-                        let base = if p.dash_active {
-                            p.dash_vel
-                        } else if let Some(c) = &p.control {
-                            c.vel
-                        } else {
-                            p.cur_vel
-                        };
-                        base + p.pull
-                    };
+                    let cvel = player_velocity(&world.players[idx as usize]);
                     speed += cvel.dot(dir).max(Fix64::ZERO);
                 }
                 // 回旋镖（S004，098c Ub）：出程距离 = 点击距离 clamp[300, 800×(1+0.15×时间精通)]，
@@ -4408,6 +4456,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             } else {
                                 None
                             },
+                            // S016 弹跳弹的每帧制导目标在首次重定向（`Fc`）时置位；此处无。
+                            chase: None,
                         },
                         // S003 追踪弹：从施法者前方 `qb = 2 + Rv[施法者] + Cr` 处生成（098c `Pb` 11215）
                         // ——不影响则会**生成瞬间就碰到施法者自己**（因为它的 `bv=true` 允许自撞）。
@@ -6543,6 +6593,7 @@ mod tests {
                 is_fireball: true,
                 class: ProjClass::ReflectTransfer,
                 direct_dmg: None,
+                chase: None,
             },
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
@@ -6609,6 +6660,7 @@ mod tests {
                 is_fireball: false,
                 class: ProjClass::NoReflect,
                 direct_dmg: None,
+                chase: None,
             },
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
@@ -9179,6 +9231,69 @@ mod tests {
             .iter()
             .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, .. }));
         assert!(!still, "弹跳弹寿命逐跳耗尽后应消失，不得无限弹");
+    }
+
+    /// S016 弹跳弹重定向后的**每帧制导**（098c `mb` 11118：`vel = .98vel + .02*(speed·dir→目标)`）。
+    #[test]
+    fn s016_bounce_homes_toward_chase_target() {
+        let mut world = World::new(2, 1304);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::ZERO, d60(5.0)); // +y
+        world.players[1].move_target = None;
+        // 手动注入一枚朝 +x、追踪玩家 1 的弹跳弹。
+        world.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::W098b {
+                proj: crate::skill::W098bProjKind::Bounce,
+                vel: Vec2::new(Fix64::from_num(900.0), Fix64::ZERO),
+                speed: Fix64::from_num(900.0),
+                radius: Fix64::from_num(38.0),
+                remaining: Fix64::from_num(5.0),
+                life: Fix64::from_num(5.0),
+                gx: Fix64::from_num(6.0),
+                kb_ji: Fix64::from_num(1.15),
+                ignite: None,
+                blast: None,
+                target: None,
+                bob_phase: BoomerangPhase::Out,
+                on_hit: crate::skill::W098bOnHit::Ki,
+                debuff_dur: Fix64::ZERO,
+                lateral: Fix64::ZERO,
+                forward_dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                out_dist: Fix64::ZERO,
+                burst: 0,
+                emit_cooldown: Fix64::ZERO,
+                emit_angle: 0.0,
+                pillar_bounce: false,
+                pillar_rest: Fix64::ZERO,
+                lightning_dmg: Fix64::ZERO,
+                weaken_armed: false,
+                blast_dmg: Fix64::from_num(6.0),
+                blast_floor: Fix64::ZERO,
+                blast_on_expiry: false,
+                is_fireball: false,
+                class: ProjClass::ReflectTransfer,
+                direct_dmg: None,
+                chase: Some(1),
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        world.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        let vel = world
+            .projectiles
+            .iter()
+            .find_map(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, vel, .. } => Some(vel),
+                _ => None,
+            })
+            .expect("弹跳弹应仍在场");
+        assert!(vel.y > Fix64::ZERO, "应朝 +y 目标偏转，实际 {vel:?}");
+        assert!(vel.x < Fix64::from_num(900.0), "前向速度应因制导略降，实际 {vel:?}");
     }
 
     #[test]
