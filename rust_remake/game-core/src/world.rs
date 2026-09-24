@@ -4246,6 +4246,23 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                 };
+                // S003 追踪弹（098c `Pb` 11285）：继承施法者**前向**速度分量
+                //   `Qb = dx*Q[ii]+dy*S[ii]`，取 `max(0,·)`；`bO(Nb, 900*.03 + Qb, …)`
+                //   ⇒ 弹速（每秒）= `900 + 前向速度`。施法者前冲时弹速更快。
+                if id == crate::skill::SkillId::S003 {
+                    let cvel = {
+                        let p = &world.players[idx as usize];
+                        let base = if p.dash_active {
+                            p.dash_vel
+                        } else if let Some(c) = &p.control {
+                            c.vel
+                        } else {
+                            p.cur_vel
+                        };
+                        base + p.pull
+                    };
+                    speed += cvel.dot(dir).max(Fix64::ZERO);
+                }
                 // 回旋镖（S004，098c Ub）：出程距离 = 点击距离 clamp[300, 800×(1+0.15×时间精通)]，
                 // 前向 1500/s 匀减速到出程点归零后回程。life 由固定射程(1.6×speed)改为「出程+回程」总时长兜底。
                 let boomerang_out_dist = if proj == crate::skill::W098bProjKind::Boomerang {
@@ -7386,6 +7403,42 @@ mod tests {
             guard += 1;
         }
         assert!(world.players[1].hp < hp1, "追踪弹（900/s）应追上移速 210 的目标并造成伤害");
+    }
+
+    /// S003 追踪弹继承施法者**前向**速度（098c `Pb` 11285：`bO(Nb, 900*.03 + Qb, …)`，
+    /// `Qb = max(0, (Q,S)·dir)`）——施法者前冲时弹速 = 900 + 前向速度。
+    #[test]
+    fn s003_inherits_caster_forward_speed() {
+        let mut world = World::new(2, 1302);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(20.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        // 施法者以 210/s 向 +x 前冲（直接注入当前速度）。
+        world.players[0].cur_vel = Vec2::new(Fix64::from_num(210.0), Fix64::ZERO);
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S003, Some(Vec2::new(d60(20.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let speed = world
+            .projectiles
+            .iter()
+            .find_map(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Homing, speed, .. } => {
+                    Some(speed.to_num::<f64>())
+                }
+                _ => None,
+            })
+            .expect("应生成 S003 追踪弹");
+        assert!(speed > 900.0, "应继承前向速度（应为 900+前向），实际 {speed}");
     }
 
     /// S004 回旋镖：出程后回程拉回施法者，回到附近即收回消失。
