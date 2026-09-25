@@ -168,6 +168,10 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
             wu8(o, 15);
             wu64(o, v.to_bits());
         }
+        BuffKind::ChainSpeed(v) => {
+            wu8(o, 17);
+            wu64(o, v.to_bits());
+        }
         BuffKind::GnMult(v) => {
             wu8(o, 16);
             wu64(o, v.to_bits());
@@ -192,6 +196,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         10 => BuffKind::Weakened,
         11 => BuffKind::Silenced,
         15 => BuffKind::SpeedSteal(f64::from_bits(u64at(b, p)?)),
+        17 => BuffKind::ChainSpeed(f64::from_bits(u64at(b, p)?)),
         16 => BuffKind::GnMult(f64::from_bits(u64at(b, p)?)),
         13 => BuffKind::Mirror,
         14 => BuffKind::Haste,
@@ -258,6 +263,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wu8(o, p.catastrophe_stage);
     // 熔岩靴激活 CD（M5）
     wfix(o, p.lava_boot_cd);
+    wfix(o, p.chain_action_cd);
     // 魔法张力 + 伤害成长（098c，D9 批次1）
     wf64(o, p.mana);
     wf64(o, p.growth);
@@ -427,6 +433,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     };
     let catastrophe_stage = u8at(b, p)?;
     let lava_boot_cd = fixat(b, p)?;
+    let chain_action_cd = fixat(b, p)?;
     let mana = f64::from_bits(u64at(b, p)?);
     let growth = f64::from_bits(u64at(b, p)?);
     let aegis_charged = u8at(b, p)? != 0;
@@ -548,6 +555,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.rewind = rewind;
     pl.catastrophe_stage = catastrophe_stage;
     pl.lava_boot_cd = lava_boot_cd;
+    pl.chain_action_cd = chain_action_cd;
     pl.mana = mana;
     pl.growth = growth;
     pl.aegis_charged = aegis_charged;
@@ -645,7 +653,21 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Chain { dir, speed, damage, heal, ratio, ratio_decay, life, last_target, owner, max_chain, hit_count, turn_delay } => { wu8(o, 9); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *heal); wfix(o, *ratio); wfix(o, *ratio_decay); wfix(o, *life); wu32(o, *last_target); wu32(o, *owner); wu32(o, *max_chain); wu32(o, *hit_count); wfix(o, *turn_delay); }
         PK::BonusBomb { dir, speed, damage, radius, push_power, push_time, remaining, owner } => { wu8(o, 10); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); wu32(o, *owner); }
         PK::Returner { dir, speed, damage, radius, push_power, push_time, owner } => { wu8(o, 11); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wu32(o, *owner); }
-        PK::Tether { owner, target, damage_per_sec, beam_dps, pull_speed, remaining, beam } => { wu8(o, 12); wu32(o, *owner); wu32(o, *target); wfix(o, *damage_per_sec); wfix(o, *beam_dps); wfix(o, *pull_speed); wfix(o, *remaining); wu8(o, *beam as u8); }
+        PK::Tether { owner, anchor, damage_per_sec, beam_dps, pull, remaining, beam, red } => {
+            wu8(o, 12);
+            wu32(o, *owner);
+            match anchor 
+            {
+                crate::world::TetherAnchor::Player(a) => { wu8(o, 0); wu32(o, *a); }
+                crate::world::TetherAnchor::Obstacle(a) => { wu8(o, 1); wu32(o, *a); }
+            }
+            wfix(o, *damage_per_sec);
+            wfix(o, *beam_dps);
+            wu8(o, match pull { crate::world::TetherPull::TargetToOwner => 0, crate::world::TetherPull::OwnerToAnchor => 1, crate::world::TetherPull::None => 2 });
+            match remaining { Some(v) => { wu8(o, 1); wfix(o, *v); } None => wu8(o, 0) }
+            wu8(o, *beam as u8);
+            wu8(o, *red as u8);
+        }
         PK::Gravity { dir, speed, radius, pull_speed, damage_per_sec, remaining } => { wu8(o, 13); wvec(o, *dir); wfix(o, *speed); wfix(o, *radius); wfix(o, *pull_speed); wfix(o, *damage_per_sec); wfix(o, *remaining); }
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining, heal_team } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); wu8(o, *heal_team as u8); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
@@ -717,7 +739,26 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
         9 => PK::Chain { dir: vecat(b, p)?, speed: fixat(b, p)?, damage: fixat(b, p)?, heal: fixat(b, p)?, ratio: fixat(b, p)?, ratio_decay: fixat(b, p)?, life: fixat(b, p)?, last_target: u32at(b, p)?, owner: u32at(b, p)?, max_chain: u32at(b, p)?, hit_count: u32at(b, p)?, turn_delay: fixat(b, p)? },
         10 => PK::BonusBomb { dir: vecat(b, p)?, speed: fixat(b, p)?, damage: fixat(b, p)?, radius: fixat(b, p)?, push_power: fixat(b, p)?, push_time: fixat(b, p)?, remaining: fixat(b, p)?, owner: u32at(b, p)? },
         11 => PK::Returner { dir: vecat(b, p)?, speed: fixat(b, p)?, damage: fixat(b, p)?, radius: fixat(b, p)?, push_power: fixat(b, p)?, push_time: fixat(b, p)?, owner: u32at(b, p)? },
-        12 => PK::Tether { owner: u32at(b, p)?, target: u32at(b, p)?, damage_per_sec: fixat(b, p)?, beam_dps: fixat(b, p)?, pull_speed: fixat(b, p)?, remaining: fixat(b, p)?, beam: u8at(b, p)? != 0 },
+        12 => {
+            let owner = u32at(b, p)?;
+            let anchor = match u8at(b, p)? {
+                0 => crate::world::TetherAnchor::Player(u32at(b, p)?),
+                1 => crate::world::TetherAnchor::Obstacle(u32at(b, p)?),
+                _ => return None,
+            };
+            let damage_per_sec = fixat(b, p)?;
+            let beam_dps = fixat(b, p)?;
+            let pull = match u8at(b, p)? {
+                0 => crate::world::TetherPull::TargetToOwner,
+                1 => crate::world::TetherPull::OwnerToAnchor,
+                2 => crate::world::TetherPull::None,
+                _ => return None,
+            };
+            let remaining = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
+            let beam = u8at(b, p)? != 0;
+            let red = u8at(b, p)? != 0;
+            PK::Tether { owner, anchor, damage_per_sec, beam_dps, pull, remaining, beam, red }
+        }
         13 => PK::Gravity { dir: vecat(b, p)?, speed: fixat(b, p)?, radius: fixat(b, p)?, pull_speed: fixat(b, p)?, damage_per_sec: fixat(b, p)?, remaining: fixat(b, p)? },
         14 => PK::Star { owner: u32at(b, p)?, radius: fixat(b, p)?, damage_per_sec: fixat(b, p)?, heal_per_sec: fixat(b, p)?, remaining: fixat(b, p)?, heal_team: u8at(b, p)? != 0 },
         15 => PK::BindLine { dir: vecat(b, p)?, speed: fixat(b, p)?, count: u32at(b, p)?, fired: u32at(b, p)?, bind_time: fixat(b, p)?, from: vecat(b, p)?, end: vecat(b, p)? },
@@ -884,6 +925,7 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
     }
     wu32(&mut o, w.obstacles.len() as u32);
     for ob in &w.obstacles {
+        wu32(&mut o, ob.id);
         wvec(&mut o, ob.pos);
         wfix(&mut o, ob.radius);
         wu32(&mut o, ob.hp);
@@ -973,7 +1015,7 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
     let no = count_at(b, &mut p, MAX_DECODE_OBSTACLES)?;
     let mut obstacles = Vec::with_capacity(no);
     for _ in 0..no {
-        obstacles.push(Obstacle { pos: vecat(b, &mut p)?, radius: fixat(b, &mut p)?, hp: u32at(b, &mut p)? });
+        obstacles.push(Obstacle { id: u32at(b, &mut p)?, pos: vecat(b, &mut p)?, radius: fixat(b, &mut p)?, hp: u32at(b, &mut p)? });
     }
     let npr = count_at(b, &mut p, MAX_DECODE_PROJECTILES)?;
     let mut projectiles = Vec::with_capacity(npr);

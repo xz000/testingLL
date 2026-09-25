@@ -94,6 +94,27 @@ pub enum ProjClass {
     Inert,
 }
 
+/// 链（Tether）的锚点：术士玩家或静态障碍（柱子）。
+///
+/// 098c 把链挂在施法者的 `Fv` 上、指向命中对象（class1 术士或 class3 柱子，raw `war3map.j` 4286）。
+/// 我方用稳定 id 引用柱子（`remove` 不变索引，S013A 换位只改 `pos`）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TetherAnchor {
+    Player(u32),
+    Obstacle(u32),
+}
+
+/// 链的拉拽模式（098c `DA` 主循环 4294-4323）：
+/// - `TargetToOwner`：拉目标向施法者（蓝链命中术士，4312）；
+/// - `OwnerToAnchor`：拉施法者向锚点（蓝链命中柱子 4321 / 红链命中敌人 4298）；
+/// - `None`：无拉拽（红链命中队友/柱子，只做 `YI` 切割）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TetherPull {
+    TargetToOwner,
+    OwnerToAnchor,
+    None,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ProjectileKind {
     /// 延时爆炸的石头：倒计时结束对半径内造成伤害+击退
@@ -197,16 +218,24 @@ pub enum ProjectileKind {
         push_time: Fix64,
         owner: u32,
     },
-    /// 回拉/束缚线（Y1/Y1b）：记录绑定的目标玩家，每帧把它拉向施法者并持续掉血（beam 时额外扫射）。
+    /// 回拉/束缚线（S019 锁链）：把锚点与施法者相连，每帧按 `pull` 拉拽 + 持续掉血（beam 时额外沿线切割）。
+    ///
+    /// 098c：持续效果在 `DA` 主循环（raw 4285-4341），不在弹体回调；命中回调 `Sc`/`sc` 只建立
+    /// `Fv[caster]=hit` 并销毁弹体。`remaining` 对应 098c 的定时断链（仅红链命中队友/柱子时
+    /// `LO(Pc, 4.5×jn)`，raw 7265）：`None` = 无定时（蓝链任意锚点 / 红链敌人）。
     Tether {
         owner: u32,
-        target: u32,
+        anchor: TetherAnchor,
         damage_per_sec: Fix64,
-        /// `beam` 沿线切割的每秒伤害（098c 红链 `YI`：`.7+.3×Yr`/je，与本体伤害不同）。
+        /// `beam` 沿线切割的每秒伤害（098c 红链 `YI`：`.7+.3×Yr`/je，仅队友/柱子锚点）。
         beam_dps: Fix64,
-        pull_speed: Fix64,
-        remaining: Fix64,
+        pull: TetherPull,
+        /// `None` = 无自然断裂（蓝柱链 / 蓝术士链 / 红敌链）；`Some(t)` = t 秒后断（红链队友/柱子）。
+        remaining: Option<Fix64>,
         beam: bool,
+        /// 形态（仅客户端视觉用）：`false`=Hook（蓝链，098c `DRAM`）/ `true`=Induction（红链，`DRAL`/`AFOD`）。
+        /// 红链打**敌人**时 `beam=false` 但仍是红形态 —— 故颜色不能只看 `beam`。
+        red: bool,
     },
     /// 镜像分身（C 栏）：跟随施法者、模仿移动并周期施放火球的分身。
     /// `offset` 为相对施法者的固定偏移；`fire_timer` 倒计时到 0 则向最近敌人发射火球（伤害 = `fire_dmg`）。
@@ -511,6 +540,9 @@ const ORB_SPEED: f64 = 20.0 / 0.03;
 /// 用圆盘描述，几何与玩家一致，但不参与名次/击杀/死亡判定。
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Obstacle {
+    /// 稳定 id（每轮布局按 0..n-1 顺序赋值）。
+    /// 链锚点用它引用柱子：`remove` 不影响其他 id，S013A 换位只改 `pos`、id 不变（链随柱走）。
+    pub id: u32,
     pub pos: Vec2,
     pub radius: Fix64,
     /// 柱子 HP（098c nx=40；被弹体伤害摧毁，每轮重生成时恢复）。
@@ -520,6 +552,7 @@ pub struct Obstacle {
 impl Obstacle {
     pub fn new(pos: Vec2, radius: f64) -> Self {
         Obstacle {
+            id: 0,
             pos,
             radius: Fix64::from_num(radius),
             hp: 40, // 098c nx=40
@@ -652,6 +685,17 @@ enum KbAttn {
     Fixed,
     /// `lI = 1 - d/k`（S001 天罚 / S021 虔诚：`mI(ii,gX,cX,1-cO/$3E8)`）。
     Mul(Fix64),
+}
+
+/// 098c 天罚系（S001/S020/S021）的「Denied 断链」模式（`mC`/`qC`/`QC`）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum DeniedMode {
+    /// 非天罚系：不做 Denied。
+    Off,
+    /// S001/S021（`mC`/`QC`）：仅当被链接的敌人处于特殊状态（危险地形/风步/凤凰态）才断。
+    Conditional,
+    /// S020（`qC`）：**无条件**断被链接敌人的链。
+    Unconditional,
 }
 
 impl World {
@@ -894,11 +938,10 @@ impl World {
             }
         }
 
-        // 3b) S006 回溯收尾：断掉所有绑定到回溯者的链（098c `RR` 的 `aR`/`VR`：Dispels link）。
+        // 3b) S006 回溯收尾（098c `RR`）：断自己拥有的链（`aR(ii)`）+ 挣脱**敌方**钩在自己身上的链（`VR(ii,false)`）。
         for id in rewind_done {
-            self.projectiles.retain(|pr| {
-                !matches!(&pr.kind, ProjectileKind::Tether { owner, target, .. } if *owner == id || *target == id)
-            });
+            self.sever_links_owned_by(id);
+            self.sever_links_on(id, false);
         }
 
         // 4) 场地收缩（随时间）—— 试验场不缩圈
@@ -1112,6 +1155,8 @@ impl World {
         let mut just_cast = vec![false; self.players.len()];
         // F 槽施法替换快照（B3：化身→灾变 S020 / 国王→虔诚 S021），避免借用冲突。
         let f_overrides = self.f_override.clone();
+        // S031「Link action」待结算队列 (玩家 id, 是否 Induce)：链激活时可用。
+        let mut chain_actions: Vec<(u32, bool)> = Vec::new();
 
         // a) 先应用新的施法请求（占用本帧的人手）
         for (idx, (p, pi)) in self.players.iter_mut().zip(input.iter()).enumerate() {
@@ -1123,6 +1168,21 @@ impl World {
                 continue;
             }
             if let Some((skill, target)) = pi.cast {
+                // S031「Link action」（098c `Arpm`）：链激活时可用（L1 Release / L2 Induce）。
+                // 链激活期间 S019 不可用（098c 隐藏 S019、显示 S031）。只收集，稍后统一结算。
+                let chain_beam = self.projectiles.iter().find_map(|pr| match &pr.kind {
+                    ProjectileKind::Tether { owner, beam, .. } if *owner == idx as u32 => Some(*beam),
+                    _ => None,
+                });
+                if skill == SkillId::S031 {
+                    if let Some(beam) = chain_beam {
+                        chain_actions.push((idx as u32, beam));
+                    }
+                    continue;
+                }
+                if skill == SkillId::S019 && chain_beam.is_some() {
+                    continue; // 链已存在：忽略（098c S019 不可用）
+                }
                 // F 槽替换（模式 3/4）：天罚 S001 在化身/国王手里变成灾变/虔诚。
                 let skill = if skill == SkillId::S001 {
                     f_overrides.get(idx).copied().flatten().unwrap_or(skill)
@@ -1174,6 +1234,49 @@ impl World {
                     p.end_windwalk();
                     just_cast[idx] = true;
                 }
+            }
+        }
+
+        // S031 结算（`players` 借用已释放）：L2 Induce → 断链定时器 `+3×jn` + 自伤 4 + 1s CD；
+        // L1 Release → 断链（098c `aR`）。无链则忽略。
+        for (idx, induce) in chain_actions.drain(..) {
+            let (jn, cd_ok, alive) = match self.players.get(idx as usize) {
+                Some(p) => (p.jn(), p.chain_action_cd <= Fix64::ZERO, p.alive),
+                None => continue,
+            };
+            if !alive || (induce && !cd_ok) {
+                continue;
+            }
+            let mut matched = false;
+            for pr in self.projectiles.iter_mut() {
+                if let ProjectileKind::Tether { owner, remaining, .. } = &mut pr.kind {
+                    if *owner != idx {
+                        continue;
+                    }
+                    if induce {
+                        if let Some(rem) = remaining {
+                            *rem += Fix64::from_num(3.0 * jn);
+                        }
+                    } else {
+                        pr.alive = false;
+                    }
+                    matched = true;
+                    break;
+                }
+            }
+            if matched {
+                if induce {
+                    if let Some(p) = self.players.get_mut(idx as usize) {
+                        p.chain_action_cd = Fix64::from_num(1.0);
+                        // 098c `FX(ii,4)`：自伤 4，保底 0.5（不可自杀）。
+                        p.hp = if p.hp <= Fix64::from_num(4.5) {
+                            Fix64::from_num(0.5)
+                        } else {
+                            p.hp - Fix64::from_num(4.0)
+                        };
+                    }
+                }
+                just_cast[idx as usize] = true;
             }
         }
 
@@ -1270,37 +1373,49 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::Tether { owner, target, pull_speed, .. } => {
-                    // 回拉线（锁链）：`pull_speed` 的**符号**编码拉拽方向——
-                    //   > 0：把绑定目标拉向施法者（**蓝链** ChainPull，原 Y1 回拉线语义）
-                    //   < 0：把施法者拉向绑定目标（**红链** RedChain，文档「把你拉向敌人」）
-                    // 用符号而非新增字段，避免改动 Tether 结构与序列化。
-                    let sp = pull_speed;
-                    if sp >= Fix64::ZERO {
-                        let from = self.players.get(owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
-                        if let Some(t) = self.players.get_mut(target as usize) {
-                            if t.alive {
-                                let d = from - t.pos;
-                                let dsq = d.length_squared();
-                                if dsq > Fix64::from_num(1.1) {
-                                    t.pull += d.normalized() * sp;
-                                }
-                            }
+                ProjectileKind::Tether { owner, anchor, pull, .. } => {
+                    // 链的拉拽（098c `DA` 4294-4323，拉拽 1.4/tick ÷0.03 = 46.7/s）：
+                    //   TargetToOwner：拉锚点术士向施法者（蓝链命中术士）
+                    //   OwnerToAnchor：拉施法者向锚点（蓝链命中柱子 / 红链命中敌人）
+                    //   None：无拉拽（红链命中队友/柱子，只做 YI 切割）
+                    const PULL_SPEED: f64 = 1.4 / 0.03;
+                    let sp = Fix64::from_num(PULL_SPEED);
+                    let anchor_pos = match anchor {
+                        TetherAnchor::Player(pid) => {
+                            self.players.get(pid as usize).filter(|p| p.alive).map(|p| p.pos)
                         }
-                    } else {
-                        // 红链：反向——把施法者拉向目标。
-                        let to = self.players.get(target as usize).map(|p| p.pos);
-                        if let Some(to) = to {
-                            if let Some(o) = self.players.get_mut(owner as usize) {
-                                if o.alive {
-                                    let d = to - o.pos;
-                                    let dsq = d.length_squared();
-                                    if dsq > Fix64::from_num(1.1) {
-                                        o.pull += d.normalized() * (-sp);
+                        TetherAnchor::Obstacle(oid) => {
+                            self.obstacles.iter().find(|o| o.id == oid).map(|o| o.pos)
+                        }
+                    };
+                    match pull {
+                        TetherPull::TargetToOwner => {
+                            if let (Some(opos), TetherAnchor::Player(pid)) =
+                                (self.players.get(owner as usize).map(|p| p.pos), anchor)
+                            {
+                                if let Some(t) = self.players.get_mut(pid as usize) {
+                                    if t.alive {
+                                        let d = opos - t.pos;
+                                        if d.length_squared() > Fix64::from_num(1.1) {
+                                            t.pull += d.normalized() * sp;
+                                        }
                                     }
                                 }
                             }
                         }
+                        TetherPull::OwnerToAnchor => {
+                            if let Some(apos) = anchor_pos {
+                                if let Some(o) = self.players.get_mut(owner as usize) {
+                                    if o.alive {
+                                        let d = apos - o.pos;
+                                        if d.length_squared() > Fix64::from_num(1.1) {
+                                            o.pull += d.normalized() * sp;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        TetherPull::None => {}
                     }
                 }
                 _ => {}
@@ -1378,6 +1493,11 @@ impl World {
                 alive: true,
             });
         }
+    }
+
+    /// 柱子锚点解析：按稳定 id 取当前坐标；`None` = 柱子已不存在（被摧毁/未生成）。
+    pub fn obstacle_pos_by_id(&self, id: u32) -> Option<Vec2> {
+        self.obstacles.iter().find(|o| o.id == id).map(|o| o.pos)
     }
 
     /// 玩家与圆形障碍的分离：把重叠进柱子的玩家沿圆心连线推出去（纯位置修正，无伤害）。
@@ -1815,18 +1935,35 @@ impl World {
                     }
                     pr.pos += *dir * (*speed * dt);
                 }
-                ProjectileKind::Tether { owner, target, remaining, .. } => {
-                    *remaining -= dt;
-                    // 098c `M1` 持久链接断裂条件：`Rr ≤ 89`（拉到位就松开）或任一方不存在。
-                    // （`900×(1+.1×射程)` 是**飞行阶段**弹体的最大射程，与持久链接无关。）
-                    let ended = match (
-                        self.players.get(*owner as usize),
-                        self.players.get(*target as usize),
-                    ) {
-                        (Some(o), Some(t)) => (t.pos - o.pos).length() <= Fix64::from_num(89.0),
-                        _ => true, // 任一方不存在 → 断
+                ProjectileKind::Tether { owner, anchor, remaining, beam, .. } => {
+                    // 098c 断链（`DA` 4288 / 4294-4338）：
+                    //   任一端不存在（施法者死亡 / 柱被摧毁）→ `aR`；
+                    //   `Rr≤89` 仅对**玩家锚点且非红链队友/柱**（`beam=false`）生效；
+                    //   红链队友/柱子另有定时（`remaining: Some`）。
+                    let owner_alive = self.players.get(*owner as usize).is_some_and(|p| p.alive);
+                    let anchor_alive = match anchor {
+                        TetherAnchor::Player(a) => self.players.get(*a as usize).is_some_and(|p| p.alive),
+                        TetherAnchor::Obstacle(oid) => self.obstacles.iter().any(|o| o.id == *oid),
                     };
-                    if *remaining < eps || ended {
+                    let mut ended = !owner_alive || !anchor_alive;
+                    if !ended && !*beam {
+                        if let TetherAnchor::Player(a) = anchor {
+                            if let (Some(o), Some(t)) =
+                                (self.players.get(*owner as usize), self.players.get(*a as usize))
+                            {
+                                if (t.pos - o.pos).length() <= Fix64::from_num(89.0) {
+                                    ended = true;
+                                }
+                            }
+                        }
+                    }
+                    if let Some(rem) = remaining {
+                        *rem -= dt;
+                        if *rem < eps {
+                            ended = true;
+                        }
+                    }
+                    if ended {
                         pr.alive = false;
                     }
                 }
@@ -2114,6 +2251,9 @@ impl World {
             }
         }
 
+        // 链弹撞柱时建立锚定 Tether（1b 循环借用 `ps`，不能直接 push，故用旁路队列）。
+        let mut pillar_tether_spawns: Vec<Projectile> = Vec::new();
+
         // 1b) 弹体撞障碍（柱子）。
         // 旧代码只判了回旋镖，导致火球/滚动火球/导弹/香蕉等**直接穿过柱子**打到后面的人。
         // 现在对所有「会飞行的弹体」统一判定：
@@ -2216,6 +2356,65 @@ impl World {
                             self.combat_events.push(CombatEvent::PillarBreak { pos: ppos });
                             self.obstacles.remove(oi);
                         }
+                    } else if let ProjectileKind::W098b {
+                        on_hit: crate::skill::W098bOnHit::ChainPull,
+                        gx,
+                        ..
+                    } = &mut pr.kind
+                    {
+                        // 蓝链撞柱（098c `Sc` 建立 `Fv[caster]=柱`；`DA` 4321 `Q[caster]+=1.4×dir`）。
+                        // 链对柱子**不掉血、不引爆**；弹体销毁，链接锚定该柱（`Obstacle.id`）。
+                        let oid = self.obstacles[oi].id;
+                        if !self.players[pr.owner as usize].mirror_immune() {
+                            pillar_tether_spawns.push(Projectile {
+                                owner: pr.owner,
+                                kind: ProjectileKind::Tether {
+                                    owner: pr.owner,
+                                    anchor: TetherAnchor::Obstacle(oid),
+                                    damage_per_sec: *gx,
+                                    beam_dps: Fix64::ZERO,
+                                    pull: TetherPull::OwnerToAnchor,
+                                    remaining: None, // 098c `DA` 4294 `nv[Vr]==3` 恒真 → 柱链不断
+                                    beam: false,
+                                    red: false,
+                                },
+                                pos: pr.pos,
+                                alive: true,
+                            });
+                        }
+                        pr.alive = false;
+                    } else if let ProjectileKind::W098b {
+                        on_hit: crate::skill::W098bOnHit::RedChain,
+                        gx,
+                        lightning_dmg,
+                        ..
+                    } = &mut pr.kind
+                    {
+                        // 红链撞柱（098c `sc` 的 `nv[Vr]==3` 分支 + `DA` 4318）：`YI` 沿线切割
+                        // + 施法者 +100 移速 4s（`sc` 7260）+ `4.5×jn` 定时断链（7265）。
+                        let oid = self.obstacles[oi].id;
+                        if !self.players[pr.owner as usize].mirror_immune() {
+                            let jn = self.players.get(pr.owner as usize).map(|p| p.jn()).unwrap_or(1.0);
+                            pillar_tether_spawns.push(Projectile {
+                                owner: pr.owner,
+                                kind: ProjectileKind::Tether {
+                                    owner: pr.owner,
+                                    anchor: TetherAnchor::Obstacle(oid),
+                                    damage_per_sec: *gx,
+                                    beam_dps: *lightning_dmg / Fix64::from_num(0.18),
+                                    pull: TetherPull::None,
+                                    remaining: Some(Fix64::from_num(4.5 * jn)),
+                                    beam: true,
+                                    red: true,
+                                },
+                                pos: pr.pos,
+                                alive: true,
+                            });
+                            if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                o.add_buff_fixed(BuffKind::ChainSpeed(100.0), 4.0);
+                            }
+                        }
+                        pr.alive = false;
                     } else {
                         // 098c 柱子可摧毁（nx=40，D9 批次3）：火球类直伤弹命中扣 HP，归零移除
                         //（每轮 re-layout 即重生成）。其余弹体被挡下消失。
@@ -2497,23 +2696,49 @@ impl World {
                         returners.push((*owner, pr.pos, bdir, Fix64::from_num(14.0)));
                     }
                 }
-                ProjectileKind::Tether { owner, target, damage_per_sec, beam_dps, beam, .. } => {
-                    // 回拉线：绑定目标持续掉血；beam=红链 `YI` 沿路径切割（用 `beam_dps`，与本体伤害不同）。
-                    // 镜像分身免疫：被链目标若处于 Mirror 期间，不结算链伤害/拉拽。
-                    if !self.players.get(*target as usize).is_some_and(|p| p.has_buff(BuffKind::Mirror)) {
-                        dot_events.push((*target, *damage_per_sec * dt, Some(*owner)));
+                ProjectileKind::Tether { owner, anchor, damage_per_sec, beam_dps, beam, .. } => {
+                    // 本体伤害只对**敌方术士锚点**结算（098c `DA` 4301/4308 仅 `cn!=cn`；柱子/队友不掉血）。
+                    // 镜像分身免疫：被链目标处于 Mirror 期间不结算。
+                    let anchor_player = match anchor {
+                        TetherAnchor::Player(a) => Some(*a),
+                        TetherAnchor::Obstacle(_) => None,
+                    };
+                    if let Some(a) = anchor_player {
+                        let owner_team = self.players.get(*owner as usize).map(|p| p.team);
+                        let enemy = self.players.get(a as usize).map(|p| p.team) != owner_team;
+                        if enemy
+                            && !self.players.get(a as usize).is_some_and(|p| p.has_buff(BuffKind::Mirror))
+                        {
+                            dot_events.push((a, *damage_per_sec * dt, Some(*owner)));
+                        }
                     }
                     if *beam {
-                        // 沿施法者→目标线段穿过的所有敌人（098c `YI`：`.7+.3×Yr`/je）。
+                        // 红链 `YI`：沿 施法者↔锚点 线段穿过的所有敌人（098c `.7+.3×Yr`/je）。
                         let from = self.players.get(*owner as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
-                        let to = self.players.get(*target as usize).map(|p| p.pos).unwrap_or(from);
-                        for j in 0..n {
-                            let p = &self.players[j];
-                            if !p.alive || p.id == *owner || p.id == *target {
-                                continue;
-                            }
-                            if point_near_segment(p.pos, from, to, p.radius) {
-                                dot_events.push((p.id, *beam_dps * dt, Some(*owner)));
+                        let to = anchor_player
+                            .and_then(|a| self.players.get(a as usize).map(|p| p.pos))
+                            .or_else(|| match anchor {
+                                TetherAnchor::Obstacle(oid) => {
+                                    self.obstacles.iter().find(|o| o.id == *oid).map(|o| o.pos)
+                                }
+                                _ => None,
+                            });
+                        if let Some(to) = to {
+                            // 098c `YI`：只切**异队**对象（`if cn[Vv[gX]]!=cn[jI]`）；队友/施法者不受伤。
+                            let owner_team = self.players.get(*owner as usize).map(|p| p.team);
+                            for j in 0..n {
+                                let p = &self.players[j];
+                                if !p.alive
+                                    || p.id == *owner
+                                    || Some(p.id) == anchor_player
+                                    || Some(p.team) == owner_team
+                                {
+                                    continue;
+                                }
+                                // 098c `YI`：垂直距离 < `Lr=75` 且投影在两端之间的敌人（矩形，**不加目标半径**）。
+                                if point_in_chain_beam(p.pos, from, to, Fix64::from_num(CHAIN_BEAM_HALF_WIDTH)) {
+                                    dot_events.push((p.id, *beam_dps * dt, Some(*owner)));
+                                }
                             }
                         }
                     }
@@ -2679,8 +2904,11 @@ impl World {
                             Some(last) => nearest_hit_any_opt_skip(&self.players, pr.pos, pr.owner, *radius, true, Some(last)),
                             None => nearest_hit(&self.players, pr.pos, pr.owner, *radius),
                         }
-                    } else if *on_hit == crate::skill::W098bOnHit::RedChain {
-                        // 红链可命中友军（触发闪电，098c sc）。
+                    } else if *on_hit == crate::skill::W098bOnHit::RedChain
+                        || *on_hit == crate::skill::W098bOnHit::ChainPull
+                    {
+                        // 链弹可命中**任意术士（含队友）**：098c 碰撞过滤 `(cn!=cn) or (Nv[gX] and Nv[fA])`
+                        // （术士 `Nv=true`，raw 2712/4389）；蓝链/红链命中回调都只建立链接（`Sc`/`sc`）。
                         nearest_hit_any(&self.players, pr.pos, pr.owner, *radius)
                     } else {
                         nearest_hit(&self.players, pr.pos, pr.owner, *radius)
@@ -2793,21 +3021,22 @@ impl World {
                                 debuffs.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
                             }
                             crate::skill::W098bOnHit::ChainPull => {
-                                // 锁链（蓝链）：落地为持久 Tether——逐帧对绑定目标施加每秒伤害
-                                //（damage_per_sec=gx=0.2+0.1×L），并把目标拉向施法者（pull_speed 取正）。
-                                debuffs.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
+                                // 锁链·钩引（蓝链）：命中术士 → 锚定它并把目标拉向施法者（098c `DA` 4312）；
+                                // 命中柱子走撞柱分支（拉施法者向柱子，4321）。
+                                // 098c 链**无 Tied**；伤害 `0.2+0.2(L-1)`/0.18s 仅敌方（伤害分支按队伍判定）。
                                 // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
                                 if !self.players[victim as usize].mirror_immune() {
                                     tether_spawns.push(Projectile {
                                         owner: pr.owner,
                                         kind: ProjectileKind::Tether {
                                             owner: pr.owner,
-                                            target: victim,
+                                            anchor: TetherAnchor::Player(victim),
                                             damage_per_sec: *gx,
                                             beam_dps: Fix64::ZERO,
-                                            pull_speed: Fix64::from_num(1.4 / 0.03), // >0：目标→施法者（098c `Q+=1.4/tick`÷0.03）
-                                            remaining: Fix64::from_num(60.0), // 098c：持续到两人靠到 ≤89 才断（见 movement 分支）
-                                            beam: false, // 蓝链无沿线切割（098c `YI` 仅红链）
+                                            pull: TetherPull::TargetToOwner,
+                                            remaining: None, // 无定时：仅靠 ≤89 或手动 Release 断
+                                            beam: false,
+                                            red: false,
                                         },
                                         pos: pr.pos,
                                         alive: true,
@@ -2866,34 +3095,45 @@ impl World {
                                 recharge_souls.push((pr.owner, hit_pos));
                             }
                             crate::skill::W098bOnHit::RedChain => {
-                                // 锁链·红链（文档「红链」）：链到敌人 → 把**施法者**拉向目标；
-                                // 链到**友军/柱子** → 引发闪电（098c `sc`，伤害 lightning_dmg=1.0→3.4）。
-                                let same_team = self.players.get(pr.owner as usize).map(|p| p.team)
-                                    == self.players.get(victim as usize).map(|p| p.team);
-                                if same_team {
-                                    if *lightning_dmg > Fix64::ZERO {
-                                        events.push((victim, *lightning_dmg, Some(pr.owner)));
-                                        self.lightning_visual.push((pr.pos, self.players[victim as usize].pos, Fix64::from_num(0.1)));
-                                    }
-                                } else if !self.players[victim as usize].mirror_immune() {
-                                    // 落地为持久 Tether，把施法者拉向命中目标（pull_speed 取负）。
-                                    // 绑定目标仍逐帧承受每秒伤害（damage_per_sec=gx=0.2+0.1×L）。
-                                    // 镜像分身无敌窗口：否决锁链（文档「否决锁链和负面效果」）。
+                                // 锁链·红链/诱导：命中**敌人** → 拉施法者向敌人（098c `DA` 4298，**无 YI**）；
+                                // 命中**队友** → `YI` 沿线切割 + 施法者 +100 移速 4s（`sc` 7260）+ `4.5×jn` 定时断（7265）。
+                                // 命中柱子走撞柱分支。
+                                // 镜像分身无敌窗口：否决锁链。
+                                if !self.players[victim as usize].mirror_immune() {
+                                    let same_team = self.players.get(pr.owner as usize).map(|p| p.team)
+                                        == self.players.get(victim as usize).map(|p| p.team);
+                                    let (pull, beam, beam_dps, remaining) = if same_team {
+                                        let jn = self.players.get(pr.owner as usize).map(|p| p.jn()).unwrap_or(1.0);
+                                        (
+                                            TetherPull::None,
+                                            true,
+                                            *lightning_dmg / Fix64::from_num(0.18), // `YI` `.7+.3×Yr`/0.18s
+                                            Some(Fix64::from_num(4.5 * jn)),
+                                        )
+                                    } else {
+                                        (TetherPull::OwnerToAnchor, false, Fix64::ZERO, None)
+                                    };
                                     tether_spawns.push(Projectile {
                                         owner: pr.owner,
                                         kind: ProjectileKind::Tether {
                                             owner: pr.owner,
-                                            target: victim,
+                                            anchor: TetherAnchor::Player(victim),
                                             damage_per_sec: *gx,
-                                            // 红链沿线切割（098c `YI`：`.7+.3×Yr` 只在 `je` 内 → 每 0.18s）÷0.18 得 DPS。
-                                            beam_dps: *lightning_dmg / Fix64::from_num(0.18),
-                                            pull_speed: Fix64::from_num(-1.4 / 0.03), // <0：施法者→目标（098c `Q+=1.4/tick`÷0.03）
-                                            remaining: Fix64::from_num(60.0), // 098c：持续到两人靠到 ≤89 才断（见 movement 分支）
-                                            beam: true, // 红链沿连线切割经过的敌人
+                                            beam_dps,
+                                            pull,
+                                            remaining,
+                                            beam,
+                                            red: true,
                                         },
                                         pos: pr.pos,
                                         alive: true,
                                     });
+                                    if same_team {
+                                        // 098c `sc`：`gR(caster, hR+100)`（`mr`=100），固定 4s 后 `pc` 还原。
+                                        if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                            o.add_buff_fixed(BuffKind::ChainSpeed(100.0), 4.0);
+                                        }
+                                    }
                                 }
                             }
                             crate::skill::W098bOnHit::Silence => {
@@ -3224,7 +3464,7 @@ impl World {
 
         // 3) 结算爆炸（石头 / 导弹）
         for e in &explode {
-            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, false, DmgFalloff::None, KbAttn::Radius);
+            self.explode_at(e.pos, e.owner, e.radius, e.damage, e.bomb_force, false, DeniedMode::Off, DmgFalloff::None, KbAttn::Radius);
         }
 
         // 4) 结算命中/持续伤害（受护盾吸收、记录击杀来源）
@@ -3388,7 +3628,7 @@ impl World {
                 }
             }
         }
-        // 禁锢·沉默（B4-Y）：禁施法（可移动）
+        // 禁锢·沉默（B4-Y）：禁施法（可移动）；098c `AC` 另 `aR(被沉默者)` —— 断其自己的链。
         for (victim, dur, owner) in silences.drain(..) {
             let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
             if let Some(p) = self.players.get_mut(victim as usize) {
@@ -3396,6 +3636,9 @@ impl World {
                     p.add_debuff(BuffKind::Silenced, dur, ojn);
                 }
             }
+            // 098c `AC`：`aR(被沉默者)` —— 断其自己的链。
+            // 注意：本段在 `step_projectiles` 内，弹体已 `mem::take` 到 `ps`，须对 `ps` 操作。
+            ps.retain(|p| !matches!(&p.kind, ProjectileKind::Tether { owner: o, .. } if *o == victim));
         }
         // 098c 播报：同一施法者本 tick 沉默 ≥ 3 个目标（Silencer）。
         {
@@ -3485,12 +3728,12 @@ impl World {
             });
         }
         for (owner, center, br, dmg, ji, floor, _gx) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, false, DmgFalloff::FloorMul(floor), KbAttn::Fixed);
+            self.explode_at(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, DeniedMode::Off, DmgFalloff::FloorMul(floor), KbAttn::Fixed);
         }
         // 陨石落地（098c `oB`）：中心伤害 `12+2L`，随距离衰减 `(1 - d/(400+40xi))`，同队/自身免疫。
         for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
             // 陨石 `oB`：伤害 `Zb`（含距离），但击退 `mI(...,.75)` 是**固定系数** → `KbAttn::Fixed`。
-            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, false, DmgFalloff::Mul(denom), KbAttn::Fixed);
+            self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, DeniedMode::Off, DmgFalloff::Mul(denom), KbAttn::Fixed);
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -3512,6 +3755,10 @@ impl World {
 
         // 4e) 链体（锁链）落地：作为持久 Tether 加入，逐帧对绑定目标施加每秒伤害 + 符号拉拽。
         for t in tether_spawns.drain(..) {
+            ps.push(t);
+        }
+        // 4e-b) 链弹撞柱落地（1b 旁路队列）。
+        for t in pillar_tether_spawns.drain(..) {
             ps.push(t);
         }
         // 4f) 镜像分身火球：作为普通 W098b 火弹加入。
@@ -3704,11 +3951,11 @@ impl World {
 
     /// 在 (pos) 处半径 `radius` 的爆炸：对范围内玩家造成伤害并按中心连线击退。
     /// `exclude_owner`：以自身为中心的 nova（098b S001/S020/S021）不伤施法者。
-    /// `is_smite`：天罚系 nova（S001/S020/S021）——受害者的守护之盾减免生效（M3 2c）。
+    /// `denied`：天罚系 nova（S001/S020/S021）的「Denied 断链」模式（098c `mC`/`qC`/`QC`）。
     /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
     #[allow(clippy::too_many_arguments)]
     /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
-    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, is_smite: bool, dmg_falloff: DmgFalloff, kb_attn: KbAttn) -> u32 {
+    fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, denied: DeniedMode, dmg_falloff: DmgFalloff, kb_attn: KbAttn) -> u32 {
         // 纯表现：记录一次爆炸（客户端画扩散圆环）。不参与快照/哈希。
         self.combat_events.push(CombatEvent::Explode { pos, radius });
         let r_sq = radius * radius;
@@ -3771,7 +4018,7 @@ impl World {
                 }
                 // 击退（沿中心连线远离，随距离衰减；走控制/强制速度；击退抗性在 push 内统一折算）
                 // nova 自伤不伴随自击退（098c 原版：只有被敌人打中才有击退）。
-                if d_sq > Fix64::ZERO && !(is_smite && p.id == owner) {
+                if d_sq > Fix64::ZERO {
                     let dist = d_sq.sqrt();
                     // 098c `mI(nr,Vr,HX,lI)`：击退 = 常数 × `lI`（mI 无距离项）。
                     // S001/S021 的 `lI=1-d/1000` 走 `KbAttn::Mul(1000)`；其余为固定系数。
@@ -3807,37 +4054,82 @@ impl World {
                 .unwrap_or((pos, false));
             self.combat_events.push(CombatEvent::MultiHit { owner, pos, vampire });
         }
-        // 098c `Denied`：天罚命中「被链接（`Fv`）+ 特殊状态（出界/凤凰/风步）」的目标 → 断链 + 播报。
-        if is_smite {
-            let arena = self.arena_radius;
-            for &v in &hits {
-                let info = self.players.get(v as usize).map(|p| {
-                    (
-                        p.alive,
-                        p.pos.length() > arena,
-                        p.phoenix_remaining > Fix64::ZERO,
-                        p.windwalk_state > Fix64::ZERO,
-                        p.pos,
-                    )
-                });
-                let Some((alive, oob, phoenix, windwalk, vpos)) = info else { continue };
-                if !alive || !(oob || phoenix || windwalk) {
-                    continue;
+        // 098c `Denied`（`mC`/`qC`/`QC`）：遍历所有**敌人** gX，若其链锚在施法者身上（`Fv[gX]==ii`）
+        // → `aR(gX)` 断其链 + 播报。S020（`qC`）**无条件**；S001/S021 仅当 gX 处于特殊状态
+        //（危险地形/风步/凤凰态）。**与半径/命中无关**。
+        match denied {
+            DeniedMode::Off => {}
+            mode => {
+                let caster = owner;
+                let caster_team = owner_team;
+                let arena = self.arena_radius;
+                let mut sever_owners: Vec<u32> = Vec::new();
+                for pr in self.projectiles.iter() {
+                    let ProjectileKind::Tether {
+                        owner: o,
+                        anchor: TetherAnchor::Player(a),
+                        ..
+                    } = &pr.kind
+                    else {
+                        continue;
+                    };
+                    if *a != caster {
+                        continue;
+                    }
+                    let Some(p) = self.players.get(*o as usize) else { continue };
+                    if Some(p.team) == caster_team {
+                        continue; // 只断**敌人**挂上来的链
+                    }
+                    let special = mode == DeniedMode::Unconditional
+                        || (p.alive
+                            && (p.pos.length() > arena
+                                || p.phoenix_remaining > Fix64::ZERO
+                                || p.windwalk_state > Fix64::ZERO));
+                    if special {
+                        sever_owners.push(*o);
+                    }
                 }
-                if self.sever_links_to(v) > 0 {
-                    self.combat_events.push(CombatEvent::Denied { owner, pos: vpos });
+                for o in sever_owners {
+                    self.projectiles.retain(|pr| {
+                        !matches!(&pr.kind, ProjectileKind::Tether { owner: x, anchor: TetherAnchor::Player(a), .. }
+                            if *a == caster && *x == o)
+                    });
+                    let dpos = self.players.get(caster as usize).map(|p| p.pos).unwrap_or(Vec2::ZERO);
+                    self.combat_events.push(CombatEvent::Denied { owner: caster, pos: dpos });
                 }
             }
         }
         hit_enemies
     }
 
-    /// 098c `aR`：断开**指向 `victim` 的链接弹体**（束缚/链索/束缚线），返回断开数量。
-    fn sever_links_to(&mut self, victim: u32) -> usize {
+    /// 098c `aR(gX)` 的等价：断开 `gX` **自己拥有**的链（`owner==gX`，任意锚点）。
+    /// 用于：S006 回溯（`RR`）、S017B 沉默（`AC`）。
+    fn sever_links_owned_by(&mut self, owner: u32) -> usize {
+        let before = self.projectiles.len();
+        self.projectiles.retain(|pr| {
+            !matches!(&pr.kind, ProjectileKind::Tether { owner: o, .. } if *o == owner)
+        });
+        before - self.projectiles.len()
+    }
+
+    /// 098c `VR(gX, ER)` 的等价：断开「**锚点为 `gX`**」的链（`Fv[XR]==gX`）。
+    /// `any_team=false` 时只断**敌方** owner 挂上来的链（S005/S006/S007 的「挣脱锁链」）；
+    /// `true` 时不分队伍。
+    fn sever_links_on(&mut self, target: u32, any_team: bool) -> usize {
+        let teams: Vec<u8> = self.players.iter().map(|p| p.team).collect();
+        let target_team = teams.get(target as usize).copied();
         let before = self.projectiles.len();
         self.projectiles.retain(|pr| match &pr.kind {
-            ProjectileKind::Tether { target, .. } => *target != victim,
-            ProjectileKind::Chain { last_target, .. } => *last_target != victim,
+            ProjectileKind::Tether { owner, anchor: TetherAnchor::Player(a), .. } => {
+                if *a != target {
+                    return true;
+                }
+                if any_team {
+                    return false;
+                }
+                // 同队 owner 保留（只挣脱敌方链）。
+                teams.get(*owner as usize).copied() == target_team
+            }
             _ => true,
         });
         before - self.projectiles.len()
@@ -4236,7 +4528,9 @@ fn _layout_obstacles(out: &mut Vec<Obstacle>, rng: &mut Rng, arena_radius: Fix64
         let angle = base + (rng.next_fix() - Fix64::from_num(0.5)) * jitter * Fix64::from_num(2);
         let pos = Vec2::new(ring_r * crate::fix::cos(angle), ring_r * crate::fix::sin(angle));
         let r = min_r + (max_r - min_r) * rng.next_fix();
-        out.push(Obstacle::new(pos, r.to_num::<f64>()));
+        let mut ob = Obstacle::new(pos, r.to_num::<f64>());
+        ob.id = i as u32; // 每轮序号 0..count-1（两端同 seed ⇒ 同 id）
+        out.push(ob);
     }
 }
 
@@ -4605,7 +4899,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // S001 天罚（098c mC，普通局 F 键）：半径 250（按**半径**判定 `cO<=$FA`），
                         // 伤害随距离乘法衰减 `×(1-d/1000)`（mC `mI(...,1.-cO/$3E8)`），伤害 10+血剑。
                         // 098c `mC`：伤害与击退都乘 `(1-d/1000)`（`mI(ii,gX,cX,1.-cO/$3E8)`）。
-                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变（098c `qC` 实证）：伤害按阶段 `$B/$C/$E` = **11/12/14**（+血剑 Zr）；
@@ -4621,7 +4915,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         let r = Fix64::from_num(r);
                         let falloff_div = Fix64::from_num(falloff_div);
                         // 098c `qC`：伤害为加法衰减，但击退 `mI(ii,gX,cX-cO/60,1)` 系数**固定 1**。
-                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, true, DmgFalloff::Sub(falloff_div), KbAttn::Fixed);
+                        world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, DeniedMode::Unconditional, DmgFalloff::Sub(falloff_div), KbAttn::Fixed);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
@@ -4630,7 +4924,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚（半径 250、衰减 ×(1-d/1000)）；500 内**队友**
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
                         // 098c `QC`：伤害与击退都乘 `(1-d/1000)`（`mI(ii,gX,cX,1-cO/$3E8)`）。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, true, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
                         let caster_team = world.players[idx as usize].team;
                         let mut healed_any = false;
                         let allies: Vec<u32> = world
@@ -4690,6 +4984,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let dur = stats.duration.to_num::<f64>();
                 match kind {
                     crate::skill::W098bUtilKind::Reflect => {
+                        // 098c `gC`：激活反射盾时 `VR(ii,false)` —— 挣脱**敌方钩在自己身上**的链。
+                        world.sever_links_on(idx, false);
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Reflect, dur);
                         }
@@ -4715,6 +5011,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     crate::skill::W098bUtilKind::Haste => {
                         // S007 急行：+35 移速（Speed buff）+ 吸收窗口（Haste buff，吸收 50%→移速）。
                         // 吸收上限 sr = 3+2×L（098c KR），每点吸收 +15 移速（Qr）。
+                        // 098c `KR`：激活时 `VR(ii,false)` —— 挣脱**敌方钩在自己身上**的链。
+                        world.sever_links_on(idx, false);
                         let lv = caster_level as f64;
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
@@ -5438,12 +5736,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             owner: idx,
                             kind: ProjectileKind::Tether {
                                 owner: idx,
-                                target: tid,
+                                anchor: TetherAnchor::Player(tid),
                                 damage_per_sec: stats.damage,
                                 beam_dps: Fix64::ZERO,
-                                pull_speed: stats.speed,
-                                remaining: stats.duration,
+                                pull: TetherPull::TargetToOwner,
+                                remaining: Some(stats.duration),
                                 beam,
+                                red: false,
                             },
                             pos: ppos,
                             alive: true,
@@ -5812,6 +6111,27 @@ fn towards(from: Vec2, target: Option<Vec2>) -> Vec2 {
 }
 
 /// 点 `p` 是否在线段 [a, b] 附近（距离 <= width）。供束缚线/回拉线扫射判定。
+/// 098c `YI` 的链线切割判定：点到**线段所在直线**的垂直距离 `< half_width`，且投影**严格在两端之间**
+/// （`cO>0 and cO<rA`，矩形而非圆角；`Lr=75`）。注意：**不**加目标半径。
+fn point_in_chain_beam(p: Vec2, a: Vec2, b: Vec2, half_width: Fix64) -> bool {
+    let ab = b - a;
+    let len_sq = ab.length_squared();
+    if len_sq <= Fix64::ZERO {
+        return (p - a).length_squared() <= half_width * half_width;
+    }
+    let pa = p - a;
+    let t = pa.dot(ab);
+    if t <= Fix64::ZERO || t >= len_sq {
+        return false; // 098c `cO>0 and cO<rA`：严格在两端之间
+    }
+    let cross = (pa.x * ab.y - pa.y * ab.x).abs();
+    let len = len_sq.sqrt();
+    cross < half_width * len
+}
+
+/// 098c `Lr = 75`：链线切割的固定半宽（war3 单位）。
+const CHAIN_BEAM_HALF_WIDTH: f64 = 75.0;
+
 fn point_near_segment(p: Vec2, a: Vec2, b: Vec2, width: Fix64) -> bool {
     let ab = b - a;
     let len_sq = ab.length_squared();
@@ -6846,7 +7166,8 @@ mod tests {
         assert!(world.players[0].s007_absorb < Fix64::from_num(3.0 + 2.0), "吸收量应减少（sr 上限 3+2L）");
     }
 
-    /// S019B 红链：命中友军 → 引发闪电伤害（098c `sc`）。
+    /// S019B 红链：命中友军 → `YI` 沿线切割的持久链 + 施法者 +100 移速（098c `sc`）。
+    /// 注：`YI` 切的是**线上敌人**，友军锚点本身不掉血。
     #[test]
     fn s019b_redchain_lightning_on_ally() {
         let mut world = World::new(2, 47);
@@ -6858,7 +7179,6 @@ mod tests {
         world.players[0].move_target = None;
         world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
         world.players[1].move_target = None;
-        let hp1 = world.players[1].hp;
         world.step(vec![
             PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
@@ -6866,11 +7186,20 @@ mod tests {
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         for _ in 0..90 {
             world.step(none.clone(), dt);
-            if world.players[1].hp < hp1 {
-                break;
-            }
         }
-        assert!(world.players[1].hp < hp1, "红链命中友军应引发闪电伤害（098c sc）");
+        let t = world.projectiles.iter().find_map(|p| match &p.kind {
+            ProjectileKind::Tether { anchor, beam, beam_dps, pull, remaining, .. } => {
+                Some((*anchor, *beam, *beam_dps, *pull, *remaining))
+            }
+            _ => None,
+        });
+        let (anchor, beam, beam_dps, pull, remaining) = t.expect("红链命中友军应建立持久链");
+        assert_eq!(anchor, TetherAnchor::Player(1));
+        assert!(beam, "红链命中友军应开 YI 切割");
+        assert!(beam_dps > Fix64::ZERO, "YI 切割伤害应 > 0");
+        assert_eq!(pull, TetherPull::None, "红链命中友军无拉拽");
+        assert!(remaining.is_some(), "红链命中友军应有 4.5×jn 定时断链");
+        assert!(world.players[0].has_buff(BuffKind::ChainSpeed(0.0)), "施法者应获 +100 移速");
     }
 
     #[test]
@@ -7698,7 +8027,7 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(30.0), Fix64::ZERO); // 敌人放远，避开
         world.players[1].move_target = None;
         let pillar = Vec2::new(d60(5.0), Fix64::ZERO); // 300 处的柱子（半径 40）
-        world.obstacles.push(Obstacle { pos: pillar, radius: Fix64::from_num(40.0), hp: 400 });
+        world.obstacles.push(Obstacle { id: 0, pos: pillar, radius: Fix64::from_num(40.0), hp: 400 });
         world.step(vec![
             PlayerInput { cast: Some((SkillId::S004, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
@@ -7750,6 +8079,7 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.obstacles.clear();
         world.obstacles.push(Obstacle {
+            id: 0,
             pos: Vec2::new(d60(4.0), Fix64::ZERO),
             radius: Fix64::from_num(40.0),
             hp: 400,
@@ -8190,7 +8520,7 @@ mod tests {
         setup(&mut w);
         let n = w.explode_at(
             Vec2::ZERO, 0, Fix64::from_num(3.0), Fix64::from_num(5.0), Fix64::ZERO,
-            true, false, DmgFalloff::None, KbAttn::Radius,
+            true, DeniedMode::Off, DmgFalloff::None, KbAttn::Radius,
         );
         assert_eq!(n, 3, "应命中 3 个敌人");
         assert!(
@@ -8207,7 +8537,7 @@ mod tests {
         v.players[0].set_items(&[crate::item::ItemId::FireMask]);
         let _ = v.explode_at(
             Vec2::ZERO, 0, Fix64::from_num(3.0), Fix64::from_num(5.0), Fix64::ZERO,
-            true, false, DmgFalloff::None, KbAttn::Radius,
+            true, DeniedMode::Off, DmgFalloff::None, KbAttn::Radius,
         );
         assert!(
             v.combat_events.iter().any(|e| matches!(e, CombatEvent::MultiHit { vampire: true, .. })),
@@ -8265,7 +8595,7 @@ mod tests {
             Fix64::from_num(10.0),
             Fix64::ZERO,
             true,
-            true,
+            DeniedMode::Conditional,
             DmgFalloff::Mul(Fix64::from_num(1000.0)),
             KbAttn::Mul(Fix64::from_num(1000.0)),
         );
@@ -8294,7 +8624,7 @@ mod tests {
             Fix64::from_num(10.0),
             Fix64::from_num(1000.0),
             true,
-            true,
+            DeniedMode::Conditional,
             DmgFalloff::Mul(Fix64::from_num(1000.0)),
             KbAttn::Mul(Fix64::from_num(1000.0)),
         );
@@ -8314,49 +8644,61 @@ mod tests {
     }
 
     #[test]
+    /// 098c `Denied`（`mC`/`qC`/`QC`）：**敌人挂在自己身上**的链（`Fv[gX]==施法者`）在敌人处于特殊状态
+    ///（危险地形/风步/凤凰态）时被天罚断开；S020（`qC`）**无条件**；队友挂上来的链不断；**与半径无关**。
     fn smite_denied_breaks_link_on_special_target() {
-        let tether = || Projectile {
-            owner: 0,
+        let enemy_tether = || Projectile {
+            owner: 1,
             kind: ProjectileKind::Tether {
-                owner: 0,
-                target: 1,
+                owner: 1,
+                anchor: TetherAnchor::Player(0),
                 damage_per_sec: Fix64::ZERO,
                 beam_dps: Fix64::ZERO,
-                pull_speed: Fix64::ZERO,
-                remaining: Fix64::from_num(1.0),
+                pull: TetherPull::TargetToOwner,
+                remaining: Some(Fix64::from_num(1.0)),
                 beam: false,
+                red: false,
             },
             pos: Vec2::ZERO,
             alive: true,
         };
-        // 目标处于风步（特殊状态）→ 天罚命中应断链 + Denied。
+        let smite = |w: &mut World, denied: DeniedMode| {
+            w.explode_at(
+                Vec2::ZERO, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
+                true, denied, DmgFalloff::None, KbAttn::Radius,
+            )
+        };
+        // A) 敌人链 + 敌人风步 + S001（有条件）→ 断链 + Denied。
         let mut w = World::new(2, 4242);
         w.obstacles.clear();
-        w.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
         w.players[1].windwalk_state = Fix64::from_num(1.0);
-        w.projectiles.push(tether());
-        let n = w.explode_at(
-            w.players[1].pos, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
-            true, true, DmgFalloff::None, KbAttn::Radius,
-        );
-        assert_eq!(n, 1);
-        assert!(
-            w.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })),
-            "被链接 + 特殊状态的天罚应触发 Denied"
-        );
+        w.projectiles.push(enemy_tether());
+        smite(&mut w, DeniedMode::Conditional);
+        assert!(w.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })), "风步+被链应 Denied");
         assert!(!w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "应断链");
-
-        // 非特殊状态 → 不断链、不 Denied。
-        let mut w2 = World::new(2, 4242);
-        w2.obstacles.clear();
-        w2.players[1].pos = Vec2::new(Fix64::from_num(2.0), Fix64::ZERO);
-        w2.projectiles.push(tether());
-        let _ = w2.explode_at(
-            w2.players[1].pos, 0, Fix64::from_num(50.0), Fix64::from_num(3.0), Fix64::ZERO,
-            true, true, DmgFalloff::None, KbAttn::Radius,
-        );
-        assert!(!w2.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })));
-        assert!(w2.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
+        // B) 敌人链 + 敌人普通状态 + S001（有条件）→ 不断。
+        let mut w = World::new(2, 4242);
+        w.obstacles.clear();
+        w.projectiles.push(enemy_tether());
+        smite(&mut w, DeniedMode::Conditional);
+        assert!(!w.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })));
+        assert!(w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
+        // C) 敌人链 + 敌人普通状态 + S020（无条件）→ 断。
+        let mut w = World::new(2, 4242);
+        w.obstacles.clear();
+        w.projectiles.push(enemy_tether());
+        smite(&mut w, DeniedMode::Unconditional);
+        assert!(w.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })), "S020 应无条件 Denied");
+        assert!(!w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
+        // D) 队友链（owner 同队）+ 风步 → 不断（只断敌人）。
+        let mut w = World::new(2, 4242);
+        w.obstacles.clear();
+        w.players[1].team = 0;
+        w.players[1].windwalk_state = Fix64::from_num(1.0);
+        w.projectiles.push(enemy_tether());
+        smite(&mut w, DeniedMode::Conditional);
+        assert!(!w.combat_events.iter().any(|e| matches!(e, CombatEvent::Denied { .. })), "队友链不应 Denied");
+        assert!(w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
     }
 
     #[test]
@@ -8501,7 +8843,7 @@ mod tests {
                 Fix64::from_num(10.0),
                 Fix64::ZERO,
                 false,
-                false,
+                DeniedMode::Off,
                 DmgFalloff::None,
                 KbAttn::Radius,
             )
@@ -9067,12 +9409,13 @@ mod tests {
             owner: 1,
             kind: ProjectileKind::Tether {
                 owner: 1,
-                target: 0,
+                anchor: TetherAnchor::Player(0),
                 damage_per_sec: Fix64::ZERO,
                 beam_dps: Fix64::ZERO,
-                pull_speed: Fix64::ZERO,
-                remaining: Fix64::from_num(60.0),
+                pull: TetherPull::TargetToOwner,
+                remaining: Some(Fix64::from_num(60.0)),
                 beam: false,
+                red: false,
             },
             pos: Vec2::ZERO,
             alive: true,
@@ -9096,7 +9439,7 @@ mod tests {
         // Dispels link + negative buffs
         assert!(!world.players[0].has_buff(crate::player::BuffKind::Tied), "应清减益（Tied）");
         assert!(
-            !world.projectiles.iter().any(|pr| matches!(&pr.kind, ProjectileKind::Tether { target, .. } if *target == 0)),
+            !world.projectiles.iter().any(|pr| matches!(&pr.kind, ProjectileKind::Tether { anchor, .. } if matches!(anchor, TetherAnchor::Player(a) if *a == 0))),
             "应断掉绑定到回溯者的链"
         );
     }
@@ -11445,58 +11788,58 @@ mod tests {
         assert!(lost < 30.0, "力场 5s 总伤害应有界（实测 {lost}）");
     }
 
-    /// 回归：蓝链 Tether 不沿线切割（beam=false）；红链 beam=true 且 `beam_dps>0`（098c `YI`）。
+    /// 回归：`YI` 沿线切割仅红链命中**队友/柱子**时开启（098c `sc`/`DA` 4318）；
+    /// 蓝链、红链命中敌人都**不**切割。
     #[test]
     fn s019_chain_beam_flags_match_098c() {
         let dt = Fix64::from_num(1.0 / 60.0);
-        let find = |beam: bool, w: &World| -> Option<(bool, f64)> {
-            let _ = beam;
-            w.projectiles.iter().find_map(|p| match p.kind {
-                ProjectileKind::Tether { beam, beam_dps, .. } => Some((beam, beam_dps.to_num::<f64>())),
+        let find = |w: &World| -> Option<(bool, f64, TetherPull, TetherAnchor, bool)> {
+            w.projectiles.iter().find_map(|p| match &p.kind {
+                ProjectileKind::Tether { beam, beam_dps, pull, anchor, red, .. } => {
+                    Some((*beam, beam_dps.to_num::<f64>(), *pull, *anchor, *red))
+                }
                 _ => None,
             })
         };
-        // 蓝链（A，默认形态）
-        let mut w = World::new(2, 6001);
-        w.obstacles.clear();
-        w.sandbox = true;
-        w.players[0].pos = Vec2::ZERO;
-        w.players[0].team = 0;
-        w.players[0].move_target = None;
-        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
-        w.players[1].team = 1;
-        w.players[1].move_target = None;
-        w.step(vec![
-            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
-            PlayerInput::default(),
-        ], dt);
-        for _ in 0..40 {
-            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
-        }
-        let blue = find(false, &w).expect("蓝链应生成 Tether");
-        assert!(!blue.0, "蓝链不应沿线切割（beam=false）");
-        assert_eq!(blue.1, 0.0, "蓝链 beam_dps 应为 0");
-        // 红链（B）
-        let mut w = World::new(2, 6002);
-        w.obstacles.clear();
-        w.sandbox = true;
-        w.players[0].pos = Vec2::ZERO;
-        w.players[0].team = 0;
-        w.players[0].move_target = None;
-        w.players[0].forms[SkillId::S019.as_u32() as usize] = true; // B=红链
-        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
-        w.players[1].team = 1;
-        w.players[1].move_target = None;
-        w.step(vec![
-            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
-            PlayerInput::default(),
-        ], dt);
-        for _ in 0..40 {
-            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
-        }
-        let red = find(true, &w).expect("红链应生成 Tether");
-        assert!(red.0, "红链应沿线切割（beam=true）");
-        assert!(red.1 > 0.0, "红链 beam_dps 应 > 0（098c YI）");
+        let run = |red: bool, target_team: u8| -> World {
+            let mut w = World::new(2, if red { 6002 } else { 6001 });
+            w.obstacles.clear();
+            w.sandbox = true;
+            w.players[0].pos = Vec2::ZERO;
+            w.players[0].team = 0;
+            w.players[0].move_target = None;
+            w.players[0].forms[SkillId::S019.as_u32() as usize] = red;
+            w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+            w.players[1].team = target_team;
+            w.players[1].move_target = None;
+            w.step(vec![
+                PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ], dt);
+            for _ in 0..40 {
+                w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+            }
+            w
+        };
+        // 蓝链 vs 敌人：无 YI，拉目标向施法者，蓝形态。
+        let w = run(false, 1);
+        let (beam, dps, pull, _, red) = find(&w).expect("蓝链应生成 Tether");
+        assert!(!beam && dps == 0.0, "蓝链不切割");
+        assert_eq!(pull, TetherPull::TargetToOwner);
+        assert!(!red, "蓝链应为蓝形态（视觉）");
+        // 红链 vs 敌人：无 YI，拉施法者向敌人，**红形态**（视觉不能只看 beam）。
+        let w = run(true, 1);
+        let (beam, dps, pull, _, red) = find(&w).expect("红链应生成 Tether");
+        assert!(!beam && dps == 0.0, "红链命中敌人不切割");
+        assert_eq!(pull, TetherPull::OwnerToAnchor);
+        assert!(red, "红链命中敌人应为红形态（视觉）");
+        // 红链 vs 队友：YI 切割，无拉拽，红形态。
+        let w = run(true, 0);
+        let (beam, dps, pull, anchor, red) = find(&w).expect("红链应生成 Tether");
+        assert!(beam && dps > 0.0, "红链命中队友应切割");
+        assert_eq!(pull, TetherPull::None);
+        assert_eq!(anchor, TetherAnchor::Player(1));
+        assert!(red, "红链命中队友应为红形态");
     }
 
     /// 回归：锁链链接**按距离**持续（非固定 0.5s）——近距离常驻，超距（>900）断裂。
@@ -11539,6 +11882,421 @@ mod tests {
             !w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })),
             "靠到 ≤89 时链接应断裂"
         );
+    }
+
+    /// S019 蓝链命中**柱子** → 锚定柱子并把施法者拉向柱子（098c `DA` 4321）。
+    /// 柱链不掉柱 HP、不因 `≤89` 断裂。
+    #[test]
+    fn s019_blue_chain_hooks_pillar_pulls_caster() {
+        let mut w = World::new(2, 7101);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(40.0), Fix64::ZERO); // 远处，避免干扰
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.obstacles.push(Obstacle { id: 0, pos: Vec2::new(d60(3.0), Fix64::ZERO), radius: Fix64::from_num(40.0), hp: 40 });
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..60 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let t = w.projectiles.iter().find_map(|p| match &p.kind {
+            ProjectileKind::Tether { anchor, pull, remaining, .. } => Some((*anchor, *pull, *remaining)),
+            _ => None,
+        }).expect("蓝链撞柱应建立锚定链");
+        assert_eq!(t.0, TetherAnchor::Obstacle(0));
+        assert_eq!(t.1, TetherPull::OwnerToAnchor);
+        assert!(t.2.is_none(), "柱链无定时断裂");
+        assert!(w.players[0].pos.x > Fix64::ZERO, "施法者应被拉向柱子（+x），实际 {:?}", w.players[0].pos.x);
+        assert_eq!(w.obstacles[0].hp, 40, "链对柱子不应造成伤害");
+    }
+
+    /// 柱链不因 `Rr≤89` 断裂（098c `DA` 4294 `nv[Vr]==3` 恒真）。
+    #[test]
+    fn s019_blue_chain_pillar_link_survives_within_89() {
+        let mut w = World::new(2, 7102);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(40.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.obstacles.push(Obstacle { id: 0, pos: Vec2::new(d60(3.0), Fix64::ZERO), radius: Fix64::from_num(40.0), hp: 40 });
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..300 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "柱链不应因距离断裂");
+    }
+
+    /// 柱被摧毁 → 柱链断裂（098c `DA` 4288 `not av[Vr]`）。
+    #[test]
+    fn s019_pillar_anchor_breaks_when_pillar_destroyed() {
+        let mut w = World::new(2, 7103);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(40.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.obstacles.push(Obstacle { id: 0, pos: Vec2::new(d60(3.0), Fix64::ZERO), radius: Fix64::from_num(40.0), hp: 40 });
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..20 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })));
+        w.obstacles.clear(); // 模拟柱被摧毁
+        w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        assert!(!w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "柱被摧毁后柱链应断裂");
+    }
+
+    /// S019 红链命中柱子 → `YI` 切割链 + 施法者 +100 移速（098c `sc`）。
+    #[test]
+    fn s019_red_chain_pillar_lightning_and_speed() {
+        let mut w = World::new(2, 7104);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[0].forms[SkillId::S019.as_u32() as usize] = true; // 红链
+        w.players[1].pos = Vec2::new(d60(40.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.obstacles.push(Obstacle { id: 0, pos: Vec2::new(d60(3.0), Fix64::ZERO), radius: Fix64::from_num(40.0), hp: 40 });
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..40 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let t = w.projectiles.iter().find_map(|p| match &p.kind {
+            ProjectileKind::Tether { anchor, beam, beam_dps, remaining, .. } => Some((*anchor, *beam, *beam_dps, *remaining)),
+            _ => None,
+        }).expect("红链撞柱应建立链");
+        assert_eq!(t.0, TetherAnchor::Obstacle(0));
+        assert!(t.1 && t.2 > Fix64::ZERO, "红链撞柱应开 YI 切割");
+        assert!(t.3.is_some(), "红链撞柱应有 4.5×jn 定时断链");
+        assert!(w.players[0].has_buff(BuffKind::ChainSpeed(0.0)), "施法者应获 +100 移速");
+        assert_eq!(w.obstacles[0].hp, 40, "链不应伤害柱子");
+    }
+
+    /// S019 蓝链也能命中**队友**（098c 碰撞 `Nv`）并拉之。
+    #[test]
+    fn s019_blue_chain_hits_ally() {
+        let mut w = World::new(2, 7105);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
+        w.players[1].team = 0; // 同队
+        w.players[1].move_target = None;
+        let x_before = w.players[1].pos.x;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..90 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let t = w.projectiles.iter().find_map(|p| match &p.kind {
+            ProjectileKind::Tether { anchor, pull, .. } => Some((*anchor, *pull)),
+            _ => None,
+        }).expect("蓝链应命中队友并建立链");
+        assert_eq!(t.0, TetherAnchor::Player(1));
+        assert_eq!(t.1, TetherPull::TargetToOwner);
+        assert!(w.players[1].pos.x < x_before, "队友应被拉向施法者");
+    }
+
+    /// `YI` 沿线切割只伤**异队**（098c `if cn[Vv[gX]]!=cn[jI]`）——队友站在连线上不应受伤。
+    #[test]
+    fn s019_beam_only_cuts_enemies() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut w = World::new(4, 7301);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.configure_regen(0.0);
+        // p0 施法者(队0)、p1 锚点队友(队0)、p2 队友(队0) 在连线上、p3 敌人(队1) 在连线上。
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(10.0), Fix64::ZERO);
+        w.players[1].team = 0;
+        w.players[1].move_target = None;
+        w.players[2].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        w.players[2].team = 0;
+        w.players[2].move_target = None;
+        w.players[3].pos = Vec2::new(d60(7.0), Fix64::ZERO);
+        w.players[3].team = 1;
+        w.players[3].move_target = None;
+        let hp_atky = w.players[2].hp;
+        let hp_enemy = w.players[3].hp;
+        w.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::Tether {
+                owner: 0,
+                anchor: TetherAnchor::Player(1),
+                damage_per_sec: Fix64::ZERO,
+                beam_dps: Fix64::from_num(10.0),
+                pull: TetherPull::None,
+                remaining: Some(Fix64::from_num(5.0)),
+                beam: true,
+                red: true,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        for _ in 0..30 {
+            // 钉住位置，避免碰撞推挤把目标挤出线段。
+            w.players[1].pos = Vec2::new(d60(10.0), Fix64::ZERO);
+            w.players[2].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+            w.players[3].pos = Vec2::new(d60(7.0), Fix64::ZERO);
+            w.step(vec![
+                PlayerInput::default(),
+                PlayerInput::default(),
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ], dt);
+        }
+        assert!(w.players[3].hp < hp_enemy, "敌人在连线上应被 YI 切割");
+        assert_eq!(w.players[2].hp, hp_atky, "队友在连线上不应被 YI 切割");
+    }
+
+    /// 098c `YI` 的切割半宽是固定 `Lr=75`（不是目标半径）：
+    /// 离连线 60 的敌人受伤；离连线 90 的不受伤。
+    #[test]
+    fn s019_beam_half_width_is_75() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut w = World::new(4, 7403);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.configure_regen(0.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(10.0), Fix64::ZERO); // 队友锚点
+        w.players[1].team = 0;
+        w.players[1].move_target = None;
+        w.players[2].pos = Vec2::new(d60(5.0), Fix64::from_num(60.0)); // 离连线 60 < 75
+        w.players[2].team = 1;
+        w.players[2].move_target = None;
+        w.players[3].pos = Vec2::new(d60(5.0), Fix64::from_num(90.0)); // 离连线 90 > 75
+        w.players[3].team = 1;
+        w.players[3].move_target = None;
+        let hp_in = w.players[2].hp;
+        let hp_out = w.players[3].hp;
+        w.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::Tether {
+                owner: 0,
+                anchor: TetherAnchor::Player(1),
+                damage_per_sec: Fix64::ZERO,
+                beam_dps: Fix64::from_num(10.0),
+                pull: TetherPull::None,
+                remaining: Some(Fix64::from_num(5.0)),
+                beam: true,
+                red: true,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        for _ in 0..30 {
+            w.players[1].pos = Vec2::new(d60(10.0), Fix64::ZERO);
+            w.players[2].pos = Vec2::new(d60(5.0), Fix64::from_num(60.0));
+            w.players[3].pos = Vec2::new(d60(5.0), Fix64::from_num(90.0));
+            w.step(vec![
+                PlayerInput::default(),
+                PlayerInput::default(),
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ], dt);
+        }
+        assert!(w.players[2].hp < hp_in, "离连线 60（<75）的敌人应被切割");
+        assert_eq!(w.players[3].hp, hp_out, "离连线 90（>75）的敌人不应被切割");
+    }
+
+    /// 098c `gC`(S005)/`KR`(S007)：激活时 `VR(self,false)` —— 挣脱**敌方**钩在自己身上的链，
+    /// 但保留同队挂上来的链。
+    #[test]
+    fn s005_s007_escape_enemy_chains_only() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mk = || {
+            let mut w = World::new(3, 7401);
+            w.obstacles.clear();
+            w.sandbox = true;
+            w.players[0].pos = Vec2::ZERO;
+            w.players[0].team = 0;
+            w.players[0].move_target = None;
+            w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+            w.players[1].team = 1;
+            w.players[1].move_target = None;
+            w.players[2].pos = Vec2::new(d60(-5.0), Fix64::ZERO);
+            w.players[2].team = 0;
+            w.players[2].move_target = None;
+            let tether = |owner: u32| Projectile {
+                owner,
+                kind: ProjectileKind::Tether {
+                    owner,
+                    anchor: TetherAnchor::Player(0),
+                    damage_per_sec: Fix64::ZERO,
+                    beam_dps: Fix64::ZERO,
+                    pull: TetherPull::TargetToOwner,
+                    remaining: Some(Fix64::from_num(60.0)),
+                    beam: false,
+                    red: false,
+                },
+                pos: Vec2::ZERO,
+                alive: true,
+            };
+            w.projectiles.push(tether(1)); // 敌链钩在 p0
+            w.projectiles.push(tether(2)); // 友链钩在 p0
+            w
+        };
+        for skill in [SkillId::S005, SkillId::S007] {
+            let mut w = mk();
+            w.step(vec![
+                PlayerInput { cast: Some((skill, None)), ..Default::default() },
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ], dt);
+            for _ in 0..40 {
+                w.step(vec![PlayerInput::default(), PlayerInput::default(), PlayerInput::default()], dt);
+            }
+            let enemy = w.projectiles.iter().any(|p| matches!(&p.kind, ProjectileKind::Tether { owner, .. } if *owner == 1));
+            let ally = w.projectiles.iter().any(|p| matches!(&p.kind, ProjectileKind::Tether { owner, .. } if *owner == 2));
+            assert!(!enemy, "{skill:?} 应挣脱敌方链");
+            assert!(ally, "{skill:?} 不应断同队链");
+        }
+    }
+
+    /// 098c `AC`（S017B 沉默）：被沉默者 `aR(自己)` —— 断其**自己拥有**的链。
+    #[test]
+    fn silence_breaks_targets_own_chain() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut w = World::new(2, 7402);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.players[1].forms[SkillId::S017.as_u32() as usize] = true; // B=沉默
+        // p0 自有一条链。
+        w.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::Tether {
+                owner: 0,
+                anchor: TetherAnchor::Player(1),
+                damage_per_sec: Fix64::ZERO,
+                beam_dps: Fix64::ZERO,
+                pull: TetherPull::TargetToOwner,
+                remaining: Some(Fix64::from_num(60.0)),
+                beam: false,
+                red: false,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        w.step(vec![
+            PlayerInput::default(),
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::ZERO))), ..Default::default() },
+        ], dt);
+        for _ in 0..80 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(w.players[0].has_buff(BuffKind::Silenced), "p0 应被沉默");
+        assert!(
+            !w.projectiles.iter().any(|p| matches!(&p.kind, ProjectileKind::Tether { owner, .. } if *owner == 0)),
+            "沉默应断被沉默者自己的链"
+        );
+    }
+
+    /// S031：L1 Release 断链；L2 Induce（红链队友/柱）延长 `3×jn` + 自伤 4。
+    #[test]
+    fn s031_release_and_induce() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        // Release：蓝链命中敌人后按 S031 → 断链。
+        let mut w = World::new(2, 7201);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..60 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        assert!(w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "应先有链");
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S031, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        assert!(!w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })), "Release 应断链");
+
+        // Induce：红链命中队友 → 链有定时；按 S031 → remaining 增大 + 自伤 4。
+        let mut w = World::new(2, 7202);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[0].forms[SkillId::S019.as_u32() as usize] = true;
+        w.players[1].pos = Vec2::new(d60(6.0), Fix64::ZERO);
+        w.players[1].team = 0; // 队友
+        w.players[1].move_target = None;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..60 {
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let rem0 = w.projectiles.iter().find_map(|p| match &p.kind {
+            ProjectileKind::Tether { remaining, .. } => *remaining,
+            _ => None,
+        }).expect("红链应建立链");
+        let hp0 = w.players[0].hp;
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S031, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let rem1 = w.projectiles.iter().find_map(|p| match &p.kind {
+            ProjectileKind::Tether { remaining, .. } => *remaining,
+            _ => None,
+        }).expect("Induce 不应断链");
+        assert!(rem1 > rem0, "Induce 应延长断链定时器：{rem0:?} -> {rem1:?}");
+        assert!(w.players[0].hp < hp0, "Induce 应自伤 4");
     }
 
     /// 回归：单机试验场场景下，暗物质确实生成飞行弹体，并对敌人造成伤害与位移。

@@ -2513,6 +2513,12 @@ impl Game {
                 || ctx.keyboard.is_logical_key_just_pressed(&Key::Character(upper.into()));
             if just {
                 if let Some(skill) = bound_for(key) {
+                    // 链激活：Y 槽切到 S031（L1 Release / L2 Induce）——098c 隐藏 S019、显示 S031。
+                    if skill == SkillId::S019 && self.chain_active_for_me() {
+                        self.pending_cast = Some((SkillId::S031, None));
+                        self.pending_clear_signal = true;
+                        continue;
+                    }
                     // 冷却门控：CD 剩余 > 预输入余量时不响应（不显示瞄准/不施法），避免 CD 中按字母出现瞄准线误导。
                     if !self.skill_cast_ready(skill) {
                         continue;
@@ -2601,6 +2607,14 @@ impl Game {
             Some(l) => l.my_index() as u32,
             None => self.lan_my_index as u32,
         }
+    }
+
+    /// 本机玩家当前是否有激活的锁链（S019）—— 决定 Y 键路由到 S031（098c 隐藏 S019/显示 S031）。
+    fn chain_active_for_me(&self) -> bool {
+        let me = self.self_index();
+        self.world.projectiles.iter().any(|p| {
+            matches!(&p.kind, game_core::world::ProjectileKind::Tether { owner, .. } if *owner == me)
+        })
     }
 
     /// 玩家显示名：联网时优先用 Steam 昵称（roster 以 slot==player_id 对齐），否则回退「玩家{id}」。
@@ -3357,12 +3371,16 @@ impl Game {
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, 5.0, 0.5, Color::from_rgb(120, 230, 220))?;
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
-                game_core::world::ProjectileKind::Tether { owner, target, beam, .. } => {
-                    // 锁链（S019）：098c 用 War3 闪电 `AFOD` 连「施法者↔目标」（每 tick `MoveLightningEx` 刷新）；
-                    // 红链（B）额外用 `CLSB` 画"沿线切割"。这里以折线闪电近似：
+                game_core::world::ProjectileKind::Tether { owner, anchor, beam, red, .. } => {
+                    // 锁链（S019）：098c 用 War3 闪电 `AFOD` 连「施法者↔锚点」（每 tick `MoveLightningEx` 刷新）；
+                    // 红链（B）额外用 `CLSB` 画"沿线切割"。以折线闪电近似：
                     //   蓝链（A，`beam=false`）= 淡蓝细闪电；红链（B，`beam=true`）= 粗红闪电 + 亮芯（切割感）。
+                    // 锚点可为术士或柱子（稳定 id → `obstacle_pos_by_id`）。
                     let op = self.world.players.get(owner as usize).map(|p| p.pos);
-                    let tp = self.world.players.get(target as usize).map(|p| p.pos);
+                    let tp = match anchor {
+                        game_core::world::TetherAnchor::Player(a) => self.world.players.get(a as usize).map(|p| p.pos),
+                        game_core::world::TetherAnchor::Obstacle(id) => self.world.obstacle_pos_by_id(id),
+                    };
                     if let (Some(o), Some(t)) = (op, tp) {
                         let to_screen = |v: Vec2| Point2 {
                             x: v.x.to_num::<f32>() * self.scale + self.offset.x,
@@ -3371,7 +3389,7 @@ impl Game {
                         let (a, b) = (to_screen(o), to_screen(t));
                         let time = ctx.time.time_since_start().as_secs_f32();
                         if beam {
-                            // 红链：外圈粗闪电 + 内芯亮线（近似 `CLSB` 切割）。
+                            // 红链命中队友/柱子：外圈粗闪电 + 内芯亮线（近似 `YI`/`CLSB` 切割）。
                             draw_lightning_polyline(
                                 &mut canvas, ctx, a, b, 4.5,
                                 Color::from_rgba(255, 70, 60, 225), 10.0, owner as f32 * 3.1, time,
@@ -3381,21 +3399,27 @@ impl Game {
                                 Color::from_rgba(255, 225, 210, 240), 7.0,
                                 owner as f32 * 3.1 + 7.7, time * 1.6,
                             )?;
+                        } else if red {
+                            // 红链（Induction）命中敌人：红色闪电（098c `DRAL`）。
+                            draw_lightning_polyline(
+                                &mut canvas, ctx, a, b, 3.0,
+                                Color::from_rgba(255, 90, 80, 225), 8.0, owner as f32 * 3.1, time,
+                            )?;
                         } else {
-                            // 蓝链：淡蓝闪电。
+                            // 蓝链（Hook）：淡蓝闪电（098c `DRAM`）。
                             draw_lightning_polyline(
                                 &mut canvas, ctx, a, b, 3.0,
                                 Color::from_rgba(130, 170, 255, 220), 8.0, owner as f32 * 3.1, time,
                             )?;
                         }
                         // 两端锚点（锁链的“结点”）。
-                        let anchor = if beam {
+                        let node_col = if red {
                             Color::from_rgb(255, 110, 100)
                         } else {
                             Color::from_rgb(140, 170, 255)
                         };
                         for p in [a, b] {
-                            let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), p, 4.0, 0.5, anchor)?;
+                            let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), p, 4.0, 0.5, node_col)?;
                             canvas.draw(&dot, graphics::DrawParam::new());
                         }
                     }
@@ -3430,15 +3454,20 @@ impl Game {
                     let line = Mesh::new_line(&ctx.gfx, &[Point2 { x: fx, y: fy }, Point2 { x: ex, y: ey }], 4.0, Color::from_rgba(200, 120, 255, 200))?;
                     canvas.draw(&line, graphics::DrawParam::new());
                 }
-                game_core::world::ProjectileKind::W098b { proj, radius, .. } => {
+                game_core::world::ProjectileKind::W098b { proj, radius, on_hit, .. } => {
                     // 098b 名册弹体（M1/M2）：按形态配色。
                     let r = (radius.to_num::<f32>() * self.scale).max(4.0);
-                    let color = match proj {
-                        game_core::skill::W098bProjKind::Straight => Color::from_rgb(255, 130, 60),
-                        game_core::skill::W098bProjKind::Homing => Color::from_rgb(200, 110, 255),
-                        game_core::skill::W098bProjKind::Boomerang => Color::from_rgb(90, 220, 230),
-                        game_core::skill::W098bProjKind::Bounce => Color::from_rgb(255, 220, 80),
-                        game_core::skill::W098bProjKind::Magma => Color::from_rgb(255, 120, 40),
+                    let color = match on_hit {
+                        // S019 链弹按**形态**上色（098c 蓝链 `DRAM` / 红链 `DRAL`）。
+                        game_core::skill::W098bOnHit::ChainPull => Color::from_rgb(130, 170, 255),
+                        game_core::skill::W098bOnHit::RedChain => Color::from_rgb(255, 90, 80),
+                        _ => match proj {
+                            game_core::skill::W098bProjKind::Straight => Color::from_rgb(255, 130, 60),
+                            game_core::skill::W098bProjKind::Homing => Color::from_rgb(200, 110, 255),
+                            game_core::skill::W098bProjKind::Boomerang => Color::from_rgb(90, 220, 230),
+                            game_core::skill::W098bProjKind::Bounce => Color::from_rgb(255, 220, 80),
+                            game_core::skill::W098bProjKind::Magma => Color::from_rgb(255, 120, 40),
+                        },
                     };
                     let dot = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py }, r, 0.4, color)?;
                     canvas.draw(&dot, graphics::DrawParam::new());
@@ -4383,24 +4412,39 @@ impl Game {
                         let skill = me.bound_skill(*key);
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
                         // 技能名：外层用中性基础名（不绑定具体形态；形态见详情面板）
-                        let label = match skill {
-                            Some(s) => game_core::skill::DefTable::neutral_name(s),
-                            None => "—",
+                        // 链激活时 Y 槽实为 S031「锁链附加」（Release/Induce）——098c 隐藏 S019、显示 S031。
+                        let chain_here = if skill == Some(SkillId::S019) {
+                            self.world.projectiles.iter().find_map(|p| match &p.kind {
+                                game_core::world::ProjectileKind::Tether { owner, beam, .. } if *owner == me.player_id => Some(*beam),
+                                _ => None,
+                            })
+                        } else {
+                            None
+                        };
+                        let label = match chain_here {
+                            Some(true) => "锁链附加·诱导",
+                            Some(false) => "锁链附加·释放",
+                            None => match skill {
+                                Some(s) => game_core::skill::DefTable::neutral_name(s),
+                                None => "—",
+                            },
                         };
                         draw_text(canvas, ctx, &self.key_label(*key), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
                         draw_text(canvas, ctx, label, 15.0, Color::WHITE, slot_center, true)?;
                         // 形态角标（右下）：该技能有第二形态且当前为 B 时标出形态名后缀
                         // —— 中性名会剥掉「·形态」，否则对局中看不出自己是 A 还是 B。
-                        if let Some(s) = skill {
-                            let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                            if alt && game_core::skill::DefTable::has_alt(s) {
-                                draw_text(
-                                    canvas, ctx,
-                                    game_core::skill::DefTable::form_suffix(s, true),
-                                    12.0, Color::from_rgb(150, 220, 180),
-                                    Point2 { x: bx + slot_w - 14.0, y: y0 + slot_h - 10.0 },
-                                    true,
-                                )?;
+                        if chain_here.is_none() {
+                            if let Some(s) = skill {
+                                let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                                if alt && game_core::skill::DefTable::has_alt(s) {
+                                    draw_text(
+                                        canvas, ctx,
+                                        game_core::skill::DefTable::form_suffix(s, true),
+                                        12.0, Color::from_rgb(150, 220, 180),
+                                        Point2 { x: bx + slot_w - 14.0, y: y0 + slot_h - 10.0 },
+                                        true,
+                                    )?;
+                                }
                             }
                         }
 

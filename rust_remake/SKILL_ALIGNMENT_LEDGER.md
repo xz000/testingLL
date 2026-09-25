@@ -245,15 +245,64 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 又：098c 柱面反弹写在**柱子自己的** `hv=IN`→`WA()` 里（对所有弹体生效），而“弹体被销毁/弹体自伤”写在**弹体自己的** `hv` 里——所以“撞柱不销毁”还是“撞柱消失/爆炸”取决于**弹体自己的处理器**，不能一概而论。（待办：逐技能核对“撞柱是否伤柱/销毁”，目前 `pillar_bounce` 分支统一扣柱 HP。）
 
-### S019 锁链（蓝 `uc`/红 `Uc`；审计 §4 已记；本次补视觉）
+### S019 锁链（蓝 Hook `uc` / 红 Induction `Uc`）
 
-| 项 | 098c | 我方 | 状态 |
+> **权威顺序（本工程）**：**JASS 代码 > 英文原版 w3a 文本 > 中文截图文本**。
+> **源文件**：`..\098c\out\war3map.j`（**raw**）。
+> ⚠ `war3map_pretty.j` 会把 `elseif` 拆成 `else`+嵌套 `if`（已实证误读 `aR`），**不可用于控制流**。
+
+| 项 | 098c（raw `war3map.j` 行号） | 我方（现状） | 状态 |
 |---|---|---|---|
-| 伤害 | `hI(caster,target,.2×Yr)` 每 0.18s（`if je` 门控） | `damage_per_sec=(0.2+0.2(L-1))/0.18` | ✅（审计已核） |
-| 拉拽 | 蓝链 `Q[目标]-=1.4×dir`、红链 `Q[施法者]+=1.4×dir`，每 tick | `pull_speed=±46.7` | ✅ |
-| 断裂 | `Rr≤89` 松开 | 同 | ✅ |
-| 红链切割 | `YI`(3532)：对线段掠过的敌人 `hI(.7+.3×Yr)`（`if je`）；蓝链无 | `beam_dps`（仅 B） | ✅ |
-| 视觉 | `AddLightningEx("AFOD")` 连施法者↔目标（每 tick `MoveLightningEx` 刷新）；红链切割用 `"CLSB"` | 折线闪电：蓝=淡蓝、红=粗红+亮芯；两端锚点 | ✅（2026-09-20 新增，近似） |
+| 入口 | `uc`(Hook)/`Uc`(Induction)；设 `Av[+1]=Av[+3]=true`（可撞 class1 术士 + class3 柱子，**不撞弹体**） | `W098bOnHit::ChainPull`/`RedChain`（命中判定与撞柱分支已按 `Av` 实现） | ✅ |
+| 链接载体 | 命中回调 `Sc`(蓝)/`sc`(红) 执行 `Fv[caster]=hit`，弹体随即 `iO` 销毁；持续效果全在 `DA` 主循环 **4285-4341** | `ProjectileKind::Tether { anchor, pull, remaining: Option<..> }`（锚点为玩家/柱子稳定 id） | ✅ 近似 |
+| 命中判定 | 碰撞过滤 raw 4389 + 术士 `Nv=true`(2712) ⇒ 链弹可命中**队友** | 蓝链/红链均用 `nearest_hit_any`（含队友、排施法者） | ✅ |
+| 拉拽·蓝→术士 | `DA` 4312 `Q[Vr]-=1.4×dir`（拉目标向施法者；**队友也拉**） | `TetherPull::TargetToOwner` | ✅ |
+| 拉拽·蓝→柱 | `DA` 4321 `Q[nr]+=1.4×dir`（**拉施法者向柱子**） | `TetherPull::OwnerToAnchor`（`TetherAnchor::Obstacle`） | ✅ |
+| 拉拽·红→敌 | `DA` 4298 `Q[nr]+=1.4×dir`（拉施法者向敌人） | `TetherPull::OwnerToAnchor` | ✅ |
+| 拉拽·红→队友/柱 | 无拉拽 | `TetherPull::None` | ✅ |
+| 伤害 | `DA` 4301/4308 `hI(nr,Vr,.2×Yr)` 每 **0.18s**（`je` raw 4198-4212）；**仅敌方**、**无 Tied** | `damage_per_sec=.2/0.18`，仅敌方锚点结算；**已去 Tied** | ✅ |
+| 红链切割 `YI` | `DA` 4305（队友）/4318（柱子）沿线 `.7+.3×Yr`/0.18s；**只切异队**（`cn!=cn[jI]`）；判定为**垂直距离 `<Lr=75` 且投影在两端之间**（矩形，**不加目标半径**）；**敌人无 YI** | 仅队友/柱子开 `beam`；敌人 `beam=false`；已加队伍过滤与 `Lr=75` 矩形判定（`point_in_chain_beam`） | ✅ |
+| 红链 +移速 | `sc` raw 7260 `gR(caster,hR+100)`（`mr='d'`=100），4s 后 `pc` 还原 | `BuffKind::ChainSpeed(+100)`（固定 4s，不入 `jn`） | ✅ |
+| 断链 | 术士/敌人 `Rr≤89` 松（`DA` 4326-4338）；**柱链与红链同队**因 `DA` 4294 的 `…or nv[Vr]==3`/同队条件恒真而**不断**；红链队友/柱子另有 `sc` raw 7265 `4.5×jn` 定时断 | `remaining: Option`（`None`=不断）；`≤89` 仅玩家锚点且非红链队友；柱不存在/施法者死亡即断 | ✅ |
+| 柱链不吃伤 | `Sc`/`sc` 无对柱 `hI` | 撞柱分支建立链、**不扣柱 HP** | ✅ |
+| S031 | 链激活时隐藏 S019、显示 S031（`uc`/`Uc`；`aR` **无条件**恢复 S019、隐藏 S031）；L1 `Release`→`aR`（raw 8579）；L2 `Induce`（仅红链队友/柱）→ `qc`(raw 7239，断链定时器 `+3×jn`) + 自伤 4 + 1s CD | 核心逻辑已实现（`handle_casts` 拦截 + 客户端 Y 键路由/HUD 切标签）；`S031` 的 `SkillDef` 仍为占位（未走 `execute_effects`） | ✅（定义仍占位） |
+| 视觉 | 蓝链 `DRAM`、红链 `DRAL`（飞行弹体+链接）；红链切割 `"CLSB"` | 飞行弹体与链接都按**形态** `red` 上色（蓝=淡蓝 / 红=红）；红链队友/柱子额外加粗亮芯（`YI`）；锚点支持柱子 | ✅ 近似 |
+
+> **文本对照**：措辞上【中】中文截图与【我】一致——蓝链「把术士拉向你或把你自己拉向柱子」、
+> 红链「把你自己拉向敌人；若目标是队友或柱子则附加可切割敌人的红色闪电」。
+> 【原】英文 w3a："…which will take damage until link ends. **If target is ally or pillar, a lightning will be induced.**"（Lightning 1.0→3.4）。
+> 数值上【中】截图作「6 级 / 伤害 +0.1 / 闪电 +0.1 / CD 17·15·13·11·9·7」，【原】w3a 为「9 级 / 伤害 +0.2 / 闪电 +0.3 / CD 17·14.5·…·8」；
+> **JASS 固定 `.2*Yr` 且等级可至 9+，故以【原】为准**（截图疑为旧版或简写）。
+
+#### 链的**断开入口**（098c `aR`/`VR` 全表；2026-09-25 已核）
+
+> `VR(gX,false)` = 断**敌方** owner 挂到 `gX` 上的链；`true` = 不分队伍。`aR(gX)` = 断 `gX` **自己拥有**的链。
+
+| 触发 | 098c（raw 行号） | 我方 |
+|---|---|---|
+| S031 L1 Release | `uC` 8580 `aR(self)` | ✅ |
+| S035 切形态（Y 槽=S019） | `sC` 8259 `aR(self)` | ⚠ 形态切换仅在学习/配置期（全局设计） |
+| S005 反射盾 | `gC` 7770 `VR(self,false)` | ✅（断敌方链、保留同队） |
+| S007 急行 | `KR` 2792 `VR(self,false)` | ✅ |
+| S006 回溯 | `RR` 2623 `aR(self)` + 2624 `VR(self,false)` | ✅ |
+| S017B 沉默 | `AC` 7507（经线切 `BC` 7567）`aR(被沉默者)` | ✅ |
+| S001 天罚 Denied | `mC` 7915：敌人链锚在自己身上 + 敌人处于特殊状态 → `aR(敌人)` | ✅（`DeniedMode::Conditional`） |
+| S021 虔诚 Denied | `QC` 8118 同上 | ✅（`Conditional`） |
+| S020 灾变 Denied | `qC` 8030：**无条件**断敌人挂在自己身上的链 | ✅（`DeniedMode::Unconditional`） |
+| S019 重放清旧链 | `uc`/`Uc` 7325/7347 `aR(self)` | ✅（链期间 S019 禁用） |
+| 目标/柱消失 | `DA` 4289 | ✅ |
+| 拉到位 `Rr≤89` | `DA` 4338（仅术士/敌人） | ✅ |
+| 红链队友/柱定时断 | `Pc` 7236（`4.5×jn`） | ✅ |
+| 死亡/复活/回合重置 | `BR` 2668（`fR`/复活/死亡） | ✅ |
+| 对象销毁 | `iN` 4809 `VR(nr,true)` | ✅（柱毁 → 锚点失效） |
+| 玩家离开 | `zd` 10099 `VR(unit,false)` | ⚠（联网掉线处理不同） |
+
+> 回归测试：`s005_s007_escape_enemy_chains_only`（只挣脱敌方链）、`silence_breaks_targets_own_chain`（沉默断自己链）、`s031_release_and_induce`、`smite_denied_breaks_link_on_special_target`、`s019_pillar_anchor_breaks_when_pillar_destroyed`。
+> 实现辅助：`World::sever_links_owned_by`（= `aR(self)`）、`World::sever_links_on`（= `VR`）；
+> ⚠ 注意 `step_projectiles` 开头 `mem::take(self.projectiles)`：在其内部要断链须操作局部 `ps`，不能用 `self.*`。
+> **Denied 修正（2026-09-25）**：旧实现是「遍历命中半径内的敌人，断锚点为该敌人的链」——语义**反了**。
+> 098c 是「遍历敌人 `gX`，若 `Fv[gX]==施法者`（敌人链住了你）→ `aR(gX)`」，**与半径无关**。
+> 已改为 `explode_at(..., denied: DeniedMode{Off,Conditional,Unconditional})`：S001/S021=`Conditional`、S020=`Unconditional`。
 
 ---
 
@@ -271,6 +320,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 6 | **S016 弹跳** | ✅ 已实施（`31b5397`）：重定向用提前量 `vel=tvel+(√(speed²−cross²)−dot)*dir`；新增 `chase`(Fv) 做每帧制导 `vel=.98vel+.02*speed*dir` | `Fc` 13764 / `mb` 11118（Select-String） | ✅ 已完成 |
 | 7 | **S016B 充能** | ✅ 已实施（`5cb07b3`）：`dc` 命中生成魂（`SoulReturn`）→ `cc` 400/s 回飞 → 64 内 `Nc` 清 CD；顺带 kb 0.8→1.15 | `dc` 13679 / `cc` 13633 / `Nc` 13615 | ✅ 已完成 |
 | 8 | 通用 | ✅ `jn`（`37bc636`）；✅ `Hr`（`8a8c647`：S012 燃烧冲刺撞柱不反弹，`WA` 4671）；`Bv`（仅地形碎石）/`cv`（通用优先级，我方护盾反射已等价）不适用 | `jn` 初始化 10236；`Hr` `AB` 6123 / `WA` 4671；`Bv` `eN` 4778 | ✅ 完成（含不适用项） |
+| 9 | **S019 锁链** | ✅ **已完成（2026-09-25，协议 38→39）**：`Obstacle.id` + `Tether` 锚点重构（`TetherAnchor`/`TetherPull`/`remaining: Option`）+ `BuffKind::ChainSpeed` + 撞柱链（蓝自拉 / 红 `YI`+移速）+ 去 Tied、伤害仅敌方 + 蓝链含队友 + 红敌无 `beam` + S031 Release/Induce（服务端拦截 + 客户端 Y 键路由/HUD 切标签）。新增测试：`s019_blue_chain_hooks_pillar_pulls_caster` / `s019_blue_chain_pillar_link_survives_within_89` / `s019_pillar_anchor_breaks_when_pillar_destroyed` / `s019_red_chain_pillar_lightning_and_speed` / `s019_blue_chain_hits_ally` / `s031_release_and_induce` | `DA` 4285-4341；`sc` 7240-7266；raw 8579/7239 | ✅ 已完成 |
 
 
 

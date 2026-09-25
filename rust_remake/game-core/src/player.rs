@@ -139,6 +139,9 @@ pub enum BuffKind {
     /// 098c `vc`：`gR(目标, hR(目标)±70)`（`Kr=70`，`hR/gR` = **移速**），并在 `(3+L)×jn` 秒后
     /// 由 `YB`(12902) 回调加回/扣回。我们用 buff 承担“临时修改 + 到期自动恢复”，语义等价。
     SpeedSteal(f64),
+    /// **S019 红链命中队友/柱子**：施法者固定 +100 移速（098c `sc` 的 `gR(caster,hR+mr)`，`mr`=100），
+    /// 固定 4s 后 `pc` 还原。独立于 `SpeedSteal`（同 variant 只会互相覆盖），平面相加；不受 `jn`/化身缩放。
+    ChainSpeed(f64),
     /// **S014B 汲取·削弱：伤害成长/输出倍率乘子**（敌方 0.5 / 友方 1.1）。
     ///
     /// 098c `oc`：`Gn[目标] *= 0.5`（友军 `*=1.1`），到期 `yB`(12894) 回调 `Gn /= ve` 还原。
@@ -267,6 +270,8 @@ pub struct Player {
     pub catastrophe_stage: u8,
     /// 熔岩靴激活 CD（098b 25s；熔岩上用天罚触发，D8/M5）。随快照同步。
     pub lava_boot_cd: Fix64,
+    /// S031「Link action」的 1s 冷却（098c `Arpm` L2 `acdn=1.0`；仅 Induce 施加）。
+    pub chain_action_cd: Fix64,
     /// 098c 魔法张力值（D9）：出生 0、挨打回魔（受多少伤加多少）、无上限；
     /// 放大所受击退（公式 100+mana）。纯内部值，无 UI 蓝条。
     pub mana: f64,
@@ -379,6 +384,7 @@ impl Player {
             rewind: None,
             catastrophe_stage: 0,
             lava_boot_cd: Fix64::ZERO,
+            chain_action_cd: Fix64::ZERO,
             mana: 0.0,
             growth: 1.0,
             boomerang_side: false,
@@ -452,6 +458,11 @@ impl Player {
     pub fn add_buff(&mut self, kind: BuffKind, remaining: f64) {
         let mult = if kind.is_debuff() { 1.0 } else { self.jn() };
         self.add_buff_scaled(kind, remaining * mult);
+    }
+
+    /// 写入一个**不随 `jn`/化身时长缩放**的增益（098c `sc`→`pc` 的固定 4s 移速）。
+    pub fn add_buff_fixed(&mut self, kind: BuffKind, secs: f64) {
+        self.add_buff_fix(kind, Fix64::from_num(secs));
     }
 
     /// 由 `source_jn` 的施法者施加的**减益**：时长 × `jn[施法者] / jn[自己]`
@@ -672,7 +683,17 @@ impl Player {
                 _ => 0.0,
             })
             .sum();
-        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat + steal)) * Fix64::from_num(mult)
+        // S019 红链命中队友/柱子：施法者固定 +100 移速（098c `sc`，`mr`=100）。与 `SpeedSteal` 独立相加。
+        let chain_speed: f64 = self
+            .buffs
+            .iter()
+            .filter(|b| b.remaining > Fix64::ZERO && b.kind.same_variant(&BuffKind::ChainSpeed(0.0)))
+            .map(|b| match b.kind {
+                BuffKind::ChainSpeed(v) => v,
+                _ => 0.0,
+            })
+            .sum();
+        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat + steal + chain_speed)) * Fix64::from_num(mult)
     }
 
     /// 测试用：当前基础移速（含物品平加）。
@@ -771,6 +792,7 @@ impl Player {
 
     /// 推进统一 buff 计时（到期回收），并推进强制位移/踢击的剩余时长。
     pub fn tick_buffs(&mut self, dt: Fix64) {
+        self.chain_action_cd = (self.chain_action_cd - dt).max(Fix64::ZERO);
         let eps = Fix64::from_num(1.0 / 65536.0);
         for b in self.buffs.iter_mut() {
             if b.remaining > Fix64::ZERO {
@@ -946,6 +968,7 @@ impl Player {
         // 回合瞬态：避免上一局末触发的效果泄漏进下一局
         // （熔岩靴激活 CD / 凤凰态 / 潜行吸血 CD / 守护充能 / 复活调度 / 冰面标记）。
         self.lava_boot_cd = Fix64::ZERO;
+        self.chain_action_cd = Fix64::ZERO;
         self.phoenix_remaining = Fix64::ZERO;
         self.windwalk_state = Fix64::ZERO;
         self.role_kb_mult = 1.0;
