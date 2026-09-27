@@ -144,6 +144,7 @@
 ### 后期可选（记录，不在当前范围）
 | 能力 | 用途 | 说明 |
 |---|---|---|
+| **近期一起玩过（Recently Played With）游戏内查看面板** | 在游戏内浏览/邀请「近期同玩」的玩家 | **「标记」已做（A 部分，2026-09-27）**；游戏内查看/邀请面板（B 部分）留作远期，见下方 §5 |
 | 语音聊天 | 内建语音 | 工程较大，后置评估 |
 | Steam Input（手柄） | 手柄支持 | 若做手柄再上 |
 | Steam UGC（创意工坊） | 自定义地图/技能 | 超出当前范围 |
@@ -164,3 +165,28 @@
 4. ~~Steamworks 第二批：成就 / 排行榜 / 头像 / Ping~~ ✅ 已落（2026-08-29），**待真机复验 + 后台配置 key**
    （真机复验 + Steamworks 后台配置 key）。
 5. 复验通过后接最后一批：**云存档**（Remote Storage）。
+
+---
+
+## 5. 近期一起玩过（Recently Played With）
+
+### A. 标记支持 ✅ 已落（2026-09-27）
+Steam 自带的「好友 → 近期一起玩过」列表**需要游戏主动调 `ISteamFriends::SetPlayedWith` 才会填充**
+（且要求当前用户与对方处于同一局游戏/同一大厅，关联才生效）。已接入：
+- **net-steam**：`session::played_with_targets(me, ids)`（纯函数：去本机/无效 id + 保序去重，有单测）
+  + `session::mark_played_with(transport, ids)`（对每个目标调 `Friend::set_played_with()`，best-effort，返回标记人数）。
+- **client**：`steam_mark_played_with()` 汇总 `steam_roster`（房间成员）+ `steam_participants`（对局参与者），
+  **仅当目标集合变化时**才真正调 Steam；在节流的 `steam_refresh_network_info`（每 30 帧）里调用，
+  房间阶段与对局阶段都会生效。每次进房/回主菜单复位标记集合。
+- **待真机复验**：双账号进同一房间/打一局后，在 Steam 客户端「好友 → 近期一起玩过」应能看到对方。
+  若发现只在房间内标记不够（Steam 要求“实际对局中”才关联），兜底方案：对局中按秒级节流**周期性重标记**
+  （加一个 `steam_played_with_mark_ticks` 计数器，每 N 帧无条件重标一次），代价很小。
+- 不改模拟/协议 → 不升 `PROTOCOL_VERSION`。
+
+### B. 游戏内查看/邀请面板（远期规划，未做）
+- 读列表：`Friends::get_coplay_friends()` → 每条用 `Friend::coplay_time()`（Unix 时间）与
+  `Friend::coplay_game_played()`（AppID，可按本 AppID 过滤）组装 `RecentPlayer`；昵称/头像复用现有
+  `list_friends`/`avatar_rgba`/`steam_draw_avatar` 那套。
+- UI（候选，待定）：并进现有「邀请好友」面板做**页签切换**（`好友 | 近期一起玩过`），或单独按键开的新面板。
+- 选中后动作（候选，待定）：邀请进当前房间 / 打开 Steam 资料页 / 加好友。
+- 备注：`get_coplay_friends` 是**跨游戏**的近期玩家，建议按 `coplay_game_played() == 本 AppID` 过滤到本作。

@@ -8,7 +8,7 @@
 //! - 掉线/重连/迁移/接管：`poll_steam_reconnect` · `poll_steam_migration` · `steam_do_takeover` · `clear_transient_input`
 //! - presence：`steam_transport` · `steam_current_room_info` · `steam_set/clear/refresh_presence`
 //! - 社交/状态/工具：`steam_ping_of` · `steam_refresh_network_info` · `steam_draw_avatar` · `steam_ensure_leaderboard` · `steam_record_match_result`
-//! - 好友/会话：`steam_refresh_friends` · `steam_ensure_session` · `steam_poll_join_requests`
+//! - 好友/会话：`steam_refresh_friends` · `steam_mark_played_with`（近期一起玩过）· `steam_ensure_session` · `steam_poll_join_requests`
 //!
 //! **剩余仍在 `main.rs`**（多为 UI/大厅流程/渲染长方法，暂不迁移）：`steam_lobby_update` · `steam_lobby_act` ·
 //! `steam_lobby_create_update` · `steam_lobby_list_update` · `enter_steam_mode` · `steam_config_update` ·
@@ -450,6 +450,8 @@ impl Game {
         if self.steam_net_ticks % 30 != 1 {
             return;
         }
+        // 顺手把同房/同局玩家标记为「近期一起玩过」（填充 Steam 自带的 Recently Played With 列表）。
+        self.steam_mark_played_with();
         // 先把要查的 SteamID 抄出来（避免 `steam_transport()` 的借用挡住后面的 &mut self）。
         // 含房间成员 +（邀请面板展开时）好友列表里的人，好让两边都能显示头像。
         let member_ids: Vec<u64> = self.steam_roster.iter().map(|(_, _, id)| *id).collect();
@@ -610,6 +612,25 @@ impl Game {
         self.steam_lang = steam;
         let resolved = self.lang_pref().resolve(steam);
         i18n::set_lang(resolved);
+    }
+
+    /// 把房间成员 + 对局参与者标记为 Steam「近期一起玩过」（填充 Steam 客户端自带列表）。
+    /// Steam 要求当前用户与对方在同一游戏里才会建立关联，故在房间/对局中调用；
+    /// 仅当目标集合**变化**时才真正调 Steam（避免每 0.5s 重复标记同一批人）。
+    /// 建议放在节流的 `steam_refresh_network_info` 里调用。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_mark_played_with(&mut self) {
+        // 汇总房间成员 + 对局参与者（两处各自可能包含对方没有的 id）。
+        let mut ids: Vec<u64> = self.steam_roster.iter().map(|(_, _, id)| *id).collect();
+        ids.extend(self.steam_participants.iter().copied());
+        let Some(t) = self.steam_transport() else { return };
+        let targets = net_steam::session::played_with_targets(t.steam_id(), &ids);
+        if targets.is_empty() || targets == self.steam_played_with {
+            return; // 没人可标 / 集合没变 → 不重复调 Steam。
+        }
+        let n = net_steam::session::mark_played_with(t, &ids);
+        eprintln!("[steam-coplay] marked {n} player(s) as recently-played-with: {targets:?}");
+        self.steam_played_with = targets;
     }
 
     /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。

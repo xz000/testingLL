@@ -119,6 +119,33 @@ pub fn list_friends(transport: &SteamTransport, lobby: Option<u64>) -> Vec<Frien
     out
 }
 
+/// 计算「近期一起玩过」需要标记的目标 SteamID：去掉本机与无效 id（0），去重并保持原顺序。
+///
+/// Steam 自带的「近期一起玩过的玩家 / Recently Played With」列表靠 [`mark_played_with`]
+/// 对同房/同局玩家调用 `ISteamFriends::SetPlayedWith` 填充；本函数只做集合整理（纯函数、可单测）。
+pub fn played_with_targets(me: u64, ids: &[u64]) -> Vec<u64> {
+    let mut out: Vec<u64> = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if id == 0 || id == me || out.contains(&id) {
+            continue;
+        }
+        out.push(id);
+    }
+    out
+}
+
+/// 把 `ids` 中除本机外的玩家标记为「近期一起玩过」（填充 Steam 客户端自带的近期玩家列表）。
+/// **需在同一房间/同一局游戏中调用**（`SetPlayedWith` 要求当前用户与对方在同一游戏里，关联才生效）。
+/// 纯 best-effort：不做错误处理，返回实际标记的人数；集合整理见 [`played_with_targets`]。
+pub fn mark_played_with(transport: &SteamTransport, ids: &[u64]) -> usize {
+    let targets = played_with_targets(transport.steam_id(), ids);
+    let fr = transport.friends();
+    for &id in &targets {
+        fr.get_friend(steamworks::SteamId::from_raw(id)).set_played_with();
+    }
+    targets.len()
+}
+
 /// 邀请一位好友进房间：`invite_user_to_game(connect 串)`。
 /// 好友的游戏若在运行 → 收到 `GameRichPresenceJoinRequested`（据此自动加入大厅）；
 /// 未运行 → Steam 用 `+connect_lobby <id>` 启动它（命令行解析见 client）。
@@ -1073,5 +1100,17 @@ mod tests {
         let mut rgba = vec![255u8; 16];
         circular_crop_rgba(&mut rgba, 0);
         assert_eq!(rgba, vec![255u8; 16], "side=0 应原样返回");
+    }
+
+    #[test]
+    fn played_with_targets_filters_self_and_invalid_and_dedups() {
+        // 本机(7)、无效(0) 去掉；重复的 9 只留一次；其余保持原顺序。
+        let targets = super::played_with_targets(7, &[7, 0, 9, 9, 3, 7, 0]);
+        assert_eq!(targets, vec![9, 3]);
+    }
+
+    #[test]
+    fn played_with_targets_empty_when_only_self() {
+        assert!(super::played_with_targets(42, &[42, 0, 42]).is_empty());
     }
 }

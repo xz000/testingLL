@@ -1094,6 +1094,9 @@ struct Game {
     /// Steam：Rich Presence 上次写入的内容（`状态|connect`），内容不变则不重复写。
     #[cfg(feature = "steam")]
     steam_presence_text: String,
+    /// Steam：上次已标记「近期一起玩过」的玩家集合；成员集合变化时才重新调 `SetPlayedWith`（避免每帧刷 Steam）。
+    #[cfg(feature = "steam")]
+    steam_played_with: Vec<u64>,
     /// Steam：主菜单上是否已尝试过初始化会话（失败也不再每帧重试，避免刷屏 + 反复 SteamAPI_Init）。
     #[cfg(feature = "steam")]
     steam_session_tried: bool,
@@ -1587,6 +1590,8 @@ impl Game {
             steam_presence_last: -999.0,
             #[cfg(feature = "steam")]
             steam_presence_text: String::new(),
+            #[cfg(feature = "steam")]
+            steam_played_with: Vec::new(),
             #[cfg(feature = "steam")]
             steam_session_tried: false,
             #[cfg(feature = "steam")]
@@ -7126,6 +7131,7 @@ impl Game {
             self.steam_pings = Vec::new();
             self.steam_avatars = Vec::new();
             self.steam_net_ticks = 0;
+            self.steam_played_with = Vec::new();
             // 本场战绩上报标记/提示条复位（下一场重新上报）。
             self.steam_stats_recorded = false;
             self.steam_stats_snapshot = None;
@@ -8472,6 +8478,7 @@ impl Game {
         self.steam_friends = Vec::new();
         self.steam_friend_selection = 0;
         self.steam_friend_hint = String::new();
+        self.steam_played_with = Vec::new(); // 新房间：重新标记「近期一起玩过」
         self.steam_presence_text = String::new(); // 强制立即写（不节流）
         self.steam_presence_last = -999.0;
         // 会话已被消费（成功），下次回主菜单允许再初始化一次。
