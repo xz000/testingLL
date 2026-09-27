@@ -280,3 +280,30 @@ Steam 库定位、多库扫描、`libraryfolders.vdf` 解析**直接复用** `au
 
 - 2026-09-27：初版。范围锁定「HUD 技能槽 + 物品栏 + 商店」；图标独立成包类型；内置默认无（回退文字）；
   状态图标本次不做；示例包用现有 CJK 字体程序生成；包仅存本地不同步。
+- 2026-09-27：**I0–I5 全部落地**（`steam_paths`/`icon_pack`/`icons`、HUD 与商店接入、设置页选择与打开目录、
+  Python 演示生成器、工坊发布），并顺带给设置菜单加了**滚动 + 鼠标滚轮**。真机上传待验证。
+
+---
+
+## 14. 落地状态 + 创意工坊发布（2026-09-27）
+
+**I0–I5 均已完成并提交**（见 §13）。功能默认关闭（`icon_pack=none` = 纯文字），**零行为变化/零回归**。
+
+### 14.1 创意工坊标签
+- 发布图标包时游戏发送 tag **`Icons`**（见 `icon_pack::publish_meta`）。
+- 该 tag 必须在 **Steamworks 后台 → 创意工坊 → 标签**里**预先定义**（字符串完全一致 `Icons`），
+  否则 Steam 可能报错/忽略。与 `AUDIO_PLAN.md` §8.6 的 `Sound` / `Music` 并列。
+
+### 14.2 发布流程（需真机：Steam 客户端 + 登录 + 已启用 Workshop）
+1. 准备本地包：`%APPDATA%/warlock_brawl/icons/<包>/`（含 `icons/`，可选清单/`preview.png`）。
+   示例：`python tools/gen_demo_icon_pack.py`（默认写到 `DemoIconPack`）。
+2. 游戏（**Steam 构建**、经 Steam 启动）→ 设置：
+   - 「图标包」选包（可先预览）；
+   - 「要发布的图标包」选目标**本地**包；
+   - 「发布本地图标包」执行 → 行内显示 创建中 / 上传 x% / 已发布 id；
+   - 「发布可见性」「发布时复用物品 id」控制公开性与更新/新建。
+3. 发布映射键用 `icon:<包id>` 存 `settings.txt`（`published.icon:<包id>=<fileid>`），与音频发布互不干扰。
+
+### 14.3 Steamworks 后台前置（否则报 `no workshop depot found`）
+同 `AUDIO_PLAN.md` §8.6/§8.7：① 附加配置选项勾选 **Enable ISteamUGC for file transfer**；
+② Steam 云配额（存预览图）；③ 改完走 **Publish → Prepare for Publishing → Publish to Steam**。

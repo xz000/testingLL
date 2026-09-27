@@ -322,6 +322,8 @@
 后台定义 `Sound` / `Music`，要求**至少选一**（合集包两个都打）。tag 仅用于工坊页/后续 B 阶段的游戏内查询；
 **游戏内分类的事实来源是目录布局/manifest `type`**（tag 打错不影响游戏内识别）。
 
+> 图标包另用 tag `Icons`（后台需同样预定义），见 `ICON_PACK_PLAN.md` §14。
+
 ### 8.7 落地状态
 - ✅ **A0**：本地目录扫描 + 音效包整包覆盖 + 设置页选择 + 启动/改包热重载（`audio_pack.rs`、`audio.rs`、`local_settings.rs`）。
 - ✅ **B0**：BGM 场景系统（`menu/lobby/battle/result` + 循环 + 交叉淡入淡出 + `music_volume` 接线）。
