@@ -429,6 +429,9 @@ enum TrainingAction {
 /// 训练场设置面板的行数（靶子数量 / 靶子移动）。
 const TRAINING_ROWS: usize = 2;
 
+/// 主菜单卡片数（单机 / 局域网 / Steam / 设置）。
+const MENU_COUNT: usize = 4;
+
 /// 设置界面行：`(行类型, 标签 key)`。标签为中文原文，绘制时过 [`i18n::t`]。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum SetRow {
@@ -5900,7 +5903,6 @@ impl event::EventHandler for Game {
             use ggez::input::mouse::MouseButton;
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
             let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
-            const MENU_COUNT: usize = 4;
             // 本机设置界面（主菜单 4 号入口）独占输入。
             if self.settings_open {
                 self.settings_update(ctx);
@@ -6857,15 +6859,59 @@ impl event::EventHandler for Game {
     /// winit 循环已在 main.rs:5842 把 `MouseWheel` 转发到此。
     fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, y: f32) -> GameResult {
         use game_core::meta::MatchPhase;
-        // 设置界面：滚轮滚动设置行（子界面自行处理/忽略）。
-        if self.settings_open && !self.workshop_open && !self.keybinds_open {
-            let n = SETTINGS_ROWS.len();
-            let max_scroll = n.saturating_sub(SETTINGS_VISIBLE);
-            if y > 0.0 {
-                self.settings_scroll = self.settings_scroll.saturating_sub(1);
-            } else if y < 0.0 {
-                self.settings_scroll = (self.settings_scroll + 1).min(max_scroll);
+        // 菜单滚轮 = 选中项上下移动（与 ↑/↓ 同义；y>0 上、y<0 下）。各界面用自己的选中字段/范围。
+        if y != 0.0 && self.settings_open {
+            let up = y > 0.0;
+            if self.keybinds_open {
+                let n = local_settings::BIND_ACTIONS.len();
+                if n > 0 {
+                    self.keybinds_sel = if up { (self.keybinds_sel + n - 1) % n } else { (self.keybinds_sel + 1) % n };
+                    self.audio.play(audio::AudioCue::UiMove);
+                }
+            } else if self.workshop_open {
+                let n = self.workshop_row_views().len();
+                if n > 0 {
+                    self.workshop_sel = if up { (self.workshop_sel + n - 1) % n } else { (self.workshop_sel + 1) % n };
+                    self.audio.play(audio::AudioCue::UiMove);
+                }
+            } else {
+                let n = SETTINGS_ROWS.len();
+                self.settings_row = if up { (self.settings_row + n - 1) % n } else { (self.settings_row + 1) % n };
+                self.settings_scroll = scroll_to_show(self.settings_row, self.settings_scroll, SETTINGS_VISIBLE, n);
+                self.audio.play(audio::AudioCue::UiMove);
             }
+            return Ok(());
+        }
+        // 训练场设置：滚轮移动选中行。
+        if y != 0.0 && self.training_open {
+            let up = y > 0.0;
+            self.training_row = if up { (self.training_row + TRAINING_ROWS - 1) % TRAINING_ROWS } else { (self.training_row + 1) % TRAINING_ROWS };
+            self.audio.play(audio::AudioCue::UiMove);
+            return Ok(());
+        }
+        // Steam 大厅子菜单 / 房间列表。
+        #[cfg(feature = "steam")]
+        {
+            if y != 0.0 && self.steam_lobby_menu {
+                let up = y > 0.0;
+                self.steam_lobby_selection = if up { (self.steam_lobby_selection + 2) % 3 } else { (self.steam_lobby_selection + 1) % 3 };
+                self.audio.play(audio::AudioCue::UiMove);
+                return Ok(());
+            }
+            if y != 0.0 && self.steam_lobby_list {
+                let n = self.steam_list_lobbies.len();
+                if n > 0 {
+                    let up = y > 0.0;
+                    self.steam_list_selection = if up { (self.steam_list_selection + n - 1) % n } else { (self.steam_list_selection + 1) % n };
+                    self.audio.play(audio::AudioCue::UiMove);
+                }
+                return Ok(());
+            }
+        }
+        // 主菜单卡片（无子界面时）。
+        if y != 0.0 && self.app == AppState::MainMenu {
+            let up = y > 0.0;
+            self.menu_selection = if up { (self.menu_selection + MENU_COUNT - 1) % MENU_COUNT } else { (self.menu_selection + 1) % MENU_COUNT };
             return Ok(());
         }
         // 对战阶段：滚轮交给 `update_camera` 做光标锚点缩放（行/像素增量归一化，避免像素滚轮一下跳满）。

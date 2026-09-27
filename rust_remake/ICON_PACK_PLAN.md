@@ -254,7 +254,8 @@ Steam 库定位、多库扫描、`libraryfolders.vdf` 解析**直接复用** `au
   - `local_settings` 增 `publish_icon_pack`（默认 `none`）。
   - ⚠ Steam 部分**只能真机验证**（逻辑层已按音频发布同构）。
 
-> 附带：设置菜单行数已 21，新增**滚动**（一屏 12 行 + 滚轮 + 右缘滑条，`SETTINGS_VISIBLE`/`scroll_to_show`）。
+> 附带：设置菜单行数已 21，新增**滚动**（一屏 12 行 + 右缘滑条，`SETTINGS_VISIBLE`/`scroll_to_show`）。
+> **鼠标滚轮**已接到各菜单：设置 / 键位 / 工坊物品列表 / 训练场 / Steam 大厅（子菜单与房间列表）/ 主菜单卡片（= 上下移动选中，与 ↑/↓ 同义）。
 - [x] **I5 示例包生成器** ✔ 2026-09-27：`tools/gen_demo_icon_pack.py`（Python + Pillow）。
   - 键表来源：客户端 `cargo run -p client -- --dump-icon-keys`（复用 `icon_pack::key_entries`，**不在 Python 重复维护**）。
   - 产物：`icons/skill/*.png` + `icons/item/*.png` + 清单 + `keys.txt` + `preview.png`；不随仓库附带生成结果。
