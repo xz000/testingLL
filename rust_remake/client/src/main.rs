@@ -3651,19 +3651,30 @@ impl Game {
                         Color::from_rgba(90, 100, 120, 220),
                     )?;
                     canvas.draw(&slot_border, graphics::DrawParam::new());
-                    // 物品名（截断到 4 字）+ 右上角**档位角标**（名字里的 "1/2/3" 会被截掉，用角标补回）
+                    // 图标（有则替换 4 字名；缺则回退文字）+ 右上角**档位角标**。
                     if let Some(it) = pr.items.get(i) {
                         let d = it.def();
-                        let name: String = d.name.chars().take(4).collect();
-                        draw_text(
-                            &mut canvas,
-                            ctx,
-                            &name,
-                            13.0,
-                            Color::from_rgb(255, 230, 160),
-                            Point2 { x: x + (slot_w - 4.0) / 2.0, y: y0 + (slot_w - 4.0) / 2.0 - 2.0 },
-                            true,
-                        )?;
+                        let icon = self
+                            .icon_bank
+                            .icon(ctx, icon_pack::IconKey::item(d.id.as_u32()));
+                        if let Some(img) = &icon {
+                            icons::draw_fitted(
+                                &mut canvas, img,
+                                graphics::Rect::new(x + 2.0, y0 + 2.0, slot_w - 8.0, slot_w - 8.0),
+                                Color::WHITE,
+                            );
+                        } else {
+                            let name: String = d.name.chars().take(4).collect();
+                            draw_text(
+                                &mut canvas,
+                                ctx,
+                                &name,
+                                13.0,
+                                Color::from_rgb(255, 230, 160),
+                                Point2 { x: x + (slot_w - 4.0) / 2.0, y: y0 + (slot_w - 4.0) / 2.0 - 2.0 },
+                                true,
+                            )?;
+                        }
                         // 档位角标：仅同家族多档时显示（怀表 1/2、靴 1/2/3、头盔 1/2/3…）
                         if d.family != game_core::item::ItemFamily::Standalone {
                             draw_text(
@@ -4738,7 +4749,10 @@ impl Game {
                                     } else {
                                         i18n::tf("{i} {name}  ({cost}G 金币不足)", &[("i", (i + 1).to_string()), ("name", form_name.to_string()), ("cost", cost.to_string())])
                                     };
-                                    ui::row(canvas, ctx, r, &label, ui::theme::BODY, st)?;
+                                    let on = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
+                                    let icon = icon_pack::slot_state(Some(*skill), on, None)
+                                        .and_then(|k| self.icon_bank.icon(ctx, k));
+                                    ui::row_with_icon(canvas, ctx, r, icon.as_ref(), &label, ui::theme::BODY, st)?;
                                     // 任何技能（含已锁定/金币不足）都可点击查看详情，只是买不了
                                     self.learn_hitboxes.push((r, LearnAction::Skill(i)));
                                     ry += ui::theme::ROW_H + 4.0;
@@ -4946,7 +4960,11 @@ impl Game {
                             } else {
                                 ui::RowState::Normal
                             };
-                            ui::row(canvas, ctx, r, &format!("[{key}] {}", row.label), ui::theme::BODY, st)?;
+                            let icon = row
+                                .buy
+                                .or(row.sell)
+                                .and_then(|id| self.icon_bank.icon(ctx, icon_pack::IconKey::item(id.as_u32())));
+                            ui::row_with_icon(canvas, ctx, r, icon.as_ref(), &format!("[{key}] {}", row.label), ui::theme::BODY, st)?;
                             if let Some(id) = row.select_id() {
                                 self.learn_hitboxes.push((r, LearnAction::ShopSelect(id)));
                             }
@@ -4957,8 +4975,15 @@ impl Game {
                         // ---- 详情区：名称 / 描述 / 购买按钮 / 卖出按钮 ----
                         match &selected_row {
                             Some(row) => {
-                                let name = row.buy.or(row.sell).map(|id| id.def().name).unwrap_or("");
-                                ui::text_left(canvas, ctx, name, ui::theme::BODY, ui::theme::accent(), rx, iy)?;
+                                let did = row.buy.or(row.sell);
+                                let name = did.map(|id| id.def().name).unwrap_or("");
+                                let name_x = if let Some(img) = did.and_then(|id| self.icon_bank.icon(ctx, icon_pack::IconKey::item(id.as_u32()))) {
+                                    icons::draw_fitted(canvas, &img, graphics::Rect::new(rx, iy, 20.0, 20.0), Color::WHITE);
+                                    rx + 26.0
+                                } else {
+                                    rx
+                                };
+                                ui::text_left(canvas, ctx, name, ui::theme::BODY, ui::theme::accent(), name_x, iy)?;
                                 iy += 24.0;
                                 if !row.desc.is_empty() {
                                     iy = ui::text_wrapped(canvas, ctx, i18n::t(row.desc), ui::theme::SMALL, ui::theme::text_dim(), rx, iy, content_w)?;

@@ -299,6 +299,21 @@ pub fn row(
     size: f32,
     state: RowState,
 ) -> GameResult {
+    row_with_icon(canvas, ctx, r, None, label, size, state)
+}
+
+/// 带**左侧小图标**的行：图标 `None` 时与 [`row`] 等价（纯文字、文本 x 不变）。
+///
+/// 图标画在行内左侧（约行高、上限 26px，等比居中），文本右移让位；用于商店 / 技能列表。
+pub fn row_with_icon(
+    canvas: &mut Canvas,
+    ctx: &Context,
+    r: graphics::Rect,
+    icon: Option<&graphics::Image>,
+    label: &str,
+    size: f32,
+    state: RowState,
+) -> GameResult {
     let fill = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), r, state.bg())?;
     canvas.draw(&fill, graphics::DrawParam::new());
     let border_color = if state == RowState::Selected {
@@ -310,13 +325,33 @@ pub fn row(
     };
     let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.0), r, border_color)?;
     canvas.draw(&border, graphics::DrawParam::new());
+    let mut text_x = r.x + theme::PAD;
+    if let Some(img) = icon {
+        let iw = img.width() as f32;
+        let ih = img.height() as f32;
+        let s = (r.h - 8.0).clamp(12.0, 26.0);
+        if iw > 0.0 && ih > 0.0 {
+            let sc = (s / iw).min(s / ih);
+            let (w, h) = (iw * sc, ih * sc);
+            canvas.draw(
+                img,
+                graphics::DrawParam::new()
+                    .dest(Point2 {
+                        x: r.x + theme::PAD + (s - w) * 0.5,
+                        y: r.y + (r.h - h) * 0.5,
+                    })
+                    .scale(Vector2 { x: sc, y: sc }),
+            );
+            text_x += s + 8.0;
+        }
+    }
     text_left(
         canvas,
         ctx,
         label,
         size,
         state.text_color(),
-        r.x + theme::PAD,
+        text_x,
         r.y + (r.h - size) / 2.0 - 2.0,
     )
 }
