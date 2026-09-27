@@ -20,6 +20,8 @@ pub struct LocalSettings {
     pub sfx_pack: String,
     /// BGM 包选择：`off`（关闭）/ `builtin` / 包 id（单包内含分场景）。
     pub music_pack: String,
+    /// 图标包选择：`none`（保持现状，纯文字）或包 id（逐键覆盖）。见 `icon_pack.rs`。
+    pub icon_pack: String,
     /// 发布到创意工坊时是否**复用上次的物品 id**（更新而非新建）。默认开。
     pub workshop_reuse: bool,
     /// 发布可见性：`true`=公开（Public），`false`=私有（Private）。默认公开。
@@ -282,6 +284,7 @@ impl Default for LocalSettings {
             lang: LangPref::Auto,
             sfx_pack: "builtin".to_string(),
             music_pack: "off".to_string(),
+            icon_pack: "none".to_string(),
             workshop_reuse: true,
             workshop_public: true,
             published: Vec::new(),
@@ -558,6 +561,7 @@ pub fn parse(text: &str) -> LocalSettings {
             }
             "sfx_pack" => s.sfx_pack = v.to_string(),
             "music_pack" => s.music_pack = v.to_string(),
+            "icon_pack" => s.icon_pack = v.to_string(),
             "publish_pack" => s.publish_pack = v.to_string(),
             "key_stop" => {
                 if let Some(k) = BindKey::parse(v) {
@@ -645,7 +649,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_form_switch={}\nkey_shop_cat={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nicon_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_form_switch={}\nkey_shop_cat={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -653,6 +657,7 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.lang.code(),
         s.sfx_pack,
         s.music_pack,
+        s.icon_pack,
         if s.workshop_reuse { 1 } else { 0 },
         if s.workshop_public { 1 } else { 0 },
         s.publish_pack,
@@ -727,6 +732,7 @@ mod tests {
             lang: LangPref::Fixed(crate::i18n::Lang::En),
             sfx_pack: "MyPack".to_string(),
             music_pack: "BigMusic".to_string(),
+            icon_pack: "NeonIcons".to_string(),
             workshop_reuse: false,
             workshop_public: false,
             published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],

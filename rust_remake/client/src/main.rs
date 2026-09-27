@@ -49,6 +49,12 @@ mod i18n;
 mod audio;
 /// 外部音频包（音效/BGM 的外部目录选择）：纯逻辑，见 `audio_pack.rs`。
 mod audio_pack;
+/// Steam 库 / 创意工坊内容目录探测（音频包与图标包共用的纯路径函数）。
+mod steam_paths;
+/// 外部图标包（HUD/商店图标的外部目录选择）：纯逻辑，见 `icon_pack.rs`。
+/// I0 基础设施——I1 接入 HUD 后移除 `allow(dead_code)`。
+#[allow(dead_code)]
+mod icon_pack;
 /// 表现层 P3：客户端本地特效（命中闪光/火花）——纯客户端、不进快照。
 mod fx;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
