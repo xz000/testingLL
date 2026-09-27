@@ -2964,8 +2964,8 @@ impl World {
                         if *proj == crate::skill::W098bProjKind::Boomerang {
                             bob_home.push((pi, victim));
                         }
-                        // 锁链的伤害走 Tether 的 `damage_per_sec`（文档 `0.2+0.1×L` 是**每秒**，
-                        // 与引力「每秒 0.3+0.2×L」同量级），不再按单发直伤结算（0.2 单发等于没有）。
+                        // 锁链的伤害走 Tether 的 `damage_per_sec`——098c `hI(nr,Vr,.2×Yr)` 在 `if je` 内（**每 0.18s** 一次），
+                        // 故 def 存**每秒** DPS `.2×Yr/0.18`；命中本身**不**结算直伤（`Sc`/`sc` 只建链接）。
                         let is_chain = *on_hit == crate::skill::W098bOnHit::ChainPull
                             || *on_hit == crate::skill::W098bOnHit::RedChain;
                         // 汲取（S014）：命中**友军**时不是伤害而是“支援”（移速/输出增益 + 治疗）→ 跳过通用伤害。
@@ -9260,6 +9260,48 @@ mod tests {
         let hp_after = world.players[1].hp.to_num::<f64>();
         assert!(hp_after < hp_before, "锁链应对绑定目标持续掉血，{} -> {}", hp_before, hp_after);
         assert!(hp_after < hp_early, "锁链伤害应逐帧累积（非单发），{} -> {}", hp_early, hp_after);
+    }
+
+    /// 锁链本体伤害 = `.2×Yr / 0.18s`（098c `hI(.2×Yr)` 于 `if je`；`je` 每 6×0.03s=0.18s）。
+    /// 逐帧按 `dps×dt` 累积，0.5s 应 ≈ `.2/0.18 × 0.5`。
+    #[test]
+    fn tether_body_dps_matches_jass() {
+        let mut w = World::new(2, 7403);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.configure_regen(0.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(Fix64::from_num(300.0), Fix64::ZERO);
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+        w.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::Tether {
+                owner: 0,
+                anchor: TetherAnchor::Player(1),
+                damage_per_sec: Fix64::from_num(0.2 / 0.18),
+                beam_dps: Fix64::ZERO,
+                pull: TetherPull::None,
+                remaining: None,
+                beam: false,
+                red: false,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        let hp0 = w.players[1].hp.to_num::<f64>();
+        for _ in 0..30 {
+            // 固定位置：300 > 89，避免被拉近而断链。
+            w.players[0].pos = Vec2::ZERO;
+            w.players[1].pos = Vec2::new(Fix64::from_num(300.0), Fix64::ZERO);
+            w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
+        }
+        let dealt = hp0 - w.players[1].hp.to_num::<f64>();
+        let expected = (0.2 / 0.18) * 0.5;
+        assert!((dealt - expected).abs() < 0.02, "tether dps 实测 {dealt} != 期望 {expected}");
     }
 
     /// S022 镜像分身（C 栏）：施放后生成 2 个跟随施法者的分身，施法者获得 +25 移速与
