@@ -11425,6 +11425,23 @@ fn main() -> GameResult {
         }
         return Ok(());
     }
+    // 无窗口 CLI：诊断图标包发现/键解析（排查“选了包却无图标”）。
+    if args.iter().any(|a| a == "--dump-icon-packs") {
+        println!("APPDATA={:?}", std::env::var("APPDATA"));
+        let roots = icon_pack::default_roots();
+        println!("roots={roots:?}");
+        for p in icon_pack::discover(&roots) {
+            println!("pack id={:?} name={:?} root={}", p.id, p.name, p.root.display());
+            for (label, key) in [
+                ("skill/36", icon_pack::IconKey::skill(36, icon_pack::SkillVariant::Base)),
+                ("skill/55", icon_pack::IconKey::skill(55, icon_pack::SkillVariant::Base)),
+                ("item/0", icon_pack::IconKey::item(0)),
+            ] {
+                println!("  {label} -> {:?}", icon_pack::icon_path(&p.root, key));
+            }
+        }
+        return Ok(());
+    }
     let app = parse_app_from_args(&args);
     // 诊断日志落盘（带 ms 时间戳）：按启动参数区分 host/client，便于两端时序对齐。
     let role = if args.iter().any(|a| a == "--steam-host" || a == "--host") {

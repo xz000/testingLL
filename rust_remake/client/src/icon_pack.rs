@@ -162,7 +162,8 @@ pub fn candidate_stems(key: IconKey) -> Vec<String> {
 pub fn icon_path(root: &Path, key: IconKey) -> Option<PathBuf> {
     for stem in candidate_stems(key) {
         for ext in ICON_EXTS {
-            let p = root.join(format!("{stem}.{ext}"));
+            // 键（stem）是**相对包内 `icons/` 的路径**（如 `skill/36`）。
+            let p = root.join("icons").join(format!("{stem}.{ext}"));
             if p.is_file() {
                 return Some(p);
             }
@@ -449,11 +450,11 @@ mod tests {
         let root = tmp_root("iconpath");
         let key = IconKey::skill(SkillId::S031.as_u32(), SkillVariant::Induce);
         // 只有 S019 B 图标 → 诱导应回退到它
-        write(&root.join(format!("skill/{}_b.png", SkillId::S019.as_u32())), b"x");
+        write(&root.join("icons").join(format!("skill/{}_b.png", SkillId::S019.as_u32())), b"x");
         let got = icon_path(&root, key).unwrap();
         assert!(got.ends_with(format!("{}_b.png", SkillId::S019.as_u32())), "{got:?}");
         // 补上专属图标 → 优先专属
-        write(&root.join(format!("skill/{}_induce.png", SkillId::S031.as_u32())), b"x");
+        write(&root.join("icons").join(format!("skill/{}_induce.png", SkillId::S031.as_u32())), b"x");
         let got = icon_path(&root, key).unwrap();
         assert!(got.ends_with(format!("{}_induce.png", SkillId::S031.as_u32())), "{got:?}");
         // 完全没有 → None
