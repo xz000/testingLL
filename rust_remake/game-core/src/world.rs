@@ -9304,6 +9304,61 @@ mod tests {
         assert!((dealt - expected).abs() < 0.02, "tether dps 实测 {dealt} != 期望 {expected}");
     }
 
+    /// 红链 `YI` 切割应是**持续**的（每个 `je`=0.18s 一次），直到 4.5×jn 定时断链——不是只切一下。
+    #[test]
+    fn chain_beam_cuts_continuously_until_timer_break() {
+        let mut w = World::new(3, 7404);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.configure_regen(0.0);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].team = 0;
+        w.players[1].team = 1;
+        w.players[2].team = 1;
+        w.obstacles.push(Obstacle {
+            id: 0,
+            pos: Vec2::new(Fix64::from_num(180.0), Fix64::ZERO),
+            radius: Fix64::from_num(40.0),
+            hp: 40,
+        });
+        w.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::Tether {
+                owner: 0,
+                anchor: TetherAnchor::Obstacle(0),
+                damage_per_sec: Fix64::ZERO,
+                beam_dps: Fix64::from_num(5.0),
+                pull: TetherPull::None,
+                remaining: Some(Fix64::from_num(4.5)),
+                beam: true,
+                red: true,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        });
+        // 敌人坐在 施法者(0)→柱子(180) 的线附近（垂直 20 < 75）。
+        let mut keep = |w: &mut World| {
+            w.players[0].pos = Vec2::ZERO;
+            w.players[1].pos = Vec2::new(d60(30.0), Fix64::ZERO); // 远离束，避免干扰
+            w.players[2].pos = Vec2::new(Fix64::from_num(90.0), Fix64::from_num(20.0));
+        };
+        keep(&mut w);
+        let hp0 = w.players[2].hp.to_num::<f64>();
+        for _ in 0..30 {
+            keep(&mut w);
+            w.step(vec![PlayerInput::default(); 3], dt);
+        }
+        let d1 = hp0 - w.players[2].hp.to_num::<f64>();
+        let hp1 = w.players[2].hp.to_num::<f64>();
+        for _ in 0..30 {
+            keep(&mut w);
+            w.step(vec![PlayerInput::default(); 3], dt);
+        }
+        let d2 = hp1 - w.players[2].hp.to_num::<f64>();
+        assert!(d1 > 0.0 && d2 > 0.0, "切割应持续（两窗口都掉血）：d1={d1} d2={d2}");
+        assert!((d1 - d2).abs() < 0.1, "两窗口应相近：d1={d1} d2={d2}");
+    }
+
     /// S022 镜像分身（C 栏）：施放后生成 2 个跟随施法者的分身，施法者获得 +25 移速与
     /// 「否决锁链和负面效果」免疫；分身周期射出火球造成伤害；持续时间（4s）结束后分身消失。
     #[test]
