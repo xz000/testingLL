@@ -4431,23 +4431,6 @@ impl Game {
                         };
                         draw_text(canvas, ctx, &self.key_label(*key), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
                         draw_text(canvas, ctx, label, 15.0, Color::WHITE, slot_center, true)?;
-                        // 形态角标（右下）：该技能有第二形态且当前为 B 时标出形态名后缀
-                        // —— 中性名会剥掉「·形态」，否则对局中看不出自己是 A 还是 B。
-                        if chain_here.is_none() {
-                            if let Some(s) = skill {
-                                let alt = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                                if alt && game_core::skill::DefTable::has_alt(s) {
-                                    draw_text(
-                                        canvas, ctx,
-                                        game_core::skill::DefTable::form_suffix(s, true),
-                                        12.0, Color::from_rgb(150, 220, 180),
-                                        Point2 { x: bx + slot_w - 14.0, y: y0 + slot_h - 10.0 },
-                                        true,
-                                    )?;
-                                }
-                            }
-                        }
-
                         // 冷却遮罩 + 倒计时
                         if let Some(s) = skill {
                             let rem = me_player.caster.cooldown_remaining(s);
@@ -4477,22 +4460,25 @@ impl Game {
                             }
                             // 形态角标：多形态技能在槽右下角显示当前形态名（去掉中性前缀后的 ·xxx 部分，
                             // 如 目标 / 区域 / 滚石），跟随切换；外层技能名仍用中性名（分裂弹…）。
-                            if let Some(s) = skill {
-                                if game_core::skill::DefTable::has_alt(s) {
-                                    let on = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                                    // 形态名后缀（目标/区域/滚石…），跟随切换；split_once 在字符边界切分不会越界
-                                    let suffix = game_core::skill::DefTable::form_suffix(s, on);
-                                    if !suffix.is_empty() {
-                                        let n = suffix.chars().count() as f32;
-                                        let cx = bx + slot_w - 6.0 - n * 7.0;
-                                        draw_text(
-                                            canvas, ctx,
-                                            suffix,
-                                            14.0,
-                                            ui::theme::accent(),
-                                            Point2 { x: cx, y: y0 + slot_h - 14.0 },
-                                            true,
-                                        )?;
+                            // 链激活时 Y 槽实为 S031「锁链附加」，外圈名已标明形态，不再叠角标。
+                            if chain_here.is_none() {
+                                if let Some(s) = skill {
+                                    if game_core::skill::DefTable::has_alt(s) {
+                                        let on = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
+                                        // 形态名后缀（目标/区域/滚石…），跟随切换；split_once 在字符边界切分不会越界
+                                        let suffix = game_core::skill::DefTable::form_suffix(s, on);
+                                        if !suffix.is_empty() {
+                                            let n = suffix.chars().count() as f32;
+                                            let cx = bx + slot_w - 6.0 - n * 7.0;
+                                            draw_text(
+                                                canvas, ctx,
+                                                suffix,
+                                                14.0,
+                                                ui::theme::accent(),
+                                                Point2 { x: cx, y: y0 + slot_h - 14.0 },
+                                                true,
+                                            )?;
+                                        }
                                     }
                                 }
                             }
