@@ -273,7 +273,7 @@ fn roster_skills() -> Vec<SkillId> {
             }
         }
     }
-    for s in [SkillId::S001, SkillId::S020, SkillId::S021, SkillId::S031] {
+    for s in [SkillId::S001, SkillId::S020, SkillId::S021] {
         if !v.contains(&s) {
             v.push(s);
         }
@@ -281,30 +281,39 @@ fn roster_skills() -> Vec<SkillId> {
     v
 }
 
-/// 键名清单（一行一个相对文件名，不含扩展名）——`keys.txt` / 生成器共用。
-pub fn key_list() -> Vec<String> {
-    let mut v: Vec<String> = Vec::new();
+/// 键 → 显示名（`(stem, name)`，含链两态与物品）——README / `keys.txt` / `--dump-icon-keys` 共用。
+pub fn key_entries() -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = Vec::new();
     for s in roster_skills() {
         let id = s.as_u32();
-        v.push(format!("skill/{id}"));
+        let name = DefTable::neutral_name(s).to_string();
+        v.push((format!("skill/{id}"), name.clone()));
         if DefTable::has_alt(s) {
-            v.push(format!("skill/{id}_b"));
+            // 形态名约定不一：多数 B 名带 `·后缀`（如 分裂弹·区域），少数是独立名（S008 B = 岩浆）。
+            let suf = DefTable::form_suffix(s, true);
+            let alt_name = if suf.is_empty() {
+                DefTable::def_for(s, true).name.to_string()
+            } else {
+                format!("{name}·{suf}")
+            };
+            v.push((format!("skill/{id}_b"), alt_name));
         }
     }
     let s31 = SkillId::S031.as_u32();
-    for suffix in ["release", "induce"] {
-        let k = format!("skill/{s31}_{suffix}");
-        if !v.contains(&k) {
-            v.push(k);
-        }
-    }
+    v.push((format!("skill/{s31}_release"), "锁链附加·释放".to_string()));
+    v.push((format!("skill/{s31}_induce"), "锁链附加·诱导".to_string()));
     for d in game_core::item::ITEMS {
-        v.push(format!("item/{}", d.id.as_u32()));
+        v.push((format!("item/{}", d.id.as_u32()), d.name.to_string()));
     }
     v
 }
 
-/// 在 `root` 写玩家说明 `README.txt`（id→中文名对照 + 工具指引）与 `keys.txt`（纯文件名清单）。
+/// 键名清单（一行一个相对文件名，不含扩展名）。
+pub fn key_list() -> Vec<String> {
+    key_entries().into_iter().map(|(k, _)| k).collect()
+}
+
+/// 在 `root` 写玩家说明 `README.txt`（键→中文名对照 + 工具指引）与 `keys.txt`（纯文件名清单）。
 pub fn write_readme(root: &Path) -> std::io::Result<()> {
     let mut s = String::new();
     s.push_str("Circle Brawl / 圆圈之战 本地图标包说明\n");
@@ -315,26 +324,11 @@ pub fn write_readme(root: &Path) -> std::io::Result<()> {
     s.push_str("    icons/skill/<id>[_b|_release|_induce].<png|jpg|jpeg|webp>\n");
     s.push_str("    icons/item/<id>.<png|jpg|jpeg|webp>\n\n");
     s.push_str("规则：逐键覆盖（包里没有的键回退默认文字）；建议正方形 128×128 或 256×256（RGBA）。\n");
-    s.push_str("多形态技能 B 形态用 `<id>_b`（缺则回退 `<id>`）；链激活 S031 用 `<id>_release` / `<id>_induce`。\n");
+    s.push_str("多形态技能 B 形态用 `<id>_b`；链激活 S031 用 `<id>_release` / `<id>_induce`。\n");
     s.push_str("一键生成示例：仓库 `tools/gen_demo_icon_pack.py`（需 Python + Pillow + 仓库 TTF）。\n\n");
-
-    s.push_str("技能图标（icons/skill/，id = SkillId）：\n");
-    for sk in roster_skills() {
-        let id = sk.as_u32();
-        let name = DefTable::neutral_name(sk);
-        if DefTable::has_alt(sk) {
-            s.push_str(&format!("  {id:<4} {name}   （B 形态：{id}_b）\n"));
-        } else {
-            s.push_str(&format!("  {id:<4} {name}\n"));
-        }
-    }
-    let s31 = SkillId::S031.as_u32();
-    s.push_str(&format!("  {s31}_release  锁链附加·释放（链激活时）\n"));
-    s.push_str(&format!("  {s31}_induce   锁链附加·诱导（链激活时）\n"));
-
-    s.push_str("\n物品图标（icons/item/，id = ItemId）：\n");
-    for d in game_core::item::ITEMS {
-        s.push_str(&format!("  {:<4} {}\n", d.id.as_u32(), d.name));
+    s.push_str("键（相对 icons/ 的路径，扩展名任选）与对应名称：\n");
+    for (k, name) in key_entries() {
+        s.push_str(&format!("  {k:<20} {name}\n"));
     }
     s.push_str("\n放好后回游戏「设置 → 图标包」选择，改包即时生效。\n");
     std::fs::write(root.join("README.txt"), s)?;

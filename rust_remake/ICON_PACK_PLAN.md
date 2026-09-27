@@ -203,6 +203,8 @@ Steam 库定位、多库扫描、`libraryfolders.vdf` 解析**直接复用** `au
 - 生成方式（**已定**）：`tools/gen_demo_icon_pack.py`（**Python + Pillow**，与现有 `tools/` 风格一致）。
   本机已确认 Pillow 12.1.1 可用；字体用仓库 `assets/fonts/LXGWWenKaiMonoLite-Medium.ttf`。
   依赖记入 `tools/README.md`（`pip install pillow`）。
+- **键表来源**：客户端 `main()` 新增无窗口 CLI `--dump-icon-keys`，打印 `stem<TAB>名`（内部走 `icon_pack::key_entries()`）——
+  单一事实来源，新增技能/物品时 Python 侧零维护。
 - 生成器同时写 `README.txt` 的 id→名称对照表。
 
 > 说明：示例图标只是「汉字 + 底色」的占位，不是美术成品；玩家/我们后续用真图标同名替换即可，不改代码。
@@ -246,7 +248,9 @@ Steam 库定位、多库扫描、`libraryfolders.vdf` 解析**直接复用** `au
   - 打开目录：创建本地根 + 写 `README.txt`（id→中文名对照与规则）+ `keys.txt`（纯文件名清单，指向 `tools/gen_demo_icon_pack.py`）。
   - **不做**游戏内「生成示例包」按钮（选 a）：生成交 Python 工具（I5）。
 - [ ] **I4 工坊**：发布本地图标包 + 物品 id 复用映射 + `Icons` tag + 订阅物品列表可见（复用现有工坊覆盖层）。
-- [ ] **I5 示例包生成器**（§8）+ 随仓库附带一套生成结果（可选）。
+- [x] **I5 示例包生成器** ✔ 2026-09-27：`tools/gen_demo_icon_pack.py`（Python + Pillow）。
+  - 键表来源：客户端 `cargo run -p client -- --dump-icon-keys`（复用 `icon_pack::key_entries`，**不在 Python 重复维护**）。
+  - 产物：`icons/skill/*.png` + `icons/item/*.png` + 清单 + `keys.txt` + `preview.png`；不随仓库附带生成结果。
 
 > 建议顺序：I0 → I1 → I2 → I3 → I4 → I5。I0 的 `pack_core` 抽取是唯一有回归风险的改动，放最前、用现有测试兜底。
 

@@ -123,3 +123,14 @@ field(4) + type(4) + cstring    + trailer(4)   # 字符串
 - 技能：`cargo run -q -p game-core --example dump_defs > _ours.tsv`
 - 物品：见 `game-core/src/item.rs` 的 `w3t_crosscheck_item_bonuses` 测试
   （锁定 `Ilif` 生命加成与速度之靴三档；w3t `unam` 实证 I007=Boots 3、I008=Boots 2）。
+
+## 6. `gen_demo_icon_pack.py` — 生成演示图标包
+
+生成一个覆盖全部技能 / 物品键的「演示图标包」（汉字 + 底色方块，占位风格），用于测试
+本地图标包与创意工坊上传。详见 `ICON_PACK_PLAN.md`。
+
+- 依赖：**Pillow**（`pip install pillow`）+ 仓库字体 `assets/fonts/LXGWWenKaiMonoLite-Medium.ttf`。
+- 键表来源：调用客户端 `cargo run -q -p client -- --dump-icon-keys`（**权威**，不在 Python 里重复维护 id/名字）。
+- 用法：`python tools/gen_demo_icon_pack.py [输出目录]`（默认 `%APPDATA%/warlock_brawl/icons/DemoIconPack`）。
+- 产物：`icons/skill/*.png`、`icons/item/*.png`、`circle_brawl_pack.ini`、`keys.txt`、`preview.png`。
+- 回游戏「设置 → 图标包」选 `Demo Icon Pack` 即可看到；真实包同名替换 PNG 即可。

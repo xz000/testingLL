@@ -11194,6 +11194,13 @@ fn main() -> GameResult {
     // 解析命令行（可选直通入口）：--join <host:port> / --host <port> [--players N] / --solo。
     // 若无任一参数 → 进主菜单选择。
     let args: Vec<String> = std::env::args().collect();
+    // 无窗口 CLI：导出图标键→名对照表（供 tools/gen_demo_icon_pack.py 使用），打印后退出。
+    if args.iter().any(|a| a == "--dump-icon-keys") {
+        for (stem, name) in icon_pack::key_entries() {
+            println!("{stem}\t{name}");
+        }
+        return Ok(());
+    }
     let app = parse_app_from_args(&args);
     // 诊断日志落盘（带 ms 时间戳）：按启动参数区分 host/client，便于两端时序对齐。
     let role = if args.iter().any(|a| a == "--steam-host" || a == "--host") {
