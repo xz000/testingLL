@@ -21,6 +21,8 @@ use game_core::skill::{DefTable, SkillId};
 
 /// 清单文件名（与音频包同名，便于玩家复用认知）。
 pub const MANIFEST_NAME: &str = "circle_brawl_pack.ini";
+/// 图标包选择值：不选包（保持现状，纯文字；内置默认）。
+pub const PACK_NONE: &str = "none";
 /// 图标扩展名搜索优先级（PNG 推荐，其余为兼容）。
 pub const ICON_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 
@@ -47,7 +49,7 @@ impl IconPack {
 }
 
 /// 技能槽的**显示变体**（与 HUD 的中性名 / 形态角标 / 链释放·诱导同源，见 plan §4.3）。
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SkillVariant {
     /// A 形态 / 普通技能。
     Base,
@@ -60,7 +62,7 @@ pub enum SkillVariant {
 }
 
 /// 一个图标键（技能或物品）。
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum IconKey {
     Skill { id: u32, variant: SkillVariant },
     Item { id: u32 },

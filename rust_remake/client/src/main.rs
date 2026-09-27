@@ -55,6 +55,8 @@ mod steam_paths;
 /// I0 基础设施——I1 接入 HUD 后移除 `allow(dead_code)`。
 #[allow(dead_code)]
 mod icon_pack;
+/// 图标图像缓存（ggez 侧）：按图标键懒加载 + 缓存。
+mod icons;
 /// 表现层 P3：客户端本地特效（命中闪光/火花）——纯客户端、不进快照。
 mod fx;
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
@@ -609,6 +611,10 @@ struct Game {
     audio: audio::AudioBank,
     /// 已发现的音频包（本地 + 创意工坊目录；启动与改包时重扫）。
     audio_packs: Vec<audio_pack::Pack>,
+    /// 已发现的图标包（本地 + 创意工坊目录；启动与改设置时重扫）。
+    icon_packs: Vec<icon_pack::IconPack>,
+    /// 图标图像缓存（当前选择的图标包；`none` = 纯文字）。
+    icon_bank: icons::IconBank,
     /// 待重载音频（改包后置位，`update` 里带 `ctx` 重载）。
     pending_audio_reload: bool,
     /// 创意工坊订阅状态缓存（`(已订阅, 已就绪)`；`None` = Steam 不可用）。打开设置时刷新。
@@ -1318,6 +1324,9 @@ impl Game {
         let (w, h) = (ui::UI_W, ui::UI_H);
         i18n::set_lang(local_settings.lang.resolve(None));
         let audio_packs = audio_pack::discover(&audio_pack::default_roots());
+        let icon_packs = icon_pack::discover(&icon_pack::default_roots());
+        let mut icon_bank = icons::IconBank::new();
+        icon_bank.set_pack(icon_pack_root(&local_settings, &icon_packs));
         let audio = audio::AudioBank::new(ctx, &local_settings, &audio_packs);
         eprintln!(
             "[audio] 已加载 {}/{} 个音效素材（静音={}）；发现 {} 个音频包",
@@ -1335,6 +1344,8 @@ impl Game {
             lang_override: None,
             audio,
             audio_packs,
+            icon_packs,
+            icon_bank,
             pending_audio_reload: false,
             workshop_counts: None,
             audition_scene: None,
@@ -4417,7 +4428,6 @@ impl Game {
 
                         let skill = me.bound_skill(*key);
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
-                        // 技能名：外层用中性基础名（不绑定具体形态；形态见详情面板）
                         // 链激活时 Y 槽实为 S031「锁链附加」（Release/Induce）——098c 隐藏 S019、显示 S031。
                         let chain_here = if skill == Some(SkillId::S019) {
                             self.world.projectiles.iter().find_map(|p| match &p.kind {
@@ -4427,16 +4437,24 @@ impl Game {
                         } else {
                             None
                         };
-                        let label = match chain_here {
-                            Some(true) => "锁链附加·诱导",
-                            Some(false) => "锁链附加·释放",
-                            None => match skill {
-                                Some(s) => game_core::skill::DefTable::neutral_name(s),
-                                None => "—",
-                            },
-                        };
+                        let form_on = skill
+                            .map(|s| me.forms.get(s.as_u32() as usize).copied().unwrap_or(false))
+                            .unwrap_or(false);
+                        // 文字 + 形态角标 + 图标键三者同源（`slot_display`）。
+                        let disp = slot_display(skill, form_on, chain_here);
+                        // 有图标 → 画图标替换中部名字文字；缺图标 → 回退到文字（保持现状）。
+                        let icon = disp.icon.and_then(|k| self.icon_bank.icon(ctx, k));
+                        if let Some(img) = &icon {
+                            icons::draw_fitted(
+                                canvas, img,
+                                graphics::Rect::new(bx + 4.0, y0 + 4.0, slot_w - 8.0, slot_h - 8.0),
+                                Color::WHITE,
+                            );
+                        }
                         draw_text(canvas, ctx, &self.key_label(*key), 16.0, Color::from_rgb(200, 200, 215), Point2 { x: bx + 6.0, y: y0 + 4.0 }, true)?;
-                        draw_text(canvas, ctx, label, 15.0, Color::WHITE, slot_center, true)?;
+                        if icon.is_none() {
+                            draw_text(canvas, ctx, disp.label, 15.0, Color::WHITE, slot_center, true)?;
+                        }
                         // 冷却遮罩 + 倒计时
                         if let Some(s) = skill {
                             let rem = me_player.caster.cooldown_remaining(s);
@@ -4464,29 +4482,19 @@ impl Game {
                                     draw_text(canvas, ctx, "蓄力中", 15.0, Color::from_rgb(255, 200, 120), Point2 { x: bx + slot_w / 2.0, y: y0 + slot_h - 14.0 }, true)?;
                                 }
                             }
-                            // 形态角标：多形态技能在槽右下角显示当前形态名（去掉中性前缀后的 ·xxx 部分，
-                            // 如 目标 / 区域 / 滚石），跟随切换；外层技能名仍用中性名（分裂弹…）。
-                            // 链激活时 Y 槽实为 S031「锁链附加」，外圈名已标明形态，不再叠角标。
-                            if chain_here.is_none() {
-                                if let Some(s) = skill {
-                                    if game_core::skill::DefTable::has_alt(s) {
-                                        let on = me.forms.get(s.as_u32() as usize).copied().unwrap_or(false);
-                                        // 形态名后缀（目标/区域/滚石…），跟随切换；split_once 在字符边界切分不会越界
-                                        let suffix = game_core::skill::DefTable::form_suffix(s, on);
-                                        if !suffix.is_empty() {
-                                            let n = suffix.chars().count() as f32;
-                                            let cx = bx + slot_w - 6.0 - n * 7.0;
-                                            draw_text(
-                                                canvas, ctx,
-                                                suffix,
-                                                14.0,
-                                                ui::theme::accent(),
-                                                Point2 { x: cx, y: y0 + slot_h - 14.0 },
-                                                true,
-                                            )?;
-                                        }
-                                    }
-                                }
+                            // 形态角标：多形态技能在槽右下角显示当前形态名（目标 / 区域 / 滚石…），
+                            // 跟随切换；`disp.form_suffix` 已含「链激活不显示」的规则，且与图标同源。
+                            if !disp.form_suffix.is_empty() {
+                                let n = disp.form_suffix.chars().count() as f32;
+                                let cx = bx + slot_w - 6.0 - n * 7.0;
+                                draw_text(
+                                    canvas, ctx,
+                                    disp.form_suffix,
+                                    14.0,
+                                    ui::theme::accent(),
+                                    Point2 { x: cx, y: y0 + slot_h - 14.0 },
+                                    true,
+                                )?;
                             }
                         }
                     }
@@ -5743,6 +5751,8 @@ impl event::EventHandler for Game {
             self.pending_audio_reload = false;
             self.audio_packs = audio_pack::discover(&audio_pack::default_roots());
             self.audio.reload(ctx, &self.local_settings, &self.audio_packs);
+            // 图标包同批重扫（I1 暂借音频“改包”信号；I3 加图标设置项后独立触发）。
+            self.rescan_icon_packs();
         }
         let is_menu = self.app == AppState::MainMenu;
         let finished = self.meta.phase == game_core::meta::MatchPhase::Finished;
@@ -8677,6 +8687,13 @@ impl Game {
             })
     }
 
+    /// 重扫图标包并应用当前设置选择（启动 / 改设置 / 打开设置时调用）。
+    fn rescan_icon_packs(&mut self) {
+        self.icon_packs = icon_pack::discover(&icon_pack::default_roots());
+        let root = icon_pack_root(&self.local_settings, &self.icon_packs);
+        self.icon_bank.set_pack(root);
+    }
+
     /// 在 Steam 覆盖层打开本作创意工坊页（订阅音频包）。非 Steam 构建只记日志。
     fn open_workshop(&self) {
         #[cfg(feature = "steam")]
@@ -10754,6 +10771,44 @@ const MASTERY_INFO: [(&str, &str); 4] = [
     ("背包研究", "物品栏容量提升（3 → 6 → 10 格）。"),
 ];
 
+/// HUD 技能槽的显示状态：文字 + 形态角标 + 图标键**同源**（避免图标与名字/角标漂移）。
+struct SlotDisplay {
+    /// 中部主文字（中性技能名 / 锁链附加·释放/诱导 / 占位 `—`）。
+    label: &'static str,
+    /// 右下角形态角标（空串 = 不显示；链激活时为“”）。
+    form_suffix: &'static str,
+    /// 图标键（未选包或空槽为 `None`）。
+    icon: Option<icon_pack::IconKey>,
+}
+
+/// 技能槽显示状态解析（与 [`icon_pack::slot_state`] 同源）。
+fn slot_display(skill: Option<SkillId>, form_on: bool, chain_here: Option<bool>) -> SlotDisplay {
+    use game_core::skill::DefTable;
+    let icon = icon_pack::slot_state(skill, form_on, chain_here);
+    match (skill, chain_here) {
+        // 链激活：Y 槽实为 S031「锁链附加」——外圈名已标明形态，不再叠角标。
+        (_, Some(true)) => SlotDisplay { label: "锁链附加·诱导", form_suffix: "", icon },
+        (_, Some(false)) => SlotDisplay { label: "锁链附加·释放", form_suffix: "", icon },
+        (Some(s), None) => {
+            let form_suffix =
+                if DefTable::has_alt(s) { DefTable::form_suffix(s, form_on) } else { "" };
+            SlotDisplay { label: DefTable::neutral_name(s), form_suffix, icon }
+        }
+        (None, _) => SlotDisplay { label: "—", form_suffix: "", icon },
+    }
+}
+
+/// 当前设置选中的图标包根（`none` / 找不到 → `None`）。
+fn icon_pack_root(
+    settings: &local_settings::LocalSettings,
+    packs: &[icon_pack::IconPack],
+) -> Option<std::path::PathBuf> {
+    if settings.icon_pack == icon_pack::PACK_NONE {
+        return None;
+    }
+    icon_pack::find(packs, &settings.icon_pack).map(|p| p.root.clone())
+}
+
 /// 在屏幕上居中绘制文本（用 ggez 内置默认字体）。
 /// **居中**绘制文本（`center` 是**中心点**）。
 ///
@@ -11518,6 +11573,35 @@ mod tests {
         let icons = super::active_status_icons(&p);
         assert!(icons.iter().any(|i| i.label == "格"), "招架就绪应有格");
         assert!(icons.iter().any(|i| i.label == "燃"), "燃烧应有燃");
+    }
+
+    /// 技能槽显示状态：文字 / 形态角标 / 图标键三者同源（与 `icon_pack::slot_state` 一致）。
+    #[test]
+    fn slot_display_shares_label_badge_icon() {
+        use super::icon_pack::{IconKey, SkillVariant};
+        use game_core::skill::SkillId;
+        // 普通技能：中性名、无角标、base 图标
+        let d = super::slot_display(Some(SkillId::S000), false, None);
+        assert_eq!(d.label, "火球");
+        assert_eq!(d.form_suffix, "");
+        assert_eq!(d.icon, Some(IconKey::skill(SkillId::S000.as_u32(), SkillVariant::Base)));
+        // B 形态（S009 双形态）：角标 = 区域、alt 图标
+        let d = super::slot_display(Some(SkillId::S009), true, None);
+        assert_eq!(d.label, "分裂弹");
+        assert_eq!(d.form_suffix, "区域");
+        assert_eq!(d.icon, Some(IconKey::skill(SkillId::S009.as_u32(), SkillVariant::Alt)));
+        // 链激活：S031 释放/诱导，无角标
+        let d = super::slot_display(Some(SkillId::S019), false, Some(false));
+        assert_eq!(d.label, "锁链附加·释放");
+        assert_eq!(d.form_suffix, "");
+        assert_eq!(d.icon, Some(IconKey::skill(SkillId::S031.as_u32(), SkillVariant::Release)));
+        let d = super::slot_display(Some(SkillId::S019), true, Some(true));
+        assert_eq!(d.label, "锁链附加·诱导");
+        assert_eq!(d.icon, Some(IconKey::skill(SkillId::S031.as_u32(), SkillVariant::Induce)));
+        // 空槽
+        let d = super::slot_display(None, false, None);
+        assert_eq!(d.label, "—");
+        assert_eq!(d.icon, None);
     }
 
     /// 连杀音效按 098c 断点（3..10 与 >10）映射。

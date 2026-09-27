@@ -229,15 +229,15 @@ Steam 库定位、多库扫描、`libraryfolders.vdf` 解析**直接复用** `au
 
 ## 11. 分步实施（每步可编译/提交/过门禁）
 
-- [ ] **I0 基础设施（纯 std + 单测）**
+- [x] **I0 基础设施（纯 std + 单测）** ✔ 2026-09-27（`steam_paths.rs` / `icon_pack.rs` / `local_settings.icon_pack`）
   - 只抽**纯路径探测**到 `steam_paths.rs`（`steam_root_from_exe`/`workshop_content_root`/`parse_library_paths`/
     `workshop_roots`/`detect_steam_root`），`audio_pack` 改用它（机械移动，行为不变，靠现有音频测试兜底）。
   - 新增 `icon_pack.rs`：**自管**自己的 `IconPack`/`IconKind`/manifest（**不**复用音频的 `Pack`/`PackKind`——
     两者语义不同：逐键覆盖 vs 整包），组合 `steam_paths` 完成发现。
   - `discover` / `slot_state` / `icon_path` + 单测；`local_settings` 增 `icon_pack`（默认 `none`）+ 读写 + 单测。
-- [ ] **I1 HUD 技能槽图标**
-  - **先把 HUD 的技能槽文字解析（中性名 / 形态角标 / 链释放·诱导）抽成纯函数**，文字与图标共用（§4.3）。
-  - `icons.rs`（`IconBank` + `draw_icon`）；HUD 技能槽接入（有图替换文字、缺图回退、保留键位/冷却/形态角标）。
+- [x] **I1 HUD 技能槽图标** ✔ 2026-09-27
+  - `slot_display` 纯函数（文字 / 角标 / 图标键同源，`main.rs`）+ 单测。
+  - `icons.rs`（`IconBank` 懒加载缓存 + `draw_fitted` 等比绘制）；HUD 技能槽接入（有图替换中部文字、缺图回退、保留键位/冷却/形态角标）。设置 UI（选包）在 I3。
 - [ ] **I2 HUD 物品栏 + 商店/技能详情图标**
 - [ ] **I3 设置 UX**：图标包选择、打开目录（写 id→名 README）、生成示例包按钮。
 - [ ] **I4 工坊**：发布本地图标包 + 物品 id 复用映射 + `Icons` tag + 订阅物品列表可见（复用现有工坊覆盖层）。
