@@ -437,12 +437,14 @@ enum SetRow {
     SfxPack,
     Music,
     MusicPack,
+    IconPack,
     Workshop,
     PublishTarget,
     PublishPack,
     PublishReuse,
     PublishVisibility,
     OpenAudioDir,
+    OpenIconDir,
     Audition,
     AuditionBgm,
     GenerateExample,
@@ -451,18 +453,20 @@ enum SetRow {
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 17] = [
+const SETTINGS_ROWS: [(SetRow, &str); 19] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
     (SetRow::Music, "音乐音量"),
     (SetRow::MusicPack, "BGM 包"),
+    (SetRow::IconPack, "图标包"),
     (SetRow::Workshop, "创意工坊物品"),
     (SetRow::PublishTarget, "要发布的包"),
     (SetRow::PublishPack, "发布本地包"),
     (SetRow::PublishReuse, "发布时复用物品 id"),
     (SetRow::PublishVisibility, "发布可见性"),
     (SetRow::OpenAudioDir, "打开音频包目录"),
+    (SetRow::OpenIconDir, "打开图标包目录"),
     (SetRow::Audition, "试听当前音效包"),
     (SetRow::AuditionBgm, "试听 BGM 场景"),
     (SetRow::GenerateExample, "生成示例包"),
@@ -8499,6 +8503,13 @@ impl Game {
                     audio_pack::cycle_id(&ids, &self.local_settings.music_pack, delta);
                 self.pending_audio_reload = true;
             }
+            Some(SetRow::IconPack) => {
+                let ids: Vec<String> =
+                    self.icon_pack_options().into_iter().map(|(v, _)| v).collect();
+                self.local_settings.icon_pack =
+                    icon_pack::cycle_id(&ids, &self.local_settings.icon_pack, delta);
+                self.rescan_icon_packs();
+            }
             Some(SetRow::Workshop) => {
                 self.open_workshop_list();
             }
@@ -8520,6 +8531,9 @@ impl Game {
             }
             Some(SetRow::OpenAudioDir) => {
                 self.open_audio_dir();
+            }
+            Some(SetRow::OpenIconDir) => {
+                self.open_icon_dir();
             }
             Some(SetRow::Audition) => {
                 self.audition_pack();
@@ -8562,12 +8576,14 @@ impl Game {
                     | SetRow::Lang
                     | SetRow::SfxPack
                     | SetRow::MusicPack
+                    | SetRow::IconPack
                     | SetRow::Workshop
                     | SetRow::PublishTarget
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
                     | SetRow::OpenAudioDir
+                    | SetRow::OpenIconDir
                     | SetRow::Audition
                     | SetRow::AuditionBgm
                     | SetRow::GenerateExample
@@ -8586,12 +8602,14 @@ impl Game {
                     | SetRow::Lang
                     | SetRow::SfxPack
                     | SetRow::MusicPack
+                    | SetRow::IconPack
                     | SetRow::Workshop
                     | SetRow::PublishTarget
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
                     | SetRow::OpenAudioDir
+                    | SetRow::OpenIconDir
                     | SetRow::Audition
                     | SetRow::AuditionBgm
                     | SetRow::GenerateExample
@@ -8612,6 +8630,15 @@ impl Game {
             if p.kind.has_sfx() {
                 v.push((p.id.clone(), p.display()));
             }
+        }
+        v
+    }
+
+    /// 可用图标包选项：`(值, 显示名)`。首项为“无”（保持纯文字）。
+    fn icon_pack_options(&self) -> Vec<(String, String)> {
+        let mut v = vec![(icon_pack::PACK_NONE.to_string(), i18n::t("无").to_string())];
+        for p in &self.icon_packs {
+            v.push((p.id.clone(), p.display()));
         }
         v
     }
@@ -8757,6 +8784,19 @@ impl Game {
                 open_in_file_manager(&root);
             }
             Err(e) => eprintln!("[audio] 创建音频包目录失败：{e}"),
+        }
+    }
+
+    /// 打开本地图标包目录（不存在则创建），写说明/键名清单并交给系统文件管理器。
+    fn open_icon_dir(&self) {
+        match icon_pack::ensure_local_root() {
+            Ok(root) => {
+                if let Err(e) = icon_pack::write_readme(&root) {
+                    eprintln!("[icon] 写说明文件失败（忽略）：{e}");
+                }
+                open_in_file_manager(&root);
+            }
+            Err(e) => eprintln!("[icon] 创建图标包目录失败：{e}"),
         }
     }
 
@@ -9219,6 +9259,9 @@ impl Game {
             Some(SetRow::MusicPack) => {
                 Self::pack_label(&self.music_pack_options(), &self.local_settings.music_pack)
             }
+            Some(SetRow::IconPack) => {
+                Self::pack_label(&self.icon_pack_options(), &self.local_settings.icon_pack)
+            }
             Some(SetRow::Workshop) => match self.workshop_counts {
                 Some((n, ok)) => {
                     i18n::tf("已订阅 {n}（就绪 {ok}）", &[("n", n.to_string()), ("ok", ok.to_string())])
@@ -9244,6 +9287,7 @@ impl Game {
                 }
             }
             Some(SetRow::OpenAudioDir) => i18n::t("[打开]").to_string(),
+            Some(SetRow::OpenIconDir) => i18n::t("[打开]").to_string(),
             Some(SetRow::Audition) => i18n::t("[试听]").to_string(),
             Some(SetRow::AuditionBgm) => match self.audition_scene {
                 Some(s) => i18n::t(music_scene_label(s)).to_string(),

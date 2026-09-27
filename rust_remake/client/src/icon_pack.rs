@@ -246,6 +246,104 @@ pub fn cycle_id(ids: &[String], cur: &str, delta: i32) -> String {
     ids[ni as usize].clone()
 }
 
+/// 确保本地图标包根目录存在（不存在则创建）。返回该目录。
+pub fn ensure_local_root() -> std::io::Result<PathBuf> {
+    let root = local_root();
+    std::fs::create_dir_all(&root)?;
+    Ok(root)
+}
+
+/// 名册技能（生成键对照表用）：各树可选技能 + F 槽模式技能 + 链附加 S031，去重。
+fn roster_skills() -> Vec<SkillId> {
+    use game_core::skill::SkillTree;
+    let mut v: Vec<SkillId> = Vec::new();
+    for t in [
+        SkillTree::C,
+        SkillTree::R,
+        SkillTree::E,
+        SkillTree::D,
+        SkillTree::Y,
+        SkillTree::T,
+        SkillTree::F,
+        SkillTree::G,
+    ] {
+        for &s in t.skills_in_tree() {
+            if !v.contains(&s) {
+                v.push(s);
+            }
+        }
+    }
+    for s in [SkillId::S001, SkillId::S020, SkillId::S021, SkillId::S031] {
+        if !v.contains(&s) {
+            v.push(s);
+        }
+    }
+    v
+}
+
+/// 键名清单（一行一个相对文件名，不含扩展名）——`keys.txt` / 生成器共用。
+pub fn key_list() -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for s in roster_skills() {
+        let id = s.as_u32();
+        v.push(format!("skill/{id}"));
+        if DefTable::has_alt(s) {
+            v.push(format!("skill/{id}_b"));
+        }
+    }
+    let s31 = SkillId::S031.as_u32();
+    for suffix in ["release", "induce"] {
+        let k = format!("skill/{s31}_{suffix}");
+        if !v.contains(&k) {
+            v.push(k);
+        }
+    }
+    for d in game_core::item::ITEMS {
+        v.push(format!("item/{}", d.id.as_u32()));
+    }
+    v
+}
+
+/// 在 `root` 写玩家说明 `README.txt`（id→中文名对照 + 工具指引）与 `keys.txt`（纯文件名清单）。
+pub fn write_readme(root: &Path) -> std::io::Result<()> {
+    let mut s = String::new();
+    s.push_str("Circle Brawl / 圆圈之战 本地图标包说明\n");
+    s.push_str("========================================\n\n");
+    s.push_str("每个子目录 = 一个图标包，结构：\n");
+    s.push_str("  <包名>/\n");
+    s.push_str("    circle_brawl_pack.ini        # 可选：name / author / version / description\n");
+    s.push_str("    icons/skill/<id>[_b|_release|_induce].<png|jpg|jpeg|webp>\n");
+    s.push_str("    icons/item/<id>.<png|jpg|jpeg|webp>\n\n");
+    s.push_str("规则：逐键覆盖（包里没有的键回退默认文字）；建议正方形 128×128 或 256×256（RGBA）。\n");
+    s.push_str("多形态技能 B 形态用 `<id>_b`（缺则回退 `<id>`）；链激活 S031 用 `<id>_release` / `<id>_induce`。\n");
+    s.push_str("一键生成示例：仓库 `tools/gen_demo_icon_pack.py`（需 Python + Pillow + 仓库 TTF）。\n\n");
+
+    s.push_str("技能图标（icons/skill/，id = SkillId）：\n");
+    for sk in roster_skills() {
+        let id = sk.as_u32();
+        let name = DefTable::neutral_name(sk);
+        if DefTable::has_alt(sk) {
+            s.push_str(&format!("  {id:<4} {name}   （B 形态：{id}_b）\n"));
+        } else {
+            s.push_str(&format!("  {id:<4} {name}\n"));
+        }
+    }
+    let s31 = SkillId::S031.as_u32();
+    s.push_str(&format!("  {s31}_release  锁链附加·释放（链激活时）\n"));
+    s.push_str(&format!("  {s31}_induce   锁链附加·诱导（链激活时）\n"));
+
+    s.push_str("\n物品图标（icons/item/，id = ItemId）：\n");
+    for d in game_core::item::ITEMS {
+        s.push_str(&format!("  {:<4} {}\n", d.id.as_u32(), d.name));
+    }
+    s.push_str("\n放好后回游戏「设置 → 图标包」选择，改包即时生效。\n");
+    std::fs::write(root.join("README.txt"), s)?;
+
+    let keys = key_list().join("\n");
+    std::fs::write(root.join("keys.txt"), format!("{keys}\n"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +451,31 @@ mod tests {
         assert!(packs[0].root.starts_with(&local), "本地根优先");
         let _ = std::fs::remove_dir_all(&local);
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    #[test]
+    fn key_list_covers_chain_and_items_without_dups() {
+        let keys = key_list();
+        assert!(keys.contains(&format!("skill/{}", SkillId::S019.as_u32())));
+        assert!(keys.contains(&format!("skill/{}_release", SkillId::S031.as_u32())));
+        assert!(keys.contains(&format!("skill/{}_induce", SkillId::S031.as_u32())));
+        assert!(keys.contains(&"item/0".to_string()));
+        let mut sorted = keys.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), keys.len(), "键名清单不应重复");
+    }
+
+    #[test]
+    fn write_readme_lists_keys_and_names() {
+        let root = tmp_root("readme");
+        write_readme(&root).unwrap();
+        let readme = std::fs::read_to_string(root.join("README.txt")).unwrap();
+        assert!(readme.contains("火球"), "应含技能中文名对照");
+        assert!(readme.contains(&format!("{}_release", SkillId::S031.as_u32())));
+        let keys = std::fs::read_to_string(root.join("keys.txt")).unwrap();
+        assert!(keys.contains("item/0"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
