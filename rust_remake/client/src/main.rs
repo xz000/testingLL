@@ -2657,10 +2657,21 @@ impl Game {
     }
 
     /// 本机玩家当前是否有激活的锁链（S019）—— 决定 Y 键路由到 S031（098c 隐藏 S019/显示 S031）。
+    ///
+    /// 包括**已吸附的 Tether**与**飞行中的链弹**：098c `uc`/`Uc` 在施法瞬间就切到 S031，
+    /// 飞行途中按 Y = S031(L1) Release = 取消在途链弹。
     fn chain_active_for_me(&self) -> bool {
         let me = self.self_index();
-        self.world.projectiles.iter().any(|p| {
-            matches!(&p.kind, game_core::world::ProjectileKind::Tether { owner, .. } if *owner == me)
+        self.world.projectiles.iter().any(|p| match &p.kind {
+            game_core::world::ProjectileKind::Tether { owner, .. } => *owner == me,
+            game_core::world::ProjectileKind::W098b { on_hit, .. } => {
+                p.owner == me
+                    && matches!(
+                        on_hit,
+                        game_core::skill::W098bOnHit::ChainPull | game_core::skill::W098bOnHit::RedChain
+                    )
+            }
+            _ => false,
         })
     }
 
@@ -4471,9 +4482,18 @@ impl Game {
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
                         // 链激活时 Y 槽实为 S031「锁链附加」（Release/Induce）——098c 隐藏 S019、显示 S031。
                         let chain_here = if skill == Some(SkillId::S019) {
-                            self.world.projectiles.iter().find_map(|p| match &p.kind {
+                            let tether = self.world.projectiles.iter().find_map(|p| match &p.kind {
                                 game_core::world::ProjectileKind::Tether { owner, beam, .. } if *owner == me.player_id => Some(*beam),
                                 _ => None,
+                            });
+                            tether.or_else(|| {
+                                // 链弹飞行中（尚未吸附）：S031 L1 = Release（可取消）。
+                                let inflight = self.world.projectiles.iter().any(|p| {
+                                    p.owner == me.player_id
+                                        && matches!(&p.kind, game_core::world::ProjectileKind::W098b { on_hit, .. }
+                                            if matches!(on_hit, game_core::skill::W098bOnHit::ChainPull | game_core::skill::W098bOnHit::RedChain))
+                                });
+                                if inflight { Some(false) } else { None }
                             })
                         } else {
                             None

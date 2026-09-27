@@ -1174,14 +1174,23 @@ impl World {
                     ProjectileKind::Tether { owner, beam, .. } if *owner == idx as u32 => Some(*beam),
                     _ => None,
                 });
+                // 链弹**飞行途中**（尚未吸附）：098c `uc`/`Uc` 在**施法瞬间**就隐藏 S019/显示 S031，
+                // 故此时 S019 同样不可用；按 Y = S031(L1) Release → `aR` 取消在途链弹（`nv[Nb]==2`→`iO`）。
+                let chain_inflight = self.projectiles.iter().any(|pr| {
+                    pr.owner == idx as u32
+                        && matches!(&pr.kind, ProjectileKind::W098b { on_hit, .. }
+                            if matches!(on_hit, crate::skill::W098bOnHit::ChainPull | crate::skill::W098bOnHit::RedChain))
+                });
                 if skill == SkillId::S031 {
-                    if let Some(beam) = chain_beam {
-                        chain_actions.push((idx as u32, beam));
+                    match (chain_beam, chain_inflight) {
+                        (Some(beam), _) => chain_actions.push((idx as u32, beam)), // 已吸附：Release/Induce
+                        (None, true) => chain_actions.push((idx as u32, false)),  // 飞行中：Release（取消链弹）
+                        (None, false) => {}                                       // 无链：忽略
                     }
                     continue;
                 }
-                if skill == SkillId::S019 && chain_beam.is_some() {
-                    continue; // 链已存在：忽略（098c S019 不可用）
+                if skill == SkillId::S019 && (chain_beam.is_some() || chain_inflight) {
+                    continue; // 链已存在/在途：忽略（098c S019 不可用）
                 }
                 // F 槽替换（模式 3/4）：天罚 S001 在化身/国王手里变成灾变/虔诚。
                 let skill = if skill == SkillId::S001 {
@@ -1262,6 +1271,19 @@ impl World {
                     }
                     matched = true;
                     break;
+                }
+            }
+            // 链弹飞行中：Release 取消它（098c `aR`→`iO`）；Induce 对未吸附的链弹不生效。
+            if !matched && !induce {
+                for pr in self.projectiles.iter_mut() {
+                    if pr.owner == idx
+                        && matches!(&pr.kind, ProjectileKind::W098b { on_hit, .. }
+                            if matches!(on_hit, crate::skill::W098bOnHit::ChainPull | crate::skill::W098bOnHit::RedChain))
+                    {
+                        pr.alive = false;
+                        matched = true;
+                        break;
+                    }
                 }
             }
             if matched {
@@ -11911,6 +11933,66 @@ mod tests {
             !w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. })),
             "靠到 ≤89 时链接应断裂"
         );
+    }
+
+    /// 098c `uc`/`Uc`：链弹**飞行途中**就已隐藏 S019/显示 S031——
+    /// 此时不可再发 S019；按 Y = S031(L1) Release 取消在途链弹（`aR`→`iO`）。
+    #[test]
+    fn s019_bolt_in_flight_blocks_recast_and_s031_cancels() {
+        let mut w = World::new(2, 7301);
+        w.obstacles.clear();
+        w.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].team = 0;
+        w.players[0].move_target = None;
+        w.players[1].pos = Vec2::new(Fix64::ZERO, d60(-20.0)); // 远处，避开弹道
+        w.players[1].team = 1;
+        w.players[1].move_target = None;
+
+        let is_chain_bolt = |k: &ProjectileKind| {
+            matches!(k, ProjectileKind::W098b { on_hit, .. }
+                if matches!(on_hit, crate::skill::W098bOnHit::ChainPull | crate::skill::W098bOnHit::RedChain))
+        };
+        let has_bolt = |w: &World| w.projectiles.iter().any(|p| is_chain_bolt(&p.kind));
+        let has_tether = |w: &World| w.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Tether { .. }));
+
+        // 朝远处施放 S019，推进到链弹起飞（飞行中）。
+        let far = Vec2::new(d60(20.0), Fix64::ZERO);
+        let mut fired = false;
+        for i in 0..90 {
+            let inp = if i == 0 {
+                PlayerInput { cast: Some((SkillId::S019, Some(far))), ..Default::default() }
+            } else {
+                PlayerInput::default()
+            };
+            w.step(vec![inp, PlayerInput::default()], dt);
+            if has_bolt(&w) {
+                fired = true;
+                break;
+            }
+        }
+        assert!(fired, "S019 链弹应进入飞行");
+        assert!(!has_tether(&w), "尚未吸附，不应有 Tether");
+
+        // 飞行途中再按 S019 → 忽略（不发第二枚）。
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S019, Some(far))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        assert_eq!(
+            w.projectiles.iter().filter(|p| is_chain_bolt(&p.kind)).count(),
+            1,
+            "飞行途中不应再发链弹"
+        );
+
+        // 飞行途中按 S031（Release）→ 取消在途链弹。
+        w.step(vec![
+            PlayerInput { cast: Some((SkillId::S031, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        assert!(!has_bolt(&w), "S031 Release 应取消在途链弹");
+        assert!(!has_tether(&w), "取消后不应产生 Tether");
     }
 
     /// S019 蓝链命中**柱子** → 锚定柱子并把施法者拉向柱子（098c `DA` 4321）。

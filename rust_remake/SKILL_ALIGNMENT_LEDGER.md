@@ -265,7 +265,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 红链 +移速 | `sc` raw 7260 `gR(caster,hR+100)`（`mr='d'`=100），4s 后 `pc` 还原 | `BuffKind::ChainSpeed(+100)`（固定 4s，不入 `jn`） | ✅ |
 | 断链 | 术士/敌人 `Rr≤89` 松（`DA` 4326-4338）；**柱链与红链同队**因 `DA` 4294 的 `…or nv[Vr]==3`/同队条件恒真而**不断**；红链队友/柱子另有 `sc` raw 7265 `4.5×jn` 定时断 | `remaining: Option`（`None`=不断）；`≤89` 仅玩家锚点且非红链队友；柱不存在/施法者死亡即断 | ✅ |
 | 柱链不吃伤 | `Sc`/`sc` 无对柱 `hI` | 撞柱分支建立链、**不扣柱 HP** | ✅ |
-| S031 | 链激活时隐藏 S019、显示 S031（`uc`/`Uc`；`aR` **无条件**恢复 S019、隐藏 S031）；L1 `Release`→`aR`（raw 8579）；L2 `Induce`（仅红链队友/柱）→ `qc`(raw 7239，断链定时器 `+3×jn`) + 自伤 4 + 1s CD | 核心逻辑已实现（`handle_casts` 拦截 + 客户端 Y 键路由/HUD 切标签）；`S031` 的 `SkillDef` 仍为占位（未走 `execute_effects`） | ✅（定义仍占位） |
+| S031 | **施法瞬发**即隐藏 S019、显示 S031（`uc`/`Uc`；`aR` **无条件**恢复 S019、隐藏 S031）——**飞行途中已可 Release**；L1 `Release`→`aR`（raw 8579）；L2 `Induce`（仅红链队友/柱）→ `qc`(raw 7239，断链定时器 `+3×jn`) + 自伤 4 + 1s CD | 核心逻辑已实现（`handle_casts` 拦截 + 客户端 Y 键路由/HUD 切标签）；**飞行途中已计入激活态**：S019 禁用、Y=S031(L1) Release 取消在途链弹（2026-09-27 对齐）；`S031` 的 `SkillDef` 仍为占位（未走 `execute_effects`） | ✅（定义仍占位） |
 | 视觉 | 蓝链 `DRAM`、红链 `DRAL`（飞行弹体+链接）；红链切割 `"CLSB"` | 飞行弹体与链接都按**形态** `red` 上色（蓝=淡蓝 / 红=红）；红链队友/柱子额外加粗亮芯（`YI`）；锚点支持柱子 | ✅ 近似 |
 
 > **文本对照**：措辞上【中】中文截图与【我】一致——蓝链「把术士拉向你或把你自己拉向柱子」、
@@ -290,6 +290,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | S021 虔诚 Denied | `QC` 8118 同上 | ✅（`Conditional`） |
 | S020 灾变 Denied | `qC` 8030：**无条件**断敌人挂在自己身上的链 | ✅（`DeniedMode::Unconditional`） |
 | S019 重放清旧链 | `uc`/`Uc` 7325/7347 `aR(self)` | ✅（链期间 S019 禁用） |
+| S031 Release·**飞行中** | `uc`/`Uc` 施法即显示 S031；`uC` 8580 `aR(self)` 对 `nv==2` 在途链弹执行 `iO` | ✅（2026-09-27 新增；测试 `s019_bolt_in_flight_blocks_recast_and_s031_cancels`） |
 | 目标/柱消失 | `DA` 4289 | ✅ |
 | 拉到位 `Rr≤89` | `DA` 4338（仅术士/敌人） | ✅ |
 | 红链队友/柱定时断 | `Pc` 7236（`4.5×jn`） | ✅ |
@@ -297,7 +298,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 对象销毁 | `iN` 4809 `VR(nr,true)` | ✅（柱毁 → 锚点失效） |
 | 玩家离开 | `zd` 10099 `VR(unit,false)` | ⚠（联网掉线处理不同） |
 
-> 回归测试：`s005_s007_escape_enemy_chains_only`（只挣脱敌方链）、`silence_breaks_targets_own_chain`（沉默断自己链）、`s031_release_and_induce`、`smite_denied_breaks_link_on_special_target`、`s019_pillar_anchor_breaks_when_pillar_destroyed`。
+> 回归测试：`s005_s007_escape_enemy_chains_only`（只挣脱敌方链）、`silence_breaks_targets_own_chain`（沉默断自己链）、`s031_release_and_induce`、`smite_denied_breaks_link_on_special_target`、`s019_pillar_anchor_breaks_when_pillar_destroyed`、`s019_bolt_in_flight_blocks_recast_and_s031_cancels`（飞行途中不可连发 / S031 取消在途链弹）。
 > 实现辅助：`World::sever_links_owned_by`（= `aR(self)`）、`World::sever_links_on`（= `VR`）；
 > ⚠ 注意 `step_projectiles` 开头 `mem::take(self.projectiles)`：在其内部要断链须操作局部 `ps`，不能用 `self.*`。
 > **Denied 修正（2026-09-25）**：旧实现是「遍历命中半径内的敌人，断锚点为该敌人的链」——语义**反了**。
