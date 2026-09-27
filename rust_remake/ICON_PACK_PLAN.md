@@ -247,7 +247,14 @@ Steam 库定位、多库扫描、`libraryfolders.vdf` 解析**直接复用** `au
   - 设置页新增「图标包」（`无` / 各包，循环切换即生效 + 写回）与「打开图标包目录」两行。
   - 打开目录：创建本地根 + 写 `README.txt`（id→中文名对照与规则）+ `keys.txt`（纯文件名清单，指向 `tools/gen_demo_icon_pack.py`）。
   - **不做**游戏内「生成示例包」按钮（选 a）：生成交 Python 工具（I5）。
-- [ ] **I4 工坊**：发布本地图标包 + 物品 id 复用映射 + `Icons` tag + 订阅物品列表可见（复用现有工坊覆盖层）。
+- [x] **I4 工坊** ✔ 2026-09-27
+  - 设置页新增「要发布的图标包」「发布本地图标包」两行；`icon_pack::publish_meta`（tag `Icons`）+ `preview_path` + `is_under`。
+  - 把音频发布重构出通用 `begin_workshop_publish(pack_id, content, title, desc, tags, preview)`，音频/图标各一调用点。
+  - 图标发布映射键用 `icon:<id>`（`published.icon:<id>=<fileid>`），避免与音频包 id 冲突；复用现有 `WorkshopPublish` 状态机。
+  - `local_settings` 增 `publish_icon_pack`（默认 `none`）。
+  - ⚠ Steam 部分**只能真机验证**（逻辑层已按音频发布同构）。
+
+> 附带：设置菜单行数已 21，新增**滚动**（一屏 12 行 + 滚轮 + 右缘滑条，`SETTINGS_VISIBLE`/`scroll_to_show`）。
 - [x] **I5 示例包生成器** ✔ 2026-09-27：`tools/gen_demo_icon_pack.py`（Python + Pillow）。
   - 键表来源：客户端 `cargo run -p client -- --dump-icon-keys`（复用 `icon_pack::key_entries`，**不在 Python 重复维护**）。
   - 产物：`icons/skill/*.png` + `icons/item/*.png` + 清单 + `keys.txt` + `preview.png`；不随仓库附带生成结果。

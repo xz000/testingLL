@@ -443,6 +443,8 @@ enum SetRow {
     PublishPack,
     PublishReuse,
     PublishVisibility,
+    PublishIconTarget,
+    PublishIconPack,
     OpenAudioDir,
     OpenIconDir,
     Audition,
@@ -453,7 +455,7 @@ enum SetRow {
     Lang,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 19] = [
+const SETTINGS_ROWS: [(SetRow, &str); 21] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -465,6 +467,8 @@ const SETTINGS_ROWS: [(SetRow, &str); 19] = [
     (SetRow::PublishPack, "发布本地包"),
     (SetRow::PublishReuse, "发布时复用物品 id"),
     (SetRow::PublishVisibility, "发布可见性"),
+    (SetRow::PublishIconTarget, "要发布的图标包"),
+    (SetRow::PublishIconPack, "发布本地图标包"),
     (SetRow::OpenAudioDir, "打开音频包目录"),
     (SetRow::OpenIconDir, "打开图标包目录"),
     (SetRow::Audition, "试听当前音效包"),
@@ -474,6 +478,22 @@ const SETTINGS_ROWS: [(SetRow, &str); 19] = [
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
 ];
+
+/// 设置界面一屏可见行数（超出则滚动；行高 = 内容带 / 可见行数）。
+const SETTINGS_VISIBLE: usize = 12;
+
+/// 让 `row` 落在 `[scroll, scroll+visible)` 内，返回新的 scroll（纯函数，便于单测）。
+fn scroll_to_show(row: usize, scroll: usize, visible: usize, len: usize) -> usize {
+    let visible = visible.max(1);
+    let out = if row < scroll {
+        row
+    } else if row >= scroll + visible {
+        (row + 1).saturating_sub(visible)
+    } else {
+        scroll
+    };
+    out.min(len.saturating_sub(visible))
+}
 
 /// 用系统文件管理器打开目录（跨平台；失败静默）。
 #[cfg(target_os = "windows")]
@@ -650,6 +670,8 @@ struct Game {
     settings_open: bool,
     /// 设置界面当前选中行。
     settings_row: usize,
+    /// 设置界面滚动偏移（顶部可见行号）。
+    settings_scroll: usize,
     /// 设置界面鼠标命中盒。
     settings_hitboxes: ui::HitRegistry<SettingsAction>,
     /// 「按键设置」子界面的可点区域（鼠标支持）。
@@ -1366,6 +1388,7 @@ impl Game {
             workshop_publish: None,
             settings_open: false,
             settings_row: 0,
+            settings_scroll: 0,
             settings_hitboxes: ui::HitRegistry::new(),
             keybinds_hitboxes: ui::HitRegistry::new(),
             player_target: None,
@@ -6039,6 +6062,7 @@ impl event::EventHandler for Game {
                         self.menu_hint.clear();
                         self.settings_open = true;
                         self.settings_row = 0;
+                        self.settings_scroll = 0;
                         // 打开设置时重扫音频包（新订阅的创意工坊物品/新放的本地包能立即出现在列表里）。
                         self.pending_audio_reload = true;
                         self.refresh_workshop_counts();
@@ -6833,6 +6857,17 @@ impl event::EventHandler for Game {
     /// winit 循环已在 main.rs:5842 把 `MouseWheel` 转发到此。
     fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, y: f32) -> GameResult {
         use game_core::meta::MatchPhase;
+        // 设置界面：滚轮滚动设置行（子界面自行处理/忽略）。
+        if self.settings_open && !self.workshop_open && !self.keybinds_open {
+            let n = SETTINGS_ROWS.len();
+            let max_scroll = n.saturating_sub(SETTINGS_VISIBLE);
+            if y > 0.0 {
+                self.settings_scroll = self.settings_scroll.saturating_sub(1);
+            } else if y < 0.0 {
+                self.settings_scroll = (self.settings_scroll + 1).min(max_scroll);
+            }
+            return Ok(());
+        }
         // 对战阶段：滚轮交给 `update_camera` 做光标锚点缩放（行/像素增量归一化，避免像素滚轮一下跳满）。
         if !self.pre_game_config {
             let n = if y.abs() > 5.0 { y / 100.0 } else { y };
@@ -8437,6 +8472,9 @@ impl Game {
         if let Some(i) = clicked {
             self.settings_row = i;
         }
+        // 键盘/点击移动后保持当前行在可见窗口内（滚轮另见 `mouse_wheel_event`）。
+        self.settings_scroll =
+            scroll_to_show(self.settings_row, self.settings_scroll, SETTINGS_VISIBLE, n);
 
         let mut delta = 0i32;
         if pressed(NamedKey::ArrowLeft) {
@@ -8472,6 +8510,8 @@ impl Game {
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
+                    | SetRow::PublishIconTarget
+                    | SetRow::PublishIconPack
             );
             if workshop_row && !appid::workshop_enabled() {
                 self.settings_flash(i18n::t("demo 版不支持创意工坊（正式版可用）").to_string());
@@ -8565,6 +8605,22 @@ impl Game {
             Some(SetRow::PublishVisibility) => {
                 self.local_settings.workshop_public = !self.local_settings.workshop_public;
             }
+            Some(SetRow::PublishIconTarget) => {
+                let ids: Vec<String> =
+                    self.publish_icon_options().into_iter().map(|(v, _)| v).collect();
+                self.local_settings.publish_icon_pack =
+                    icon_pack::cycle_id(&ids, &self.local_settings.publish_icon_pack, delta);
+            }
+            Some(SetRow::PublishIconPack) => {
+                #[cfg(feature = "steam")]
+                {
+                    self.start_workshop_publish_icon();
+                }
+                #[cfg(not(feature = "steam"))]
+                {
+                    eprintln!("[workshop] 本构建未启用 Steam，无法发布");
+                }
+            }
             Some(kind) => {
                 // 音量行：`wrap` 时满则回 0（点击/回车步进一格）；否则按 delta 微调。
                 let step = if wrap { 0.05 } else { delta as f32 * 0.05 };
@@ -8582,6 +8638,8 @@ impl Game {
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
+                    | SetRow::PublishIconTarget
+                    | SetRow::PublishIconPack
                     | SetRow::OpenAudioDir
                     | SetRow::OpenIconDir
                     | SetRow::Audition
@@ -8608,6 +8666,8 @@ impl Game {
                     | SetRow::PublishPack
                     | SetRow::PublishReuse
                     | SetRow::PublishVisibility
+                    | SetRow::PublishIconTarget
+                    | SetRow::PublishIconPack
                     | SetRow::OpenAudioDir
                     | SetRow::OpenIconDir
                     | SetRow::Audition
@@ -8669,6 +8729,18 @@ impl Game {
         let mut v = vec![(PUBLISH_AUTO.to_string(), i18n::t("自动（音效优先）").to_string())];
         for p in &self.audio_packs {
             if audio_pack::is_under(&local, &p.root) {
+                v.push((p.id.clone(), p.display()));
+            }
+        }
+        v
+    }
+
+    /// 可选**图标包**发布目标：`(值, 显示名)`。首项“（不发布）”；其余为**本地**图标包。
+    fn publish_icon_options(&self) -> Vec<(String, String)> {
+        let local = icon_pack::local_root();
+        let mut v = vec![(icon_pack::PACK_NONE.to_string(), i18n::t("（不发布）").to_string())];
+        for p in &self.icon_packs {
+            if icon_pack::is_under(&local, &p.root) {
                 v.push((p.id.clone(), p.display()));
             }
         }
@@ -8737,6 +8809,17 @@ impl Game {
                 audio_pack::find(&self.audio_packs, &self.local_settings.music_pack)
                     .filter(|p| audio_pack::is_under(&local, &p.root) && p.kind.has_bgm())
             })
+    }
+
+    /// 当前**图标包**发布目标：`publish_icon_pack` 指定（且仍为本地包）；未指定/非本地 → `None`。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    fn publish_icon_target(&self) -> Option<&icon_pack::IconPack> {
+        if self.local_settings.publish_icon_pack == icon_pack::PACK_NONE {
+            return None;
+        }
+        let local = icon_pack::local_root();
+        icon_pack::find(&self.icon_packs, &self.local_settings.publish_icon_pack)
+            .filter(|p| icon_pack::is_under(&local, &p.root))
     }
 
     /// 重扫图标包并应用当前设置选择（启动 / 改设置 / 打开设置时调用）。
@@ -9039,7 +9122,27 @@ impl Game {
         }
     }
 
-    /// 发布当前**发布目标**（见 `publish_target`）到创意工坊（仅 Steam 构建）。
+    /// 图标包发布行显示文本（与音频发布共用一个进行中状态）。
+    fn icon_publish_status_text(&self) -> String {
+        #[cfg(feature = "steam")]
+        {
+            match &self.workshop_publish {
+                Some(WorkshopPublish::Creating { .. }) => i18n::t("创建中…").to_string(),
+                Some(WorkshopPublish::Uploading { text, .. }) => text.clone(),
+                Some(WorkshopPublish::Finished(t)) => t.clone(),
+                None => match self.publish_icon_target() {
+                    Some(p) => i18n::tf("将发布：{name}", &[("name", p.display())]),
+                    None => i18n::t("无可发布的本地包").to_string(),
+                },
+            }
+        }
+        #[cfg(not(feature = "steam"))]
+        {
+            i18n::t("需要 Steam").to_string()
+        }
+    }
+
+    /// 发布当前**音频包发布目标**（见 `publish_target`）到创意工坊（仅 Steam 构建）。
     #[cfg(feature = "steam")]
     fn start_workshop_publish(&mut self) {
         let Some(pack) = self.publish_target() else {
@@ -9051,14 +9154,43 @@ impl Game {
         let pack_id = pack.id.clone();
         let content = pack.root.clone();
         let meta = audio_pack::publish_meta(pack);
-        let preview = audio_pack::preview_path(&content);
+        let preview = audio_pack::preview_path(&pack.root);
+        self.begin_workshop_publish(pack_id, content, meta.title, meta.description, meta.tags, preview);
+    }
+
+    /// 发布当前**图标包发布目标**（见 `publish_icon_target`）到创意工坊（仅 Steam 构建）。
+    /// 发布映射键用 `icon:<id>`，避免与音频包 id 冲突。
+    #[cfg(feature = "steam")]
+    fn start_workshop_publish_icon(&mut self) {
+        let Some(pack) = self.publish_icon_target() else {
+            eprintln!("[workshop] 没有可发布的本地图标包：请在「要发布的图标包」里选一个本地包");
+            return;
+        };
+        let pack_id = format!("icon:{}", pack.id);
+        let content = pack.root.clone();
+        let meta = icon_pack::publish_meta(pack);
+        let preview = icon_pack::preview_path(&pack.root);
+        self.begin_workshop_publish(pack_id, content, meta.title, meta.description, meta.tags, preview);
+    }
+
+    /// 通用发布：创建/更新工坊物品并进入上传状态机（音频包与图标包共用）。
+    #[cfg(feature = "steam")]
+    fn begin_workshop_publish(
+        &mut self,
+        pack_id: String,
+        content: std::path::PathBuf,
+        title: String,
+        description: String,
+        tags: Vec<String>,
+        preview: Option<std::path::PathBuf>,
+    ) {
         let public = self.local_settings.workshop_public;
         let reuse_id = if self.local_settings.workshop_reuse {
             self.local_settings.published_id(&pack_id)
         } else {
             None
         };
-        let tags = if SEND_WORKSHOP_TAGS { meta.tags.clone() } else { Vec::new() };
+        let tags = if SEND_WORKSHOP_TAGS { tags } else { Vec::new() };
         let Some(t) = self.steam_transport() else {
             eprintln!("[workshop] Steam 不可用，无法发布");
             return;
@@ -9072,7 +9204,7 @@ impl Game {
             "[workshop] 发布包 {pack_id}：app_id={} 已安装={} title={:?} tags={:?} preview={:?} public={public} content={}",
             t.app_id(),
             t.app_installed(),
-            meta.title,
+            title,
             tags,
             preview,
             content.display()
@@ -9082,8 +9214,8 @@ impl Game {
             let (handle, done) = t.submit_workshop_update(net_steam::WorkshopUpdate {
                 file_id: id,
                 content_path: content,
-                title: meta.title,
-                description: meta.description,
+                title,
+                description,
                 tags,
                 preview,
                 visibility: vis,
@@ -9100,8 +9232,8 @@ impl Game {
                 rx,
                 pack_id,
                 content,
-                title: meta.title,
-                description: meta.description,
+                title,
+                description,
                 tags,
                 preview,
                 public,
@@ -9236,6 +9368,8 @@ impl Game {
                         | SetRow::PublishPack
                         | SetRow::PublishReuse
                         | SetRow::PublishVisibility
+                        | SetRow::PublishIconTarget
+                        | SetRow::PublishIconPack
                 ) {
                     return i18n::t("demo 不支持").to_string();
                 }
@@ -9272,6 +9406,10 @@ impl Game {
                 Self::pack_label(&self.publish_pack_options(), &self.local_settings.publish_pack)
             }
             Some(SetRow::PublishPack) => self.publish_status_text(),
+            Some(SetRow::PublishIconTarget) => {
+                Self::pack_label(&self.publish_icon_options(), &self.local_settings.publish_icon_pack)
+            }
+            Some(SetRow::PublishIconPack) => self.icon_publish_status_text(),
             Some(SetRow::PublishReuse) => {
                 if self.local_settings.workshop_reuse {
                     i18n::t("复用（更新）").to_string()
@@ -9772,9 +9910,15 @@ impl Game {
 
         let panel = layout::centered_panel(sw, sh, 0.66, 0.80);
         let (px, py, pw, ph) = (panel.x, panel.y, panel.w, panel.h);
-        let content = graphics::Rect::new(px + 24.0, py + 20.0, pw - 48.0, ph - 100.0);
-        for (i, (kind, label)) in SETTINGS_ROWS.iter().enumerate() {
-            let r = layout::row_in(content, i, SETTINGS_ROWS.len());
+        let need_scroll = SETTINGS_ROWS.len() > SETTINGS_VISIBLE;
+        let content_w = pw - 48.0 - if need_scroll { 12.0 } else { 0.0 };
+        let content = graphics::Rect::new(px + 24.0, py + 20.0, content_w, ph - 100.0);
+        let (win_start, win_end) =
+            ui::scroll_window(SETTINGS_ROWS.len(), SETTINGS_VISIBLE, self.settings_scroll);
+        let vis = win_end - win_start;
+        for (i, item) in SETTINGS_ROWS.iter().enumerate().take(win_end).skip(win_start) {
+            let (kind, label) = *item;
+            let r = layout::row_in(content, i - win_start, vis);
             let sel = i == self.settings_row;
             let hover = !sel && r.contains(mouse);
             ui::paint_row(&mut canvas, ctx, r, sel, hover)?;
@@ -9795,6 +9939,20 @@ impl Game {
             }
             ui::text_right(&mut canvas, ctx, &self.settings_value_text(i), ui::theme::BODY, col, r.x + r.w - 14.0, r.y + 8.0)?;
             self.settings_hitboxes.push((r, SettingsAction::Row(i)));
+        }
+        // 滚动条（仅超一屏时）：右缘细轨 + 按偏移定位的滑块。
+        if need_scroll {
+            let track = graphics::Rect::new(content.x + content.w + 4.0, content.y, 4.0, content.h);
+            let tb = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), track, ui::theme::row_bg())?;
+            canvas.draw(&tb, graphics::DrawParam::new());
+            let total = SETTINGS_ROWS.len() as f32;
+            let vis_f = SETTINGS_VISIBLE as f32;
+            let bar_h = (content.h * (vis_f / total)).max(24.0);
+            let max_off = (total - vis_f).max(1.0);
+            let frac_y = (self.settings_scroll as f32 / max_off).clamp(0.0, 1.0);
+            let bar = graphics::Rect::new(track.x, content.y + (content.h - bar_h) * frac_y, track.w, bar_h);
+            let bb = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), bar, ui::theme::accent())?;
+            canvas.draw(&bb, graphics::DrawParam::new());
         }
 
         let bw = 110.0;
@@ -11652,6 +11810,20 @@ mod tests {
     }
 
     /// 技能槽显示状态：文字 / 形态角标 / 图标键三者同源（与 `icon_pack::slot_state` 一致）。
+    /// 设置滚动：当前行必须被夹进可见窗口（含上下边界 clamp）。
+    #[test]
+    fn scroll_to_show_keeps_row_visible() {
+        // 已在窗口内 → 不动
+        assert_eq!(super::scroll_to_show(5, 0, 12, 21), 0);
+        // 越过下边界 → 下滚恰好露出该行
+        assert_eq!(super::scroll_to_show(12, 0, 12, 21), 1);
+        assert_eq!(super::scroll_to_show(20, 0, 12, 21), 9, "末尾行 → 滚到底");
+        // 越过上边界 → 上滚到该行
+        assert_eq!(super::scroll_to_show(3, 8, 12, 21), 3);
+        // 行数不足一屏 → 偏移恒 0
+        assert_eq!(super::scroll_to_show(5, 0, 12, 8), 0);
+    }
+
     #[test]
     fn slot_display_shares_label_badge_icon() {
         use super::icon_pack::{IconKey, SkillVariant};

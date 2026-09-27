@@ -30,6 +30,8 @@ pub struct LocalSettings {
     pub published: Vec<(String, u64)>,
     /// 发布目标：`auto`（音效包优先，否则 BGM 包）或某个**本地**包 id。
     pub publish_pack: String,
+    /// **图标包**发布目标：`none`（不发布）或某个**本地**图标包 id。
+    pub publish_icon_pack: String,
     /// 8 个技能槽的自定义按键（下标 = `CastKey::as_u32`，顺序 C/R/E/D/Y/T/F/G）。
     pub skill_keys: [char; 8],
     /// 停止移动 + 清空指令队列（默认 `S`）。
@@ -289,6 +291,7 @@ impl Default for LocalSettings {
             workshop_public: true,
             published: Vec::new(),
             publish_pack: "auto".to_string(),
+            publish_icon_pack: "none".to_string(),
             skill_keys: DEFAULT_SKILL_KEYS,
             key_stop: DEFAULT_KEY_STOP,
             key_cam_center: DEFAULT_KEY_CAM_CENTER,
@@ -563,6 +566,7 @@ pub fn parse(text: &str) -> LocalSettings {
             "music_pack" => s.music_pack = v.to_string(),
             "icon_pack" => s.icon_pack = v.to_string(),
             "publish_pack" => s.publish_pack = v.to_string(),
+            "publish_icon_pack" => s.publish_icon_pack = v.to_string(),
             "key_stop" => {
                 if let Some(k) = BindKey::parse(v) {
                     s.key_stop = k;
@@ -649,7 +653,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nicon_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_form_switch={}\nkey_shop_cat={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nicon_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\npublish_icon_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_form_switch={}\nkey_shop_cat={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -661,6 +665,7 @@ pub fn serialize(s: &LocalSettings) -> String {
         if s.workshop_reuse { 1 } else { 0 },
         if s.workshop_public { 1 } else { 0 },
         s.publish_pack,
+        s.publish_icon_pack,
         s.skill_keys.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(","),
         s.key_stop.code(),
         s.key_cam_center.code(),
@@ -737,6 +742,7 @@ mod tests {
             workshop_public: false,
             published: vec![("MyPack".to_string(), 42), ("Other".to_string(), 7)],
             publish_pack: "MyPack".to_string(),
+            publish_icon_pack: "IconPack".to_string(),
             skill_keys: ['q', 'w', 'e', 'r', 'a', 's', 'd', 'f'],
             key_stop: BindKey::Char('x'),
             key_cam_center: BindKey::Named(NamedBind::Home),

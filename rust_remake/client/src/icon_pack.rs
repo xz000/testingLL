@@ -235,6 +235,42 @@ pub fn find<'a>(packs: &'a [IconPack], id: &str) -> Option<&'a IconPack> {
     packs.iter().find(|p| p.id == id)
 }
 
+/// 工坊预览图：`<root>/preview.<png|jpg|jpeg|gif>`（可选）。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub fn preview_path(root: &Path) -> Option<PathBuf> {
+    for ext in ["png", "jpg", "jpeg", "gif"] {
+        let p = root.join(format!("preview.{ext}"));
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// 该包根是否位于 `root` 下（用于判断“本地包”，创意工坊包不可再发布）。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub fn is_under(root: &Path, pack_root: &Path) -> bool {
+    pack_root.starts_with(root)
+}
+
+/// 发布到创意工坊的元数据。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishMeta {
+    pub title: String,
+    pub description: String,
+    pub tags: Vec<String>,
+}
+
+/// 由图标包推导发布元数据（tag `Icons`）。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub fn publish_meta(pack: &IconPack) -> PublishMeta {
+    PublishMeta {
+        title: pack.name.clone(),
+        description: format!("{} — Circle Brawl icon pack.", pack.name),
+        tags: vec!["Icons".to_string()],
+    }
+}
+
 /// 在选项 id 列表中循环移动（找不到当前项时从头算）。空列表返回 `cur`。
 pub fn cycle_id(ids: &[String], cur: &str, delta: i32) -> String {
     if ids.is_empty() {
