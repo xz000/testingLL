@@ -4897,9 +4897,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
                         // S001 天罚（098c mC，普通局 F 键）：半径 250（按**半径**判定 `cO<=$FA`），
-                        // 伤害随距离乘法衰减 `×(1-d/1000)`（mC `mI(...,1.-cO/$3E8)`），伤害 10+血剑。
-                        // 098c `mC`：伤害与击退都乘 `(1-d/1000)`（`mI(ii,gX,cX,1.-cO/$3E8)`）。
-                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
+                        // 伤害 10+血剑，**250 内满额不衰减**；`1-d/1000` 只作用于**击退**。
+                        // 依据 `mI`：伤害 `HX` 原样传 `hI`（无距离项），`lI=1-cO/$3E8` 只进击退冲量 `LI`；
+                        // 对照灾变 `qC` 把伤害衰减塞进 `HX`、`lI` 传固定 1 —— 可见 `lI` 就是击退系数。
+                        // 故伤害 DmgFalloff::None，击退 KbAttn::Mul(1000)。（曾误把该衰减也乘到伤害上）
+                        smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::None, KbAttn::Mul(Fix64::from_num(1000.0)));
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变（098c `qC` 实证）：伤害按阶段 `$B/$C/$E` = **11/12/14**（+血剑 Zr）；
@@ -4921,10 +4923,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
-                        // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚（半径 250、衰减 ×(1-d/1000)）；500 内**队友**
+                        // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚（半径 250、伤害满额、击退 ×(1-d/1000)）；500 内**队友**
                         //（不含自己，JASS `gX!=ii`）回血 cX/2、+60 移速 4s。FFA 无队友 → 纯伤害 nova。
-                        // 098c `QC`：伤害与击退都乘 `(1-d/1000)`（`mI(ii,gX,cX,1-cO/$3E8)`）。
-                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::Mul(Fix64::from_num(1000.0)), KbAttn::Mul(Fix64::from_num(1000.0)));
+                        // 098c `QC`：伤害 `HX=cX` 不衰减，`lI=1-cO/$3E8` 只作用于击退（同 `mC`）。
+                        world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::None, KbAttn::Mul(Fix64::from_num(1000.0)));
                         let caster_team = world.players[idx as usize].team;
                         let mut healed_any = false;
                         let allies: Vec<u32> = world
@@ -8274,10 +8276,10 @@ mod tests {
         for f in 0..60 {
             world.step(none.clone(), dt); // windup 0.7s
             if f == 44 {
-                // 天罚刚落地即采集：击退会把 p1 推出场外进岩浆（098c 正确行为），不计入
-                // 距离衰减（098c `mI(...,1-d/1000)`）：p1 在 120 处 → 11×(1-120/1000)=9.68。
+                // 天罚刚落地即采集：击退会把 p1 推出场外进岩浆（098c 正确行为）。
+                // 伤害 250 内**满额**不衰减（`1-d/1000` 只作用于击退）：p1 在 120 处仍吃 10+1=11。
                 let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
-                assert!((d1 - 9.68).abs() < 0.5, "目标应吃 11×(1-120/1000)=9.68 天罚，实际 {d1}");
+                assert!((d1 - 11.0).abs() < 0.5, "目标应吃满额 11 天罚（不随距离衰减），实际 {d1}");
             }
         }
         assert!(!world.players[0].aegis_charged, "天罚释放应消耗充能");
@@ -8575,9 +8577,10 @@ mod tests {
         assert_eq!(hits, 1, "仅半径内的敌人被命中");
     }
 
-    /// 天罚/虔诚伤害随距离乘法衰减（098c `mI(...,1-d/1000)`）：中心 > 边缘。
+    /// `explode_at` 的 `DmgFalloff::Mul`（陨石 `oB` 用的乘法距离衰减）：中心 > 边缘。
+    /// 注意：天罚/虔诚**不用**它——它们的 `1-d/1000` 只作用于击退（见下一个测试）。
     #[test]
-    fn smite_damage_falls_off_with_distance() {
+    fn explode_at_mul_falloff_is_distance_based() {
         let mut w = World::new(3, 5);
         for p in w.players.iter_mut() {
             p.alive = true;
@@ -8625,7 +8628,7 @@ mod tests {
             Fix64::from_num(1000.0),
             true,
             DeniedMode::Conditional,
-            DmgFalloff::Mul(Fix64::from_num(1000.0)),
+            DmgFalloff::None, // 看击退，与 S001 实际调用一致（伤害不衰减）
             KbAttn::Mul(Fix64::from_num(1000.0)),
         );
         let vel = |i: usize| {
@@ -9027,6 +9030,32 @@ mod tests {
         assert_eq!(world.players[0].hp, hp0 - Fix64::from_num(10), "天罚应自伤 10（无击退）");
         assert!(world.players[1].hp < hp1, "250 内敌人应受伤");
         assert_eq!(world.players[2].hp, hp2, "250 外敌人不应受伤");
+    }
+
+    /// S001 天罚：250 内伤害**满额、不随距离衰减**（原版 `mI` 的 `1-d/1000` 只乘击退）。
+    /// 回归：曾误把 `DmgFalloff::Mul(1000)` 也传给伤害，导致边缘只打 75%。
+    #[test]
+    fn s001_smiting_damage_full_at_radius_edge() {
+        let mut world = World::new(2, 9123);
+        world.base_regen = 0.0;
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 正好落在半径边缘 250：应命中，且伤害满额（不做距离衰减）。
+        world.players[1].pos = Vec2::new(Fix64::from_num(250.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp1 = world.players[1].hp;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(); 2];
+        for _ in 0..60 {
+            world.step(none.clone(), dt); // windup 0.7s
+        }
+        let drop = (hp1 - world.players[1].hp).to_num::<f64>();
+        assert!((drop - 10.0).abs() < 1e-6, "边缘 250 应吃满额 10（不随距离衰减），实际 {drop}");
     }
 
     /// S020 灾变：三级递进——伤害随 stage 递增且 stage 循环。
