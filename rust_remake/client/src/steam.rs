@@ -5,7 +5,7 @@
 //! 因此这是**纯逻辑分组**，不改变任何行为与借用关系（局域网/单机路径不受影响）。
 //!
 //! **当前包含**（逻辑类已全部迁入）：
-//! - 掉线/重连/迁移/接管：`poll_steam_reconnect` · `poll_steam_migration` · `steam_do_takeover` · `clear_transient_input`
+//! - 掉线/重连/迁移/接管：`poll_steam_migration`（含「先探测重连、再选举迁移」）· `steam_do_takeover` · `clear_transient_input`
 //! - presence：`steam_transport` · `steam_current_room_info` · `steam_set/clear/refresh_presence`
 //! - 社交/状态/工具：`steam_ping_of` · `steam_refresh_network_info` · `steam_draw_avatar` · `steam_ensure_leaderboard` · `steam_record_match_result`
 //! - 好友/会话：`steam_refresh_friends` · `steam_mark_played_with`（近期一起玩过）· `steam_ensure_session` · `steam_poll_join_requests`
@@ -119,72 +119,6 @@ impl Game {
                 Ok(Some(cli))
             } else {
                 Ok(Some(cli))
-            }
-        }
-    }
-
-    /// Steam client 战斗端掉线后的重连入口（对齐局域网 `poll_reconnect`，但直接操作 `steam_cli_ls`）。
-    /// 按 R 触发：发 `ReconnectReq`(带本机 SteamID) → host 应答 `Snapshot` → 重建 World → `apply_resync` 对齐续打。
-    #[cfg(feature = "steam")]
-    pub(crate) fn poll_steam_reconnect(&mut self, ctx: &Context, cli: &mut net::lockstep::ClientLockstep<net_steam::SteamTransport>) {
-        use ggez::input::keyboard::Key;
-        let r_pressed = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("r".into()))
-            || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("R".into()));
-        if !self.reconnect_attempting && !r_pressed {
-            return; // 未按 R，不发起重连，保持空闲等待。
-        }
-        if !self.reconnect_attempting {
-            self.reconnect_attempting = true;
-            self.reconnect_stall_ticks = 0;
-            eprintln!("[steam-client] reconnect flow: sending ReconnectReq...");
-        }
-        // 发重连请求（带本机 SteamID 作稳定身份，host 按身份找回槽位）。
-        if cli.send_reconnect_req(self.steam_my_id).is_err() {
-            eprintln!("[steam-client] reconnect send failed");
-            self.reconnect_attempting = false;
-            return;
-        }
-        let mut rcv = vec![0u8; 256 * 1024];
-        match cli.recv_snapshot(&mut rcv) {
-            Ok(Some((world_bytes, seq))) => {
-                eprintln!("[steam-client] got Snapshot seq={seq}, rebuilding World ({n} bytes)", n = world_bytes.len());
-                cli.apply_resync(&mut rcv).ok();
-                match game_core::world_ser::world_from_bytes(&world_bytes) {
-                    Some(w) => {
-                        self.world = w;
-                        // 清空本地输入残留，避免把掉线期间的输入误带到接回后。
-                        self.player_target = None;
-                        self.pending_cast = None;
-                        self.pending_skill = None;
-                        self.queued_cmds.clear();
-                        self.pending_shift_skill = None;
-                        self.pending_clear_signal = false;
-                        self.pending_stop_signal = false;
-                        self.steam_cli_stale_ticks = 0;
-                        self.conn_dropped = false;
-                        self.reconnect_attempting = false;
-                        eprintln!("[steam-client] reconnected: World rebuilt from snapshot, resuming lockstep");
-                    }
-                    None => {
-                        eprintln!("[steam-client] failed to decode snapshot, retrying on next keypress");
-                        self.reconnect_attempting = false;
-                    }
-                }
-            }
-            Ok(None) => {
-                // 尚未收到快照：累计 stall；超过阈值（~10s@60fps）判定 host 不可达，放弃本次重连，
-                // 留给玩家按 Esc 退回主菜单（C1/C2），不再无限重试卡死。
-                self.reconnect_stall_ticks = self.reconnect_stall_ticks.saturating_add(1);
-                const STALL_LIMIT: u32 = 600;
-                if self.reconnect_stall_ticks >= STALL_LIMIT {
-                    eprintln!("[steam-client] reconnect STALL: 无快照超过 {STALL_LIMIT} 帧，放弃重连（host 可能已掉线）；可按 Esc 退回主菜单");
-                    self.reconnect_attempting = false;
-                    self.reconnect_stall_ticks = 0;
-                }
-            }
-            Err(e) => {
-                eprintln!("[steam-client] reconnect error: {e:?}");
-                self.reconnect_attempting = false;
             }
         }
     }

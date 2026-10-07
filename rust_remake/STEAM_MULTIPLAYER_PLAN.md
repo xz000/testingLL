@@ -44,7 +44,10 @@
 - **client**：Steam Fighting 分支接入掉线检测（连续收不到权威帧）→ 显示重连 UI → 按 R 发 `ReconnectReq` →
   拉快照重建 `self.world` → `apply_resync` 对齐继续。
 - **新增**：`steam_my_id`（本机 SteamID，重连身份）、`steam_cli_stale_ticks`（Steam client 掉线探测）；
-  `poll_steam_reconnect` 重连入口；host 分支 `auto_drop_idle` 接入。
+  ~~`poll_steam_reconnect` 重连入口~~；host 分支 `auto_drop_idle` 接入。
+  > **修正（2026-09-27，EXIT_MENU_RECONNECT_PLAN E4）**：`poll_steam_reconnect` 依赖的 `conn_dropped`
+  > 在 Steam 路径从未置位 → 不可达/近似死代码，**已删除**；Steam 掉线统一走 `poll_steam_migration`
+  > 阶段 A（先发 `ReconnectReq` 探测原 host：在则重连接回、超时则选举迁移，即 D2-A）。
 - **复用**：`HostLockstep`/`ClientLockstep` 传输无关，局域网已验证。
 - **单测 +1**：`host_auto_drops_then_client_reconnects_resumes`（锁死「自动掉线 + 重连回接续打」整条链路）。
   workspace 120 全绿，build/test/clippy（默认+steam）全绿。

@@ -24,7 +24,7 @@
 | 快照生成 | host `set_snapshot` / `broadcast_snapshot`，`SNAPSHOT_EVERY=30` 帧 | `main.rs` · `lockstep.rs` |
 | 重连握手 | `NetLink::try_reconnect`(`ReconnectReq`→`Snapshot`) + `align_after_reconnect`(`Resync`)；host `poll` 处理 `ReconnectReq` | `netlink.rs` · `lockstep.rs` |
 | 帧推进+补发 | `ClientLockstep::step_frame` → `try_advance` + `request_frame` | `lockstep.rs` |
-| Steam 掉线重连 | `steam::poll_steam_reconnect` | `client/src/steam.rs` |
+| Steam 掉线重连 | **已并入主机迁移**：`poll_steam_migration` 阶段 A 先发 `ReconnectReq` 探测原 host（在→重连接回；超时→选举迁移，D2-A）。旧 `poll_steam_reconnect` 因 `conn_dropped` 在 Steam 路径从未置位而不可达，已于 2026-09-27 删除（EXIT_MENU_RECONNECT_PLAN E4）。 | `client/src/steam.rs` |
 | Steam 主机迁移/接管 | `steam::poll_steam_migration` · `steam::steam_do_takeover` | `client/src/steam.rs` |
 
 ## 代码组织（掉线/重连/迁移）

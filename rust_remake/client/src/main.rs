@@ -1064,11 +1064,8 @@ struct Game {
     conn_dropped: bool,
     /// 是否检测到帧同步分歧（本端世界哈希与 host 广播不一致）；置位后 HUD 显示警示。
     desync_detected: bool,
-    /// 客户端是否正在发起重连（已按 R，正等 host 快照）。
+    /// 客户端是否正在发起重连（已按 R，正等 host 快照）。仅局域网路径使用。
     reconnect_attempting: bool,
-    /// 重连已持续尝试的帧数（S1 stall-abort 用，仅 Steam 路径使用）：超过阈值仍无快照则放弃本次重连，避免无限重试卡死。
-    #[cfg(feature = "steam")]
-    reconnect_stall_ticks: u32,
     /// 主机端累计产帧数（用于周期保存快照）。
     host_frame_count: u64,
     /// 单机开局配置剩余的等待秒数（超时自动用默认配置开始，避免“按键无反应卡死”）。
@@ -1675,8 +1672,6 @@ impl Game {
             conn_dropped: false,
             desync_detected: false,
             reconnect_attempting: false,
-            #[cfg(feature = "steam")]
-            reconnect_stall_ticks: 0,
             host_frame_count: 0,
             pre_game_timer: PRE_GAME_TIMEOUT_SECS,
             menu_selection: 0,
@@ -6741,15 +6736,10 @@ impl event::EventHandler for Game {
                         // Steam client：就绪/配置已完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
                         // 上行用 `send_room_state`（合包，Steam P2P 下实测可靠）；`send_input` 单独发送曾实测间歇丢。
                         let mut c_rcv = vec![0u8; 256 * 1024];
-                        // 已判定掉线：冻结世界，进入重连入口（按 R 拉快照重建），不再推进世界（避免与 host 分叉）。
-                        if self.conn_dropped {
-                            self.poll_steam_reconnect(ctx, &mut cli);
-                            self.steam_cli_ls = Some(cli);
-                            self.accumulator = 0.0;
-                            return Ok(());
-                        }
-                        // 正处于「主机迁移/重连探测」流程：推进迁移状态机（探测 host 存活 / 选举 / 接管 / 重定向），
-                        // 不推进世界（避免与最终权威分叉）。
+                        // 正处于「主机迁移/重连探测」流程：推进迁移状态机（**先探测原 host 是否还在→在则重连接回；
+                        // 否则选举新 host 迁移**），不推进世界（避免与最终权威分叉）。
+                        // 注：Steam 掉线统一走这里（D2-A）；旧的 `poll_steam_reconnect` 因依赖从未置位的 `conn_dropped`
+                        // 而不可达，已删除。
                         if self.steam_migrating {
                             let leftover = self.poll_steam_migration(cli, &mut c_rcv)?;
                             // 若是新 host 已消费 cli（转为 host_ls），则不归还；否则归还 cli。
