@@ -1745,8 +1745,13 @@ impl Game {
         self.zoom = self.zoom.clamp(ZOOM_MIN, ZOOM_MAX);
         self.scale = base * self.zoom;
 
+        // 退出菜单打开：忽略本地相机输入（保持当前视角），并清掉拖拽/滚轮残留，
+        // 否则 ↑/↓（菜单导航）会同时平移相机、滚轮会缩放（见 EXIT_MENU_RECONNECT_PLAN.md E2）。
+        if self.escape_menu {
+            self.pan_drag = None;
+            self.wheel = 0.0;
         // 学习/整场配置阶段：相机锁定在场地中心（方向键此时用于商店滚动，不能平移）。
-        if self.pre_game_config {
+        } else if self.pre_game_config {
             self.cam = Point2 { x: 0.0, y: 0.0 };
             self.pan_drag = None;
             self.wheel = 0.0;
@@ -7113,6 +7118,16 @@ impl event::EventHandler for Game {
     /// winit 循环已在 main.rs:5842 把 `MouseWheel` 转发到此。
     fn mouse_wheel_event(&mut self, _ctx: &mut Context, _x: f32, y: f32) -> GameResult {
         use game_core::meta::MatchPhase;
+        // 对局内 Esc 菜单：滚轮上/下移动选择（与 ↑/↓ 同义），并**不**驱动相机缩放。
+        if y != 0.0 && self.escape_menu {
+            let up = y > 0.0;
+            let n = escape_menu_items().len();
+            self.escape_menu_selection =
+                next_escape_selection(self.escape_menu_selection, if up { -1 } else { 1 }, n);
+            self.escape_menu_confirm = None;
+            self.audio.play(audio::AudioCue::UiMove);
+            return Ok(());
+        }
         // 菜单滚轮 = 选中项上下移动（与 ↑/↓ 同义；y>0 上、y<0 下）。各界面用自己的选中字段/范围。
         if y != 0.0 && self.settings_open {
             let up = y > 0.0;
