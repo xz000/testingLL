@@ -520,6 +520,15 @@ const EN: &[(&str, &str)] = &[
     ("房主已离开房间", "The host left the room"),
     ("房主已退出或断开，本场无法继续", "The host left or disconnected; this match cannot continue"),
     ("按 Q / 回车 / Esc 返回主菜单", "Press Q / Enter / Esc to return to the main menu"),
+    // ---- 对局内退出菜单（E1） ----
+    ("对局菜单", "Match menu"),
+    ("继续游戏", "Resume"),
+    ("退出游戏", "Quit game"),
+    ("再按一次确认", "Press again to confirm"),
+    ("再按一次确认返回主菜单", "Press again to confirm returning to the main menu"),
+    ("↑/↓ 选择   回车 确认   Esc 继续", "↑/↓ select   Enter confirm   Esc resume"),
+    ("你是房主：返回主菜单会中断所有人的对局", "You are the host: returning to the menu aborts the match for everyone"),
+    ("你是房主：返回主菜单会让其他人尝试接管本局", "You are the host: returning lets others take over the match"),
     // ---- 房间列表 ----
     ("搜索中…", "Searching…"),
     ("全部", "All"),

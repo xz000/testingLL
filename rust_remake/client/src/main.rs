@@ -325,6 +325,40 @@ enum AppState {
     SteamJoin { lobby_id: Option<u64> },
 }
 
+/// 对局内 Esc 菜单的选项（EXIT_MENU_RECONNECT_PLAN.md E1；重连入口留给 E3）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum EscapeChoice {
+    /// 继续游戏（关掉菜单）。
+    Continue,
+    /// 返回主菜单（离开本局）。
+    LeaveMatch,
+    /// 退出游戏。
+    QuitGame,
+}
+
+/// 是否处于「对局内」（可打开 Esc 菜单）：排除主菜单；Steam 房间/就绪由更早的 `steam_in_lobby` 分支处理。
+fn is_in_match(app: AppState) -> bool {
+    match app {
+        AppState::MainMenu => false,
+        AppState::Solo | AppState::LanHost { .. } | AppState::LanJoin { .. } => true,
+        #[cfg(feature = "steam")]
+        AppState::SteamHost { .. } | AppState::SteamJoin { .. } => true,
+    }
+}
+
+/// 退出菜单的选项（E1：继续/离开/退出）。
+fn escape_menu_items() -> [EscapeChoice; 3] {
+    [EscapeChoice::Continue, EscapeChoice::LeaveMatch, EscapeChoice::QuitGame]
+}
+
+/// 退出菜单选择的循环步进（纯函数，便于单测）。
+fn next_escape_selection(cur: usize, delta: isize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    ((cur as isize + delta).rem_euclid(len as isize)) as usize
+}
+
 
 /// `enter_steam_mode` / CLI 启动只发起操作（`start_*`）并记下类型，真正「进房」由 `update` 每帧
 /// `run_callbacks` 后 `tick_lobby` 完成、再调用 `finish_enter_steam_mode` 落地（建 lockstep/世界/战绩）。
@@ -617,6 +651,20 @@ fn main_menu_card_rect(i: usize) -> graphics::Rect {
     let x = ui::UI_W / 2.0 - card_w / 2.0;
     let y = MAIN_MENU_CARD_Y0 + i as f32 * (MAIN_MENU_CARD_H + MAIN_MENU_CARD_GAP);
     graphics::Rect::new(x, y, card_w, MAIN_MENU_CARD_H)
+}
+
+/// 对局内 Esc 菜单的面板矩形（**绘制与鼠标命中必须共用**）。
+fn escape_menu_panel(sw: f32, sh: f32) -> graphics::Rect {
+    layout::centered_panel(sw, sh, 0.44, 0.52)
+}
+
+/// 对局内 Esc 菜单各行的矩形（**绘制与鼠标命中必须共用**）。
+fn escape_menu_rows() -> Vec<graphics::Rect> {
+    let (sw, sh) = (ui::UI_W, ui::UI_H);
+    let panel = escape_menu_panel(sw, sh);
+    let content = graphics::Rect::new(panel.x + 24.0, panel.y + 58.0, panel.w - 48.0, panel.h - 100.0);
+    let n = escape_menu_items().len();
+    (0..n).map(|i| layout::row_in(content, i, n)).collect()
 }
 
 struct Game {
@@ -1004,6 +1052,12 @@ struct Game {
     net_cfg: NetCfgSync,
     /// 开局前的技能配置阶段（第一局开始前先选/升级技能）。
     pre_game_config: bool,
+    /// 对局内 Esc 菜单是否打开（本地 UI 覆盖；多人**不暂停世界**，仅门控本地输入）。
+    escape_menu: bool,
+    /// 退出菜单当前选中项（索引到 `escape_menu_items()`）。
+    escape_menu_selection: usize,
+    /// 危险项（离开/退出）的二次确认挂起：`Some(选择索引)` = 等待再次确认。
+    escape_menu_confirm: Option<usize>,
     /// 顶层应用状态（主菜单 / 各模式）。
     app: AppState,
     /// 客户端是否已因长时间收不到帧而进入“掉线/重连”状态（显示重连界面）。
@@ -1615,6 +1669,9 @@ impl Game {
             net_cfg: NetCfgSync::Idle,
             app,
             pre_game_config: app != AppState::MainMenu,
+            escape_menu: false,
+            escape_menu_selection: 0,
+            escape_menu_confirm: None,
             conn_dropped: false,
             desync_detected: false,
             reconnect_attempting: false,
@@ -2542,6 +2599,11 @@ impl Game {
         use ggez::input::keyboard::Key;
         use ggez::input::mouse::MouseButton;
 
+        // 退出菜单打开时暂停本地战斗输入；世界仍按权威帧推进（见 EXIT_MENU_RECONNECT_PLAN.md §4.2）。
+        if self.escape_menu {
+            return;
+        }
+
         // 玩家档案（本帧只读绑定的技能）
         let me = self.self_index();
         let bound_for = |key: game_core::skill::CastKey| -> Option<SkillId> {
@@ -2707,6 +2769,10 @@ impl Game {
     /// 生成本（本机玩家）这一帧要下达的命令（移动 / 施法 / shift 队列 / 清队 / 停止）。
     /// 单机模式把它放到 `PLAYER_ID`；联网模式由 `NetLink` 上行给 host、按我的序号归位。
     fn local_player_input(&mut self) -> PlayerInput {
+        // 退出菜单打开：本地不上行任何输入（改用默认占位），避免菜单期间误施法/误移动（仅多人；单机已整帧暂停）。
+        if self.escape_menu {
+            return PlayerInput::default();
+        }
         let set_target = self.player_target;
         // 施法与移动都是**持续电平量**：在「施法被世界接受」（自己角色进入 is_busy）前持续重发，
         // 由 `note_self_cast` 在接受的那一帧清除。这样：
@@ -3782,6 +3848,11 @@ impl Game {
             ui::text_left(&mut canvas, ctx, &hint, 15.0, Color::from_rgb(150, 165, 185), 12.0, sh - 14.0)?;
         }
 
+        // 对局内 Esc 菜单（最上层覆盖）。
+        if self.escape_menu {
+            self.draw_escape_menu(&mut canvas, ctx)?;
+        }
+
         canvas.finish(ctx)?;
         Ok(())
     }
@@ -4396,6 +4467,158 @@ impl Game {
         if !self.steam_friend_hint.is_empty() {
             draw_text(canvas, ctx, i18n::t(&self.steam_friend_hint), 18.0, Color::from_rgb(255, 220, 120), Point2 { x: cx, y: hint_y + 24.0 }, true)?;
         }
+        Ok(())
+    }
+
+    /// 对局内 Esc 菜单的输入处理（开关/导航/确认/执行）。
+    /// 返回 `true` = 已执行「返回主菜单」或「退出游戏」，调用方应立即 `return Ok(())`。
+    fn escape_menu_update(&mut self, ctx: &mut Context) -> bool {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        // Esc：关闭已打开的菜单；未打开则打开。
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+            if self.escape_menu {
+                self.escape_menu = false;
+                self.escape_menu_confirm = None;
+            } else {
+                self.escape_menu = true;
+                self.escape_menu_selection = 0;
+                self.escape_menu_confirm = None;
+                // 打开菜单：清掉在途输入，避免关闭后误施法/误移动。
+                self.clear_match_transient_input();
+                self.audio.play(audio::AudioCue::UiConfirm);
+            }
+            return false;
+        }
+        if !self.escape_menu {
+            return false;
+        }
+        let items = escape_menu_items();
+        let n = items.len();
+        // 上下选择（移动即取消已挂起的二次确认）。
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::ArrowUp)) {
+            self.escape_menu_selection = next_escape_selection(self.escape_menu_selection, -1, n);
+            self.escape_menu_confirm = None;
+        } else if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::ArrowDown)) {
+            self.escape_menu_selection = next_escape_selection(self.escape_menu_selection, 1, n);
+            self.escape_menu_confirm = None;
+        }
+        // 鼠标点击行（与绘制共用 `escape_menu_rows` 几何）。
+        let mut act: Option<usize> = None;
+        if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
+            let m = ui::mouse_design(ctx);
+            for (i, r) in escape_menu_rows().iter().enumerate() {
+                if r.contains(m) {
+                    act = Some(i);
+                    break;
+                }
+            }
+        }
+        // 回车确认（含小键盘回车 `\r`）。
+        if act.is_none()
+            && (ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Enter))
+                || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("\r".into())))
+        {
+            act = Some(self.escape_menu_selection);
+        }
+        if let Some(i) = act {
+            if i >= n {
+                return false;
+            }
+            self.escape_menu_selection = i;
+            match items[i] {
+                EscapeChoice::Continue => {
+                    self.escape_menu = false;
+                    self.escape_menu_confirm = None;
+                }
+                choice @ (EscapeChoice::LeaveMatch | EscapeChoice::QuitGame) => {
+                    if self.escape_menu_confirm == Some(i) {
+                        // 二次确认通过 → 执行。
+                        self.escape_menu_confirm = None;
+                        match choice {
+                            EscapeChoice::LeaveMatch => {
+                                self.leave_match();
+                                return true;
+                            }
+                            EscapeChoice::QuitGame => {
+                                ctx.request_quit();
+                                return true;
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        // 首次触发危险项：进入等待二次确认（同一项再按一次才执行）。
+                        self.escape_menu_confirm = Some(i);
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// 清空本机在对局中的临时输入残留（打开退出菜单时调用）。
+    fn clear_match_transient_input(&mut self) {
+        self.player_target = None;
+        self.pending_cast = None;
+        self.pending_skill = None;
+        self.pending_shift_skill = None;
+        self.queued_cmds.clear();
+        self.pending_clear_signal = false;
+        self.pending_stop_signal = false;
+        self.self_was_busy = false;
+    }
+
+    /// 主动离开本局（退出菜单「返回主菜单」）：复用 `reset_to_main_menu` 的全量拆除。
+    fn leave_match(&mut self) {
+        eprintln!("[exit] escape menu -> leave match");
+        self.reset_to_main_menu();
+    }
+
+    /// 绘制对局内 Esc 菜单（主题风格面板 + 行；危险项二次确认提示）。
+    fn draw_escape_menu(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        let panel = escape_menu_panel(sw, sh);
+        // 半透明遮罩 + 面板底/边框。
+        let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(0.0, 0.0, sw, sh), Color::from_rgba(8, 10, 16, 180))?;
+        canvas.draw(&dim, graphics::DrawParam::new());
+        let bg = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), panel, ui::theme::panel_bg())?;
+        canvas.draw(&bg, graphics::DrawParam::new());
+        let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.0), panel, ui::theme::panel_border())?;
+        canvas.draw(&border, graphics::DrawParam::new());
+        ui::text_center(canvas, ctx, i18n::t("对局菜单"), 30.0, ui::theme::accent(), cx, panel.y + 18.0)?;
+        let rows = escape_menu_rows();
+        let items = escape_menu_items();
+        let mouse = ui::mouse_design(ctx);
+        for (i, (r, item)) in rows.iter().zip(items.iter()).enumerate() {
+            let selected = i == self.escape_menu_selection;
+            let hover = !selected && r.contains(mouse);
+            let label = match item {
+                EscapeChoice::Continue => i18n::t("继续游戏"),
+                EscapeChoice::LeaveMatch => i18n::t("返回主菜单"),
+                EscapeChoice::QuitGame => i18n::t("退出游戏"),
+            };
+            ui::paint_row(canvas, ctx, *r, selected, hover)?;
+            let col = if selected { ui::theme::accent() } else { ui::theme::text() };
+            ui::text_left(canvas, ctx, label, 22.0, col, r.x + 18.0, r.y + r.h * 0.5 - 11.0)?;
+            if self.escape_menu_confirm == Some(i) {
+                ui::text_right(canvas, ctx, i18n::t("再按一次确认"), 18.0, ui::theme::warn(), r.x + r.w - 14.0, r.y + r.h * 0.5 - 9.0)?;
+            }
+        }
+        // 底部提示：房主离开时给出警告（避免不知情地中断他人）。
+        let leave_idx = items.iter().position(|c| *c == EscapeChoice::LeaveMatch).unwrap_or(usize::MAX);
+        let warn: Option<String> = match self.app {
+            AppState::LanHost { .. } => Some(i18n::t("你是房主：返回主菜单会中断所有人的对局").to_string()),
+            #[cfg(feature = "steam")]
+            AppState::SteamHost { .. } => Some(i18n::t("你是房主：返回主菜单会让其他人尝试接管本局").to_string()),
+            _ => None,
+        };
+        let hint = if self.escape_menu_confirm == Some(leave_idx) {
+            warn.as_deref().unwrap_or(i18n::t("再按一次确认返回主菜单"))
+        } else {
+            i18n::t("↑/↓ 选择   回车 确认   Esc 继续")
+        };
+        ui::text_center(canvas, ctx, hint, 17.0, ui::theme::text_dim(), cx, panel.y + panel.h - 26.0)?;
         Ok(())
     }
 
@@ -6102,6 +6325,18 @@ impl event::EventHandler for Game {
             return Ok(());
         }
 
+        // 对局内 Esc 菜单（EXIT_MENU_RECONNECT_PLAN.md E1）：本地 UI 覆盖，不暂停多人世界，仅门控本地输入。
+        if is_in_match(self.app) {
+            if self.escape_menu_update(ctx) {
+                return Ok(()); // 已「返回主菜单」或「退出游戏」
+            }
+            // 单机/训练场：本地是唯一权威，可真暂停（跳过本帧模拟）。
+            if self.escape_menu && self.app == AppState::Solo {
+                self.accumulator = 0.0;
+                return Ok(());
+            }
+        }
+
         match self.meta.phase {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
@@ -6120,7 +6355,7 @@ impl event::EventHandler for Game {
                 use ggez::input::keyboard::Key;
                 let q = ctx.keyboard.is_logical_key_just_pressed(&Key::Character("q".into()))
                     || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
-                if q {
+                if q && !self.escape_menu {
                     eprintln!("[meta] finished -> back to main menu");
                     // 098c `yx`（Rescue）是终局过场的第二音；我们在离开结算画面时播一次。
                     self.audio.play(audio::AudioCue::AnnFinish);
@@ -6129,13 +6364,15 @@ impl event::EventHandler for Game {
                 Ok(())
             }
             MatchPhase::Learning => {
-                // 学习阶段：轮询购买升级输入 + 计时
-                self.poll_learning(ctx);
-                self.poll_growth_buy(ctx);
-            self.poll_shop(ctx);
-                // 鼠标点击派发（U2）：命中上一帧绘制时记录的元素
-                if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
-                    self.learn_dispatch_click(ctx);
+                // 学习阶段：轮询购买升级输入 + 计时（退出菜单打开时暂停学习期输入）。
+                if !self.escape_menu {
+                    self.poll_learning(ctx);
+                    self.poll_growth_buy(ctx);
+                    self.poll_shop(ctx);
+                    // 鼠标点击派发（U2）：命中上一帧绘制时记录的元素
+                    if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
+                        self.learn_dispatch_click(ctx);
+                    }
                 }
                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
                 if self.meta.is_first_config() && self.net_host_ls.is_none() {
@@ -6234,17 +6471,9 @@ impl event::EventHandler for Game {
                 Ok(())
             }
             MatchPhase::Fighting => {
-                // 对局进行中允许随时按 Esc 返回主菜单（含联网）：client 离开=正常掉线由其余端迁移/接管；
-                // host 离开=触发现有 drop→迁移路径。与 Q 在 Finished 一致，消除 C1/C2 联网无法退出的死状态。
-                use ggez::input::keyboard::Key;
-                use winit::keyboard::NamedKey;
-                if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
-                    eprintln!("[exit] Esc -> back to main menu");
-                    self.reset_to_main_menu();
-                    self.accumulator = 0.0;
-                    return Ok(());
-                }
-                // 每帧轮询输入（技能键 / 鼠标）
+                // 退出对局统一走「对局内 Esc 菜单」（`escape_menu_update`，见 EXIT_MENU_RECONNECT_PLAN.md E1）：
+                // 这里不再直接读 Esc，否则会与菜单同帧冲突、立即退回主菜单。
+                // 每帧轮询输入（技能键 / 鼠标）；菜单打开时 `poll_input` 自行早退。
                 self.poll_input(ctx);
                 self.accumulator = accumulate_tick(self.accumulator, dt);
                 let ticking = Fix64::from_num(TICK);
@@ -7066,6 +7295,10 @@ impl Game {
         self.meta = m;
         // 开局不带默认技能：玩家从零在配置界面选。
         self.app = AppState::MainMenu;
+        // 退出菜单一并收起。
+        self.escape_menu = false;
+        self.escape_menu_selection = 0;
+        self.escape_menu_confirm = None;
         // 放弃联网连接（UDP socket / 握手 / 帧同步关闭）。
         self.net_link = None;
         self.lan_my_index = PLAYER_ID as u8;
@@ -12144,5 +12377,44 @@ mod tests {
         // 最后一张卡片必须落在底部提示条（UI_H - 34）之上，避免压字。
         let last = rects[3];
         assert!(last.y + last.h < super::ui::UI_H - 34.0, "卡片不得与底部提示重叠");
+    }
+
+    /// E1：`is_in_match` 只对真正的对局模式为真（主菜单为假）。
+    #[test]
+    fn is_in_match_excludes_main_menu() {
+        assert!(!super::is_in_match(AppState::MainMenu));
+        assert!(super::is_in_match(AppState::Solo));
+        assert!(super::is_in_match(AppState::LanHost { port: 1, total: 2 }));
+        assert!(super::is_in_match(AppState::LanJoin { addr: "127.0.0.1:1".parse().unwrap() }));
+        #[cfg(feature = "steam")]
+        {
+            assert!(super::is_in_match(AppState::SteamHost { players: 2 }));
+            assert!(super::is_in_match(AppState::SteamJoin { lobby_id: None }));
+        }
+    }
+
+    /// E1：退出菜单选择循环（上下环绕）。
+    #[test]
+    fn escape_selection_wraps() {
+        let n = super::escape_menu_items().len();
+        assert_eq!(n, 3);
+        assert_eq!(super::next_escape_selection(0, -1, n), 2, "从首项上移应回绕到最后");
+        assert_eq!(super::next_escape_selection(2, 1, n), 0, "从末项下移应回绕到首");
+        assert_eq!(super::next_escape_selection(1, 1, n), 2);
+        assert_eq!(super::next_escape_selection(0, 1, 0), 0, "空列表不 panic");
+    }
+
+    /// E1：退出菜单各行的几何（绘制与鼠标命中共用）应落在设计分辨率内、从上到下且不重叠。
+    #[test]
+    fn escape_menu_rows_are_inside_screen_and_disjoint() {
+        let rows = super::escape_menu_rows();
+        assert_eq!(rows.len(), super::escape_menu_items().len());
+        for r in &rows {
+            assert!(r.x >= 0.0 && r.y >= 0.0, "行不得跑到屏幕外(负坐标): {r:?}");
+            assert!(r.x + r.w <= super::ui::UI_W + 0.5, "行不得超出设计宽度: {r:?}");
+        }
+        for w in rows.windows(2) {
+            assert!(w[0].y + w[0].h <= w[1].y + 0.5, "行应从上到下且不重叠");
+        }
     }
 }

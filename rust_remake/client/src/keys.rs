@@ -102,6 +102,8 @@ pub enum Screen {
     SettingsEditor,
     Play,
     LearnConfig,
+    /// 对局内 Esc 菜单（退出菜单，见 `EXIT_MENU_RECONNECT_PLAN.md` E1）。
+    PauseMenu,
 }
 
 /// 一条键位绑定：按键 → 动作（`key` 用统一写法：小写字母/`方向键`/`回车` 等）。
@@ -217,6 +219,12 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "设置→按键设置", action: "自定义学习期动作键" },
             Binding { key: "esc", action: "返回" },
         ],
+        PauseMenu => &[
+            Binding { key: "up", action: "上移选择" },
+            Binding { key: "down", action: "下移选择" },
+            Binding { key: "enter", action: "确认所选（危险项需再确认一次）" },
+            Binding { key: "esc", action: "继续游戏（关闭菜单）" },
+        ],
     }
 }
 
@@ -224,7 +232,7 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
 mod keymap_tests {
     use super::*;
 
-    const ALL: [Screen; 9] = [
+    const ALL: [Screen; 10] = [
         Screen::MainMenu,
         Screen::Settings,
         Screen::SteamMenu,
@@ -234,6 +242,7 @@ mod keymap_tests {
         Screen::SettingsEditor,
         Screen::Play,
         Screen::LearnConfig,
+        Screen::PauseMenu,
     ];
 
     /// **同一界面内不许有重复键** —— 这正是"一键两用"（`O` 开→立刻关、`Q` 关编辑却退房）的检测。
@@ -378,6 +387,19 @@ mod source_scan_tests {
         let body = fn_body("fn publish_room_cfg");
         assert!(body.contains("ROOM_NAME_KEY"), "publish_room_cfg 应发布房名");
         assert!(body.contains("ROOM_NOTE_KEY"), "publish_room_cfg 应发布备注");
+    }
+
+    /// 回归（E1）：对局内 Esc 不再**立即**退回主菜单，而是走退出菜单（`escape_menu_update`）。
+    #[test]
+    fn fighting_escape_no_longer_exits_immediately() {
+        assert!(
+            !SRC.contains("[exit] Esc -> back to main menu"),
+            "Fighting 不应再在 Esc 上直接 reset_to_main_menu（应走 escape_menu_update）"
+        );
+        assert!(
+            SRC.contains("fn escape_menu_update"),
+            "退出菜单入口 escape_menu_update 应存在"
+        );
     }
 
     /// 回归：就绪界面不得再提示已退休的 `E 编辑房间`（设置入口统一为 `O`）。
