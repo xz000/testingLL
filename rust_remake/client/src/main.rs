@@ -1178,6 +1178,10 @@ struct Game {
     /// Steam：成就/榜单提示条（文案 + 到期时刻，秒）。
     #[cfg(feature = "steam")]
     steam_toast: (String, f64),
+    /// 诊断（R0）：`--netdiag` 开启网络诊断日志（大厅 owner/成员、peer 连接状态、大厅聊天可达性）。
+    /// 默认关；不影响默认行为。用于真机验证 V1/V2。
+    #[cfg(feature = "steam")]
+    net_diag: bool,
 }
 
 /// 外置 CJK 字体文件名候选（按优先级）；发布时随 exe 分发，开发期在仓库 `assets/fonts/` 下。
@@ -1663,6 +1667,8 @@ impl Game {
             steam_stats_snapshot: None,
             #[cfg(feature = "steam")]
             steam_toast: (String::new(), 0.0),
+            #[cfg(feature = "steam")]
+            net_diag: std::env::args().any(|a| a == "--netdiag"),
             net_cfg: NetCfgSync::Idle,
             app,
             pre_game_config: app != AppState::MainMenu,

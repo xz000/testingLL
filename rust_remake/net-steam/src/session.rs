@@ -85,6 +85,29 @@ fn create_lobby_error_hint(e: steamworks::SteamError) -> String {
     }
 }
 
+/// 诊断（R0）：某 peer 的 Steam 网络连接状态（`get_session_connection_info` 的 `state`）。
+/// 用于区分「链路真断」（`ClosedByPeer`/`ProblemDetectedLocally`）与「只是应用层没帧」（`Connected`）。
+/// 真机验证 V2 用；也供 A 方案（连接状态门控选举）参考。
+pub fn peer_connection_state(
+    transport: &SteamTransport,
+    peer: u64,
+) -> Option<steamworks::networking_types::NetworkingConnectionState> {
+    use steamworks::networking_types::NetworkingIdentity;
+    let identity = NetworkingIdentity::new_steam_id(steamworks::SteamId::from_raw(peer));
+    let (state, _info, _realtime) = transport.networking_messages().get_session_connection_info(&identity);
+    Some(state)
+}
+
+/// 诊断/控制（R0）：向大厅广播一条消息（经 **Steam 后端**，非 P2P relay）。返回是否成功。
+/// 真机验证 V1（房主离开后大厅聊天是否仍可用）；后续 B 方案的 epoch 宣告也会走这条路径。
+pub fn send_lobby_chat(transport: &SteamTransport, lobby: u64, bytes: &[u8]) -> bool {
+    use steamworks::LobbyId;
+    transport
+        .matchmaking()
+        .send_lobby_chat_message(LobbyId::from_raw(lobby), bytes)
+        .is_ok()
+}
+
 /// 列出 Steam 好友（供「邀请好友」界面）。在线优先、其次昵称升序；`in_lobby` 标记是否已在房间里。
 /// 昵称需先 `request_user_information` 刷新（异步生效；首次可能拿到空昵称，界面重开即正常）。
 pub fn list_friends(transport: &SteamTransport, lobby: Option<u64>) -> Vec<FriendInfo> {
@@ -542,6 +565,15 @@ impl SteamSession {
                 q.lock().unwrap().push_back(req);
             });
         }
+        // 诊断（R0）：大厅聊天回调——记录「收到后端大厅消息」这一事件（含发送者），
+        // 用来验证 V1（房主离开后其余成员能否继续收大厅聊天）。
+        // 注：`chat_id` 只在回调作用域内有效，故 R0 不读消息内容（内容读取留待 B/R4 再设计）。
+        transport.register_callback(move |cb: steamworks::LobbyChatMsg| {
+            eprintln!(
+                "[netdiag] LobbyChatMsg recv: lobby={} from={} type={:?} chat_id={}",
+                cb.lobby.raw(), cb.user.raw(), cb.chat_entry_type, cb.chat_id
+            );
+        });
         Ok(SteamSession {
             transport,
             lobby: None,

@@ -386,6 +386,8 @@ impl Game {
         }
         // 顺手把同房/同局玩家标记为「近期一起玩过」（填充 Steam 自带的 Recently Played With 列表）。
         self.steam_mark_played_with();
+        // R0 诊断（`--netdiag`）：大厅/连接状态日志（默认关）。
+        self.steam_log_net_diag();
         // 先把要查的 SteamID 抄出来（避免 `steam_transport()` 的借用挡住后面的 &mut self）。
         // 含房间成员 +（邀请面板展开时）好友列表里的人，好让两边都能显示头像。
         let member_ids: Vec<u64> = self.steam_roster.iter().map(|(_, _, id)| *id).collect();
@@ -565,6 +567,39 @@ impl Game {
         let n = net_steam::session::mark_played_with(t, &ids);
         eprintln!("[steam-coplay] marked {n} player(s) as recently-played-with: {targets:?}");
         self.steam_played_with = targets;
+    }
+
+    /// 诊断（R0，`--netdiag`）：打印大厅 owner/成员 + 各 peer 连接状态，并广播大厅聊天探针。
+    /// 用途：真机验证 V1（房主离开后大厅是否存活 / 大厅聊天是否可用）与 V2（断链时的连接状态取值）。
+    /// 默认关闭，不影响正常游玩。
+    #[cfg(feature = "steam")]
+    pub(crate) fn steam_log_net_diag(&self) {
+        if !self.net_diag {
+            return;
+        }
+        let Some(t) = self.steam_transport() else { return };
+        let me = t.steam_id();
+        // 每 30 帧（~0.5s）：各 peer 的 Steam 连接状态（V2，细粒度观察断链时的状态迁移）。
+        let ids: Vec<u64> = self.steam_roster.iter().map(|(_, _, id)| *id).collect();
+        for id in ids {
+            if id == me {
+                continue;
+            }
+            eprintln!("[netdiag] conn[{id}]={:?}", net_steam::session::peer_connection_state(t, id));
+        }
+        // 每 150 帧（~2.5s）：大厅 owner/成员 + 发一条大厅聊天探针（V1，看房主离开后大厅是否还在）。
+        if self.steam_net_ticks % 150 == 1 {
+            if let Some(lid) = self.steam_lobby_id {
+                let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
+                let mm = t.matchmaking();
+                let owner = mm.lobby_owner(lobby).raw();
+                let members: Vec<u64> = mm.lobby_members(lobby).iter().map(|s| s.raw()).collect();
+                eprintln!("[netdiag] lobby={lid} owner={owner} members={members:?} me={me}");
+                let msg = format!("[CB1]diag from={me}");
+                let ok = net_steam::session::send_lobby_chat(t, lid, msg.as_bytes());
+                eprintln!("[netdiag] lobby-chat send ok={ok} bytes={}", msg.len());
+            }
+        }
     }
 
     /// 刷新好友列表（展开邀请面板时调一次；R 手动刷新）。

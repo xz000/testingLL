@@ -521,6 +521,21 @@
 - 一个 commit 只做一件事；message 末尾附 `真机验收：…`（列 2–4 条可操作步骤）。
 - 纯代码/文档不限；涉及协议（R2 `PROTOCOL_VERSION++`）要在 message 里标出。
 
+### 19.4 R0（诊断探针）使用与验收 —— ✅ 已落（见 §19.1 R0 行）
+**开启**：启动加 `--netdiag`（如 `client.exe --netdiag` / `run-steam.ps1` 里加参数）。默认关闭，不影响行为。
+**日志关键行**（`client.log` / stderr）：
+- `[netdiag] lobby=<id> owner=<id> members=[...] me=<id>` —— 每 ~2.5s（看大厅是否存活 / owner 是否变）。
+- `[netdiag] conn[<peer>]=<State>` —— 每 ~0.5s（看断链时状态迁移；`Connected`/`ProblemDetectedLocally`/`ClosedByPeer`/`None`）。
+- `[netdiag] lobby-chat send ok=<bool>` —— 本端广播大厅聊天是否成功。
+- `[netdiag] LobbyChatMsg recv: lobby=.. from=.. type=..` —— **收到**大厅聊天（证明后端路径通）。
+
+**验收（V1）**：双账号在房间/对局中；**房主退出/杀进程**后，观察余下账号：
+- `lobby=` 行是否还在打印（大厅是否存活）；`owner=` 是否变成别人/0；`members=[...]` 是否还列得出来；
+- 余下账号（若有不止一个）能否继续 `lobby-chat send ok=true` 且对方收到 `LobbyChatMsg recv`。
+→ 这直接决定 **B（epoch fencing）能不能做**。
+
+**验收（V2）**：两端对局中，一端断网/杀进程；记录另一端 `conn[peer]` 的**状态序列与时延**（多久从 `Connected` 变其它）。→ 决定 **A** 的阈值。
+
 ---
 
 ## 20. 参照：War3 / Dota2 怎么处理掉线、暂停、重连
