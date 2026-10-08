@@ -1102,9 +1102,12 @@ impl<T: Transport> ClientLockstep<T> {
     pub fn recv_snapshot(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<u8>, u64)>> {
         loop {
             match self.transport.recv_from(rcv) {
-                Ok(Some((n, _))) => {
+                Ok(Some((n, from))) => {
                     if let Some(Packet::Snapshot { world_bytes, seq }) = Packet::decode(&rcv[..n]) {
-                        return Ok(Some((world_bytes, seq)));
+                        // R4①：只接受当前 host 的快照（迁移时先 retarget 再收，host 已更新）。
+                        if from == self.host {
+                            return Ok(Some((world_bytes, seq)));
+                        }
                     }
                 }
                 Ok(None) => return Ok(None),
@@ -1122,8 +1125,14 @@ impl<T: Transport> ClientLockstep<T> {
         let mut got = false;
         loop {
             match self.transport.recv_from(rcv) {
-                Ok(Some((n, _))) => {
+                Ok(Some((n, from))) => {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
+                        // R4①：同 `step_frame`，只信任当前 host 的帧/快照/哈希。
+                        if matches!(&pkt, Packet::Frame { .. } | Packet::Snapshot { .. } | Packet::StateHash { .. })
+                            && from != self.host
+                        {
+                            continue;
+                        }
                         match pkt {
                             Packet::Frame { seq, entries } => {
                                 if seq >= self.expect_seq && self.pending.len() < PENDING_MAX {
@@ -1159,6 +1168,13 @@ impl<T: Transport> ClientLockstep<T> {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
+                        // R4①：只信任当前 host 的权威数据包（Frame/Snapshot/StateHash），避免被取代的
+                        // “僵尸 host”的帧污染已切换权威的本端（Takeover 仍接受任意来源，交给迁移逻辑）。
+                        if matches!(&pkt, Packet::Frame { .. } | Packet::Snapshot { .. } | Packet::StateHash { .. })
+                            && from != self.host
+                        {
+                            continue;
+                        }
                         match pkt {
                             Packet::Frame { seq, entries } => {
                                 if seq >= self.expect_seq && self.pending.len() < PENDING_MAX {
@@ -1726,6 +1742,33 @@ mod tests {
         assert_eq!(cfgs[0].0, 0, "host cfg 的 new index 为 0");
     }
 
+    /// R4①：客户端应忽略来自非当前 host 的权威帧（防“僵尸 host”污染）。
+    #[test]
+    fn client_ignores_frames_from_non_host() {
+        let (mut ht, ct) = pair();
+        // 客户端认为 host 是 5999，但帧实际来自 pair 的 host（4000）→ 应被忽略。
+        let bogus_host = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 5999)));
+        let mut cli = ClientLockstep::new(ct, 1, bogus_host);
+        let mut rcv = [0u8; 4096];
+        let pkt = Packet::Frame { seq: 0, entries: vec![(0, vec![1, 2, 3])] };
+        ht.send_to(&pkt.encode(), &Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4001)))).unwrap();
+        assert!(cli.step_frame(&mut rcv).unwrap().is_none(), "非 host 的帧应被忽略");
+        assert_eq!(cli.expect_seq(), 0, "忽略后不应推进");
+    }
+
+    /// R4①（正对照）：来自当前 host 的帧应被正常接受并推进。
+    #[test]
+    fn client_accepts_frames_from_host() {
+        let (mut ht, ct) = pair();
+        let host_peer = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000)));
+        let mut cli = ClientLockstep::new(ct, 1, host_peer);
+        let mut rcv = [0u8; 4096];
+        let pkt = Packet::Frame { seq: 0, entries: vec![(0, vec![1, 2, 3])] };
+        ht.send_to(&pkt.encode(), &host_peer).unwrap();
+        assert!(cli.step_frame(&mut rcv).unwrap().is_some(), "来自 host 的帧应被接受");
+        assert_eq!(cli.expect_seq(), 1, "接受后应推进");
+    }
+
     /// 重连全链路（client 侧收 Snapshot + Resync）：client 发 ReconnectReq →
     /// host 用已保存快照应答 Snapshot 并广播 Resync → client 接快照重建 World + set_start_seq/apply_resync
     /// → 继续跑，host 与重连端仍逐位一致。
@@ -2042,7 +2085,9 @@ mod tests {
         let host_inbox = Rc::new(RefCell::new(std::collections::VecDeque::new()));
         let p1_inbox = Rc::new(RefCell::new(std::collections::VecDeque::new()));
         // 迁移的 client（player2，新 host）用 ht 作 transport；在线 client（player1）用 p1t。
-        let ht = FakeTransport { inbox: host_inbox.clone(), peer_inbox: p1_inbox.clone(), peer_addr: p1_peer_addr, drop_seqs: Vec::new() };
+        // 注：FakeTransport 用自身 `peer_addr` 作为所收包的来源；R4① 要求「来源 == 当前 host」，
+        // 故这两个客户的 transport 的 `peer_addr` 都需等于它们认为的 host（4000）。
+        let ht = FakeTransport { inbox: host_inbox.clone(), peer_inbox: p1_inbox.clone(), peer_addr: host_peer_addr, drop_seqs: Vec::new() };
         let mut p1t = FakeTransport { inbox: p1_inbox.clone(), peer_inbox: host_inbox.clone(), peer_addr: host_peer_addr, drop_seqs: Vec::new() };
         let mut cli = ClientLockstep::new(ht, 2, host_peer.clone()); // player2 (新 host)
         let mut rcv = [0u8; 16384];

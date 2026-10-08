@@ -6491,6 +6491,22 @@ impl event::EventHandler for Game {
                     // 对局中也刷新 ping（HUD 显示到对端的延迟，卡顿来源一眼可辨）。
                     self.steam_refresh_network_info(ctx);
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
+                        // R4②：host 自栅栏——定期查 Steam 仲裁的 lobby owner；若已不是自己 → 判定被取代，退位。
+                        // 走 Steam 后端（lobby_owner），即使与新旧 host 的 P2P 被隔离也能生效，封堵“僵尸 host”。
+                        if self.steam_net_ticks % 30 == 1 {
+                            if let Some(lid) = self.steam_lobby_id {
+                                let owner = net_steam::session::lobby_owner(host.transport_ref(), lid);
+                                if steam::should_self_fence(owner, self.steam_my_id, &self.steam_participants) {
+                                    eprintln!(
+                                        "[steam-host] SELF-FENCE: lobby owner is {owner}, not me ({}); stepping down",
+                                        self.steam_my_id
+                                    );
+                                    self.reset_to_main_menu();
+                                    self.accumulator = 0.0;
+                                    return Ok(());
+                                }
+                            }
+                        }
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
                         if self.net_cfg == NetCfgSync::HostGather {

@@ -38,6 +38,15 @@ pub(crate) fn elect_new_host(owner: u64, old_host: u64, online: &[u64]) -> u64 {
         .unwrap_or(0)
 }
 
+/// R4②：host 是否应自栅栏退位。
+/// host 正常情况下就是 Steam 的 lobby owner；一旦 `owner` 变成别人（且是本局参与成员），
+/// 说明本端已被取代（可能因 P2P 隔离而没收到 `Takeover`）→ 应退位，避免“僵尸 host”。
+/// `participants` 为空（原 host 尚未登记参与集）时不作为阻塞条件。纯函数，便于单测。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub(crate) fn should_self_fence(owner: u64, me: u64, participants: &[u64]) -> bool {
+    owner != 0 && owner != me && (participants.is_empty() || participants.contains(&owner))
+}
+
 impl Game {
     /// Steam（client）主机迁移状态机：每帧在「收不到权威帧、疑似 host 掉线」后调用。
     /// 分两阶段：
@@ -694,6 +703,16 @@ mod tests {
     #[test]
     fn elect_prefers_lobby_owner_when_valid() {
         assert_eq!(elect_new_host(500, 100, &[100, 500, 300]), 500);
+    }
+
+    /// R4②：自栅栏判定。
+    #[test]
+    fn self_fence_only_when_owner_is_someone_else() {
+        assert!(!super::should_self_fence(7, 7, &[7, 9]), "自己是 owner，不退位");
+        assert!(!super::should_self_fence(0, 7, &[7, 9]), "无 owner，不退位");
+        assert!(super::should_self_fence(9, 7, &[7, 9]), "owner 是别的参与成员 → 退位");
+        assert!(super::should_self_fence(9, 7, &[]), "参与集为空（原 host）也退位");
+        assert!(!super::should_self_fence(9, 7, &[7]), "owner 不在参与集 → 不退位（保守）");
     }
 
     /// owner 不可用时回退到「在线参与集中除旧 host 外的最小 SteamID」。

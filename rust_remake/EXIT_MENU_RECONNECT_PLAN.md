@@ -318,6 +318,10 @@
   （owner 合法则选 owner，否则回退最小 SteamID）+ 2 单测。各端读同一后端 owner → 选举天然一致。
 - 2026-10-08：新增 **§16bis.5（被取代 host 的 UX）/§16bis.6（R4 范围）**：分析僵尸 host 的成因与危害；
   R4 定为 **①客户端按来源过滤 + ②host 自栅栏**（不做 epoch）；归队 UX 用 **U2 自动尝试+覆盖层**，归入 **R6**。
+- 2026-10-08：**R4 已落**（防脑裂）：
+  - ①`ClientLockstep::{step_frame,pump_frames}` 只接受来自 `self.host` 的 `Frame`/`Snapshot`/`StateHash`；`recv_snapshot` 同样只收 host 的。
+  - ②host 每 30 帧查 `lobby_owner()`，`should_self_fence(owner,me,participants)` 为真则退位（R4 暂为回菜单）。
+  - 新增 3 单测（client_ignores/accepts_frames_from_host + self_fence_only_when_owner_is_someone_else）；修一个 FakeTransport 建模不一致的旧测试。不改协议。
 - 2026-10-08：**R2 真机复验时发现并修复一个真 bug**（`logs/console-menu-full-20261008-222141.log`）：主机迁移后旧 host 掉线，
   下一回合 `HostGather` 永远等它的 `PlayerCfg`（`all_cfgs` 未排除 `dropped`）→ 卡住。修：`net::lockstep::all_cfgs` 对 `dropped` 端不再要求 cfg
   （及其角色保持掉线前配置）；补单测 `host_all_cfgs_ignores_dropped_client`。
