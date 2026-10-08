@@ -7,7 +7,9 @@ param(
     [ValidateSet('auto','zh','en','')] [string]$Lang = '',
     # 版本：`full` = 正式版（AppID 908660）/ `demo` = 试玩版（AppID 1042120）。
     # 决定编译期 feature（`client/demo` → AppID 1042120 且关工坊/成就/天梯）与 stage 的 steam_appid.txt。
-    [ValidateSet('full','demo')] [string]$Target = 'full'
+    [ValidateSet('full','demo')] [string]$Target = 'full',
+    # 诊断（R0）：加 `--netdiag` 启动 → 打印大厅 owner/成员、peer 连接状态、大厅聊天探针。
+    [switch]$NetDiag
 )
 
 $ErrorActionPreference = 'Continue'
@@ -68,6 +70,12 @@ if ($Mode -eq 'menu') {
 if ($Lang -ne '') {
     Write-Host "== lang override: --lang $Lang =="
     $argsList += @('--lang', $Lang)
+}
+
+# R0 诊断（可选）：--netdiag → 网络诊断日志（大厅 owner/成员、peer 连接状态、大厅聊天探针）。
+if ($NetDiag) {
+    Write-Host '== netdiag enabled: --netdiag =='
+    $argsList += @('--netdiag')
 }
 
 # 前台运行（&）并把控制台输出同时写到 logs/（进程内 logging 已带 ms 时间戳；
