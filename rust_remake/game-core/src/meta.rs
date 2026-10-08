@@ -1010,6 +1010,265 @@ impl MatchState {
     }
 }
 
+// ===== meta 序列化（重连/迁移快照带 meta 用；与 `world_ser` 同一套大端、长度前缀风格）=====
+//
+// 为何在 `meta.rs` 内实现：`MatchState` 含私有字段（`opening_gold_granted`/`pending_first_round`），
+// 同模块内可直接读写；`world_ser` 只调用本方法。
+// `config` 复用 `to_meta_string`/`from_meta_string`（已含全部设置项且有 schema 校验）。
+impl MatchState {
+    /// 把整场 meta 状态序列化成字节（不含 World；与 `world_ser` 的 world 字节一起打包成快照）。
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut o = Vec::new();
+        let cfg = self.config.to_meta_string();
+        wu32(&mut o, cfg.len() as u32);
+        o.extend_from_slice(cfg.as_bytes());
+        wu32(&mut o, self.round);
+        wu8(&mut o, self.opening_gold_granted as u8);
+        wu8(&mut o, phase_code(self.phase));
+        wf64(&mut o, self.learn_remaining);
+        wu32(&mut o, self.profiles.len() as u32);
+        for p in &self.profiles {
+            write_profile(&mut o, p);
+        }
+        wu32(&mut o, self.round_placements.len() as u32);
+        for r in &self.round_placements {
+            wu32(&mut o, r.len() as u32);
+            for id in r {
+                wu32(&mut o, *id);
+            }
+        }
+        wu8(&mut o, self.pending_first_round as u8);
+        wu8(&mut o, self.first_blood_taken as u8);
+        o
+    }
+
+    /// 从字节还原整场 meta 状态；格式非法/超限返回 `None`（不 panic）。
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        let mut p = 0usize;
+        let clen = u32at(b, &mut p)? as usize;
+        let cs = b.get(p..p + clen)?;
+        p += clen;
+        let config = MatchConfig::from_meta_string(std::str::from_utf8(cs).ok()?)?;
+        let round = u32at(b, &mut p)?;
+        let opening_gold_granted = u8at(b, &mut p)? != 0;
+        let phase = match u8at(b, &mut p)? {
+            0 => MatchPhase::Fighting,
+            1 => MatchPhase::Learning,
+            2 => MatchPhase::Finished,
+            _ => return None,
+        };
+        let learn_remaining = f64at(b, &mut p)?;
+        let np = u32at(b, &mut p)? as usize;
+        if np > MAX_META_PROFILES {
+            return None;
+        }
+        let mut profiles = Vec::with_capacity(np);
+        for _ in 0..np {
+            profiles.push(read_profile(b, &mut p)?);
+        }
+        let nr = u32at(b, &mut p)? as usize;
+        if nr > MAX_META_ROUNDS {
+            return None;
+        }
+        let mut round_placements = Vec::with_capacity(nr);
+        for _ in 0..nr {
+            let n = u32at(b, &mut p)? as usize;
+            if n > MAX_META_PLAYERS {
+                return None;
+            }
+            let mut v = Vec::with_capacity(n);
+            for _ in 0..n {
+                v.push(u32at(b, &mut p)?);
+            }
+            round_placements.push(v);
+        }
+        let pending_first_round = u8at(b, &mut p)? != 0;
+        let first_blood_taken = u8at(b, &mut p)? != 0;
+        Some(MatchState {
+            config,
+            round,
+            opening_gold_granted,
+            phase,
+            learn_remaining,
+            profiles,
+            round_placements,
+            pending_first_round,
+            first_blood_taken,
+        })
+    }
+}
+
+const MAX_META_PROFILES: usize = 64;
+const MAX_META_SKILLS: usize = 128;
+const MAX_META_ITEMS: usize = 16;
+const MAX_META_ROUNDS: usize = 1024;
+const MAX_META_PLAYERS: usize = 64;
+
+fn wu32(o: &mut Vec<u8>, v: u32) {
+    o.extend_from_slice(&v.to_be_bytes());
+}
+fn wi32(o: &mut Vec<u8>, v: i32) {
+    o.extend_from_slice(&v.to_be_bytes());
+}
+fn wu8(o: &mut Vec<u8>, v: u8) {
+    o.push(v);
+}
+fn wf64(o: &mut Vec<u8>, v: f64) {
+    o.extend_from_slice(&v.to_bits().to_be_bytes());
+}
+fn u32at(b: &[u8], p: &mut usize) -> Option<u32> {
+    let s = b.get(*p..*p + 4)?;
+    *p += 4;
+    Some(u32::from_be_bytes(s.try_into().ok()?))
+}
+fn i32at(b: &[u8], p: &mut usize) -> Option<i32> {
+    let s = b.get(*p..*p + 4)?;
+    *p += 4;
+    Some(i32::from_be_bytes(s.try_into().ok()?))
+}
+fn u8at(b: &[u8], p: &mut usize) -> Option<u8> {
+    let v = *b.get(*p)?;
+    *p += 1;
+    Some(v)
+}
+fn f64at(b: &[u8], p: &mut usize) -> Option<f64> {
+    let s = b.get(*p..*p + 8)?;
+    *p += 8;
+    Some(f64::from_bits(u64::from_be_bytes(s.try_into().ok()?)))
+}
+fn phase_code(p: MatchPhase) -> u8 {
+    match p {
+        MatchPhase::Fighting => 0,
+        MatchPhase::Learning => 1,
+        MatchPhase::Finished => 2,
+    }
+}
+
+fn write_profile(o: &mut Vec<u8>, p: &PlayerProfile) {
+    wu32(o, p.player_id);
+    wi32(o, p.gold);
+    wu32(o, p.total_kills);
+    wu32(o, p.rounds_survived);
+    wu32(o, p.score);
+    wf64(o, p.total_damage);
+    wu32(o, p.current_streak);
+    wu8(o, p.first_blood_taken as u8);
+    wu32(o, p.best_placement);
+    wu32(o, p.skill_levels.len() as u32);
+    for l in &p.skill_levels {
+        wu32(o, *l);
+    }
+    for s in &p.key_slots {
+        match s {
+            Some(id) => {
+                wu8(o, 1);
+                wu32(o, id.as_u32());
+            }
+            None => {
+                wu8(o, 0);
+                wu32(o, 0);
+            }
+        }
+    }
+    wu32(o, p.items.len() as u32);
+    for it in &p.items {
+        wu32(o, it.as_u32());
+    }
+    wi32(o, p.gold_spent);
+    wu8(o, p.mastery.life);
+    wu8(o, p.mastery.range);
+    wu8(o, p.mastery.time);
+    wu8(o, p.mastery.backpack);
+    wu8(o, p.team);
+    wu32(o, p.forms.len() as u32);
+    for f in &p.forms {
+        wu8(o, *f as u8);
+    }
+    for b in p.jordan_breaks {
+        wu8(o, b);
+    }
+    wu8(o, p.spell_buys);
+    wf64(o, p.damage_this_round);
+}
+
+fn read_profile(b: &[u8], p: &mut usize) -> Option<PlayerProfile> {
+    let player_id = u32at(b, p)?;
+    let gold = i32at(b, p)?;
+    let total_kills = u32at(b, p)?;
+    let rounds_survived = u32at(b, p)?;
+    let score = u32at(b, p)?;
+    let total_damage = f64at(b, p)?;
+    let current_streak = u32at(b, p)?;
+    let first_blood_taken = u8at(b, p)? != 0;
+    let best_placement = u32at(b, p)?;
+    let ns = u32at(b, p)? as usize;
+    if ns > MAX_META_SKILLS {
+        return None;
+    }
+    let mut skill_levels = Vec::with_capacity(ns);
+    for _ in 0..ns {
+        skill_levels.push(u32at(b, p)?);
+    }
+    let mut key_slots: [Option<crate::skill::SkillId>; 8] = [None; 8];
+    for slot in key_slots.iter_mut() {
+        let present = u8at(b, p)? != 0;
+        let id = u32at(b, p)?;
+        *slot = if present { Some(crate::skill::SkillId::from_u32(id)) } else { None };
+    }
+    let ni = u32at(b, p)? as usize;
+    if ni > MAX_META_ITEMS {
+        return None;
+    }
+    let mut items = Vec::with_capacity(ni);
+    for _ in 0..ni {
+        let id = u32at(b, p)?;
+        items.push(crate::item::ItemId::from_u32(id)?);
+    }
+    let gold_spent = i32at(b, p)?;
+    let mastery = Mastery {
+        life: u8at(b, p)?,
+        range: u8at(b, p)?,
+        time: u8at(b, p)?,
+        backpack: u8at(b, p)?,
+    };
+    let team = u8at(b, p)?;
+    let nf = u32at(b, p)? as usize;
+    if nf > MAX_META_SKILLS {
+        return None;
+    }
+    let mut forms = Vec::with_capacity(nf);
+    for _ in 0..nf {
+        forms.push(u8at(b, p)? != 0);
+    }
+    let mut jordan_breaks = [0u8; 8];
+    for jb in jordan_breaks.iter_mut() {
+        *jb = u8at(b, p)?;
+    }
+    let spell_buys = u8at(b, p)?;
+    let damage_this_round = f64at(b, p)?;
+    Some(PlayerProfile {
+        player_id,
+        gold,
+        total_kills,
+        rounds_survived,
+        score,
+        total_damage,
+        current_streak,
+        first_blood_taken,
+        best_placement,
+        skill_levels,
+        key_slots,
+        items,
+        gold_spent,
+        mastery,
+        team,
+        forms,
+        jordan_breaks,
+        spell_buys,
+        damage_this_round,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

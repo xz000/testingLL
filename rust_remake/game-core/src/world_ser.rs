@@ -4,6 +4,7 @@
 //! 保证 `to_bytes` ↔ `from_bytes` 后逐位一致，供重连端重建整场 World 后继续 lockstep。
 
 use crate::fix::{Fix64, Vec2};
+use crate::meta::MatchState;
 use crate::player::{Buff, BuffKind, Cmd, Control, Kick, Player, SweepState, MAX_CMDS};
 use crate::skill::{CastPhase, Caster, SkillId};
 use crate::world::{Obstacle, ProjClass, Projectile, ProjectileKind, ScatterKind, World};
@@ -47,6 +48,44 @@ fn fixat(b: &[u8], p: &mut usize) -> Option<Fix64> {
 }
 fn vecat(b: &[u8], p: &mut usize) -> Option<Vec2> {
     Some(Vec2::new(fixat(b, p)?, fixat(b, p)?))
+}
+
+// ===== 快照打包（World + Meta）=====
+//
+// 重连/主机迁移的 `Packet::Snapshot` 载荷是**不透明字节**（net/lockstep 只透传），
+// 因此在客户端层把 world 与 meta 两份字节打包成一份 blob 即可，**无需改协议包结构**。
+// 但快照格式变了 → `PROTOCOL_VERSION` 必须 +1（旧/新构建不得联机）。
+
+/// 快照 blob 魔数（'C''B''Z''1'）：首字段校验，避免把非快照字节当快照解析。
+const SNAPSHOT_MAGIC: u32 = 0x4342_5A31;
+
+/// 把「world 字节（`world_to_bytes` 的产物）+ meta 字节」打包成一份快照 blob。
+/// 传入 `world_bytes` 便于调用方复用它同时算 `state_hash_bytes`（避免重复序列化 World）。
+pub fn pack_snapshot(world_bytes: &[u8], meta: &MatchState) -> Vec<u8> {
+    let mb = meta.to_bytes();
+    let mut o = Vec::with_capacity(12 + world_bytes.len() + mb.len());
+    wu32(&mut o, SNAPSHOT_MAGIC);
+    wu32(&mut o, world_bytes.len() as u32);
+    o.extend_from_slice(world_bytes);
+    wu32(&mut o, mb.len() as u32);
+    o.extend_from_slice(&mb);
+    o
+}
+
+/// 解包快照 blob → `(World, MatchState)`；格式非法返回 `None`。
+pub fn snapshot_from_bytes(bytes: &[u8]) -> Option<(World, MatchState)> {
+    let mut p = 0usize;
+    if u32at(bytes, &mut p)? != SNAPSHOT_MAGIC {
+        return None;
+    }
+    let wl = u32at(bytes, &mut p)? as usize;
+    let wb = bytes.get(p..p + wl)?;
+    p += wl;
+    let ml = u32at(bytes, &mut p)? as usize;
+    let mb = bytes.get(p..p + ml)?;
+    let world = world_from_bytes(wb)?;
+    let meta = MatchState::from_bytes(mb)?;
+    Some((world, meta))
 }
 
 // ===== 不可信输入的上界防护（RISK_ANALYSIS.md P4 / D2） =====
@@ -1260,5 +1299,60 @@ mod tests {
         w2.kills_this_round.push((0, 0xFFFF_FFFF)); // 被击杀者越界
         let bytes2 = world_to_bytes(&w2);
         assert!(world_from_bytes(&bytes2).is_none(), "越界被击杀者 id 必须被拒绝");
+    }
+
+    /// R2：快照 = world + meta 打包；往返后 world 与关键 meta 字段一致。
+    #[test]
+    fn snapshot_roundtrip_preserves_world_and_meta() {
+        let mut w = World::new(3, 77);
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let none = vec![crate::world::PlayerInput::default(); 3];
+        for _ in 0..5 {
+            w.step(none.clone(), dt);
+        }
+        let mut m = crate::meta::MatchState::new(crate::meta::MatchConfig::default(), &[0, 1, 2], 34);
+        m.round = 2;
+        m.phase = crate::meta::MatchPhase::Learning;
+        m.learn_remaining = 12.5;
+        m.profiles[1].gold = 42;
+        m.profiles[1].total_kills = 7;
+        m.profiles[1].skill_levels[3] = 5;
+        m.profiles[1].items.push(crate::item::ItemId::Boots2);
+        m.profiles[1].mastery.range = 3;
+        m.profiles[1].key_slots[crate::skill::CastKey::D.as_u32() as usize] = Some(crate::skill::SkillId::S003);
+        m.profiles[1].jordan_breaks[crate::skill::CastKey::C.as_u32() as usize] = 2;
+        m.first_blood_taken = true;
+        m.round_placements.push(vec![2, 0, 1]);
+
+        let wb = world_to_bytes(&w);
+        let blob = pack_snapshot(&wb, &m);
+        let (w2, m2) = snapshot_from_bytes(&blob).expect("snapshot decode");
+        assert_eq!(w.players, w2.players, "world 往返一致");
+        assert_eq!(m.round, m2.round);
+        assert_eq!(m.phase, m2.phase);
+        assert_eq!(m.learn_remaining, m2.learn_remaining);
+        assert_eq!(m.first_blood_taken, m2.first_blood_taken);
+        assert_eq!(m.round_placements, m2.round_placements);
+        assert_eq!(m.profiles.len(), m2.profiles.len());
+        for (a, b) in m.profiles.iter().zip(m2.profiles.iter()) {
+            assert_eq!(a.player_id, b.player_id);
+            assert_eq!(a.gold, b.gold);
+            assert_eq!(a.total_kills, b.total_kills);
+            assert_eq!(a.skill_levels, b.skill_levels);
+            assert_eq!(a.key_slots, b.key_slots);
+            assert_eq!(a.items, b.items);
+            assert_eq!(a.mastery, b.mastery);
+            assert_eq!(a.jordan_breaks, b.jordan_breaks);
+        }
+    }
+
+    /// R2：非快照字节（魔数不符 / 裸 world 字节）应被拒绝。
+    #[test]
+    fn snapshot_rejects_foreign_bytes() {
+        assert!(snapshot_from_bytes(b"not a snapshot").is_none());
+        assert!(
+            snapshot_from_bytes(&world_to_bytes(&World::new(2, 1))).is_none(),
+            "裸 world 字节不是快照"
+        );
     }
 }

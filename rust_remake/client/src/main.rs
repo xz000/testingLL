@@ -2959,9 +2959,10 @@ impl Game {
             Ok(Some((world_bytes, seq))) => {
                 eprintln!("[client] got Snapshot seq={seq}, rebuilding World ({n} bytes)", n = world_bytes.len());
                 link.align_after_reconnect().ok();
-                match game_core::world_ser::world_from_bytes(&world_bytes) {
-                    Some(w) => {
+                match game_core::world_ser::snapshot_from_bytes(&world_bytes) {
+                    Some((w, m)) => {
                         self.world = w;
+                        self.meta = m; // R2：快照带 meta（回合/金币/技能绑定），避免跨回合重连分歧
                         // 清空本地输入残留，避免把掉线期间的输入误带到接回后。
                         self.player_target = None;
                         self.pending_cast = None;
@@ -6639,13 +6640,16 @@ impl event::EventHandler for Game {
                                     // 周期性世界状态哈希（分歧检测）+ 本地快照（重连用）：
                                     // 同一帧只序列化一次 World，hash 与 snapshot 复用同一份字节。
                                     let wb = game_core::world_ser::world_to_bytes(&self.world);
+                                    // 哈希只用 world 字节（与 client 侧 `state_hash(&world)` 一致），不含 meta。
                                     host.broadcast_state_hash(seq, game_core::world_ser::state_hash_bytes(&wb));
+                                    // R2：快照 = world + meta 打包。
+                                    let sb = game_core::world_ser::pack_snapshot(&wb, &self.meta);
                                     // 广播快照只为本局「主机迁移/接管」，频率更低（默认 2.5s），
                                     // 其余帧只本地保存（重连时按需单发），避免每 0.5s 一个大包挤占可靠频道。
                                     if self.host_frame_count % SNAPSHOT_BROADCAST_EVERY == 0 {
-                                        host.broadcast_snapshot(wb, host.next_seq());
+                                        host.broadcast_snapshot(sb, host.next_seq());
                                     } else {
-                                        host.set_snapshot(wb, host.next_seq());
+                                        host.set_snapshot(sb, host.next_seq());
                                     }
                                 }
                                 // 周期统计（每 5s）：产帧间隔分布 + 因等输入而停摆的累计次数 + 最差 ping。
@@ -6925,8 +6929,10 @@ impl event::EventHandler for Game {
                             // 局域网无主机迁移，故**不广播**快照（只本地保存，供掉线重连按需单发）。
                             if self.host_frame_count % SNAPSHOT_EVERY == 0 {
                                 let wb = game_core::world_ser::world_to_bytes(&self.world);
+                                // 哈希只用 world（与 client 侧一致）；快照 = world + meta 打包（R2）。
                                 host.broadcast_state_hash(seq, game_core::world_ser::state_hash_bytes(&wb));
-                                host.set_snapshot(wb, host.next_seq());
+                                let sb = game_core::world_ser::pack_snapshot(&wb, &self.meta);
+                                host.set_snapshot(sb, host.next_seq());
                             }
                             self.accumulator -= TICK;
                         } else {

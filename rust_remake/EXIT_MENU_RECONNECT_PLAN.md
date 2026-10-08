@@ -312,6 +312,8 @@
 - 2026-10-08：**R0 实测（§18.1）**：V1 ✅ 房主离开后大厅存活、owner 自动移交（→ B 可行；C 升为主方案）；V2 ⚠ 连接状态不可靠（→ **放弃 A**，改 R3' = lobby_owner 选举）。R0 探针已提交（`7f5f209`/`2e2d571`）。
 - 2026-10-08：**B 修订为「owner 写大厅元数据 epoch」**（聊天内容因 `Client: !Send` 无法在回调中读取，见 §15.2）；
   实施顺序改为**正确性优先** `R2 → R3' → R4 → R1 → R5/R6`（§19.1）。
+- 2026-10-08：**R2 已落**（快照带 meta）：新增 `MatchState::to_bytes/from_bytes` + `world_ser::pack_snapshot/snapshot_from_bytes`；
+  客户端全部快照读写点（重连/迁移/接管/广播）改为携带并恢复 meta；`PROTOCOL_VERSION` 39→40；补 2 单测。
 
 ---
 

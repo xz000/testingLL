@@ -67,4 +67,4 @@ pub fn version() -> &'static str {
 /// 与**硬体** `burning`，回溯时一并恢复 + 清减益 + 断链。
 /// v39（2026-09-25）：S019 锁链完整复刻——`Obstacle.id`（稳定柱子锚点）；`Tether` 改锚点结构
 /// （`TetherAnchor`/`TetherPull`/`remaining: Option<Fix64>`/`red` 形态位）；新增 `BuffKind::ChainSpeed`（红链队友/柱 +100 移速）。
-pub const PROTOCOL_VERSION: u32 = 39;
+pub const PROTOCOL_VERSION: u32 = 40;

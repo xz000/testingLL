@@ -45,8 +45,9 @@ impl Game {
                 if from == old_host {
                     if let net::Packet::Snapshot { world_bytes, seq } = pkt {
                         cli.apply_resync(rcv).ok();
-                        if let Some(w) = game_core::world_ser::world_from_bytes(&world_bytes) {
+                        if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {
                             self.world = w;
+                            self.meta = m; // R2：快照带 meta
                             self.clear_transient_input();
                             eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
                         }
@@ -106,8 +107,9 @@ impl Game {
                 // 避免各端因帧序不一致在接管后卡在缺口处反复请求重传（包括无缓存快照的早期接管）。
                 cli.set_start_seq(seq);
                 if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
-                    if let Some(w) = game_core::world_ser::world_from_bytes(&wb) {
+                    if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&wb) {
                         self.world = w;
+                        self.meta = m; // R2：快照带 meta
                         self.clear_transient_input();
                     }
                 }
@@ -133,7 +135,8 @@ impl Game {
         // S7：若原 host 在首个 `SNAPSHOT_EVERY` 周期前掉线（从未广播过快照），`cached_snapshot()` 为 None，
         // 则用本端已回放的最新 world（self.world）+ 当前期望帧 seq 作为接管基线，保证仍能广播 Takeover + 快照接管。
         // 本端自己的 World 基线（期望帧 seq）。
-        let own = (game_core::world_ser::world_to_bytes(&self.world), cli.expect_seq());
+        let wb = game_core::world_ser::world_to_bytes(&self.world);
+        let own = (game_core::world_ser::pack_snapshot(&wb, &self.meta), cli.expect_seq());
         let cached = cli.cached_snapshot();
         // 取「本端 world」与「缓存快照」中 seq 更新的一份作为接管基线：
         // 低频/无周期广播快照时，本端自己可能反而更新，用 max 避免无谓回滚到旧缓存。
@@ -148,8 +151,9 @@ impl Game {
         // 本端 world index = 在原始参与列表中的位置（对局开始时确定，迁移不变）。
         let my_index = self.steam_participants.iter().position(|&id| id == self.steam_my_id).unwrap_or(0) as u8;
         let total = self.steam_participants.len().max(1);
-        if let Some(w) = game_core::world_ser::world_from_bytes(&effective_snap.0) {
+        if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&effective_snap.0) {
             self.world = w;
+            self.meta = m; // R2：快照带 meta
         }
         // 更新在线参与集：排除掉线的旧 host（供下一次迁移选举）。
         let new_online: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
