@@ -21,6 +21,23 @@
 
 use super::*;
 
+/// R3'：确定性选举新 host。
+/// **优先用 Steam 仲裁的当前 lobby owner**（`owner`）——全员从后端读到同一值，天然一致；
+/// 仅当 owner 不可用（`0` / 仍是旧 host = 移交未反映 / 不在本局在线参与集）时，
+/// 回退到「在线参与集中除旧 host 外的最小 SteamID」（确定性与旧逻辑一致）。纯函数，便于单测。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+pub(crate) fn elect_new_host(owner: u64, old_host: u64, online: &[u64]) -> u64 {
+    if owner != 0 && owner != old_host && online.contains(&owner) {
+        return owner;
+    }
+    online
+        .iter()
+        .filter(|&&id| id != old_host)
+        .copied()
+        .min()
+        .unwrap_or(0)
+}
+
 impl Game {
     /// Steam（client）主机迁移状态机：每帧在「收不到权威帧、疑似 host 掉线」后调用。
     /// 分两阶段：
@@ -64,17 +81,21 @@ impl Game {
                 // 来自非旧 host（如新 host）的包：忽略，继续探测/等待。
             }
             if self.steam_migrate_ticks >= MIGRATE_PROBE_TICKS {
-                // 判定 host 掉线 → 确定性选举新 host（排除当前 host、SteamID 最小者）。
+                // 判定 host 掉线 → 选举新 host。
+                // R3'：优先用 Steam 仲裁的当前 lobby owner（全员一致）；不可用则回退最小 SteamID。
                 // 候选集用 `steam_online`（已排除历次掉线的 host），避免把已掉线的旧 host 再选出。
                 let old_host_id = match old_host {
                     net::transport::Peer::Steam { id, .. } => id,
                     _ => 0,
                 };
-                let candidates: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
-                let new_host_id = candidates.iter().min().copied().unwrap_or(0);
+                let owner = self
+                    .steam_lobby_id
+                    .map(|lid| net_steam::session::lobby_owner(cli.transport_ref(), lid))
+                    .unwrap_or(0);
+                let new_host_id = elect_new_host(owner, old_host_id, &self.steam_online);
                 self.steam_new_host_id = new_host_id;
                 eprintln!(
-                    "[steam-client] host gone (probe timeout), elected new host={new_host_id} (I {}), online={:?}",
+                    "[steam-client] host gone (probe timeout), elected new host={new_host_id} (lobby_owner={owner}, I {}), online={:?}",
                     if new_host_id == self.steam_my_id { "am new host" } else { "am client" },
                     self.steam_online
                 );
@@ -662,5 +683,29 @@ impl Game {
         self.steam_lobby_list = false;
         self.steam_friend_hint = "已从邀请加入房间".to_string();
         self.enter_steam_mode(ctx, false, 2, None, None);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::elect_new_host;
+
+    /// R3'：owner 合法（是参与成员且非旧 host）时优先选 owner——即使它不是最小 SteamID。
+    #[test]
+    fn elect_prefers_lobby_owner_when_valid() {
+        assert_eq!(elect_new_host(500, 100, &[100, 500, 300]), 500);
+    }
+
+    /// owner 不可用时回退到「在线参与集中除旧 host 外的最小 SteamID」。
+    #[test]
+    fn elect_falls_back_to_min_id_when_owner_invalid() {
+        // owner 仍是旧 host（Steam 移交未反映）→ 回退。
+        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 300);
+        // 无大厅 / owner 无效（0）→ 回退。
+        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 300);
+        // owner 不在本局在线参与集（如只在大厅但未参与）→ 回退。
+        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 300);
+        // 全部掉线/空集 → 0。
+        assert_eq!(elect_new_host(0, 100, &[100]), 0);
     }
 }

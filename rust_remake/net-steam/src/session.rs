@@ -98,6 +98,13 @@ pub fn peer_connection_state(
     Some(state)
 }
 
+/// 当前大厅 owner 的 SteamID（Steam 仲裁的权威；房主离开后会**自动移交**给剩余成员）。
+/// R3' 选举用；`0` = 无大厅/无效。
+pub fn lobby_owner(transport: &SteamTransport, lobby: u64) -> u64 {
+    use steamworks::LobbyId;
+    transport.matchmaking().lobby_owner(LobbyId::from_raw(lobby)).raw()
+}
+
 /// 诊断/控制（R0）：向大厅广播一条消息（经 **Steam 后端**，非 P2P relay）。返回是否成功。
 /// 真机验证 V1（房主离开后大厅聊天是否仍可用）；后续 B 方案的 epoch 宣告也会走这条路径。
 pub fn send_lobby_chat(transport: &SteamTransport, lobby: u64, bytes: &[u8]) -> bool {

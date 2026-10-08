@@ -314,6 +314,8 @@
   实施顺序改为**正确性优先** `R2 → R3' → R4 → R1 → R5/R6`（§19.1）。
 - 2026-10-08：**R2 已落**（快照带 meta）：新增 `MatchState::to_bytes/from_bytes` + `world_ser::pack_snapshot/snapshot_from_bytes`；
   客户端全部快照读写点（重连/迁移/接管/广播）改为携带并恢复 meta；`PROTOCOL_VERSION` 39→40；补 2 单测。
+- 2026-10-08：**R3' 已落**（选举 = `lobby_owner()`）：`net-steam::session::lobby_owner` + 纯函数 `steam::elect_new_host`
+  （owner 合法则选 owner，否则回退最小 SteamID）+ 2 单测。各端读同一后端 owner → 选举天然一致。
 - 2026-10-08：**R2 真机复验时发现并修复一个真 bug**（`logs/console-menu-full-20261008-222141.log`）：主机迁移后旧 host 掉线，
   下一回合 `HostGather` 永远等它的 `PlayerCfg`（`all_cfgs` 未排除 `dropped`）→ 卡住。修：`net::lockstep::all_cfgs` 对 `dropped` 端不再要求 cfg
   （及其角色保持掉线前配置）；补单测 `host_all_cfgs_ignores_dropped_client`。
