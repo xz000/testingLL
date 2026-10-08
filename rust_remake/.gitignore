@@ -6,6 +6,7 @@
 /input_log.txt
 /netlogs/
 /logs/
+/logs_host/
 /logs_client/
 *日志*.txt
 
