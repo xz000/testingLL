@@ -68,29 +68,37 @@ impl Game {
                 let _ = cli.send_reconnect_req(self.steam_my_id);
             }
             let old_host = cli.host_peer();
-            // 只接受「来自旧 host」的包作为 host 还活着的证据：
-            // 否则新 host（接管后）广播的 Snapshot 会被误判成“旧 host 还活着” → 恢复却不重定向 → 永远连旧 host。
-            if let Ok(Some((from, pkt))) = cli.recv_packet(rcv) {
-                if from == old_host {
-                    if let net::Packet::Snapshot { world_bytes, seq } = pkt {
-                        cli.apply_resync(rcv).ok();
-                        if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {
-                            self.world = w;
-                            self.meta = m; // R2：快照带 meta
-                            self.clear_transient_input();
-                            eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
+            // 探测恢复：**只有收到旧 host 的 Snapshot 才算恢复**（重建 world+meta）。
+            //
+            // 为何不把「任意包」当恢复信号（修复 2026-10-08 真机死循环）：若本端落后超过帧缓冲
+            // （frame_buf_capacity=60≈1s），仅靠锁步补帧**无法补齐**，必须靠整快照重建；
+            // 若此时收到一帧/StateHash 就提前 resume，会继续卡在缺口 → 又 stale → 死循环，
+            // 表现为“显示重连、操作无反应，但输入仍上行到 host（host 用 held 输入让角色继续动）”。
+            // 本端在阶段 A 每 ~0.25s 重发 ReconnectReq，host 会回 Snapshot（限速≤0.5s）；
+            // 且 host 还有周期快照广播——循环读包直到读到 Snapshot 或本次无更多包。
+            loop {
+                match cli.recv_packet(rcv) {
+                    Ok(Some((from, pkt))) => {
+                        if from != old_host {
+                            continue; // 非旧 host（如新 host）的包：忽略。
                         }
-                        self.steam_migrating = false;
-                        self.steam_migrate_ticks = 0;
-                        return Ok(Some(cli));
+                        if let net::Packet::Snapshot { world_bytes, seq } = pkt {
+                            cli.apply_resync(rcv).ok();
+                            if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {
+                                self.world = w;
+                                self.meta = m; // R2：快照带 meta
+                                self.clear_transient_input();
+                                eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
+                            }
+                            self.steam_migrating = false;
+                            self.steam_migrate_ticks = 0;
+                            return Ok(Some(cli));
+                        }
+                        // 旧 host 的其它包（Frame/StateHash）：它还在，但不足以补齐缺口，继续等 Snapshot。
                     }
-                    // 来自旧 host 的其它包（如 Frame）也说明 host 还在：恢复，交给下一帧正常循环推进（丢帧由 lockstep 补发）。
-                    self.steam_migrating = false;
-                    self.steam_migrate_ticks = 0;
-                    eprintln!("[steam-client] host alive (heartbeat from old host), resuming");
-                    return Ok(Some(cli));
+                    Ok(None) => break,
+                    Err(_) => break,
                 }
-                // 来自非旧 host（如新 host）的包：忽略，继续探测/等待。
             }
             if self.steam_migrate_ticks >= MIGRATE_PROBE_TICKS {
                 // 判定 host 掉线 → 选举新 host。
