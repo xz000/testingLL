@@ -307,3 +307,288 @@
 - 2026-09-27：v1 初版（审计 + 设计骨架）。
 - 2026-09-27：**v2** 锁定 D1/D2；补 §0.3 关键数值、§3 状态机、§4.2 帧同步红线、§5 深入重连、§6 Q3/Q4 权衡、§7–§9 改动点/实施/测试。
 - 2026-09-27：**v2.1** 锁定 D3/D4，新增 D5（LAN 不投入）/D6（菜单覆盖全阶段）；实施顺序调整为 E1→E2→E4→E3→(E5)。
+- 2026-09-27：E1/E2/E4 已落（`6bab72d`/`274e8b8`/`4e356d8`）；新增 §14（E3 深入：现状时序 + 问题 + 优化建议）。
+- 2026-09-27：E3 三问已定（§14.7：采纳全部 S1–S6；允许 Esc 放弃；超时横幅+回菜单）；新增 §15（脑裂与 Steamworks 工具）、§16（老 host 归队可行性）。脑裂/归队均作为后续独立专题，**尚未开工**。
+
+---
+
+## 14. E3 深入：Steam 掉线/重连/迁移的时序与 UI 优化
+
+> 结论先行：**保持现有「先探测重连、再选举迁移」的快速时序**（不要改成 60s 才迁移，那会让全队干等），
+> 把优化集中在**反馈（UI）**与**少量鲁棒性/带宽细节**上。D3 的「60s」只适用于「LAN 主动重连」口径，**不套到 Steam 迁移**。
+
+### 14.1 现状时序（精确到 tick，约 60 tick/s）
+| 阶段 | 触发/时长 | 行为 | 玩家可见 |
+|---|---|---|---|
+| 正常 | — | 每帧收权威帧推进 | 正常 |
+| **静默掉线** | `steam_cli_stale_ticks >= CLIENT_STALE_TICKS(180≈3s)` | 无权威帧 → 世界**冻结**（不推进） | **无任何提示（黑箱）** ← 最大问题 |
+| **探测原 host** | 阶段 A，`MIGRATE_PROBE_TICKS(60≈1s)`；**每帧**发 `ReconnectReq` | 收到**来自旧 host 的任意包**即恢复；超时→选新 host | **无提示** |
+| **选举后接管** | 阶段 B，`MIGRATE_BAIL_TICKS(600≈10s)`（从进入迁移起算） | 本端是新 host→接管；否则等 `Takeover` | **无提示** |
+| 失败 | 阶段 B 超时 | **静默** `reset_to_main_menu` | 突然回主菜单，懵 |
+
+关键常量：`CLIENT_STALE_TICKS=180`、`MIGRATE_PROBE_TICKS=60`、`MIGRATE_BAIL_TICKS=600`、
+`HOST_DROP_TICKS=180`（host 判 client 掉线、默认输入占位）、`RECONNECT_RESP_INTERVAL=30`（host 限速应答）、
+`SNAPSHOT_EVERY=30`（本地快照）、`SNAPSHOT_BROADCAST_EVERY=150`（Steam 广播快照）。
+
+### 14.2 问题清单
+- **P1（UX，最大）**：从「静默掉线」到「迁移完成/失败」全程**无任何 UI**，世界冻结但玩家不知发生了什么。
+- **P2**：`draw_reconnect_overlay` 只在 `conn_dropped`（**仅 LAN**）时画；Steam 迁移期完全不画。
+- **P3**：阶段 B 超时**静默**回主菜单（无 toast/横幅）。
+- **P4（带宽）**：阶段 A **每帧**发 `ReconnectReq`（60/s）；host 已限速回应，客户端发送端也可节流。
+- **P5（鲁棒性）**：探测窗口仅 **1s**，一次 relay 抖动 >1s 就误判「host 掉线」→ 不必要的迁移（有快照兜底，但有脑裂风险与开销）。
+- **P6（语义）**：阶段 A/B 共用 `steam_migrate_ticks`，进入阶段 B 不复位 → B 的「600 帧」实际是「从进迁移起 600 帧」（B 只剩 ~540 帧）。
+- **P7（已知风险，非本次修）**：**非对称断链脑裂**——若 client↔旧 host 断、但 client↔其他 client 通，则 client 选自己为新 host 并广播 `Takeover`，旧 host 收不到 `Takeover`（`superseded` 不生效）→ 可能双权威。需后续专题。
+
+### 14.3 优化建议（供拍板；均为增量、不动协议）
+- **S1 早期抖动提示**：静默超过 `STALE_HINT_TICKS(30≈0.5s)` 就显示**非模态**小提示（顶部横幅）：
+  「正在等待房主…（{t}s）」；一收到帧即消失。→ 直接消除 P1 的前 3s 黑箱。
+- **S2 迁移模态覆盖层**（P1/P2）：`steam_migrating` 期间画覆盖层，按子阶段显示：
+  - 阶段 A：「正在尝试重新连回房主…（{t}s）」
+  - 阶段 B（本端非新 host）：「房主已离开，正在选拔新主机…（{t}s）」
+  - 阶段 B（本端是新 host）：「正在接管对局…」
+  - 统一加 spinner + 已等待秒数；底部提示「Esc 返回主菜单（放弃本局）」。
+- **S3 失败有反馈（P3）**：阶段 B 超时时 `push_banner("连接未能恢复，已返回主菜单")` 再 reset（或进入 Failed 覆盖层等按键）。
+- **S4 节流重连请求（P4）**：阶段 A 每 `RECONNECT_REQ_EVERY(15≈0.25s)` 帧发一次（而非每帧）。
+- **S5 探测窗口 1s → 1.5s（P5）**：`MIGRATE_PROBE_TICKS=90`，容忍一次 relay 抖动，仍远快于 60s。
+- **S6 阶段计时独立（P6）**：进入阶段 B 时把 `steam_migrate_ticks` 复位（或在阶段 B 用独立计数），使「10s 接管窗口」名副其实。
+- **S7 风格统一**：覆盖层/横幅文案与 E1 退出菜单同一套 `ui::theme` 与 i18n。
+
+> 建议采纳：**S1+S2+S3+S4+S6（必做）**，**S5（可做，1.5s 小步）**。S7 随实现。
+> 明确**不做**：把迁移等 60s（D3-60s 不套 Steam），也不做掉线角色幽灵化（玩法改动，§12）。
+
+### 14.4 UI 状态映射（实现用）
+```
+无权威帧：
+  stale_ticks < 30         → 正常（仍显示上一帧画面）
+  30 ≤ stale_ticks < 180   → S1 顶部非模态横幅「正在等待房主…」
+  stale_ticks ≥ 180        → 进入迁移（S2 覆盖层）
+迁移中 steam_migrating：
+  new_host_id == 0         → 「正在尝试重新连回房主…」
+  new_host_id == my_id     → 「正在接管对局…」
+  new_host_id == 其他      → 「房主已离开，正在选拔新主机…」
+阶段 B 超时                → S3 横幅 + 返回主菜单
+```
+
+### 14.5 实现要点 / 改动点
+- `client/src/main.rs`：
+  - 新增常量 `STALE_HINT_TICKS=30`（或复用/新增）；Steam 分支与 `draw_scene` 据此画 S1 横幅。
+  - `draw_scene`：新增 `if self.steam_migrating { draw_migration_overlay }`（Steam）；S1 徽标。
+  - 新增 `draw_migration_overlay`（或扩展 `draw_reconnect_overlay` 带状态参数），风格对齐 E1。
+  - 阶段 B 超时分枝：加 `push_banner` 后再 reset。
+- `client/src/steam.rs`：
+  - 阶段 A `ReconnectReq` 节流（S4）；阶段 B 入口 `steam_migrate_ticks` 复位（S6）。
+- `client/src/keys.rs`：无需新屏幕（`PauseMenu` 已覆盖「Esc 返回」）。
+- **不改协议 / `world_ser`** → 不升 `PROTOCOL_VERSION`。
+
+### 14.6 测试
+- **纯函数单测**：S1 阈值判定、S2 状态→文案映射（`migration_overlay_state(migrating, new_host_id, my_id)` 类）。
+- **源码级守卫**：迁移覆盖层存在；阶段 B 不再静默 reset。
+- **真机复验（待双端）**：host 短暂卡顿 >1.5s → 先探测、能重连接回（不误迁移）；host 真退 → 覆盖层显示各阶段、最终接管/或超时横幅回菜单。
+
+### 14.7 待确认（E3）—— 已定（2026-09-27）
+- **E3-Q1** ✅ 采纳全部：S1+S2+S3+S4+S6（必做）+ S5（探测窗口 1s→1.5s）。
+- **E3-Q2** ✅ 迁移覆盖层**允许 Esc 主动放弃**→返回主菜单。
+- **E3-Q3** ✅ 阶段 B 超时用 **横幅 + 自动回菜单**。
+
+---
+
+## 15. 脑裂（split-brain）与授权仲裁 —— Steamworks 可用工具
+
+> 背景（问题 P7/§14.2）：**非对称断链**时（client↔旧 host 断、但 client↔其他 client 通），
+> client 会选举并广播 `Takeover`，而旧 host 收不到 `Takeover`（`superseded` 不生效）→ **双权威/脑裂**。
+
+### 15.1 Steamworks 可用工具（已查证 0.13.1 实际 API）
+| 能力 | API | 对防脑裂的价值 |
+|---|---|---|
+| **每 peer 连接状态** | `ISteamNetworkingMessages::GetSessionConnectionInfo(...).state` → `NetworkingConnectionState::{None,Connecting,FindingRoute,Connected,ClosedByPeer,ProblemDetectedLocally}`（另有 `realtime.connection_state()`） | **高**：区分「链路真的断了」与「只是应用层没帧」。比“3s 无帧”可靠得多。 |
+| **大厅唯一 owner** | `ISteamMatchmaking::GetLobbyOwner` → `lobby_owner()`（文档原文：*“There is guaranteed to always be one and only one lobby member who is the owner.”*） | **中高**：Steam 保证“恰好一个 owner”，可作权威/仲裁回退。⚠ 0.13 **无 `SetLobbyOwner`**；owner 离开后是否移交未文档化（大厅可能被销毁）。 |
+| **大厅聊天消息** | `ISteamMatchmaking::SendLobbyChatMsg`（经 **Steam 后端**广播，非 P2P relay；≤ 4KB，带宽有限） | **高**：走**另一条传输路径**，即使 P2P relay 不对称断链也能到达全体大厅成员 → 适合做「权威宣告 / epoch / 心跳」。 |
+| **会话失败回调** | `session_failed_callback`（已注册） | 低中：辅助信号。 |
+| 主机迁移 / 授权仲裁 API | **不存在** | — |
+
+### 15.2 建议方案（分层，按代价从低到高）
+- **A. 连接状态门控选举（低成本，建议先做）**：选举前要求“到旧 host 的连接状态为非 `Connected`
+  （`ClosedByPeer`/`ProblemDetectedLocally`/`None`）”或 P2P 确实不可达；若状态仍 `Connected` 只是没帧，
+  则**继续探测**（可能是 host 应用层卡顿而非掉线）。→ 大幅减少**误迁移**。
+- **B. Lobby 聊天 fencing（中成本，强效）**：新 host 的 `Takeover` 除 P2P 外，**另经 `SendLobbyChatMsg` 广播**
+  一个带 **epoch（递增代次）** 的轻量宣告；各端只接受 **最高 epoch** 的权威；旧 host 即使 P2P 被隔离，
+  也能从后端路径看到自己被取代而**退位**。→ 直接封堵非对称断链的脑裂窗口。
+- **C. Owner 回退（低成本，辅助）**：选举结果可选与 `lobby_owner()` 交叉校验；冲突时以 owner 为准。
+  （依赖 owner 离开后 Steam 的行为，需真机验证。）
+
+> 建议：**先纳入 A + C（便宜、不改协议），B 作为专题单独评估**（引入 epoch 概念，改动面较大）。
+> 真正的网络分区无 API 能完全根除；B 能把“双权威窗口”降到极小。
+
+### 15.3 待決（防脑裂）
+- **SP-Q1** ✅ 已定（2026-09-27）：**直接做 A+B+C**。0.13.1 已含所需全部 API（`get_session_connection_info`/
+  `lobby_owner`/`send_lobby_chat_message`+`LobbyChatMsg` 回调），**无需升级组件版本**。
+
+### 15.4 A+B+C 详细设计
+**A. 连接状态门控选举**
+- net-steam 新增 `peer_connection_state(transport, peer_id) -> Option<NetworkingConnectionState>`（封装 `get_session_connection_info().state`）。
+- 迁移阶段 A 超时后**不立即选举**，先看旧 host 的 state：
+  - `Connected` → 链路仍在，**延长探测**（可能是 host 应用层卡顿，不是掉线）；
+  - `ClosedByPeer` / `ProblemDetectedLocally` / `None` → 确认掉线 → 选举。
+- 也可用 `realtime.connection_state()` 双重确认。
+
+**B. Epoch fencing（经 Steam 后端）**
+- 引入**权威代次** `Authority { epoch: u64, host_id: u64 }`；对局开始 epoch=0（host=建房者）。
+- 迁选新 host：`epoch += 1`；新 host 既要 P2P 广播 `Takeover`，**又要 `SendLobbyChatMsg` 发一条控制消息**
+  （如 `[CB1]TAKEOVER e=<epoch> h=<hostid>`），走 **Steam 后端**、不受 P2P 不对称隔离影响。
+- 各端只接受 **epoch 最高**的权威；旧 host（即使 P2P 被隔离）从后端消息看到 epoch 更高 → `superseded` 退位。
+- 可顺带把 `[CB1]HB e=.. h=..` 作低频心跳（与快照广播同频，~2.5s），让被隔离端也能得知当前权威/识别自己已被取代。
+- 协议：`Packet::Takeover` 加 `epoch` 字段（运行期包，不进 World；但改了 `proto.rs` → 补 roundtrip 测试）。
+
+**C. Owner 辅助**
+- 选举结果与 `lobby_owner()` 交叉校验；二者不一致时**以 owner 为准**（待验证 owner 离开后的行为后再定策略）。
+
+> ⚠ **B 的最大前提（必须真机验证）：原 host（= 建房者 = lobby owner）离开后，大厅是否仍存在、
+> 其余成员能否继续收发 lobby chat。** 若 Steam 在 owner 离开时销毁大厅，则 B 不可行，需改控制面方案
+> （例如：控制面用全员 P2P mesh，但那正是非对称分区时会断的路径）。→ 见 §18 验证清单 V1。
+
+---
+
+## 16bis. 崩溃重连（Crash Reconnect）—— host 与 client 均可重开回归
+
+> 用户目标（2026-09-27）：**最终要实现“进程崩溃后重开→回到原对局”**；可能需要「手动暂停 / 等待掉线者重连」。
+> 这是一项大工程，需先解决下列**架构缺口**。
+
+### 16bis.1 关键缺口
+- **G1【最关键：快照不含 meta】】** `world_ser` 只序列化 `World`；`MatchState`（回合/阶段/金币/profiles/技能绑定）**不在快照**。
+  重连只重建 `self.world`（`poll_steam_migration`/旧 `poll_steam_reconnect`），meta 保留本端旧值 → 跨回合/学习阶段重连会**meta 落后/分歧**。
+  → 需把 `MatchState` 也序列化进快照（`Packet::Snapshot` 携带 `world_bytes + meta_bytes`）。**这是状态字段 → 必须升 `PROTOCOL_VERSION` + 补往返测试**。
+- **G2【重开后如何发现对局】** 崩溃重开 = 新进程，不知道 lobby id / 当前 host / 自己槽位。
+  → 需**本地持久化会话描述**（lobby_id / my_id / host_id / participants / epoch），重开时读回 → 重进 lobby → 拉快照归队。干净退出/离场时清除。
+- **G3【host 崩溃后以 client 归队】** 见 §16：需 `HostLockstep::into_transport()` + main.rs “被取代→转 client 归队”路径；
+  且新 host 要能**宣告自己**（靠 B 的 epoch 心跳 / lobby 后端）。
+- **G4【社交/暂停语义】** 重连窗口内其他人怎么办：
+  - 现状：host 用**默认输入占位**（该角色站桩可被击杀），其余继续——**不暂停**；
+  - 可选：**协调暂停**（host 停产帧，各端冻结，同时**抑制 stale→迁移**）等崩溃者回来；触发方式（host 手动 / 投票 / 掉线自动+超时）需定。
+- **G5【大厅存活性】（同 B 前提）** 原 host 离开/崩溃后大厅是否还在，决定 G2/G3 能否用 lobby 发现。
+
+### 16bis.2 分阶段（建议）
+- **CR0 真机验证**（§18 V1）：owner 离开后大厅/大厅聊天是否存活；`get_session_connection_info` 在断链/掉线的实际取值。
+- **CR1 快照带 meta（G1）**：写 `MatchState` 序列化（建议 `meta_ser` 对称 `world_ser`）+ 快照包扩展 + 往返测试 + `PROTOCOL_VERSION++`。
+  → **也直接修复现有迁移/重连的 meta 隐患**（不是只为崩溃重连）。
+- **CR2 会话持久化 + client 崩溃重开归队（G2）**：本地会话文件 + 重开提示「重新加入上一局」+ 重进 lobby + `ReconnectReq` + 快照（含 meta）+ `apply_resync`。
+- **CR3 host 崩溃重开 / 被取代归队为 client（G3）**：`into_transport` + 转 client 路径 + 权威发现（B 的 epoch）。
+- **CR4（可选）协调暂停 / 重连窗口 UX（G4）**：控制消息 `Pause{on}` + 暂停期间抑制迁移 + 界面倒计时。
+
+### 16bis.3 影响的模块
+- `game-core`：`meta_ser`（新）+ `PROTOCOL_VERSION`。
+- `net`：`Packet::Snapshot` 携带 meta；`Takeover` 携 epoch；`HostLockstep::into_transport`；补无头测试。
+- `net-steam`：`SendLobbyChatMsg` 发送 + `LobbyChatMsg` 回调接收（解析控制消息）；连接状态封装。
+- `client`：会话描述持久化（新文件，类似 `local_settings`）；重开时「重新加入上一局」入口；归队路径；暂停 UI（CR4）。
+
+### 16bis.4 待決（崩溃重连）—— 部分已定
+- **CR-Q1** ✅：先做 **CR0（验证）+ CR1（快照带 meta）**。
+- **CR-Q2** 🟡：暂停参照 WC3/Dota2（见 §20），待选模式。
+- **CR-Q3** ✅：host **整局保槽**（不硬过期，仅 UI 标“掉线中”）；client 前 60s 自动重试，之后允许手动/崩溃重开再接。
+- **CR-Q4** ✅：**LAN 不做**（D4/D5 重申，专注 Steam）。
+
+---
+
+## 18. 关键验证清单（真机，未做前不写代码的部分）
+- **V1（gates B / G5）**：房主（lobby owner）离开后：`lobby_members()` 是否仍返回其余成员？其余成员能否 `send_lobby_chat_message` 并收到 `LobbyChatMsg`？`get_lobby_owner()` 返回什么（0？移交？）？
+- **V2（gates A）**：断开网络/杀进程时，`get_session_connection_info(peer).state` 的实际取值序列（Connected→?；多久变 `ProblemDetectedLocally`/`ClosedByPeer`）。
+- **V3（gates 迁移正确性）**：跨回合/学习阶段触发迁移后，两端 `meta.round`/金币/技能是否一致（验证 G1 影响面）。
+
+---
+
+## 19. 重规划（双账号可测；**每步一个 commit**，另一端 `git pull` 后真机验收）
+
+> 前提已变：**现在可以双账号测试**，且**只做 Steam**（LAN 冻结）。因此把「先验后改」具体化为工具链：
+> **每步一个 commit**，commit 信息里附「真机验收清单」，你在另一账号拉取后按单跑。
+
+### 19.1 路线（每项 = 一个可提交、可验收的步骤）
+| 步骤 | 内容 | 依赖 | 需要双账号？ |
+|---|---|---|---|
+| **R0** | **诊断探针**：把 `get_session_connection_info().state`、`lobby_owner`、`lobby_members`、大厅聊天可达性写成日志（不改行为） | — | ✅（跑 V1/V2） |
+| **R1** | **E3**：掉线/迁移 UI + 时序优化（S1–S6，无协议改动） | — | 可单机看 UI；双账号更佳 |
+| **R2** | **CR1**：快照带 `MatchState`（meta），修跨回合重连隐患 | — | ✅（V3） |
+| **R3** | **A**：连接状态门控选举（减少误迁移） | R0 数据 | ✅ |
+| **R4** | **B**：epoch fencing（lobby-chat 控制面） | **R0/V1 结论** | ✅ |
+| **R5** | **CR2**：会话持久化 + client 崩溃重开归队 | R2 | ✅ |
+| **R6** | **CR3**：host 崩溃 / 被取代 → 转 client 归队 | R4/R5 | ✅ |
+| **R7**（可选） | **暂停**（CR-Q2 定后） | R1 | ✅ |
+
+### 19.2 为何 R0 先做
+- V1（大厅是否随 owner 离开而存活）是 **B 的硬前提**，也是一个日志就能回答的问题；
+- V2（断链时连接状态的真实取值/时延）决定 A 的阈值；
+- 先装探针、再让双账号跑几局，**用真实数据定参数**，避免拍脑袋。
+
+### 19.3 每步的 commit 约定
+- 一个 commit 只做一件事；message 末尾附 `真机验收：…`（列 2–4 条可操作步骤）。
+- 纯代码/文档不限；涉及协议（R2 `PROTOCOL_VERSION++`）要在 message 里标出。
+
+---
+
+## 20. 参照：War3 / Dota2 怎么处理掉线、暂停、重连
+
+> 大致行为（供设计参照，细节以各自版本为准）：
+
+| 维度 | 魔兽争霸 3（经典自定义） | Dota 2 | 我们（host 权威 lockstep + 快照） |
+|---|---|---|---|
+| 网络架构 | P2P 锁步（无专用服务器） | **专用服务器权威**（状态同步） | host 权威 lockstep + 周期快照（**近似“把 host 当小服务器”**） |
+| 掉线是否自动暂停 | **不自动**：掉线方单位采立，有文字提示 | **自动暂停**（约 2 分钟窗口，提示“X 已断线”） | 待定（CR-Q2） |
+| 重连 | 经典自定义基本都是“掉线即退出”，无可靠重连 | **自动重连 + 从服务器状态同步** | host 快照重连/迁移（已部分做） |
+| 放弃判定（abandon） | 掉线基本即算离开 | 约 5 分钟无重连算 abandon | host **整局保槽**（CR-Q3） |
+| 手动暂停 | **有**（弹提示；正式比赛有限制） | **有**（有暂停预算/次数限制） | 可选（R7） |
+
+**分析（对我们）**：我们的架构实际上是“轻量服务器”（host=小服务器、快照=状态同步），
+**在能力上更接近 Dota2**（能自动重连），而不是纯 WC3。所以：
+- 重连/状态同步：照 Dota2（我们已有快照），继续完善（meta 快照 + 发现/归队）。
+- 暂停（CR-Q2）：WC3 与 Dota2 **都有手动暂停**；Dota2 额外有“掉线自动暂停”。
+- 防滥用：**借用 Dota2 的“暂停预算/次数限制”**（避免一个人反复冻结全场）。
+
+### 20.1 CR-Q2 三选
+| 选项 | 含义 | 优点 | 缺点 |
+|---|---|---|---|
+| **P0 无暂停** | 掉线坐立，其余继续 | 最简、无滥用 | 等待体验差 |
+| **P1 仅 host 手动暂停/继续** | host 按键（或投票）暂停 | WC3/Dota2 都这么做；可控 | 依赖 host 自觉；需 UI |
+| **P2 掉线自动暂停 + 有限窗口** | 检测掉线就冻结等重连，超时继续 | Dota2 式，等待友好 | **可能被滥用**；需暂停预算/次数限制 |
+
+**建议**：本轮 **P0**（继续用“掉线坐立占位”）；把 **P1** 作为 R7 轻量项（host 手动，带提示）；
+**P2** 等崩溃重连（R5/R6）到位且加了暂停预算后再评估。
+
+### 20.2 待确认（重规划）
+- **RP-Q1**：按 §19.1 路线（R0→R1→…）推进，每步一 commit + 验收清单？
+- **RP-Q2**：CR-Q2 先按 **P0**，P1 列入 R7，P2 待定？
+
+---
+
+## 16. 老 host 被接管后能否重新连回来？
+
+### 16.1 现状
+- 旧 host 收到新 host 的 `Takeover`（`notify_old_host_takeover` 单发）→ `HostLockstep::is_superseded()` = true
+  → main.rs 直接 `reset_to_main_menu()`（**丢失本局**）。
+- 若旧 host **根本收不到** `Takeover`（非对称断链）→ 它继续产帧（僵尸权威）→ 脑裂（§15）。
+- 若旧 host 只是短暂卡顿、网络恢复：它仍在产帧，但客户端已迁移；它只能靠收到 `Takeover` 才知道退位——目前退到主菜单。
+
+### 16.2 “作为 client 归队”可行性分析
+**结论：技术可行**，接线大部分已存在：
+- 新 host 的 `HostLockstep` 的 `client_identities` 已含旧 host 的 SteamID（`takeover` 按 `participants` 建），
+  且 `auto_drop_idle` 已把它标为 `dropped`；旧 host 发 `ReconnectReq{SteamID}` → `unmark_dropped` **即可接回**。
+- 旧 host 从收到的 `Takeover{participants}` 就能得知新 host 的 SteamID。
+- 世界索引：原始 `participants` 不变 → 旧 host 用原 index 续打，不会重排。
+- **缺的接线**：
+  1. `HostLockstep` 没有 `into_transport()`（只有 `transport_ref()`）→ 需新增，才能把同一条 `SteamTransport`
+     从 HostLockstep 取出、重建为 `ClientLockstep`（参考 `takeover()` 反向）。
+  2. main.rs 需新增“被取代 → 转 client 归队”路径：取出 transport → 建 `ClientLockstep{host=新host}` →
+     `send_reconnect_req` → 收 `Snapshot` → 重建 World → `apply_resync` → 续打。
+
+### 16.3 分情况
+| 情况 | 能否归队 | 说明 |
+|---|---|---|
+| host 短暂卡顿/分区后恢复（进程未退） | ✅ 可（若实现 16.2） | 目前是退主菜单，改善空间大 |
+| host 进程崩溃后重开 | ⚠ 需额外流程 | SteamID 稳定，可重开→重进大厅；但需把“重进大厅”接到“拉快照归队”而非新建对局 |
+| 非对称断链（收不到 Takeover） | ❌ 当前不行 | 同 §15；需 B 方案的 lobby-chat epoch 才能可靠感知被取代 |
+| host 主动离场（退出菜单） | ❌ 不应归队 | 属主动 abandon（§2.2），不重连 |
+
+### 16.4 待決（老 host 归队）
+- **RH-Q1**：把「**被接管的新旧 host 转为 client 归队**」作为一个独立步骤（E6？）实现？还是先只改进提示（退主菜单前告知“你已被接管”）？
+- **RH-Q2**：若实现归队，崩溃重开后的“重进大厅→拉快照归队”也要一并做吗（更复杂）还是先只做“进程未退的短暂断链归队”？
+
+### 16.5 与 E3 的关系
+- E3 本轮**只做 UI/时序优化**（§14），不碰归队与防脑裂；归队（§16）/防脑裂（§15）/崩溃重连（§16bis）作为后续独立专题。
+- **建议排期**：E3（UI/时序）→ CR0/V1–V3（验证）→ CR1（快照带 meta）→ A+C → B（epoch fencing）→ CR2/CR3（崩溃重连）→ CR4（可选暂停）。
