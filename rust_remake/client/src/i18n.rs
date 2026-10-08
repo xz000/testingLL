@@ -527,6 +527,7 @@ const EN: &[(&str, &str)] = &[
     ("正在接管对局…", "Taking over the match…"),
     ("Esc 返回主菜单（放弃本局）", "Esc: return to main menu (abandon match)"),
     ("连接未能恢复，已返回主菜单", "Connection could not be recovered; returned to the main menu"),
+    ("无法确定新主机，已返回主菜单", "Could not determine a new host; returned to the main menu"),
     // ---- 对局内退出菜单（E1） ----
     ("对局菜单", "Match menu"),
     ("继续游戏", "Resume"),

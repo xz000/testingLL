@@ -1214,8 +1214,11 @@ impl<T: Transport> ClientLockstep<T> {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, _))) => {
                     if let Some(Packet::Resync { seq }) = Packet::decode(&rcv[..n]) {
-                        // 对齐到重连基线：丢弃所有更早的 pending 帧，从该 seq 起恢复严格按序。
-                        self.pending.retain(|(s, _)| *s >= seq);
+                        // 对齐到重连基线：**清空全部 pending**，从该 seq 起以快照重建的 world 为基线严格按序。
+                        // 为何全清而非 retain(>=seq)：快照重建后，resync 之前缓存的帧可能来自旧权威链/
+                        // 旧世界（如同序号不同内容），保留会污染恢复后的回放 → 造成 desync（2026-10-08 真机）。
+                        // 清空后 seq 起的帧由 host 可靠重发/广播补齐（frame_buf 含最近帧）。
+                        self.pending.clear();
                         self.expect_seq = seq;
                         return Ok(true);
                     }

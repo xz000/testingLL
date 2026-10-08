@@ -156,6 +156,9 @@ const STALE_HINT_TICKS: u64 = 30;
 /// S4：迁移阶段 A 重发 `ReconnectReq` 的间隔帧数（约 0.25s；host 侧另有回包限速）。
 #[cfg(feature = "steam")]
 const RECONNECT_REQ_EVERY: u64 = 15;
+/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（约 4.5s）→ 回菜单，不做最小 ID 回退。
+#[cfg(feature = "steam")]
+const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 270;
 /// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
 /// Steamworks 应用 AppID —— 由 `appid.rs` 按 **feature** 决定（正式版 908660 / demo 1042120）。

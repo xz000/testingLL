@@ -21,21 +21,19 @@
 
 use super::*;
 
-/// R3'：确定性选举新 host。
-/// **优先用 Steam 仲裁的当前 lobby owner**（`owner`）——全员从后端读到同一值，天然一致；
-/// 仅当 owner 不可用（`0` / 仍是旧 host = 移交未反映 / 不在本局在线参与集）时，
-/// 回退到「在线参与集中除旧 host 外的最小 SteamID」（确定性与旧逻辑一致）。纯函数，便于单测。
+/// R3'：确定性选举新 host = Steam 仲裁的当前 `lobby_owner`（`owner`），全员从后端读到同一值。
+/// 仅当 owner 合法（非 0 / 非旧 host / 在本局在线参与集）时返回它；**否则返回 0（不选举）**。
+///
+/// 为何**不做**“最小 SteamID 回退”（2026-10-08 真机教训）：若 owner 仍是旧 host（说明 Steam 尚未把
+/// ownership 移交 / 旧 host 可能还活着），回退会让自己“抢”当 host → 随后又被 R4② 自栅栏打回，
+/// 造成误接管与后续混乱。无法确定合法 owner 时，应由调用方继续探测，超时则回菜单。纯函数，便于单测。
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 pub(crate) fn elect_new_host(owner: u64, old_host: u64, online: &[u64]) -> u64 {
     if owner != 0 && owner != old_host && online.contains(&owner) {
-        return owner;
+        owner
+    } else {
+        0
     }
-    online
-        .iter()
-        .filter(|&&id| id != old_host)
-        .copied()
-        .min()
-        .unwrap_or(0)
 }
 
 /// R4②：host 是否应自栅栏退位。
@@ -113,16 +111,25 @@ impl Game {
                     .map(|lid| net_steam::session::lobby_owner(cli.transport_ref(), lid))
                     .unwrap_or(0);
                 let new_host_id = elect_new_host(owner, old_host_id, &self.steam_online);
-                self.steam_new_host_id = new_host_id;
-                // S6：进入阶段 B 重新计时，使 MIGRATE_BAIL_TICKS 的“接管窗口”名副其实。
                 if new_host_id != 0 {
+                    self.steam_new_host_id = new_host_id;
+                    // S6：进入阶段 B 重新计时，使 MIGRATE_BAIL_TICKS 的“接管窗口”名副其实。
                     self.steam_migrate_ticks = 0;
+                    eprintln!(
+                        "[steam-client] host gone (probe timeout), elected new host={new_host_id} (lobby_owner={owner}, I {}), online={:?}",
+                        if new_host_id == self.steam_my_id { "am new host" } else { "am client" },
+                        self.steam_online
+                    );
+                } else if self.steam_migrate_ticks >= MIGRATE_NO_OWNER_BAIL_TICKS {
+                    // owner 未移交/未知（无法确定合法新 host）→ 不再猜测（不做最小 ID 回退），回菜单。
+                    eprintln!(
+                        "[steam-client] cannot determine a valid new host (lobby_owner={owner}) after {MIGRATE_NO_OWNER_BAIL_TICKS} ticks; returning to menu"
+                    );
+                    self.reset_to_main_menu();
+                    self.menu_hint = i18n::t("无法确定新主机，已返回主菜单").to_string();
+                    self.accumulator = 0.0;
+                    return Ok(None);
                 }
-                eprintln!(
-                    "[steam-client] host gone (probe timeout), elected new host={new_host_id} (lobby_owner={owner}, I {}), online={:?}",
-                    if new_host_id == self.steam_my_id { "am new host" } else { "am client" },
-                    self.steam_online
-                );
             }
             return Ok(Some(cli));
         }
@@ -732,16 +739,14 @@ mod tests {
         assert!(!super::should_self_fence(9, 7, &[7]), "owner 不在参与集 → 不退位（保守）");
     }
 
-    /// owner 不可用时回退到「在线参与集中除旧 host 外的最小 SteamID」。
+    /// owner 不可用（未移交 / 无效 / 不在参与集）时**不选举**（返回 0，不再做最小 ID 回退）。
     #[test]
-    fn elect_falls_back_to_min_id_when_owner_invalid() {
-        // owner 仍是旧 host（Steam 移交未反映）→ 回退。
-        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 300);
-        // 无大厅 / owner 无效（0）→ 回退。
-        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 300);
-        // owner 不在本局在线参与集（如只在大厅但未参与）→ 回退。
-        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 300);
-        // 全部掉线/空集 → 0。
-        assert_eq!(elect_new_host(0, 100, &[100]), 0);
+    fn elect_returns_zero_when_owner_invalid() {
+        // owner 仍是旧 host（Steam 移交未反映）→ 不选举。
+        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 0);
+        // 无大厅 / owner 无效（0）→ 不选举。
+        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 0);
+        // owner 不在本局在线参与集（如只在大厅但未参与）→ 不选举。
+        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 0);
     }
 }
