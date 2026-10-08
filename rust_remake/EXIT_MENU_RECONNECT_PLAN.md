@@ -326,6 +326,10 @@
   S2 迁移模态覆盖层（探测房主/选拔新主机/接管 + spinner + 已等待秒数）；S3 阶段 B 超时回菜单前在主菜单底部提示原因；
   S4 迁移阶段 A `ReconnectReq` 节流到每 15 帧；S5 `MIGRATE_PROBE_TICKS` 60→90（1.5s）；
   S6 进入阶段 B 重置计时；Q2：迁移中按 Esc 直接返回主菜单（不走暂停菜单）。补 6 条 i18n。不改协议。
+- 2026-10-08：**R1 真机发现并修复两个问题**（`logs/console-menu-full-20261008-234039/234749.log`）：
+  ① `c00ea4e` 阶段 A 仅以 Snapshot 判恢复（不再见帧即 resume），修「落后>帧缓冲 → 反复 NO frames/resuming」死循环；
+  ② `50b44a3` 选举仅在 owner 合法时进行（**去掉最小 ID 回退**，否则 owner 未移交时会误接管 → 又被自栅栏打回）；
+  `apply_resync` 改为**清空全部 pending**（不再 retain≥seq），防恢复后旧链帧污染回放导致 desync。
 - 2026-10-08：**R2 真机复验时发现并修复一个真 bug**（`logs/console-menu-full-20261008-222141.log`）：主机迁移后旧 host 掉线，
   下一回合 `HostGather` 永远等它的 `PlayerCfg`（`all_cfgs` 未排除 `dropped`）→ 卡住。修：`net::lockstep::all_cfgs` 对 `dropped` 端不再要求 cfg
   （及其角色保持掉线前配置）；补单测 `host_all_cfgs_ignores_dropped_client`。
