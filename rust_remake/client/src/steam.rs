@@ -63,7 +63,10 @@ impl Game {
         self.steam_migrate_ticks = self.steam_migrate_ticks.saturating_add(1);
         // —— 阶段 A：探测 host 是否还在（尚未决定新 host）。
         if self.steam_new_host_id == 0 {
-            let _ = cli.send_reconnect_req(self.steam_my_id);
+            // S4：节流重发 `ReconnectReq`（每 ~0.25s），避免每帧刷可靠通道（host 侧另有回包限速）。
+            if self.steam_migrate_ticks % RECONNECT_REQ_EVERY == 0 {
+                let _ = cli.send_reconnect_req(self.steam_my_id);
+            }
             let old_host = cli.host_peer();
             // 只接受「来自旧 host」的包作为 host 还活着的证据：
             // 否则新 host（接管后）广播的 Snapshot 会被误判成“旧 host 还活着” → 恢复却不重定向 → 永远连旧 host。
@@ -103,6 +106,10 @@ impl Game {
                     .unwrap_or(0);
                 let new_host_id = elect_new_host(owner, old_host_id, &self.steam_online);
                 self.steam_new_host_id = new_host_id;
+                // S6：进入阶段 B 重新计时，使 MIGRATE_BAIL_TICKS 的“接管窗口”名副其实。
+                if new_host_id != 0 {
+                    self.steam_migrate_ticks = 0;
+                }
                 eprintln!(
                     "[steam-client] host gone (probe timeout), elected new host={new_host_id} (lobby_owner={owner}, I {}), online={:?}",
                     if new_host_id == self.steam_my_id { "am new host" } else { "am client" },
@@ -120,6 +127,8 @@ impl Game {
                 "[steam-client] migration Phase-B STALL: 收不到新 host 的 Takeover（{MIGRATE_BAIL_TICKS} 帧），放弃并退回主菜单"
             );
             self.reset_to_main_menu();
+            // S3：失败不再静默——回菜单后在主菜单底部提示原因。
+            self.menu_hint = i18n::t("连接未能恢复，已返回主菜单").to_string();
             self.accumulator = 0.0;
             return Ok(None); // 不归还 cli（reset_to_main_menu 已清 steam_cli_ls），避免呆cli被重新存回。
         }

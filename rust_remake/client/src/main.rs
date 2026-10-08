@@ -149,7 +149,14 @@ const CLIENT_STALE_TICKS: u64 = 180;
 /// Steam（client）：进入迁移后，探测“host 是否还在”的帧数（发 ReconnectReq 等 Snapshot 应答）。约 1 秒。
 /// 超时无应答则判定 host 掉线，开始选举新 host。
 #[cfg(feature = "steam")]
-const MIGRATE_PROBE_TICKS: u64 = 60;/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
+const MIGRATE_PROBE_TICKS: u64 = 90;
+/// S1：client 静默多少帧后显示「正在等待房主…」非模态提示（约 0.5s）。
+#[cfg(feature = "steam")]
+const STALE_HINT_TICKS: u64 = 30;
+/// S4：迁移阶段 A 重发 `ReconnectReq` 的间隔帧数（约 0.25s；host 侧另有回包限速）。
+#[cfg(feature = "steam")]
+const RECONNECT_REQ_EVERY: u64 = 15;
+/// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
 /// Steamworks 应用 AppID —— 由 `appid.rs` 按 **feature** 决定（正式版 908660 / demo 1042120）。
 /// 曾经在这里写死 908660；demo 版必须换 AppID，否则会以正式版身份初始化（云/工坊/统计全作用到正式版上）。
@@ -3657,6 +3664,14 @@ impl Game {
             self.draw_reconnect_overlay(&mut canvas, ctx)?;
         }
 
+        // S1/S2：等待房主横幅 / 主机迁移覆盖层（仅 Steam）。
+        #[cfg(feature = "steam")]
+        if self.steam_migrating {
+            self.draw_migration_overlay(&mut canvas, ctx)?;
+        } else if self.steam_cli_stale_ticks >= STALE_HINT_TICKS {
+            self.draw_waiting_host_banner(&mut canvas, ctx)?;
+        }
+
         // 帧同步分歧警示：检测到本端世界哈希与 host 广播不一致时显示红条。
         if self.desync_detected {
             let (sw, _sh) = (ui::UI_W, ui::UI_H);
@@ -4482,6 +4497,15 @@ impl Game {
     fn escape_menu_update(&mut self, ctx: &mut Context) -> bool {
         use ggez::input::keyboard::Key;
         use winit::keyboard::NamedKey;
+        // 迁移中：Esc = 放弃本局回主菜单（迁移覆盖层提示），不走暂停菜单。
+        #[cfg(feature = "steam")]
+        if self.steam_migrating {
+            if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+                self.leave_match();
+                return true;
+            }
+            return false;
+        }
         // Esc：关闭已打开的菜单；未打开则打开。
         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
             if self.escape_menu {
@@ -4626,6 +4650,56 @@ impl Game {
             i18n::t("↑/↓ 选择   回车 确认   Esc 继续")
         };
         ui::text_center(canvas, ctx, hint, 17.0, ui::theme::text_dim(), cx, panel.y + panel.h - 26.0)?;
+        Ok(())
+    }
+
+    /// S1：静默等待房主时的非模态顶部提示（不遮挡操作）。
+    #[cfg(feature = "steam")]
+    fn draw_waiting_host_banner(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, _sh) = (ui::UI_W, ui::UI_H);
+        let secs = self.steam_cli_stale_ticks as f64 / 60.0;
+        let bg = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, sw, 34.0),
+            Color::from_rgba(30, 40, 60, 200),
+        )?;
+        canvas.draw(&bg, graphics::DrawParam::new());
+        ui::text_center(
+            canvas,
+            ctx,
+            &i18n::tf("正在等待房主…（{secs}s）", &[("secs", format!("{secs:.0}"))]),
+            18.0,
+            Color::from_rgb(200, 220, 255),
+            sw / 2.0,
+            8.0,
+        )?;
+        Ok(())
+    }
+
+    /// S2：主机迁移期间的模态覆盖层（探测 / 选举 / 接管），spinner + 已等待秒数 + Esc 放弃提示。
+    #[cfg(feature = "steam")]
+    fn draw_migration_overlay(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        let dim = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(0.0, 0.0, sw, sh),
+            Color::from_rgba(8, 8, 12, 200),
+        )?;
+        canvas.draw(&dim, graphics::DrawParam::new());
+        let secs_s = format!("{:.0}", self.steam_migrate_ticks as f64 / 60.0);
+        let status = if self.steam_new_host_id == 0 {
+            i18n::tf("正在尝试重新连回房主…（{secs}s）", &[("secs", secs_s.clone())])
+        } else if self.steam_new_host_id == self.steam_my_id {
+            i18n::t("正在接管对局…").to_string()
+        } else {
+            i18n::tf("房主已离开，正在选拔新主机…（{secs}s）", &[("secs", secs_s.clone())])
+        };
+        let spinner = ["|", "/", "-", "\\"][(self.frame as usize / 8) % 4];
+        draw_text(canvas, ctx, &format!("{spinner} {status}"), 34.0, Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh * 0.42 }, true)?;
+        draw_text(canvas, ctx, "Esc 返回主菜单（放弃本局）", 20.0, Color::from_rgb(150, 200, 255), Point2 { x: cx, y: sh * 0.42 + 60.0 }, true)?;
         Ok(())
     }
 

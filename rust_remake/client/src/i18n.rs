@@ -520,6 +520,13 @@ const EN: &[(&str, &str)] = &[
     ("房主已离开房间", "The host left the room"),
     ("房主已退出或断开，本场无法继续", "The host left or disconnected; this match cannot continue"),
     ("按 Q / 回车 / Esc 返回主菜单", "Press Q / Enter / Esc to return to the main menu"),
+    // ---- E3：掉线等待 / 主机迁移 UI ----
+    ("正在等待房主…（{secs}s）", "Waiting for host… ({secs}s)"),
+    ("正在尝试重新连回房主…（{secs}s）", "Reconnecting to the host… ({secs}s)"),
+    ("房主已离开，正在选拔新主机…（{secs}s）", "Host left; electing a new host… ({secs}s)"),
+    ("正在接管对局…", "Taking over the match…"),
+    ("Esc 返回主菜单（放弃本局）", "Esc: return to main menu (abandon match)"),
+    ("连接未能恢复，已返回主菜单", "Connection could not be recovered; returned to the main menu"),
     // ---- 对局内退出菜单（E1） ----
     ("对局菜单", "Match menu"),
     ("继续游戏", "Resume"),

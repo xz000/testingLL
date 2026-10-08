@@ -322,6 +322,10 @@
   - ①`ClientLockstep::{step_frame,pump_frames}` 只接受来自 `self.host` 的 `Frame`/`Snapshot`/`StateHash`；`recv_snapshot` 同样只收 host 的。
   - ②host 每 30 帧查 `lobby_owner()`，`should_self_fence(owner,me,participants)` 为真则退位（R4 暂为回菜单）。
   - 新增 3 单测（client_ignores/accepts_frames_from_host + self_fence_only_when_owner_is_someone_else）；修一个 FakeTransport 建模不一致的旧测试。不改协议。
+- 2026-10-08：**R1（E3 UI/时序）已落**：S1 静默>0.5s 顶部非模态「正在等待房主…（{secs}s）」；
+  S2 迁移模态覆盖层（探测房主/选拔新主机/接管 + spinner + 已等待秒数）；S3 阶段 B 超时回菜单前在主菜单底部提示原因；
+  S4 迁移阶段 A `ReconnectReq` 节流到每 15 帧；S5 `MIGRATE_PROBE_TICKS` 60→90（1.5s）；
+  S6 进入阶段 B 重置计时；Q2：迁移中按 Esc 直接返回主菜单（不走暂停菜单）。补 6 条 i18n。不改协议。
 - 2026-10-08：**R2 真机复验时发现并修复一个真 bug**（`logs/console-menu-full-20261008-222141.log`）：主机迁移后旧 host 掉线，
   下一回合 `HostGather` 永远等它的 `PlayerCfg`（`all_cfgs` 未排除 `dropped`）→ 卡住。修：`net::lockstep::all_cfgs` 对 `dropped` 端不再要求 cfg
   （及其角色保持掉线前配置）；补单测 `host_all_cfgs_ignores_dropped_client`。
