@@ -596,7 +596,7 @@
 | **R5** | **CR2**：会话持久化 + client 崩溃重开归队 | R2 | ✅ |
 | **R6** | **CR3**：host 崩溃 / 被取代 → 转 client 归队（U2） | R4/R5 | ✅ |
 | **R7**（可选） | **暂停**（CR-Q2 定后） | R1 | ✅ |
-| **R8**（新） | **有界 backlog 追赶**（client 落后时加速追帧，见 §21） | — | ✅（可单机+真机） |
+| **R8 ✅** | **有界 backlog 追赶**（见 §21）：阈值 6 / 上限 10，仅 Steam | — | 真机可验 |
 
 > ~~R3（A：连接状态门控选举）~~ **【已撤回：V2 证明状态不可靠】**。实施顺序改为**正确性优先**：
 > `R2 → R3' → R4 → R1 → R5/R6`（先堵正确性与脑裂风险，UI 放后；UI 对着稳定状态机只写一次）。
@@ -734,6 +734,8 @@
 - 无头：client 落后 N 帧（模拟 pending 积压）后，应在有界 update 数内追平，且与 host 世界逐位一致（扩展 `netlink`/`lockstep` 测试）。
 - 不改协议。
 
-### 21.6 待确认
-- **CU-Q1**：采纳 §21.3 的阈值/上限（6 / 10）？
-- **CU-Q2**：仅 Steam 先做，还是一并给 LAN？
+### 21.6 决策（已定 2026-10-09）
+- **CU-Q1** ✅：采纳阈值 **6** / 上限 **10**（不合适后续再调）。
+- **CU-Q2** ✅：**仅 Steam**，不管 LAN。
+- **R8 已落**：`should_step_more(acc, pending_len, steps_done)` 纯函数 + Steam client 推进循环改造
+  （backlog>6 时每 update 额外追帧至 10 步；追赶步不扣 accumulator）；补单测 `catchup_budget_only_when_backlog_and_capped`。

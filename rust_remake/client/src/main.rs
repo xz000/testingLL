@@ -159,6 +159,23 @@ const RECONNECT_REQ_EVERY: u64 = 15;
 /// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（约 4.5s）→ 回菜单，不做最小 ID 回退。
 #[cfg(feature = "steam")]
 const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 270;
+/// R8：client backlog 超过该帧数才触发追赶加速（避开平时抖动）。仅 Steam。
+#[cfg(feature = "steam")]
+const CATCHUP_BACKLOG_THRESHOLD: usize = 6;
+/// R8：每个 update 最多推进的帧数上限（含正常步），防一帧内 step 过多卡顿。仅 Steam。
+#[cfg(feature = "steam")]
+const CATCHUP_MAX_PER_UPDATE: usize = 10;
+
+/// R8：本 update 是否还应继续推进一帧？
+/// - 正常：`accumulator >= TICK`（实时节奏）；
+/// - 追赶：`pending_len` 超过阈值且本 update 步数未达上限 → 额外消费 backlog（有界）。
+///
+/// 纯函数，便于单测。仅 Steam。
+#[cfg(feature = "steam")]
+fn should_step_more(accumulator: f64, pending_len: usize, steps_done: usize) -> bool {
+    accumulator >= TICK
+        || (pending_len > CATCHUP_BACKLOG_THRESHOLD && steps_done < CATCHUP_MAX_PER_UPDATE)
+}
 /// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
 /// Steamworks 应用 AppID —— 由 `appid.rs` 按 **feature** 决定（正式版 908660 / demo 1042120）。
@@ -6855,7 +6872,12 @@ impl event::EventHandler for Game {
                         // 输入**每模拟 tick 上行一条**（与 host 每帧消耗 1 条一一对应）。
                         // 注：不能改成“每次 update 只发一条”——若 client 渲染<60fps，发送率会低于 host
                         // 产帧率，host `try_emit` 就会因缺输入而停摆（实测：sim 掉到 ~20–30Hz 且抖）。
-                        while self.accumulator >= TICK {
+                        // R8：有界 backlog 追赶——正常按 accumulator 步进；若 backlog 超过阈值，
+                        // 则在本 update 内额外消费 pending（最多 CATCHUP_MAX_PER_UPDATE 步），尽快回到 live。
+                        // 追赶步不由 accumulator 供资（不扣 accumulator），避免追赶后 accumulator 欠账变慢。
+                        let mut steps_this_update: usize = 0;
+                        while should_step_more(self.accumulator, cli.pending_len(), steps_this_update) {
+                            let funded = self.accumulator >= TICK;
                             // 诊断（每 5s 汇总）：上行输入间隔。
                             {
                                 let now = ctx.time.time_since_start().as_secs_f64();
@@ -6917,7 +6939,10 @@ impl event::EventHandler for Game {
                                     self.client_input_stats.reset();
                                     self.client_pending_max = 0;
                                 }
-                                self.accumulator -= TICK;
+                                if funded {
+                                    self.accumulator -= TICK;
+                                }
+                                steps_this_update += 1;
                             } else {
                                 // 本帧无权威帧：累计掉线计数，超阈值进入「主机迁移/重连探测」（host 可能掉线）。
                                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
@@ -12487,6 +12512,22 @@ mod tests {
         // 最后一张卡片必须落在底部提示条（UI_H - 34）之上，避免压字。
         let last = rects[3];
         assert!(last.y + last.h < super::ui::UI_H - 34.0, "卡片不得与底部提示重叠");
+    }
+
+    /// R8：追赶预算判定（仅 Steam）。
+    #[cfg(feature = "steam")]
+    #[test]
+    fn catchup_budget_only_when_backlog_and_capped() {
+        // accumulator 够 → 继续（正常节奏）。
+        assert!(super::should_step_more(0.05, 0, 0));
+        // accumulator 不够 + 无 backlog → 停。
+        assert!(!super::should_step_more(0.001, 0, 0));
+        // 恰好等于阈值（非 >）→ 不追。
+        assert!(!super::should_step_more(0.001, super::CATCHUP_BACKLOG_THRESHOLD, 0));
+        // backlog 超过阈值且未达上限 → 追。
+        assert!(super::should_step_more(0.001, super::CATCHUP_BACKLOG_THRESHOLD + 1, 0));
+        // 达到上限 → 停（即便 backlog 很大）。
+        assert!(!super::should_step_more(0.001, 999, super::CATCHUP_MAX_PER_UPDATE));
     }
 
     /// E1：`is_in_match` 只对真正的对局模式为真（主菜单为假）。
