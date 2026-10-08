@@ -589,16 +589,22 @@
 | 步骤 | 内容 | 依赖 | 需要双账号？ |
 |---|---|---|---|
 | **R0 ✅** | **诊断探针**（已落 `7f5f209`） | — | ✅ 已跑 V1/V2 |
-| **R2** | **CR1**：快照带 `MatchState`（meta），修跨回合重连隐患（**升 `PROTOCOL_VERSION`**） | — | ✅（V3） |
-| **R3'** | **C**：选举改用 `lobby_owner()`（Steam 仲裁的新 owner 即新 host） | — | ✅ |
-| **R4** | **B**：owner 写**大厅元数据** epoch 权威（防脑裂兜底） | R3' | ✅ |
-| **R1** | **E3**：掉线/迁移 UI + 时序优化（S1–S6，无协议改动） | — | 可单机看 UI；双账号更佳 |
+| **R2 ✅** | **CR1**：快照带 `MatchState`（meta）（`95e8a1f`，协议 40） | — | ✅（V3） |
+| **R3' ✅** | **选举 = `lobby_owner()`**（`9e50746`） | — | ✅ |
+| **R4 ✅** | **防脑裂**：①客户端只认当前 host 的帧/快照/哈希 ②host 自栅栏（`970d954`） | R3' | ✅ |
+| **R1 ✅** | **E3**：掉线/迁移 UI + 时序优化 S1–S6（`377ef9e`） | — | ✅ |
 | **R5** | **CR2**：会话持久化 + client 崩溃重开归队 | R2 | ✅ |
-| **R6** | **CR3**：host 崩溃 / 被取代 → 转 client 归队 | R4/R5 | ✅ |
+| **R6** | **CR3**：host 崩溃 / 被取代 → 转 client 归队（U2） | R4/R5 | ✅ |
 | **R7**（可选） | **暂停**（CR-Q2 定后） | R1 | ✅ |
+| **R8**（新） | **有界 backlog 追赶**（client 落后时加速追帧，见 §21） | — | ✅（可单机+真机） |
 
 > ~~R3（A：连接状态门控选举）~~ **【已撤回：V2 证明状态不可靠】**。实施顺序改为**正确性优先**：
 > `R2 → R3' → R4 → R1 → R5/R6`（先堵正确性与脑裂风险，UI 放后；UI 对着稳定状态机只写一次）。
+>
+> **计划外修复（R1 真机发现，已落）**：
+> - `f41b54f`：迁移后回合间 `HostGather` 不再等掉线端的 cfg（`all_cfgs` 排除 `dropped`）。
+> - `c00ea4e`：迁移阶段 A 仅以 `Snapshot` 判恢复（修「落后>帧缓冲 → 反复 NO frames/resuming」死循环）。
+> - `50b44a3`：选举仅在 owner 合法时进行（去最小 ID 回退）+ `apply_resync` 清空 pending（防恢复后 desync）。
 
 ### 19.2 为何先做 R0 / 为何改正确性优先
 - R0 已用双账号实测回答 V1/V2（见 §18.1），并**改变了方案**（放弃 A、C 升主、B 改元数据）。
@@ -695,3 +701,39 @@
 ### 16.5 与 E3 的关系
 - E3 本轮**只做 UI/时序优化**（§14），不碰归队与防脑裂；归队（§16）/防脑裂（§15）/崩溃重连（§16bis）作为后续独立专题。
 - **建议排期**：E3（UI/时序）→ CR0/V1–V3（验证）→ CR1（快照带 meta）→ A+C → B（epoch fencing）→ CR2/CR3（崩溃重连）→ CR4（可选暂停）。
+
+---
+
+## 21. R8：客户端有界 backlog 追赶（计划）
+
+### 21.1 现状（真机 `logs/console-menu-full-20261008-235620.log`）
+- 重连后 `host alive, resumed from snapshot seq=780`；`pending_max` 一度达 **222 帧**（≈3.7s）。
+- 稳态下客户端基本 **~1× 实时**推进（`MAX_CATCHUP_STEPS=8` 只在**单帧超长**时生效；每帧正常 dt≈16ms 只够 1 步）。
+- 后果：能慢慢排空，但**排空前客户端一直落后**（offset 恒定）→ 输入延迟偏高、画面比 host 慢半拍。
+
+### 21.2 目标
+有 backlog 时以**有界**速度追赶，尽快回到「live」；无 backlog 时保持 1× 实时（不增加平时开销）。
+
+### 21.3 机制（建议）
+- 在 client 的推进循环里，**每 update 步进后**：若 `cli.pending_len() > CATCHUP_BACKLOG_THRESHOLD`
+  且本 update 已步数 `< CATCHUP_MAX_PER_UPDATE`，则**继续消费 pending**（不依赖 accumulator）。
+- 仍**严格按 host 帧序**应用（确定性不变，只是把“快进”做得更主动）。
+- 参数（建议，可调）：
+  - `CATCHUP_BACKLOG_THRESHOLD = 6`（超过这么多积压才加速，避开平时抖动）
+  - `CATCHUP_MAX_PER_UPDATE = 10`（每 update 最多额外 step，防一帧内卡顿）
+- 纯函数抽 `catchup_budget(pending_len, stepped_this_update, threshold, cap) -> usize` 便于单测。
+- 追赶期间可跳过头像/ping 等非关键周期工作（可选）。
+
+### 21.4 边界/权衡
+- 追赶时世界会「快进」（角色/弹幕前移）——预期；`prev_player_pos` 插值可能跳一下，可接受。
+- K 取太大（如 60）会一帧内 step 60 次→明显卡顿，故必须有上限；稳态不触发。
+- 是否只 Steam？逻辑在 client、传输无关，可两者都用；先 Steam 真机验证。
+
+### 21.5 测试
+- 纯函数：`catchup_budget` 各分支单测。
+- 无头：client 落后 N 帧（模拟 pending 积压）后，应在有界 update 数内追平，且与 host 世界逐位一致（扩展 `netlink`/`lockstep` 测试）。
+- 不改协议。
+
+### 21.6 待确认
+- **CU-Q1**：采纳 §21.3 的阈值/上限（6 / 10）？
+- **CU-Q2**：仅 Steam 先做，还是一并给 LAN？
