@@ -523,11 +523,15 @@ impl<T: Transport> HostLockstep<T> {
     }
 
     /// 是否已收齐所有【参与本局】的端（host 自身 + 参与 client）的配置（未参与的 vacant 槽位不要求）。
+    ///
+    /// **掉线的 client 不要求 cfg**：其角色保持掉线前的技能配置，不会再来上报。
+    /// 这在「主机迁移」后尤其关键——接管时旧 host 已掉线，若仍等它的 cfg，下一回合的
+    /// `HostGather` 会永远卡住（2026-10-08 真机发现：迁移后 `settle_round` → `round 2 HostGather` 一直 waiting）。
     pub fn all_cfgs(&self) -> bool {
         if self.local_base > 0 && self.local_cfg.is_none() {
             return false;
         }
-        (0..self.expected).all(|c| !self.is_active(c) || self.cfgs[c].is_some())
+        (0..self.expected).all(|c| !self.is_active(c) || self.dropped[c] || self.cfgs[c].is_some())
     }
 
     /// 合并所有【参与本局】端配置：`(player_index, bytes)`（host=0 在前，参与 client 随后），收齐才 Some。
@@ -1706,6 +1710,20 @@ mod tests {
             assert!(host.try_emit().is_some(), "掉线后 host 应继续产帧（不因缺 client 卡死）");
         }
         assert!(host.next_seq() > before, "掉线后 host 应持续前进");
+    }
+
+    /// 回归（2026-10-08 真机）：主机迁移后旧 host 掉线，回合间 `HostGather` 不应再等它的 cfg。
+    #[test]
+    fn host_all_cfgs_ignores_dropped_client() {
+        let (ht, _ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        host.set_local_cfg(vec![1, 2, 3]);
+        assert!(!host.all_cfgs(), "client 未掉线时缺 cfg 不应满足");
+        host.mark_dropped(1);
+        assert!(host.all_cfgs(), "client 掉线后不应再要求其 cfg");
+        let cfgs = host.collect_cfgs().expect("掉线端不要求后应可收齐");
+        assert_eq!(cfgs.len(), 1, "只应包含 host 自己的 cfg（掉线端不提供）");
+        assert_eq!(cfgs[0].0, 0, "host cfg 的 new index 为 0");
     }
 
     /// 重连全链路（client 侧收 Snapshot + Resync）：client 发 ReconnectReq →
