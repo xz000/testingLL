@@ -737,5 +737,56 @@
 ### 21.6 决策（已定 2026-10-09）
 - **CU-Q1** ✅：采纳阈值 **6** / 上限 **10**（不合适后续再调）。
 - **CU-Q2** ✅：**仅 Steam**，不管 LAN。
-- **R8 已落**：`should_step_more(acc, pending_len, steps_done)` 纯函数 + Steam client 推进循环改造
+- **R8 已落**（`0620f7e`）：`should_step_more(acc, pending_len, steps_done)` 纯函数 + Steam client 推进循环改造
   （backlog>6 时每 update 额外追帧至 10 步；追赶步不扣 accumulator）；补单测 `catchup_budget_only_when_backlog_and_capped`。
+  真机复验（`logs/console-menu-full-20261009-002513.log`）：`resumed seq=540` 后 `pending_max=25` 且 ~1s 内排空，无 DESYNC。
+
+---
+
+## 22. R5 / R6：归队（设计拆分）
+
+> 目标：**崩溃或卡顿后，能重新加入正在进行的一局**（不是新建一局）。
+> R5 = **client** 崩溃重开归队；R6 = **host** 崩溃/被取代 → 转 client 归队（UX = U2 自动尝试+覆盖层）。
+> 两者共享同一个核心动作：「以稳定身份（SteamID）重进大厅 → 向当前 host 发 `ReconnectReq` → 收 `Snapshot`(含 meta) → `apply_resync` → 继续当 client」。
+
+### 22.1 共同件（先做）
+- **C1 归队握手**（新 client 路径；与「新开局」区分）：
+  - 入参：`Transport`、`new_host: Peer`、`my_steam_id`、期望参与者/自己的 index。
+  - 行为：节流重发 `ReconnectReq{my_steam_id}` → 等 host 回 `Snapshot` → 重建 world+meta（复用 R2）→ `apply_resync` → 返回 `ClientLockstep`。
+  - 超时（建议 15s）→ 失败（回菜单）。
+  - 与现有「新开局」的 `finish_enter_steam_mode` Join 分支**分开**：后者会 `stage_world_for_participants` 建新 world，**不能**用于归队。
+- **C2 `HostLockstep::into_transport()`**：从 HostLockstep 取出 `T`（镜像 `ClientLockstep::into_transport`）——R6 把被取代的 host 转成 client 要用。
+- **C3 会话描述持久化**：小文件（建议 app data，如 `session_rejoin.json`）：`{lobby_id, matchkey, my_steam_id, participants, protocol_version, saved_at}`。
+  - 写入：进房/开局时写；参与者变化时更新。清除：干净离场/`reset_to_main_menu`。
+  - 有效期：建议 30 分钟（超出忽略）。
+
+### 22.2 R5：client 崩溃重开归队
+- **H1 启动发现**：主菜单启动时若会话文件存在且新鲜 → 底部/弹窗提示「重新加入上一局」；玩家确认才尝试（不自动，避免误入）。
+- **H2 加入 + 归队**：初始化 Steam 会话 → 按 `lobby_id` join → 取当前权威（`lobby_owner`；若已迁移则是新 host）→ 跑 **C1** 握手 → 归队。
+- **H3 边界**：host 也不在/大厅已关 → join 失败或握手超时 → 提示并回菜单。
+- 依赖：R2（快照带 meta，已落）、C1/C3。
+
+### 22.3 R6：被取代/自栅栏的 host → 转 client 归队（U2）
+- 触发：host 收到 `Takeover`（`is_superseded`）或 R4② 自栅栏（`lobby_owner != 自己`）。
+- **H1 转 client**：用 **C2** 取出 transport → 建 `ClientLockstep{host=新host}` → 跑 **C1** 握手 → 归队（我的 index = 原 participants 中位置）。
+  - 新 host 信息：来自收到的 `Takeover{participants}`（含 source）或 `lobby_owner()`。
+- **H2 UX（U2）**：覆盖层「你已被接管，正在重新加入对局…（{t}s）」+「Esc 返回主菜单」；成功→续打；超时/失败→横幅 + 回菜单。
+  - 复用 R1(E3) 的连接恢复覆盖层组件。
+- **H3 边界/防循环**：若新 host 也够不到、或归队失败 → 不再重试，回菜单（不自杀式循环）。
+- 依赖：R4（自栅栏）、C1/C2。
+
+### 22.4 分阶段实施（每步一 commit）
+| 步 | 内容 | 依赖 | 可测 |
+|---|---|---|---|
+| **R6a** | `HostLockstep::into_transport` + net 单测（host→取出 transport→建 ClientLockstep） | — | 单测 |
+| **R5a** | 会话描述序列化（`to_bytes/from_bytes` 纯函数）+ 写/读/清除点 | — | 单测 |
+| **R5b** | C1 归队握手（重建 ClientLockstep，从快照恢复 world+meta） + 单测（无头） | R6a/R5a | 单测+真机 |
+| **R5c** | 启动「重新加入上一局」提示 + join + 归队（client 崩溃场景） | R5b | 真机 |
+| **R6b** | 被取代/自栅栏 host → C2+C1 归队 + U2 覆盖层 | R6a/R5b | 真机 |
+| **R7**（可选） | 暂停（P1 手动 / P2 待定） | — | 真机 |
+
+### 22.5 待确认
+- **RJ-Q1**：崩溃重开是**提示确认**（建议）还是**自动重连**？
+- **RJ-Q2**：会话文件位置/有效期（建议 app data / 30 分钟）？
+- **RJ-Q3**：归队握手超时（建议 15s）？
+- **RJ-Q4**：先做 **R5（client 崩溃）** 还是 **R6（host 归队）**？（两者共享 C1；建议先 R6a+R5a 打底，再 R5b（握手），然后 R5c/R6b）
