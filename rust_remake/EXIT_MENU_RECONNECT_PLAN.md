@@ -310,6 +310,8 @@
 - 2026-09-27：E1/E2/E4 已落（`6bab72d`/`274e8b8`/`4e356d8`）；新增 §14（E3 深入：现状时序 + 问题 + 优化建议）。
 - 2026-09-27：E3 三问已定（§14.7：采纳全部 S1–S6；允许 Esc 放弃；超时横幅+回菜单）；新增 §15（脑裂与 Steamworks 工具）、§16（老 host 归队可行性）。脑裂/归队均作为后续独立专题，**尚未开工**。
 - 2026-10-08：**R0 实测（§18.1）**：V1 ✅ 房主离开后大厅存活、owner 自动移交（→ B 可行；C 升为主方案）；V2 ⚠ 连接状态不可靠（→ **放弃 A**，改 R3' = lobby_owner 选举）。R0 探针已提交（`7f5f209`/`2e2d571`）。
+- 2026-10-08：**B 修订为「owner 写大厅元数据 epoch」**（聊天内容因 `Client: !Send` 无法在回调中读取，见 §15.2）；
+  实施顺序改为**正确性优先** `R2 → R3' → R4 → R1 → R5/R6`（§19.1）。
 
 ---
 
@@ -414,16 +416,20 @@
 - **C. 以 `lobby_owner()` 为权威（【升级为主方案】）**：V1 实测证明 **房主离开后 Steam 会自动把 owner
   移交给留下的成员（几乎即时）**，且 `lobby_owner()` 是**全员一致**的权威。故可把“新 host = 当前 `lobby_owner()`”
   作为选举，**替代**现在的“最小 SteamID”启发式——确定性 + 由 Steam 仲裁、天然无脑裂。
-- **B. Lobby 聊天 fencing（强效补充）**：新 host 的 `Takeover` 除 P2P 外，**另经 `SendLobbyChatMsg` 广播**一个带
-  **epoch（递增代次）** 的宣告；各端只认最高 epoch；旧 host 即使 P2P 被隔离，也能从后端看到自己被取代而**退位**。
-  V1 证明大厅在 owner 离开后**仍存活**，故 B **可行**。
+- **B. 权威 fencing（走大厅元数据，【修订】）**：新 host 把 **`authority = "epoch:hostid"` 写入大厅元数据**
+  （`set_lobby_data`，**只有 owner 能写**）；各端定期 `lobby_data` 读取，只认最高 epoch，hostid 变了就 retarget。
+  旧 host 只要还连得上 Steam 后端，读到更高 epoch 即**退位**。
+  > **为何不用大厅聊天**：聊天内容只能在回调作用域内读（`chat_id` 出回调即失效），而回调闭包要求 `Send`，
+  > 但 `steamworks::Client` 内含 `Manager`（原始指针）为 **`!Send`**，无法带进回调 → 解析聊天内容做不了。
+  > 而**元数据读写无需回调**，且只有 owner 能写——恰好与 **C（host=owner）** 合体。
 
-> 修订后的推荐：**C（election = lobby_owner）为主 + B（epoch fencing）为兜底**；**A 不做**。
+> 修订后的推荐：**C（election = lobby_owner）为主 + B（owner 写大厅元数据 epoch）为兜底**；**A 不做**。
 > 真正的网络分区无 API 能完全根除；C 提供一致权威，B 把“双权威窗口”降到极小。
+> V1 实测：owner 离开后大厅**仍存活**且 owner **自动移交** → 元数据通道可用。
 
-### 15.3 待決（防脑裂）
-- **SP-Q1** ✅ 已定（2026-09-27）：**直接做 A+B+C**。0.13.1 已含所需全部 API（`get_session_connection_info`/
-  `lobby_owner`/`send_lobby_chat_message`+`LobbyChatMsg` 回调），**无需升级组件版本**。
+### 15.3 決策（防脑裂）—— 已定（2026-10-08）
+- **SP-Q1**：**C（选举 = `lobby_owner()`）为主 + B（owner 写大厅元数据 epoch）为兜底**；**A 撤回**（V2 证明连接状态不可靠）。
+- 0.13.1 已含所需 API（`lobby_owner`/`set_lobby_data`/`lobby_data`），**无需升级组件版本**。
 
 ### 15.4 A+B+C 详细设计
 **A. 连接状态门控选举**
@@ -433,20 +439,22 @@
   - `ClosedByPeer` / `ProblemDetectedLocally` / `None` → 确认掉线 → 选举。
 - 也可用 `realtime.connection_state()` 双重确认。
 
-**B. Epoch fencing（经 Steam 后端）**
-- 引入**权威代次** `Authority { epoch: u64, host_id: u64 }`；对局开始 epoch=0（host=建房者）。
-- 迁选新 host：`epoch += 1`；新 host 既要 P2P 广播 `Takeover`，**又要 `SendLobbyChatMsg` 发一条控制消息**
-  （如 `[CB1]TAKEOVER e=<epoch> h=<hostid>`），走 **Steam 后端**、不受 P2P 不对称隔离影响。
-- 各端只接受 **epoch 最高**的权威；旧 host（即使 P2P 被隔离）从后端消息看到 epoch 更高 → `superseded` 退位。
-- 可顺带把 `[CB1]HB e=.. h=..` 作低频心跳（与快照广播同频，~2.5s），让被隔离端也能得知当前权威/识别自己已被取代。
-- 协议：`Packet::Takeover` 加 `epoch` 字段（运行期包，不进 World；但改了 `proto.rs` → 补 roundtrip 测试）。
+**B. 权威 fencing（大厅元数据，【修订】）**
+- 引入**权威代次** `Authority { epoch: u64, host_id: u64 }`；对局开始 epoch=0（host=建房者，也是 owner）。
+- **当前 host = lobby owner**（见 C），故它**有权限** `set_lobby_data(ROOM_AUTH_KEY, "epoch:hostid")`：
+  - 开局写 `0:<host>`；每次迁移写 `epoch+1:<新host>`。
+- 各端（含旧 host）定期（~1–2s）`lobby_data(ROOM_AUTH_KEY)` 读取：
+  - 只认**最高 epoch**；若 `hostid` ≠ 当前权威 peer → `retarget_host` 并向该 host 请求快照/对齐。
+  - 旧 host 读到更高 epoch → `superseded` 退位（不再产帧）。
+- 优点：**无需解析聊天内容**（绕开 `!Send` 阻塞）、后端一致性由 Steam 保证、与 owner 移交天然契合。
+- 协议：`Packet::Takeover` 可选加 `epoch` 字段（运行期包，不进 World → 不升 `PROTOCOL_VERSION`；改了 `proto.rs` 补 roundtrip）。
 
-**C. Owner 辅助**
-- 选举结果与 `lobby_owner()` 交叉校验；二者不一致时**以 owner 为准**（待验证 owner 离开后的行为后再定策略）。
+**C. 选举 = `lobby_owner()`（主方案）**
+- V1 实测：房主离开后 Steam **自动且近乎即时**把 owner 移交给留下的成员 → 新 host 定义为**当前 `lobby_owner()`**，
+  **替代**“最小 SteamID”启发式。全员读到的 owner 一致 → 天然无脑裂，且新 host 具备写元数据权限（支撑 B）。
+- 边界：owner 必须仍是**本局参与者/在线**（正常成立；若加入者中途进大厅而非参与对局需单独处理）。
 
-> ⚠ **B 的最大前提（必须真机验证）：原 host（= 建房者 = lobby owner）离开后，大厅是否仍存在、
-> 其余成员能否继续收发 lobby chat。** 若 Steam 在 owner 离开时销毁大厅，则 B 不可行，需改控制面方案
-> （例如：控制面用全员 P2P mesh，但那正是非对称分区时会断的路径）。→ 见 §18 验证清单 V1。
+> ✅ 前提已由 V1 实测确认（大厅在 owner 离开后仍存活、owner 自动移交、跨成员聊天双向）。
 
 ---
 
@@ -479,7 +487,7 @@
 ### 16bis.3 影响的模块
 - `game-core`：`meta_ser`（新）+ `PROTOCOL_VERSION`。
 - `net`：`Packet::Snapshot` 携带 meta；`Takeover` 携 epoch；`HostLockstep::into_transport`；补无头测试。
-- `net-steam`：`SendLobbyChatMsg` 发送 + `LobbyChatMsg` 回调接收（解析控制消息）；连接状态封装。
+- `net-steam`：`set_lobby_data`/`lobby_data` 封装（owner 写权威、全员读）；`lobby_owner()` 封装；连接状态封装（诊断用）。
 - `client`：会话描述持久化（新文件，类似 `local_settings`）；重开时「重新加入上一局」入口；归队路径；暂停 UI（CR4）。
 
 ### 16bis.4 待決（崩溃重连）—— 部分已定
@@ -526,20 +534,22 @@
 ### 19.1 路线（每项 = 一个可提交、可验收的步骤）
 | 步骤 | 内容 | 依赖 | 需要双账号？ |
 |---|---|---|---|
-| **R0** | **诊断探针**：把 `get_session_connection_info().state`、`lobby_owner`、`lobby_members`、大厅聊天可达性写成日志（不改行为） | — | ✅（跑 V1/V2） |
+| **R0 ✅** | **诊断探针**（已落 `7f5f209`） | — | ✅ 已跑 V1/V2 |
+| **R2** | **CR1**：快照带 `MatchState`（meta），修跨回合重连隐患（**升 `PROTOCOL_VERSION`**） | — | ✅（V3） |
+| **R3'** | **C**：选举改用 `lobby_owner()`（Steam 仲裁的新 owner 即新 host） | — | ✅ |
+| **R4** | **B**：owner 写**大厅元数据** epoch 权威（防脑裂兜底） | R3' | ✅ |
 | **R1** | **E3**：掉线/迁移 UI + 时序优化（S1–S6，无协议改动） | — | 可单机看 UI；双账号更佳 |
-| **R2** | **CR1**：快照带 `MatchState`（meta），修跨回合重连隐患 | — | ✅（V3） |
-| ~~R3~~ | ~~**A**：连接状态门控选举~~ **【撤回：V2 证明状态不可靠】** | — | — |
-| **R3'** | **C**：选举改用 `lobby_owner()`（Steam 仲裁的新 owner 即新 host） | R0/V1 结论 | ✅ |
-| **R4** | **B**：epoch fencing（lobby-chat 控制面） | R0/V1 结论 | ✅ |
 | **R5** | **CR2**：会话持久化 + client 崩溃重开归队 | R2 | ✅ |
 | **R6** | **CR3**：host 崩溃 / 被取代 → 转 client 归队 | R4/R5 | ✅ |
 | **R7**（可选） | **暂停**（CR-Q2 定后） | R1 | ✅ |
 
-### 19.2 为何 R0 先做
-- V1（大厅是否随 owner 离开而存活）是 **B 的硬前提**，也是一个日志就能回答的问题；
-- V2（断链时连接状态的真实取值/时延）决定 A 的阈值；
-- 先装探针、再让双账号跑几局，**用真实数据定参数**，避免拍脑袋。
+> ~~R3（A：连接状态门控选举）~~ **【已撤回：V2 证明状态不可靠】**。实施顺序改为**正确性优先**：
+> `R2 → R3' → R4 → R1 → R5/R6`（先堵正确性与脑裂风险，UI 放后；UI 对着稳定状态机只写一次）。
+
+### 19.2 为何先做 R0 / 为何改正确性优先
+- R0 已用双账号实测回答 V1/V2（见 §18.1），并**改变了方案**（放弃 A、C 升主、B 改元数据）。
+- 用户选择**正确性优先**：先把 R2（跨回合 meta 分歧）+ R3'/R4（脑裂）堵上，再做 R1 的 UI。
+  UI 后做的好处：对着**最终稳定**的迁移/选举状态机写一次，不返工。
 
 ### 19.3 每步的 commit 约定
 - 一个 commit 只做一件事；message 末尾附 `真机验收：…`（列 2–4 条可操作步骤）。
