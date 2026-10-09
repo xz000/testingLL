@@ -133,7 +133,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **A 也会砸柱** | `oB` 的遍历用**小写 `kv`（全对象表）** + `if(nv[gX]==1 or(Dv[gX] or fv[gX]))and cn[...]!=OR` ⇒ **可摧毁柱与飞行物一样吃伤** | 我们的 `explode_at` **只扫玩家** → **砸不到柱** | ⚠ 待办（真实差异） |
 | **B 岩浆弹体** | `OB`：`ev=2*(1+.1*ei)`、speed 400、`Rv=72`、`xv=.75`、`Av[+1/+2/+3]=true`、`Ev=16` | life 2.0×ei(0.1) ✓ / 400 ✓ / 72 ✓ / 反弹 .75 ✓（`pillar_restitution(S008)`） | ✅ |
 | **B 爆炸 `EB`** | `cX=3+1.5L`；半径 `200×sqrt(128+40xi+Rv[nr])/14.142`（xi=0、Rv=72 → 200）；`tI(nr,cX,.6,半径)` ⇒ **地板 .5、击退 .6**；`Jv` 与 `Gv` **都是 `ba`=EB** → 无论是被打掉还是到寿都炸 | 伤害 `blast_dmg=gx`（= def 4.5+1.5(L-1) = **3+1.5L** ✓✓ 正好）、半径公式 ✓、地板 .5 ✓、`blast_on_expiry=true` ✓、命中时也炸 ✓ | ✅（2026-09-22） |
-| **B 撞柱** | `Na`=Condition(`VB`)：`elseif Dv[Vr] then IA(nr); mI(nr,Vr,$A+2*Xv[nr],.8)` ⇒ 撞柱伤 **10+2L**、击退 .8、自毁 | 我方 S008B `pillar_bounce=false` → 走 blocked 分支扣 `gx`（=3+1.5L） | ⚠ **差异确认**：应 10+2L（L1=12）；忠实体需存等级/专用字段（改快照，需升协议）或沿用推导式 `gx*(4/3)+6`。待拍板 |
+| **B 撞柱** | `Na`=Condition(`VB`)：`elseif Dv[Vr] then IA(nr); mI(nr,Vr,$A+2*Xv[nr],.8)` ⇒ 撞柱伤 **10+2L**、击退 .8、自毁 | ✅ 已修（`f2eb383`）：新增 `ProjectileKind::W098b.pillar_dmg`（spawn 时 S008B = `10+2L`、其余 = `gx`），blocked/弹跳分支改用之；`PROTOCOL_VERSION` 41→**42**（快照格式变）；测试 `s008b_magma_pillar_damage_is_10_plus_2l` | ✅ |
 | **B 烤肉饼** | `Na` 对术士：伤害 + “pancake”减速（我们的 `Magma` + `Scorched`） | 近似 ✓ | ✅ 近似 |
 | tooltip 交叉验证 | 陨石：Damage `12+2L`、半径随 xi；岩浆：“Max AoE damage **4.5**”（= L1 的 3+1.5）、“DPS factor **0.6**” | ✓ 均合 | ✅ |
 
