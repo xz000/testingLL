@@ -5383,13 +5383,15 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let mut dir = towards(origin, target);
                 // 时间精通：闪电射程 +15%/级（JASS jb 600×(1+.15ei)）。
                 let mut remaining = range * Fix64::from_num(ei_mult(true));
-                let mut hit_any = false;
+                let caster_team = world.players.get(idx as usize).map(|p| p.team);
+                // 098c `xi` = 范围精通（AoE）：命中时在撞击点做 `sI`（半径 160×(1+.12xi)、地板 .15xi）。
+                let xi_aoe = world.players.get(idx as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
                 for _bounce in 0..4 {
-                    // 扫描本段最近命中：玩家 vs 柱子
+                    // 扫描本段最近命中：玩家 / 柱子 / 弹体（098c `Bb` 遍历 `kv` 全对象）。
                     let mut best_t = remaining;
                     let mut best_player: Option<u32> = None;
                     let mut best_pillar: Option<usize> = None;
-                    let caster_team = world.players.get(idx as usize).map(|p| p.team);
+                    let mut best_proj: Option<usize> = None;
                     for q in world.players.iter() {
                         if !q.alive || q.id == idx || Some(q.team) == caster_team {
                             continue;
@@ -5399,6 +5401,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 best_t = t;
                                 best_player = Some(q.id);
                                 best_pillar = None;
+                                best_proj = None;
                             }
                         }
                     }
@@ -5408,13 +5411,51 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 best_t = t;
                                 best_player = None;
                                 best_pillar = Some(oi);
+                                best_proj = None;
+                            }
+                        }
+                    }
+                    // 098c `Bb` 过滤：`Av[+2]`（可与弹体碰撞）且（异队 或 是火球）；排除反射盾。
+                    for (pi, pr) in world.projectiles.iter().enumerate() {
+                        if !pr.alive {
+                            continue;
+                        }
+                        let (is_fb, pr_radius, collides) = match &pr.kind {
+                            ProjectileKind::W098b { radius, is_fireball, col_mask, .. } => {
+                                (*is_fireball, *radius, *col_mask & W098B_COL_MISSILE != 0)
+                            }
+                            _ => continue,
+                        };
+                        if !collides {
+                            continue;
+                        }
+                        let enemy = world.players.get(pr.owner as usize).map(|p| p.team) != caster_team;
+                        if !enemy && !is_fb {
+                            continue;
+                        }
+                        if let Some((t, _)) = World::ray_circle_t(origin, dir, pr.pos, pr_radius) {
+                            if t < best_t {
+                                best_t = t;
+                                best_player = None;
+                                best_pillar = None;
+                                best_proj = Some(pi);
                             }
                         }
                     }
                     let seg_end = origin + dir * best_t;
                     world.lightning_visual.push((origin, seg_end, Fix64::from_num(0.1)));
+                    // 098c `sI`：命中（战/弹）时在撞击点做范围精通 AoE（`uI` 仍为真）。
+                    let aoe_at_hit = |w: &mut World| {
+                        if xi_aoe > 0.0 {
+                            let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi_aoe));
+                            let qi = 0.15 * xi_aoe;
+                            if splash_damage(&mut w.players, seg_end, idx, gx, radius, qi, w.damage_mult) > 0 {
+                                w.combat_events.push(CombatEvent::Splash { pos: seg_end, radius });
+                            }
+                        }
+                    };
                     if let Some(pid) = best_player {
-                        // 玩家命中：KI 伤害 + 击退，光束终止（098c：单段只结算一名玩家）
+                        // 玩家命中：KI 伤害 + 击退，光束终止（098c：单段只结算一名玩家）。
                         let vmana = world.players[pid as usize].mana;
                         let vic_hn = world.players[pid as usize].dmg_taken_mult;
                         let atk_gn = world.players.get(idx as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
@@ -5425,8 +5466,39 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 p.push_knockback(dir * kb * world.knockback_mult);
                             }
                         }
-                        hit_any = true;
+                        aoe_at_hit(world);
                         break;
+                    }
+                    if let Some(pi) = best_proj {
+                        let owner = world.projectiles[pi].owner;
+                        let ppos = world.projectiles[pi].pos;
+                        let (is_fb, fbdmg, blast, blast_dmg, kb_ji_p, blast_floor) = match &world.projectiles[pi].kind {
+                            ProjectileKind::W098b { is_fireball, gx, blast, blast_dmg, kb_ji, blast_floor, .. } => {
+                                (*is_fireball, *gx, *blast, *blast_dmg, *kb_ji, *blast_floor)
+                            }
+                            _ => unreachable!(),
+                        };
+                        let same_team = world.players.get(owner as usize).map(|p| p.team) == caster_team;
+                        if is_fb && same_team {
+                            // 098c `pI` 引爆己方火球：半径 230、伤害 `2*(cX+火球伤)/3`、地板 .6。
+                            let cxf = gx.to_num::<f64>();
+                            let fbd = fbdmg.to_num::<f64>();
+                            let dmg = Fix64::from_num((2.0 * (cxf + fbd) / 3.0).max(0.0));
+                            let r = Fix64::from_num(230.0);
+                            splash_damage(&mut world.players, ppos, idx, dmg, r, 0.6, world.damage_mult);
+                            world.combat_events.push(CombatEvent::Splash { pos: ppos, radius: r });
+                            world.projectiles[pi].alive = false;
+                            // `uI=false` → 不再做末端 AoE
+                            break;
+                        } else {
+                            // 098c：触发该弹体的 `Jv`（销毁回调）；我们销毁并按 `blast` 触发爆炸。
+                            world.projectiles[pi].alive = false;
+                            if let Some(r) = blast {
+                                world.explode_at(ppos, owner, r, blast_dmg, Fix64::from_num(100.0) * blast_dmg * kb_ji_p, false, DeniedMode::Off, DmgFalloff::FloorMul(blast_floor), KbAttn::Fixed);
+                            }
+                            aoe_at_hit(world);
+                            break;
+                        }
                     }
                     if let Some(oi) = best_pillar {
                         // 柱子反射（098c Bb 反射段，D9 技能手感批）：镜向方向继续，剩余射程递减
@@ -5434,12 +5506,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         origin = seg_end + normal;
                         dir = crate::fix::mirror_by(dir, normal);
                         remaining -= best_t;
-                        hit_any = true;
                         continue;
                     }
-                    break; // 无命中：光束到射程终点
+                    break; // 无命中：光束到射程终点（`uI=false`，不做末端 AoE）
                 }
-                let _ = hit_any;
             }
             SkillEffect::Missile { .. } => {
                 // 追踪导弹：锁定点击处最近的敌人全速直追；命中爆炸伤+击退。（数值走 stats，随等级成长）
@@ -9433,6 +9503,114 @@ mod tests {
         assert!(drops[0] > 0.0 && drops[1] > drops[0], "第二级伤害应高于第一级：{drops:?}");
         // 第三级半径 400（伤害也更高）；三级后回到 stage 0
         assert!(drops[2] > drops[1], "第三级应最强：{drops:?}");
+    }
+
+    /// S002 闪电命中敌方弹体（098c `Bb`：`nv==2` → 触发其 `Jv` 销毁）。
+    #[test]
+    fn s002_lightning_intercepts_enemy_projectile() {
+        let mut world = World::new(2, 0x9002);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].team = 0;
+        world.players[1].team = 1;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(Fix64::ZERO, d60(10.0)); // 不在射线上
+        world.players[1].move_target = None;
+        // 敌方弹体停在射线上（+x 180）。
+        world.projectiles.push(Projectile {
+            owner: 1,
+            kind: ProjectileKind::W098b {
+                proj: crate::skill::W098bProjKind::Straight,
+                vel: Vec2::ZERO,
+                speed: Fix64::from_num(600.0),
+                radius: Fix64::from_num(25.0),
+                remaining: Fix64::from_num(5.0),
+                life: Fix64::from_num(5.0),
+                gx: Fix64::from_num(5.0),
+                pillar_dmg: Fix64::from_num(5.0),
+                kb_ji: Fix64::ONE,
+                ignite: None,
+                blast: None,
+                target: None,
+                bob_phase: BoomerangPhase::Out,
+                on_hit: crate::skill::W098bOnHit::Ki,
+                debuff_dur: Fix64::ZERO,
+                lateral: Fix64::ZERO,
+                forward_dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                out_dist: Fix64::ZERO,
+                burst: 0,
+                emit_cooldown: Fix64::ZERO,
+                emit_angle: 0.0,
+                pillar_bounce: false,
+                pillar_rest: Fix64::ZERO,
+                lightning_dmg: Fix64::ZERO,
+                weaken_armed: false,
+                blast_dmg: Fix64::ZERO,
+                blast_floor: Fix64::ZERO,
+                blast_on_expiry: false,
+                is_fireball: false,
+                class: ProjClass::ReflectTransfer,
+                direct_dmg: None,
+                chase: None,
+                col_mask: W098B_COL_ALL,
+                s009_role: S009_ROLE_NONE,
+            },
+            pos: Vec2::new(d60(3.0), Fix64::ZERO),
+            alive: true,
+        });
+        world.players[0].caster = crate::skill::Caster::new();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S002, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            !world.projectiles.iter().any(|p| p.alive && p.owner == 1 && matches!(p.kind, ProjectileKind::W098b { .. })),
+            "敌方弹体应被闪电引爆并销毁"
+        );
+    }
+
+    /// S002 闪电 `xi>0`（范围精通）命中时在撞击点做 AoE（098c `Bb` → `sI`）。
+    #[test]
+    fn s002_lightning_xi_aoe_splashes() {
+        let mut world = World::new(3, 0x9003);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        world.players[0].team = 0;
+        world.players[1].team = 1;
+        world.players[2].team = 1;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].mastery[1] = 5; // 范围精通 → AoE 半径 160*(1+.12*5)=256
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO); // 直击（180）
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(3.0), d60(2.0)); // 距撞击点 120 < 256
+        world.players[2].move_target = None;
+        let hp2 = world.players[2].hp;
+        world.players[0].caster = crate::skill::Caster::new();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S002, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 3];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[2].hp < hp2, "范围精通>0 时闪电应溅射到撞击点附近（实际 hp2 {hp2} -> {}", world.players[2].hp);
     }
 
     /// S018B 力场弹（098c `Mc`）：**850/s 飞行弹**到点才生成力场（非立即），且飞行弹不参与碰撞。
