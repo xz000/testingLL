@@ -1813,7 +1813,7 @@ impl World {
         if let Some(f) = from.and_then(|f| self.players.get(f as usize).map(|a| a.id)) {
             // 吸血 = `item_fx.lifesteal`（死亡面具 vi+3 = 24%）+ 生命精通 `vi`（8%/级）。
             // **鲜血之剑的回血是天罚专属**（098c `mC` 的 `DX((Zr+1)*n)`，见 `SkillEffect::W098bNova`），
-            // 不走通用伤害路径，故此处不加 `on_damage_heal`。
+            // 不走通用伤害路径，故此处不加 `smite_recover`。
             let (lifesteal, vi) = {
                 let a = &self.players[f as usize];
                 (a.item_fx.lifesteal, a.mastery[0])
@@ -5187,16 +5187,16 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                 }
-                // 098c mC 顺序：FX 自伤在前、DX 回血在后（回血按命中敌数 n 结算）——
-                // 鲜血之剑回血 (Zr+1)×n；死亡面具翻倍（vi×2 → 吸血/回血 ×2）。
+                // 098c mC 顺序：FX 自伤在前、DX 在后（均按命中敌数 n 结算）。
+                // **`DX(ri,(Zr+1)*n)` = 张力(gn) −(Zr+1)×n（下限 0）——不是回血！**
+                // （本图 JASS 大小写敏感：`DX`=−、`dX`=+；`Zr`=鲜血之剑等级 = `smite_bonus`。）
                 if kind == crate::skill::W098bNovaKind::Smiting && smite_hits > 0 {
-                    let p = &mut world.players[idx as usize];
-                    if p.alive {
-                        let mult = if p.item_fx.scourge_double { 2.0 } else { 1.0 };
-                        let heal = p.item_fx.on_damage_heal * mult * smite_hits as f64
-                            + gx.to_num::<f64>() * p.item_fx.lifesteal * mult * smite_hits as f64;
-                        if heal > 0.0 {
-                            p.hp = (p.hp + Fix64::from_num(heal)).min(p.max_hp);
+                    if let Some(p) = world.players.get_mut(idx as usize) {
+                        if p.alive {
+                            // 鲜血之剑拥有才生效（`Zr = smite_bonus > 0`）；减量 = `smite_recover = Zr+1`。
+                            if p.item_fx.smite_bonus > 0.0 {
+                                p.mana = (p.mana - p.item_fx.smite_recover * smite_hits as f64).max(0.0);
+                            }
                         }
                     }
                 }
@@ -8650,6 +8650,7 @@ mod tests {
         // 火球直伤+灼烧 tick 已让 Gn 成长若干次（D9），重置以便断言裸伤害。
         world.players[0].caster = crate::skill::Caster::new();
         world.players[0].growth = 1.0;
+        world.players[0].mana = 50.0; // 已知张力起点，验证天罚的 DX 衰减（098c 非回血）
         world.step(vec![
             PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
             PlayerInput::default(),
@@ -8665,9 +8666,11 @@ mod tests {
             }
         }
         assert!(!world.players[0].aegis_charged, "天罚释放应消耗充能");
-        // 施法者：满血 100 - 自伤 11 + 回血 2×n（n=1 或 2，取决于 p2 是否已飞出半径）
+        // 施法者：满血 100 − 自伤 11（**无回血！** 098c `DX` 是张力−、不是回血）
         let hp0_now = world.players[0].hp.to_num::<f64>();
-        assert!((90.5..=93.5).contains(&hp0_now), "自伤 11 后应回血 2×n（91~93），实际 {hp0_now}");
+        assert!((hp0_now - 89.0).abs() < 0.5, "自伤 11 后不应回血（098c DX=张力），实际 {hp0_now}");
+        // 张力：50 − (Zr+1)×n（Zr=1、n=1~2）
+        assert!(world.players[0].mana < 50.0, "天罚命中应减少张力 (Zr+1)×n，实际 {}", world.players[0].mana);
         // 天罚后获得 5s 减伤窗口（Aegis buff）
         assert!(world.players[0].has_buff(BuffKind::Aegis), "天罚后应挂 5s 减伤窗口");
         let _ = hp0;
@@ -9349,9 +9352,9 @@ mod tests {
         assert_eq!(aggregate(&[ItemId::LavaBoots1]).lava_passive_mult, 0.96);
         assert_eq!(aggregate(&[ItemId::LavaBoots2]).lava_passive_mult, 0.94);
         assert_eq!(aggregate(&[ItemId::LavaBoots3]).lava_passive_mult, 0.92);
-        assert_eq!(ItemId::FireMask.def().fx.on_damage_heal, 0.0, "死亡面具无平回（098c 仅 vi+3/−0.03回复）");
-        assert_eq!(ItemId::BloodSword1.def().fx.on_damage_heal, 2.0, "鲜血之剑天罚回血 (Zr+1)=2");
-        assert_eq!(ItemId::BloodSword2.def().fx.on_damage_heal, 3.0);
+        assert_eq!(ItemId::FireMask.def().fx.smite_recover, 0.0, "死亡面具无天罚恢复（098c 仅 vi+3/−0.03回复）");
+        assert_eq!(ItemId::BloodSword1.def().fx.smite_recover, 2.0, "鲜血之剑天罚减张力 (Zr+1)=2");
+        assert_eq!(ItemId::BloodSword2.def().fx.smite_recover, 3.0);
     }
 
     #[test]

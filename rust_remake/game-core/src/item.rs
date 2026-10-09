@@ -104,7 +104,9 @@ pub struct ItemEffects {
     /// 生命偷取比例（死亡面具 0.24 = 098c vi 8%×3，任何伤害生效）。
     pub lifesteal: f64,
     /// **天罚命中**回血（鲜血之剑 2/3 = 098c `mC` 的 `DX((Zr+1)*n)`；仅 S001 天罚结算时按命敌数用）。
-    pub on_damage_heal: f64,
+    /// 天罚（S001）命中时对**施法者张力**的减量 = 098c `(Zr+1)`（`DX` 减张力，**非回血**）。
+    /// 鲜血之剑 1/2 → 2/3；无剑为 0。
+    pub smite_recover: f64,
     /// 天罚（S001）伤害平加（鲜血之剑 +1/+2；098c mC 实证 cX = 10 + Zr）。
     pub smite_bonus: f64,
     /// 守护之盾充能窗口受伤减免（0.25/0.75；火球命中充能 → 天罚后 5s，见 world）。
@@ -156,7 +158,7 @@ const fn fx() -> ItemEffects {
         regen_penalty: 0.0,
         kb_resist_frac: 0.0,
         lifesteal: 0.0,
-        on_damage_heal: 0.0,
+        smite_recover: 0.0,
         smite_bonus: 0.0,
         smite_reduction: 0.0,
         aegis: false,
@@ -207,10 +209,10 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::Amulet3, family: ItemFamily::Amulet, tier: 3, cost: 5, sell: 12, name: "坠饰 3", desc: "生命 +30 回复 +0.1/s（满级）", fx: ItemEffects { hp_add: 30.0, regen_add: 0.1, ..fx() } },
     // I00D 火球法杖：火球改 5.5+0.5L 直伤 + 3+0.5L 点燃 2.5s；天罚加倍时长/伤害（买 7 @bD 10708）
     ItemDef { id: ItemId::FireStaff, family: ItemFamily::Standalone, tier: 1, cost: 7, sell: 6, name: "火球法杖", desc: "火球附加点燃(3+0.5Lv/2.5s) 直伤降 5.5+0.5Lv；天罚加倍", fx: ItemEffects { fireball_burn: true, ..fx() } },
-    // I00F 鲜血之剑 1：S001 等级+1（mC cX=10+Zr → +1 伤）；命中每敌回 (Zr+1)=2 血（买 8 @bD 10747）
-    ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 8, sell: 7, name: "鲜血之剑 1", desc: "天罚伤害 +1；命中每敌回 2 血；可升 1 次", fx: ItemEffects { smite_bonus: 1.0, on_damage_heal: 2.0, ..fx() } },
-    // I00G 鲜血之剑 2：Zr=2 → +2 伤；回 (Zr+1)=3 血/敌（买 8；卖 24 @ED 10498）
-    ItemDef { id: ItemId::BloodSword2, family: ItemFamily::BloodSword, tier: 2, cost: 8, sell: 24, name: "鲜血之剑 2", desc: "天罚伤害 +2；命中每敌回 3 血", fx: ItemEffects { smite_bonus: 2.0, on_damage_heal: 3.0, ..fx() } },
+    // I00F 鲜血之剑 1：S001 等级+1（mC cX=10+Zr → +1 伤）；命中每敌 `DX` 减张力 (Zr+1)=2（买 8 @bD 10747）
+    ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 8, sell: 7, name: "鲜血之剑 1", desc: "天罚伤害 +1；天罚命中每敌减张力 2；可升 1 次", fx: ItemEffects { smite_bonus: 1.0, smite_recover: 2.0, ..fx() } },
+    // I00G 鲜血之剑 2：Zr=2 → +2 伤；减张力 (Zr+1)=3/敌（买 8；卖 24 @ED 10498）
+    ItemDef { id: ItemId::BloodSword2, family: ItemFamily::BloodSword, tier: 2, cost: 8, sell: 24, name: "鲜血之剑 2", desc: "天罚伤害 +2；天罚命中每敌减张力 3", fx: ItemEffects { smite_bonus: 2.0, smite_recover: 3.0, ..fx() } },
     // I00H 守护之盾：火球命中充能 → 天罚释放 5s 内受伤-25% 击退-50%（HC 实证）；HP 上限-10（买 13 @bD 10758）
     ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 13, sell: 12, name: "守护之盾", desc: "火球命中充能：天罚后5s 受伤-25% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.25, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
     // I00I 守护之盾 2：098c **不可获得**（`UnitAddItemById`/`bD` 全图从不创建，JASS 核实）⇒ 已移除。
@@ -277,7 +279,7 @@ pub fn aggregate(items: &[ItemId]) -> ItemEffects {
         out.regen_penalty += f.regen_penalty;
         out.kb_resist_frac = out.kb_resist_frac.max(f.kb_resist_frac);
         out.lifesteal += f.lifesteal;
-        out.on_damage_heal += f.on_damage_heal;
+        out.smite_recover += f.smite_recover;
         out.smite_bonus += f.smite_bonus;
         out.smite_reduction = out.smite_reduction.max(f.smite_reduction);
         out.aegis |= f.aegis;
