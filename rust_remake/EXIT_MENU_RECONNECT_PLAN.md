@@ -784,6 +784,7 @@
 | **R5c ✅** | 启动提示 + join + 归队握手（client 崩溃场景） | R5b | 真机 |
 | **R6b ✅** | 被取代/自栅栏 host → C2+C1 归队 + U2 覆盖层 | R6a/R5b | 真机 |
 | **R7 ✅** | 联机暂停（host 仲裁 + 确认框 + 3s 恢复倒计时 + 每人 3 次 + 5s 冷却） | — | 真机 |
+| **R7e ⏳** | 学习期也可暂停（需学习期心跳 + 冻结本地 `tick_learning` + 阶段推进协调） | R7 | 真机 |
 
 > **R5c 实现要点**：`RejoinSession` 在 `finish_enter_steam_mode` 成功时写入（`persist_rejoin_session`）、干净离场清除；
 > 主菜单启动若读到「新鲜+协议一致」的会话 → 提示「回车/Y 重新加入，Esc 忽略」；确认后按 lobby_id join，

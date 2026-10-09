@@ -390,6 +390,17 @@ mod source_scan_tests {
         assert!(body.contains("ROOM_NOTE_KEY"), "publish_room_cfg 应发布备注");
     }
 
+    /// 回归（R7a）：暂停确认框必须用**帧初** `pause_modal` 屏蔽同帧 Esc 打开退出菜单。
+    /// 若写成 `!self.pause_confirm`，则「确认框打开→本帧按 Esc 取消」会把同一帧的 Esc 交给
+    /// `escape_menu_update` → 打开退出菜单（实测 bug）。
+    #[test]
+    fn pause_confirm_blocks_escape_menu_same_frame() {
+        assert!(
+            SRC.contains("if !pause_modal && self.escape_menu_update(ctx)"),
+            "暂停确认框应用帧初 pause_modal 屏蔽同帧 Esc 打开退出菜单（R7a 回归）"
+        );
+    }
+
     /// 回归（E1）：对局内 Esc 不再**立即**退回主菜单，而是走退出菜单（`escape_menu_update`）。
     #[test]
     fn fighting_escape_no_longer_exits_immediately() {

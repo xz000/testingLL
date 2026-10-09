@@ -6608,7 +6608,10 @@ impl event::EventHandler for Game {
                 if pause_modal {
                     self.pause_confirm_update(ctx);
                 }
-                if !self.pause_confirm && self.escape_menu_update(ctx) {
+                // 关键：用**帧初**的 `pause_modal` 判定，而非更新后的 `pause_confirm`。
+                // 否则「确认框打开→本帧按 Esc 取消」会把 pause_confirm 置回 false，紧接着同一帧的
+                // escape_menu_update 又用**同一个 Esc** 打开退出菜单（这正是实测到的 bug）。
+                if !pause_modal && self.escape_menu_update(ctx) {
                     return Ok(()); // 已「返回主菜单」或「退出游戏」
                 }
                 // 按暂停键弹确认框（未开菜单、非确认框处理帧）；实际发送由 host/client 分支完成。
