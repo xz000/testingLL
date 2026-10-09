@@ -653,10 +653,10 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
-| 防重复 | `if le[ii]!=0` → “Previous cast detected, aborting TimeShift” + 停止 | ? | 📋 |
+| 防重复 | `if le[ii]!=0` → “Previous cast detected, aborting TimeShift” + 停止 | ✅ 无需实现：S006 CD **22s**（L1）≫ 3.6s 回溯窗；且全工程仅 S016/T3Fast2 有 `reset_cooldown`，**无 S006 冷却归零路径** → 无法重入 | ✅ |
 | **快照** | 用**合成对象 id** `IR=ii+500` 存一份副本：`K/L/Q/S/U/w/Y/z/G/ev/Hr` 全部拷入；另外 `CreateUnit('thrd')` 白影（`SetUnitVertexColor(...,75)` 半透）+ 加 `'Atsi'` | 我方 = 保存 pos/hp 后延迟回滚 | ⚠ 近似 |
 | 定时 | `le[ii] = LO(function RR, **3.6*jn[ri]**, ii, IR, ne, **Fn[ri]（HP）**, **gn[ri]（蓝）**, facing)` | 我方 3.6s ✓（待核） | ✅ |
-| **回滚（`RR`）** | ① `K/L/Q/S/U/w/Y/z[施法者]=快照`（位置+速度+加速度全还原）；`aR` 断链；`VR(false)`；`G/ev/Hr` 还原（`Hr` 真则 `hv=ni; Rv=Do`）；`SetUnitX/Y` + 停止指令；② **HP**：`if Fn[id]<ve then Fn[id]=ve`（`ve`=快照 HP）⇒ **只回补到快照血量，不会反向扣血**；③ **蓝**：`AR=(0.8-zr[id]/10)*(gn[id]-ee)`，`AR>=0` 才应用（`ee`=快照蓝）⇒ **只保留 `(0.8−0.1L)` 的正向蓝量变化**（花掉的蓝不返还） | 我方：位置/HP 还原 ✓（测试 `s006_rewind_restores_position_and_hp`）；**蓝量规则未实现**（本作无蓝）；HP“只补不回”待核 | 📋 |
+| **回滚（`RR`）** | ① `K/L/Q/S/U/w/Y/z[施法者]=快照`（位置+速度+加速度全还原）；`aR` 断链；`VR(false)`；`G/ev/Hr` 还原（`Hr` 真则 `hv=ni; Rv=Do`）；`SetUnitX/Y` + 停止指令；② **HP**：`if Fn[id]<ve then Fn[id]=ve`（`ve`=快照 HP）⇒ **只回补到快照血量，不会反向扣血**；③ **蓝**：`AR=(0.8-zr[id]/10)*(gn[id]-ee)`，`AR>=0` 才应用（`ee`=快照蓝）⇒ **只保留 `(0.8−0.1L)` 的正向蓝量变化**（花掉的蓝不返还） | ✅ 位置/HP/动量/硬体还原（`world.rs:926`）：`p.hp.max(rw.hp)` = **只补不回**（对 `if Fn<ve then Fn=ve`）；**张力**即本作的 `mana`：`if p.mana>rw.mana { p.mana = rw.mana + keep*(p.mana-rw.mana) }`（`world.rs:934`，=对 `gn=ee+(.8-.1zr)(gn-ee)`）；清减益已做；测试 `s006_rewind_restores_position_and_hp` | ✅ |
 | 收尾 | `SetUnitFacing` + 特效 + `RemoveUnit(F[IR])` + `le[ii]=0` + `JO(...,ae)`（清 buff） | — | 📋 |
 | tooltip | “After **3.6** seconds, travel back … recover location, hitpoints and momentum … You will still take **30%** damage points”（307 行） | — | 📋 代码里未见 30%（待再核） |
 
