@@ -4972,6 +4972,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // 098c `qC`：伤害为加法衰减，但击退 `mI(ii,gX,cX-cO/60,1)` 系数**固定 1**。
                         world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, DeniedMode::Unconditional, DmgFalloff::Sub(falloff_div), KbAttn::Fixed);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
+                        // （施法者自伤在下方共用 FX 块统一处理：S020 固定 20、S001/S021 用 `gx`。）
                         let p = &mut world.players[idx as usize];
                         p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
                     }
@@ -5007,8 +5008,17 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     if p.alive {
                         let hp = p.hp.to_num::<f64>();
-                        let dmg = gx.to_num::<f64>();
+                        // S020 灾变是**固定 20**（JASS `qC`：`FX(ii,20)`）；S001 天罚 / S021 虔诚用 `cX`(=gx)（`FX(ii,cX)`）。
+                        let dmg = if kind == crate::skill::W098bNovaKind::Catastrophe {
+                            20.0
+                        } else {
+                            gx.to_num::<f64>()
+                        };
                         p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
+                        // 098c `qC`：`dX(ri,$A)` → 张力 +10（仅灾变）。
+                        if kind == crate::skill::W098bNovaKind::Catastrophe {
+                            p.mana += 10.0;
+                        }
                     }
                 }
                 // 098c mC 顺序：FX 自伤在前、DX 回血在后（回血按命中敌数 n 结算）——
@@ -9165,6 +9175,37 @@ mod tests {
         assert!(drops[0] > 0.0 && drops[1] > drops[0], "第二级伤害应高于第一级：{drops:?}");
         // 第三级半径 400（伤害也更高）；三级后回到 stage 0
         assert!(drops[2] > drops[1], "第三级应最强：{drops:?}");
+    }
+
+    /// S020 灾变：施法者**固定自伤 20**（`FX(ii,20)`，下限 0.5 不致死）+ 张力 **+10**（`dX(ri,$A)`）。
+    #[test]
+    fn s020_catastrophe_caster_self_damage_and_tension() {
+        let mut world = World::new(2, 0x8020);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(50.0), Fix64::ZERO); // 远离，避免被 AoE/击退影响
+        world.players[1].move_target = None;
+        let hp0 = world.players[0].hp;
+        let mana0 = world.players[0].mana;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S020, None)), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        let dmg = (hp0 - world.players[0].hp).to_num::<f64>();
+        assert!((dmg - 20.0).abs() < 0.5, "施法者应固定自伤 20，实际 {dmg}");
+        let manad = world.players[0].mana - mana0;
+        assert!((manad - 10.0).abs() < 1e-6, "张力应 +10，实际 {manad}");
     }
 
     /// S021 虔诚：伤敌人 + 自奶 gx×0.5（无队伍时只奶自己）。
