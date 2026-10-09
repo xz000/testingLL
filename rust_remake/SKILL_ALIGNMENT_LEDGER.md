@@ -255,7 +255,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **击退** | A：`mI(nr,Vr,ZO,.2)`（13009）→ **20%**；B：`mI(nr,Vr,ZO,.6)`（13132）→ **60%**；方向 = **弹体→目标**（`mI` 用 `K[JR]-K[HI]`，`HI=nr` 是弹体）；**友军分支没有 `mI` → 无击退** | `kb_ji` = 0.2 / 0.6（原误写 0.8/0.8） | ✅（2026-09-21 修正） |
 | 友军命中 | **不结算伤害、不击退**（友军分支无 `mI`）；A 治疗 `5+L` 且**仍然销毁弹体**（`vc` 的 `IA(nr)` 在 `if nv[Vr]==1` 块末尾，敌/友共用）；B `Gn×1.1` 且**不销毁** | A：治疗+加速+销毁；B：`GnMult(1.1)` + 续命 + 转最近敌人、不销毁（修正：原先 A 命中友军也不销毁） | ✅（2026-09-21 修正） |
 | tooltip 交叉验证 | A：“steal the life and the movement speed … Damage 6→13、Duration 4→11、CD 22→16.5”✓；B：“reduce enemy damage to **50%**；**If the missile hits friendly units, including yourself, a damage bonus on 10% is granted and the missile will target the closest enemy**” ✓（伤害 5→10、持续 7.5→16.5、CD 22→19） | 数值均合 | ✅ |
-| 已知简化 | B 的两段是真状态（`bv`/`Nv` 位）：`ic` 首段置位后，B 才能命中**友军（“including yourself”也含自己）**；每cast仅一次友军增益 | 单段寿命 + 无 `bv` 位 → B 不能吃自己（会重复吃友军，无“只一次”限制） | ⚠ 若要做，需给弹体加 `weaken_armed: bool` 字段（同步/协议） |
+| 两段状态 | B 的两段是真状态（`bv`/`Nv` 位）：`ic` 首段置位后，B 才能命中**友军（“including yourself”也含自己）**；每cast仅一次友军增益 | ✅ 已实现：`weaken_armed: bool`（首段到期置位 `world.rs:2093` → 命中检测改 `nearest_hit_any_incl_owner`；命中友军后复位 `3683`＝每 cast 一次）；测试 `s014b_*` 覆盖 | ✅ |
 
 ### 结论（已定论）：`kv` vs `Kv`——“近日老”两套入口，`Kv` 只走**术士**（2026-09-22）
 
@@ -613,7 +613,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
 | 进入形态 | `if not kr[ri]`：`bO(ii,**20**,点击点)`（= 20/tick = **667/s 初推**）；生成 `'thrd'` 半透白影（`SetUnitTimeScale(.5)` + 立即 `KillUnit` = 纯特效）；停指令 + 朝向点击点；`JO(true,ii,true,**7331**,...)`（**添加可操控能力 7331**）；**`Jr[ri]` 注册单位“点指令”事件 → `UB`**（每次右键 → 发射凤凰弹）；`kr[ri]=true`；`LO(PB, **3.1*jn**)` 到期；凤凰模型特效 | 我方：`s012b_phoenix_redirect_*` ✓（可指向重定向） | ✅ 结构一致 |
-| 差异点 | 原版是“**3.1*jn 秒内每次点指令都发一枚凤凰弹**”（不限次数），且首帧有一个 667/s 初推 | 我方待对账（重定向次数/初推） | 📋 |
+| 差异点 | 原版是“**3.1*jn 秒内每次点指令都发一枚凤凰弹**”（不限次数），且首帧有一个 667/s 初推 | ✅ 已核对：初推 667/s（`speed=667`）、3.1s 窗口（`duration=3.1`）、每次点指令发弹/冲量（`world.rs:822`：`windwalk_state>0 && !charging` → 发弹，否则 `18×0.5^(v/20)` 冲量）；凤凰弹 `tB` 速度 1000/半径 44/`ev=1.4(1+.1ei)`/伤害 `4+0.5×(E+R)` 均已对齐 | ✅ |
 
 ### ❗`xv` 修正：它是**逐弹体**属性，不是逐技能（2026-09-22 重核）
 
@@ -644,7 +644,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
 | 形态 | 生成一个 **class-3 对象**（`rO(3)`）跟在施法者身上：`K/L/Q/S` 初次同步；`jv=FC` 每帧 `K/L/Q/S[盾]=K/L/Q/S[施法者]`（纯跟随）；`Av[+1]=true`（与术士撞）、`Av[+2]=true`（与弹体撞）、`Av[+3]=false`；`cv=2`；`Rv[gX]='x'`=**120**；`Pr[施法者]`=该对象；`nV`/地形检查（已在危险地形则放不出）。失败时仅 `IssueImmediateOrderById` | 我方 = 一个 `BuffKind::Reflect` buff | ⚠ 结构不同（效果近似） |
-| 持续 | `LO(function DC, (2.6+.2*zr[ri])*jn[ri], ...)` → 到期 `DC` 仅 `DestroyEffect` + `iO(Pr[Yv],false)` 删掉盾 | 我方按 def 时长 | 📋 对账 `zr` 映射 |
+| 持续 | `LO(function DC, (2.6+.2*zr[ri])*jn[ri], ...)` → 到期 `DC` 仅 `DestroyEffect` + `iO(Pr[Yv],false)` 删掉盾 | ✅ 已核：def `duration_base=2.8 / delta=0.2` ⇒ `2.6+0.2L`（`zr`=S005 等级），与 JASS 一致 | ✅ |
 | **反射（`fC`）** | ① 排除：`Ev[Vr]==9 or na` 或 `(nv[Vr]==1 and not Hr[Vr])` → 直接 `return false`；② 重叠则把被撞对象推到盾面外（`K[Vr]=K[nr]-r*dx`，`r=Rv[盾]+Rv[目标]`）；③ **沿法线镜面反射** `cO=(Q*dx+S*dy)*2; Q-=cO*dx; S-=cO*dy`（即 `v'=v−2(v·n)n`）；④ **把弹体归属改成盾主**：`Vv[Vr]=Vv[nr]` + `SetUnitOwner(...,Player(Vv[nr]))`（`Ev!=2/16/Xa/17` 且 `nv!=1` 时）⇒ 反弹出去的弹体**变成你的**；⑤ `Ev[Vr]==2`（回旋镖）→ 反射后直接置成**回程**（`U=w=0, jv=ci=Tb, ev=0, Gv=null`）；⑥ `Ev[Vr]==3` → 把弹体颜色改成盾主的 | ✅ 已实现（`0baea5d`）：`Bullet`/`W098b` 两路都改 `fix::bounce_off(v,n,1)`；改归属；`ProjClass` 实现②①④⑤（回旋镖→`Home`，岩浆/链弹/双生弹保留归属，S009/S018 类不反射）；推出重叠 | ✅ 已修（残余：`nv==1` 英雄撞盾与 `Ev==3` 换色纯表现未做） |
 
 ### S006 回溯（Time Shift）✅ 已普查（未动代码）
