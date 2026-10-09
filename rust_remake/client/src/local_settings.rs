@@ -48,6 +48,8 @@ pub struct LocalSettings {
     pub key_sell: BindKey,
     /// 静音（默认 `F10`）。
     pub key_mute: BindKey,
+    /// R7：暂停/恢复（默认 `F9`）。
+    pub key_pause: BindKey,
     /// 学习页技能形态切换（默认 `B`）。
     pub key_form_switch: BindKey,
     /// 商店三大类切换（默认 `B`/`N`/`M`）。
@@ -70,6 +72,8 @@ pub enum NamedBind {
     Enter,
     Delete,
     Backspace,
+    F8,
+    F9,
     F10,
     Home,
     End,
@@ -77,11 +81,13 @@ pub enum NamedBind {
 
 impl NamedBind {
     /// 全部命名键（改键捕获时逐一试探）。
-    pub const ALL: [NamedBind; 7] = [
+    pub const ALL: [NamedBind; 9] = [
         NamedBind::Space,
         NamedBind::Enter,
         NamedBind::Delete,
         NamedBind::Backspace,
+        NamedBind::F8,
+        NamedBind::F9,
         NamedBind::F10,
         NamedBind::Home,
         NamedBind::End,
@@ -94,6 +100,8 @@ impl NamedBind {
             NamedBind::Enter => "enter",
             NamedBind::Delete => "delete",
             NamedBind::Backspace => "backspace",
+            NamedBind::F8 => "f8",
+            NamedBind::F9 => "f9",
             NamedBind::F10 => "f10",
             NamedBind::Home => "home",
             NamedBind::End => "end",
@@ -114,6 +122,8 @@ impl NamedBind {
             NamedBind::Enter => "ENTER",
             NamedBind::Delete => "DELETE",
             NamedBind::Backspace => "BACKSPACE",
+            NamedBind::F8 => "F8",
+            NamedBind::F9 => "F9",
             NamedBind::F10 => "F10",
             NamedBind::Home => "HOME",
             NamedBind::End => "END",
@@ -207,6 +217,8 @@ pub enum BindAction {
     FormSwitch,
     ShopCat(usize),
     Mute,
+    /// R7：暂停/恢复（仅对战内有意义）。
+    Pause,
 }
 
 impl BindAction {
@@ -217,7 +229,8 @@ impl BindAction {
             | BindAction::Stop
             | BindAction::CamCenter
             | BindAction::CamSelf
-            | BindAction::CamFollow => BindScope::Battle,
+            | BindAction::CamFollow
+            | BindAction::Pause => BindScope::Battle,
             BindAction::Buy | BindAction::Sell => BindScope::Learn,
             BindAction::FormSwitch => BindScope::LearnSkill,
             BindAction::ShopCat(_) => BindScope::LearnShop,
@@ -241,7 +254,7 @@ impl BindAction {
 }
 
 /// 全部可绑动作（UI 列表顺序：技能 → 对战 → 镜头 → 学习期 → 系统）。
-pub const BIND_ACTIONS: [BindAction; 19] = [
+pub const BIND_ACTIONS: [BindAction; 20] = [
     BindAction::Skill(0),
     BindAction::Skill(1),
     BindAction::Skill(2),
@@ -254,6 +267,7 @@ pub const BIND_ACTIONS: [BindAction; 19] = [
     BindAction::CamCenter,
     BindAction::CamSelf,
     BindAction::CamFollow,
+    BindAction::Pause,
     BindAction::Buy,
     BindAction::Sell,
     BindAction::FormSwitch,
@@ -275,6 +289,8 @@ pub const DEFAULT_KEY_FORM_SWITCH: BindKey = BindKey::Char('b');
 pub const DEFAULT_KEY_SHOP_CAT: [BindKey; 3] =
     [BindKey::Char('b'), BindKey::Char('n'), BindKey::Char('m')];
 pub const DEFAULT_KEY_MUTE: BindKey = BindKey::Named(NamedBind::F10);
+/// R7：暂停/恢复默认键（`F9`；避开 Steam 截图 `F12` 与现有功能键）。
+pub const DEFAULT_KEY_PAUSE: BindKey = BindKey::Named(NamedBind::F9);
 
 impl Default for LocalSettings {
     fn default() -> Self {
@@ -300,6 +316,7 @@ impl Default for LocalSettings {
             key_buy: DEFAULT_KEY_BUY,
             key_sell: DEFAULT_KEY_SELL,
             key_mute: DEFAULT_KEY_MUTE,
+            key_pause: DEFAULT_KEY_PAUSE,
             key_form_switch: DEFAULT_KEY_FORM_SWITCH,
             key_shop_cat: DEFAULT_KEY_SHOP_CAT,
             training_bots: DEFAULT_TRAINING_BOTS,
@@ -382,6 +399,7 @@ impl LocalSettings {
             BindAction::FormSwitch => self.key_form_switch,
             BindAction::ShopCat(i) => self.key_shop_cat.get(i).copied().unwrap_or(BindKey::Char('?')),
             BindAction::Mute => self.key_mute,
+            BindAction::Pause => self.key_pause,
         }
     }
 
@@ -411,6 +429,7 @@ impl LocalSettings {
                 }
             }
             BindAction::Mute => self.key_mute = k,
+            BindAction::Pause => self.key_pause = k,
         }
     }
 
@@ -455,6 +474,7 @@ impl LocalSettings {
                 DEFAULT_KEY_SHOP_CAT.get(i).copied().unwrap_or(BindKey::Char('?'))
             }
             BindAction::Mute => DEFAULT_KEY_MUTE,
+            BindAction::Pause => DEFAULT_KEY_PAUSE,
         };
         self.bind_key(a) == default
     }
@@ -477,6 +497,7 @@ impl LocalSettings {
         self.key_buy = DEFAULT_KEY_BUY;
         self.key_sell = DEFAULT_KEY_SELL;
         self.key_mute = DEFAULT_KEY_MUTE;
+        self.key_pause = DEFAULT_KEY_PAUSE;
         self.key_form_switch = DEFAULT_KEY_FORM_SWITCH;
         self.key_shop_cat = DEFAULT_KEY_SHOP_CAT;
     }
@@ -602,6 +623,11 @@ pub fn parse(text: &str) -> LocalSettings {
                     s.key_mute = k;
                 }
             }
+            "key_pause" => {
+                if let Some(k) = BindKey::parse(v) {
+                    s.key_pause = k;
+                }
+            }
             "key_form_switch" => {
                 if let Some(k) = BindKey::parse(v) {
                     s.key_form_switch = k;
@@ -653,7 +679,7 @@ pub fn parse(text: &str) -> LocalSettings {
 /// 序列化为 `key=value` 文本（固定行序，便于人读/手改）。
 pub fn serialize(s: &LocalSettings) -> String {
     let mut out = format!(
-        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nicon_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\npublish_icon_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_form_switch={}\nkey_shop_cat={}\n",
+        "master_volume={}\nsfx_volume={}\nmusic_volume={}\nmuted={}\nlang={}\nsfx_pack={}\nmusic_pack={}\nicon_pack={}\nworkshop_reuse={}\nworkshop_public={}\npublish_pack={}\npublish_icon_pack={}\nskill_keys={}\nkey_stop={}\nkey_cam_center={}\nkey_cam_self={}\nkey_cam_follow={}\nkey_buy={}\nkey_sell={}\nkey_mute={}\nkey_pause={}\nkey_form_switch={}\nkey_shop_cat={}\n",
         s.master_volume,
         s.sfx_volume,
         s.music_volume,
@@ -674,6 +700,7 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_buy.code(),
         s.key_sell.code(),
         s.key_mute.code(),
+        s.key_pause.code(),
         s.key_form_switch.code(),
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
@@ -751,6 +778,7 @@ mod tests {
             key_buy: BindKey::Char('='),
             key_sell: BindKey::Named(NamedBind::Delete),
             key_mute: BindKey::Char('m'),
+            key_pause: BindKey::Named(NamedBind::F8),
             key_form_switch: BindKey::Char('v'),
             key_shop_cat: [BindKey::Char('n'), BindKey::Named(NamedBind::Enter), BindKey::Char('q')],
             training_bots: 4,

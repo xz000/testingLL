@@ -783,7 +783,7 @@
 | **R5b ✅** | C1 归队握手 `rejoin_step` + `apply_snapshot_world` | R6a/R5a | 单测 |
 | **R5c ✅** | 启动提示 + join + 归队握手（client 崩溃场景） | R5b | 真机 |
 | **R6b ✅** | 被取代/自栅栏 host → C2+C1 归队 + U2 覆盖层 | R6a/R5b | 真机 |
-| **R7**（可选） | 暂停（P1 手动 / P2 待定） | — | 真机 |
+| **R7 ✅** | 联机暂停（host 仲裁 + 确认框 + 3s 恢复倒计时 + 每人 3 次 + 5s 冷却） | — | 真机 |
 
 > **R5c 实现要点**：`RejoinSession` 在 `finish_enter_steam_mode` 成功时写入（`persist_rejoin_session`）、干净离场清除；
 > 主菜单启动若读到「新鲜+协议一致」的会话 → 提示「回车/Y 重新加入，Esc 忽略」；确认后按 lobby_id join，
@@ -794,6 +794,16 @@
 > ①R4②自栅栏（lobby owner 变成别人）或 ②收到 `Takeover` 时，用 `into_transport()` 把 host 传输转成
 > `ClientLockstep{host=新host}`，进入归队握手（复用 R5b `rejoin_step`）；失败（无法定位新 host）才回主菜单。
 > 覆盖层文案：`你已被接管，正在重新加入…`。
+
+### R7 联机暂停（已实现）
+- **发起**：对局内按 `F9`（默认，可在「设置 → 按键设置」改）→ **确认框**（回车确认 / Esc 取消）→ 避免误触。
+- **仲裁**：host 权威。client 发 `PauseReq`；host 校验额度/冷却后广播 `PauseState`；host 自己在本地仲裁。
+- **额度**：每人 **3 次**（`PAUSE_BUDGET_DEFAULT`），host 记账随状态广播；用尽则提示。
+- **恢复**：**任何人都可**请求恢复 → host 广播 **3s 倒计时**（`RESUME_COUNTDOWN_TICKS=180`）→ 到点继续产帧。
+- **防刷**：恢复后 **5s 冷却**（`PAUSE_COOLDOWN_TICKS=300`）内拒绝再次暂停。
+- **实现细节**：host 暂停期间 `try_emit` 不产帧、帧号不前进，client 期望 seq 不变，恢复后自然续上（世界状态不变）；双方暂停期间把 accumulator 钉在 `TICK`（每 update 一次轮询）但不堆积；client 暂停中不计掉线计数（避免误触发迁移）。
+- **协议**：新增 `PauseReq`(TAG20)/`PauseState`(TAG21)；`PROTOCOL_VERSION` 40→**41**。
+- **范围**：仅 Steam；host 迁移时新 host 从「未暂停」起步。默认键 `F9`（`NamedBind` 白名单新增 `F8/F9`；`F10` 已用于全局静音）。
 
 ### 22.5 待确认
 - **RJ-Q1**：崩溃重开是**提示确认**（建议）还是**自动重连**？

@@ -46,6 +46,12 @@ pub const TAG_PARTICIPANTS: u8 = 18;
 /// host → 所有 client：周期性世界状态哈希（分歧检测）。`[seq:u64][hash:u64]`，`seq` = 该哈希对应的帧号。
 /// client 推进到同 seq 时比对自己世界的哈希，不一致即判定帧同步分歧（desync）。
 pub const TAG_STATE_HASH: u8 = 19;
+/// R7：client→host 暂停/恢复请求。`identity`=发起者稳定身份，`resume`=true 表示请求恢复（否则请求暂停）。
+/// 由 host 仲裁（额度/冷却）后广播 `PauseState`生效，避免各端各自暂停导致不一致。
+pub const TAG_PAUSE_REQ: u8 = 20;
+/// R7：host→所有 client 暂停状态（权威）。`paused`=当前是否暂停，`by`=发起者身份，
+/// `resume_in`=恢复倒计时剩余帧（>0 表示正在恢复；0 且 paused 表示暂停中），`remaining`=各参与者剩余暂停次数。
+pub const TAG_PAUSE_STATE: u8 = 21;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -100,6 +106,10 @@ pub enum Packet {
     Participants { ids: Vec<u64> },
     /// host→所有 client：周期性世界状态哈希（分歧检测）。`hash` = host 应用完 `seq` 帧后世界状态的哈希。
     StateHash { seq: u64, hash: u64 },
+    /// R7：client→host 暂停/恢复请求（`resume`=true 为恢复）。
+    PauseReq { identity: u64, resume: bool },
+    /// R7：host→所有 client 暂停状态（权威）。`remaining`=各参与者剩余暂停次数（id, left）。
+    PauseState { paused: bool, by: u64, resume_in: u16, remaining: Vec<(u64, u8)> },
 }
 
 impl Packet {
@@ -246,6 +256,26 @@ impl Packet {
                 v.push(TAG_STATE_HASH);
                 v.extend_from_slice(&seq.to_be_bytes());
                 v.extend_from_slice(&hash.to_be_bytes());
+                v
+            }
+            Packet::PauseReq { identity, resume } => {
+                let mut v = Vec::with_capacity(10);
+                v.push(TAG_PAUSE_REQ);
+                v.extend_from_slice(&identity.to_be_bytes());
+                v.push(if *resume { 1 } else { 0 });
+                v
+            }
+            Packet::PauseState { paused, by, resume_in, remaining } => {
+                let mut v = Vec::with_capacity(1 + 1 + 8 + 2 + 2 + remaining.len() * 9);
+                v.push(TAG_PAUSE_STATE);
+                v.push(if *paused { 1 } else { 0 });
+                v.extend_from_slice(&by.to_be_bytes());
+                v.extend_from_slice(&resume_in.to_be_bytes());
+                v.extend_from_slice(&(remaining.len() as u16).to_be_bytes());
+                for (id, left) in remaining {
+                    v.extend_from_slice(&id.to_be_bytes());
+                    v.push(*left);
+                }
                 v
             }
         }
@@ -408,6 +438,29 @@ impl Packet {
                 let hash = u64::from_be_bytes(buf[9..17].try_into().ok()?);
                 Some(Packet::StateHash { seq, hash })
             }
+            TAG_PAUSE_REQ if buf.len() >= 10 => {
+                let identity = u64::from_be_bytes(buf[1..9].try_into().ok()?);
+                Some(Packet::PauseReq { identity, resume: buf[9] != 0 })
+            }
+            TAG_PAUSE_STATE if buf.len() >= 14 => {
+                let paused = buf[1] != 0;
+                let by = u64::from_be_bytes(buf[2..10].try_into().ok()?);
+                let resume_in = u16::from_be_bytes([buf[10], buf[11]]);
+                let n = u16::from_be_bytes([buf[12], buf[13]]) as usize;
+                let mut remaining = Vec::with_capacity(n.min((buf.len().saturating_sub(14)) / 9 + 1));
+                let mut pos = 14usize;
+                for _ in 0..n {
+                    if pos + 9 > buf.len() {
+                        return None;
+                    }
+                    let id = u64::from_be_bytes(buf[pos..pos + 8].try_into().ok()?);
+                    pos += 8;
+                    let left = buf[pos];
+                    pos += 1;
+                    remaining.push((id, left));
+                }
+                Some(Packet::PauseState { paused, by, resume_in, remaining })
+            }
             _ => None,
         }
     }
@@ -451,6 +504,15 @@ mod tests {
             Packet::Takeover { seq: 12345, participants: vec![111, 222, 333] },
             Packet::Participants { ids: vec![111, 222, 333] },
             Packet::StateHash { seq: 120, hash: 0xDEAD_BEEF_1234_5678 },
+            Packet::PauseReq { identity: 9001, resume: false },
+            Packet::PauseReq { identity: 9001, resume: true },
+            Packet::PauseState {
+                paused: true,
+                by: 9001,
+                resume_in: 0,
+                remaining: vec![(111, 3), (222, 2), (333, 0)],
+            },
+            Packet::PauseState { paused: false, by: 0, resume_in: 0, remaining: vec![] },
         ];
         for p in cases {
             let enc = p.encode();

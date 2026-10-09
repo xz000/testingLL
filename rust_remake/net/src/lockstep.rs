@@ -41,6 +41,25 @@ pub fn newer_snapshot(
 /// host 仅在冷却归零时回整快照+Resync，避免在迁移探测期间被反复广播整快照刷屏。
 const RECONNECT_RESP_INTERVAL: u32 = 30;
 
+/// R7：每位参与者默认暂停额度。
+pub const PAUSE_BUDGET_DEFAULT: u8 = 3;
+/// R7：恢复请求后的倒计时帧数（60fps 下约 3s，War3/Dota2 风格）。
+pub const RESUME_COUNTDOWN_TICKS: u16 = 180;
+/// R7：恢复完成后不可再次暂停的冷却帧数（60fps 下约 5s，防刷）。
+pub const PAUSE_COOLDOWN_TICKS: u16 = 300;
+
+/// R7：暂停状态快照（host 权威；client 收到的视图）。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PauseView {
+    pub paused: bool,
+    /// 暂停发起者稳定身份（0=无）。
+    pub by: u64,
+    /// 恢复倒计时剩余帧（>0 表示正在恢复；0 且 `paused` 表示单纯暂停中）。
+    pub resume_in: u16,
+    /// 各参与者剩余暂停次数（id, left）。
+    pub remaining: Vec<(u64, u8)>,
+}
+
 /// host 侧帧同步状态机。
 pub struct HostLockstep<T: Transport> {
     transport: T,
@@ -109,6 +128,20 @@ pub struct HostLockstep<T: Transport> {
     superseded: bool,
     /// R6b：若被取缔，记录发来 `Takeover` 的端（通常即新 host），供上层转 client 归队。
     superseded_by: Option<Peer>,
+    /// R7：本 host 的稳定身份（用于暂停额度列表与自暂停）。0=未知。
+    local_identity: u64,
+    /// R7：当前是否已暂停（暂停期间 `try_emit` 不产帧）。
+    paused: bool,
+    /// R7：暂停发起者身份。
+    pause_by: u64,
+    /// R7：恢复倒计时剩余帧（0=未在恢复）。
+    pause_resume: u16,
+    /// R7：恢复后冷却剩余帧（>0 时拒绝新的暂停请求）。
+    pause_cooldown: u16,
+    /// R7：各参与者剩余暂停次数（懒初始化，缺省为 `PAUSE_BUDGET_DEFAULT`）。
+    pause_budget: Vec<(u64, u8)>,
+    /// R7：暂停状态周期重播计数（每 15 帧重播一次，避免丢包）。
+    pause_bcast: u16,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -150,6 +183,13 @@ impl<T: Transport> HostLockstep<T> {
             alive_tick: 0,
             superseded: false,
             superseded_by: None,
+            local_identity: 0,
+            paused: false,
+            pause_by: 0,
+            pause_resume: 0,
+            pause_cooldown: 0,
+            pause_budget: Vec::new(),
+            pause_bcast: 0,
         }
     }
 
@@ -242,6 +282,117 @@ impl<T: Transport> HostLockstep<T> {
     /// R6b：被取缔时，发来 `Takeover` 的端（通常即新 host 的 peer）；未记录则为 `None`。
     pub fn superseded_by(&self) -> Option<Peer> {
         self.superseded_by
+    }
+
+    /// R7：登记本 host 稳定身份（用于暂停额度列表与自暂停）。
+    pub fn set_local_identity(&mut self, id: u64) {
+        self.local_identity = id;
+    }
+
+    /// R7：某参与者的剩余暂停次数（未登记则默认额度）。
+    pub fn pause_budget_of(&self, id: u64) -> u8 {
+        self.pause_budget
+            .iter()
+            .find(|(i, _)| *i == id)
+            .map(|(_, b)| *b)
+            .unwrap_or(PAUSE_BUDGET_DEFAULT)
+    }
+
+    fn dec_pause_budget(&mut self, id: u64) {
+        if let Some(e) = self.pause_budget.iter_mut().find(|(i, _)| *i == id) {
+            e.1 = e.1.saturating_sub(1);
+        } else {
+            self.pause_budget.push((id, PAUSE_BUDGET_DEFAULT.saturating_sub(1)));
+        }
+    }
+
+    /// R7：当前是否暂停（暂停期间 `try_emit` 不产帧）。
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    /// R7：当前暂停状态视图（供 host 广播 / UI 显示）。
+    pub fn pause_view(&self) -> PauseView {
+        let mut remaining: Vec<(u64, u8)> = Vec::new();
+        for id in self.client_identities.iter().flatten() {
+            remaining.push((*id, self.pause_budget_of(*id)));
+        }
+        if self.local_identity != 0 && !remaining.iter().any(|(i, _)| *i == self.local_identity) {
+            remaining.push((self.local_identity, self.pause_budget_of(self.local_identity)));
+        }
+        PauseView {
+            paused: self.paused,
+            by: self.pause_by,
+            resume_in: self.pause_resume,
+            remaining,
+        }
+    }
+
+    /// R7：请求暂停（`by`=发起者身份）。被暂停中/冷却中/额度用尽时拒绝并返回 false。
+    pub fn request_pause(&mut self, by: u64) -> bool {
+        if self.paused || self.pause_cooldown > 0 || by == 0 {
+            return false;
+        }
+        if self.pause_budget_of(by) == 0 {
+            return false;
+        }
+        self.dec_pause_budget(by);
+        self.paused = true;
+        self.pause_by = by;
+        self.pause_resume = 0;
+        self.pause_bcast = 0;
+        self.broadcast_pause_state();
+        true
+    }
+
+    /// R7：请求恢复（任何人都可）。已不在暂停/已在倒计时中时拒绝并返回 false。
+    pub fn request_resume(&mut self) -> bool {
+        if !self.paused || self.pause_resume > 0 {
+            return false;
+        }
+        self.pause_resume = RESUME_COUNTDOWN_TICKS;
+        self.broadcast_pause_state();
+        true
+    }
+
+    /// R7：每帧推进暂停状态机（倒计时/冷却/周期重播）。host 主循环每 update 调一次。
+    pub fn tick_pause(&mut self) {
+        if self.pause_cooldown > 0 {
+            self.pause_cooldown -= 1;
+        }
+        self.pause_bcast = self.pause_bcast.wrapping_add(1);
+        if !self.paused {
+            return;
+        }
+        if self.pause_resume > 0 {
+            self.pause_resume -= 1;
+            if self.pause_resume == 0 {
+                self.paused = false;
+                self.pause_by = 0;
+                self.pause_cooldown = PAUSE_COOLDOWN_TICKS;
+            }
+            self.broadcast_pause_state();
+        } else if self.pause_bcast % 15 == 0 {
+            // 暂停中（无倒计时）：周期重播状态，避免初始广播丢失导致 client 不知道被暂停。
+            self.broadcast_pause_state();
+        }
+    }
+
+    /// R7：向所有已知 client 广播当前暂停状态（连发 3 拍增强投递可靠性）。
+    fn broadcast_pause_state(&mut self) {
+        let v = self.pause_view();
+        let pkt = Packet::PauseState {
+            paused: v.paused,
+            by: v.by,
+            resume_in: v.resume_in,
+            remaining: v.remaining,
+        };
+        let enc = pkt.encode();
+        for _ in 0..3 {
+            for peer in self.client_peers.iter().flatten() {
+                let _ = self.transport.send_to(&enc, peer);
+            }
+        }
     }
 
     /// 主机迁移接管：把「原 client lockstep」转换为「新 host lockstep」。
@@ -737,6 +888,14 @@ impl<T: Transport> HostLockstep<T> {
                                 self.superseded = true;
                                 self.superseded_by = Some(from);
                             }
+                            Packet::PauseReq { identity, resume } => {
+                                // R7：host 仲裁暂停/恢复。恢复任何人都可；暂停需额度且不在冷却。
+                                if resume {
+                                    self.request_resume();
+                                } else {
+                                    self.request_pause(identity);
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -762,6 +921,10 @@ impl<T: Transport> HostLockstep<T> {
     pub fn try_emit(&mut self) -> Option<(u64, crate::proto::FrameData)> {
         // S2/S4：已被新 host 取缔 → 不再产/广播权威帧，避免与新 host 双权威脑裂。
         if self.superseded {
+            return None;
+        }
+        // R7：暂停中不产帧（帧号不前进；client 期望 seq 不变，恢复后自然续上）。
+        if self.paused {
             return None;
         }
         let mut entries: FrameData = Vec::new();
@@ -868,6 +1031,8 @@ pub struct ClientLockstep<T: Transport> {
     /// 周期收到的世界状态哈希（`(seq, host_hash)`），按 seq 缓存供 client 推进到该帧时比对。
     /// 有界（只保留最近若干条），避免长期运行/落后时无界增长。
     state_hashes: VecDeque<(u64, u64)>,
+    /// R7：host 广播的暂停状态（权威视图）。
+    pause: PauseView,
 }
 
 /// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
@@ -888,7 +1053,20 @@ impl<T: Transport> ClientLockstep<T> {
             latest_snapshot: None,
             latest_takeover: None,
             state_hashes: VecDeque::new(),
+            pause: PauseView::default(),
         }
+    }
+
+    /// R7：当前 host 广播的暂停状态视图。
+    pub fn pause_view(&self) -> &PauseView {
+        &self.pause
+    }
+
+    /// R7：向 host 发送暂停/恢复请求（`resume`=true 为请求恢复）。
+    pub fn send_pause_req(&mut self, identity: u64, resume: bool) -> io::Result<()> {
+        let pkt = Packet::PauseReq { identity, resume };
+        self.transport.send_to(&pkt.encode(), &self.host)
+            .map(|_| ())
     }
 
     /// 缓存 host 广播的状态哈希（按 seq 排序插入，保持有界）。
@@ -1157,8 +1335,8 @@ impl<T: Transport> ClientLockstep<T> {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
-                        // R4①：同 `step_frame`，只信任当前 host 的帧/快照/哈希。
-                        if matches!(&pkt, Packet::Frame { .. } | Packet::Snapshot { .. } | Packet::StateHash { .. })
+                        // R4①：同 `step_frame`，只信任当前 host 的帧/快照/哈希/暂停状态。
+                        if matches!(&pkt, Packet::Frame { .. } | Packet::Snapshot { .. } | Packet::StateHash { .. } | Packet::PauseState { .. })
                             && from != self.host
                         {
                             continue;
@@ -1179,6 +1357,10 @@ impl<T: Transport> ClientLockstep<T> {
                                 // 缓存 host 的周期性世界哈希，供推进到该帧时比对（分歧检测）。
                                 self.record_state_hash(seq, hash);
                             }
+                            Packet::PauseState { paused, by, resume_in, remaining } => {
+                                // R7：缓存 host 权威暂停状态。
+                                self.pause = PauseView { paused, by, resume_in, remaining };
+                            }
                             _ => {}
                         }
                     }
@@ -1198,9 +1380,9 @@ impl<T: Transport> ClientLockstep<T> {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
-                        // R4①：只信任当前 host 的权威数据包（Frame/Snapshot/StateHash），避免被取代的
+                        // R4①：只信任当前 host 的权威数据包（Frame/Snapshot/StateHash/PauseState），避免被取代的
                         // “僵尸 host”的帧污染已切换权威的本端（Takeover 仍接受任意来源，交给迁移逻辑）。
-                        if matches!(&pkt, Packet::Frame { .. } | Packet::Snapshot { .. } | Packet::StateHash { .. })
+                        if matches!(&pkt, Packet::Frame { .. } | Packet::Snapshot { .. } | Packet::StateHash { .. } | Packet::PauseState { .. })
                             && from != self.host
                         {
                             continue;
@@ -1224,6 +1406,10 @@ impl<T: Transport> ClientLockstep<T> {
                             Packet::StateHash { seq, hash } => {
                                 // 缓存 host 的周期性世界哈希，供推进到该帧时比对（分歧检测）。
                                 self.record_state_hash(seq, hash);
+                            }
+                            Packet::PauseState { paused, by, resume_in, remaining } => {
+                                // R7：缓存 host 权威暂停状态。
+                                self.pause = PauseView { paused, by, resume_in, remaining };
                             }
                             _ => {}
                         }
@@ -1826,6 +2012,43 @@ mod tests {
         // FakeTransport 的 recv_from 固定回对端地址（client_peer=4001）。
         assert_eq!(host.superseded_by(), Some(Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4001)))), "应记录来源端为新 host");
         assert!(host.try_emit().is_none(), "被取缔后不再产帧");
+    }
+
+    /// R7：暂停仲裁 + 恢复倒计时 + 额度扣减 + client 收到状态。
+    #[test]
+    fn pause_arbitration_and_resume_countdown() {
+        let (ht, ct) = pair();
+        let host_peer = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000)));
+        let mut host = HostLockstep::new(ht, 2, true);
+        host.set_local_identity(1000);
+        host.set_client_identities(&[Some(2000)]);
+        let mut cli = ClientLockstep::new(ct, 1, host_peer);
+        let mut hrcv = [0u8; 4096];
+        // 先发一帧上行登记 host 侧的 client peer（否则广播暂停状态无接收方）。
+        cli.send_room_state(false, false, &[0]).unwrap();
+        host.poll(&mut hrcv);
+        // client 请求暂停。
+        cli.send_pause_req(2000, false).unwrap();
+        host.poll(&mut hrcv);
+        assert!(host.is_paused(), "host 应进入暂停");
+        assert_eq!(host.pause_budget_of(2000), PAUSE_BUDGET_DEFAULT - 1, "应扣减发起者额度");
+        assert!(host.try_emit().is_none(), "暂停中不产帧");
+        // client 收到 PauseState。
+        let mut crcv = [0u8; 4096];
+        assert!(cli.step_frame(&mut crcv).unwrap().is_none());
+        assert!(cli.pause_view().paused);
+        assert_eq!(cli.pause_view().by, 2000);
+        // client 请求恢复（任何人可）。
+        cli.send_pause_req(1000, true).unwrap();
+        host.poll(&mut hrcv);
+        assert!(host.is_paused(), "恢复倒计时中仍暂停");
+        assert_eq!(host.pause_view().resume_in, RESUME_COUNTDOWN_TICKS);
+        for _ in 0..RESUME_COUNTDOWN_TICKS {
+            host.tick_pause();
+        }
+        assert!(!host.is_paused(), "倒计时结束应恢复");
+        // 恢复后冷却期内不能再次暂停。
+        assert!(!host.request_pause(1000), "冷却期内应拒绝暂停");
     }
 
     /// R4①：客户端应忽略来自非当前 host 的权威帧（防“僵尸 host”污染）。

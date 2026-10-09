@@ -533,6 +533,18 @@ const EN: &[(&str, &str)] = &[
     ("正在重新加入上一局…（{secs}s）", "Rejoining the previous match… ({secs}s)"),
     ("你已被接管，正在重新加入…（{secs}s）", "You were taken over; rejoining… ({secs}s)"),
     ("无法重新加入上一局，已返回主菜单", "Could not rejoin the previous match; returned to the main menu"),
+    // ---- R7：联机暂停 ----
+    ("暂停 / 恢复（联机）", "Pause / Resume (online)"),
+    ("暂停次数已用尽", "No pause uses left"),
+    ("暂停次数已用尽或冷却中", "No pause uses left or on cooldown"),
+    ("暂停本局？（回车确认 / Esc 取消）", "Pause the match? (Enter to confirm / Esc to cancel)"),
+    ("恢复本局？（回车确认 / Esc 取消）", "Resume the match? (Enter to confirm / Esc to cancel)"),
+    ("{by} 暂停了本局", "{by} paused the match"),
+    ("{n} 秒后恢复…", "Resuming in {n}s…"),
+    ("按 {key} 可请求恢复（任何人）", "Press {key} to request resume (anyone)"),
+    ("本端剩余暂停次数：{n}", "Your remaining pauses: {n}"),
+    ("你", "You"),
+    ("玩家 #{id}", "Player #{id}"),
     // ---- 对局内退出菜单（E1） ----
     ("对局菜单", "Match menu"),
     ("继续游戏", "Resume"),

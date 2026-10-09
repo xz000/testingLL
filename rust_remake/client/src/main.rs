@@ -1202,6 +1202,15 @@ struct Game {
     /// R5c：归队握手已进行的帧数（节流重发 + 超时判定）。
     #[cfg(feature = "steam")]
     steam_rejoin_ticks: u32,
+    /// R7：暂停确认框是否打开（避免一键误触）。
+    #[cfg(feature = "steam")]
+    pause_confirm: bool,
+    /// R7：本帧待发送的暂停动作（Some(true)=请求暂停，Some(false)=请求恢复）。
+    #[cfg(feature = "steam")]
+    pause_pending: Option<bool>,
+    /// R7：暂停相关提示（文案, 剩余秒）。
+    #[cfg(feature = "steam")]
+    pause_toast: (String, f64),
     /// Steam：主菜单上是否已尝试过初始化会话（失败也不再每帧重试，避免刷屏 + 反复 SteamAPI_Init）。
     #[cfg(feature = "steam")]
     steam_session_tried: bool,
@@ -1715,6 +1724,12 @@ impl Game {
             steam_rejoin_handshaking: false,
             #[cfg(feature = "steam")]
             steam_rejoin_ticks: 0,
+            #[cfg(feature = "steam")]
+            pause_confirm: false,
+            #[cfg(feature = "steam")]
+            pause_pending: None,
+            #[cfg(feature = "steam")]
+            pause_toast: (String::new(), 0.0),
             #[cfg(feature = "steam")]
             steam_session_tried: false,
             #[cfg(feature = "steam")]
@@ -3733,6 +3748,17 @@ impl Game {
             self.draw_waiting_host_banner(&mut canvas, ctx)?;
         }
 
+        // R7：暂停覆盖层 / 确认框（仅 Steam，对局内；迁移/归队期间不叠加）。
+        #[cfg(feature = "steam")]
+        if self.steam_active()
+            && (self.pause_confirm || self.steam_paused_now())
+            && !self.steam_migrating
+            && !self.steam_rejoin_handshaking
+            && !self.escape_menu
+        {
+            self.draw_pause_overlay(&mut canvas, ctx)?;
+        }
+
         // 帧同步分歧警示：检测到本端世界哈希与 host 广播不一致时显示红条。
         if self.desync_detected {
             let (sw, _sh) = (ui::UI_W, ui::UI_H);
@@ -3894,6 +3920,10 @@ impl Game {
             if !self.steam_toast.0.is_empty() && now < self.steam_toast.1 {
                 let (sw, sh) = (ui::UI_W, ui::UI_H);
                 draw_text(&mut canvas, ctx, &self.steam_toast.0, 22.0, Color::from_rgb(255, 215, 120), Point2 { x: sw / 2.0, y: sh * 0.08 }, true)?;
+            }
+            if !self.pause_toast.0.is_empty() && now < self.pause_toast.1 {
+                let (sw, sh) = (ui::UI_W, ui::UI_H);
+                draw_text(&mut canvas, ctx, &self.pause_toast.0, 22.0, Color::from_rgb(255, 190, 90), Point2 { x: sw / 2.0, y: sh * 0.12 }, true)?;
             }
         }
 
@@ -6507,6 +6537,17 @@ impl event::EventHandler for Game {
             }
         }
 
+        // R7：Steam 对局内暂停/恢复键（默认 F9，可自定义）——先弹确认框防误触。
+        #[cfg(feature = "steam")]
+        if self.steam_active()
+            && !self.escape_menu
+            && self.meta.phase == MatchPhase::Fighting
+            && !self.steam_rejoin_handshaking
+            && !self.steam_migrating
+        {
+            self.steam_pause_input(ctx);
+        }
+
         match self.meta.phase {
             MatchPhase::Finished => {
                 // 整场对抗结束：不再模拟
@@ -6675,6 +6716,16 @@ impl event::EventHandler for Game {
                                 }
                             }
                         }
+                        // R7：登记本端身份 + 处理本端暂停/恢复请求 + 推进暂停状态机（每 update 一次）。
+                        host.set_local_identity(self.steam_my_id);
+                        if let Some(want) = self.pause_pending.take() {
+                            let ok = if want { host.request_pause(self.steam_my_id) } else { host.request_resume() };
+                            if !ok && want {
+                                let now = ctx.time.time_since_start().as_secs_f64();
+                                self.pause_toast = (i18n::t("暂停次数已用尽或冷却中").to_string(), now + 2.5);
+                            }
+                        }
+                        host.tick_pause();
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
                         if self.net_cfg == NetCfgSync::HostGather {
@@ -6875,7 +6926,12 @@ impl event::EventHandler for Game {
                             }
                         }
                         self.steam_host_broadcasting_takeover = takeover_bcast;
+                        let host_paused = host.is_paused();
                         self.steam_host_ls = Some(host);
+                        if host_paused {
+                            // 暂停中：保持每 update 一次轮询（收暂停/恢复请求），但不让 accumulator 无限堆积。
+                            self.accumulator = TICK;
+                        }
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
                         // Steam client：开局配置·配置同步阶段——上报我的 PlayerCfg，等 host 广播 PlayerCfgAll 后完成。
                         if self.net_cfg == NetCfgSync::ClientWait {
@@ -6986,6 +7042,10 @@ impl event::EventHandler for Game {
                         // 输入**每模拟 tick 上行一条**（与 host 每帧消耗 1 条一一对应）。
                         // 注：不能改成“每次 update 只发一条”——若 client 渲染<60fps，发送率会低于 host
                         // 产帧率，host `try_emit` 就会因缺输入而停摆（实测：sim 掉到 ~20–30Hz 且抖）。
+                        // R7：发送本端暂停/恢复请求（由 host 仲裁后广播生效）。
+                        if let Some(want) = self.pause_pending.take() {
+                            let _ = cli.send_pause_req(self.steam_my_id, !want);
+                        }
                         // R8：有界 backlog 追赶——正常按 accumulator 步进；若 backlog 超过阈值，
                         // 则在本 update 内额外消费 pending（最多 CATCHUP_MAX_PER_UPDATE 步），尽快回到 live。
                         // 追赶步不由 accumulator 供资（不扣 accumulator），避免追赶后 accumulator 欠账变慢。
@@ -7058,6 +7118,11 @@ impl event::EventHandler for Game {
                                 }
                                 steps_this_update += 1;
                             } else {
+                                // R7：暂停中不累计掉线计数（否则暂停超时会被误判为 host 掉线而触发迁移）。
+                                if cli.pause_view().paused {
+                                    self.steam_cli_stale_ticks = 0;
+                                    break;
+                                }
                                 // 本帧无权威帧：累计掉线计数，超阈值进入「主机迁移/重连探测」（host 可能掉线）。
                                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
                                 if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
@@ -7071,6 +7136,10 @@ impl event::EventHandler for Game {
                                 }
                                 break; // 等权威帧（不扣 accumulator；上限由 accumulate_tick 夹住，避免无限增长后一帧快进过多）
                             }
+                        }
+                        if cli.pause_view().paused {
+                            // 暂停中：保持每 update 一次轮询（收 host 的恢复广播），但不堆积 accumulator。
+                            self.accumulator = TICK;
                         }
                         self.steam_cli_ls = Some(cli);
                     }
@@ -7618,6 +7687,10 @@ impl Game {
             self.steam_stats_recorded = false;
             self.steam_stats_snapshot = None;
             self.steam_toast = (String::new(), 0.0);
+            // R7：清除暂停 UI 状态。
+            self.pause_confirm = false;
+            self.pause_pending = None;
+            self.pause_toast = (String::new(), 0.0);
             // R5c：干净离场 → 清除归队会话（不再提示重新加入）。
             rejoin::clear(&rejoin::default_path());
             self.steam_rejoin_prompt = None;
@@ -9051,6 +9124,108 @@ impl Game {
         true
     }
 
+    /// R7：当前是否处于暂停（host 看 HostLockstep，client 看广播视图）。
+    #[cfg(feature = "steam")]
+    fn steam_paused_now(&self) -> bool {
+        if let Some(h) = self.steam_host_ls.as_ref() {
+            h.is_paused()
+        } else if let Some(c) = self.steam_cli_ls.as_ref() {
+            c.pause_view().paused
+        } else {
+            false
+        }
+    }
+
+    /// R7：暂停状态视图（host/client 统一口径）。
+    #[cfg(feature = "steam")]
+    fn steam_pause_view(&self) -> net::lockstep::PauseView {
+        if let Some(h) = self.steam_host_ls.as_ref() {
+            h.pause_view()
+        } else if let Some(c) = self.steam_cli_ls.as_ref() {
+            c.pause_view().clone()
+        } else {
+            net::lockstep::PauseView::default()
+        }
+    }
+
+    /// R7：本端（我的 steam id）剩余暂停次数。
+    #[cfg(feature = "steam")]
+    fn steam_pause_remaining_mine(&self) -> u8 {
+        self.steam_pause_view()
+            .remaining
+            .iter()
+            .find(|(id, _)| *id == self.steam_my_id)
+            .map(|(_, b)| *b)
+            .unwrap_or(net::lockstep::PAUSE_BUDGET_DEFAULT)
+    }
+
+    /// R7：对局内暂停/恢复键处理（先弹确认框防误触，再置 `pause_pending` 由 host/client 分支发送）。
+    #[cfg(feature = "steam")]
+    fn steam_pause_input(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let paused = self.steam_paused_now();
+        if !self.pause_confirm {
+            if self.bind_just(ctx, local_settings::BindAction::Pause) {
+                if !paused && self.steam_pause_remaining_mine() == 0 {
+                    let now = ctx.time.time_since_start().as_secs_f64();
+                    self.pause_toast = (i18n::t("暂停次数已用尽").to_string(), now + 2.5);
+                    return;
+                }
+                self.pause_confirm = true;
+            }
+            return;
+        }
+        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
+            self.pause_confirm = false;
+        } else if keys::confirm_just(ctx) {
+            self.pause_confirm = false;
+            self.pause_pending = Some(!paused); // true=请求暂停
+        }
+    }
+
+    /// R7：暂停覆盖层（确认框 / 暂停中 / 恢复倒计时）。
+    #[cfg(feature = "steam")]
+    fn draw_pause_overlay(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let cx = sw / 2.0;
+        let v = self.steam_pause_view();
+        if !self.pause_confirm {
+            let dim = Mesh::new_rectangle(
+                &ctx.gfx,
+                DrawMode::fill(),
+                graphics::Rect::new(0.0, 0.0, sw, sh),
+                Color::from_rgba(8, 8, 12, 170),
+            )?;
+            canvas.draw(&dim, graphics::DrawParam::new());
+        }
+        let key = self.local_settings.bind_key(local_settings::BindAction::Pause).label();
+        let pauser = if v.by == self.steam_my_id {
+            i18n::t("你").to_string()
+        } else {
+            i18n::tf("玩家 #{id}", &[("id", v.by.to_string())])
+        };
+        let status = if self.pause_confirm {
+            if self.steam_paused_now() {
+                i18n::t("恢复本局？（回车确认 / Esc 取消）").to_string()
+            } else {
+                i18n::t("暂停本局？（回车确认 / Esc 取消）").to_string()
+            }
+        } else if v.resume_in > 0 {
+            let secs = ((v.resume_in as f32) / 60.0).ceil() as u32;
+            i18n::tf("{n} 秒后恢复…", &[("n", secs.to_string())])
+        } else {
+            i18n::tf("{by} 暂停了本局", &[("by", pauser)])
+        };
+        let col = if self.pause_confirm { Color::from_rgb(255, 210, 140) } else { Color::from_rgb(255, 190, 90) };
+        draw_text(canvas, ctx, &status, 34.0, col, Point2 { x: cx, y: sh * 0.40 }, true)?;
+        if !self.pause_confirm && v.resume_in == 0 {
+            draw_text(canvas, ctx, &i18n::tf("按 {key} 可请求恢复（任何人）", &[("key", key.clone())]), 20.0, Color::from_rgb(180, 210, 240), Point2 { x: cx, y: sh * 0.40 + 52.0 }, true)?;
+        }
+        draw_text(canvas, ctx, &i18n::tf("本端剩余暂停次数：{n}", &[("n", self.steam_pause_remaining_mine().to_string())]), 20.0, Color::from_rgb(170, 176, 190), Point2 { x: cx, y: sh * 0.40 + 84.0 }, true)?;
+        Ok(())
+    }
+
         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
     /// 设置界面键鼠输入：↑↓ 选择、←→ 调值、回车/点击 调整、Esc/Q/返回 关闭。自动保存。
     fn settings_update(&mut self, ctx: &Context) {
@@ -10257,6 +10432,7 @@ impl Game {
             FormSwitch => i18n::t("切换技能形态").to_string(),
             ShopCat(i) => i18n::tf("商店分类 {n}", &[("n", (i + 1).to_string())]),
             Mute => i18n::t("静音").to_string(),
+            Pause => i18n::t("暂停 / 恢复（联机）").to_string(),
         }
     }
 
@@ -11507,7 +11683,7 @@ fn keybind_group_title(a: local_settings::BindAction) -> &'static str {
     use local_settings::BindAction::*;
     match a {
         Skill(_) => "战斗 · 技能",
-        Stop | CamCenter | CamSelf | CamFollow => "战斗 · 镜头与停止",
+        Stop | CamCenter | CamSelf | CamFollow | Pause => "战斗 · 镜头与停止",
         Buy | Sell => "学习期 · 通用",
         FormSwitch => "学习期 · 技能页",
         ShopCat(_) => "学习期 · 商店页",
@@ -11558,6 +11734,8 @@ fn named_key(n: local_settings::NamedBind) -> winit::keyboard::NamedKey {
         Enter => NamedKey::Enter,
         Delete => NamedKey::Delete,
         Backspace => NamedKey::Backspace,
+        F8 => NamedKey::F8,
+        F9 => NamedKey::F9,
         F10 => NamedKey::F10,
         Home => NamedKey::Home,
         End => NamedKey::End,
@@ -12334,7 +12512,7 @@ mod tests {
             })
             .collect();
         assert_eq!(actions, local_settings::BIND_ACTIONS.to_vec(), "每个可绑动作都应出现且顺序一致");
-        assert_eq!(actions.len(), 19, "（8 技能 + 停止 + 3 镜头 + 买 + 卖 + 形态 + 商店 3 类 + 静音）");
+        assert_eq!(actions.len(), 20, "（8 技能 + 停止 + 3 镜头 + 暂停 + 买 + 卖 + 形态 + 商店 3 类 + 静音）");
         let headers = rows.iter().filter(|r| matches!(r, KeybindRow::Header(_))).count();
         assert_eq!(headers, 6, "应有 6 个分组标题");
         // 选择下标 ↔ 显示行号一致，导航不会错位。
