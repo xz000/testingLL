@@ -4630,8 +4630,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     crate::skill::SkillId::S003 | crate::skill::SkillId::S004
                 )));
                 // S016 弹跳弹：单跳射程 = max_distance（098c Range 900→1950），换算飞行时间 = range/speed。
+                // 098c `Gc`：`ev=(750+150L)*(1+.1*ei)/900`，即射程**含时间精通 ei**（重定向 `Fc` 同样按 ei 重算）。
                 if proj == crate::skill::W098bProjKind::Bounce {
-                    life = stats.max_distance / speed;
+                    life = stats.max_distance / speed * Fix64::from_num(ei_mult(false));
                 }
                 // S008 陨石（098c iB）：speed = 点击距离/1.35（变速度，1.35s 命中；非固定 400）。
                 let mut speed = speed;
@@ -9988,6 +9989,44 @@ mod tests {
             .expect("弹跳弹应仍在场");
         assert!(vel.y > Fix64::ZERO, "应朝 +y 目标偏转，实际 {vel:?}");
         assert!(vel.x < Fix64::from_num(900.0), "前向速度应因制导略降，实际 {vel:?}");
+    }
+
+    /// R7 复核①：S016A 射程包含时间精通 ei（098c `Gc`: `ev=(750+150L)*(1+.1*ei)/900`）。
+    #[test]
+    fn s016_bounce_a_range_scales_with_time_mastery() {
+        let life_at = |ei: u8| -> f64 {
+            let mut world = World::new(2, 0x6016);
+            world.obstacles.clear();
+            world.sandbox = true;
+            world.base_regen = 0.0;
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[0].mastery[2] = ei; // R00Y 时间精通
+            world.players[1].pos = Vec2::new(Fix64::ZERO, d60(30.0));
+            world.players[1].move_target = None;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            world.step(
+                vec![
+                    PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(20.0), Fix64::ZERO)))), ..Default::default() },
+                    PlayerInput::default(),
+                ],
+                dt,
+            );
+            world
+                .projectiles
+                .iter()
+                .find_map(|p| match p.kind {
+                    ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, life, .. } => {
+                        Some(life.to_num::<f64>())
+                    }
+                    _ => None,
+                })
+                .expect("应生成弹跳弹")
+        };
+        let l0 = life_at(0);
+        let l6 = life_at(6);
+        assert!((l0 - 1.0).abs() < 1e-3, "ei=0 时 L1 单跳寿命应 900/900=1.0，实际 {l0}");
+        assert!((l6 - 1.6).abs() < 1e-3, "ei=6 时应 ×(1+.1*6)=1.6，实际 {l6}");
     }
 
     #[test]
