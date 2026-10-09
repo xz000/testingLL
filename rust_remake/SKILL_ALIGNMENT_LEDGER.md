@@ -539,16 +539,16 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
-| 发射 | `jb`：`LX()` → `dir=(点击点−施法者)` 归一；射程 `Cb=(1+1.5*.1*ei)*600` = **600×(1+0.15ei)**；伤害 `cX=6+1*Ur[ri]` = **6+L**（tooltip Damage 7→13 ✓）；调 `Bb(cb,px,py,dx,dy,Cb,cX)` | def speed/range 待对账 | 📋 |
-| **射线扫描** | `Bb` 遍历 **`gX=kv`（全对象表）**；过滤 `(cn!=施法者队 or hv[gX]==Vi) and Av[3*gX+2] and not(hv[gX]==zi)` → **排除幻象/分身**（`zi=fC`）；取沿射线距离 `cO = px*(-dy)+py*dx` 最小、且在半径内的**首个**对象 | 我方 `S002` 射线命中 | 📋 |
-| **命中术士** | `if wR(db,45) then mI(cb,db,cX,.95)` → 伤害 `6+L`、**击退系数 .95**；并 `Iv[cb]=ar[Vv[db]]`（重置吸收预算） | 伤害 ✓？击退系数待核 | 📋 |
-| **命中柱子** | 解析式圆相交（阈值 `$3840=120²`）→ 若命中：在柱面画闪电 `AddLightning("CLSB")` + 生成 `'shld'` 装饰单位，然后 **递归 `Bb(db,Fb,Gb,px,py,D,cX)`**：`D=Cb-fb`（剩余射程）、方向 `(px,py)` 已按柱面法线**镜像反射**；**仅当 `D>100` 才继续** | 我方：柱子挡下（？）需核对——原版是**镜面反弹并继续** | ⚠ 差异候选 |
+| 发射 | `jb`：`LX()` → `dir=(点击点−施法者)` 归一；射程 `Cb=(1+1.5*.1*ei)*600` = **600×(1+0.15ei)**；伤害 `cX=6+1*Ur[ri]` = **6+L**（tooltip Damage 7→13 ✓）；调 `Bb(cb,px,py,dx,dy,Cb,cX)` | ✅ 我方射程 `range×ei_mult(true)`（600×1.15ei）、伤害 `stats.damage`=6+L | ✅ |
+| **射线扫描** | `Bb` 遍历 **`gX=kv`（全对象表）**；过滤 `(cn!=施法者队 or hv[gX]==Vi) and Av[3*gX+2] and not(hv[gX]==zi)` → **排除幻象/分身**（`zi=fC`）；取沿射线距离 `cO = px*(-dy)+py*dx` 最小、且在半径内的**首个**对象 | ✅ 已实现：扫玩家 + 柱子 + **弹体**（`col_mask & MISSILE` 且（异队 或 火球）） | ✅ |
+| **命中术士** | `if wR(db,45) then mI(cb,db,cX,.95)` → 伤害 `6+L`、**击退系数 .95**；并 `Iv[cb]=ar[Vv[db]]`（重置吸收预算） | ✅ 伤害 6+L、`kb_ji=0.95` | ✅ |
+| **命中柱子** | 解析式圆相交（阈值 `$3840=120²`）→ 若命中：在柱面画闪电 `AddLightning("CLSB")` + 生成 `'shld'` 装饰单位，然后 **递归 `Bb(db,Fb,Gb,px,py,D,cX)`**：`D=Cb-fb`（剩余射程）、方向 `(px,py)` 已按柱面法线**镜像反射**；**仅当 `D>100` 才继续** | ✅ 已实现（镜面反射 + 剩余射程递减） | ✅ |
 | ✅ `Bb` 尾部全解 | ① **命中自己队的火球**（`hv[db]==Vi and cn同队`）→ `pI(db, 2*(cX+6.3+0.7*ur)/3, 3*cX/(cX+6.3+0.7*ur)/2, K/L[db], 230, .6)` + `iO(db,true)` 销毁那枚火球 + LGH_FB/Thunderclap 特效，并 `uI=false`（不画自家闪电）—— 疑似“闪电引爆自家火球”的联防机制（待细读）。
 | ✅ ② 命中敌方弹体 | `nv[db]==2` → 调那枚弹体自己的 **`Jv[db]` 销毁回调**（闪电可引爆/打掉弹体）。
 | ✅ ③ 未命中（`db==0`） | `uI=false`；`px=x+(Cb+10)*dx`（闪电画到**射程+10**）；BoltImpact 特效。
 | ✅ ④ xi>0 加 AoE | `if uI then ... if xi[ri]>0 then sI(cb,cX,.95,px,py)` → **远程精通给闪电在命中点加 AoE**（`sI`→`pI`：半径 `pe*(1+.12xi)`=160×、地板 `.15xi`、击退 .95）。
 | ✅ ⑤ 收尾 | `Iv[cb]=0`；`Db=AddLightning("CLSB",true,x,y,px,py)`；`LO(function bb,.3s)` 到期 `DestroyLightning`。 |
-| ⚠ 我方差异候选 | S002 需核三项：**打敌方弹体**（调 `Jv`）、**打自家火球**（`pI` 引爆）、**xi>0 的沿点 AoE**。 | ⚠ |
+| 三项差异 | ① 敌方弹体（`nv==2`）→ `Jv` 引爆；② 己方火球（`hv==Vi` 同队）→ `pI` 引爆（半径230、伤 `2*(cX+火伤)/3`、地板.6）；③ `xi>0` 命中点 `sI` AoE（半径 `160(1+.12xi)`、地板 `.15xi`、击退.95） | ✅ 已实现（`ce87283`）；测试 `s002_lightning_intercepts_enemy_projectile` / `s002_lightning_xi_aoe_splashes` | ✅ |
 | 视觉 | `AddLightning("CLSB",true,起,终)`；`LO(function bb, .3s, ...)` → `bb`(10844) = `DestroyLightning` | 我方折线闪电 | ✅ 近似 |
 | 撞柱 `xv` | 生成处未设 → `-1`（但本技能根本不是弹体，撞柱逻辑在 `Bb` 里） | — | ✅ |
 | ⚠ 字段语义补充 | `Bb` 用 **`Av[3*gX+2]`** 作“射线可命中”的过滤位，说明 `Av[+2]` 在这套系统里不只用于弹体互撞——需在 `JASS_FIELDS_098c.md` 里补注 | — | 📝 待记 |

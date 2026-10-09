@@ -9610,7 +9610,7 @@ mod tests {
         for _ in 0..60 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[2].hp < hp2, "范围精通>0 时闪电应溅射到撞击点附近（实际 hp2 {hp2} -> {}", world.players[2].hp);
+        assert!(world.players[2].hp < hp2, "范围精通>0 时闪电应溅射到撞击点附近（实际 hp2 {hp2} -> {}）", world.players[2].hp);
     }
 
     /// S018B 力场弹（098c `Mc`）：**850/s 飞行弹**到点才生成力场（非立即），且飞行弹不参与碰撞。
