@@ -82,6 +82,15 @@ const MAX_CATCHUP_STEPS: usize = 8;
 /// 据此停止每帧重发。取值覆盖一帧最大位移（含冰面不吸附的滑行落点）。
 const PLAYER_TARGET_ARRIVE_EPS: f64 = 12.0;
 
+/// 当前 Unix 秒（取不到时返回 0）。仅 Steam（R5c 会话时间戳）。
+#[cfg(feature = "steam")]
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// 固定步长累加器：加入本帧时间（上限 0.25s）并夹到 [`MAX_CATCHUP_STEPS`] 步以内。
 /// 纯函数，便于单测。
 fn accumulate_tick(acc: f64, dt: f64) -> f64 {
@@ -162,6 +171,9 @@ const RECONNECT_REQ_EVERY: u64 = 15;
 /// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（约 4.5s）→ 回菜单，不做最小 ID 回退。
 #[cfg(feature = "steam")]
 const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 270;
+/// R5c：归队握手超时（帧，约 15s）→ 放弃并回主菜单。仅 Steam。
+#[cfg(feature = "steam")]
+const REJOIN_TIMEOUT_TICKS: u32 = 900;
 /// R8：client backlog 超过该帧数才触发追赶加速（避开平时抖动）。仅 Steam。
 #[cfg(feature = "steam")]
 const CATCHUP_BACKLOG_THRESHOLD: usize = 6;
@@ -1178,6 +1190,18 @@ struct Game {
     /// Steam：上次已标记「近期一起玩过」的玩家集合；成员集合变化时才重新调 `SetPlayedWith`（避免每帧刷 Steam）。
     #[cfg(feature = "steam")]
     steam_played_with: Vec<u64>,
+    /// R5c：启动时读到的「上一局」归队描述（主菜单提示用；已过期/版本不符则为 None）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_prompt: Option<rejoin::RejoinSession>,
+    /// R5c：玩家确认归队时暂存的目标（进房成功后据此走归队而非新开局）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_target: Option<rejoin::RejoinSession>,
+    /// R5c：当前是否处于「归队握手」中（等 host 快照）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_handshaking: bool,
+    /// R5c：归队握手已进行的帧数（节流重发 + 超时判定）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_ticks: u32,
     /// Steam：主菜单上是否已尝试过初始化会话（失败也不再每帧重试，避免刷屏 + 反复 SteamAPI_Init）。
     #[cfg(feature = "steam")]
     steam_session_tried: bool,
@@ -1677,6 +1701,20 @@ impl Game {
             steam_presence_text: String::new(),
             #[cfg(feature = "steam")]
             steam_played_with: Vec::new(),
+            #[cfg(feature = "steam")]
+            steam_rejoin_prompt: {
+                // R5c：启动时读回上次会话；仅保留「新鲜 + 协议一致」的，供主菜单提示。
+                let now = unix_now();
+                rejoin::load(&rejoin::default_path()).filter(|s| {
+                    s.is_fresh(now) && s.protocol_version == game_core::PROTOCOL_VERSION
+                })
+            },
+            #[cfg(feature = "steam")]
+            steam_rejoin_target: None,
+            #[cfg(feature = "steam")]
+            steam_rejoin_handshaking: false,
+            #[cfg(feature = "steam")]
+            steam_rejoin_ticks: 0,
             #[cfg(feature = "steam")]
             steam_session_tried: false,
             #[cfg(feature = "steam")]
@@ -3689,7 +3727,7 @@ impl Game {
 
         // S1/S2：等待房主横幅 / 主机迁移覆盖层（仅 Steam）。
         #[cfg(feature = "steam")]
-        if self.steam_migrating {
+        if self.steam_migrating || self.steam_rejoin_handshaking {
             self.draw_migration_overlay(&mut canvas, ctx)?;
         } else if self.steam_cli_stale_ticks >= STALE_HINT_TICKS {
             self.draw_waiting_host_banner(&mut canvas, ctx)?;
@@ -4713,7 +4751,9 @@ impl Game {
         )?;
         canvas.draw(&dim, graphics::DrawParam::new());
         let secs_s = format!("{:.0}", self.steam_migrate_ticks as f64 / 60.0);
-        let status = if self.steam_new_host_id == 0 {
+        let status = if self.steam_rejoin_handshaking {
+            i18n::tf("正在重新加入上一局…（{secs}s）", &[("secs", secs_s.clone())])
+        } else if self.steam_new_host_id == 0 {
             i18n::tf("正在尝试重新连回房主…（{secs}s）", &[("secs", secs_s.clone())])
         } else if self.steam_new_host_id == self.steam_my_id {
             i18n::t("正在接管对局…").to_string()
@@ -6255,6 +6295,28 @@ impl event::EventHandler for Game {
             use ggez::input::mouse::MouseButton;
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
             let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
+            // R5c：上一局归队提示（回车/Y 加入，Esc 忽略）。
+            #[cfg(feature = "steam")]
+            if let Some(rj) = self.steam_rejoin_prompt.clone() {
+                if just_named(NamedKey::Enter) || just('y') || just('Y') {
+                    let lobby = rj.lobby_id;
+                    self.steam_rejoin_prompt = None;
+                    self.steam_rejoin_target = Some(rj);
+                    self.steam_join_lobby_id = Some(lobby);
+                    self.steam_lobby_menu = false;
+                    self.steam_lobby_create = false;
+                    self.steam_lobby_list = false;
+                    self.steam_ensure_session();
+                    self.enter_steam_mode(ctx, false, 2, None, None);
+                    self.accumulator = 0.0;
+                    return Ok(());
+                } else if just_named(NamedKey::Escape) {
+                    rejoin::clear(&rejoin::default_path());
+                    self.steam_rejoin_prompt = None;
+                    self.accumulator = 0.0;
+                    return Ok(());
+                }
+            }
             // 本机设置界面（主菜单 4 号入口）独占输入。
             if self.settings_open {
                 self.settings_update(ctx);
@@ -6859,6 +6921,34 @@ impl event::EventHandler for Game {
                         // Steam client：就绪/配置已完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
                         // 上行用 `send_room_state`（合包，Steam P2P 下实测可靠）；`send_input` 单独发送曾实测间歇丢。
                         let mut c_rcv = vec![0u8; 256 * 1024];
+                        // R5c：归队握手——等 host 快照重建 world+meta 后再进入正常推进；超时回菜单。
+                        if self.steam_rejoin_handshaking {
+                            let got = cli
+                                .rejoin_step(&mut c_rcv, self.steam_my_id, self.steam_rejoin_ticks, RECONNECT_REQ_EVERY as u32)
+                                .ok()
+                                .flatten();
+                            self.steam_rejoin_ticks = self.steam_rejoin_ticks.saturating_add(1);
+                            if let Some((wb, seq)) = got {
+                                cli.apply_resync(&mut c_rcv).ok();
+                                self.apply_snapshot_world(&wb);
+                                self.steam_rejoin_handshaking = false;
+                                self.steam_rejoin_ticks = 0;
+                                self.steam_cli_stale_ticks = 0;
+                                eprintln!("[steam-rejoin] resumed from snapshot seq={seq}");
+                            } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
+                                eprintln!("[steam-rejoin] handshake timeout -> return to menu");
+                                self.steam_cli_ls = Some(cli);
+                                self.steam_rejoin_handshaking = false;
+                                self.steam_rejoin_ticks = 0;
+                                self.reset_to_main_menu();
+                                self.menu_hint = i18n::t("无法重新加入上一局，已返回主菜单").to_string();
+                                self.accumulator = 0.0;
+                                return Ok(());
+                            }
+                            self.steam_cli_ls = Some(cli);
+                            self.accumulator = 0.0;
+                            return Ok(());
+                        }
                         // 正处于「主机迁移/重连探测」流程：推进迁移状态机（**先探测原 host 是否还在→在则重连接回；
                         // 否则选举新 host 迁移**），不推进世界（避免与最终权威分叉）。
                         // 注：Steam 掉线统一走这里（D2-A）；旧的 `poll_steam_reconnect` 因依赖从未置位的 `conn_dropped`
@@ -7507,6 +7597,12 @@ impl Game {
             self.steam_stats_recorded = false;
             self.steam_stats_snapshot = None;
             self.steam_toast = (String::new(), 0.0);
+            // R5c：干净离场 → 清除归队会话（不再提示重新加入）。
+            rejoin::clear(&rejoin::default_path());
+            self.steam_rejoin_prompt = None;
+            self.steam_rejoin_target = None;
+            self.steam_rejoin_handshaking = false;
+            self.steam_rejoin_ticks = 0;
             // 进房时 `steam_sess` 会被消费掉（传输归 lockstep），回到主菜单后可再初始化一次
             // （否则好友邀请与房间列表在主菜单上会永久失效）。
             self.steam_session_tried = false;
@@ -8685,6 +8781,8 @@ impl Game {
         let Some(kind) = self.steam_lobby_pending.take() else {
             return;
         };
+        // R5c：本次进房是否为「归队」（从主菜单「重新加入上一局」发起）。
+        let rejoin = self.steam_rejoin_target.take();
         let seed = 20260812u64;
         let res = (|| -> std::io::Result<()> {
             let mut sess = self
@@ -8858,7 +8956,41 @@ impl Game {
         self.steam_stats_recorded = false;
         self.steam_stats_snapshot = None;
         self.steam_toast = (String::new(), 0.0);
+        if let Some(rj) = rejoin.as_ref() {
+            // R5c：归队——跳过就绪界面，直接进入「归队握手」（等 host 快照重建 world+meta）。
+            self.steam_in_lobby = false;
+            self.steam_rejoin_handshaking = true;
+            self.steam_rejoin_ticks = 0;
+            self.steam_participants = rj.participants.clone();
+            self.steam_online = rj.participants.clone();
+            self.steam_my_index = rj
+                .participants
+                .iter()
+                .position(|&x| x == rj.my_steam_id)
+                .unwrap_or(0) as u8;
+            eprintln!("[steam-rejoin] joined lobby, start handshake (lobby={})", rj.lobby_id);
+        }
+        self.persist_rejoin_session();
         self.accumulator = 0.0;
+    }
+
+    /// R5c：把当前房间/对局写成可归队的会话描述（进房成功时调用；写盘失败只记日志）。
+    #[cfg(feature = "steam")]
+    fn persist_rejoin_session(&self) {
+        let Some(lobby_id) = self.steam_lobby_id else { return };
+        let mut parts: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
+        parts.sort_unstable();
+        let participants: Vec<u64> = parts.into_iter().map(|(_, id)| id).collect();
+        let s = rejoin::RejoinSession {
+            lobby_id,
+            match_key: net_steam::session::MATCH_VALUE.to_string(),
+            my_steam_id: self.steam_my_id,
+            participants,
+            protocol_version: game_core::PROTOCOL_VERSION,
+            saved_at_unix: unix_now(),
+        };
+        rejoin::save(&rejoin::default_path(), &s);
+        eprintln!("[steam-rejoin] persisted session for lobby {lobby_id} ({} participants)", s.participants.len());
     }
 
         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
@@ -10786,6 +10918,11 @@ impl Game {
         // 局域网等需在 GUI 外接管的提示（拾取对应卡片后显示，避免只 eprintln 看不到）。
         if !self.menu_hint.is_empty() {
             draw_text(&mut canvas, ctx, i18n::t(&self.menu_hint), 19.0, graphics::Color::from_rgb(255, 200, 120), Point2 { x: cx, y: sh - 76.0 }, true)?;
+        }
+        // R5c：上一局归队提示。
+        #[cfg(feature = "steam")]
+        if self.steam_rejoin_prompt.is_some() {
+            draw_text(&mut canvas, ctx, i18n::t("检测到未结束的上一局：回车/Y 重新加入，Esc 忽略"), 19.0, graphics::Color::from_rgb(140, 230, 160), Point2 { x: cx, y: sh - 110.0 }, true)?;
         }
         canvas.finish(ctx)?;
         Ok(())

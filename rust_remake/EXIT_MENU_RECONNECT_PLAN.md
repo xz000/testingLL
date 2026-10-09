@@ -778,12 +778,17 @@
 ### 22.4 分阶段实施（每步一 commit）
 | 步 | 内容 | 依赖 | 可测 |
 |---|---|---|---|
-| **R6a** | `HostLockstep::into_transport` + net 单测（host→取出 transport→建 ClientLockstep） | — | 单测 |
-| **R5a** | 会话描述序列化（`to_bytes/from_bytes` 纯函数）+ 写/读/清除点 | — | 单测 |
-| **R5b** | C1 归队握手（重建 ClientLockstep，从快照恢复 world+meta） + 单测（无头） | R6a/R5a | 单测+真机 |
-| **R5c** | 启动「重新加入上一局」提示 + join + 归队（client 崩溃场景） | R5b | 真机 |
+| **R6a ✅** | `HostLockstep::into_transport` + net 单测（`0a0ce45`） | — | 单测 |
+| **R5a ✅** | 会话描述序列化 + 读写（`f408d88`，`client/src/rejoin.rs`） | — | 单测 |
+| **R5b ✅** | C1 归队握手 `rejoin_step` + `apply_snapshot_world` | R6a/R5a | 单测 |
+| **R5c ✅** | 启动提示 + join + 归队握手（client 崩溃场景） | R5b | 真机 |
 | **R6b** | 被取代/自栅栏 host → C2+C1 归队 + U2 覆盖层 | R6a/R5b | 真机 |
 | **R7**（可选） | 暂停（P1 手动 / P2 待定） | — | 真机 |
+
+> **R5c 实现要点**：`RejoinSession` 在 `finish_enter_steam_mode` 成功时写入（`persist_rejoin_session`）、干净离场清除；
+> 主菜单启动若读到「新鲜+协议一致」的会话 → 提示「回车/Y 重新加入，Esc 忽略」；确认后按 lobby_id join，
+> 落地时走「归队」而非新开局（跳过就绪界面），在 Steam client 分支跑 `rejoin_step` 等快照重建，超时（~15s）回菜单。
+> 已知限制（MVP）：写入用的是房间成员名单（`steam_roster`），若“加入但未参战”的成员与最终参与者不同，`my_index` 可能需后续按 StartConfig 的 participants 重写。
 
 ### 22.5 待确认
 - **RJ-Q1**：崩溃重开是**提示确认**（建议）还是**自动重连**？
