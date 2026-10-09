@@ -4995,6 +4995,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 W098B_COL_UNIT | W098B_COL_MISSILE
                             } else if id == crate::skill::SkillId::S009 && alt {
                                 0
+                            } else if on_hit == crate::skill::W098bOnHit::ChainPull
+                                || on_hit == crate::skill::W098bOnHit::RedChain
+                            {
+                                // S019 链弹 `uc`/`Uc`：只设 `Av[+1/+3]`（术士+障碍）——**无 `Av[+2]`** → 不与其他弹体互撞。
+                                W098B_COL_UNIT | W098B_COL_OBSTACLE
                             } else {
                                 W098B_COL_ALL
                             },
@@ -9345,6 +9350,43 @@ mod tests {
         assert!(drops[0] > 0.0 && drops[1] > drops[0], "第二级伤害应高于第一级：{drops:?}");
         // 第三级半径 400（伤害也更高）；三级后回到 stage 0
         assert!(drops[2] > drops[1], "第三级应最强：{drops:?}");
+    }
+
+    /// S019 链弹 `Av[+1/+3]`（无 `Av[+2]`）→ **不与其他弹体互撞**（已加入 `col_mask`）。
+    #[test]
+    fn s019_chain_does_not_collide_with_missiles() {
+        let mut world = World::new(2, 0x9019);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S019, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let mut cm = None;
+        for _ in 0..30 {
+            if cm.is_some() {
+                break;
+            }
+            world.step(none.clone(), dt);
+            cm = world.projectiles.iter().find_map(|p| match &p.kind {
+                ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::ChainPull | crate::skill::W098bOnHit::RedChain, col_mask, .. } => Some(*col_mask),
+                _ => None,
+            });
+        }
+        let cm = cm.expect("应生成链弹");
+        assert_eq!(cm & W098B_COL_MISSILE, 0, "链弹不应与弹体互撞（Av[+2]=false）");
+        assert_ne!(cm & W098B_COL_UNIT, 0, "链弹应命中单位");
+        assert_ne!(cm & W098B_COL_OBSTACLE, 0, "链弹应与障碍/柱交互");
     }
 
     /// S020 灾变：施法者**固定自伤 20**（`FX(ii,20)`，下限 0.5 不致死）+ 张力 **+10**（`dX(ri,$A)`）。
