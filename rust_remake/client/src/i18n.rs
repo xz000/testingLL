@@ -547,6 +547,7 @@ const EN: &[(&str, &str)] = &[
     ("{n} 秒后恢复…", "Resuming in {n}s…"),
     ("按 {key} 可请求恢复（任何人）", "Press {key} to request resume (anyone)"),
     ("本端剩余暂停次数：{n}", "Your remaining pauses: {n}"),
+    ("剩余暂停：{list}", "Pauses left: {list}"),
     ("你", "You"),
     ("玩家 #{id}", "Player #{id}"),
     // ---- 对局内退出菜单（E1） ----

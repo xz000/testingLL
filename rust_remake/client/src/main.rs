@@ -9237,6 +9237,17 @@ impl Game {
         }
     }
 
+    /// R7d：按 SteamID 取显示名（房间名单优先，回退「玩家 #id」）。
+    #[cfg(feature = "steam")]
+    fn steam_name_of(&self, id: u64) -> String {
+        if let Some((_, name, _)) = self.steam_roster.iter().find(|(_, _, i)| *i == id) {
+            if !name.is_empty() {
+                return name.clone();
+            }
+        }
+        i18n::tf("玩家 #{id}", &[("id", id.to_string())])
+    }
+
     /// R7：本端（我的 steam id）剩余暂停次数。
     #[cfg(feature = "steam")]
     fn steam_pause_remaining_mine(&self) -> u8 {
@@ -9305,7 +9316,7 @@ impl Game {
         let pauser = if v.by == self.steam_my_id {
             i18n::t("你").to_string()
         } else {
-            i18n::tf("玩家 #{id}", &[("id", v.by.to_string())])
+            self.steam_name_of(v.by)
         };
         let status = if self.pause_confirm {
             if self.steam_paused_now() {
@@ -9324,7 +9335,23 @@ impl Game {
         if !self.pause_confirm && v.resume_in == 0 {
             draw_text(canvas, ctx, &i18n::tf("按 {key} 可请求恢复（任何人）", &[("key", key.clone())]), 20.0, Color::from_rgb(180, 210, 240), Point2 { x: cx, y: sh * 0.40 + 52.0 }, true)?;
         }
-        draw_text(canvas, ctx, &i18n::tf("本端剩余暂停次数：{n}", &[("n", self.steam_pause_remaining_mine().to_string())]), 20.0, Color::from_rgb(170, 176, 190), Point2 { x: cx, y: sh * 0.40 + 84.0 }, true)?;
+        // R7d：各参与者剩余次数（名字 + 剩余；本端排在前面并标注「你」）。
+        let mut entries: Vec<(u64, u8)> = v.remaining.clone();
+        entries.sort_by_key(|(id, _)| if *id == self.steam_my_id { (0u8, 0u64) } else { (1, *id) });
+        let list = entries
+            .iter()
+            .map(|(id, left)| {
+                if *id == self.steam_my_id {
+                    format!("{} {left}", i18n::t("你"))
+                } else {
+                    format!("{} {left}", self.steam_name_of(*id))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("  ·  ");
+        if !list.is_empty() {
+            draw_text(canvas, ctx, &i18n::tf("剩余暂停：{list}", &[("list", list)]), 19.0, Color::from_rgb(170, 176, 190), Point2 { x: cx, y: sh * 0.40 + 84.0 }, true)?;
+        }
         Ok(())
     }
 

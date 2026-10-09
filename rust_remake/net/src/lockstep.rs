@@ -887,6 +887,15 @@ impl<T: Transport> HostLockstep<T> {
                                             let _ = self.transport.send_to(&enc, peer);
                                         }
                                     }
+                                    // R7d：重连/归队者即时获知当前暂停状态（否则暂停中归队者会误以为未暂停）。
+                                    let pv = self.pause_view();
+                                    let ps = Packet::PauseState {
+                                        paused: pv.paused,
+                                        by: pv.by,
+                                        resume_in: pv.resume_in,
+                                        remaining: pv.remaining,
+                                    };
+                                    let _ = self.transport.send_to(&ps.encode(), &from);
                                 }
                             }
                             Packet::Takeover { .. } => {
@@ -2063,6 +2072,27 @@ mod tests {
         host.set_pause_budget_default(0);
         assert_eq!(host.pause_budget_of(9999), 0);
         assert!(!host.request_pause(9999), "额度为 0 应拒绝暂停");
+    }
+
+    /// R7d：重连请求的应答里也会带当前暂停状态（暂停中归队者能立即知道被暂停）。
+    #[test]
+    fn reconnect_req_replies_with_pause_state() {
+        let (ht, ct) = pair();
+        let host_peer = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000)));
+        let mut host = HostLockstep::new(ht, 2, true);
+        host.set_local_identity(1000);
+        host.set_client_identities(&[Some(2000)]);
+        assert!(host.request_pause(1000), "host 暂停应成功");
+        let mut cli = ClientLockstep::new(ct, 1, host_peer);
+        let mut hrcv = [0u8; 4096];
+        let mut crcv = [0u8; 4096];
+        // client 发 ReconnectReq（host 无快照，仍应回 PauseState）。
+        assert!(cli.rejoin_step(&mut crcv, 2000, 0, 15).unwrap().is_none());
+        host.poll(&mut hrcv);
+        // client 读应答（step_frame 缓存 PauseState）。
+        assert!(cli.step_frame(&mut crcv).unwrap().is_none());
+        assert!(cli.pause_view().paused, "重连应答应包含暂停状态");
+        assert_eq!(cli.pause_view().by, 1000);
     }
 
     /// R4①：客户端应忽略来自非当前 host 的权威帧（防“僵尸 host”污染）。
