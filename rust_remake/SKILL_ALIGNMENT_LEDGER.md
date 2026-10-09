@@ -658,7 +658,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 定时 | `le[ii] = LO(function RR, **3.6*jn[ri]**, ii, IR, ne, **Fn[ri]（HP）**, **gn[ri]（蓝）**, facing)` | 我方 3.6s ✓（待核） | ✅ |
 | **回滚（`RR`）** | ① `K/L/Q/S/U/w/Y/z[施法者]=快照`（位置+速度+加速度全还原）；`aR` 断链；`VR(false)`；`G/ev/Hr` 还原（`Hr` 真则 `hv=ni; Rv=Do`）；`SetUnitX/Y` + 停止指令；② **HP**：`if Fn[id]<ve then Fn[id]=ve`（`ve`=快照 HP）⇒ **只回补到快照血量，不会反向扣血**；③ **蓝**：`AR=(0.8-zr[id]/10)*(gn[id]-ee)`，`AR>=0` 才应用（`ee`=快照蓝）⇒ **只保留 `(0.8−0.1L)` 的正向蓝量变化**（花掉的蓝不返还） | ✅ 位置/HP/动量/硬体还原（`world.rs:926`）：`p.hp.max(rw.hp)` = **只补不回**（对 `if Fn<ve then Fn=ve`）；**张力**即本作的 `mana`：`if p.mana>rw.mana { p.mana = rw.mana + keep*(p.mana-rw.mana) }`（`world.rs:934`，=对 `gn=ee+(.8-.1zr)(gn-ee)`）；清减益已做；测试 `s006_rewind_restores_position_and_hp` | ✅ |
 | 收尾 | `SetUnitFacing` + 特效 + `RemoveUnit(F[IR])` + `le[ii]=0` + `JO(...,ae)`（清 buff） | — | 📋 |
-| tooltip 的伤害保留% | tooltip（`w3a` `aub1`）逐级：L1 **70%**…L7 10% / L8 **“NO damage”** = `(80−10L)%` | ⚠ **tooltip 与代码不一致**：该 `(.8−zr/10)` 因子在 JASS 里**只作用于 `gn`（张力/蓝）**（`RR` 行 2638），**HP 是全量还原**（行 2635 `set Fn[id]=ve`，仅在当前血低于快照时补回）——全库搜 `(.8-` 仅此一处。我方按代码（全量回血 + 张力 keep）。要不要改为按 tooltip（保留 X% 伤害）待拍板 | ⚠ 待裁定 |
+| tooltip 的伤害保留% | tooltip（`w3a` `aub1`）逐级：L1 **70%**…L7 10% / L8 **“NO damage”** = `(80−10L)%` | ⚠ **tooltip 与代码不一致**：该 `(.8−zr/10)` 因子在 JASS 里**只作用于 `gn`（张力/蓝）**（`RR` 行 2638），**HP 是全量还原**（行 2635 `set Fn[id]=ve`，仅在当前血低于快照时补回）——全库搜 `(.8-` 仅此一处。我方按代码（全量回血 + 张力 keep）。**2026-10-09 用户裁定：按代码（A）**——tooltip 过时，不实现 X% 伤害保留 | ✅ |
 
 ### S007 急行（Haste）✅ 已普查（未动代码）
 
