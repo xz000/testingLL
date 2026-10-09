@@ -201,6 +201,8 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | S014 汲取 `ac`/`vc`/`oc` | A `ev=(1+.1ei)*700`、B 首段 `(1+.1ei)*.12`；代码对齐 | `vc`/`oc` 同队=支援/增益、异队=伤害 | ✅ |
 | S015 火焰喷射 `Ac` | `ev=800*(1+.1ei)/900` | — | ✅（ei） |
 | S016 弹跳 `Gc`/`gc` | ✅ 已修①、⑥ | ✅ 已修 | ✅ |
+| S017 缠绕/沉默 `rC`/`CC` | `rC: ev=1.1*(1+.1ei)`、`CC` 双镖射程 `(1+.1ei)*900`；代码通用乘 ei 无覆盖 | `rC` 掩码全 true、无 `Nv/bv` ⇒ 限敌 | ✅（ei） |
+| S019 链弹 `uc`/`Uc` | `gv=900*(1+.1ei)`（射程）；代码链弹走 Tether | `Nv=true`、`hv` 各自处理 | ✅（ei） |
 
 **batch 1 新发现（共享 `mb`/`Mb`，影响 **S003 与 S016** 两者）**：
 - `mb`（逐帧制导）里 `v=$3E8*.03=30/tick` ⇒ 制导目标速度 **1000/s**，且**只在近邻最近目标**下生效（`Pb` 与 `Gc` 都把 `jv=fi`）。
@@ -209,7 +211,9 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 **S008 待细查**：`iB` 的 `ev=1.35` **不含 ei**，而代码对 S008 两形态都通用乘 `(1+.1ei)`；需先确定代码 A/B 与 `OB`/`iB` 的映射（代码 A=DelayedBlast、B=岩浆），再决定是否给 `iB` 去掉 ei。
 
-**本批未覆盖**：S017、S019、T3 树（Bullet/Missile/Banana/Rolling/Returner/ScatterLine/BonusBomb…）——下一批继续。
+**T3 树（待确认）**：代码的 `SkillTree::T` 除 S014/S015/S016 外还含 `T3Fast`(“跳弹”)/`T3Fast2`/`TestLeech`("转镖")/`TLeech`/`T2Shot`/`T2Volley`（`SkillId` 18–23），这些是**旧 rust_remake 的测试/演示技能**，**在 098c 里没有对应 Sxx 入口**（098c 仅 S000–S033）。若要对齐，需先明确它们应对照 **098b** 还是仅作自研玩法（否则无 JASS 基准）。待用户确认后再扫。
+
+**本批未覆盖**：S008 细查（`iB` 无 ei）、以及 T3/测试技能的基准确认。
 
 
 
