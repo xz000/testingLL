@@ -579,7 +579,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
 | **A（暗物质弹）** | `Jc`：`ev=**900*(1+.1*ei)/400**`（秒）、速度 **400/s**、**`Av[+3]=true` 只与障碍碰撞**（不撞玩家/弹体）、`xv=**1**`（撞柱镜面反弹）、`Ev=na`、`Gv=Ea=jc`（到点）、`jv=Va=hc`（每帧） | ✅ 已修（`c110912`）：`Gravity` 对柱返 `Some(0)`+反射，`col_mask` 仅障碍；测试 `s018a_dark_matter_bounces_off_pillar` | ✅ |
-| **B（力场弹）** | `Mc`：`ev=min(点击距离, **850*(1+.1*ei**>)/850`、速度 **850/s**、**`Av[+3]=false`（穿柱！）**、`Gv=ca`（到点生成力场）、`xv=1` | ⚠ **时序差异**：我方 S018B 走 `StarZone` **直接在落点生成力场**，**未建模 `Mc` 的 850/s 飞行弹**（JASS 先飞 `dist/850` 秒、`Av` 全 false 无碰撞，到点再生成力场）。功能等价但少了 `dist/850`（0.3~0.9s）延迟；待定是否补 | 📋 |
+| **B（力场弹）** | `Mc`：`ev=min(点击距离, **850*(1+.1*ei**>)/850`、速度 **850/s**、**`Av[+3]=false`（穿柱！）**、`Gv=ca`（到点生成力场）、`xv=1` | ✅ 已实现（`W098bOnHit::StarField` + `star_spawns`）：850/s 飞行弹到点才生成力场（射程上限 `850(1+.1ei)`，`Av` 全 false 无碰撞）；力场半径 `175√(1+.1xi)`、`ev=5jn`；测试 `s018b_force_field_spawns_after_travel` | ✅（忠实，2026-10-09） |
 | **力场每帧 `kc`** | `if je then`：同队 → `PX(Vr, **.13+.03*Yr**`（**每秒治疗**）；异队 → 减益 659（伤害 `.2+.25*Yr`，刷新） | tooltip：“Damage per second **2.25**、Heal per second **1.0**”（L1：0.13+0.03 = 0.16/跳？需核 tick 频率） | 📋 |
 | 其他回调 | `Kc`（销毁）、`lc`（淡出）、`Lc`（生成 `GreenPentagramVampiric` + `Rv=$FA*XB`、`XB=.7√(1+.1xi)`） | — | 📋 |
 
