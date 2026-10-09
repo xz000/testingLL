@@ -82,10 +82,7 @@ impl Game {
                         }
                         if let net::Packet::Snapshot { world_bytes, seq } = pkt {
                             cli.apply_resync(rcv).ok();
-                            if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {
-                                self.world = w;
-                                self.meta = m; // R2：快照带 meta
-                                self.clear_transient_input();
+                            if self.apply_snapshot_world(&world_bytes) {
                                 eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
                             }
                             self.steam_migrating = false;
@@ -161,11 +158,7 @@ impl Game {
                 // 避免各端因帧序不一致在接管后卡在缺口处反复请求重传（包括无缓存快照的早期接管）。
                 cli.set_start_seq(seq);
                 if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
-                    if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&wb) {
-                        self.world = w;
-                        self.meta = m; // R2：快照带 meta
-                        self.clear_transient_input();
-                    }
+                    self.apply_snapshot_world(&wb);
                 }
                 cli.apply_resync(rcv).ok();
                 self.steam_migrating = false;
@@ -205,10 +198,7 @@ impl Game {
         // 本端 world index = 在原始参与列表中的位置（对局开始时确定，迁移不变）。
         let my_index = self.steam_participants.iter().position(|&id| id == self.steam_my_id).unwrap_or(0) as u8;
         let total = self.steam_participants.len().max(1);
-        if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(&effective_snap.0) {
-            self.world = w;
-            self.meta = m; // R2：快照带 meta
-        }
+        self.apply_snapshot_world(&effective_snap.0);
         // 更新在线参与集：排除掉线的旧 host（供下一次迁移选举）。
         let new_online: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
         self.steam_online = new_online.clone();
@@ -264,6 +254,19 @@ impl Game {
         // 接管后持续广播 Takeover，直到首个在线 client 连上（产帧成功）才停，避免晚进入迁移的 client 错过。
         self.steam_host_broadcasting_takeover = true;
         Ok(())
+    }
+
+    /// C1/R5b：用快照字节（含 world+meta）重建世界与对局状态；重连/迁移/归队共用。成功返回 true。
+    #[cfg(feature = "steam")]
+    pub(crate) fn apply_snapshot_world(&mut self, world_bytes: &[u8]) -> bool {
+        if let Some((w, m)) = game_core::world_ser::snapshot_from_bytes(world_bytes) {
+            self.world = w;
+            self.meta = m;
+            self.clear_transient_input();
+            true
+        } else {
+            false
+        }
     }
 
     /// 清空本机临时的输入/目标残留（重连/迁移重建世界后用，避免把掉线期间的输入误带到接回后）。

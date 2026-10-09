@@ -1103,6 +1103,22 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(())
     }
 
+    /// C1/R5b：归队握手的一步（重连/归队共用）。按 `interval` 节流重发 `ReconnectReq{identity}`；
+    /// 收到 host 的 `Snapshot` 时返回 `(world_bytes, seq)`（调用方据此重建 world+meta 并 `apply_resync`）。
+    /// `interval` 传 0 时按 1 处理（避免取模 0）。返回 `Ok(None)` = 本 tick 还没拿到，继续下一帧。
+    pub fn rejoin_step(
+        &mut self,
+        rcv: &mut [u8],
+        identity: u64,
+        tick: u32,
+        interval: u32,
+    ) -> io::Result<Option<(Vec<u8>, u64)>> {
+        if tick % interval.max(1) == 0 {
+            self.send_reconnect_req(identity)?;
+        }
+        self.recv_snapshot(rcv)
+    }
+
     /// 尝试收 host 回给重连者的整场快照：返回 `Some((world_bytes, seq))`；当前没有则 None。
     pub fn recv_snapshot(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<u8>, u64)>> {
         loop {
@@ -1748,6 +1764,33 @@ mod tests {
         let cfgs = host.collect_cfgs().expect("掉线端不要求后应可收齐");
         assert_eq!(cfgs.len(), 1, "只应包含 host 自己的 cfg（掉线端不提供）");
         assert_eq!(cfgs[0].0, 0, "host cfg 的 new index 为 0");
+    }
+
+    /// R5b：归队握手 `rejoin_step`：按 interval 重发 ReconnectReq，并在收到 host 的 Snapshot 时返回它。
+    #[test]
+    fn client_rejoin_step_throttles_and_returns_snapshot() {
+        let (mut ht, ct) = pair();
+        let host_peer = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000)));
+        let mut cli = ClientLockstep::new(ct, 1, host_peer);
+        let mut rcv = [0u8; 16384];
+        // tick=0：应发一次 ReconnectReq（host 收到），暂无快照 → None。
+        assert!(cli.rejoin_step(&mut rcv, 555, 0, 15).unwrap().is_none());
+        let mut hrcv = [0u8; 4096];
+        let (n, _from) = ht
+            .recv_from(&mut hrcv)
+            .unwrap()
+            .expect("host 应收到 ReconnectReq");
+        assert!(
+            matches!(Packet::decode(&hrcv[..n]), Some(Packet::ReconnectReq { identity: 555, .. })),
+            "应发 ReconnectReq(identity=555)"
+        );
+        // tick=1（非 interval 倍数）：不应重发。
+        assert!(cli.rejoin_step(&mut rcv, 555, 1, 15).unwrap().is_none());
+        assert!(ht.recv_from(&mut hrcv).unwrap().is_none(), "未到 interval 不应重发");
+        // host 发 Snapshot → rejoin_step 返回它。
+        let snap = Packet::Snapshot { world_bytes: vec![9, 8, 7], seq: 42 };
+        ht.send_to(&snap.encode(), &host_peer).unwrap();
+        assert_eq!(cli.rejoin_step(&mut rcv, 555, 2, 15).unwrap(), Some((vec![9, 8, 7], 42)));
     }
 
     /// R6a：HostLockstep 可取出底层 transport，并据此重建 ClientLockstep（host→client 归队用）。
