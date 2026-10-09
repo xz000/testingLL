@@ -401,6 +401,31 @@ fn next_escape_selection(cur: usize, delta: isize, len: usize) -> usize {
     ((cur as isize + delta).rem_euclid(len as isize)) as usize
 }
 
+/// R7：暂停确认框的按键解析结果。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum PauseConfirmKey {
+    /// 忽略（本帧无相关按键）。
+    Ignore,
+    /// 取消确认框。
+    Cancel,
+    /// 确认（发出暂停/恢复请求）。
+    Confirm,
+}
+
+/// R7：解析暂停确认框按键（纯函数，便于单测）。
+/// `Esc` 或**再次按暂停键**=取消；回车/`=`=确认（`Esc` 优先级最高，确保“一键关掉最上层浮层”）。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+fn resolve_pause_confirm_key(esc: bool, pause_key: bool, confirm: bool) -> PauseConfirmKey {
+    if esc || pause_key {
+        PauseConfirmKey::Cancel
+    } else if confirm {
+        PauseConfirmKey::Confirm
+    } else {
+        PauseConfirmKey::Ignore
+    }
+}
+
 
 /// `enter_steam_mode` / CLI 启动只发起操作（`start_*`）并记下类型，真正「进房」由 `update` 每帧
 /// `run_callbacks` 后 `tick_lobby` 完成、再调用 `finish_enter_steam_mode` 落地（建 lockstep/世界/战绩）。
@@ -6527,25 +6552,40 @@ impl event::EventHandler for Game {
 
         // 对局内 Esc 菜单（EXIT_MENU_RECONNECT_PLAN.md E1）：本地 UI 覆盖，不暂停多人世界，仅门控本地输入。
         if is_in_match(self.app) {
-            if self.escape_menu_update(ctx) {
-                return Ok(()); // 已「返回主菜单」或「退出游戏」
+            // R7：暂停确认框优先于 Esc 菜单消费按键（Esc/再次按暂停键=取消），否则按一次 Esc 会
+            // 既取消确认框又打开退出菜单。确认框**不**本帧 return（网络 tick 照常跑）。
+            #[cfg(feature = "steam")]
+            {
+                let pause_modal = self.pause_confirm;
+                if pause_modal {
+                    self.pause_confirm_update(ctx);
+                }
+                if !self.pause_confirm && self.escape_menu_update(ctx) {
+                    return Ok(()); // 已「返回主菜单」或「退出游戏」
+                }
+                // 按暂停键弹确认框（未开菜单、非确认框处理帧）；实际发送由 host/client 分支完成。
+                if !pause_modal
+                    && !self.pause_confirm
+                    && self.steam_active()
+                    && !self.escape_menu
+                    && self.meta.phase == MatchPhase::Fighting
+                    && !self.steam_rejoin_handshaking
+                    && !self.steam_migrating
+                {
+                    self.steam_pause_try_open(ctx);
+                }
+            }
+            #[cfg(not(feature = "steam"))]
+            {
+                if self.escape_menu_update(ctx) {
+                    return Ok(()); // 已「返回主菜单」或「退出游戏」
+                }
             }
             // 单机/训练场：本地是唯一权威，可真暂停（跳过本帧模拟）。
             if self.escape_menu && self.app == AppState::Solo {
                 self.accumulator = 0.0;
                 return Ok(());
             }
-        }
-
-        // R7：Steam 对局内暂停/恢复键（默认 F9，可自定义）——先弹确认框防误触。
-        #[cfg(feature = "steam")]
-        if self.steam_active()
-            && !self.escape_menu
-            && self.meta.phase == MatchPhase::Fighting
-            && !self.steam_rejoin_handshaking
-            && !self.steam_migrating
-        {
-            self.steam_pause_input(ctx);
         }
 
         match self.meta.phase {
@@ -9159,28 +9199,36 @@ impl Game {
             .unwrap_or(net::lockstep::PAUSE_BUDGET_DEFAULT)
     }
 
-    /// R7：对局内暂停/恢复键处理（先弹确认框防误触，再置 `pause_pending` 由 host/client 分支发送）。
+    /// R7：按暂停键→弹确认框（防误触）；额度用尽直接提示。
     #[cfg(feature = "steam")]
-    fn steam_pause_input(&mut self, ctx: &Context) {
-        use ggez::input::keyboard::Key;
-        use winit::keyboard::NamedKey;
-        let paused = self.steam_paused_now();
-        if !self.pause_confirm {
-            if self.bind_just(ctx, local_settings::BindAction::Pause) {
-                if !paused && self.steam_pause_remaining_mine() == 0 {
-                    let now = ctx.time.time_since_start().as_secs_f64();
-                    self.pause_toast = (i18n::t("暂停次数已用尽").to_string(), now + 2.5);
-                    return;
-                }
-                self.pause_confirm = true;
-            }
+    fn steam_pause_try_open(&mut self, ctx: &Context) {
+        if !self.bind_just(ctx, local_settings::BindAction::Pause) {
             return;
         }
-        if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape)) {
-            self.pause_confirm = false;
-        } else if keys::confirm_just(ctx) {
-            self.pause_confirm = false;
-            self.pause_pending = Some(!paused); // true=请求暂停
+        let paused = self.steam_paused_now();
+        if !paused && self.steam_pause_remaining_mine() == 0 {
+            let now = ctx.time.time_since_start().as_secs_f64();
+            self.pause_toast = (i18n::t("暂停次数已用尽").to_string(), now + 2.5);
+            return;
+        }
+        self.pause_confirm = true;
+    }
+
+    /// R7：暂停确认框的按键处理（Esc/再次按暂停键=取消，回车/=确认）；确认后置 `pause_pending`。
+    #[cfg(feature = "steam")]
+    fn pause_confirm_update(&mut self, ctx: &Context) {
+        use ggez::input::keyboard::Key;
+        use winit::keyboard::NamedKey;
+        let esc = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::Escape));
+        let pause_key = self.bind_just(ctx, local_settings::BindAction::Pause);
+        let confirm = keys::confirm_just(ctx);
+        match resolve_pause_confirm_key(esc, pause_key, confirm) {
+            PauseConfirmKey::Cancel => self.pause_confirm = false,
+            PauseConfirmKey::Confirm => {
+                self.pause_confirm = false;
+                self.pause_pending = Some(!self.steam_paused_now()); // true=请求暂停
+            }
+            PauseConfirmKey::Ignore => {}
         }
     }
 
@@ -12929,6 +12977,18 @@ mod tests {
         assert_eq!(super::next_escape_selection(2, 1, n), 0, "从末项下移应回绕到首");
         assert_eq!(super::next_escape_selection(1, 1, n), 2);
         assert_eq!(super::next_escape_selection(0, 1, 0), 0, "空列表不 panic");
+    }
+
+    /// R7a：暂停确认框按键解析：Esc/再次按暂停键=取消（优先），回车=确认，其余忽略。
+    #[test]
+    fn pause_confirm_key_resolution() {
+        use super::{resolve_pause_confirm_key, PauseConfirmKey};
+        assert_eq!(resolve_pause_confirm_key(true, false, false), PauseConfirmKey::Cancel);
+        assert_eq!(resolve_pause_confirm_key(false, true, false), PauseConfirmKey::Cancel);
+        // Esc/暂停键优先于回车（同一帧同时按也只取消）。
+        assert_eq!(resolve_pause_confirm_key(true, false, true), PauseConfirmKey::Cancel);
+        assert_eq!(resolve_pause_confirm_key(false, false, true), PauseConfirmKey::Confirm);
+        assert_eq!(resolve_pause_confirm_key(false, false, false), PauseConfirmKey::Ignore);
     }
 
     /// E1：退出菜单各行的几何（绘制与鼠标命中共用）应落在设计分辨率内、从上到下且不重叠。
