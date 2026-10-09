@@ -4692,7 +4692,10 @@ impl Game {
                     #[cfg(feature = "steam")]
                     {
                         let paused = self.steam_paused_now();
-                        if !paused && self.steam_pause_remaining_mine() == 0 {
+                        if !paused && self.match_cfg.pause_budget == 0 {
+                            let now = ctx.time.time_since_start().as_secs_f64();
+                            self.pause_toast = (i18n::t("本局已禁用暂停").to_string(), now + 2.5);
+                        } else if !paused && self.steam_pause_remaining_mine() == 0 {
                             let now = ctx.time.time_since_start().as_secs_f64();
                             self.pause_toast = (i18n::t("暂停次数已用尽").to_string(), now + 2.5);
                         } else {
@@ -6801,8 +6804,9 @@ impl event::EventHandler for Game {
                                 }
                             }
                         }
-                        // R7：登记本端身份 + 处理本端暂停/恢复请求 + 推进暂停状态机（每 update 一次）。
+                        // R7：登记本端身份 + 同步房间设置的暂停额度 + 处理暂停/恢复请求 + 推进暂停状态机（每 update 一次）。
                         host.set_local_identity(self.steam_my_id);
+                        host.set_pause_budget_default(self.match_cfg.pause_budget);
                         if let Some(want) = self.pause_pending.take() {
                             let ok = if want { host.request_pause(self.steam_my_id) } else { host.request_resume() };
                             if !ok && want {
@@ -9241,7 +9245,7 @@ impl Game {
             .iter()
             .find(|(id, _)| *id == self.steam_my_id)
             .map(|(_, b)| *b)
-            .unwrap_or(net::lockstep::PAUSE_BUDGET_DEFAULT)
+            .unwrap_or(self.match_cfg.pause_budget)
     }
 
     /// R7：按暂停键→弹确认框（防误触）；额度用尽直接提示。
@@ -9251,6 +9255,11 @@ impl Game {
             return;
         }
         let paused = self.steam_paused_now();
+        if !paused && self.match_cfg.pause_budget == 0 {
+            let now = ctx.time.time_since_start().as_secs_f64();
+            self.pause_toast = (i18n::t("本局已禁用暂停").to_string(), now + 2.5);
+            return;
+        }
         if !paused && self.steam_pause_remaining_mine() == 0 {
             let now = ctx.time.time_since_start().as_secs_f64();
             self.pause_toast = (i18n::t("暂停次数已用尽").to_string(), now + 2.5);

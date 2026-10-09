@@ -539,6 +539,7 @@ const EN: &[(&str, &str)] = &[
     ("恢复本局", "Resume match"),
     ("多人对局：打开菜单不会暂停，请选〈暂停本局〉", "Online match: this menu does not pause; choose \"Pause match\""),
     ("暂停次数已用尽", "No pause uses left"),
+    ("本局已禁用暂停", "Pause is disabled for this match"),
     ("暂停次数已用尽或冷却中", "No pause uses left or on cooldown"),
     ("暂停本局？（回车确认 / Esc 取消）", "Pause the match? (Enter to confirm / Esc to cancel)"),
     ("恢复本局？（回车确认 / Esc 取消）", "Resume the match? (Enter to confirm / Esc to cancel)"),

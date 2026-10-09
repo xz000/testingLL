@@ -1,0 +1,23 @@
+game-core\src\meta.rs:21:pub struct MatchConfig {
+game-core\src\meta.rs:90:impl MatchConfig {
+game-core\src\meta.rs:143:        Some(MatchConfig {
+game-core\src\meta.rs:235:impl Default for MatchConfig {
+game-core\src\meta.rs:242:        MatchConfig {
+game-core\src\meta.rs:1289:            MatchConfig {
+game-core\src\meta.rs:1325:        let config = MatchConfig {
+game-core\src\meta.rs:1477:            MatchConfig { gold_per_most_damage: 1, ..Default::default() },
+game-core\src\meta.rs:1507:            MatchConfig { gold_rewards_enabled: false, ..Default::default() },
+game-core\src\meta.rs:1521:        let mut m = MatchState::new(MatchConfig { game_mode: 3, ..Default::default() }, &[0, 1], 8);
+game-core\src\meta.rs:1574:            MatchConfig { game_mode: 2, win_score: 3, ..Default::default() },
+game-core\src\meta.rs:1656:        let mut c = MatchConfig {
+game-core\src\meta.rs:1767:        let config = MatchConfig {
+game-core\src\meta.rs:1779:        let config = MatchConfig {
+game-core\src\meta.rs:1794:        let config = MatchConfig {
+game-core\src\meta.rs:2073:        let cfg = MatchConfig { team_count: 2, ..Default::default() };
+client\src\main.rs:269:    let cfg = game_core::meta::MatchConfig {
+client\src\main.rs:309:) -> game_core::meta::MatchConfig {
+client\src\main.rs:1470:            let cfg = MatchConfig {
+client\src\main.rs:1477:            let cfg = MatchConfig {
+client\src\main.rs:1806:            match_cfg: game_core::meta::MatchConfig {
+client\src\main.rs:1816:            match_cfg: game_core::meta::MatchConfig { game_mode: init_mode, ..Default::default() },
+client\src\main.rs:2652:    fn match_config(&self) -> game_core::meta::MatchConfig {

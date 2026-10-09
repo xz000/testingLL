@@ -138,8 +138,10 @@ pub struct HostLockstep<T: Transport> {
     pause_resume: u16,
     /// R7：恢复后冷却剩余帧（>0 时拒绝新的暂停请求）。
     pause_cooldown: u16,
-    /// R7：各参与者剩余暂停次数（懒初始化，缺省为 `PAUSE_BUDGET_DEFAULT`）。
+    /// R7：各参与者剩余暂停次数（懒初始化，缺省为 `pause_budget_default`）。
     pause_budget: Vec<(u64, u8)>,
+    /// R7：每人默认暂停额度（房间设置；0=禁用）。
+    pause_budget_default: u8,
     /// R7：暂停状态周期重播计数（每 15 帧重播一次，避免丢包）。
     pause_bcast: u16,
 }
@@ -189,6 +191,7 @@ impl<T: Transport> HostLockstep<T> {
             pause_resume: 0,
             pause_cooldown: 0,
             pause_budget: Vec::new(),
+            pause_budget_default: PAUSE_BUDGET_DEFAULT,
             pause_bcast: 0,
         }
     }
@@ -289,20 +292,25 @@ impl<T: Transport> HostLockstep<T> {
         self.local_identity = id;
     }
 
+    /// R7：设置每人默认暂停额度（房间设置；0=禁用）。host 开局时用 `match_cfg.pause_budget` 设置。
+    pub fn set_pause_budget_default(&mut self, n: u8) {
+        self.pause_budget_default = n;
+    }
+
     /// R7：某参与者的剩余暂停次数（未登记则默认额度）。
     pub fn pause_budget_of(&self, id: u64) -> u8 {
         self.pause_budget
             .iter()
             .find(|(i, _)| *i == id)
             .map(|(_, b)| *b)
-            .unwrap_or(PAUSE_BUDGET_DEFAULT)
+            .unwrap_or(self.pause_budget_default)
     }
 
     fn dec_pause_budget(&mut self, id: u64) {
         if let Some(e) = self.pause_budget.iter_mut().find(|(i, _)| *i == id) {
             e.1 = e.1.saturating_sub(1);
         } else {
-            self.pause_budget.push((id, PAUSE_BUDGET_DEFAULT.saturating_sub(1)));
+            self.pause_budget.push((id, self.pause_budget_default.saturating_sub(1)));
         }
     }
 
@@ -2049,6 +2057,12 @@ mod tests {
         assert!(!host.is_paused(), "倒计时结束应恢复");
         // 恢复后冷却期内不能再次暂停。
         assert!(!host.request_pause(1000), "冷却期内应拒绝暂停");
+        // R7c：默认额度可被房间设置覆盖；0=禁用。
+        host.set_pause_budget_default(5);
+        assert_eq!(host.pause_budget_of(9999), 5);
+        host.set_pause_budget_default(0);
+        assert_eq!(host.pause_budget_of(9999), 0);
+        assert!(!host.request_pause(9999), "额度为 0 应拒绝暂停");
     }
 
     /// R4①：客户端应忽略来自非当前 host 的权威帧（防“僵尸 host”污染）。

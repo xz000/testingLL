@@ -79,11 +79,13 @@ pub struct MatchConfig {
     pub team_count: u8,
     /// 死亡竞赛（En2）的胜利得分（098b `-+胜利得分` 开局设置）。
     pub win_score: u32,
+    /// R7：联机暂停——每位玩家可用的暂停次数（0=禁用暂停；上限 9）。默认 3。
+    pub pause_budget: u8,
 }
 
 /// 房间设置串（用于大厅元数据/同步）的**模式版本**：字段顺序或语义变更时必须递增，
 /// 否则不同版本的端会按各自的顺序解析同一串。
-pub const ROOM_SETTINGS_SCHEMA: u32 = 4;
+pub const ROOM_SETTINGS_SCHEMA: u32 = 5;
 
 impl MatchConfig {
     /// 序列化为**紧凑单行**（大厅元数据用；`|` 分隔、`;` 分隔列表）。
@@ -119,6 +121,7 @@ impl MatchConfig {
             self.game_mode.to_string(),
             self.team_count.to_string(),
             self.win_score.to_string(),
+            self.pause_budget.to_string(),
         ];
         parts.join("|")
     }
@@ -126,8 +129,8 @@ impl MatchConfig {
     /// 从 [`Self::to_meta_string`] 还原；缺字段/格式不符返回 `None`（由调用方回退默认值）。
     pub fn from_meta_string(s: &str) -> Option<Self> {
         let p: Vec<&str> = s.trim().split('|').collect();
-        // schema + 25 个字段
-        if p.len() < 26 {
+        // schema + 26 个字段
+        if p.len() < 27 {
             return None;
         }
         if p[0].parse::<u32>().ok()? != ROOM_SETTINGS_SCHEMA {
@@ -163,6 +166,7 @@ impl MatchConfig {
             game_mode: byte(23)?,
             team_count: byte(24)?,
             win_score: uint(25)?,
+            pause_budget: byte(26)?,
         })
     }
 
@@ -199,6 +203,7 @@ impl MatchConfig {
             score_per_assist,
             score_per_round_win,
             base_regen,
+            pause_budget,
         );
         n
     }
@@ -263,9 +268,15 @@ impl Default for MatchConfig {
             ice_mode: 1,                    // 默认随机
             arena_shape: 0,                 // 圆形
             gold_rewards_enabled: true,
+            pause_budget: 3,                // R7：联机暂停每人 3 次
         }
     }
 }
+
+/// R7：暂停次数的合法范围（编辑器/校验用）。
+/// 0 = 禁用暂停；上限 9（单数字便于显示）。
+pub const PAUSE_BUDGET_MIN: u8 = 0;
+pub const PAUSE_BUDGET_MAX: u8 = 9;
 
 /// 098c 精通研究（D12.3，kf handler 实证）：学习期购买、不涨价、跨回合永久保留。
 /// **上限（2026-09-12 w3q 实证）**：R00D/R00I/R00Y 各 **6 级**（tooltip 名字「… Mastery 1..6」+ `glvl=6`）；

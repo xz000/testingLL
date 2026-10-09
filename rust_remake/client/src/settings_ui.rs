@@ -79,6 +79,8 @@ pub enum SettingId {
     ShrinkDelaySecs,
     ShrinkTotalSecs,
     BaseRegen,
+    // R7：联机暂停每人次数
+    PauseBudget,
     // 地图
     ArenaShape,
     PillarMode,
@@ -114,6 +116,7 @@ impl SettingId {
                 BetweenRoundsSecs,
                 ShrinkDelaySecs,
                 ShrinkTotalSecs,
+                PauseBudget,
             ],
             Group::Map => &[ArenaShape, PillarMode, IceMode],
             Group::Mode => &[GameMode, GoldRewardsEnabled],
@@ -143,6 +146,7 @@ impl SettingId {
             ShrinkDelaySecs => "收缩延迟(秒)",
             ShrinkTotalSecs => "收缩总时长(秒)",
             BaseRegen => "基础回血(HP/s)",
+            PauseBudget => "暂停次数(每人)",
             ArenaShape => "地图形状",
             PillarMode => "柱子",
             IceMode => "冰面",
@@ -177,6 +181,7 @@ impl SettingId {
             ShrinkDelaySecs => "开局静止期；实际延迟 = 本值 × √存活人数（098c `wo*√sn`）。",
             ShrinkTotalSecs => "满员时从开始收缩到缩到 0 的总时长；实际 = 本值 × √(存活/初始)，连续收缩（非按环）。",
             BaseRegen => "098c 设置 9 `In`=.05/0.1s = 0.5。档位 0.5/0/0.25/0.75/1.0/2.0。",
+            PauseBudget => "联机对局中每人可用的暂停次数（0 = 禁用暂停）。默认 3，上限 9。",
             ArenaShape => "**仅圆形**（暂锁定，置灰）；后续版本再扩正方形/六边形。",
             PillarMode => "关闭 / 随机 / 每局必有。",
             IceMode => "关闭 / 随机 / 每局必有。",
@@ -230,6 +235,7 @@ impl SettingId {
             }
             ScorePerKill | ScorePerAssist | ScorePerRoundWin => Some((0, 20, 1)),
             TotalRounds => Some((1, 50, 1)),
+            PauseBudget => Some((0, 9, 1)),
             _ => None,
         }
     }
@@ -319,6 +325,7 @@ pub fn value(cfg: &MatchConfig, id: SettingId) -> f64 {
         ShrinkDelaySecs => cfg.shrink_delay_secs,
         ShrinkTotalSecs => cfg.shrink_total_secs,
         BaseRegen => cfg.base_regen,
+        PauseBudget => cfg.pause_budget as f64,
         ArenaShape => cfg.arena_shape as f64,
         TotalRounds => cfg.total_rounds as f64,
         // 大厅元数据项不走数值通道（由 `meta_value`/`meta_set` 负责）
@@ -353,6 +360,7 @@ fn set(cfg: &mut MatchConfig, id: SettingId, v: f64) {
         ShrinkDelaySecs => cfg.shrink_delay_secs = v,
         ShrinkTotalSecs => cfg.shrink_total_secs = v,
         BaseRegen => cfg.base_regen = v,
+        PauseBudget => cfg.pause_budget = (iv).clamp(0, 9) as u8,
         ArenaShape => cfg.arena_shape = bv,
         TotalRounds => cfg.total_rounds = v.round().clamp(1.0, 50.0) as u32,
         RoomName | RoomNote | PlayerLimit => {} // 大厅元数据项：见 `meta_set`
