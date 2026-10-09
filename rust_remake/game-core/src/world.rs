@@ -303,6 +303,9 @@ pub enum ProjectileKind {
         life: Fix64,
         /// FI 伤害系数 gX（随施法等级已求值；Bounce 每跳 ×0.8）。
         gx: Fix64,
+        /// 击中柱子时的伤害。默认 = `gx`；S008B 岩浆例外：098c `VB` 柱分支 `mI(nr,Vr,$A+2*Xv,.8)`
+        /// ⇒ **固定 `10+2L`**（与直伤/爆炸的 `3+1.5L` 不同，故单存一份；spawn 时按等级算好）。
+        pillar_dmg: Fix64,
         /// KI 击退系数 JI。
         kb_ji: Fix64,
         /// 命中点燃 DoT 总量（无则 None）。
@@ -1058,6 +1061,7 @@ impl World {
                     remaining: life,
                     life,
                     gx: dmg,
+                    pillar_dmg: dmg,
                     kb_ji: Fix64::from_num(0.8),
                     ignite: None,
                     blast: None,
@@ -2388,7 +2392,7 @@ impl World {
                         *vel = crate::fix::bounce_off(*vel, normal, *pillar_rest); // 098c `v − (1+xv)(v·n)n`
                         pr.pos = o.pos + normal * min; // 推出柱面，避免下帧仍重叠而反复反弹
                         let dmg = match &pr.kind {
-                            ProjectileKind::W098b { gx, .. } => gx.to_num::<f64>(),
+                            ProjectileKind::W098b { pillar_dmg, .. } => pillar_dmg.to_num::<f64>(),
                             _ => 0.0,
                         };
                         if dmg > 0.0 {
@@ -2463,7 +2467,7 @@ impl World {
                         // 098c 柱子可摧毁（nx=40，D9 批次3）：火球类直伤弹命中扣 HP，归零移除
                         //（每轮 re-layout 即重生成）。其余弹体被挡下消失。
                         let dmg = match &pr.kind {
-                            ProjectileKind::W098b { gx, .. } => gx.to_num::<f64>(),
+                            ProjectileKind::W098b { pillar_dmg, .. } => pillar_dmg.to_num::<f64>(),
                             ProjectileKind::Bullet { damage, .. } => damage.to_num::<f64>(),
                             _ => 0.0,
                         };
@@ -3483,6 +3487,7 @@ impl World {
                         remaining: Fix64::from_num(2.0),
                         life: Fix64::from_num(2.0),
                         gx: dmg,
+                        pillar_dmg: dmg,
                         kb_ji: Fix64::ONE,
                         ignite: None,
                         blast: None,
@@ -3749,6 +3754,7 @@ impl World {
                     remaining: life,
                     life,
                     gx,
+                    pillar_dmg: gx,
                     kb_ji,
                     ignite: None,
                     blast: None,
@@ -3829,6 +3835,7 @@ impl World {
                     remaining: Fix64::from_num(5.0),
                     life: Fix64::from_num(5.0),
                     gx: heal, // ← 这里 gx 表达“治疗量”
+                    pillar_dmg: Fix64::ZERO, // 回血球不与柱子碰撞，占位
                     kb_ji: Fix64::ZERO,
                     ignite: None,
                     blast: None,
@@ -3871,6 +3878,7 @@ impl World {
                     remaining: Fix64::from_num(5.0),
                     life: Fix64::from_num(5.0),
                     gx: Fix64::ZERO,
+                    pillar_dmg: Fix64::ZERO,
                     kb_ji: Fix64::ZERO,
                     ignite: None,
                     blast: None,
@@ -4848,6 +4856,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             remaining: life,
                             life,
                             gx,
+                            // S008B 岩浆撞柱固定 `10+2L`（098c `VB` 柱分支）；其余弹体 = `gx`。
+                            pillar_dmg: if id == crate::skill::SkillId::S008 && alt {
+                                Fix64::from_num(10.0 + 2.0 * caster_level as f64)
+                            } else {
+                                gx
+                            },
                             kb_ji,
                             // 点燃总量随施法等级（growth.extra = 6+1.5×L；effect.ignite 仅作开关+L1 基准）。
                             ignite: ignite_total,
@@ -7091,6 +7105,7 @@ mod tests {
                 remaining: Fix64::from_num(2.0),
                 life: Fix64::from_num(2.0),
                 gx: Fix64::from_num(5.0),
+                pillar_dmg: Fix64::from_num(5.0),
                 kb_ji: Fix64::ONE,
                 ignite: None,
                 blast: None,
@@ -7158,6 +7173,7 @@ mod tests {
                 remaining: Fix64::from_num(2.0),
                 life: Fix64::from_num(2.0),
                 gx: Fix64::from_num(5.0),
+                pillar_dmg: Fix64::from_num(5.0),
                 kb_ji: Fix64::ONE,
                 ignite: None,
                 blast: None,
@@ -8442,6 +8458,33 @@ mod tests {
             "火球应被柱子挡下销毁"
         );
         assert_eq!(world.obstacles[0].hp, 40 - 7, "应对柱子造成 6.3+0.7L（L1=7）伤害，实际 HP={}", world.obstacles[0].hp);
+    }
+
+    /// S008B 岩浆撞柱：098c `VB`（`Na`）柱分支 `mI(nr,Vr,$A+2*Xv,.8)` → **固定 `10+2L`**（别于直伤 3+1.5L）。
+    #[test]
+    fn s008b_magma_pillar_damage_is_10_plus_2l() {
+        let mut world = World::new(2, 0x8008);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0));
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S008.as_u32() as usize] = true; // B=岩浆
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+        }
+        assert_eq!(world.obstacles[0].hp, 40 - 12, "S008B 撞柱应 10+2L=12（L1），实际 HP={}", world.obstacles[0].hp);
     }
 
     /// 098c 动量交换（D9 批次2）：高速玩家撞低速玩家 → 速度法向分量交换。
@@ -10039,6 +10082,7 @@ mod tests {
                 remaining: Fix64::from_num(5.0),
                 life: Fix64::from_num(5.0),
                 gx: Fix64::from_num(6.0),
+                pillar_dmg: Fix64::from_num(6.0),
                 kb_ji: Fix64::from_num(1.15),
                 ignite: None,
                 blast: None,
@@ -10202,6 +10246,7 @@ mod tests {
                 remaining: Fix64::from_num(10.0),
                 life: Fix64::from_num(10.0),
                 gx: Fix64::from_num(6.0),
+                pillar_dmg: Fix64::from_num(6.0),
                 kb_ji: Fix64::from_num(1.15),
                 ignite: None,
                 blast: None,
