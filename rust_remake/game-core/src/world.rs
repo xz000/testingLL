@@ -477,11 +477,13 @@ impl ProjectileKind {
             ProjectileKind::Chain { .. } | ProjectileKind::ScatterLine { .. } => {
                 Fix64::from_num(PROJ_HIT_RADIUS_FALLBACK)
             }
+            // S018A 暗物质（098c `Jc`：`Av[+3]=true` + `xv=1`）：`Jc` **未设 `Rv`**（`rO` 默认 0）
+            // → 与柱的脚本碰撞阈值为 `0 + Rv[柱]`，即**中心进入柱圆即反射**。故此处返 0（非 None）。
+            | ProjectileKind::Gravity { .. } => Fix64::ZERO,
             ProjectileKind::Rock { .. }
             | ProjectileKind::Decoy { .. }
             | ProjectileKind::Tether { .. }
             | ProjectileKind::Star { .. }
-            | ProjectileKind::Gravity { .. }
             | ProjectileKind::BindLine { .. }
             | ProjectileKind::Clone { .. }
             | ProjectileKind::DelayedBlast { .. } => return None,
@@ -2463,6 +2465,12 @@ impl World {
                             }
                         }
                         pr.alive = false;
+                    } else if let ProjectileKind::Gravity { dir, .. } = &mut pr.kind {
+                        // S018A 暗物质柱碰撞（098c `Jc`：`Av[+3]=true` + `xv=1`）：
+                        // 柱子的 `hv=IN`→`WA()` 做**镜面反射** `v'=v−(1+xv)(v·n)n`（xv=1 → 法向取反）；
+                        // `Jc` 无 `Jv`/`Gv` 销毁 → 弹体**不销毁**，反弹后继续飞（拉拽效果随之移动）。
+                        *dir = crate::fix::bounce_off(*dir, normal, Fix64::ONE);
+                        pr.pos = o.pos + normal * min; // 推出柱面，避免下帧反复触发
                     } else {
                         // 098c 柱子可摧毁（nx=40，D9 批次3）：火球类直伤弹命中扣 HP，归零移除
                         //（每轮 re-layout 即重生成）。其余弹体被挡下消失。
@@ -12913,6 +12921,44 @@ mod tests {
         assert!(
             world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Gravity { .. })),
             "暗物质应能存活若干帧（不被障碍销毁）"
+        );
+    }
+
+    /// S018A 暗物质柱碰撞（098c `Jc`：`Av[+3]=true` + `xv=1`）：撞柱应**镜面反射且不销毁**。
+    #[test]
+    fn s018a_dark_matter_bounces_off_pillar() {
+        let mut world = World::new(2, 0x8018);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0));
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let mut reflected = false;
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+            for pr in world.projectiles.iter() {
+                if let ProjectileKind::Gravity { dir, .. } = pr.kind {
+                    if dir.x < Fix64::ZERO {
+                        reflected = true;
+                    }
+                }
+            }
+        }
+        assert!(reflected, "暗物质应撞柱反射（dir.x 反向）");
+        assert!(
+            world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Gravity { .. })),
+            "反射后暗物质不应销毁"
         );
     }
 
