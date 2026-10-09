@@ -133,7 +133,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **A 也会砸柱** | `oB` 的遍历用**小写 `kv`（全对象表）** + `if(nv[gX]==1 or(Dv[gX] or fv[gX]))and cn[...]!=OR` ⇒ **可摧毁柱与飞行物一样吃伤** | 我们的 `explode_at` **只扫玩家** → **砸不到柱** | ⚠ 待办（真实差异） |
 | **B 岩浆弹体** | `OB`：`ev=2*(1+.1*ei)`、speed 400、`Rv=72`、`xv=.75`、`Av[+1/+2/+3]=true`、`Ev=16` | life 2.0×ei(0.1) ✓ / 400 ✓ / 72 ✓ / 反弹 .75 ✓（`pillar_restitution(S008)`） | ✅ |
 | **B 爆炸 `EB`** | `cX=3+1.5L`；半径 `200×sqrt(128+40xi+Rv[nr])/14.142`（xi=0、Rv=72 → 200）；`tI(nr,cX,.6,半径)` ⇒ **地板 .5、击退 .6**；`Jv` 与 `Gv` **都是 `ba`=EB** → 无论是被打掉还是到寿都炸 | 伤害 `blast_dmg=gx`（= def 4.5+1.5(L-1) = **3+1.5L** ✓✓ 正好）、半径公式 ✓、地板 .5 ✓、`blast_on_expiry=true` ✓、命中时也炸 ✓ | ✅（2026-09-22） |
-| **B 撞柱** | `Na` 尾部：`if Dv[Vr] then IA(nr); mI(nr,Vr, $A+2*Xv[nr], .8)` ⇒ 撞柱伤 **10+2L**、击退 .8、自毁 | 我们的撞柱分支扣的是 `gx`（=3+1.5L） | ⚠ 待办 |
+| **B 撞柱** | `Na`=Condition(`VB`)：`elseif Dv[Vr] then IA(nr); mI(nr,Vr,$A+2*Xv[nr],.8)` ⇒ 撞柱伤 **10+2L**、击退 .8、自毁 | 我方 S008B `pillar_bounce=false` → 走 blocked 分支扣 `gx`（=3+1.5L） | ⚠ **差异确认**：应 10+2L（L1=12）；忠实体需存等级/专用字段（改快照，需升协议）或沿用推导式 `gx*(4/3)+6`。待拍板 |
 | **B 烤肉饼** | `Na` 对术士：伤害 + “pancake”减速（我们的 `Magma` + `Scorched`） | 近似 ✓ | ✅ 近似 |
 | tooltip 交叉验证 | 陨石：Damage `12+2L`、半径随 xi；岩浆：“Max AoE damage **4.5**”（= L1 的 3+1.5）、“DPS factor **0.6**” | ✓ 均合 | ✅ |
 
@@ -144,7 +144,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方实现 | 状态 |
 |---|---|---|---|
 | **A 形态（目标）** | `hB=700*(1+.1*ei)`；`ev=min(点击距离, hB)/700`（速度 700）；半径 `Rv=50`；`Av[+1/+2]=true`；`hv=FB`/`Gv=DB`/`Jv=gB` | speed 700 / radius 50 ✓；**射程上限原缺失** → 已加 `cap=700×(1+.1ei)` | ✅（2026-09-22） |
-| **A 命中** | `FB`：`if wR(Vr,45) → mI(nr,Vr, 3, 1.4)`（**固定 3**，不是 3+0.5L！）+ `Av=false; IA` | 我们给的是分级伤害 | ⚠ 待办（父弹直伤应恒为 3） |
+| **A 命中** | `FB`：`if wR(Vr,45) → mI(nr,Vr, 3, 1.4)`（**固定 3**，不是 3+0.5L！）+ `Av=false; IA` | ✅ 已实现：spawn 设 `direct_dmg=Some(3.0)`，命中 `hit_dmg=direct_dmg.unwrap_or(gx)`；`kb_ji=1.4`；测试 `s009_parent_direct_hit_is_fixed_3` | ✅ |
 | **A 到点（分裂）** | `DB`：先 `dB(Vv[nr], Q[nr], S[nr], K[nr], L[nr])` 喷出碎片，然后 `iO`（直销毁、**不跑 `Jv`**） | 我们：到点直接喷 N 枚（近似） | ✅ 近似 |
 | **碎片** | `dB`：速度 **250**（`$FA*.03`），朝 `pos+父弹速度` 方向；`ev=.12*4=0.48s`；`Rv=50`；`xv=1`；`jv=wi=CB` | 未建模（我们直接喷小子弹） | ⚠ 简化 |
 | **小子弹（真正的“minor missiles”）** | `CB` 每 `0.12s` 在碎片位置喷 **2 枚**（一顺一逆旋转，角度随剩余寿命变 → 螺旋）：速度 **600**、`Rv=21`、`ev=1.2*(1+.1ei)`、`hv=Ti=BB` → `mI(nr,Vr, 2.5+0.5L, .65)`——**L1=3.0、L8=6.5 与 tooltip “Damage per missile” 完全吻合** | 我们把“碎片+小子弹”压缩为到点喷 N 枚：速度 600 ✓、半径 21 ✓（原 15）、寿命 `1.2(1+.1ei)` ✓（原 0.8）、击退 .65 ✓（原代入父弹的 1.4）、伤害 = 分级伤害 ✓ | ✅ 近似（2026-09-22） |
@@ -588,7 +588,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
 | **三阶段** | `Tr` = 阶段：`Tr==0` → `cX=**11**`；`Tr==1` → `**12**`；else → `**14**`（各配不同爆炸特效 DarkPortal / epicexplosion1 / epicexplosion2） | 我方测试 `s020_catastrophe_stages_escalate_and_cycle` ✓；**数值 11/12/14 待对账** | 📋 |
-| 加成/自伤 | `if Zr>0 → cX+=Zr`（+等级）；`call FX(ii,**20**)`（**固定自伤 20**，不是 cX！）；`call dX(ri,$A)`（**自回魔 +10**） | 我方实现待对账（自伤量） | 📋 |
+| 加成/自伤 | `if Zr>0 → cX+=Zr`（+等级）；`call FX(ii,**20**)`（**固定自伤 20**，不是 cX！）；`call dX(ri,$A)`（**张力 +10**） | ✅ 已修（`01f3731`）：共用 FX 自伤块对 `Catastrophe` 取**固定 20**（S001/S021 仍用 `gx`）+ 张力 +10；测试 `s020_catastrophe_caster_self_damage_and_tension` | ✅ |
 | **命中** | 只扫 `Kv`（术士）异队：`Tr<=1` 时 **半径 300**、伤害 `cX - d/**60**`；`Tr==2` 时 **半径 400**、伤害 `cX - d/**40**`；均 `mI(...,1)`（击退 100%）；另有与天罚同构的 **Denied 断链** | 我方测试 ✓ | ✅/📋 |
 | 物品/地形 | 火法杖 `LC(ri,ii)`；危险地形 `kC(ri,ii)` | — | 📋 |
 
