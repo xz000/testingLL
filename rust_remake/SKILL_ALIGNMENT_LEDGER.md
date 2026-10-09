@@ -524,11 +524,11 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 伤害 | `cX = $A + Zr[ri]`（`Zr=0` 时 10）→ **10+等级**；对 250 半径内**异队**术士 `mI(ii,gX,cX, 1-cO/$3E8)` —— **伤害 `HX=cX` 满额不衰减**，`1-d/1000` 只进击退冲量 `LI`（$3E8=1000） | tooltip：“Damage nearby warlocks by 10/11/12/13 **including yourself**” ✓；伤害 250 内**满额**、击退 `×(1-d/1000)` ✓（2026-09-27 修：曾误把该衰减也乘到伤害上，边缘只打 75%） | ✅ |
 | 半径 | **250**（`cO<=$FA`；`WX`→`SX` = 两单位坐标欧氏距离，中心到中心） | `warlock098b_def` S001：`radius=250`；`explode_at` 判 `d²<=250²` ✓ | ✅ |
 | **自伤** | `call FX(ii,cX)` → `Fn[施法者] -= cX`（HP 直接扣，下限 .5）+ 红字 | ✓（我们有 smite 自伤测试） | ✅ |
-| **每命中恢复** | `if Zr[ri]>0 then call DX(ri,(Zr+1)*n)`（`n`=命中数）；tooltip：“**Damage point recovery per hit 2/3**”（L1 对应 `Zr+1=2`）——注意 L1 伤害 `$A+Zr=11` 与“recovery 2”**同时**被 `Zr=1` 满足 ⇒ 这一行就是 tooltip 的那条 | 我方实现是**回血**；但 `DX`(2333) 的定义是 `gn[id]-=cX` + `SetUnitState(...,**MANA**)` ⇒ 按代码是**回魔** | ⚠ **待定（伪差异候选）** |
-| 每参战等级 | `Zr` 写入在 21381/21398（`Zr[id]+=1`）待核；“命中数≥ 3”有专用文本 | — | 📋 |
+| **每命中恢复** | `if Zr[ri]>0 then call DX(ri,(Zr+1)*n)`（`n`=命中数）——注意本图 `DX`（大写）= `gn -= cX`（张力减、下限 0），与 `dX`（小写，`gn +=`）是**两个函数**；⇒ 回的是**张力**、**非血** | ✅ 已改（098c）：`if smite_bonus>0 { p.mana -= smite_recover * n }`；字段 `on_damage_heal` 改名 `smite_recover` | ✅ |
+| 每参战等级 `Zr` | `Zr` 由**物品 16（鲜血之剑）**升级递增（`iV[16]=true; Zr+=1`，且 `SetUnitAbilityLevel('S001',1+Zr)`），伤害 `cX=10+Zr`、恢复 `(Zr+1)` | ✅ `Zr = item_fx.smite_bonus`（鲜血之剑 1/2 → 1/2）；伤害 `10+smite_bonus` | ✅ |
 | **Denied** | 若某个术士 `Fv[gX]==ii`（其链接目标=施法者）且（在危险地形 or `kr[Vv[gX]]` or `Fr[gX]`）→ `aR(gX)` **断链**（`nv[nR]==2` 弹体则 `iO`）+ “Denied”红字/音效 | ✓ 我们有 `smite_denied_breaks_link_on_special_target` | ✅ |
-| 物品 12（`iV[$C+24*ri]`） | 施法时 `vi[ri] = 2*vi[ri]`（**生命精通翻倍**），结束恢复 | 待核我方物品映射（$C=12） | 📋 |
-| 物品 13（火法杖） | `call LC(ri,ii)`（待读 15459） | — | 📋 |
+| 物品 12（`iV[$C+24*ri]`） | 施法时 `vi[ri] = 2*vi[ri]`（**生命偷取 `vi` 翻倍**），结束恢复 | ✅ = `ItemId::FireMask`（`scourge_double`）；包裹 `explode_at` 前后各翻/复原 `mastery[0]` 与 `item_fx.lifesteal`；`explode_at` 已补攻方吸血 | ✅ |
+| 物品 13（火法杖） | `call LC(ri,ii)`（待读 15459）：给施法者能力 7251 共 `4*jn` 秒 + 血精灵武器特效 | 我方 `FireStaff` 是火球点燃被动（`fireball_burn`）；`LC` 的「临时能力 7251」语义**待核** | 📋 |
 | 危险地形变体 | `if nV[ri] and 地形==火灾 then kC(ri,ii)`：`To[id]/=8`、`nV[id]=false`、`GX(1,0,id)`，按物品 19/20/其他给 `KC=6/8/10` + DivineShield 特效 + `JC`/`jC` 回调 | — | 📋 |
 
 ---
@@ -580,7 +580,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 |---|---|---|---|
 | **A（暗物质弹）** | `Jc`：`ev=**900*(1+.1*ei)/400**`（秒）、速度 **400/s**、**`Av[+3]=true` 只与障碍碰撞**（不撞玩家/弹体）、`xv=**1**`（撞柱镜面反弹）、`Ev=na`、`Gv=Ea=jc`（到点）、`jv=Va=hc`（每帧） | ✅ 已修（`c110912`）：`Gravity` 对柱返 `Some(0)`+反射，`col_mask` 仅障碍；测试 `s018a_dark_matter_bounces_off_pillar` | ✅ |
 | **B（力场弹）** | `Mc`：`ev=min(点击距离, **850*(1+.1*ei**>)/850`、速度 **850/s**、**`Av[+3]=false`（穿柱！）**、`Gv=ca`（到点生成力场）、`xv=1` | ✅ 已实现（`W098bOnHit::StarField` + `star_spawns`）：850/s 飞行弹到点才生成力场（射程上限 `850(1+.1ei)`，`Av` 全 false 无碰撞）；力场半径 `175√(1+.1xi)`、`ev=5jn`；测试 `s018b_force_field_spawns_after_travel` | ✅（忠实，2026-10-09） |
-| **力场每帧 `kc`** | `if je then`：同队 → `PX(Vr, **.13+.03*Yr**`（**每秒治疗**）；异队 → 减益 659（伤害 `.2+.25*Yr`，刷新） | tooltip：“Damage per second **2.25**、Heal per second **1.0**”（L1：0.13+0.03 = 0.16/跳？需核 tick 频率） | 📋 |
+| **力场每帧 `kc`** | `if je`（**每 0.18s**）：同队 → `PX(Vr, .13+.03*Yr)`（治疗）；异队 → 减益 659（伤害 `.2+.25*Yr`，刷新）。`Yr`=Y 槽技能等级 | ⚠近似：我方 `Star` 用**连续 DPS**（tooltip 逐级 2.25→8.0 伤 / 1.0→2.4 奶），未建模 0.18s 离散脉冲；L1 吻合 tooltip。若需严格，改为每 0.18s 一次脉冲 | ⚠近似（待定） |
 | 其他回调 | `Kc`（销毁）、`lc`（淡出）、`Lc`（生成 `GreenPentagramVampiric` + `Rv=$FA*XB`、`XB=.7√(1+.1xi)`） | — | 📋 |
 
 ### S020 灾变（`qC` 15664）✅ 已普查（未动代码）
