@@ -633,7 +633,8 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 我方 `pillar_restitution(SkillId)` 是**逐技能**的 → **S009/S018 都需要改成“逐弹体角色”**（列入 P0 复审清单）。
 
 > 状态（`0baea5d`）：**S009 已完成**（碎片与 B 形态父弹在生成处逐弹体设 `pillar_rest=1`，A 形态仍被柱挡）；
-> **S018A/B 仍未做**——S018 走 `ProjectileKind::Gravity`，其运动分支**没有柱碰撞**（直穿），需先给 `Gravity` 加障碍碰撞才能实现 `xv=1` 反弹。
+> **S018A 柱碰撞仍未做（已复核 2026-10-09）**——098c `Jc`：`Av[+3]=true`（撞障碍）+ `xv=1`（镜面反射），但 **`Rv` 未设**（用单位默认碰撞半径）→ 忠实体需知道 `e000` 默认 `Rv`。我方 `Gravity` 运动分支 `obstacle_radius()=None` → **直穿柱**。影响：暗物质弹穿柱而非反弹。
+> 修复需：① `obstacle_radius()` 给 Gravity 返回其默认碰撞半径；② 在撞障碍循环加 Gravity 分支（`bounce_off(dir,n,1)` + 推出柱面）。因 `Rv` 默认值未知，暂标 **已知缺口**（低优先：暗物质多在空地施放）。
 
 
 
