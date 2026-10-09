@@ -3599,6 +3599,9 @@ impl World {
             if let Some(p) = self.players.get_mut(victim as usize) {
                 if p.alive {
                     p.hp = (p.hp + heal_amt).min(p.max_hp);
+                    // 098c `PX(gX,qX)` 内部固定 `BX(id,qX)`（血）+ `DX(id,qX/2)`（张力 −奶/2，下限 0）。
+                    // `heals` 队列的两处来源（S018B 力场、S014A 友军）均走 `PX`，故统一附带 `DX`。
+                    p.mana = (p.mana - heal_amt.to_num::<f64>() / 2.0).max(0.0);
                 }
             }
         }
@@ -5207,7 +5210,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         for a in allies {
                             let p = &mut world.players[a as usize];
                             if (p.pos - ppos).length_squared() <= Fix64::from_num(500.0 * 500.0) {
-                                p.hp = (p.hp + gx * Fix64::from_num(0.5)).min(p.max_hp);
+                                // 098c `QC`：`BX(Vv[gX], cX*0.5)`（治疗 cX/2）+ `DX(Vv[gX], cX*0.5)`（张力 −cX/2，
+                                // 恒等于治疗量，非奶/2）；`250` 半径内异队 `mI` 伤害满额、击退 `1-d/1000`。
+                                let heal = gx * Fix64::from_num(0.5);
+                                p.hp = (p.hp + heal).min(p.max_hp);
+                                p.mana = (p.mana - heal.to_num::<f64>()).max(0.0);
                                 p.add_buff(BuffKind::Speed(1.0 + 60.0 / 210.0), 4.0);
                                 healed_any = true;
                             }
@@ -12599,6 +12606,7 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
         world.players[1].move_target = None;
         world.players[1].hp = Fix64::from_num(40.0);
+        world.players[1].mana = 50.0; // 验证 PX 的 DX 副作用（治疗同扣张力 奶/2）
         world.players[2].team = 1; // 敌人也在落点
         world.players[2].pos = Vec2::new(d60(3.5), Fix64::ZERO);
         world.players[2].move_target = None;
@@ -12616,6 +12624,8 @@ mod tests {
         let h2 = world.players[2].hp.to_num::<f64>();
         assert!(h1 > 40.0, "力场应治疗队友（40→↑），实际 {h1}");
         assert!(h2 < 50.0, "力场应伤害敌人（50→↓），实际 {h2}");
+        // 098c `PX` 内含 `DX(qX/2)`：治疗同时扣被治疗者张力 奶/2。
+        assert!(world.players[1].mana < 50.0, "力场治疗应附带扣张力（PX→DX），实际 {}", world.players[1].mana);
     }
 
     /// S018 引力·力场（B 形态）：范围内敌人**受伤但不受减速**。
