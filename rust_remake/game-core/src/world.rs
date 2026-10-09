@@ -413,6 +413,11 @@ const W098B_KB_TIME: f64 = 0.35;/// 098c 击退初速封顶（war3 单位/s）�
 const W098B_KB_MAX_SPEED: f64 = 2000.0;
 /// 098b 火球点燃时长（秒）：consolidated S000「点燃 2.5×jn」。
 const W098B_IGNITE_SECONDS: f64 = 2.5;
+/// 098c `mb` 逐帧制导的目标速度（war3 单位/s）：`v=$3E8*.03=30/tick` ⇒ **1000/s**
+/// （注意：与弹体初速 900 不同）。S003 追踪弹与 S016 弹跳弹的 `jv=fi=mb` 都用它（`Q=.98Q+.02*v*dir`）。
+const W098B_STEER_SPEED: f64 = 1000.0;
+/// 098c `Mb`：逐帧制导目标失效后，在 **700**（`$77A10=700²`）内重找**最近敌方**。
+const W098B_REFIND_RADIUS: f64 = 700.0;
 
 /// 098c 英雄撞柱/撞界的弹性系数 `xv`：`FR` 创建英雄时 `set xv[i]=.5`
 /// （war3map_pretty.j:4953 `OO(1,..)` → `nv==1`，4979 `set xv[i]=.5`）。
@@ -2146,34 +2151,51 @@ impl World {
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Bounce => {
-                            // 098c `mb`(11118) 每帧制导：`vel = .98vel + .02*(speed·dir→目标)`。
-                            // `chase`（`Fv[nr]`）在重定向（`Fc`）时置位；目标死亡/不存在则清空（直线飞完）。
-                            if let Some(tid) = *chase {
-                                if let Some(t) = self.players.get(tid as usize) {
-                                    if t.alive {
-                                        let d = t.pos - pr.pos;
-                                        if d.length() > Fix64::ZERO {
-                                            *vel = *vel * Fix64::from_num(0.98)
-                                                + d.normalized() * *speed * Fix64::from_num(0.02);
-                                        }
-                                    } else {
-                                        *chase = None;
-                                    }
-                                } else {
-                                    *chase = None;
+                            // 098c `mb`(11118) 每帧制导：`Q=.98Q+.02*v*dir`，v=`$3E8*.03`=**1000/s**
+                            // （非弹体初速 900）。`chase`（`Fv[nr]`）在重定向（`Fc`）时置位。
+                            // 目标失效 → `Mb`：在 700 内重找最近敌方后继续制导；无则清空（直线飞完）。
+                            let alive = (*chase)
+                                .and_then(|tid| self.players.get(tid as usize))
+                                .filter(|t| t.alive)
+                                .map(|t| t.pos);
+                            let dest = match alive {
+                                Some(p) => Some(p),
+                                None => {
+                                    *chase = nearest_enemy_within(&self.players, pr.pos, pr.owner, Fix64::from_num(W098B_REFIND_RADIUS));
+                                    (*chase).and_then(|tid| self.players.get(tid as usize)).map(|t| t.pos)
+                                }
+                            };
+                            if let Some(dst) = dest {
+                                let d = dst - pr.pos;
+                                if d.length() > Fix64::ZERO {
+                                    *vel = *vel * Fix64::from_num(0.98)
+                                        + d.normalized() * Fix64::from_num(W098B_STEER_SPEED * 0.02);
                                 }
                             }
                             pr.pos += *vel * dt;
                         }
                         crate::skill::W098bProjKind::Homing => {
-                            // 朝锁定目标全速直追；目标死亡则保持当前方向直线飞完剩余寿命。
-                            if let Some(tid) = target {
-                                if let Some(t) = self.players.get(*tid as usize) {
-                                    if t.alive {
-                                        let d = t.pos - pr.pos;
-                                        if d.length() > Fix64::ZERO {
-                                            *vel = d.normalized() * *speed;
-                                        }
+                            // S003 追踪弹（098c `mb`/`Mb`）：每帧 `Q=.98Q+.02*v*dir`（v=**1000/s**）；
+                            // 目标失效 → 在 700 内重找最近敌方继续追（而非保持原向直飞）。
+                            // 注：回血球/魂（DrainOrb/SoulReturn）也用 Homing 运动，但朝施法者直飞、
+                            // 不做目标制导，故仅对 `on_hit==Ki`（追踪弹）启用。
+                            if *on_hit == crate::skill::W098bOnHit::Ki {
+                                let alive = (*target)
+                                    .and_then(|tid| self.players.get(tid as usize))
+                                    .filter(|t| t.alive)
+                                    .map(|t| t.pos);
+                                let dest = match alive {
+                                    Some(p) => Some(p),
+                                    None => {
+                                        *target = nearest_enemy_within(&self.players, pr.pos, pr.owner, Fix64::from_num(W098B_REFIND_RADIUS));
+                                        (*target).and_then(|tid| self.players.get(tid as usize)).map(|t| t.pos)
+                                    }
+                                };
+                                if let Some(dst) = dest {
+                                    let d = dst - pr.pos;
+                                    if d.length() > Fix64::ZERO {
+                                        *vel = *vel * Fix64::from_num(0.98)
+                                            + d.normalized() * Fix64::from_num(W098B_STEER_SPEED * 0.02);
                                     }
                                 }
                             }
@@ -6018,6 +6040,24 @@ fn nearest_hit(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Opti
         let owner_idx = players.iter().position(|p| p.id == id)?;
         Some((id, players[owner_idx].pos - pos))
     })
+}
+
+/// 098c `Mb`：逐帧制导目标失效后，在 `W098B_REFIND_RADIUS` 内重找**最近的敌方**单位
+/// （S003 追踪弹 / S016 弹跳弹共用 `mb`/`Mb`）。返回单位 id。
+fn nearest_enemy_within(players: &[Player], pos: Vec2, owner: u32, radius: Fix64) -> Option<u32> {
+    let oteam = players.get(owner as usize).map(|p| p.team);
+    let r2 = radius * radius;
+    let mut best: Option<(Fix64, u32)> = None;
+    for p in players.iter() {
+        if !p.alive || p.id == owner || Some(p.team) == oteam {
+            continue;
+        }
+        let d2 = (p.pos - pos).length_squared();
+        if d2 <= r2 && best.map(|(b, _)| d2 < b).unwrap_or(true) {
+            best = Some((d2, p.id));
+        }
+    }
+    best.map(|(_, id)| id)
 }
 
 /// 同 `nearest_hit`，但**不排除友军**（红链 S019B：链到友军/柱子时引发闪电，098c `sc`）。
@@ -10070,6 +10110,109 @@ mod tests {
         let d_ally = (hp_ally - world.players[2].hp).to_num::<f64>();
         assert!(d_enemy > 5.0, "敌人应受首跳伤害，实际 {d_enemy}");
         assert!(d_ally.abs() < 0.01, "队友不应被弹跳弹误伤，实际 {d_ally}");
+    }
+
+    /// 造一枚朝 +x、追踪 `chase` 的弹跳弹（供制导单测用）。
+    fn inject_bounce(chase: Option<u32>, vel_x: f64) -> Projectile {
+        Projectile {
+            owner: 0,
+            kind: ProjectileKind::W098b {
+                proj: crate::skill::W098bProjKind::Bounce,
+                vel: Vec2::new(Fix64::from_num(vel_x), Fix64::ZERO),
+                speed: Fix64::from_num(900.0),
+                radius: Fix64::from_num(38.0),
+                remaining: Fix64::from_num(10.0),
+                life: Fix64::from_num(10.0),
+                gx: Fix64::from_num(6.0),
+                kb_ji: Fix64::from_num(1.15),
+                ignite: None,
+                blast: None,
+                target: None,
+                bob_phase: BoomerangPhase::Out,
+                on_hit: crate::skill::W098bOnHit::Ki,
+                debuff_dur: Fix64::ZERO,
+                lateral: Fix64::ZERO,
+                forward_dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                out_dist: Fix64::ZERO,
+                burst: 0,
+                emit_cooldown: Fix64::ZERO,
+                emit_angle: 0.0,
+                pillar_bounce: false,
+                pillar_rest: Fix64::ZERO,
+                lightning_dmg: Fix64::ZERO,
+                weaken_armed: false,
+                blast_dmg: Fix64::from_num(6.0),
+                blast_floor: Fix64::ZERO,
+                blast_on_expiry: false,
+                is_fireball: false,
+                class: ProjClass::ReflectTransfer,
+                direct_dmg: None,
+                chase,
+            },
+            pos: Vec2::ZERO,
+            alive: true,
+        }
+    }
+
+    /// R7 复核④（S016+S003 共享）：逐帧制导稳态速度应趋近 **1000/s**（098c `mb` 的 `$3E8*.03`），非 900。
+    #[test]
+    fn w098b_steer_speed_converges_to_1000() {
+        let mut world = World::new(2, 0x6018);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌人放在很远处（避免命中），弹体沿 +x 追踪它。
+        world.players[1].pos = Vec2::new(Fix64::from_num(8000.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.projectiles.push(inject_bounce(Some(1), 900.0));
+        let none = vec![PlayerInput::default(); 2];
+        for _ in 0..180 {
+            world.step(none.clone(), dt);
+        }
+        let speed = world
+            .projectiles
+            .iter()
+            .find_map(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, vel, .. } => Some(vel.length().to_num::<f64>()),
+                _ => None,
+            })
+            .expect("弹跳弹应仍在场");
+        assert!((speed - 1000.0).abs() < 5.0, "制导稳态应趋近 1000/s，实际 {speed}");
+    }
+
+    /// R7 复核⑤（S016+S003 共享）：制导目标死亡后，应在 **700** 内重找最近敌方继续追（098c `Mb`）。
+    #[test]
+    fn w098b_steer_refinds_nearest_enemy_when_target_dies() {
+        let mut world = World::new(3, 0x6019);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 玩家 1：存活敌方，位于 +y（700 内）；玩家 2：已死（原 chase 目标）。
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(Fix64::ZERO, Fix64::from_num(300.0));
+        world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].alive = false;
+        world.projectiles.push(inject_bounce(Some(2), 900.0));
+        world.step(vec![PlayerInput::default(); 3], dt);
+        let (chase, vy) = world
+            .projectiles
+            .iter()
+            .find_map(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, chase, vel, .. } => {
+                    Some((chase, vel.y.to_num::<f64>()))
+                }
+                _ => None,
+            })
+            .expect("弹跳弹应仍在场");
+        assert_eq!(chase, Some(1), "应重找到存活敌方玩家 1");
+        assert!(vy > 0.0, "速度应转向 +y 的新目标，实际 vy={vy}");
     }
 
     #[test]
