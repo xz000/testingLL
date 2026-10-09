@@ -832,6 +832,11 @@ impl<T: Transport> HostLockstep<T> {
     pub fn transport_ref(&self) -> &T {
         &self.transport
     }
+
+    /// 取出底层 transport（R6a：被取代/自栅栏的 host 转 client 时，把 transport 移交给 ClientLockstep）。
+    pub fn into_transport(self) -> T {
+        self.transport
+    }
 }
 
 /// client 侧帧同步状态机。
@@ -1743,6 +1748,16 @@ mod tests {
         let cfgs = host.collect_cfgs().expect("掉线端不要求后应可收齐");
         assert_eq!(cfgs.len(), 1, "只应包含 host 自己的 cfg（掉线端不提供）");
         assert_eq!(cfgs[0].0, 0, "host cfg 的 new index 为 0");
+    }
+
+    /// R6a：HostLockstep 可取出底层 transport，并据此重建 ClientLockstep（host→client 归队用）。
+    #[test]
+    fn host_into_transport_rebuilds_client() {
+        let (ht, _ct) = pair();
+        let host_peer = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000)));
+        let host = HostLockstep::new(ht, 2, true);
+        let cli = ClientLockstep::new(host.into_transport(), 1, host_peer);
+        assert_eq!(cli.expect_seq(), 0, "取出的 transport 应能重建 client");
     }
 
     /// R4①：客户端应忽略来自非当前 host 的权威帧（防“僵尸 host”污染）。
