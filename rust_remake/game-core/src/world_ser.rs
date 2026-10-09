@@ -711,7 +711,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
         PK::Star { owner, radius, damage_per_sec, heal_per_sec, remaining, heal_team } => { wu8(o, 14); wu32(o, *owner); wfix(o, *radius); wfix(o, *damage_per_sec); wfix(o, *heal_per_sec); wfix(o, *remaining); wu8(o, *heal_team as u8); }
         PK::BindLine { dir, speed, count, fired, bind_time, from, end } => { wu8(o, 15); wvec(o, *dir); wfix(o, *speed); wu32(o, *count); wu32(o, *fired); wfix(o, *bind_time); wvec(o, *from); wvec(o, *end); }
         PK::PushBullet { dir, speed, damage, radius, push_power, push_time, remaining } => { wu8(o, 16); wvec(o, *dir); wfix(o, *speed); wfix(o, *damage); wfix(o, *radius); wfix(o, *push_power); wfix(o, *push_time); wfix(o, *remaining); }
-        PK::W098b { proj, vel, speed, radius, remaining, life, gx, pillar_dmg, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball, class, direct_dmg, chase } => {
+        PK::W098b { proj, vel, speed, radius, remaining, life, gx, pillar_dmg, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball, class, direct_dmg, chase, col_mask, s009_role } => {
             wu8(o, 17);
             wu8(o, match proj { crate::skill::W098bProjKind::Straight => 0, crate::skill::W098bProjKind::Homing => 1, crate::skill::W098bProjKind::Boomerang => 2, crate::skill::W098bProjKind::Bounce => 3, crate::skill::W098bProjKind::Magma => 4 });
             wvec(o, *vel); wfix(o, *speed); wfix(o, *radius); wfix(o, *remaining); wfix(o, *life); wfix(o, *gx); wfix(o, *pillar_dmg); wfix(o, *kb_ji);
@@ -741,6 +741,8 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wu8(o, direct_dmg.is_some() as u8);
             if let Some(v) = direct_dmg { wfix(o, *v); }
             wu32(o, chase.unwrap_or(u32::MAX));
+            wu8(o, *col_mask);
+            wu8(o, *s009_role);
         }
         PK::Clone { owner, offset, fire_timer, fire_cd, fire_dmg, remaining } => {
             wu8(o, 18);
@@ -871,7 +873,9 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
             };
             let direct_dmg = if u8at(b, p)? != 0 { Some(fixat(b, p)?) } else { None };
             let chase = match u32at(b, p)? { u32::MAX => None, v => Some(v) };
-            PK::W098b { proj, vel, speed, radius, remaining, life, gx, pillar_dmg, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball, class, direct_dmg, chase }
+            let col_mask = u8at(b, p)?;
+            let s009_role = u8at(b, p)?;
+            PK::W098b { proj, vel, speed, radius, remaining, life, gx, pillar_dmg, kb_ji, ignite, blast, target, bob_phase, on_hit, debuff_dur, lateral, forward_dir, out_dist, burst, emit_cooldown, emit_angle, pillar_bounce, pillar_rest, lightning_dmg, weaken_armed, blast_floor, blast_dmg, blast_on_expiry, is_fireball, class, direct_dmg, chase, col_mask, s009_role }
         }
         18 => PK::Clone {
             owner: u32at(b, p)?,

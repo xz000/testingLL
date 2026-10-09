@@ -372,6 +372,11 @@ pub enum ProjectileKind {
         /// S016 弹跳弹的**当前追踪目标**（098c `Fv[nr]`）：重定向（`Fc`）后置位，
         /// 每帧由 `mb` 朝它制导 `vel = .98vel + .02*(speed·dir)`。其余技能恒 `None`。
         chase: Option<u32>,
+        /// 逐弹碰撞掩码（098c `Av[3p+1..3]` 的等价物，bit0=单位/bit1=弹体/bit2=障碍）。
+        /// 决定与「术士 / 其他弹体 / 柱子」是否参与碰撞（碰撞被挡/参数化见撞障碍分支）。
+        col_mask: u8,
+        /// S009 分裂的角色（0=普通/无；1=A 父弹；2=A 碎片；3=B 父弹）——驱动发射器与到点碎裂。
+        s009_role: u8,
     },
     /// 陨石落点（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
     /// 到点由 `oB` 规则结算：范围内异队玩家受 `damage × (1 - d/falloff_denom)` 并击退。
@@ -421,6 +426,20 @@ const W098B_IGNITE_SECONDS: f64 = 2.5;
 const W098B_STEER_SPEED: f64 = 1000.0;
 /// 098c `Mb`：逐帧制导目标失效后，在 **700**（`$77A10=700²`）内重找**最近敌方**。
 const W098B_REFIND_RADIUS: f64 = 700.0;
+/// 逐弹碰撞掩码位（098c `Av[3p+1..3]` 的等价物）：与「单位 / 其他弹体 / 障碍（柱）」是否碰撞。
+const W098B_COL_UNIT: u8 = 1 << 0;
+const W098B_COL_MISSILE: u8 = 1 << 1;
+const W098B_COL_OBSTACLE: u8 = 1 << 2;
+const W098B_COL_ALL: u8 = W098B_COL_UNIT | W098B_COL_MISSILE | W098B_COL_OBSTACLE;
+/// S009 小子弹生成队列项：(owner, 位置, 速度, gx, 速度标量, 半径, 寿命, kb_ji)。
+type SpawnBullet = (u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64, Fix64);
+/// S009 A 碎片生成队列项：(owner, 位置, 速度, gx, kb_ji)。
+type SpawnFragment = (u32, Vec2, Vec2, Fix64, Fix64);
+/// S009 分裂的逐弹角色：驱动发射器与到点碎裂。
+const S009_ROLE_NONE: u8 = 0;
+const S009_ROLE_A_PARENT: u8 = 1;
+const S009_ROLE_A_FRAGMENT: u8 = 2;
+const S009_ROLE_B_PARENT: u8 = 3;
 
 /// 098c 英雄撞柱/撞界的弹性系数 `xv`：`FR` 创建英雄时 `set xv[i]=.5`
 /// （war3map_pretty.j:4953 `OO(1,..)` → `nv==1`，4979 `set xv[i]=.5`）。
@@ -472,8 +491,15 @@ impl ProjectileKind {
             | ProjectileKind::PushBullet { radius, .. }
             // 回旋镖单独处理：撞柱是**反弹**而不是消失（原版 BoomerangScript 的 MirrorBy），保留原手感。
             | ProjectileKind::Boomerang { radius, .. } => *radius,
-            // 098b 弹体：回旋镖（S004）撞柱反弹，其余撞柱消失（见撞障碍分支）。
-            | ProjectileKind::W098b { radius, .. } => *radius,
+            // 098b 弹体：是否与障碍碰撞由逐弹掩码 `col_mask`（098c `Av[+3]`）决定；
+            // 未置位 → 直接穿过柱子（如 S009 父弹/A 父弹）。
+            | ProjectileKind::W098b { radius, col_mask, .. } => {
+                if *col_mask & W098B_COL_OBSTACLE != 0 {
+                    *radius
+                } else {
+                    return None;
+                }
+            }
             ProjectileKind::Chain { .. } | ProjectileKind::ScatterLine { .. } => {
                 Fix64::from_num(PROJ_HIT_RADIUS_FALLBACK)
             }
@@ -501,15 +527,20 @@ impl ProjectileKind {
         const C2: u8 = 1 << 1; // 回旋镖
         const C3: u8 = 1 << 2; // 场/块（岩浆等）
         match self {
-            ProjectileKind::W098b { proj, .. } => match proj {
+            ProjectileKind::W098b { proj, col_mask, .. } => {
+                if *col_mask & W098B_COL_MISSILE == 0 {
+                    return None;
+                }
+                match proj {
                 // 098c `Ub`（11481）只设 `Av[Nb*3+1]=true`（类 1 = 术士）与 `Av[Nb*3+3]=true`（类 3 = 障碍/柱子），
                 // **没有** `Av[Nb*3+2]`（类 2 = 弹体）→ 回旋镖**从不与其他弹体互撞**。
                 // （注意：098c 的 1/3 类分别是「术士/障碍」，与本模拟的 C1/C3（弹/场）不是同一套编号：
                 //   术士命中走 `Sb`、障碍命中走撞柱分支，所以这里的“弹体互撞”类别应为空。）
-                crate::skill::W098bProjKind::Boomerang => Some((2, 0)),
-                crate::skill::W098bProjKind::Magma => None, // 岩浆走 magma_absorb
-                _ => Some((1, C1 | C2 | C3)),
-            },
+                    crate::skill::W098bProjKind::Boomerang => Some((2, 0)),
+                    crate::skill::W098bProjKind::Magma => None, // 岩浆走 magma_absorb
+                    _ => Some((1, C1 | C2 | C3)),
+                }
+            }
             ProjectileKind::Bullet { .. }
             | ProjectileKind::Missile { .. }
             | ProjectileKind::PushBullet { .. }
@@ -1088,6 +1119,8 @@ impl World {
                     class: ProjClass::ReflectTransfer, // 凤凰弹（`tB` 未设 Ev）
                     direct_dmg: None,
                     chase: None,
+                    col_mask: W098B_COL_ALL,
+                    s009_role: S009_ROLE_NONE,
                 },
                 pos,
                 alive: true,
@@ -1817,8 +1850,10 @@ impl World {
         // 陨石落点（098c `oB`）：(owner, 落点, 半径, 中心伤害, kb_ji, 衰减分母)
         let mut delayed_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 碎裂/侧弹生成队列（B4：S009 目标形态到点碎裂、区域形态螺旋侧弹）
-        // (owner, 位置, 速度, gx, 弹半径, 寿命, kb_ji)
-        let mut spawn_bullets: Vec<(u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
+        // (owner, 位置, 速度, gx, 速度标量, 弹半径, 寿命, kb_ji)
+        let mut spawn_bullets: Vec<SpawnBullet> = Vec::new();
+        // S009 A 形态到点生成的「碎片」：(owner, 位置, 速度(250/s 沿父弹方向), gx, kb_ji)
+        let mut fragment_spawns: Vec<SpawnFragment> = Vec::new();
         // 098c 回旋镖回程到位结算：(owner, 位置, gx, kb_ji) —— 对命中半径 qI 内目标 AOE（距离衰减）。
         let mut bob_home: Vec<(usize, u32)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
@@ -2033,7 +2068,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, chase, bob_phase, gx, kb_ji, forward_dir, out_dist, burst, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, chase, bob_phase, gx, kb_ji, forward_dir, out_dist, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, s009_role, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 走三阶段状态机（见下）。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -2109,32 +2144,19 @@ impl World {
                                 expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *gx));
                             }
                         }
-                        // S009·目标形态（B4）：到点碎裂成 6 枚环形弹片（098c dB：600/s 旋转喷出）
-                        // S009·目标形态：到点时分出碎片（098c `DB` 12304 调 `dB` 12150）——
-                        // 碎片本体速度 **250/s**、寿命 `ev=.12*4=0.48s`、半径 50；它每 0.12s 再螺旋喷 2 枚
-                        // 小子弹（`CB` 12070）：速度 600、半径 `Rv=21`、寿命 `1.2*(1+.1ei)`、
-                        // `hv=Ti=BB` → 伤害 `2.5+0.5L`（L1=3√、L8=6.5√ tooltip “Damage per missile”），击退 .65。
-                        // 本作把“碎片+小子弹”压缩为到点一次喷出 N 枚小子弹（保持每枚伤害/速度/寿命/击退）。
-                        if *burst > 0 {
-                            let eim_s009 = self
-                                .players
-                                .get(pr.owner as usize)
-                                .map(|p| 1.0 + 0.1 * p.mastery[2] as f64)
-                                .unwrap_or(1.0);
-                            let n = *burst as i64;
-                            let base = std::f64::consts::TAU / n as f64;
-                            for k in 0..n {
-                                // 确定性三角：f64 只用于「常数×k + 角度状态」的 IEEE 四则运算（逐位确定），
-                                // 三角函数走 CORDIC（crate::fix），避免平台 libm 差异导致帧同步 desync。
-                                let ang = Fix64::from_num(base * k as f64 + *emit_angle);
-                                let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
-                                spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(21.0), Fix64::from_num(1.2 * eim_s009), Fix64::from_num(0.65)));
-                            }
+                        // S009·目标形态到点（098c `DB` → `dB`）：生成 **1 个「碎片」**（速度 250 沿父弹
+                        // 速度方向、寿命 0.48s、半径 50、`xv=1`），碎片随后每 0.12s 自行喷 2 枚小子弹。
+                        if *s009_role == S009_ROLE_A_PARENT {
+                            let dirv = if vel.length() > Fix64::ZERO {
+                                vel.normalized()
+                            } else {
+                                Vec2::new(Fix64::ONE, Fix64::ZERO)
+                            };
+                            fragment_spawns.push((pr.owner, pr.pos, dirv * Fix64::from_num(250.0), *gx, *kb_ji));
                         }
                     }
-                    // S009·区域形态（B4）：飞行中每 0.12s 沿旋转角撒一枚侧弹（098c cB 螺旋）
-                    // S009·区域形态：飞行中每 0.12s 沿旋转角撇一枚侧弹（098c `cB` 12002：`jv=Ui=cB`）；
-                    // 严格说 098c 每 tick 喷的是 **2 枚**（一顺一逆），本作撒 1 枚作近似。
+                    // S009 发射器（098c `CB`/`cB`）：A 碎片每 0.12s 喷 2 枚（绕速度 ±rot(ev)）；
+                    // B 父弹每 0.18s 喷 2 枚**反向**（`gv` 与 `gv+180°`，随后 `gv+=30°`）。
                     if *emit_cooldown > Fix64::ZERO {
                         let eim_s009 = self
                             .players
@@ -2143,12 +2165,33 @@ impl World {
                             .unwrap_or(1.0);
                         *emit_cooldown -= dt;
                         if *emit_cooldown <= Fix64::ZERO {
-                            *emit_cooldown = Fix64::from_num(0.12);
-                            *emit_angle += 0.52; // ≈30° 螺旋步进
-                            // 确定性三角：走 CORDIC（见上）。
-                            let ang = Fix64::from_num(*emit_angle);
-                            let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
-                            spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(600.0), *gx, Fix64::from_num(21.0), Fix64::from_num(1.2 * eim_s009), Fix64::from_num(0.65)));
+                            if *s009_role == S009_ROLE_A_FRAGMENT {
+                                *emit_cooldown = Fix64::from_num(0.12);
+                                let spd = vel.length();
+                                if spd > Fix64::ZERO {
+                                    let dx = vel.x / spd;
+                                    let dy = vel.y / spd;
+                                    let ev = *remaining;
+                                    let den = Fix64::ONE + ev;
+                                    // 098c `CB`：`Dx=(dx∓dy·ev)/(1+ev)`（绕速度小角度旋转）。
+                                    let a = Vec2::new((dx - dy * ev) / den, (dy + dx * ev) / den);
+                                    let b = Vec2::new((dx + dy * ev) / den, (dy - dx * ev) / den);
+                                    let life_a = Fix64::from_num(1.2 * eim_s009);
+                                    spawn_bullets.push((pr.owner, pr.pos, a * Fix64::from_num(600.0), *gx, Fix64::from_num(600.0), Fix64::from_num(21.0), life_a, Fix64::from_num(0.65)));
+                                    spawn_bullets.push((pr.owner, pr.pos, b * Fix64::from_num(600.0), *gx, Fix64::from_num(600.0), Fix64::from_num(21.0), life_a, Fix64::from_num(0.65)));
+                                }
+                            } else if *s009_role == S009_ROLE_B_PARENT {
+                                // 098c `cB`：速度 750 / Rv20 / 寿命 1（不随 ei）；同一次两枚反向。
+                                *emit_cooldown = Fix64::from_num(0.18);
+                                let ang = Fix64::from_num(*emit_angle);
+                                let d = Vec2::new(crate::fix::cos(ang), crate::fix::sin(ang));
+                                let v = Fix64::from_num(750.0);
+                                spawn_bullets.push((pr.owner, pr.pos, d * v, *gx, v, Fix64::from_num(20.0), Fix64::ONE, Fix64::from_num(0.65)));
+                                spawn_bullets.push((pr.owner, pr.pos, d * Fix64::from_num(-750.0), *gx, v, Fix64::from_num(20.0), Fix64::ONE, Fix64::from_num(0.65)));
+                                *emit_angle += 0.5235987755982988; // 30°（098c `gv+=30*bj_DEGTORAD`）
+                            } else {
+                                *emit_cooldown = Fix64::from_num(0.12);
+                            }
                         }
                     }
                     } // end !is_boomerang（回旋镖不走通用寿命/到点逻辑）
@@ -2913,7 +2956,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, direct_dmg, life, remaining, .. } => {
+                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, direct_dmg, life, remaining, col_mask, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -2924,7 +2967,10 @@ impl World {
                     // 结算后弹开并转入「飞回施法者」状态（`sb`→`Tb`），**之后不再造成伤害**。
                     // 证据：`Ub` 里 `hv[nb]=Ni=Condition(Sb)`；`Sb` 的 `6.4+0.8*Xv[nr]` 与 tooltip 7.2/8.0/… 完全吻合。
                     // （此前误把它写成“飞行不结算 + 回程 210 AOE”——那是陨石 `oB`/`Zb` 的公式，已纠正。）
-                    let hit = if *proj == crate::skill::W098bProjKind::Boomerang {
+                    let hit = if *col_mask & W098B_COL_UNIT == 0 {
+                        // 逐弹掩码未含单位碰撞（098c `Av[+1]==false`）→ 不命中单位（如 S009 A 碎片）。
+                        None
+                    } else if *proj == crate::skill::W098bProjKind::Boomerang {
                         // 098c：回旋镖的碰撞处理器 `hv=Ni=Condition(Sb)` **从不被清除**
                         //（`sb()` 只清 `U/w/ev/Gv` 并换 `jv=Tb`）→ **命中后不消失、回家路上还能再命中**，
                         // 每次命中都重新结算伤害 + 弹开 + 重新追施法者。
@@ -3520,6 +3566,8 @@ impl World {
                         class: ProjClass::ReflectTransfer,
                         direct_dmg: None,
                         chase: None,
+                        col_mask: W098B_COL_ALL,
+                        s009_role: S009_ROLE_NONE,
                     },
                     pos: clone_pos,
                     alive: true,
@@ -3751,18 +3799,19 @@ impl World {
             }
         }
         // 碎裂/侧弹生成（B4 S009 双形态）
-        for (owner, pos, vel, gx, radius, life, kb_ji) in spawn_bullets.drain(..) {
+        // S009 小子弹（098c `CB`/`cB`）：`Av[+1/+3]`（术士+障碍）、`xv=-1` → 撞柱**被销毁、不伤柱**、不与其他弹体互撞。
+        for (owner, pos, vel, gx, speed, radius, life, kb_ji) in spawn_bullets.drain(..) {
             ps.push(Projectile {
                 owner,
                 kind: ProjectileKind::W098b {
                     proj: crate::skill::W098bProjKind::Straight,
                     vel,
-                    speed: Fix64::from_num(600.0),
+                    speed,
                     radius,
                     remaining: life,
                     life,
                     gx,
-                    pillar_dmg: gx,
+                    pillar_dmg: Fix64::ZERO, // `BB` 只对 `nv==1` 伤害 → 不伤柱
                     kb_ji,
                     ignite: None,
                     blast: None,
@@ -3772,13 +3821,12 @@ impl World {
                     debuff_dur: Fix64::ZERO,
                     lateral: Fix64::ZERO,
                     forward_dir: vel.normalized(),
-                    out_dist: life * Fix64::from_num(600.0),
+                    out_dist: life * speed,
                     burst: 0,
                     emit_cooldown: Fix64::ZERO,
                     emit_angle: 0.0,
-                    // S009 分裂子弹（098c `dB` 12160：`set xv[Nb]=1`）→ 撞柱反弹。
-                    pillar_bounce: true,
-                    pillar_rest: Fix64::ONE,
+                    pillar_bounce: false, // `xv` 未设（默认 -1）→ 撞柱销毁（非反弹）
+                    pillar_rest: Fix64::ZERO,
                     lightning_dmg: Fix64::ZERO,
                     weaken_armed: false,
                     blast_dmg: gx,
@@ -3788,6 +3836,53 @@ impl World {
                     class: ProjClass::NoReflect, // S009 分裂子弹（Ev==9）
                     direct_dmg: None, // 碎片用分级 `gx`（098c `CB`：`2.5+.5*Xv`）
                     chase: None,
+                    col_mask: W098B_COL_UNIT | W098B_COL_OBSTACLE,
+                    s009_role: S009_ROLE_NONE,
+                },
+                pos,
+                alive: true,
+            });
+        }
+        // S009 A 碎片（098c `dB`）：速度 250 沿父弹方向、寿命 0.48、半径 50、`xv=1`（撞柱反弹）、
+        // 只与障碍碰撞（`Av[+3]`）、无单位/弹体碰撞；每 0.12s 喷 2 枚小子弹。
+        for (owner, pos, vel, gx, kb_ji) in fragment_spawns.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::W098b {
+                    proj: crate::skill::W098bProjKind::Straight,
+                    vel,
+                    speed: Fix64::from_num(250.0),
+                    radius: Fix64::from_num(50.0),
+                    remaining: Fix64::from_num(0.48),
+                    life: Fix64::from_num(0.48),
+                    gx,
+                    pillar_dmg: Fix64::ZERO,
+                    kb_ji,
+                    ignite: None,
+                    blast: None,
+                    target: None,
+                    bob_phase: BoomerangPhase::Out,
+                    on_hit: crate::skill::W098bOnHit::Ki, // 无单位碰撞（col_mask 无 UNIT），不会命中
+                    debuff_dur: Fix64::ZERO,
+                    lateral: Fix64::ZERO,
+                    forward_dir: vel.normalized(),
+                    out_dist: Fix64::from_num(0.48 * 250.0),
+                    burst: 0,
+                    emit_cooldown: Fix64::from_num(0.001), // 首帧即喷（JASS `CB` 在 ev=0.48 就喷）
+                    emit_angle: 0.0,
+                    pillar_bounce: true,
+                    pillar_rest: Fix64::ONE,
+                    lightning_dmg: Fix64::ZERO,
+                    weaken_armed: false,
+                    blast_dmg: gx,
+                    blast_floor: Fix64::ZERO,
+                    blast_on_expiry: false,
+                    is_fireball: false,
+                    class: ProjClass::NoReflect,
+                    direct_dmg: None,
+                    chase: None,
+                    col_mask: W098B_COL_OBSTACLE,
+                    s009_role: S009_ROLE_A_FRAGMENT,
                 },
                 pos,
                 alive: true,
@@ -3844,6 +3939,8 @@ impl World {
                     life: Fix64::from_num(5.0),
                     gx: heal, // ← 这里 gx 表达“治疗量”
                     pillar_dmg: Fix64::ZERO, // 回血球不与柱子碰撞，占位
+                    col_mask: 0,              // 回血球不参与任何碰撞
+                    s009_role: S009_ROLE_NONE,
                     kb_ji: Fix64::ZERO,
                     ignite: None,
                     blast: None,
@@ -3892,6 +3989,8 @@ impl World {
                     blast: None,
                     target: Some(owner), // 追施法者
                     bob_phase: BoomerangPhase::Out,
+                    col_mask: 0, // 魂不参与碰撞
+                    s009_role: S009_ROLE_NONE,
                     on_hit: crate::skill::W098bOnHit::SoulReturn,
                     debuff_dur: Fix64::ZERO,
                     lateral: Fix64::ZERO,
@@ -4882,14 +4981,30 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             lateral: lat_val,
                             forward_dir: dir,
                             out_dist: boomerang_out_dist,
-                            // B4 形态：S009·目标=到点碎裂 6 片；S009·区域=0.12s 螺旋侧弹
-                            burst: if id == crate::skill::SkillId::S009 && !alt { 6 } else { 0 },
+                            // S009 发射器节奏由 `s009_role` 决定：A 父弹到点分碎片、B 父弹每 0.18s 喷侧弹。
+                            burst: 0,
                             emit_cooldown: if id == crate::skill::SkillId::S009 && alt {
-                                Fix64::from_num(0.12)
+                                Fix64::from_num(0.18)
                             } else {
                                 Fix64::ZERO
                             },
                             emit_angle: 0.0,
+                            // 逐弹碰撞掩码（098c `Av`）：S009 A 父弹 = 单位+弹体（**不撞障碍**，穿柱）；
+                            // S009 B 父弹 = 均不碰撞（纯发射器）；其余 = 全开。
+                            col_mask: if id == crate::skill::SkillId::S009 && !alt {
+                                W098B_COL_UNIT | W098B_COL_MISSILE
+                            } else if id == crate::skill::SkillId::S009 && alt {
+                                0
+                            } else {
+                                W098B_COL_ALL
+                            },
+                            s009_role: if id == crate::skill::SkillId::S009 && !alt {
+                                S009_ROLE_A_PARENT
+                            } else if id == crate::skill::SkillId::S009 && alt {
+                                S009_ROLE_B_PARENT
+                            } else {
+                                S009_ROLE_NONE
+                            },
                             // 098c `xv>0` 的技能弹体撞柱**反弹**；其余（默认 `xv=-1`）被柱挡下消失。
                             // 见 `skill::pillar_bounce_for`（依据 JASS 的 `set xv[Nb]=…` 集合）。
                             // S009 ·区域（B）形态的父弹 `GB` 设 `xv=1`（A 形态不设 → 被柱挡）；
@@ -7138,6 +7253,8 @@ mod tests {
                 class: ProjClass::ReflectTransfer,
                 direct_dmg: None,
                 chase: None,
+                col_mask: W098B_COL_ALL,
+                s009_role: S009_ROLE_NONE,
             },
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
@@ -7206,6 +7323,8 @@ mod tests {
                 class: ProjClass::NoReflect,
                 direct_dmg: None,
                 chase: None,
+                col_mask: W098B_COL_ALL,
+                s009_role: S009_ROLE_NONE,
             },
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
@@ -10115,6 +10234,8 @@ mod tests {
                 class: ProjClass::ReflectTransfer,
                 direct_dmg: None,
                 chase: Some(1),
+                col_mask: W098B_COL_ALL,
+                s009_role: S009_ROLE_NONE,
             },
             pos: Vec2::ZERO,
             alive: true,
@@ -10279,6 +10400,8 @@ mod tests {
                 class: ProjClass::ReflectTransfer,
                 direct_dmg: None,
                 chase,
+                col_mask: W098B_COL_ALL,
+                s009_role: S009_ROLE_NONE,
             },
             pos: Vec2::ZERO,
             alive: true,
@@ -11363,6 +11486,128 @@ mod tests {
             max_bullets2 = max_bullets2.max(alive_now);
         }
         assert!(max_bullets2 >= 3, "区域形态应持续撒出侧弹（主弹+侧弹），窗口内峰值 {max_bullets2}");
+    }
+
+    /// S009 A 父弹 `Av[+3]=false` → **穿柱**（098c `GB` A 只设 `Av[+1/+2]`）；到点生成角色 2 的碎片。
+    #[test]
+    fn s009a_parent_passes_through_pillar() {
+        let mut world = World::new(2, 0x9001);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0)); // 180
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S009, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let mut seen_fragment = false;
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+            if world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::W098b { s009_role: S009_ROLE_A_FRAGMENT, .. })) {
+                seen_fragment = true;
+            }
+        }
+        assert!(seen_fragment, "A 父弹应穿柱到达并生成碎片（若被柱挡下则不会出现碎片）");
+    }
+
+    /// S009 小子弹撞柱（`Av[+3]`+`xv=-1`，`BB` 只对 `nv==1` 伤害）→ **被销毁、不伤柱**。
+    #[test]
+    fn s009_minor_collides_pillar_no_damage() {
+        let mut world = World::new(2, 0x9002);
+        world.obstacles.clear();
+        world.obstacles.push(Obstacle::new(Vec2::new(d60(1.0), Fix64::ZERO), 24.0));
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.projectiles.push(Projectile {
+            owner: 0,
+            kind: ProjectileKind::W098b {
+                proj: crate::skill::W098bProjKind::Straight,
+                vel: Vec2::new(Fix64::from_num(600.0), Fix64::ZERO),
+                speed: Fix64::from_num(600.0),
+                radius: Fix64::from_num(21.0),
+                remaining: Fix64::from_num(1.2),
+                life: Fix64::from_num(1.2),
+                gx: Fix64::from_num(3.0),
+                pillar_dmg: Fix64::ZERO,
+                kb_ji: Fix64::from_num(0.65),
+                ignite: None,
+                blast: None,
+                target: None,
+                bob_phase: BoomerangPhase::Out,
+                on_hit: crate::skill::W098bOnHit::Ki,
+                debuff_dur: Fix64::ZERO,
+                lateral: Fix64::ZERO,
+                forward_dir: Vec2::new(Fix64::ONE, Fix64::ZERO),
+                out_dist: Fix64::from_num(720.0),
+                burst: 0,
+                emit_cooldown: Fix64::ZERO,
+                emit_angle: 0.0,
+                pillar_bounce: false,
+                pillar_rest: Fix64::ZERO,
+                lightning_dmg: Fix64::ZERO,
+                weaken_armed: false,
+                blast_dmg: Fix64::ZERO,
+                blast_floor: Fix64::ZERO,
+                blast_on_expiry: false,
+                is_fireball: false,
+                class: ProjClass::NoReflect,
+                direct_dmg: None,
+                chase: None,
+                col_mask: W098B_COL_UNIT | W098B_COL_OBSTACLE,
+                s009_role: S009_ROLE_NONE,
+            },
+            pos: Vec2::new(d60(1.0), Fix64::ZERO), // 与柱重叠
+            alive: true,
+        });
+        let hp0 = world.obstacles[0].hp;
+        world.step(vec![PlayerInput::default(); 2], dt);
+        assert_eq!(world.obstacles[0].hp, hp0, "小子弹撞柱不应伤柱（BB 只对 nv==1 伤害）");
+        assert!(
+            !world.projectiles.iter().any(|p| matches!(&p.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Straight, radius, .. } if *radius == Fix64::from_num(21.0))),
+            "小子弹撞柱应被销毁"
+        );
+    }
+
+    /// S009 B 父弹（纯发射器）：每 0.18s 喷 2 枚反向侧弹，侧弹 速度 750 / Rv20 / 寿命 1。
+    #[test]
+    fn s009b_parent_emits_minors_750_20_1() {
+        let mut world = World::new(1, 0x9003);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].forms[SkillId::S009.as_u32() as usize] = true; // B=区域
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.step(
+            vec![PlayerInput { cast: Some((SkillId::S009, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() }],
+            dt,
+        );
+        let none = vec![PlayerInput::default()];
+        let mut minor: Option<(f64, f64, f64)> = None;
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+            for p in world.projectiles.iter() {
+                if let ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Straight, radius, speed, life, s009_role: S009_ROLE_NONE, .. } = &p.kind {
+                    if *radius == Fix64::from_num(20.0) {
+                        minor = Some((radius.to_num::<f64>(), speed.to_num::<f64>(), life.to_num::<f64>()));
+                    }
+                }
+            }
+        }
+        let (r, sp, lf) = minor.expect("区域形态应喷出 Rv20 侧弹");
+        assert!((sp - 750.0).abs() < 1e-3, "B 侧弹速度应 750，实际 {sp}");
+        assert!((r - 20.0).abs() < 1e-3, "B 侧弹半径应 20，实际 {r}");
+        assert!((lf - 1.0).abs() < 1e-3, "B 侧弹寿命应 1（不随 ei），实际 {lf}");
     }
 
     /// S009 父弹**直伤固定 3**（098c `FB` 12220：`mI(nr,Vr,3,1.4)`）——不随等级增长；
