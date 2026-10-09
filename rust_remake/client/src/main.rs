@@ -35,6 +35,9 @@ mod logging;
 
 // Steam 联机逻辑（feature 门控，独立模块便于阅读维护；字段与方法均属 `Game`，纯逻辑分组）。
 mod steam;
+/// R5a：重连会话描述（崩溃重开后「重新加入上一局」用）。仅 Steam。
+#[cfg(feature = "steam")]
+mod rejoin;
 /// 界面按键契约（确认键等）：文案与判定放一起，单测钉住两者一致。
 mod keys;
 
