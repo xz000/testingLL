@@ -150,6 +150,10 @@ pub enum BuffKind {
     Silenced,
     /// 镜像分身（文档 C 栏）：生效期间施法者免疫锁链与减益（「否决锁链和负面效果」）。
     Mirror,
+    /// **火法杖 7251 窗口**（098c `LC`，物品 `I00D`）：施放 nova（S001/S020/S021）时
+    /// `if iV[$D] then call LC(ri,ii)` 开启 `4*jn` 秒窗口；窗口内发射的火球（S000）改走 `Eb`
+    /// → 点燃总量 ×2.4、时长 `5*jn`（否则走 `ab`：基线总量、2.5s）。纯时间窗标记、非减益。
+    FireStaffWindow,
 }
 
 impl Buff {

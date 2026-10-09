@@ -67,4 +67,9 @@ pub fn version() -> &'static str {
 /// 与**硬体** `burning`，回溯时一并恢复 + 清减益 + 断链。
 /// v39（2026-09-25）：S019 锁链完整复刻——`Obstacle.id`（稳定柱子锚点）；`Tether` 改锚点结构
 /// （`TetherAnchor`/`TetherPull`/`remaining: Option<Fix64>`/`red` 形态位）；新增 `BuffKind::ChainSpeed`（红链队友/柱 +100 移速）。
-pub const PROTOCOL_VERSION: u32 = 44;
+/// v40–v44（2026-09/10）：R7 暂停（`PauseReq`/`PauseState`）、S008B `pillar_dmg`、S009 `col_mask`/`s009_role`、
+/// S018B `W098bOnHit::StarField`。
+/// v45（2026-10-09）：火法杖 `I00D` 7251 窗口——新增 `BuffKind::FireStaffWindow`（序列化 tag 18）：
+/// 施放 nova（S001/S020/S021，098c `LC`）开 `4*jn` 秒窗口，期内发射的火球改走 `Eb`
+/// → 点燃总量 ×2.4、时长 `5*jn`。
+pub const PROTOCOL_VERSION: u32 = 45;

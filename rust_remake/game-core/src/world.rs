@@ -4937,17 +4937,27 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     life * speed
                 };
                 // 火球法杖（M3 2c，I00D）：持杖者 S000 火球直伤改 5.5+0.5×L、点燃总量改 3+0.5×L。
-                let (gx, ignite_total, staff_blast) = if world.players[idx as usize].item_fx.fireball_burn
+                let (gx, ignite_total, staff_blast, ignite_dur) = if world.players[idx as usize].item_fx.fireball_burn
                     && id == crate::skill::SkillId::S000
                 {
                     let lv = caster_level as f64;
+                    // 098c `Ab`：火球**发射时**用 `lO(...,7251,..)` 判定是否在 `LC` 窗口内 →
+                    //   窗口内 `Eb`：点燃总量 `6*(1.2+.2L)` = `stats.extra`(=`2.5*(1.2+.2L)`) × **2.4**、时长 `5*jn`；
+                    //   否则 `ab`：基线总量 `stats.extra`、时长 2.5s（`debuff_dur` 留 0，由下方 `.max(2.5)` 兜底）。
+                    let (ignite, dur) = if world.players[idx as usize].has_buff(BuffKind::FireStaffWindow) {
+                        let jn = world.players[idx as usize].jn();
+                        (Some(stats.extra * Fix64::from_num(2.4)), Some(Fix64::from_num(5.0 * jn)))
+                    } else {
+                        (Some(stats.extra), None)
+                    };
                     (
                         Fix64::from_num(5.0 + 0.5 * lv),
-                        Some(stats.extra),
+                        ignite,
                         Some(Fix64::from_num(4.8 + 0.6 * lv)),
+                        dur,
                     )
                 } else {
-                    (stats.damage, ignite, None)
+                    (stats.damage, ignite, None, None)
                 };
                 // 陨石（S008A，098c `iB`/`oB`）：**无飞行弹体**——2D 原生化为「落点定时爆炸」。
                 // 1.35s 后在点击点炸开：半径 `210×√(1+.25×远程精通)`；伤害 `(12+2L)×(1 - d/(400+40xi))`；
@@ -5019,7 +5029,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             target: homing_target,
                             bob_phase: BoomerangPhase::Out,
                             on_hit,
-                            debuff_dur: stats.duration,
+                            // 火法杖窗口内的火球点燃时长 `5*jn`（`Eb`）；其余按技能定义。
+                            debuff_dur: ignite_dur.unwrap_or(stats.duration),
                             // 回旋镖横向侧偏速度（见上方 lat_val；非回旋镖恒 0）。
                             lateral: lat_val,
                             forward_dir: dir,
@@ -5113,6 +5124,13 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // 098c mC→FX(ii,cX) 实证 + 用户文档「包括自己！」：**nova 对施法者自身也扣血**，
                 // 但 FX 有 0.5 HP 下限（不可自杀）；自伤无自击退。
                 let ppos = world.players[idx as usize].pos;
+                // 098c `LC`（`mC`/`qC`/`QC` 开头 `if iV[$D] then call LC(ri,ii)`）：持火法杖（`I00D`
+                // = `fireball_burn`）施放**任一 nova**（S001/S020/S021）→ 开「7251 窗口」`4*jn` 秒。
+                // 窗口在火球**发射**时（`Ab` 里的 `lO(...)`）被读取，决定命中处理器 `ab`/`Eb`。
+                if world.players[idx as usize].item_fx.fireball_burn {
+                    let p = &mut world.players[idx as usize];
+                    p.add_buff(BuffKind::FireStaffWindow, 4.0); // `add_buff` 内部乘 `jn` → `4*jn`
+                }
                 // 鲜血之剑（098c I00F/I00G）：天罚伤害平加 +1/+2（mC 实证 cX = 10 + Zr）。
                 let gx = stats.damage + Fix64::from_num(world.players[idx as usize].item_fx.smite_bonus);
                 // 熔岩靴激活（098c I00J-L「熔岩上天罚后激活」，M5/D8）：站熔岩 + 持靴 + CD 到期
@@ -8652,6 +8670,81 @@ mod tests {
         let healed = (world.players[1].hp - Fix64::from_num(50.0)).to_num::<f64>();
         assert!((healed - 2.4).abs() < 0.3, "面具应吸血 24%×10≈2.4，实际 {healed}");
         assert!(world.players[0].hp < world.players[0].max_hp, "目标应受伤");
+    }
+
+    /// 098c `LC`：持火法杖（`I00D`）施放 nova（S001/S020/S021）→ 开「7251 窗口」`4*jn` 秒；无杖不开。
+    #[test]
+    fn firestaff_window_opens_on_nova_cast() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 持杖：开窗口
+        let mut world = World::new(2, 1301);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].set_items(&[crate::item::ItemId::FireStaff]);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].has_buff(BuffKind::FireStaffWindow), "持杖施放天罚应开火法杖窗口");
+        // 无杖：不开
+        let mut w2 = World::new(2, 1302);
+        w2.obstacles.clear();
+        w2.sandbox = true;
+        w2.players[0].pos = Vec2::ZERO;
+        w2.players[0].move_target = None;
+        w2.step(vec![
+            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        for _ in 0..60 {
+            w2.step(none.clone(), dt);
+        }
+        assert!(!w2.players[0].has_buff(BuffKind::FireStaffWindow), "无火法杖不应开窗口");
+    }
+
+    /// 098c `Ab` 窗口分支：处于 `LC` 窗口内发射的火球走 `Eb` → 点燃总量 ×2.4、时长 `5*jn`（否则基线）。
+    #[test]
+    fn s000_window_doubles_ignite_param() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let spawn_and_read = |window: bool| -> (f64, f64) {
+            let mut w = World::new(2, if window { 1304 } else { 1303 });
+            w.obstacles.clear();
+            w.players[0].pos = Vec2::ZERO;
+            w.players[0].move_target = None;
+            w.players[0].set_items(&[crate::item::ItemId::FireStaff]);
+            if window {
+                w.players[0].add_buff(BuffKind::FireStaffWindow, 4.0);
+            }
+            w.step(vec![
+                PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ], dt);
+            for _ in 0..20 {
+                w.step(none.clone(), dt);
+            }
+            w.projectiles
+                .iter()
+                .find_map(|p| match &p.kind {
+                    ProjectileKind::W098b { ignite, debuff_dur, is_fireball: true, .. } => {
+                        Some((ignite.unwrap_or_default().to_num::<f64>(), debuff_dur.to_num::<f64>()))
+                    }
+                    _ => None,
+                })
+                .expect("应生成火球弹体")
+        };
+        let (base_ignite, base_dur) = spawn_and_read(false);
+        let (win_ignite, win_dur) = spawn_and_read(true);
+        assert!((base_ignite - 3.5).abs() < 1e-6, "基线点燃总量 L1=3.5，实际 {base_ignite}");
+        assert!((base_dur).abs() < 1e-6, "基线火球不覆盖点燃时长（由 2.5 兜底），实际 {base_dur}");
+        assert!((win_ignite - 3.5 * 2.4).abs() < 1e-6, "窗口内点燃总量 = 基线×2.4 = 8.4，实际 {win_ignite}");
+        assert!((win_dur - 5.0).abs() < 1e-6, "窗口内点燃时长 5*jn=5，实际 {win_dur}");
     }
 
     /// 098c 天罚改件（mC 实证）：鲜血之剑 +1 伤/命中每敌回 2 血；
