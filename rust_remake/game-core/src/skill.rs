@@ -887,6 +887,9 @@ pub enum W098bOnHit {
     SwapTarget,
     /// S013B 搬运（098c `pB`）：弹体到达后把**施法者传送到弹体位置**（命中/到期均可用）。
     CarrySelf,
+    /// S018B 力场弹（098c `Mc`）：850/s 飞行弹，**不参与碰撞**（`Av` 全 false），到点生成力场（`Gv=ca`）。
+    /// 力场参数复用弹体字段：`radius`=力场半径、`gx`=DPS、`ignite`=每秒治疗、`debuff_dur`=持续。
+    StarField,
 }
 
 /// 由等级推导的完整数值（成长采用"基础 + 每级斜率"的简单线性模型）。

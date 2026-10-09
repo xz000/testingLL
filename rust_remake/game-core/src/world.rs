@@ -1854,6 +1854,8 @@ impl World {
         let mut spawn_bullets: Vec<SpawnBullet> = Vec::new();
         // S009 A 形态到点生成的「碎片」：(owner, 位置, 速度(250/s 沿父弹方向), gx, kb_ji)
         let mut fragment_spawns: Vec<SpawnFragment> = Vec::new();
+        // S018B 力场弹到点生成的力场：(owner, 位置, 半径, 每秒伤, 每秒治, 持续)
+        let mut star_spawns: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 098c 回旋镖回程到位结算：(owner, 位置, gx, kb_ji) —— 对命中半径 qI 内目标 AOE（距离衰减）。
         let mut bob_home: Vec<(usize, u32)> = Vec::new();
         let eps = Fix64::from_num(1.0 / 65536.0);
@@ -2068,7 +2070,7 @@ impl World {
                         pr.alive = false;
                     }
                 }
-                ProjectileKind::W098b { proj, vel, speed, remaining, blast, target, chase, bob_phase, gx, kb_ji, forward_dir, out_dist, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, s009_role, .. } => {
+                ProjectileKind::W098b { proj, vel, speed, radius, remaining, blast, ignite, target, chase, bob_phase, gx, kb_ji, forward_dir, out_dist, emit_cooldown, emit_angle, lateral, on_hit, weaken_armed, blast_on_expiry, blast_dmg, blast_floor, debuff_dur, s009_role, .. } => {
                     // 098b 弹体运动学：Straight/Bounce 直线（Bounce 的重定向在命中分支做）；
                     // Homing 全速直追锁定目标；Boomerang 走三阶段状态机（见下）。
                     // 到期时带 blast 的弹体（陨石）在原地爆炸。
@@ -2153,6 +2155,11 @@ impl World {
                                 Vec2::new(Fix64::ONE, Fix64::ZERO)
                             };
                             fragment_spawns.push((pr.owner, pr.pos, dirv * Fix64::from_num(250.0), *gx, *kb_ji));
+                        }
+                        // S018B 力场弹到点（098c `Mc` → `Lc`）：在弹体位置生成力场（伤敌/奶队友）。
+                        if *on_hit == crate::skill::W098bOnHit::StarField {
+                            let heal = ignite.unwrap_or(Fix64::ZERO);
+                            star_spawns.push((pr.owner, pr.pos, *radius, *gx, heal, *debuff_dur));
                         }
                     }
                     // S009 发射器（098c `CB`/`cB`）：A 碎片每 0.12s 喷 2 枚（绕速度 ±rot(ev)）；
@@ -3118,6 +3125,7 @@ impl World {
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
                         match on_hit {
                             crate::skill::W098bOnHit::Ki => {}
+                            crate::skill::W098bOnHit::StarField => {} // S018B 力场弹：命中无副作用，到点生成力场
                             crate::skill::W098bOnHit::Scorched => {
                                 // 陨石灼烧「烤肉饼」（D7）：输出 ×0.1 + 禁疗，时长 = growth.duration（4s）。
                                 debuffs_scorched.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
@@ -3883,6 +3891,22 @@ impl World {
                     chase: None,
                     col_mask: W098B_COL_OBSTACLE,
                     s009_role: S009_ROLE_A_FRAGMENT,
+                },
+                pos,
+                alive: true,
+            });
+        }
+        // S018B 力场弹到点：生成力场（098c `Lc`：`heal_team=true`，半径已含范围精通缩放）。
+        for (owner, pos, radius, dps, heal, dur) in star_spawns.drain(..) {
+            ps.push(Projectile {
+                owner,
+                kind: ProjectileKind::Star {
+                    owner,
+                    radius,
+                    damage_per_sec: dps,
+                    heal_per_sec: heal,
+                    remaining: dur,
+                    heal_team: true,
                 },
                 pos,
                 alive: true,
@@ -6115,19 +6139,78 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 // xi = 端口 `mastery[1]`（字段名 `range`，实为 Area of Effect）。
                 let area_mastery = world.players.get(idx as usize).map(|q| q.mastery[1] as f64).unwrap_or(0.0);
                 let radius = Fix64::from_num(stats.radius.to_num::<f64>() * (1.0 + 0.1 * area_mastery).sqrt());
-                world.projectiles.push(Projectile {
-                    owner: idx,
-                    kind: ProjectileKind::Star {
+                if id == crate::skill::SkillId::S018 && alt {
+                    // S018B 力场弹（098c `Mc`）：850/s 飞行弹到落点（射程上限 `850×(1+.1ei)`、`Av` 全 false
+                    // → 不参与碰撞），到点由 `Lc` 在**弹体位置**生成力场（`Gv=ca`）。力场参数随弹体携带：
+                    // `radius`=力场半径、`gx`=DPS、`ignite`=每秒治疗、`debuff_dur`=持续。
+                    let ppos = world.players[idx as usize].pos;
+                    let d = place - ppos;
+                    let dist = d.length();
+                    let dir = if dist > Fix64::ZERO {
+                        d.normalized()
+                    } else {
+                        Vec2::new(Fix64::ONE, Fix64::ZERO)
+                    };
+                    let ei = world.players[idx as usize].mastery[2] as f64;
+                    let cap = Fix64::from_num(850.0 * (1.0 + 0.1 * ei));
+                    let travel = dist.min(cap);
+                    let life = travel / Fix64::from_num(850.0);
+                    world.projectiles.push(Projectile {
                         owner: idx,
-                        radius,
-                        damage_per_sec: stats.damage,
-                        heal_per_sec: heal,
-                        remaining: stats.duration,
-                        heal_team: id == crate::skill::SkillId::S018 && alt,
-                    },
-                    pos: place,
-                    alive: true,
-                });
+                        kind: ProjectileKind::W098b {
+                            proj: crate::skill::W098bProjKind::Straight,
+                            vel: dir * Fix64::from_num(850.0),
+                            speed: Fix64::from_num(850.0),
+                            radius,
+                            remaining: life,
+                            life,
+                            gx: stats.damage,
+                            pillar_dmg: Fix64::ZERO,
+                            kb_ji: Fix64::ZERO,
+                            ignite: Some(heal),
+                            blast: None,
+                            target: None,
+                            bob_phase: BoomerangPhase::Out,
+                            on_hit: crate::skill::W098bOnHit::StarField,
+                            debuff_dur: stats.duration,
+                            lateral: Fix64::ZERO,
+                            forward_dir: dir,
+                            out_dist: travel,
+                            burst: 0,
+                            emit_cooldown: Fix64::ZERO,
+                            emit_angle: 0.0,
+                            pillar_bounce: false,
+                            pillar_rest: Fix64::ZERO,
+                            lightning_dmg: Fix64::ZERO,
+                            weaken_armed: false,
+                            blast_dmg: Fix64::ZERO,
+                            blast_floor: Fix64::ZERO,
+                            blast_on_expiry: false,
+                            is_fireball: false,
+                            class: ProjClass::NoReflect,
+                            direct_dmg: None,
+                            chase: None,
+                            col_mask: 0,
+                            s009_role: S009_ROLE_NONE,
+                        },
+                        pos: ppos,
+                        alive: true,
+                    });
+                } else {
+                    world.projectiles.push(Projectile {
+                        owner: idx,
+                        kind: ProjectileKind::Star {
+                            owner: idx,
+                            radius,
+                            damage_per_sec: stats.damage,
+                            heal_per_sec: heal,
+                            remaining: stats.duration,
+                            heal_team: id == crate::skill::SkillId::S018 && alt,
+                        },
+                        pos: place,
+                        alive: true,
+                    });
+                }
             }
             SkillEffect::LineBeam { .. } => {
                 // 旧的持续线占位已由 ScatterBurst 取代；此处不再落地。
@@ -9350,6 +9433,54 @@ mod tests {
         assert!(drops[0] > 0.0 && drops[1] > drops[0], "第二级伤害应高于第一级：{drops:?}");
         // 第三级半径 400（伤害也更高）；三级后回到 stage 0
         assert!(drops[2] > drops[1], "第三级应最强：{drops:?}");
+    }
+
+    /// S018B 力场弹（098c `Mc`）：**850/s 飞行弹**到点才生成力场（非立即），且飞行弹不参与碰撞。
+    #[test]
+    fn s018b_force_field_spawns_after_travel() {
+        let mut world = World::new(2, 0x8018);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S018.as_u32() as usize] = true; // B = 力场
+        world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let mut saw_travel = false;
+        let mut saw_star_before_travel_gone = false;
+        let mut travel_gone_at = None;
+        for f in 0..120 {
+            world.step(none.clone(), dt);
+            let travel = world.projectiles.iter().any(|p| matches!(&p.kind, ProjectileKind::W098b { on_hit: crate::skill::W098bOnHit::StarField, .. }));
+            let star = world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Star { .. }));
+            if travel {
+                saw_travel = true;
+                if star {
+                    saw_star_before_travel_gone = true; // 飞行中不应已有力场
+                }
+            } else if saw_travel && travel_gone_at.is_none() {
+                travel_gone_at = Some(f);
+            }
+            if saw_travel && star {
+                break;
+            }
+        }
+        assert!(saw_travel, "S018B 应有 850/s 飞行弹（`on_hit=StarField`）");
+        assert!(!saw_star_before_travel_gone, "力场应在飞行到点后才生成（不应飞行中已有）");
+        assert!(
+            world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Star { .. })),
+            "飞行到位后应生成力场"
+        );
     }
 
     /// S019 链弹 `Av[+1/+3]`（无 `Av[+2]`）→ **不与其他弹体互撞**（已加入 `col_mask`）。
