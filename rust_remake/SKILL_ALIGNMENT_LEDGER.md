@@ -633,8 +633,8 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 我方 `pillar_restitution(SkillId)` 是**逐技能**的 → **S009/S018 都需要改成“逐弹体角色”**（列入 P0 复审清单）。
 
 > 状态（`0baea5d`）：**S009 已完成**（碎片与 B 形态父弹在生成处逐弹体设 `pillar_rest=1`，A 形态仍被柱挡）；
-> **S018A 柱碰撞仍未做（已复核 2026-10-09）**——098c `Jc`：`Av[+3]=true`（撞障碍）+ `xv=1`（镜面反射），但 **`Rv` 未设**（用单位默认碰撞半径）→ 忠实体需知道 `e000` 默认 `Rv`。我方 `Gravity` 运动分支 `obstacle_radius()=None` → **直穿柱**。影响：暗物质弹穿柱而非反弹。
-> 修复需：① `obstacle_radius()` 给 Gravity 返回其默认碰撞半径；② 在撞障碍循环加 Gravity 分支（`bounce_off(dir,n,1)` + 推出柱面）。因 `Rv` 默认值未知，暂标 **已知缺口**（低优先：暗物质多在空地施放）。
+> **S018A 柱碰撞已修（2026-10-09，`c110912`）**——098c `Jc`：`Av[+3]=true` + `xv=1`；柱子的 `hv=IN`→`WA()` 对其做镜面反射 `v'=v−(1+xv)(v·n)n`；`Jc` **未设 `Rv`**（`rO` 默认 0）⇒ 阈值为 `0+Rv[柱]`（中心进入柱圆即反射）且**不销毁**（无 `Jv`）。
+> 修复：`obstacle_radius()` 对 `Gravity` 返 `Some(0)`；撞障碍循环加 Gravity 分支（`bounce_off(dir,n,1)` + 推出柱面，不 `alive=false`）；测试 `s018a_dark_matter_bounces_off_pillar`。仅 `dir`（已在快照中）变更，**不改快照/协议**。
 
 
 
