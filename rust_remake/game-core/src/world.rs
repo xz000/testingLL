@@ -2159,7 +2159,9 @@ impl World {
                         // S018B 力场弹到点（098c `Mc` → `Lc`）：在弹体位置生成力场（伤敌/奶队友）。
                         if *on_hit == crate::skill::W098bOnHit::StarField {
                             let heal = ignite.unwrap_or(Fix64::ZERO);
-                            star_spawns.push((pr.owner, pr.pos, *radius, *gx, heal, *debuff_dur));
+                            // 098c `Lc`：力场持续 `ev = 5*jn[施法者]`（我方按 `jn` 缩放，帧率无关——时长一致即可）。
+                            let field_jn = self.players.get(pr.owner as usize).map(|o| o.jn()).unwrap_or(1.0);
+                            star_spawns.push((pr.owner, pr.pos, *radius, *gx, heal, *debuff_dur * Fix64::from_num(field_jn)));
                         }
                     }
                     // S009 发射器（098c `CB`/`cB`）：A 碎片每 0.12s 喷 2 枚（绕速度 ±rot(ev)）；
@@ -2896,7 +2898,8 @@ impl World {
                 }
                 ProjectileKind::Star { owner, radius, damage_per_sec, heal_per_sec, remaining: _, heal_team } => {
                     // 星域：范围内敌掉血、对施法者回血
-                    let star_owner_jn = self.players.get(*owner as usize).map(|o| o.jn()).unwrap_or(1.0);
+                    // （098c `kc` 对**异队**只施加伤害减益 659，**无任何减速**；此前我方多出的
+                    //  “减速 45%”在 `kc`/`Lc`/`oR` 全图无出处，已移除。）
                     for j in 0..n {
                         let p = &self.players[j];
                         if !p.alive {
@@ -2908,11 +2911,6 @@ impl World {
                             && Some(p.team) != self.players.get(*owner as usize).map(|o| o.team)
                         {
                             dot_events.push((p.id, *damage_per_sec * dt, Some(*owner)));
-                            // 力场（B4-Y）：范围内敌人减速 45%（098c Lc：降低移速 45%）。
-                            // 仅 heal_team（力场形态）施加；每帧刷新短窗避免离开后残留。
-                            if *heal_team {
-                                self.players[j].add_debuff(BuffKind::Slow(0.55), 0.3, star_owner_jn);
-                            }
                         }
                     }
                     // 力场（B4-Y）：heal_team 时治疗范围内全部队友（否则只奶 owner）
@@ -10165,7 +10163,7 @@ mod tests {
 
     /// 文档数值回归：S019 锁链 / S018 引力 A·B 的伤害与回复公式（均按 098c w3a_strings 原斜率）。
     /// 锁链伤害 `0.2+0.2×L`；引力·黑洞伤害 `0.3+0.2×L`；
-    /// 引力·力场 每秒伤害 `2.25+0.8214×L`、每秒生命恢复 `1.0+0.2×L`（MAX_HP=100）。
+    /// 引力·力场 每秒伤害 `1+1.25×L`、每秒生命恢复 `(13+3×L)/18`（098c `kc`/`yO`/`oR` 代码真值）。
     /// 其中 L = 升级次数 = level-1（见 `SkillGrowth::stats`）。
     #[test]
     fn doc_s019_s018_growth_matches_doc() {
@@ -10179,12 +10177,13 @@ mod tests {
         let d = DefTable::def(SkillId::S018).growth.stats(lvl).damage.to_num::<f64>();
         let k = 1.0 / 0.18;
         assert!((d - (0.3 + 0.2 * l) * k).abs() < 1e-3, "blackhole dps {d} != {}", (0.3 + 0.2 * l) * k);
-        // S018 force field (B)：逐级**非线性**伤害表（2.25,3.50,4.25,5.00,...）；回复 1.0+0.2/级。
+        // S018 force field (B)：DPS = `1+1.25*L`（098c `kc`/`yO`/`oR`）；奶/s = `(13+3*L)/18`。
         let st = DefTable::def_alt(SkillId::S018).expect("S018 has B form").growth.stats(lvl);
+        let lv = lvl as f64;
         let d = st.damage.to_num::<f64>();
         let e = st.extra.to_num::<f64>();
-        assert!((d - 4.25).abs() < 1e-6, "field dps L3 {d} != 4.25");
-        assert!((e - (1.0 + 0.2 * l)).abs() < 1e-6, "field hps {e} != {}", 1.0 + 0.2 * l);
+        assert!((d - (1.0 + 1.25 * lv)).abs() < 1e-6, "field dps L{lv} {d} != {}", 1.0 + 1.25 * lv);
+        assert!((e - ((13.0 + 3.0 * lv) / 18.0)).abs() < 1e-6, "field hps {e} != {}", (13.0 + 3.0 * lv) / 18.0);
     }
 
     /// S018 引力·黑洞（A 形态）：范围内敌人持续掉血（098c `hc`：每 tick `0.1+0.2×等级`）。
@@ -12619,9 +12618,12 @@ mod tests {
         assert!(h2 < 50.0, "力场应伤害敌人（50→↓），实际 {h2}");
     }
 
-    /// S018 引力·力场（B 形态）：范围内敌人被减速 45%（文档「降低移动速度 45%」→ ×0.55）。
+    /// S018 引力·力场（B 形态）：范围内敌人**受伤但不受减速**。
+    ///
+    /// 098c `kc` 对异队只 `yO(659, …, .2+.25*Yr, .2)`（纯 DoT）、`oR` 每 0.25s 只结算 `de`；
+    /// `kc`/`Lc`/`oR` 全图**无任何减速**。此前我方多出的「45% 减速」无 098c 出处，已移除。
     #[test]
-    fn s018b_force_field_slows_enemy() {
+    fn s018b_force_field_damages_not_slows() {
         let mut world = World::new(2, 1009);
         world.obstacles.clear();
         world.sandbox = true;
@@ -12633,6 +12635,7 @@ mod tests {
         world.players[1].team = 1;
         world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
         world.players[1].move_target = None;
+        world.players[1].hp = Fix64::from_num(60.0);
         world.step(vec![
             PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
@@ -12641,10 +12644,51 @@ mod tests {
         for _ in 0..30 {
             world.step(none.clone(), dt);
         }
+        assert!(world.players[1].hp < Fix64::from_num(60.0), "力场应伤害范围内敌人");
         assert!(
-            world.players[1].has_buff(BuffKind::Slow(0.55)),
-            "力场应给范围内敌人减速（×0.55 = -45%）"
+            !world.players[1].has_buff(BuffKind::Slow(0.55)),
+            "098c 力场无减速 buff（已移除 45% 减速）"
         );
+    }
+
+    /// S018B 力场：**按时长累计**与 098c 一致。
+    ///
+    /// 098c 是「每 0.18s 脉冲」；我方是「每帧 `DPS·dt`」。二者帧率不同，但
+    /// `∫DPS dT` 相同 → 同一时长内累计伤害必须相等。L1 DPS = `1+1.25*1 = 2.25`。
+    #[test]
+    fn s018b_force_field_cumulative_damage_matches_rate() {
+        let mut world = World::new(2, 1010);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0; // 屏蔽基础回血漂移
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S018.as_u32() as usize] = true; // B=力场
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[1].hp = Fix64::from_num(200.0);
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S018, Some(Vec2::new(d60(3.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        // 力场飞行弹到点才会生成 Star；等到场建立。
+        let mut guard = 0;
+        while !world.projectiles.iter().any(|p| matches!(p.kind, ProjectileKind::Star { .. })) && guard < 120 {
+            world.step(none.clone(), dt);
+            guard += 1;
+        }
+        assert!(guard < 120, "力场应在有限时间内建立");
+        let hp0 = world.players[1].hp.to_num::<f64>();
+        for _ in 0..60 {
+            world.step(none.clone(), dt); // 1 秒
+        }
+        let dealt = hp0 - world.players[1].hp.to_num::<f64>();
+        let expected = 2.25; // L1: 1 + 1.25*1
+        assert!((dealt - expected).abs() < 0.35, "力场 1s 累计伤害 {dealt} != {expected}");
     }
 
     /// S019B 红链（文档「红链」）：命中敌人 → 把**施法者**拉向敌人

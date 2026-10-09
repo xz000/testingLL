@@ -2474,14 +2474,16 @@ impl DefTable {
                 },
                 growth: SkillGrowth {
                     cooldown_base: 26.0,
-                    // 力场每秒伤害（098c Mc/Lc）：**非线性**逐级 `2.25,3.50,4.25,5.00,5.75,6.50,7.25,8.00`
-                    // （首级 +1.25，之后每级 +0.75）；用 `damage_levels` 精确表，避免线性近似。
+                    // 力场每秒伤害（098c `kc` 减益 659 + `yO`/`oR`）：`yO` 存 `de=(ZO/OX)*.25`、
+                    // `oR` 每 **0.25s** 结算 `de` ⇒ **DPS = ZO/OX = (.2+.25*Yr)/.2 = 1+1.25*Yr**（Yr=等级）。
+                    // **线性**（tooltip 的 2.25→8.00“非线性”表已过时，以代码为准）。
                     damage_base: 2.25,
-                    damage_delta: 0.8214, // 兼容用近似（实际以 damage_levels 为准）
-                    damage_levels: Some(&[2.25, 3.50, 4.25, 5.00, 5.75, 6.50, 7.25, 8.00]),
-                    // 每秒生命恢复（098c Lc）：1.0→2.4（8 级），delta 取原斜率 0.2/级。
-                    extra_base: 1.0,
-                    extra_delta: 0.2,     // 098c: heal 1.0->2.4 (8 lv)
+                    damage_delta: 1.25,
+                    damage_levels: Some(&[2.25, 3.50, 4.75, 6.00, 7.25, 8.50, 9.75, 11.00]),
+                    // 每秒生命恢复（098c `kc` 同队 `PX(Vr, .13+.03*Yr)`，每 0.18s 脉冲）
+                    // ⇒ 奶/s = `(.13+.03*Yr)/.18` = `(13+3*L)/18`（L1=8/9，+1/6 每级）。
+                    extra_base: 8.0 / 9.0,
+                    extra_delta: 1.0 / 6.0,
                     // 基线半径 175（098c `Rv=250×.7√(1+.1×范围精通)`，见 world.rs 施法缩放）。
                     radius_base: 175.0,
                     duration_base: 5.0,
@@ -3416,8 +3418,9 @@ mod tests {
             (SkillId::S008, false, &[14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0]),
             // S009 分裂弹：tooltip「Damage per missile」（碎片/子弹出伤，等价我们的 `gx`）。
             (SkillId::S009, false, &[3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5]),
-            // S018B 力场：tooltip「Damage per second」（非线性逐级表）。
-            (SkillId::S018, true, &[2.25, 3.50, 4.25, 5.00, 5.75, 6.50, 7.25, 8.00]),
+            // S018B 力场：DPS = `1+1.25*L`（098c `kc`/`yO`/`oR` 代码真值）。
+            // 注：w3a tooltip 写「2.25,3.50,4.25,…,8.00（非线性）」，与代码冲突 → 按代码。
+            (SkillId::S018, true, &[2.25, 3.50, 4.75, 6.00, 7.25, 8.50, 9.75, 11.00]),
         ];
         for (id, alt, ds) in table {
             let d = DefTable::def_for(*id, *alt);
