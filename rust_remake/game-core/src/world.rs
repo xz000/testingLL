@@ -4164,6 +4164,8 @@ impl World {
         let mut deaths: Vec<u32> = Vec::new();
         let mut hit_enemies: u32 = 0;
         let mut hits: Vec<u32> = Vec::new();
+        // 098c `hI` 的攻方吸血（`PX(HI,HX*.08*vi)` + 物品 `lifesteal`）：累计对敌造成的伤害后回血。
+        let mut dealt_enemy = Fix64::ZERO;
         for p in self.players.iter_mut() {
             if !p.alive || (exclude_owner && p.id == owner) || Some(p.team) == owner_team {
                 continue;
@@ -4202,6 +4204,7 @@ impl World {
                 if p.id != owner {
                     hit_enemies += 1;
                     hits.push(p.id);
+                    dealt_enemy += dmg;
                 }
                 if p.hp == Fix64::ZERO {
                     p.alive = false;
@@ -4227,6 +4230,21 @@ impl World {
                         dyn_force *= 1.0 - p.item_fx.aegis_kb_reduction;
                     }
                     p.push_knockback(dir * Fix64::from_num(dyn_force * falloff.to_num::<f64>()) * self.knockback_mult);
+                }
+            }
+        }
+        // 098c `hI` 吸血：攻方按对敌总伤害回血（`vi` 生命精通 8%/级 + 物品 `lifesteal`）。
+        if dealt_enemy > Fix64::ZERO {
+            if let Some(a) = self.players.get(owner as usize) {
+                let (lifesteal, vi) = (a.item_fx.lifesteal, a.mastery[0]);
+                let dealt_f = dealt_enemy.to_num::<f64>();
+                let heal = dealt_f * lifesteal + dealt_f * 0.08 * vi as f64;
+                if heal > 0.0 {
+                    if let Some(a) = self.players.get_mut(owner as usize) {
+                        if a.alive {
+                            a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
+                        }
+                    }
                 }
             }
         }
@@ -5112,6 +5130,24 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         p.lava_boot_cd = Fix64::from_num(25.0);
                     }
                 }
+                // 098c FX 自伤（`mC`/`qC`/`QC` 顺序：**FX 在前、AoE/`DX` 在后**）——
+                // 先扣施法者 HP（下限 0.5，不可自杀），再算 AoE（否则满血时吸血被 `max_hp` 截断）。
+                if let Some(p) = world.players.get_mut(idx as usize) {
+                    if p.alive {
+                        let hp = p.hp.to_num::<f64>();
+                        // S020 灾变固定 20（`FX(ii,20)`）；S001/S021 用 `cX`(=gx)（`FX(ii,cX)`）。
+                        let dmg = if kind == crate::skill::W098bNovaKind::Catastrophe {
+                            20.0
+                        } else {
+                            gx.to_num::<f64>()
+                        };
+                        p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
+                        // 098c `qC`：`dX(ri,$A)` → 张力 +10（仅灾变）。
+                        if kind == crate::skill::W098bNovaKind::Catastrophe {
+                            p.mana += 10.0;
+                        }
+                    }
+                }
                 let mut smite_hits: u32 = 0;
                 match kind {
                     crate::skill::W098bNovaKind::Smiting => {
@@ -5120,7 +5156,22 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // 依据 `mI`：伤害 `HX` 原样传 `hI`（无距离项），`lI=1-cO/$3E8` 只进击退冲量 `LI`；
                         // 对照灾变 `qC` 把伤害衰减塞进 `HX`、`lI` 传固定 1 —— 可见 `lI` 就是击退系数。
                         // 故伤害 DmgFalloff::None，击退 KbAttn::Mul(1000)。（曾误把该衰减也乘到伤害上）
+                        // 098c `MC`（死亡面具）：天罚期间 `vi[ri]=2*vi`（生命偷取翻倍），结束复原。
+                        // `vi` = 生命精通(mastery[0]) + 面具白送 +3（= `item_fx.lifesteal`）→ 两者同翻。
+                        let scourge_double = world.players.get(idx as usize).map(|p| p.item_fx.scourge_double).unwrap_or(false);
+                        if scourge_double {
+                            if let Some(p) = world.players.get_mut(idx as usize) {
+                                p.mastery[0] = p.mastery[0].saturating_mul(2);
+                                p.item_fx.lifesteal *= 2.0;
+                            }
+                        }
                         smite_hits = world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::None, KbAttn::Mul(Fix64::from_num(1000.0)));
+                        if scourge_double {
+                            if let Some(p) = world.players.get_mut(idx as usize) {
+                                p.mastery[0] /= 2;
+                                p.item_fx.lifesteal /= 2.0;
+                            }
+                        }
                     }
                     crate::skill::W098bNovaKind::Catastrophe => {
                         // S020 灾变（098c `qC` 实证）：伤害按阶段 `$B/$C/$E` = **11/12/14**（+血剑 Zr）；
@@ -5168,26 +5219,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                 }
-                // 098c FX 自伤（D9 技能手感批）：nova 对施法者扣 gx 血，但 HP 不足以承受时
-                // **保留 0.5**（显示为 1 滴血，不可自杀）——JASS 原文 `if Fn <= (cX+.5) then Fn = .5`。
-                // 天罚/灾变/虔诚三系共用（mC handler 统一走 FX）。
-                if let Some(p) = world.players.get_mut(idx as usize) {
-                    if p.alive {
-                        let hp = p.hp.to_num::<f64>();
-                        // S020 灾变是**固定 20**（JASS `qC`：`FX(ii,20)`）；S001 天罚 / S021 虔诚用 `cX`(=gx)（`FX(ii,cX)`）。
-                        let dmg = if kind == crate::skill::W098bNovaKind::Catastrophe {
-                            20.0
-                        } else {
-                            gx.to_num::<f64>()
-                        };
-                        p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
-                        // 098c `qC`：`dX(ri,$A)` → 张力 +10（仅灾变）。
-                        if kind == crate::skill::W098bNovaKind::Catastrophe {
-                            p.mana += 10.0;
-                        }
-                    }
-                }
-                // 098c mC 顺序：FX 自伤在前、DX 在后（均按命中敌数 n 结算）。
+                // 098c mC 顺序：FX 自伤在前（已上移）、DX 在后（均按命中敌数 n 结算）。
                 // **`DX(ri,(Zr+1)*n)` = 张力(gn) −(Zr+1)×n（下限 0）——不是回血！**
                 // （本图 JASS 大小写敏感：`DX`=−、`dX`=+；`Zr`=鲜血之剑等级 = `smite_bonus`。）
                 if kind == crate::skill::W098bNovaKind::Smiting && smite_hits > 0 {
@@ -8674,6 +8706,42 @@ mod tests {
         // 天罚后获得 5s 减伤窗口（Aegis buff）
         assert!(world.players[0].has_buff(BuffKind::Aegis), "天罚后应挂 5s 减伤窗口");
         let _ = hp0;
+    }
+
+    /// 098c `MC`（死亡面具）：天罚期间生命偷取 `vi` **翻倍**（`vi=2*vi`→结束复原）。
+    #[test]
+    fn s001_death_mask_doubles_lifesteal() {
+        let delta = |mask: bool| -> f64 {
+            let mut world = World::new(2, 0x1001);
+            world.obstacles.clear();
+            world.sandbox = true;
+            world.base_regen = 0.0;
+            world.players[0].team = 0;
+            world.players[1].team = 1;
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
+            world.players[1].move_target = None;
+            if mask {
+                world.players[0].set_items(&[crate::item::ItemId::FireMask]);
+            }
+            world.players[0].caster = crate::skill::Caster::new();
+            world.players[0].growth = 1.0;
+            let hp0 = world.players[0].hp;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            world.step(
+                vec![PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() }, PlayerInput::default()],
+                dt,
+            );
+            let none = vec![PlayerInput::default(); 2];
+            for _ in 0..90 {
+                world.step(none.clone(), dt);
+            }
+            (world.players[0].hp - hp0).to_num::<f64>()
+        };
+        let no_mask = delta(false); // ≈ −11（仅自伤，无吸血）
+        let with_mask = delta(true); // −11 + 吸血（且天罚下翻倍）
+        assert!(with_mask > no_mask, "死亡面具在天罚下应带来更多吸血（HP 变化 {no_mask} vs {with_mask}）");
     }
 
     /// 098c 柱子可摧毁（D9 批次3）：火球命中扣 HP（nx=40），归零移除；每轮重生成。
