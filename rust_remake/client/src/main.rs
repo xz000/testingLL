@@ -372,6 +372,8 @@ enum AppState {
 enum EscapeChoice {
     /// 继续游戏（关掉菜单）。
     Continue,
+    /// R7b：暂停 / 恢复本局（联机；文案随当前状态切换）。
+    TogglePause,
     /// 返回主菜单（离开本局）。
     LeaveMatch,
     /// 退出游戏。
@@ -388,9 +390,16 @@ fn is_in_match(app: AppState) -> bool {
     }
 }
 
-/// 退出菜单的选项（E1：继续/离开/退出）。
-fn escape_menu_items() -> [EscapeChoice; 3] {
-    [EscapeChoice::Continue, EscapeChoice::LeaveMatch, EscapeChoice::QuitGame]
+/// 退出菜单的选项（E1：继续/离开/退出；R7b 在联机对局中增暂停/恢复）。
+/// `allow_pause` = 是否是支持暂停的联机对局（Steam）；单机/LAN 不显示该项。
+fn escape_menu_items(allow_pause: bool) -> Vec<EscapeChoice> {
+    let mut v = vec![EscapeChoice::Continue];
+    if allow_pause {
+        v.push(EscapeChoice::TogglePause);
+    }
+    v.push(EscapeChoice::LeaveMatch);
+    v.push(EscapeChoice::QuitGame);
+    v
 }
 
 /// 退出菜单选择的循环步进（纯函数，便于单测）。
@@ -726,11 +735,11 @@ fn escape_menu_panel(sw: f32, sh: f32) -> graphics::Rect {
 }
 
 /// 对局内 Esc 菜单各行的矩形（**绘制与鼠标命中必须共用**）。
-fn escape_menu_rows() -> Vec<graphics::Rect> {
+fn escape_menu_rows(allow_pause: bool) -> Vec<graphics::Rect> {
     let (sw, sh) = (ui::UI_W, ui::UI_H);
     let panel = escape_menu_panel(sw, sh);
     let content = graphics::Rect::new(panel.x + 24.0, panel.y + 58.0, panel.w - 48.0, panel.h - 100.0);
-    let n = escape_menu_items().len();
+    let n = escape_menu_items(allow_pause).len();
     (0..n).map(|i| layout::row_in(content, i, n)).collect()
 }
 
@@ -4640,7 +4649,7 @@ impl Game {
         if !self.escape_menu {
             return false;
         }
-        let items = escape_menu_items();
+        let items = escape_menu_items(self.steam_active());
         let n = items.len();
         // 上下选择（移动即取消已挂起的二次确认）。
         if ctx.keyboard.is_logical_key_just_pressed(&Key::Named(NamedKey::ArrowUp)) {
@@ -4654,7 +4663,7 @@ impl Game {
         let mut act: Option<usize> = None;
         if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
             let m = ui::mouse_design(ctx);
-            for (i, r) in escape_menu_rows().iter().enumerate() {
+            for (i, r) in escape_menu_rows(self.steam_active()).iter().enumerate() {
                 if r.contains(m) {
                     act = Some(i);
                     break;
@@ -4675,6 +4684,21 @@ impl Game {
             self.escape_menu_selection = i;
             match items[i] {
                 EscapeChoice::Continue => {
+                    self.escape_menu = false;
+                    self.escape_menu_confirm = None;
+                }
+                EscapeChoice::TogglePause => {
+                    // R7b：联机暂停/恢复——普通项（菜单已是两步，无需二次确认）。
+                    #[cfg(feature = "steam")]
+                    {
+                        let paused = self.steam_paused_now();
+                        if !paused && self.steam_pause_remaining_mine() == 0 {
+                            let now = ctx.time.time_since_start().as_secs_f64();
+                            self.pause_toast = (i18n::t("暂停次数已用尽").to_string(), now + 2.5);
+                        } else {
+                            self.pause_pending = Some(!paused);
+                        }
+                    }
                     self.escape_menu = false;
                     self.escape_menu_confirm = None;
                 }
@@ -4734,14 +4758,29 @@ impl Game {
         let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.0), panel, ui::theme::panel_border())?;
         canvas.draw(&border, graphics::DrawParam::new());
         ui::text_center(canvas, ctx, i18n::t("对局菜单"), 30.0, ui::theme::accent(), cx, panel.y + 18.0)?;
-        let rows = escape_menu_rows();
-        let items = escape_menu_items();
+        let rows = escape_menu_rows(self.steam_active());
+        let items = escape_menu_items(self.steam_active());
         let mouse = ui::mouse_design(ctx);
         for (i, (r, item)) in rows.iter().zip(items.iter()).enumerate() {
             let selected = i == self.escape_menu_selection;
             let hover = !selected && r.contains(mouse);
             let label = match item {
                 EscapeChoice::Continue => i18n::t("继续游戏"),
+                EscapeChoice::TogglePause => {
+                    // R7b：文案随当前状态切换（暂停中→恢复）。
+                    #[cfg(feature = "steam")]
+                    {
+                        if self.steam_paused_now() {
+                            i18n::t("恢复本局")
+                        } else {
+                            i18n::t("暂停本局")
+                        }
+                    }
+                    #[cfg(not(feature = "steam"))]
+                    {
+                        i18n::t("暂停本局")
+                    }
+                }
                 EscapeChoice::LeaveMatch => i18n::t("返回主菜单"),
                 EscapeChoice::QuitGame => i18n::t("退出游戏"),
             };
@@ -4760,8 +4799,14 @@ impl Game {
             AppState::SteamHost { .. } => Some(i18n::t("你是房主：返回主菜单会让其他人尝试接管本局").to_string()),
             _ => None,
         };
+        #[cfg(feature = "steam")]
+        let steam_multiplayer_hint = self.steam_active() && !self.steam_paused_now();
+        #[cfg(not(feature = "steam"))]
+        let steam_multiplayer_hint = false;
         let hint = if self.escape_menu_confirm == Some(leave_idx) {
             warn.as_deref().unwrap_or(i18n::t("再按一次确认返回主菜单"))
+        } else if steam_multiplayer_hint {
+            i18n::t("多人对局：打开菜单不会暂停，请选〈暂停本局〉")
         } else {
             i18n::t("↑/↓ 选择   回车 确认   Esc 继续")
         };
@@ -7464,7 +7509,7 @@ impl event::EventHandler for Game {
         // 对局内 Esc 菜单：滚轮上/下移动选择（与 ↑/↓ 同义），并**不**驱动相机缩放。
         if y != 0.0 && self.escape_menu {
             let up = y > 0.0;
-            let n = escape_menu_items().len();
+            let n = escape_menu_items(self.steam_active()).len();
             self.escape_menu_selection =
                 next_escape_selection(self.escape_menu_selection, if up { -1 } else { 1 }, n);
             self.escape_menu_confirm = None;
@@ -12971,10 +13016,11 @@ mod tests {
     /// E1：退出菜单选择循环（上下环绕）。
     #[test]
     fn escape_selection_wraps() {
-        let n = super::escape_menu_items().len();
-        assert_eq!(n, 3);
-        assert_eq!(super::next_escape_selection(0, -1, n), 2, "从首项上移应回绕到最后");
-        assert_eq!(super::next_escape_selection(2, 1, n), 0, "从末项下移应回绕到首");
+        let n = super::escape_menu_items(true).len();
+        assert_eq!(n, 4, "联机菜单：继续/暂停/返回/退出");
+        assert_eq!(super::escape_menu_items(false).len(), 3, "单机/LAN 无暂停项");
+        assert_eq!(super::next_escape_selection(0, -1, n), 3, "从首项上移应回绕到最后");
+        assert_eq!(super::next_escape_selection(3, 1, n), 0, "从末项下移应回绕到首");
         assert_eq!(super::next_escape_selection(1, 1, n), 2);
         assert_eq!(super::next_escape_selection(0, 1, 0), 0, "空列表不 panic");
     }
@@ -12994,8 +13040,8 @@ mod tests {
     /// E1：退出菜单各行的几何（绘制与鼠标命中共用）应落在设计分辨率内、从上到下且不重叠。
     #[test]
     fn escape_menu_rows_are_inside_screen_and_disjoint() {
-        let rows = super::escape_menu_rows();
-        assert_eq!(rows.len(), super::escape_menu_items().len());
+        let rows = super::escape_menu_rows(true);
+        assert_eq!(rows.len(), super::escape_menu_items(true).len());
         for r in &rows {
             assert!(r.x >= 0.0 && r.y >= 0.0, "行不得跑到屏幕外(负坐标): {r:?}");
             assert!(r.x + r.w <= super::ui::UI_W + 0.5, "行不得超出设计宽度: {r:?}");

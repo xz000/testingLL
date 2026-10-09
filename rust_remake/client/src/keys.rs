@@ -203,7 +203,8 @@ pub fn keymap(screen: Screen) -> &'static [Binding] {
             Binding { key: "space", action: "镜头回场地中心（可改）" },
             Binding { key: "1", action: "镜头跳到自己（可改）" },
             Binding { key: "2", action: "镜头跟随自身开关（可改；缩放不解除，平移/回中心解除）" },
-            Binding { key: "设置→按键设置", action: "自定义 19 个动作键（技能/停止/镜头/学习期/静音）" },
+            Binding { key: "f9", action: "暂停 / 恢复（联机；可改）" },
+            Binding { key: "设置→按键设置", action: "自定义 20 个动作键（技能/停止/镜头/暂停/学习期/静音）" },
             Binding { key: "esc", action: "返回主菜单" },
         ],
         LearnConfig => &[

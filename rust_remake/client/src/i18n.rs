@@ -535,6 +535,9 @@ const EN: &[(&str, &str)] = &[
     ("无法重新加入上一局，已返回主菜单", "Could not rejoin the previous match; returned to the main menu"),
     // ---- R7：联机暂停 ----
     ("暂停 / 恢复（联机）", "Pause / Resume (online)"),
+    ("暂停本局", "Pause match"),
+    ("恢复本局", "Resume match"),
+    ("多人对局：打开菜单不会暂停，请选〈暂停本局〉", "Online match: this menu does not pause; choose \"Pause match\""),
     ("暂停次数已用尽", "No pause uses left"),
     ("暂停次数已用尽或冷却中", "No pause uses left or on cooldown"),
     ("暂停本局？（回车确认 / Esc 取消）", "Pause the match? (Enter to confirm / Esc to cancel)"),
