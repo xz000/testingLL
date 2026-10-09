@@ -782,13 +782,18 @@
 | **R5a ✅** | 会话描述序列化 + 读写（`f408d88`，`client/src/rejoin.rs`） | — | 单测 |
 | **R5b ✅** | C1 归队握手 `rejoin_step` + `apply_snapshot_world` | R6a/R5a | 单测 |
 | **R5c ✅** | 启动提示 + join + 归队握手（client 崩溃场景） | R5b | 真机 |
-| **R6b** | 被取代/自栅栏 host → C2+C1 归队 + U2 覆盖层 | R6a/R5b | 真机 |
+| **R6b ✅** | 被取代/自栅栏 host → C2+C1 归队 + U2 覆盖层 | R6a/R5b | 真机 |
 | **R7**（可选） | 暂停（P1 手动 / P2 待定） | — | 真机 |
 
 > **R5c 实现要点**：`RejoinSession` 在 `finish_enter_steam_mode` 成功时写入（`persist_rejoin_session`）、干净离场清除；
 > 主菜单启动若读到「新鲜+协议一致」的会话 → 提示「回车/Y 重新加入，Esc 忽略」；确认后按 lobby_id join，
 > 落地时走「归队」而非新开局（跳过就绪界面），在 Steam client 分支跑 `rejoin_step` 等快照重建，超时（~15s）回菜单。
 > 已知限制（MVP）：写入用的是房间成员名单（`steam_roster`），若“加入但未参战”的成员与最终参与者不同，`my_index` 可能需后续按 StartConfig 的 participants 重写。
+
+> **R6b 实现要点**：`HostLockstep` 收到 `Takeover` 时记录来源（`superseded_by()`，新 host）；旧 host 在
+> ①R4②自栅栏（lobby owner 变成别人）或 ②收到 `Takeover` 时，用 `into_transport()` 把 host 传输转成
+> `ClientLockstep{host=新host}`，进入归队握手（复用 R5b `rejoin_step`）；失败（无法定位新 host）才回主菜单。
+> 覆盖层文案：`你已被接管，正在重新加入…`。
 
 ### 22.5 待确认
 - **RJ-Q1**：崩溃重开是**提示确认**（建议）还是**自动重连**？

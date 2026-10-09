@@ -107,6 +107,8 @@ pub struct HostLockstep<T: Transport> {
     /// 本 host 是否已被另一新 host 的 `Takeover` 取缔（S2/S4，防脑裂）：
     /// 置位后 `try_emit` 不再产权威帧、上层应据此降级或退回主菜单，避免与新 host 双权威。
     superseded: bool,
+    /// R6b：若被取缔，记录发来 `Takeover` 的端（通常即新 host），供上层转 client 归队。
+    superseded_by: Option<Peer>,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -147,6 +149,7 @@ impl<T: Transport> HostLockstep<T> {
             snapshot: None,
             alive_tick: 0,
             superseded: false,
+            superseded_by: None,
         }
     }
 
@@ -234,6 +237,11 @@ impl<T: Transport> HostLockstep<T> {
     /// S2/S4：本 host 是否已被新 host 的 `Takeover` 取缔（上层据此降级/退回主菜单）。
     pub fn is_superseded(&self) -> bool {
         self.superseded
+    }
+
+    /// R6b：被取缔时，发来 `Takeover` 的端（通常即新 host 的 peer）；未记录则为 `None`。
+    pub fn superseded_by(&self) -> Option<Peer> {
+        self.superseded_by
     }
 
     /// 主机迁移接管：把「原 client lockstep」转换为「新 host lockstep」。
@@ -725,8 +733,9 @@ impl<T: Transport> HostLockstep<T> {
                             Packet::Takeover { .. } => {
                                 // S2/S4：收到别的 host 的接管信号 → 本端已被取缔（典型：客户端误判旧 host 掉线、
                                 // 选出新 host 并广播 Takeover）。标记 superseded 并停止作为权威（try_emit 不再产帧），
-                                // 避免与新 host 双权威脑裂。上层（main.rs 的 steam host 分支）会据此退回主菜单。
+                                // 避免与新 host 双权威脑裂。R6b：记录来源，供上层转为 client 归队（连回新 host）。
                                 self.superseded = true;
+                                self.superseded_by = Some(from);
                             }
                             _ => {}
                         }
@@ -1801,6 +1810,22 @@ mod tests {
         let host = HostLockstep::new(ht, 2, true);
         let cli = ClientLockstep::new(host.into_transport(), 1, host_peer);
         assert_eq!(cli.expect_seq(), 0, "取出的 transport 应能重建 client");
+    }
+
+    /// R6b：host 收到 `Takeover` 应记录来源（新 host），供上层转 client 归队。
+    #[test]
+    fn host_records_superseded_by_on_takeover() {
+        let (ht, mut ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let pkt = Packet::Takeover { seq: 5, participants: vec![1, 2] };
+        let from = ct.local();
+        ct.send_to(&pkt.encode(), &from).unwrap();
+        let mut rcv = [0u8; 4096];
+        host.poll(&mut rcv);
+        assert!(host.is_superseded(), "收到 Takeover 应标记 superseded");
+        // FakeTransport 的 recv_from 固定回对端地址（client_peer=4001）。
+        assert_eq!(host.superseded_by(), Some(Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4001)))), "应记录来源端为新 host");
+        assert!(host.try_emit().is_none(), "被取缔后不再产帧");
     }
 
     /// R4①：客户端应忽略来自非当前 host 的权威帧（防“僵尸 host”污染）。

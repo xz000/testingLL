@@ -4752,7 +4752,11 @@ impl Game {
         canvas.draw(&dim, graphics::DrawParam::new());
         let secs_s = format!("{:.0}", self.steam_migrate_ticks as f64 / 60.0);
         let status = if self.steam_rejoin_handshaking {
-            i18n::tf("正在重新加入上一局…（{secs}s）", &[("secs", secs_s.clone())])
+            if self.steam_new_host_id != 0 {
+                i18n::tf("你已被接管，正在重新加入…（{secs}s）", &[("secs", secs_s.clone())])
+            } else {
+                i18n::tf("正在重新加入上一局…（{secs}s）", &[("secs", secs_s.clone())])
+            }
         } else if self.steam_new_host_id == 0 {
             i18n::tf("正在尝试重新连回房主…（{secs}s）", &[("secs", secs_s.clone())])
         } else if self.steam_new_host_id == self.steam_my_id {
@@ -6660,6 +6664,11 @@ impl event::EventHandler for Game {
                                         "[steam-host] SELF-FENCE: lobby owner is {owner}, not me ({}); stepping down",
                                         self.steam_my_id
                                     );
+                                    // R6b：优先转 client 归队到新的 lobby owner；失败才回主菜单。
+                                    if self.steam_begin_rejoin_as_client(host, owner) {
+                                        self.accumulator = 0.0;
+                                        return Ok(());
+                                    }
                                     self.reset_to_main_menu();
                                     self.accumulator = 0.0;
                                     return Ok(());
@@ -6767,7 +6776,17 @@ impl event::EventHandler for Game {
                             // S2/S4：本 host 收到新 host 的 Takeover → 已被取缔（如客户端误判旧 host 掉线）。
                             // 停止作为权威、退回主菜单，避免与新 host 双权威脑裂（孤儿 host 续产帧）。
                             if host.is_superseded() {
-                                eprintln!("[steam-host] SUPERSEDED: 收到新 host 的 Takeover，已取缔，退回主菜单");
+                                eprintln!("[steam-host] SUPERSEDED: 收到新 host 的 Takeover，已取缔，转入归队");
+                                // R6b：记录到的新 host（Takeover 来源）→ 转 client 归队；无来源则回主菜单。
+                                let new_host = match host.superseded_by() {
+                                    Some(net::transport::Peer::Steam { id, .. }) => id,
+                                    _ => 0,
+                                };
+                                if self.steam_begin_rejoin_as_client(host, new_host) {
+                                    self.accumulator = 0.0;
+                                    return Ok(());
+                                }
+                                // 无法定位新 host：退回主菜单（保留归队提示由下次启动处理）。
                                 self.reset_to_main_menu();
                                 self.accumulator = 0.0;
                                 return Ok(());
@@ -6933,6 +6952,7 @@ impl event::EventHandler for Game {
                                 self.apply_snapshot_world(&wb);
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
+                                self.steam_new_host_id = 0;
                                 self.steam_cli_stale_ticks = 0;
                                 eprintln!("[steam-rejoin] resumed from snapshot seq={seq}");
                             } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
@@ -6940,6 +6960,7 @@ impl event::EventHandler for Game {
                                 self.steam_cli_ls = Some(cli);
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
+                                self.steam_new_host_id = 0;
                                 self.reset_to_main_menu();
                                 self.menu_hint = i18n::t("无法重新加入上一局，已返回主菜单").to_string();
                                 self.accumulator = 0.0;
@@ -8991,6 +9012,43 @@ impl Game {
         };
         rejoin::save(&rejoin::default_path(), &s);
         eprintln!("[steam-rejoin] persisted session for lobby {lobby_id} ({} participants)", s.participants.len());
+    }
+
+    /// R6b：旧 host（被取缔 / 自栅栏）转 client 归队——用 host 的 transport 重建 `ClientLockstep`，
+    /// 连回 `new_host` 并进入归队握手（R5b：发 `ReconnectReq` 等快照重建 world+meta）。
+    /// 返回是否成功进入归队；失败时调用方应回退到主菜单。
+    #[cfg(feature = "steam")]
+    fn steam_begin_rejoin_as_client(
+        &mut self,
+        host: net::lockstep::HostLockstep<net_steam::SteamTransport>,
+        new_host: u64,
+    ) -> bool {
+        if new_host == 0 || new_host == self.steam_my_id {
+            return false;
+        }
+        let my_index = self
+            .steam_participants
+            .iter()
+            .position(|&x| x == self.steam_my_id)
+            .unwrap_or(0) as u8;
+        let transport = host.into_transport();
+        let cli = net::lockstep::ClientLockstep::new(
+            transport,
+            my_index,
+            net::transport::Peer::Steam { id: new_host, conn: None },
+        );
+        self.steam_cli_ls = Some(cli);
+        self.steam_host_ls = None;
+        self.app = AppState::SteamJoin { lobby_id: None };
+        self.steam_active = true;
+        self.steam_in_lobby = false;
+        self.steam_my_index = my_index;
+        self.steam_rejoin_handshaking = true;
+        self.steam_rejoin_ticks = 0;
+        self.steam_new_host_id = new_host;
+        self.steam_migrating = false;
+        eprintln!("[steam-rejoin] host stepping down -> rejoin as client to new host {new_host} (my_index={my_index})");
+        true
     }
 
         /// 主菜单：标题 + 三个入口（单机试验场 / 局域网 / Steam 大厅）；按 3 进入 Steam 大厅选择子菜单。
