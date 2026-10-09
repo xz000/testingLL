@@ -3213,8 +3213,12 @@ impl World {
                         // · 首次命中后 `Nv=bv=true` → 之后的跳可以命中同队甚至施法者自己；
                         // · 重定向到全场最近的非 owner、非上一跳目标（`Fc` 排除 `Fv[nr]`）；无新目标才消失。
                         if *proj == crate::skill::W098bProjKind::Bounce {
-                            let at_floor = *gx <= Fix64::from_num(0.2);
-                            let new_gx = (*gx * Fix64::from_num(0.75)).max(Fix64::from_num(0.2));
+                            // 复核⑦：098c 地板 `.2` 作用在 **`gv` 乘子**上 ⇒ 伤害下限 = `0.2×(5+L)`，
+                            // 而非固定 `0.2`。我方 `gx` 存伤害；`blast_dmg` 在生成时默认 = 初始 `gx`
+                            // （Bounce 无 blast、不会被改写），故以 `0.2×blast_dmg` 为地板（= 0.2×初始伤害）。
+                            let floor = *blast_dmg * Fix64::from_num(0.2);
+                            let at_floor = *gx <= floor;
+                            let new_gx = (*gx * Fix64::from_num(0.75)).max(floor);
                             // 098c `gc`：`if ev[nr]>.75 and gv[nr]<=.2 then MI(...) else mI(...)`
                             // → 伤害已到地板、且还有寿命 → **不伤只推**（本处直接抹掉伤害事件）。
                             if at_floor && *remaining > Fix64::from_num(0.75) {
@@ -10110,6 +10114,39 @@ mod tests {
         let d_ally = (hp_ally - world.players[2].hp).to_num::<f64>();
         assert!(d_enemy > 5.0, "敌人应受首跳伤害，实际 {d_enemy}");
         assert!(d_ally.abs() < 0.01, "队友不应被弹跳弹误伤，实际 {d_ally}");
+    }
+
+    /// 复核⑦：S016 伤害地板应为 `0.2×初始伤害`（098c 地板作用于 `gv` 乘子），而非固定 0.2。
+    #[test]
+    fn s016_bounce_damage_floor_is_fraction_of_base() {
+        let mut world = World::new(3, 0x601a);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(0.5), Fix64::ZERO); // 贴脸，首帧即命中
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(0.5), d60(3.0)); // 第二目标，保证重定向后存活
+        world.players[2].move_target = None;
+        // 注入 gx 已很低（0.5）的弹跳弹；blast_dmg=6.0（= 初始伤害）⇒ 地板应 = 0.2×6 = 1.2。
+        let mut p = inject_bounce(None, 900.0);
+        if let ProjectileKind::W098b { gx, .. } = &mut p.kind {
+            *gx = Fix64::from_num(0.5);
+        }
+        world.projectiles.push(p);
+        world.step(vec![PlayerInput::default(); 3], dt);
+        let gx = world
+            .projectiles
+            .iter()
+            .find_map(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, gx, .. } => Some(gx.to_num::<f64>()),
+                _ => None,
+            })
+            .expect("弹跳弹应仍在场");
+        assert!(gx >= 1.19, "地板应 = 0.2×6.0 = 1.2，实际 {gx}");
+        assert!(gx < 1.3, "不应超过地板值，实际 {gx}");
     }
 
     /// 造一枚朝 +x、追踪 `chase` 的弹跳弹（供制导单测用）。
