@@ -302,7 +302,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 | 项 | 098c（raw `war3map.j` 行号） | 我方（现状） | 状态 |
 |---|---|---|---|
-| 入口 | `uc`(Hook)/`Uc`(Induction)；设 `Av[+1]=Av[+3]=true`（可撞 class1 术士 + class3 柱子，**不撞弹体**） | `W098bOnHit::ChainPull`/`RedChain`（命中判定与撞柱分支已按 `Av` 实现） | ✅ |
+| 入口 | `uc`(Hook)/`Uc`(Induction)；设 `Av[+1]=Av[+3]=true`（可撞 class1 术士 + class3 柱子，**不撞弹体**） | ✅ `W098bOnHit::ChainPull`/`RedChain`；spawn 时 `col_mask=UNIT|OBSTACLE`（去 MISSILE 位）→ 不与其他弹体互撞（测试 `s019_chain_does_not_collide_with_missiles`） | ✅ |
 | 链接载体 | 命中回调 `Sc`(蓝)/`sc`(红) 执行 `Fv[caster]=hit`，弹体随即 `iO` 销毁；持续效果全在 `DA` 主循环 **4285-4341** | `ProjectileKind::Tether { anchor, pull, remaining: Option<..> }`（锚点为玩家/柱子稳定 id） | ✅ 近似 |
 | 命中判定 | 碰撞过滤 raw 4389 + 术士 `Nv=true`(2712) ⇒ 链弹可命中**队友** | 蓝链/红链均用 `nearest_hit_any`（含队友、排施法者） | ✅ |
 | 拉拽·蓝→术士 | `DA` 4312 `Q[Vr]-=1.4×dir`（拉目标向施法者；**队友也拉**） | `TetherPull::TargetToOwner` | ✅ |
@@ -578,8 +578,8 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
-| **A（暗物质弹）** | `Jc`：`ev=**900*(1+.1*ei)/400**`（秒）、速度 **400/s**、**`Av[+3]=true` 只与障碍碰撞**（不撞玩家/弹体）、`xv=**1**`（撞柱镜面反弹）、`Ev=na`、`Gv=Ea=jc`（到点）、`jv=Va=hc`（每帧） | 我方：**400/s ✓ / 寿命≈900/400 ✓**；“只撞障碍 + 撞柱反弹”待核 | ✅/📋 |
-| **B（力场弹）** | `Mc`：`ev=min(点击距离, **850*(1+.1*ei**>)/850`、速度 **850/s**、**`Av[+3]=false`（穿柱！）**、`Gv=ca`（到点生成力场）、`xv=1` | 我方 S018B ✓（测试 `s018b_*`）；**穿柱**待核 | 📋 |
+| **A（暗物质弹）** | `Jc`：`ev=**900*(1+.1*ei)/400**`（秒）、速度 **400/s**、**`Av[+3]=true` 只与障碍碰撞**（不撞玩家/弹体）、`xv=**1**`（撞柱镜面反弹）、`Ev=na`、`Gv=Ea=jc`（到点）、`jv=Va=hc`（每帧） | ✅ 已修（`c110912`）：`Gravity` 对柱返 `Some(0)`+反射，`col_mask` 仅障碍；测试 `s018a_dark_matter_bounces_off_pillar` | ✅ |
+| **B（力场弹）** | `Mc`：`ev=min(点击距离, **850*(1+.1*ei**>)/850`、速度 **850/s**、**`Av[+3]=false`（穿柱！）**、`Gv=ca`（到点生成力场）、`xv=1` | ⚠ **时序差异**：我方 S018B 走 `StarZone` **直接在落点生成力场**，**未建模 `Mc` 的 850/s 飞行弹**（JASS 先飞 `dist/850` 秒、`Av` 全 false 无碰撞，到点再生成力场）。功能等价但少了 `dist/850`（0.3~0.9s）延迟；待定是否补 | 📋 |
 | **力场每帧 `kc`** | `if je then`：同队 → `PX(Vr, **.13+.03*Yr**`（**每秒治疗**）；异队 → 减益 659（伤害 `.2+.25*Yr`，刷新） | tooltip：“Damage per second **2.25**、Heal per second **1.0**”（L1：0.13+0.03 = 0.16/跳？需核 tick 频率） | 📋 |
 | 其他回调 | `Kc`（销毁）、`lc`（淡出）、`Lc`（生成 `GreenPentagramVampiric` + `Rv=$FA*XB`、`XB=.7√(1+.1xi)`） | — | 📋 |
 
