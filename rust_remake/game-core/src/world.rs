@@ -2979,7 +2979,11 @@ impl World {
                         // （敌/友分支共用）→ A 命中友军同样销毁。
                         let weaken_ally_keep =
                             same_team && *on_hit == crate::skill::W098bOnHit::Weaken;
-                        if !is_chain && !is_ally_support && !homing {
+                        // R7 复核⑥（098c `gc`）：弹跳弹仅 `cn[Vv[nr]]!=cn[Vv[Vr]]`（**异队**）才 `mI/MI`；
+                        // 命中同队/自己只弹跳 + 衰减 gv，**不伤害也不击退**。
+                        let bounce_same_team =
+                            *proj == crate::skill::W098bProjKind::Bounce && same_team;
+                        if !is_chain && !is_ally_support && !homing && !bounce_same_team {
                             events.push((victim, hit_dmg, Some(pr.owner)));
                         }
                         // 守护之盾充能（098c ib/ab/Eb）：火球命中敌人 → Ha 点亮（GX 设充能灯 1）。
@@ -2996,7 +3000,7 @@ impl World {
                         // 锁链（蓝链拉目标 / 红链拉施法者）以拉拽为主：跳过 KI 击退
                         //（击退 700 位移会盖过 300 的拉拽）；汲取命中**友军**时 098c `vc`/`oc` 友军分支
                         // 根本没有 `mI`（只有治疗/增益）→ 不产生击退。
-                        if !is_chain && !is_ally_support && !homing && dd.length_squared() > Fix64::ZERO {
+                        if !is_chain && !is_ally_support && !homing && !bounce_same_team && dd.length_squared() > Fix64::ZERO {
                             let vmana = self.players[victim as usize].mana;
                             let atk_gn = self.players.get(pr.owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
                             let vic_hn = self.players[victim as usize].dmg_taken_mult;
@@ -10027,6 +10031,45 @@ mod tests {
         let l6 = life_at(6);
         assert!((l0 - 1.0).abs() < 1e-3, "ei=0 时 L1 单跳寿命应 900/900=1.0，实际 {l0}");
         assert!((l6 - 1.6).abs() < 1e-3, "ei=6 时应 ×(1+.1*6)=1.6，实际 {l6}");
+    }
+
+    /// R7 复核⑥：弹跳弹首跳后撞到**队友**只弹跳、不伤害（098c `gc` 仅异队才 `mI`）。
+    #[test]
+    fn s016_bounce_no_friendly_fire_after_first_bounce() {
+        let mut world = World::new(3, 0x6017);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        // 队伍：0 与 2 同队；1 为敌。
+        world.players[0].team = 0;
+        world.players[1].team = 1;
+        world.players[2].team = 0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        // 敌 1 在 +x（第一跳，仅敌人可被首跳选中）；队友 2 离命中点更近（第二跳目标）。
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].pos = Vec2::new(d60(5.0), d60(3.0));
+        world.players[2].move_target = None;
+        let hp_enemy = world.players[1].hp;
+        let hp_ally = world.players[2].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 3];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+        }
+        let d_enemy = (hp_enemy - world.players[1].hp).to_num::<f64>();
+        let d_ally = (hp_ally - world.players[2].hp).to_num::<f64>();
+        assert!(d_enemy > 5.0, "敌人应受首跳伤害，实际 {d_enemy}");
+        assert!(d_ally.abs() < 0.01, "队友不应被弹跳弹误伤，实际 {d_ally}");
     }
 
     #[test]
