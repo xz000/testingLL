@@ -1988,9 +1988,10 @@ impl DefTable {
                 },
             },
             // ===== M2 批次C：场/线控制系 =====
-            // S017 禁锢·缠绕（Y 键）——098c 缠绕分支（"bind its target to its current position"）：
-            // CD 25→10（逐档表）、持续 4.5→6.25（+0.25/级，8 档）。speed 1000 / radius 39 / life 1.1（098c rC）；
-            // 伤害公式未解码 → 恒 3 占位（TODO）。数值见 growth（原斜率）。
+            // S017 禁锢·缠绕（Y 键）——098c 缠绕分支（`rC` 弹 / `eC` 命中 / `yc` 禁锢）：
+            // CD 25→10（逐档表）、持续 `(4+.25*abilityLevel)` = **4.25→6.0**（`yc`，非 tooltip 的 4.5→6.25）。
+            // speed 1000 / radius 39 / ev 1.1（`rC`）。**命中无任何直接伤害**（`eC` 只调 `yc`）——故 damage=0。
+            // `xi>0` 时命中点 AoE 禁锢附近非友军（半径 `170√(1+.3xi)`，见 world.rs `Cripple`）。
             // ⚠ 098c 的「沉默」是**另一分支**（CD 16→12.5、5s 恒定），对应 **S017B**，勿与缠绕混淆。
             SkillId::S017 => SkillDef {
                 id,
@@ -2010,14 +2011,14 @@ impl DefTable {
                     on_hit: W098bOnHit::Cripple,
                 },
                 growth: SkillGrowth {
-                    // 098c（w3a_strings.txt 缠绕 bind）：CD 25→10（逐档表）、持续 4.5→6.25（+0.25/级，8 档）。
-                    // max_level=8，delta 取原斜率。
+                    // CD 25→10（逐档表，098c 原斜率）；持续由 `yc` 代码定 = 4.25→6.0。
                     cooldown_base: 25.0,
                     cooldown_delta: -2.1428, // 098c: 25->10 (8 lv)
                     cooldown_levels: Some(&[25.0, 21.0, 18.0, 16.0, 14.5, 13.0, 11.5, 10.0]),
-                    damage_base: 3.0,
-                    duration_base: 4.5,
-                    duration_delta: 0.25,     // 098c: 4.5->6.25 (8 lv)
+                    // damage 保持 0（098c `eC` 无 `mI`，只有禁锢 `yc`）。
+                    // 098c `yc`：`vC=(4+.25*GetUnitAbilityLevel(...,'S017'))*jn攻/jn受` → L1=4.25 … L8=6.0。
+                    duration_base: 4.25,
+                    duration_delta: 0.25,
                     ..DEF_ZERO
                 },
             },
@@ -2346,7 +2347,8 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S015B 火焰喷射·簇射（098c Ac 簇射支）：一次 5 发 ±11° 扇形 800/s，单发 3+0.4L。
+            // S015B 火焰喷射·簇射（098c `Ac` 簇射支）：一次 5 发、步长 **5.5°**（`Er=-2..2` → ±11°，
+            // 总张角 22°）、800/s、单发 3+0.4L。
             SkillId::S015 => SkillDef {
                 id,
                 tree: SkillTree::T,
@@ -2361,7 +2363,8 @@ impl DefTable {
                     ignite: None,
                     blast: None,
                     count: 5,
-                    spread_step: 11.0_f64.to_radians(),
+                    // 098c `Ac`：`Xr = 5.5*bj_DEGTORAD*Er`，`Er` 从 -2 到 2 → 每道相对中心 **5.5°**（总 ±11°）。
+                    spread_step: 5.5_f64.to_radians(),
                     on_hit: W098bOnHit::Ki,
                 },
                 growth: SkillGrowth {
@@ -3359,7 +3362,8 @@ mod tests {
             (SkillId::S010, true, &[4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0]),
             (SkillId::S012, true, &[3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1, 3.1]),
             (SkillId::S014, false, &[4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]),
-            (SkillId::S017, false, &[4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0, 6.25]),
+            // S017：098c `yc` 代码 = `4+.25*abilityLevel` → 4.25…6.0（tooltip 4.5…6.25 已过时，按代码）。
+            (SkillId::S017, false, &[4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0]),
             (SkillId::S006, false, &[3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6]),
             (SkillId::S007, false, &[7.0, 7.8, 8.6, 9.4, 10.2, 11.0, 11.8, 12.6]),
             (SkillId::S018, true, &[5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]),
@@ -3614,12 +3618,13 @@ mod tests {
 
     #[test]
     fn s017_s018_s019_match_spec() {
-        // S017 禁锢·缠绕（A 形态）：098c 缠绕分支 CD 25→10、持续 4.5→6.25（原斜率）。
+        // S017 禁锢·缠绕（A 形态）：098c 缠绕分支 CD 25→10；持续 `yc` 代码 = 4.25→6.0（非 tooltip 4.5）。
         let d = DefTable::def(SkillId::S017);
         assert_eq!(d.name, "禁锢·缠绕");
         assert!(near(d.stats_at(1).cooldown, 25.0, 1e-3));
         assert!(near(d.stats_at(8).cooldown, 10.0, 1e-1), "L8 CD should be ~10, got {:?}", d.stats_at(8).cooldown);
-        assert!(near(d.stats_at(1).duration, 4.5, 1e-3), "L1 bind duration should be 4.5");
+        assert!(near(d.stats_at(1).duration, 4.25, 1e-3), "L1 bind duration = 4+.25*1 = 4.25（098c yc）");
+        assert!(near(d.stats_at(1).damage, 0.0, 1e-6), "098c eC 无直接伤害（只 yc 禁锢）");
         match d.effect {
             SkillEffect::Warlock098b { speed, radius, on_hit: W098bOnHit::Cripple, .. } => {
                 assert!(near(speed, 1000.0, 1e-3) && near(radius, 39.0, 1e-3));
@@ -3907,14 +3912,14 @@ mod tests {
         // 连发数随等级成长：098c missiles 6→13（8 档），走 stats.extra
         let n20 = d.stats_at(8).extra.to_num::<f64>().round() as u32;
         assert_eq!(n20, 13, "L8 missile count should be 13, got {}", n20);
-        // B 形态：簇射 = 锥形 5 道 ±11°，伤害 3.0+0.4L（098c "Fires 5 missiles at once" 3.0→5.8，8 档）
+        // B 形态：簇射 = 5 道、每道步长 5.5°（±11°），伤害 3.0+0.4L（098c "Fires 5 missiles at once" 3.0→5.8，8 档）
         let alt15 = DefTable::def_alt(SkillId::S015).expect("S015 应有 B 形态");
         assert_eq!(alt15.name, "火焰喷射·簇射");
         assert!(near(alt15.stats_at(1).damage, 3.0, 1e-3));
         match alt15.effect {
             SkillEffect::Warlock098b { count, spread_step, radius, .. } => {
                 assert_eq!(count, 5, "簇射应锥形 5 道");
-                assert!((spread_step - 11.0_f64.to_radians()).abs() < 1e-6, "每道偏转 11°");
+                assert!((spread_step - 5.5_f64.to_radians()).abs() < 1e-6, "每道步长 5.5°（098c Xr=5.5°*Er）");
                 assert!(near(radius, 22.0, 1e-3));
             }
             ref e => panic!("S015 effect 错：{e:?}"),

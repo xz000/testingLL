@@ -3129,8 +3129,28 @@ impl World {
                                 debuffs_scorched.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
                             }
                             crate::skill::W098bOnHit::Cripple => {
-                                // 残废：禁施法/禁移动近似为 Tied，时长 (4+0.25L)。
-                                debuffs.push((victim, debuff_dur.to_num::<f64>(), pr.owner));
+                                // S017 禁锢·缠绕（098c `eC`）：直中目标 `yc`（禁锢=Tied，**无伤害**）。
+                                // 若 `xi>0`（远程精通）→ 命中点 AoE：对**非友军**（除直中目标外）半径
+                                // `$AA*sqrt(1+.3xi)` = `170*sqrt(1+.3xi)` 内全部 `yc`。时长 `(4+.25L)*jn攻/jn受`。
+                                let dur = debuff_dur.to_num::<f64>();
+                                debuffs.push((victim, dur, pr.owner));
+                                let xi = self.players.get(pr.owner as usize).map(|o| o.mastery[1] as f64).unwrap_or(0.0);
+                                if xi > 0.0 {
+                                    let radius = Fix64::from_num(170.0 * (1.0 + 0.3 * xi).sqrt());
+                                    let owner_team = self.players.get(pr.owner as usize).map(|o| o.team);
+                                    let mut extra: Vec<u32> = Vec::new();
+                                    for q in self.players.iter() {
+                                        if !q.alive || q.id == victim || Some(q.team) == owner_team {
+                                            continue;
+                                        }
+                                        if (q.pos - pr.pos).length_squared() <= radius * radius {
+                                            extra.push(q.id);
+                                        }
+                                    }
+                                    for v in extra {
+                                        debuffs.push((v, dur, pr.owner));
+                                    }
+                                }
                             }
                             crate::skill::W098bOnHit::ChainPull => {
                                 // 锁链·钩引（蓝链）：命中术士 → 锚定它并把目标拉向施法者（098c `DA` 4312）；
@@ -9963,11 +9983,13 @@ mod tests {
         let _ = hp1;
     }
 
-    /// S017 致残：命中后目标被 Tied（禁施法），持续 (4+0.25L)。
+    /// S017 致残（缠绕）：命中后目标被 Tied（禁施法/禁移动）。
+    /// 098c `eC` 只调 `yc`（禁锢）——**无任何直接伤害**（此前误加 KI 伤害，已删）。
     #[test]
     fn s017_cripple_ties_target() {
         let mut world = World::new(2, 960);
         world.obstacles.clear();
+        world.base_regen = 0.0; // 屏蔽回血，验证无伤害
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
@@ -9984,8 +10006,40 @@ mod tests {
             world.step(none.clone(), dt);
             if world.players[1].tied() { tied = true; }
         }
-        assert!(world.players[1].hp < hp1, "致残弹应造成 KI 伤害");
+        assert!((world.players[1].hp - hp1).abs() < 1e-6, "098c S017 命中无直接伤害（eC 只禁锢），实际 {:?} -> {:?}", hp1, world.players[1].hp);
         assert!(tied, "命中后目标应被残废（Tied）");
+    }
+
+    /// S017 缠绕 AoE（098c `eC`）：`xi>0` 时命中点半径 `170√(1+.3xi)` 内非友军全部被禁锢（直中目标除外）。
+    #[test]
+    fn s017_cripple_xi_aoe_hits_nearby_enemies() {
+        let mut world = World::new(3, 1305);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].mastery[1] = 3; // xi（范围精通）> 0 → 开启 AoE
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[2].team = 1;
+        world.players[2].pos = Vec2::new(d60(4.6), Fix64::ZERO);
+        world.players[2].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::new(d60(4.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(); 3];
+        let mut aoe_tied = false;
+        for _ in 0..90 {
+            world.step(none.clone(), dt);
+            if world.players[2].tied() { aoe_tied = true; }
+        }
+        assert!(world.players[1].tied(), "直中目标应被禁锢");
+        assert!(aoe_tied, "xi>0 时邻近敌人也应被 AoE 禁锢");
     }
 
     /// S019 锁链：命中后目标被拉向施法者（位移朝施法者）+ 短暂 Tied。
