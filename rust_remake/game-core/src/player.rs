@@ -198,6 +198,8 @@ pub struct SweepState {
     pub dir: Vec2,
     pub bullet_speed: Fix64,
     pub damage: Fix64,
+    /// 每发子弹的**射程**（距离；098c `Xc` 流射 = `1200·寿命` = `1000·(1+.1ei)`）。
+    pub range: Fix64,
     /// 剩余要发射的弹数
     pub remaining: u32,
     /// 每发间隔（秒）

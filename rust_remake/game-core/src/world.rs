@@ -1526,7 +1526,7 @@ impl World {
 
     /// T2 扇扫连射：每个带 `sweep` 状态的玩家按心率发射一枚扇形弹，发射完清状态。
     fn step_sweep(&mut self, dt: Fix64) {
-        let mut spawn: Vec<(Vec2, Vec2, Fix64, Fix64)> = Vec::new(); // (pos, dir, speed, damage)
+        let mut spawn: Vec<(Vec2, Vec2, Fix64, Fix64, Fix64)> = Vec::new(); // (pos, dir, speed, damage, range)
         for p in self.players.iter_mut() {
             if !p.alive {
                 continue;
@@ -1536,7 +1536,7 @@ impl World {
                 let cad = s.cadence.max(1e-3);
                 while s.elapsed >= cad && s.remaining > 0 {
                     s.elapsed -= cad;
-                    spawn.push((p.pos, s.dir, s.bullet_speed, s.damage));
+                    spawn.push((p.pos, s.dir, s.bullet_speed, s.damage, s.range));
                     s.remaining -= 1;
                     s.dir = crate::fix::rotate_ccw(s.dir, Fix64::from_num(s.turn_step));
                 }
@@ -1545,7 +1545,7 @@ impl World {
                 }
             }
         }
-        for (pos, dir, speed, damage) in spawn {
+        for (pos, dir, speed, damage, range) in spawn {
             self.projectiles.push(Projectile {
                 owner: 0,
                 kind: ProjectileKind::Bullet {
@@ -1553,7 +1553,7 @@ impl World {
                     speed,
                     damage,
                     radius: Fix64::from_num(0.5),
-                    remaining: Fix64::from_num(SABULLET_RANGE),
+                    remaining: range,
                 },
                 pos,
                 alive: true,
@@ -6088,12 +6088,20 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 } else {
                     count
                 };
+                // 每发射程：098c `Xc` = 速度(1200) × 寿命(`(1+.1ei)/1.2`) = `1000·(1+.1ei)`；
+                // 未配置 `max_distance` 的旧技能（T2Shot）回退到 `SABULLET_RANGE`。
+                let range = if stats.max_distance > Fix64::ZERO {
+                    stats.max_distance * Fix64::from_num(ei_mult(false))
+                } else {
+                    Fix64::from_num(SABULLET_RANGE)
+                };
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     let base = towards(p.pos, target);
                     p.sweep = Some(crate::player::SweepState {
                         dir: base,
                         bullet_speed: stats.speed,
                         damage: stats.damage,
+                        range,
                         remaining: n,
                         cadence,
                         turn_step,
@@ -10769,6 +10777,39 @@ mod tests {
             "陨石爆炸应砸伤柱（098c oB 遍历全对象表）；当前 {:?}",
             world.obstacles.iter().map(|o| o.hp).collect::<Vec<_>>()
         );
+    }
+
+    /// S015A 流射（098c `Xc`）：速度 `$4B0*.03`=**1200/s**、射程 `1000*(1+.1ei)`、半径 22。
+    /// （旧值 speed 700 / 射程 360 系占位，与 098b/098c 均不符）
+    #[test]
+    fn s015a_stream_speed_and_range_match_098c() {
+        let mut world = World::new(2, 1307);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S015, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt); // 过前摇 + 发几发
+        }
+        let (mut max_speed, mut max_rem) = (0.0f64, 0.0f64);
+        let mut found = false;
+        for p in &world.projectiles {
+            if let ProjectileKind::Bullet { speed, remaining, .. } = &p.kind {
+                found = true;
+                max_speed = max_speed.max(speed.to_num::<f64>());
+                max_rem = max_rem.max(remaining.to_num::<f64>()); // 最新弹剩余最多
+            }
+        }
+        assert!(found, "流射应生成 Bullet");
+        assert!((max_speed - 1200.0).abs() < 1e-3, "流射速度应 1200/s（098c Xc），实际 {max_speed}");
+        // `remaining` 是递减后的剩余距离；最新弹剩余 ≈ 射程。旧占位射程 360 → 最大剩余 ≤360。
+        assert!(max_rem > 700.0, "流射射程应 ~1000（1+.1ei）（旧占位 360），最大剩余 {max_rem}");
     }
 
     /// S016 弹跳弹：两敌布阵——第一跳全额 6、跳向第二敌 ×0.8≈4.8；寿命耗尽后消失。

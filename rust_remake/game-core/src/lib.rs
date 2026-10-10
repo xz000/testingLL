@@ -74,4 +74,6 @@ pub fn version() -> &'static str {
 /// → 点燃总量 ×2.4、时长 `5*jn`。
 /// v46（2026-10-09）：新增 `BuffKind::FlatSpeed`（序列化 tag 19）——S020 自身 +50 / S021 队友 +60
 /// 改为 **平加移速**（098c `gR(unit,hR+X)`，此前用倍率 `Speed`，会随鞋子被放大）。
-pub const PROTOCOL_VERSION: u32 = 46;
+/// v47（2026-10-10）：`SweepState` 新增 `range`（每发射程）——S015A 流射对齐 098c `Xc`：
+/// 速度 700→**1200**、射程 360→**1000·(1+.1ei)**（旧值为占位，与 098b/098c 均不符）。
+pub const PROTOCOL_VERSION: u32 = 47;

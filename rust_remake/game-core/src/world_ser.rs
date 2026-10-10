@@ -419,6 +419,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
             wvec(o, s.dir);
             wfix(o, s.bullet_speed);
             wfix(o, s.damage);
+            wfix(o, s.range);
             wu32(o, s.remaining);
             wf64(o, s.cadence);
             wf64(o, s.turn_step);
@@ -569,6 +570,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
             dir: vecat(b, p)?,
             bullet_speed: fixat(b, p)?,
             damage: fixat(b, p)?,
+            range: fixat(b, p)?,
             remaining: u32at(b, p)?,
             cadence: f64::from_bits(u64at(b, p)?),
             turn_step: f64::from_bits(u64at(b, p)?),

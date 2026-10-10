@@ -1773,8 +1773,9 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S015 火焰喷射·流射（T 键形态 A，098c Ac/Xc）——每 0.08s 一发摆射；
-            // detailed：speed 700 / radius 22 / life 0.89s；单发 2.6+0.2L（口径 60% 击退近似 JI .6）。
+            // S015 火焰喷射·流射（T 键形态 A，098c `Ac`/`Xc`）——每 0.08s 一发摆射；
+            // **098c 代码**：speed `$4B0*.03`=1200/s、射程 `1000·(1+.1ei)`、半径 22、单发 `2.4+0.2·Xv`。
+            // （旧值 speed 700 / 射程 360 系占位，与 098b/098c 均不符。）
             // **098c（w3a_strings.txt Fire Spray，8 档）**：单发 2.6→4.0（+0.2/级）；
             //   missiles 6→13、cooldown 16→9（逐档表）、knockback 60%。
             // 连发数走 `extra_base/extra_delta`（SkillGrowth 通用槽，Sweep 原不使用）→ `stats.extra`。
@@ -1798,7 +1799,10 @@ impl DefTable {
                     cooldown_levels: Some(&[16.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0, 9.0]),
                     damage_base: 2.6,
                     damage_delta: 0.2,       // 098c: 2.6->4.0 (8 lv)
-                    speed_base: 700.0,
+                    // 098c `Xc`：速度 `$4B0*.03` = **1200/s**（与 098b 一致）；
+                    // 寿命 `(1+.1ei)/1.2` ⇒ 射程 = 1200·寿命 = **`1000·(1+.1ei)`**。
+                    speed_base: 1200.0,
+                    max_distance_base: 1000.0,
                     // 098c: missiles 6->13 (8 lv)
                     extra_base: 6.0,
                     extra_delta: 1.0,

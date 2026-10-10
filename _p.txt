@@ -1,0 +1,14 @@
+LEN=343189
+--- 4B0: 2
+'*3+2]=true\nset Av[Ib*3+3]=true\nset Xv[Ib]=zr[ai]\nset Q[Ib]=$4B0*.03*TX\nset S[Ib]=$4B0*.03*TY\nset TX='
+'+3]=true\nset Xv[Ib]=zr[ai]\nset Q[Ib]=$4B0*.03*TX\nset S[Ib]=$4B0*.03*TY\nset TX=TX-K[ni]\nset TY=TY-L[n'
+--- \.03\*TX: 4
+']=1\nset hv[Ib]=mi\nset Gv[Ib]=Pi\nset Jv[Ib]=pi\nset Q[Ib]=700*.03*TX/ Ar\nset S[Ib]=700*.03*TY/ Ar\nelse'
+']=1\nset hv[Ib]=Mi\nset Gv[Ib]=qi\nset Jv[Ib]=pi\nset Q[Ib]=900*.03*TX/ Ar\nset S[Ib]=900*.03*TY/ Ar\nendi'
+']=true\nset Av[Ib*3+3]=true\nset Xv[Ib]=zr[ai]\nset Q[Ib]=$4B0*.03*TX\nset S[Ib]=$4B0*.03*TY\nset TX=TX-K'
+'Cos(Ir)\nset TX=DB*Rc-Xc*Oc\nset TY=Xc*Rc+DB*Oc\nset Q[Ib]=800*.03*TX\nset S[Ib]=800*.03*TY\nset Rr=Rr+1\n'
+--- \.03\*Q\[: 0
+--- 2\.4\+\.2\*: 1
+'akes nothing returns boolean\nif TR(Xr,45)then\ncall jI(Er,Xr,2.4+.2*Xv[Er],.6)\nendif\ncall XA(Er)\nset '
+--- 2\.6\+\.4\*: 1
+'akes nothing returns boolean\nif TR(Xr,45)then\ncall jI(Er,Xr,2.6+.4*Xv[Er],.65)\nendif\ncall XA(Er)\nset'
