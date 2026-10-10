@@ -3940,6 +3940,27 @@ impl World {
         for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
             // 陨石 `oB`：伤害 `Zb`（含距离），但击退 `mI(...,.75)` 是**固定系数** → `KbAttn::Fixed`。
             self.explode_at(center, owner, radius, damage, Fix64::from_num(100.0) * damage * kb_ji, true, DeniedMode::Off, DmgFalloff::Mul(denom), KbAttn::Fixed);
+            // 098c `oB` 遍历的是**小写 `kv`（全对象表）**且条件 `nv==1 or Dv or fv` ⇒ **可摧毁柱与飞行物一样吃伤**
+            // （`mI`→`hI` 对 `Dv` 转 `FI`）。同一 `Zb` 距离衰减；柱归零则破。
+            let mut oi = 0;
+            while oi < self.obstacles.len() {
+                let dist = (self.obstacles[oi].pos - center).length();
+                if dist <= radius {
+                    let frac = (Fix64::ONE - dist / denom).max(Fix64::ZERO);
+                    let dmg = (damage * frac).to_num::<f64>().ceil() as u32;
+                    if dmg > 0 {
+                        let o = &mut self.obstacles[oi];
+                        o.hp = o.hp.saturating_sub(dmg);
+                        if o.hp == 0 {
+                            let ppos = o.pos;
+                            self.combat_events.push(CombatEvent::PillarBreak { pos: ppos });
+                            self.obstacles.remove(oi);
+                            continue;
+                        }
+                    }
+                }
+                oi += 1;
+            }
         }
         // 4d) 098b 命中点燃场（S000 火球 xc）：命中处半径 75（spec aoe_radius_obj）、
         // 时长 2.5s（consolidated：2.5×jn），总量均摊为 DPS。复用 Star 的静态区域伤害。
@@ -10712,6 +10733,34 @@ mod tests {
         }
         assert!(world.players[1].hp < hp1, "爆炸应波及 8m 处敌人");
         assert!(world.players[2].hp < hp2, "爆炸半径 210（≈3.5m）应波及 10m 处敌人");
+    }
+
+    /// S008 陨石 `oB` 遍历的是**小写 `kv`（全对象表）**（`nv==1 or Dv or fv`）⇒ **也砸可摧毁柱**
+    /// （`mI`→`hI` 对 `Dv` 转 `FI`）。此前我方 `explode_at` 只扫玩家 → 砸不到柱。
+    #[test]
+    fn s008_meteor_blast_damages_pillar() {
+        let mut world = World::new(2, 1306);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(20.0), Fix64::ZERO); // 远离爆炸（无干扰）
+        world.players[1].move_target = None;
+        // 柱子在落点（含半径 40），血量充足（L1 伤害 12+2=14，不破）
+        world.obstacles.push(Obstacle { id: 0, pos: Vec2::new(d60(9.0), Fix64::ZERO), radius: Fix64::from_num(40.0), hp: 400 });
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S008, Some(Vec2::new(d60(9.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            world.obstacles.iter().any(|o| o.hp < 400),
+            "陨石爆炸应砸伤柱（098c oB 遍历全对象表）；当前 {:?}",
+            world.obstacles.iter().map(|o| o.hp).collect::<Vec<_>>()
+        );
     }
 
     /// S016 弹跳弹：两敌布阵——第一跳全额 6、跳向第二敌 ×0.8≈4.8；寿命耗尽后消失。

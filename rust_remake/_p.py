@@ -1,6 +1,6 @@
 import io, re
 s = io.open('../098c/out/war3map.j', encoding='utf-8', errors='replace').read()
-for name in ['rC', 'eC', 'oC', 'xC', 'yc', 'wc', 'CC', 'cC', 'BC']:
+for name in ['oB', 'FI']:
     m = re.search(r'\nfunction ' + name + r' takes([^\n]*)\n', s)
     if not m:
         print('### NOTFOUND', name); continue
