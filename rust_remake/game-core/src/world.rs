@@ -1034,12 +1034,13 @@ impl World {
                 // MECHANICS.md「To[0] 随回合数成长」是文档误差；「拖延越久越痛」实际来自**缩圈导致暴露更多**，
                 // 已由 shrink_arena 实现。故此处不用 round_scale，固定 1.0。
                 let round_scale = 1.0;
-                let net = p.soak_boost(
-                    Fix64::from_num(OUT_HURT * lava_mult * round_scale)
-                        * self.lava_damage_mult
-                        * dt,
-                );
+                let lava_to = Fix64::from_num(OUT_HURT * lava_mult * round_scale)
+                    * self.lava_damage_mult
+                    * dt;
+                let net = p.soak_boost(lava_to);
                 p.hp = (p.hp - net).max(Fix64::ZERO);
+                // 098c `nA`：岩浆伤同时 `dX(id,To[id])` → **张力 += 岩浆量**（挨打回魔）。
+                p.mana += lava_to.to_num::<f64>();
                 // 098c `nA`：岩浆伤把**一半**记到「最后伤害我的人」名下（`Jn[受][An] += To/2`），
                 // 用于助攻统计。注意它**不进** `Rn`（本轮伤害），故不影响化身加冕积分 —— 见上面的
                 // 伤害结算处累加。这里先收集，循环外统一记账（避免与 players 的借用冲突）。
@@ -1825,6 +1826,9 @@ impl World {
                     if a.alive {
                         let heal = dealt_f * lifesteal + vi_steal;
                         a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
+                        // 098c `hI`：吸血走 `PX(HI,HX*.08*vi)`，内含 `DX(id,qX/2)`
+                        // ⇒ 吸血同时**降自身张力**（治疗副作用，与 `PX` 一致）。
+                        a.mana = (a.mana - heal / 2.0).max(0.0);
                     }
                 }
             }
@@ -2271,6 +2275,9 @@ impl World {
                                     {
                                         let healed = (o.max_hp - o.hp).min(*gx);
                                         o.hp += healed;
+                                        // 098c `ZB`→`PX(施法者,gv)`→`DX(gv/2)`：按**名义** `gv/2` 扣张力
+                                        // （非 clamp 后的 `healed`）。
+                                        o.mana = (o.mana - gx.to_num::<f64>() / 2.0).max(0.0);
                                         pr.alive = false;
                                     }
                                 }
@@ -4350,6 +4357,8 @@ impl World {
                     if let Some(a) = self.players.get_mut(owner as usize) {
                         if a.alive {
                             a.hp = (a.hp + Fix64::from_num(heal)).min(a.max_hp);
+                            // 098c `PX` 内含 `DX(heal/2)`：AoE 吸血同样降张力。
+                            a.mana = (a.mana - heal / 2.0).max(0.0);
                         }
                     }
                 }
@@ -5180,6 +5189,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             // S008B 岩浆撞柱固定 `10+2L`（098c `VB` 柱分支）；其余弹体 = `gx`。
                             pillar_dmg: if id == crate::skill::SkillId::S008 && alt {
                                 Fix64::from_num(10.0 + 2.0 * caster_level as f64)
+                            } else if id == crate::skill::SkillId::S009 && !alt {
+                                // 098c `GB` A 父弹 `hv=Wi=FB`：撞柱 `mI(nr,Vr,3,1.4)` → 固定 3 伤 + 销毁。
+                                Fix64::from_num(3.0)
+                            } else if id == crate::skill::SkillId::S009 && alt {
+                                // 098c `GB` B 父弹**无 `hv`**：撞柱只由柱的 `IN`→`WA` 反射，**不伤柱**。
+                                Fix64::ZERO
                             } else {
                                 gx
                             },
@@ -5207,9 +5222,11 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             // 逐弹碰撞掩码（098c `Av`）：S009 A 父弹 = 单位+弹体（**不撞障碍**，穿柱）；
                             // S009 B 父弹 = 均不碰撞（纯发射器）；其余 = 全开。
                             col_mask: if id == crate::skill::SkillId::S009 && !alt {
-                                W098B_COL_UNIT | W098B_COL_MISSILE
+                                // 098c `GB` A 父弹：顶部 `Av[+3]=true` + else 支 `Av[+1/+2]=true` ⇒ **三态全开**。
+                                W098B_COL_ALL
                             } else if id == crate::skill::SkillId::S009 && alt {
-                                0
+                                // 098c `GB` B 父弹：仅顶部 `Av[+3]=true`（**只与障碍碰**，`xv=1` 反弹）。
+                                W098B_COL_OBSTACLE
                             } else if on_hit == crate::skill::W098bOnHit::ChainPull
                                 || on_hit == crate::skill::W098bOnHit::RedChain
                             {
@@ -9144,6 +9161,47 @@ mod tests {
         assert!(world.players[0].pos.x < d60(5.0), "玩家0 应被撞向 -x");
     }
 
+    /// 098c `PX→DX`：**吸血会降低施法者自身张力**（`hI` 的 `PX(HI,HX*.08*vi)` 内含 `DX(heal/2)`）。
+    #[test]
+    fn lifesteal_reduces_attacker_tension() {
+        let mut world = World::new(2, 9730);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].set_items(&[crate::item::ItemId::FireMask]); // 24% 吸血
+        world.players[0].mana = 50.0; // 已知起点
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S000, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..60 {
+            world.step(none.clone(), dt);
+        }
+        assert!(world.players[0].mana < 50.0, "吸血应降攻方张力（PX→DX），实际 {}", world.players[0].mana);
+    }
+
+    /// 098c `nA`：岩浆伤 `dX(id,To[id])` → 受岩浆伤同时**涨张力**（挨打回魔）。
+    #[test]
+    fn lava_damage_gains_tension() {
+        let mut world = World::new(1, 9731);
+        world.obstacles.clear();
+        world.sandbox = false;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::new(world.arena_radius + Fix64::from_num(200.0), Fix64::ZERO);
+        world.players[0].move_target = None;
+        world.players[0].mana = 0.0;
+        for _ in 0..60 {
+            world.step(vec![PlayerInput::default()], dt);
+        }
+        assert!(world.players[0].mana > 0.0, "岩浆伤应涨张力，实际 {}", world.players[0].mana);
+    }
+
     /// 098c 魔法张力（D9 批次1）：挨打回魔（受多少伤加多少魔）+ 击退随魔法放大。
     #[test]
     fn mana_tension_gain_and_knockback_scaling() {
@@ -12281,9 +12339,11 @@ mod tests {
         assert!(max_bullets2 >= 3, "区域形态应持续撒出侧弹（主弹+侧弹），窗口内峰值 {max_bullets2}");
     }
 
-    /// S009 A 父弹 `Av[+3]=false` → **穿柱**（098c `GB` A 只设 `Av[+1/+2]`）；到点生成角色 2 的碎片。
+    /// S009 A 父弹（098c `GB`）：顶部 `Av[+3]=true` + else 支 `Av[+1/+2]=true` ⇒ **三态全开**，
+    /// 即**会撞柱**：`hv=FB` 对柱 `mI(nr,Vr,3,1.4)` → 柱 −3 且父弹销毁（无碎片）。
+    /// （此前台账/实现误作“A 穿柱”，系对 `GB` 顶部 `Av[+3]=true` 的漏读。）
     #[test]
-    fn s009a_parent_passes_through_pillar() {
+    fn s009a_parent_collides_with_pillar() {
         let mut world = World::new(2, 0x9001);
         world.obstacles.clear();
         world.obstacles.push(Obstacle::new(Vec2::new(d60(3.0), Fix64::ZERO), 24.0)); // 180
@@ -12293,6 +12353,7 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO);
         world.players[1].move_target = None;
         world.players[0].caster = crate::skill::Caster::new();
+        let hp0 = world.obstacles[0].hp;
         world.step(
             vec![
                 PlayerInput { cast: Some((SkillId::S009, Some(Vec2::new(d60(6.0), Fix64::ZERO)))), ..Default::default() },
@@ -12308,7 +12369,11 @@ mod tests {
                 seen_fragment = true;
             }
         }
-        assert!(seen_fragment, "A 父弹应穿柱到达并生成碎片（若被柱挡下则不会出现碎片）");
+        assert!(!seen_fragment, "A 父弹应撞柱被销毁（不出碎片）");
+        assert!(
+            world.obstacles.first().map(|o| o.hp < hp0).unwrap_or(true),
+            "A 父弹撞柱应造成 3 伤害（098c FB `mI(...,3,1.4)`）"
+        );
     }
 
     /// S009 小子弹撞柱（`Av[+3]`+`xv=-1`，`BB` 只对 `nv==1` 伤害）→ **被销毁、不伤柱**。
