@@ -5232,6 +5232,17 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             {
                                 // S019 链弹 `uc`/`Uc`：只设 `Av[+1/+3]`（术士+障碍）——**无 `Av[+2]`** → 不与其他弹体互撞。
                                 W098B_COL_UNIT | W098B_COL_OBSTACLE
+                            } else if proj == crate::skill::W098bProjKind::Boomerang {
+                                // S004 回旋镖（098c `Ub`）：`Av[+1]=true`、`Av[+3]=true`、**无 `Av[+2]`**
+                                // → 不与其他弹体互撞（旧默认 ALL 会撞弹体）。
+                                W098B_COL_UNIT | W098B_COL_OBSTACLE
+                            } else if id == crate::skill::SkillId::S013 && !alt {
+                                // S013 A 换位（098c `MB`）：`Av[+1]=true Av[+2]=false Av[+3]=true`。
+                                W098B_COL_UNIT | W098B_COL_OBSTACLE
+                            } else if id == crate::skill::SkillId::S013 && alt {
+                                // S013 B 搬运（098c `pB`）：`Av[+1]=false Av[+2]=true Av[+3]=true`
+                                // → **不命中单位**（“搬运”靠到点 `Gv` 传送施法者）。
+                                W098B_COL_MISSILE | W098B_COL_OBSTACLE
                             } else {
                                 W098B_COL_ALL
                             },
