@@ -2336,12 +2336,12 @@ impl DefTable {
                     on_hit: W098bOnHit::Weaken,
                 },
                 growth: SkillGrowth {
-                    // 098c 校准（w3a_strings.txt Weaken/oc）：伤害 5→11、持续 7.5→18、CD 22→18.5（均 8 级）。
-                    // max_level=8，delta 取原斜率：伤害 0.8571/级、持续 1.5/级、CD 0.5/级。
+                    // 098c `oc`：伤害 `ZO=4+Xv` = **4+L → 5…12**（tooltip 的 5→11 已过时，按代码）；
+                    // 持续 `(6+1.5Xv)` = 7.5→18；CD 22→18.5（均 8 级）。
                     cooldown_base: 22.0,
                     cooldown_delta: -0.5,    // 098c: 22->18.5 (8 lv)
                     damage_base: 5.0,
-                    damage_delta: 0.8571,    // 098c: 5->11 (8 lv)
+                    damage_delta: 1.0,       // 098c 代码: 4+L → L1=5 … L8=12
                     duration_base: 7.5,
                     duration_delta: 1.5,     // 098c: 7.5->18 (8 lv)
                     ..DEF_ZERO
@@ -3872,6 +3872,9 @@ mod tests {
         assert!(matches!(d.effect, SkillEffect::Warlock098b { on_hit: W098bOnHit::DrainSlow, .. }));
         let alt14 = DefTable::def_alt(SkillId::S014).expect("S014 应有 B 形态");
         assert_eq!(alt14.name, "汲取·削弱");
+        // 098c `vc`/`oc`：伤害 A = `5+L`（6…13）、B = `4+L`（5…12）。
+        assert!(near(d.stats_at(1).damage, 6.0, 1e-3) && near(d.stats_at(8).damage, 13.0, 1e-3), "S014A 伤害 5+L");
+        assert!(near(alt14.stats_at(1).damage, 5.0, 1e-3) && near(alt14.stats_at(8).damage, 12.0, 1e-3), "S014B 伤害 4+L");
         assert!(near(d.stats_at(1).cooldown, 22.0, 1e-3));
         assert!(near(d.stats_at(8).cooldown, 16.5, 1e-1), "L8 CD should be ~16.5, got {:?}", d.stats_at(8).cooldown);
         match d.effect {
