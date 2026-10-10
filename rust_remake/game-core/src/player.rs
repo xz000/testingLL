@@ -154,6 +154,10 @@ pub enum BuffKind {
     /// `if iV[$D] then call LC(ri,ii)` 开启 `4*jn` 秒窗口；窗口内发射的火球（S000）改走 `Eb`
     /// → 点燃总量 ×2.4、时长 `5*jn`（否则走 `ab`：基线总量、2.5s）。纯时间窗标记、非减益。
     FireStaffWindow,
+    /// **平加移速窗口**（098c `gR(unit, hR(unit)+X)` + `LO(YB,…)` 归还）：如 S020 自身 +50、
+    /// S021 队友 +60。与 [`BuffKind::Speed`]（**倍率**）与 [`BuffKind::SpeedSteal`]（平面但有符号、
+    /// 可叠加语义）区分——此变体直接平加到 [`Player::base_speed`] 的 `flat` 项（不受倍率/物品缩放）。
+    FlatSpeed(f64),
 }
 
 impl Buff {
@@ -687,6 +691,16 @@ impl Player {
                 _ => 0.0,
             })
             .sum();
+        // 平加移速（098c `hR+X`）：S020 自身 +50 / S021 队友 +60——与倍率项分离，不受物品/倍率缩放。
+        let flat_speed: f64 = self
+            .buffs
+            .iter()
+            .filter(|b| b.remaining > Fix64::ZERO)
+            .map(|b| match b.kind {
+                BuffKind::FlatSpeed(v) => v,
+                _ => 0.0,
+            })
+            .sum();
         // S019 红链命中队友/柱子：施法者固定 +100 移速（098c `sc`，`mr`=100）。与 `SpeedSteal` 独立相加。
         let chain_speed: f64 = self
             .buffs
@@ -697,7 +711,7 @@ impl Player {
                 _ => 0.0,
             })
             .sum();
-        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat + steal + chain_speed)) * Fix64::from_num(mult)
+        (Fix64::from_num(BASE_SPEED) + Fix64::from_num(flat + steal + chain_speed + flat_speed)) * Fix64::from_num(mult)
     }
 
     /// 测试用：当前基础移速（含物品平加）。
@@ -1090,6 +1104,18 @@ mod tests {
         // 强制位移 1s：10 单位/秒 × 1s = 10 单位；到期后无自走目标则停。
         assert!(!p.in_control());
         assert!(near(p.pos.x, 10.0, 0.5));
+    }
+
+    #[test]
+    fn flat_speed_is_additive_and_not_scaled_by_items() {
+        // 098c `gR(unit, hR(unit)+X)` 是**平加**移速；`Speed` 变体是倍率，会被鞋子放大 → 用 `FlatSpeed`。
+        let mut p = Player::new(0, Vec2::ZERO, Fix64::ONE);
+        let s0 = p.base_speed_for_test().to_num::<f64>();
+        p.add_buff(BuffKind::FlatSpeed(60.0), 4.0);
+        assert!(near(p.base_speed_for_test(), s0 + 60.0, 1e-3), "平加 +60");
+        // 带最高级鞋（Boots3 +40）仍应恰好多 +60（与 `Speed` 倍率式不同）。
+        p.set_items(&[crate::item::ItemId::Boots3]);
+        assert!(near(p.base_speed_for_test(), s0 + 40.0 + 60.0, 1e-3), "平加不受物品倍率缩放");
     }
 
     #[test]

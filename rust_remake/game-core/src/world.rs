@@ -5250,8 +5250,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         world.explode_at(ppos, idx, r, stage_gx, Fix64::from_num(100.0) * stage_gx * kb_ji, true, DeniedMode::Unconditional, DmgFalloff::Sub(falloff_div), KbAttn::Fixed);
                         world.players[idx as usize].catastrophe_stage = (stage + 1) % 3;
                         // （施法者自伤在下方共用 FX 块统一处理：S020 固定 20、S001/S021 用 `gx`。）
+                        // 098c `qC`：`gR(ii, hR(ii)+50)` → **平加** +50 移速（非倍率）；我方 `FlatSpeed`。
+                        // （098c 是 staged：+50 持续到 `pC`（6*jn 后）归还；我方简化为 4s。见台账。）
                         let p = &mut world.players[idx as usize];
-                        p.add_buff(BuffKind::Speed(1.0 + 50.0 / 210.0), 4.0);
+                        p.add_buff(BuffKind::FlatSpeed(50.0), 4.0);
                     }
                     crate::skill::W098bNovaKind::Devotion => {
                         // S021 虔诚（098c QC，国王模式 F 技能）：伤敌同天罚（半径 250、伤害满额、击退 ×(1-d/1000)）；500 内**队友**
@@ -5259,6 +5261,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // 098c `QC`：伤害 `HX=cX` 不衰减，`lI=1-cO/$3E8` 只作用于击退（同 `mC`）。
                         world.explode_at(ppos, idx, radius, gx, Fix64::from_num(100.0) * gx * kb_ji, true, DeniedMode::Conditional, DmgFalloff::None, KbAttn::Mul(Fix64::from_num(1000.0)));
                         let caster_team = world.players[idx as usize].team;
+                        let caster_jn = world.players[idx as usize].jn();
                         let mut healed_any = false;
                         let allies: Vec<u32> = world
                             .players
@@ -5274,7 +5277,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 let heal = gx * Fix64::from_num(0.5);
                                 p.hp = (p.hp + heal).min(p.max_hp);
                                 p.mana = (p.mana - heal.to_num::<f64>()).max(0.0);
-                                p.add_buff(BuffKind::Speed(1.0 + 60.0 / 210.0), 4.0);
+                                // 098c `QC`：`gR(gX, hR(gX)+60)`，归还时长 `4*jn[友]*jn[施法者]`；
+                                // 我方 `FlatSpeed(+60)`（平加）；`add_buff` 内部再 ×`jn[友]`，故传入 `4*jn[施法者]`。
+                                p.add_buff(BuffKind::FlatSpeed(60.0), 4.0 * caster_jn);
                                 healed_any = true;
                             }
                         }
@@ -9996,7 +10001,7 @@ mod tests {
         }
         // 队友：+5（cX/2=10/2）回血 + 60 移速 buff
         assert!(near(world.players[1].hp, 45.0, 0.1), "队友应回血 5（40→45），实际 {:?}", world.players[1].hp);
-        assert!(world.players[1].has_buff(BuffKind::Speed(1.0 + 60.0 / 210.0)) || world.players[1].buffs.iter().any(|b| b.remaining > Fix64::ZERO && matches!(b.kind, BuffKind::Speed(_))), "队友应有移速 buff");
+        assert!(world.players[1].has_buff(BuffKind::FlatSpeed(60.0)), "队友应有 +60 平加移速 buff（098c gR(hR+60)）");
         // 自己：只有自伤 10（50→40），不自奶
         assert!(near(world.players[0].hp, 40.0, 0.1), "自己不应被治疗（40），实际 {:?}", world.players[0].hp);
         // 敌人受伤

@@ -218,6 +218,10 @@ fn encode_buff(o: &mut Vec<u8>, b: &Buff) {
         BuffKind::Mirror => wu8(o, 13),
         BuffKind::Haste => wu8(o, 14),
         BuffKind::FireStaffWindow => wu8(o, 18),
+        BuffKind::FlatSpeed(v) => {
+            wu8(o, 19);
+            wf64(o, v);
+        }
     }
     wfix(o, b.remaining);
 }
@@ -241,6 +245,7 @@ fn decode_buff(b: &[u8], p: &mut usize) -> Option<Buff> {
         13 => BuffKind::Mirror,
         14 => BuffKind::Haste,
         18 => BuffKind::FireStaffWindow,
+        19 => BuffKind::FlatSpeed(f64::from_bits(u64at(b, p)?)),
         _ => return None,
     };
     let remaining = fixat(b, p)?;

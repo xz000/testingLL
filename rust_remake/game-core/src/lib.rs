@@ -72,4 +72,6 @@ pub fn version() -> &'static str {
 /// v45（2026-10-09）：火法杖 `I00D` 7251 窗口——新增 `BuffKind::FireStaffWindow`（序列化 tag 18）：
 /// 施放 nova（S001/S020/S021，098c `LC`）开 `4*jn` 秒窗口，期内发射的火球改走 `Eb`
 /// → 点燃总量 ×2.4、时长 `5*jn`。
-pub const PROTOCOL_VERSION: u32 = 45;
+/// v46（2026-10-09）：新增 `BuffKind::FlatSpeed`（序列化 tag 19）——S020 自身 +50 / S021 队友 +60
+/// 改为 **平加移速**（098c `gR(unit,hR+X)`，此前用倍率 `Speed`，会随鞋子被放大）。
+pub const PROTOCOL_VERSION: u32 = 46;
