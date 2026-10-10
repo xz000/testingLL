@@ -595,6 +595,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **三阶段** | `Tr` = 阶段：`Tr==0` → `cX=**11**`；`Tr==1` → `**12**`；else → `**14**`（各配不同爆炸特效 DarkPortal / epicexplosion1 / epicexplosion2） | 我方测试 `s020_catastrophe_stages_escalate_and_cycle` ✓；**数值 11/12/14 待对账** | 📋 |
 | 加成/自伤 | `if Zr>0 → cX+=Zr`（+等级）；`call FX(ii,**20**)`（**固定自伤 20**，不是 cX！）；`call dX(ri,$A)`（**张力 +10**） | ✅ 已修（`01f3731`）：共用 FX 自伤块对 `Catastrophe` 取**固定 20**（S001/S021 仍用 `gx`）+ 张力 +10；测试 `s020_catastrophe_caster_self_damage_and_tension` | ✅ |
 | **命中** | 只扫 `Kv`（术士）异队：`Tr<=1` 时 **半径 300**、伤害 `cX - d/**60**`；`Tr==2` 时 **半径 400**、伤害 `cX - d/**40**`；均 `mI(...,1)`（击退 100%）；另有与天罚同构的 **Denied 断链** | 我方测试 ✓ | ✅/📋 |
+| 自身加速 | `qC`：`gR(ii,hR(ii)+50)`（**平加** +50；`pC` 定时 6*jn 后 `−50`/`−100` 归还） | ✅ 已改（2026-10-09）：`FlatSpeed(50)`（平加，不再随鞋放大）；时长我方简化 4s（098c = staged 到 `pC`） | ✅（时长近似） |
 | 物品/地形 | 火法杖 `LC(ri,ii)`；危险地形 `kC(ri,ii)` | — | 📋 |
 
 ### S021 虔诚（`QC` 15878）✅ 已普查（伤害衰减口径同 S001，2026-09-27 修正实装）
@@ -602,7 +603,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
 | 与 S001 同构的部分 | `cX=**10**(+Zr)`；`FX(ii,cX)` 自伤（危险地形则改走 `kC`）；物品 12 → `vi*=2`；对**异队** 250 半径 `mI(ii,gX,cX,1-d/1000)`（伤害满额、`1-d/1000` 仅作用于击退，同 S001）；同构的 **Denied 断链** | 我方 `s021_devotion_*` ✓；伤害满额已修（同 S001） | ✅ |
-| **对队友** | `cn同队 and gX!=ii` 且 `cO<=**500**` → `gR(队友, hR+**60**)`（+60 移速，`LO(YB,4*jn)` 后归还）+ `BX(Vv[gX], cX***0.5**)`（**治疗 cX/2**）+ `DX(Vv[gX], cX*0.5)`（**扣队友 cX/2 蓝**——按 `DX`(2333) 定义确为扣蓝，虽看着奇怪，以代码为准）+ HolyBolt 特效 | 我方：治疗同队 ✓（测试 `s021_devotion_heals_teammates_in_team_mode`）；+60 移速与扣蓝待对账 | 📋 |
+| **对队友** | `cn同队 and gX!=ii` 且 `cO<=500` → `gR(队友, hR+60)`（**平加** +60，`LO(YB,4*jn[友]*jn[施者])` 后归还）+ `BX(Vv[gX], cX*0.5)`（**治疗 cX/2**）+ `DX(Vv[gX], cX*0.5)`（**扣张力 cX/2**）+ HolyBolt 特效 | ✅ 已实现（2026-10-09）：治疗 cX/2 + `DX(=cX/2)` + `FlatSpeed(60)`（平加，时长 `4*jn[友]*jn[施者]`）；测试 `s021_devotion_heals_teammates_in_team_mode` | ✅ |
 
 > 共享工具：`FX`(2359) = 自伤（HP `Fn` 直扣 + 红字）；`BX`(2304) = **治Í`Fn += cX`（夹到 [0.5,max]）；`dX`(2319)=+mana、`DX`(2333)=−mana；`aR`(4711)=断链；`kC`(15386)=危险地形变体；`LC`(15459)=火法杖分支；`UI`(7338)=+mana 浮字。
 
@@ -808,6 +809,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | S015B | 簇射步长 11°→5.5°（总张角 22°） | (本批) | `Ac`（`Xr=5.5°*Er`） |
 | S017A | 命中无伤害 + 时长 `4+.25L` + `xi>0` AoE 禁锢 | (本批) | `eC`/`yc` |
 | S008A | 陨石落地砸可摧毁柱 | (本批) | `oB`（全对象表 `kv`）+ `hI`→`FI` |
+| S020/S021 | 自/队友移速改**平加** `+50/+60`（`BuffKind::FlatSpeed`） | (本批) | `qC`/`QC`：`gR(unit,hR+X)` |
 | S002 | 敌弹拦截 / 己方火球引爆 / `xi` AoE | `ce87283` | `Bb`（`sI`/`pI`，`pe=$A0=160`） |
 
 > 其中 S016 额外比对过 098b 原文（`098c/out` 与 `ce/ce_old98b`），确认两版一致。
@@ -820,5 +822,5 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 ### C. 结论
 
 - **今日所有技能/机制改动 100% 以 098c 为准**；不存在 098b 依据的实现。
-- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`，火法杖 7251 窗口）。
-- 说明：S018B 数值/减速/时长/`PX→DX` 不改快照（`BuffKind` 无变更），故不升协议。
+- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`，火法杖 7251 窗口）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）。
+- 说明：S018B 数值/减速/时长/`PX→DX`、S015B 步长、S017A 伤害/时长/AoE、S008A 砸柱、S014B 伤害 均不改快照（`BuffKind` 无变更），故不升协议。
