@@ -1883,7 +1883,8 @@ impl DefTable {
                 needs_point: false,
                 effect: W098bUtility {
                     kind: W098bUtilKind::Haste,
-                    speed: Fix64::from_num(1.0 + 35.0 / 210.0),
+                    // 098c `KR`：`gR(ii, hR(ii)+35)` → **平加** +35 移速（非倍率）。此字段承载平加量。
+                    speed: Fix64::from_num(35.0),
                     max_distance: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
@@ -1908,7 +1909,8 @@ impl DefTable {
                 needs_point: false,
                 effect: W098bUtility {
                     kind: W098bUtilKind::Charge,
-                    speed: Fix64::from_num(1.0 + 200.0 / 210.0),
+                    // 098c `RB`：`gR(ii,hR(ii)+Dr)`，`Dr=$C8=200` → **平加** +200。
+                    speed: Fix64::from_num(200.0),
                     max_distance: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
@@ -2299,7 +2301,8 @@ impl DefTable {
                 needs_point: false,
                 effect: W098bUtility {
                     kind: W098bUtilKind::Windwalk,
-                    speed: Fix64::from_num(1.0 + 100.0 / 210.0),
+                    // 098c `IB`：`gR(ii,hR(ii)+Dr/2)`，`Dr=$C8=200` → **平加** +100。
+                    speed: Fix64::from_num(100.0),
                     max_distance: Fix64::ZERO,
                 },
                 growth: SkillGrowth {
@@ -3560,13 +3563,13 @@ mod tests {
         assert!(near(d.stats_at(1).cooldown, 22.0, 1e-3));
         assert!(near(d.stats_at(8).cooldown, 12.0, 1e-2), "L8 CD 应 12，实际 {:?}", d.stats_at(8).cooldown);
         assert!(near(d.stats_at(1).duration, 3.6, 1e-3) && near(d.stats_at(8).duration, 3.6, 1e-3));
-        // S007 急行：CD 21→13（20 级）；dur 6.2+0.8L → L1 7.0；移速乘数 1+35/210。
+        // S007 急行：CD 21 恒定；dur 6.2+0.8L → L1 7.0；**平加** +35 移速（098c `gR(hR+35)`）。
         let d = DefTable::def(SkillId::S007);
         assert_eq!(d.name, "急行");
         assert!(near(d.stats_at(1).duration, 7.0, 1e-3));
         match d.effect {
             SkillEffect::W098bUtility { kind: W098bUtilKind::Haste, speed, .. } => {
-                assert!((speed.to_num::<f64>() - (1.0 + 35.0 / 210.0)).abs() < 1e-3, "+35 移速换算乘数");
+                assert!(near(speed, 35.0, 1e-3), "S007 应为平加 +35（今承载平加量）");
             }
             ref e => panic!("S007 effect 错：{e:?}"),
         }
@@ -3578,7 +3581,7 @@ mod tests {
         assert!(near(d.stats_at(1).duration, 3.1, 1e-3));
         match d.effect {
             SkillEffect::W098bUtility { kind: W098bUtilKind::Charge, speed, .. } => {
-                assert!((speed.to_num::<f64>() - (1.0 + 200.0 / 210.0)).abs() < 1e-3);
+                assert!(near(speed, 200.0, 1e-3), "S010A 平加 +200（098c RB: hR+Dr, Dr=200）");
             }
             ref e => panic!("S010 effect err: {e:?}"),
         }

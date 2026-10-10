@@ -5347,7 +5347,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         world.sever_links_on(idx, false);
                         let lv = caster_level as f64;
                         if let Some(p) = world.players.get_mut(idx as usize) {
-                            p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                            // 098c `KR`：`gR(ii,hR(ii)+35)` → **平加** +35（非倍率，不随鞋子缩放）。
+                            p.add_buff(BuffKind::FlatSpeed(speed.to_num::<f64>()), dur);
                             p.add_buff(BuffKind::Haste, dur);
                             p.s007_absorb = Fix64::from_num(3.0 + 2.0 * lv);
                             p.s007_bonus = Fix64::ZERO;
@@ -5357,7 +5358,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // 疾风步·隐身（B 形态，098c IB）：隐身 + 较慢移速（无接触吸血，对齐 098c）。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
-                            p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                            // 098c `IB`：`gR(ii,hR(ii)+Dr/2)` → 平加 +100（非倍率）。
+                            p.add_buff(BuffKind::FlatSpeed(speed.to_num::<f64>()), dur);
                             p.windwalk_state = Fix64::from_num(dur);
                             // 098c `IB`：进入风步 B 形态即获得一次招架就绪（`gr=true`）。
                             p.parry_ready = true;
@@ -5389,7 +5391,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         // 098c RB 两形态都挂 'Agho' 隐身（war3map_pretty.j:5781-5804），A 形态（冲锋）同样隐身。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
-                            p.add_buff(BuffKind::Speed(speed.to_num::<f64>()), dur);
+                            // 098c `RB`：`gR(ii,hR(ii)+Dr)`，`Dr=$C8=200` → 平加 +200（非倍率）。
+                            p.add_buff(BuffKind::FlatSpeed(speed.to_num::<f64>()), dur);
                             p.windwalk_state = Fix64::from_num(dur);
                             // 098c `RB`：进入冲锋 A 形态（`fr=true`）。
                             p.charging = true;
