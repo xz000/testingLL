@@ -733,7 +733,7 @@ fn encode_projectile(o: &mut Vec<u8>, pr: &Projectile) {
             wfix(o, *lateral);
             wvec(o, *forward_dir);
             wfix(o, *out_dist);
-            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::RedChain => 7, crate::skill::W098bOnHit::Silence => 8, crate::skill::W098bOnHit::SwapTarget => 9, crate::skill::W098bOnHit::CarrySelf => 10, crate::skill::W098bOnHit::DrainOrb => 11, crate::skill::W098bOnHit::SoulReturn => 12, crate::skill::W098bOnHit::StarField => 13 });
+            wu8(o, match on_hit { crate::skill::W098bOnHit::Ki => 0, crate::skill::W098bOnHit::Cripple => 1, crate::skill::W098bOnHit::ChainPull => 2, crate::skill::W098bOnHit::Scorched => 3, crate::skill::W098bOnHit::DrainSlow => 4, crate::skill::W098bOnHit::Weaken => 5, crate::skill::W098bOnHit::Recharge => 6, crate::skill::W098bOnHit::RedChain => 7, crate::skill::W098bOnHit::Silence => 8, crate::skill::W098bOnHit::SwapTarget => 9, crate::skill::W098bOnHit::CarrySelf => 10, crate::skill::W098bOnHit::DrainOrb => 11, crate::skill::W098bOnHit::SoulReturn => 12, crate::skill::W098bOnHit::StarField => 13, crate::skill::W098bOnHit::TwinSilence => 14 });
             wfix(o, *debuff_dur);
             wu8(o, *burst);
             wfix(o, *emit_cooldown);
@@ -857,6 +857,7 @@ fn decode_projectile(b: &[u8], p: &mut usize) -> Option<Projectile> {
         11 => crate::skill::W098bOnHit::DrainOrb,
         12 => crate::skill::W098bOnHit::SoulReturn,
         13 => crate::skill::W098bOnHit::StarField,
+        14 => crate::skill::W098bOnHit::TwinSilence,
                 _ => return None,
             };
             let debuff_dur = fixat(b, p)?;

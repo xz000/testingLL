@@ -76,4 +76,6 @@ pub fn version() -> &'static str {
 /// 改为 **平加移速**（098c `gR(unit,hR+X)`，此前用倍率 `Speed`，会随鞋子被放大）。
 /// v47（2026-10-10）：`SweepState` 新增 `range`（每发射程）——S015A 流射对齐 098c `Xc`：
 /// 速度 700→**1200**、射程 360→**1000·(1+.1ei)**（旧值为占位，与 098b/098c 均不符）。
-pub const PROTOCOL_VERSION: u32 = 47;
+/// v48（2026-10-10）：S017B 双生弹结构重做——新增 `W098bOnHit::TwinSilence`（序列化 tag 14）；
+/// 两枚孪生弹（只碰弹体）到期在两弹间**连线沉默**（098c `CC`/`cC`/`BC`），无直接伤害。
+pub const PROTOCOL_VERSION: u32 = 48;

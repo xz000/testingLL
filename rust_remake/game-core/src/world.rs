@@ -1841,6 +1841,8 @@ impl World {
         // 本地工作副本（Projectile 是 Copy），在其上推进位移/倒计时并判定命中。
         let mut ps = std::mem::take(&mut self.projectiles);
         let n = self.players.len();
+        // S017B 双生弹到期端点（098c `cC`→`BC`）：帧末按 owner 配对、连线沉默。
+        let mut twin_ends: Vec<(u32, Vec2, f64)> = Vec::new(); // (owner, 端点, 沉默时长 s)
         // 撒弹线/滚动火球产出的扇形子弹收集：(owner, pos, dir, bulletspeed)
         let mut spawn: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         // T3b 命中的子弹生成的回返镖：(owner, pos, dir, speed)
@@ -2087,6 +2089,10 @@ impl World {
                             if let Some(o) = self.players.get_mut(pr.owner as usize) {
                                 o.pos = pr.pos;
                             }
+                        }
+                        // S017B 双生弹（098c `cC`）：到期时入队，稍后在帧末与同伴配对连线沉默。
+                        if *on_hit == crate::skill::W098bOnHit::TwinSilence {
+                            twin_ends.push((pr.owner, pr.pos, debuff_dur.to_num::<f64>()));
                         }
                         // S014A 到点重定向（098c `rc`，13173）：未命中时找**最近的、非施法者的对象**
                         // （不过滤队伍）→ 以 600/s 转向它继续飞，寿命改 `(1+.1×ei)×7/6`；
@@ -3288,6 +3294,11 @@ impl World {
                             crate::skill::W098bOnHit::CarrySelf => {
                                 // 预留：B 形态不碰术士（命中检测已返回 `None`），故不会走到这里。
                             }
+                            crate::skill::W098bOnHit::TwinSilence => {
+                                // S017B 双生弹只与弹体碰（`col_mask=MISSILE`）→ 不会走到单位命中；
+                                // 线段沉默在到期处（`twin_ends`）处理。
+                                let _ = victim;
+                            }
 
                         }
                         // （098c 回旋镖飞行中不命中、不转回程：回程由运动学前向归零触发、到位时 AOE 结算。）
@@ -4080,6 +4091,60 @@ impl World {
                 pos,
                 alive: true,
             });
+        }
+        // 4i) S017B 双生弹连线沉默（098c `cC` → `BC`）：帧内到期的两枚按 owner 配对，
+        // 在两点间连一条闪电段；对**到线段垂距 <100 且落在线段内**的异队施加 `AC`（沉默），
+        // 命中 >2 播 “Silencer”。`cC` 会同时销毁两枚弹——两弹同寿命、同帧入队，故配对等价。
+        if !twin_ends.is_empty() {
+            let mut by_owner: Vec<(u32, Vec<Vec2>, f64)> = Vec::new();
+            for (o, pos, dur) in twin_ends.drain(..) {
+                if let Some(e) = by_owner.iter_mut().find(|(oo, ..)| *oo == o) {
+                    e.1.push(pos);
+                } else {
+                    by_owner.push((o, vec![pos], dur));
+                }
+            }
+            for (owner, pts, dur) in by_owner {
+                let owner_team = self.players.get(owner as usize).map(|p| p.team);
+                for pair in pts.chunks(2) {
+                    if pair.len() < 2 {
+                        continue;
+                    }
+                    let (p1, p2) = (pair[0], pair[1]);
+                    let seg = p2 - p1;
+                    let len = seg.length();
+                    if len <= Fix64::ZERO {
+                        continue;
+                    }
+                    let dirv = seg / len;
+                    let perp = Vec2::new(-dirv.y, dirv.x);
+                    let mut hits: Vec<u32> = Vec::new();
+                    for q in self.players.iter() {
+                        if !q.alive || Some(q.team) == owner_team || q.mirror_immune() {
+                            continue;
+                        }
+                        let rel = q.pos - p1;
+                        let along = rel.dot(dirv);
+                        let perp_dist = rel.dot(perp).abs();
+                        if perp_dist < Fix64::from_num(100.0) && along > Fix64::ZERO && along < len {
+                            hits.push(q.id);
+                        }
+                    }
+                    if !hits.is_empty() {
+                        let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
+                        for v in &hits {
+                            if let Some(p) = self.players.get_mut(*v as usize) {
+                                p.add_debuff(BuffKind::Silenced, dur, ojn);
+                            }
+                        }
+                        // 098c `AC`：`aR(被沉默者)` —— 断其自己的链（弹体已 `mem::take` 到 `ps`）。
+                        ps.retain(|p| !matches!(&p.kind, ProjectileKind::Tether { owner: o, .. } if hits.contains(o)));
+                    }
+                    if hits.len() > 2 {
+                        self.combat_events.push(CombatEvent::Silencer { owner, pos: (p1 + p2) / Fix64::from_num(2.0) });
+                    }
+                }
+            }
         }
         // 5) 写回并清除已死亡/失效的弹体
         ps.retain(|p| p.alive);
@@ -5030,6 +5095,61 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         pos: landing,
                         alive: true,
                     });
+                    continue;
+                }
+                // S017B 双生弹（098c `CC`）：从施法者**后方 210** 生成两枚（方向 = 瞄准 ±1 个 `spread_step`)，
+                // speed 900、寿命 `((min(Rr,900(1+.1ei))+210)/900)*1.04675`、半径 23、**只与其他弹体碰**
+                //（`Av[+1]=false Av[+2]=true Av[+3]=false`）。到期连线沉默由 `TwinSilence` 处理。
+                if id == crate::skill::SkillId::S017 && alt {
+                    let ei = world.players[idx as usize].mastery[2] as f64;
+                    let rr = target.map(|t| (t - ppos).length().to_num::<f64>()).unwrap_or(0.0);
+                    let rr = rr.min(900.0 * (1.0 + 0.1 * ei));
+                    let twin_life = Fix64::from_num(((rr + 210.0) / 900.0) * 1.046_751_601);
+                    let origin = ppos - dir * Fix64::from_num(210.0);
+                    for s in [-1.0_f64, 1.0_f64] {
+                        let d = crate::fix::rotate_ccw(dir, Fix64::from_num(0.3 * s));
+                        world.projectiles.push(Projectile {
+                            owner: idx,
+                            kind: ProjectileKind::W098b {
+                                proj: crate::skill::W098bProjKind::Straight,
+                                vel: d * speed,
+                                speed,
+                                radius,
+                                remaining: twin_life,
+                                life: twin_life,
+                                gx: Fix64::ZERO,
+                                pillar_dmg: Fix64::ZERO,
+                                kb_ji: Fix64::ZERO,
+                                ignite: None,
+                                blast: None,
+                                target: None,
+                                bob_phase: BoomerangPhase::Out,
+                                on_hit: crate::skill::W098bOnHit::TwinSilence,
+                                debuff_dur: stats.duration,
+                                lateral: Fix64::ZERO,
+                                forward_dir: d,
+                                out_dist: Fix64::ZERO,
+                                burst: 0,
+                                emit_cooldown: Fix64::ZERO,
+                                emit_angle: 0.0,
+                                col_mask: W098B_COL_MISSILE, // 只与其他弹体碰（Av[+2]）
+                                pillar_bounce: false,
+                                pillar_rest: Fix64::ZERO,
+                                lightning_dmg: Fix64::ZERO,
+                                weaken_armed: false,
+                                blast_dmg: Fix64::ZERO,
+                                blast_floor: Fix64::ZERO,
+                                blast_on_expiry: false,
+                                is_fireball: false,
+                                class: ProjClass::Twin,
+                                direct_dmg: None,
+                                chase: None,
+                                s009_role: S009_ROLE_NONE,
+                            },
+                            pos: origin,
+                            alive: true,
+                        });
+                    }
                     continue;
                 }
                 // 连发（count>1）：以施法方向为中心、±spread_step 对称扇出（火焰喷射锥形 5 道）。
@@ -12772,6 +12892,38 @@ mod tests {
     }
 
     // ===== B4-Y 形态机制 =====
+
+    /// S017B 双生弹（098c `CC`/`cC`/`BC`）：两枚孪生弹到期后，在双弹间连一条线段，
+    /// 对到线段**垂距 <100 且落在线段内**的异队施加沉默（我方 
+    /// `W098bOnHit::TwinSilence` + 帧末 `twin_ends` 配对）。
+    #[test]
+    fn s017b_twins_silence_along_line_at_expiry() {
+        let mut world = World::new(2, 1308);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S017.as_u32() as usize] = true; // B=沉默
+        // 敌人在瞄准线上 ~900 处：双弹终点约 (900, ±343)，连线为 x≈900 的竖线 → 命中
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(Fix64::from_num(900.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::new(Fix64::from_num(900.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut silenced = false;
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+            if world.players[1].has_buff(BuffKind::Silenced) {
+                silenced = true;
+            }
+        }
+        assert!(silenced, "双生弹到期应在两弹间连线并沉默线段附近的敌人");
+    }
 
     /// S017B 沉默：目标禁施法但可移动；S017A 缠绕：目标定身（move_target 被清）。
     #[test]

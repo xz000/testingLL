@@ -882,7 +882,11 @@ pub enum W098bOnHit {
     /// 且敌人分支错误地开了 `beam`。见 `SKILL_ALIGNMENT_LEDGER.md` §S019。
     RedChain,
     /// S017 禁锢·沉默（形态 B，098c CC）：禁施法（可移动）。
+    /// （旧：直接命中施加；现已改由 `TwinSilence` 线段处理。）
     Silence,
+    /// **S017B 双生弹**（098c `CC`/`cC`/`BC`）：两枚孪生弹只与弹体碰（`Av[+2]`）；
+    /// 任一到期时在两弹间连一条闪电，沿线段（垂距 <100、落在线段内）对异队施加沉默（`AC`）。
+    TwinSilence,
     /// S013A 移形换位（098c `MB`）：弹体命中敌人 → 施法者与目标**互换位置**，弹体销毁。
     SwapTarget,
     /// S013B 搬运（098c `pB`）：弹体到达后把**施法者传送到弹体位置**（命中/到期均可用）。
@@ -2437,9 +2441,11 @@ impl DefTable {
                     ..DEF_ZERO
                 },
             },
-            // S017B 禁锢·沉默（098c CC）：禁施法（可移动）5s。
-            // **098c 校准（098c/data/spells.json S017）**：`silence_cd 16.0`、`silence 5s`。
-            // → B 形态冷却**独立于 A 形态**，为恒定 16.0；原误用 A 的 25.0/-0.658（与文档 17 差 8 秒，审计列高优先级）。
+            // S017B 禁锢·沉默（098c `CC`/`cC`/`BC`）：从施法者**后方 210** 生成**两枚**双生弹
+            //（方向 = 瞄准 ±**0.3 rad**）、speed 900、半径 23、`Av[+1]=false Av[+2]=true Av[+3]=false`
+            //（**只与其他弹体碰**）；任一到期 → 双弹间**连线沉默**（垂距 <100、落在线段内）。
+            // **无任何直接伤害**。`life = ((min(Rr,900(1+.1ei))+210)/900)*1.04675`（spawn 时按距离算）。
+            // 双生弹的生成/连线由 world.rs 特判（count/spread 走专用分支）。
             SkillId::S017 => SkillDef {
                 id,
                 tree: SkillTree::Y,
@@ -2449,21 +2455,20 @@ impl DefTable {
                     proj: W098bProjKind::Straight,
                     speed: Fix64::from_num(900.0),
                     radius: Fix64::from_num(23.0),
-                    life: Fix64::from_num(1.29), // 098c CC: ev=((range+$D2)/900)*1.0467, L1~1.29
-                    kb_ji: Fix64::ONE,
+                    life: Fix64::from_num(1.29), // spawn 时按 `((min(Rr,900(1+.1ei))+210)/900)*1.04675` 覆盖
+                    kb_ji: Fix64::ZERO,
                     ignite: None,
                     blast: None,
-                    count: 1,
-                    spread_step: 0.0,
-                    on_hit: W098bOnHit::Silence,
+                    count: 2, // 双生弹（专用分支生成）
+                    spread_step: 0.3,
+                    on_hit: W098bOnHit::TwinSilence,
                 },
                 growth: SkillGrowth {
                     // 098c（w3a_strings.txt Disable=silence）：CD 16→12.5（8 级），delta 取原斜率 0.5/级。
                     cooldown_base: 16.0,
                     cooldown_delta: -0.5, // 098c: 16->12.5 (8 lv)
                     cooldown_levels: Some(&[16.0, 15.5, 15.0, 14.5, 14.0, 13.5, 13.0, 12.5]), // w3a acdn B 段
-                    damage_base: 3.0,
-                    duration_base: 5.0,
+                    duration_base: 5.0, // 线段沉默时长（近似 098c `AC` 的基础 5s）
                     ..DEF_ZERO
                 },
             },
