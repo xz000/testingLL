@@ -1,83 +1,77 @@
 # 交接说明（HANDOFF）—— 新会话从这里开始
 
-> 用途：本仓库的 098c 移植工作已进入「代码阶段」。新会话**不继承上一会话的上下文**，
-> 所以这里固定记录：**文档地图、真值来源、测试基线、协议号、命令与坑**。
-> 开场只需说「**按 HANDOFF 继续，先做 P0_RECHECK §F（S005 反射）**」。
+> 用途：本仓库是 **Warlock 098c 的 Rust 复刻**（原为 098b 移植，正逐步迁移到 098c）。
+> 新会话**不继承上一会话上下文**，这里固定记录：**文档地图、真值来源、测试基线、协议号、命令与坑**。
+> 开场只需说「**按 HANDOFF 继续**」，并说明要做 Steam 主线还是技能对齐。
 
 ---
 
-## 0. 一句话现状
+## 0. 一句话现状（2026-10-10）
 
-- **P0 五个技能**（S000/S003/S008/S009/S016）已普查 + 已修代码（可复查：`P0_RECHECK.md` 判定 21/22 恰当）。
-- **技能普查 16/16 完成**（含 `SC → 入口` 分发表）、**道具 24 格全解**、**经济奖励确认**（起始金待实机）。
-- **复审出 5 处击退系数缺口 + 8 项结构性偏差 + 1 个数学错误（S005 反射）** → 现在开始按风险顺序改代码。
-- **代码阶段已有进展**：
-  - §5 第 1 项（S005 反射）✅ `0baea5d`（协议 26）；
-  - §5 第 2 项 `ProjClass`/逐弹体 `xv` ✅ 部分（S009 碎片/B 弹撞柱反弹；**S018 仍缺**）；
-  - §5 第 3 项（击退系数 5 处 + S001/S021 距离衰减）✅ `b3a0a97`（协议 **27**，详见 `KNOCKBACK_ALIGNMENT.md`）。
-  - §5 第 4 项（S009 父弹固定 3）✅ `06cee9e`（协议 **28**）。
-  - §5 第 5 项（S003 继承施法者前向速度）✅ `5d1f6c1`（协议 **29**）。
-  - §5 第 6 项（S016 提前量解算 + 跳后制导）✅ `31b5397`（协议 **30**）。
-  - §5 第 7 项（S016B 魂回飞清 CD）✅ `5cb07b3`（协议 **31**）。
-  - §5 第 8 项（`jn` + `Hr` 硬体）✅ `37bc636` / `8a8c647`（协议 **34/35**）。
-  - **代码阶段 §5 全部完成**。道具 24 项（`ITEM_AUDIT_098c.md`）、战斗/技能**逐档数值复核**
-    （`SKILL_PER_LEVEL_AUDIT.md`，`2e14f8d`）也已对齐。`Bv`/`cv` 判为不适用。
-    下一步：回合/胜负/计分流程、UI/表现、或实机行为验证。代码台账见 `CODE_PHASE_RECORD.md`。
+- **技能对齐**：本会话完成一轮**逐技能「098c 代码」基准审计**（`SKILL_CODE_AUDIT_098c.md`），
+  修掉若干偏差/占位（S015A/S017A/S017B/S018B/S014B/S007/S010/S020/S021/S008A + 火法杖窗口 + 治疗 `PX→DX`）。
+  **审计已无已知未闭合项**。
+- **联机（Steam）**：R 系列全部完成——掉线/迁移 UI、崩溃重开归队(R5c)、被取代 host 归队(R6b)、
+  联机暂停(R7a–d)、有界追赶(R8)、防脑裂。见 `EXIT_MENU_RECONNECT_PLAN.md`。
+- **协议号 `PROTOCOL_VERSION = 48`**（`game-core/src/lib.rs`；变更史见其上方注释）。
+- **关键教训**：本仓库基线**既非 098b 也非 098c**，而是「098b 事实 + 098c tooltip + 占位」的混合物；
+  **098c 的 tooltip 也常与 098c 代码不符** ⇒ **唯一真值是 098c 代码**。
 
-## 1. 文档地图（先读这三份）
+## 1. 文档地图（按权威性）
 
-| 文件 | 读什么 |
-|---|---|
-| `P0_RECHECK.md` | **§F = 下一步的实施规格（S005）**；§A 22 条判定；§B 击退系数缺口表；§C 8 项结构偏差；§D/§E 道具与经济复审与顺序 |
-| `SKILL_ALIGNMENT_LEDGER.md` | §3 八张事实表；§7 收尾清单（8 项待实施）；**§9 技能（分发表 + 16 张表）**；**§9b 道具 24 格**；**§9c 经济**；§9d 复审计划 |
-| `JASS_FIELDS_098c.md` | 两字母字段/回调语义（`Q/S` 是每 tick、`mI` 的 `lI`=击退%、`yO/oR` DoT、`wR` 废参、`Jv`≠`Gv`、`kv` vs `Kv`、两个“镜面反射”的区别） |
-| `P0_AUDIT_RECORD.md` | P0 的“事实 + 改动 + commit”汇总（供回退/复查） |
+| 文件 | 权威性 | 读什么 |
+|---|---|---|
+| `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）** | 逐技能 §3/§9 事实表 + 状态列（✅/🔧/⚠/📋）；§11 基准审计；协议史 |
+| `SKILL_CODE_AUDIT_098c.md` | **权威（代码基准）** | 逐技能按 **098c 代码** 抽出的 damage/duration/cooldown/range/speed 公式，与 def 对照 |
+| `JASS_FIELDS_098c.md` | 权威（字段语义） | 两字母字段/回调语义（`Q/S`=每 tick、`mI` 的 `lI`=击退%、`yO/oR` DoT、`wR` 废参、`Jv`≠`Gv`、`kv` vs `Kv`、两种“镜面反射”） |
+| `098C_DIFF.md` | 系统级差异 | 098b↔098c 的大系统差异（魔法张力/移动模型/物理/成长/计分/回血/岩浆），A1–A8 均已结案 |
+| `ITEM_AUDIT_098c.md` / `ECONOMY_RECHECK.md` | 权威 | 道具 24 格 / 经济奖励 |
+| `KNOCKBACK_ALIGNMENT.md` | 权威 | 击退系数逐技能 |
+| `EXIT_MENU_RECONNECT_PLAN.md` | 设计档（联机） | Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列） |
+| `CODE_PHASE_RECORD.md` | 记录 | 代码阶段改动汇总（commit hash） |
+| ⚠ `SKILL_PER_LEVEL_AUDIT.md` | **已被取代** | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 以 `SKILL_CODE_AUDIT_098c.md` 为准 |
+| `HANDOVER.md` / `P0_*.md` / `FIX_ROADMAP.md` 等 | 历史 | 早期阶段记录，可查但勿当真值 |
 
 ## 2. 真值来源（**代码是真值**，tooltip 只作交叉验证）
 
-- JASS 反编译：`../098c/out/war3map_pretty.j`（27329 行；**行号在所有文档里被引用，不要用别的文件代替**）
-- 技能 tooltip：`../098c/out/w3a_strings.txt`；技能原始数据（含**每技能多档 tooltip/`acdn`/`alev`**）：`../098c/out/w3a_parsed.json`
-- 道具：`game-core/src/item.rs`（+ 测试 `w3t_crosscheck_item_bonuses`）；JASS 买/卖处理器 `ED`(20752)、`21080–21560`
-- ⚠ 已知 tooltip 与代码冲突的例子：S016 跳衰减（tooltip 20% vs 代码 `×0.75`）、S000 火法杖 DoT（tooltip 3.0 vs 代码 3.5）→ **一律取代码**
+- JASS 反编译：`../098c/out/war3map.j`（337KB **raw**，**不要**用 `war3map_pretty.j`——它会把 `elseif` 拆坏）。
+- 技能 tooltip：`../098c/out/w3a_strings.txt`；原始数据：`../098c/out/w3a_parsed.json`。
+- 098b（**仅用于对照历史，不作真值**）：`../ce/ce_old98b/war3map.j.dec`、`../ce/ce_extract/*`。
+- ⚠ 已知 **098c tooltip ≠ 098c 代码** 的例子（一律取**代码**）：
+  - S018B 力场 DPS：tooltip `2.25…8.00`“非线性” vs 代码 `1+1.25L`（线性）。
+  - S017A 缠绕时长：tooltip `4.5…6.25` vs 代码 `4+0.25·abilityLevel`=`4.25…6.0`。
+  - S014B 削弱伤害：tooltip `5→11` vs 代码 `4+L`=`5…12`。
+  - S000 火法杖 DoT：tooltip 3.0 vs 代码 3.5；S016 跳衰减：tooltip 20% vs 代码 `×0.75`。
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 100 / game-core 273 / net 39 / net-steam 9**；带 steam+gui 的 client **107**
-- `PROTOCOL_VERSION = 25`（`game-core/src/lib.rs`）——**只要动了会进状态的字段就必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试
-- 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）
-- 提交：默认走 **pre-commit 钩子**（会跑完整回归，输出很长）；
-  **纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿
+- 测试：**client 119 / game-core 326 / net 47 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
+- `PROTOCOL_VERSION = 48`——**只要动了会进快照的字段就必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。
+- 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
+- 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
 
 ## 4. 坑（血泪）
 
-1. **改代码用 `edit` 工具**；**不要**用 `powershell Set-Content` 写 `.rs`（会把 UTF-8 中文变成 ANSI → `stream did not contain valid UTF-8`）。
-2. clippy 的 client 调用固定为 `cargo clippy -p client --features client/steam,client/gui`（**不要** `--all-targets`，会报测试专用代码）。
-3. JASS **标识符大小写敏感**（`z`/`Z`、`rv`/`Rv`、`kv`/`Kv` 都是不同变量）；`Kv` 遍历**只走术士子链**。
+1. **改代码用 `edit` 工具**；**不要**用 `powershell Set-Content` 写 `.rs`（会把 UTF-8 中文弄成 ANSI）。
+2. clippy 的 client 调用固定为 `cargo clippy -p client --features client/steam,client/gui`（**不要** `--all-targets`）。
+3. JASS **标识符大小写敏感**（`z`/`Z`、`rv`/`Rv`、`kv`/`Kv`、`DX`/`dX`、`SI`/`sI` 都是不同变量/函数）；`Kv` 遍历**只走术士子链**。
 4. 两个“镜面反射”别混：
-   - `fix::bounce_off(v,n,xv)` = `v − (1+xv)(v·n)n` → **098c 的柱/墙/盾反弹**（法向取反、切向保留）
-   - `fix::mirror_by(v,n)` = `2(v·n)n − v` → 只给 **D2 原型护盾**用；**正面撞面时 v 不变**（曾因此让火球/回旋镖穿柱）
-5. 098c 的 `mI(nr,Vr,HX,lI)`：`lI` = tooltip 的「xx% 击退」（S015 簇射 `.65` ↔ tooltip「65% knockback」可作锚点）；`HX` 才是伤害。
-6. 技能是“**一个能力多档**”：如 S000 共 **24 档**，**13–24 = 带火焰法杖版**（物品 13 靠 `SetUnitAbilityLevel('S000', +12)` 切档），不是两个技能。
+   - `fix::bounce_off(v,n,xv)` = `v − (1+xv)(v·n)n` → **098c 的柱/墙/盾反弹**（法向取反、切向保留）。
+   - `fix::mirror_by(v,n)` = `2(v·n)n − v` → 只给 **D2 原型护盾**用；**正面撞面时 v 不变**（曾因此让火球/穿柱）。
+5. 098c 的 `mI(nr,Vr,HX,lI)`：`lI` = 击退系数（tooltip 的「xx% 击退」），`HX` 才是伤害。
+6. 技能是“**一个能力多档**”：如 S000 共 **24 档**，**13–24 = 带火焰法杖版**（物品 13 靠 `SetUnitAbilityLevel('S000',+12)` 切档）。
+7. `war3map.j` **raw** 才是控制流真值；`war3map_pretty.j` 的 `elseif` 被拆坏（已实证误读 `aR`）。
+8. 改「会进快照的字段」→ 必须升协议 + 改 `world_ser.rs` ser/de + 往返测试；`BuffKind`/`W098bOnHit` 是**按 tag 显式编码**的（加变体要新 tag + 升协议）。
 
-## 5. 代码阶段顺序（风险从高到低）
+## 5. 下一步候选（按需要挑）
 
-1. ✅ **S005 反射盾**（`0baea5d`）—— 见 `P0_RECHECK.md` §F：反射改 `bounce_off` + **改弹体归属** + 回旋镖转回程 + `Ev` 排除表
-2. ✅ **引入 `ProjClass`（`Ev` 等价）**（`0baea5d`）→ S009 碎片/B 父弹 `+1` 已解决；**S018A/B `+1` 仍缺**（`Gravity` 无柱碰撞）
-3. ✅ **击退系数 5 处**（`b3a0a97`）：S002 `.95`、S003 AoE `1.3`（自撞 1.0）、S004 `.95`、
-   S008A `.75`、S008B `.6`；S001/S021 改**距离衰减** `1−d/1000`、S020 固定 1。
-   （遗留：S003 直伤 `.95`、S008B 撞柱 `.8` 未建模；详见 `KNOCKBACK_ALIGNMENT.md` §3）
-4. ✅ **S009 父弹固定 3**（`06cee9e`）：新增 `W098b.direct_dmg`，父弹 `Some(3.0)`，碎片仍分级（`FB` 12220）
-5. ✅ **S003 继承施法者速度**（`5d1f6c1`）→ ✅ **S016 提前量解算 + 跳后制导**（`31b5397`）→ ✅ **S016B 魂回飞清 CD**（`5cb07b3`）
-6. ✅ **`jn`（状态时长倍率）**（`37bc636`，协议 34）+ ✅ **`Hr` 硬体**（`8a8c647`，S012 燃烧冲刺撞柱不反弹）；
-   `Bv`（仅地形碎石）/`cv`（我方护盾反射已等价）**不适用**
-7. ✅ **道具 24 项对齐**（`56cd720`，协议 36；见 `ITEM_AUDIT_098c.md`）：买价/卖价/自带能力/脚本效果逐项核对；
-   修正熔岩靴被动 `To`、死亡面具平回、血剑回血仅天罚；Aegis2 移除、Stone 保留优化流程
-8. ✅ **经济**（`aa80a80`，协议 32）：已按英文版 JASS/w3q 核对并修——奖励金默认全 0、`mo=1`、
-   精通/技能每级增量=`gglm`=1；初始金 `Qo=20`、每回合 `qo=10`、物品价(`w3u ugol`)与卖出返还已一致。
-   详见 **`ECONOMY_RECHECK.md`**；遗留（Aegis2/Pendant/Stone/`qo` 存活口径）见其 §4。
+1. **Steam 真机验收**（协议已到 48，两端都需更新）——验收点见本会话 commit 说明（火法杖窗口、力场、S017A/B、S015A、平加移速、陨石砸柱、治疗扣张力等）。
+2. **继续技能代码审计**：把 `SKILL_CODE_AUDIT_098c.md` 里「未抽查」的小项补齐（如 S002 的 `cX` 注入点、S012A 时长）。
+3. **R7e 学习期暂停**（需学习期心跳 + 冻结本地 `tick_learning`，工作量大，待设计）。
+4. 其它 Steam 主线（回合/胜负/计分流程、UI/表现、实机行为验证）。
 
 ## 6. 每步的完成标准
 
-- 纯函数优先 + 单测覆盖该行为（项目风格）
-- `check.ps1` 全绿；协议号按需递增并补 `world_ser` 往返
-- 更新 `P0_RECHECK.md` / `SKILL_ALIGNMENT_LEDGER.md` 的**状态列**（把 ⚠/📋 改成 ✅ 并写 commit hash）
+- 纯函数优先 + 单测覆盖该行为（项目风格）。
+- `check.ps1` 全绿；协议号按需递增并补 `world_ser` 往返。
+- 更新 `SKILL_ALIGNMENT_LEDGER.md` / `SKILL_CODE_AUDIT_098c.md` 的**状态列**（把 ⚠/📋 改成 ✅ 并写 commit hash）。
