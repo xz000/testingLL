@@ -1,7 +1,7 @@
 # Steam 联机规划（Steam 为中心，纯玩家 P2P）
 
 > 创建 2026-08-25。核心决策记录 + 三阶段路线 + Steamworks 能力盘点。
-> 阅读顺序：本文件（Steam 联机主线）→ `RECONNECT.md`（重连机制）→ `FIX_ROADMAP.md`（修复路线/权威序）。
+> 阅读顺序：本文件（Steam 联机主线）→ `RECONNECT.md`（重连机制）→ `archive/FIX_ROADMAP.md`（修复路线/权威序）。
 
 ---
 

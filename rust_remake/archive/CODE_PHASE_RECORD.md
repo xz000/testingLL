@@ -1,3 +1,6 @@
+> ⚠ **历史归档（2026-10-10）**：早于 098c 迁移/本会话审计；**勿作真值**。
+> 真值见 `../HANDOFF.md`、`../SKILL_ALIGNMENT_LEDGER.md`、`../SKILL_CODE_AUDIT_098c.md`。
+
 # 代码阶段改动记录（Running log）
 
 > 用途：`HANDOFF.md §5`「代码阶段顺序（风险从高到低）」的**逐项落地台账**——

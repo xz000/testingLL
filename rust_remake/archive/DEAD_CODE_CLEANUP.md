@@ -1,3 +1,6 @@
+> ⚠ **历史归档（2026-10-10）**：早于 098c 迁移/本会话审计；**勿作真值**。
+> 真值见 `../HANDOFF.md`、`../SKILL_ALIGNMENT_LEDGER.md`、`../SKILL_CODE_AUDIT_098c.md`。
+
 # 死代码清理计划（2026-09-13）
 
 > 纪律（`WORKFLOW_NOTES.md`）：**一次只删一个可编译单元** → `cargo check`/`cargo clippy` → 通过再下一个；

@@ -35,14 +35,15 @@
 
 | 文档 | 说明 |
 |---|---|
-| ⚠ `SKILL_PER_LEVEL_AUDIT.md` | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 用 `SKILL_CODE_AUDIT_098c.md` |
+| ⚠ `archive/SKILL_PER_LEVEL_AUDIT.md` | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 用 `SKILL_CODE_AUDIT_098c.md` |
 | ⚠ `JASS_AUDIT_098c.md` | 早期逐技能事实汇编；状态/数值以台账 + 代码审计为准（仅作函数/字段查阅） |
-| `P0_AUDIT_RECORD.md` / `P0_RECHECK.md` | P0 阶段（S000/3/8/9/16）记录；多数已并入台账/代码 |
-| `CODE_PHASE_RECORD.md` / `FIX_ROADMAP.md` / `GAMEPLAY_FIX_PLAN.md` | 早期代码阶段记录 |
-| `HANDOVER.md` | 更早的交接说明（被 `HANDOFF.md` 取代） |
-| `SKILL_STATE_AUDIT.md` / `MAGNITUDE_AUDIT.md` / `UI_AUDIT.md` / `DEAD_CODE_CLEANUP.md` | 早期审计 |
-| `FRAME_SYNC_*.md` | 帧同步方案比较/设计（历史决策） |
-| `PORT_098B_DECISIONS.md` | **098b 时期**的移植决策（历史；勿按 098b 行事） |
-| `RISK_ANALYSIS.md` / `WORKFLOW_NOTES.md` | 早期流程/风险 |
+| `archive/P0_AUDIT_RECORD.md` / `archive/P0_RECHECK.md` | P0 阶段（S000/3/8/9/16）记录；多数已并入台账/代码 |
+| `archive/CODE_PHASE_RECORD.md` / `archive/FIX_ROADMAP.md` / `archive/GAMEPLAY_FIX_PLAN.md` | 早期代码阶段记录 |
+| `archive/HANDOVER.md` | 更早的交接说明（被 `HANDOFF.md` 取代） |
+| `archive/SKILL_STATE_AUDIT.md` / `archive/MAGNITUDE_AUDIT.md` / `archive/UI_AUDIT.md` / `archive/DEAD_CODE_CLEANUP.md` | 早期审计 |
+| `archive/FRAME_SYNC_*.md` | 帧同步方案比较/设计（历史决策） |
+| `archive/PORT_098B_DECISIONS.md` | **098b 时期**的移植决策（历史；勿按 098b 行事） |
+| `archive/RISK_ANALYSIS.md` / `archive/WORKFLOW_NOTES.md` | 早期流程/风险 |
 
-> 说明：C 类保留作历史参考。若发现与本表冲突，**以 A 类 + HANDOFF 为准**。
+> 说明：C 类中的 `archive/*` 已物理移入 **`archive/`** 子目录（顶部带历史横幅），保留作参考。
+> 若发现与本表冲突，**以 A 类 + HANDOFF 为准**。

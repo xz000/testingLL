@@ -30,9 +30,9 @@
 | `ITEM_AUDIT_098c.md` / `ECONOMY_RECHECK.md` | 权威 | 道具 24 格 / 经济奖励 |
 | `KNOCKBACK_ALIGNMENT.md` | 权威 | 击退系数逐技能 |
 | `EXIT_MENU_RECONNECT_PLAN.md` | 设计档（联机） | Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列） |
-| `CODE_PHASE_RECORD.md` | 记录 | 代码阶段改动汇总（commit hash） |
-| ⚠ `SKILL_PER_LEVEL_AUDIT.md` | **已被取代** | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 以 `SKILL_CODE_AUDIT_098c.md` 为准 |
-| `HANDOVER.md` / `P0_*.md` / `FIX_ROADMAP.md` 等 | 历史 | 早期阶段记录，可查但勿当真值 |
+| `archive/CODE_PHASE_RECORD.md` | 记录 | 代码阶段改动汇总（commit hash） |
+| ⚠ `archive/SKILL_PER_LEVEL_AUDIT.md` | **已被取代** | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 以 `SKILL_CODE_AUDIT_098c.md` 为准 |
+| `archive/*.md`（`HANDOVER`/`P0_*`/`FIX_ROADMAP`/`FRAME_SYNC_*`/`PORT_098B_DECISIONS` …） | 历史 | 已移入 `archive/` 并带历史横幅；可查但**勿当真值** |
 
 ## 2. 真值来源（**代码是真值**，tooltip 只作交叉验证）
 

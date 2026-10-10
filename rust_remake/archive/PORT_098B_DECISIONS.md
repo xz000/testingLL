@@ -1,3 +1,6 @@
+> ⚠ **历史归档（2026-10-10）**：早于 098c 迁移/本会话审计；**勿作真值**。
+> 真值见 `../HANDOFF.md`、`../SKILL_ALIGNMENT_LEDGER.md`、`../SKILL_CODE_AUDIT_098c.md`。
+
 # 0.98b 复刻工程决策记录（权威）
 
 > 创建 2026-09-04。本文件是「用 rust_remake 复刻 Warlock 0.98b」的**工程决策权威记录**，

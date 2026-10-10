@@ -1,3 +1,6 @@
+> ⚠ **历史归档（2026-10-10）**：早于 098c 迁移/本会话审计；**勿作真值**。
+> 真值见 `../HANDOFF.md`、`../SKILL_ALIGNMENT_LEDGER.md`、`../SKILL_CODE_AUDIT_098c.md`。
+
 # Rust 重制版潜在问题分析报告
 
 > 创建 2026-09-02。对 `rust_remake/`（lockstep 帧同步 + host 权威 + Steam P2P 的 Warlock Brawl 重制版）

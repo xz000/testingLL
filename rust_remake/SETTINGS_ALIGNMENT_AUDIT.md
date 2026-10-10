@@ -1,7 +1,7 @@
 # 开局/房间设置与 098c 对齐审计（2026-09-13）
 
 > 目标：**尽量与 098c 对齐**。本文只做总结 + 待办清单，**未改代码**。
-> 关联：`ROOM_UI_REVIEW.md`（房间 UI/回车）、`GAMEPLAY_FIX_PLAN.md`、`game-core/src/meta.rs`、`client/src/settings_ui.rs`。
+> 关联：`ROOM_UI_REVIEW.md`（房间 UI/回车）、`archive/GAMEPLAY_FIX_PLAN.md`、`game-core/src/meta.rs`、`client/src/settings_ui.rs`。
 > 真相源：`../098c/out/war3map_pretty.j`。
 
 ---

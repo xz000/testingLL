@@ -67,7 +67,7 @@ Staff 7 / Stone 5 / Blood 8 / Aegis 13 / Lava 7 / Pocket 7 / Sell 0 —— **与
 
 ## 2. 我们**之前判定错误**的地方（须在文档中更正）
 
-`P0_RECHECK.md §D` 有两处结论被本次核对推翻：
+`archive/P0_RECHECK.md §D` 有两处结论被本次核对推翻：
 
 1. **「`qo`/`Qo` 是死常量、从未被读取」——错。**
    `Select-String` 在 `war3map_pretty.j` 中大量命中：

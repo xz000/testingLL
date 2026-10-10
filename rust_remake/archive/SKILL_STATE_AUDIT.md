@@ -1,3 +1,6 @@
+> ⚠ **历史归档（2026-10-10）**：早于 098c 迁移/本会话审计；**勿作真值**。
+> 真值见 `../HANDOFF.md`、`../SKILL_ALIGNMENT_LEDGER.md`、`../SKILL_CODE_AUDIT_098c.md`。
+
 # 技能/单位状态对齐审计（098c ↔ 我们）
 
 > 起因：`Burnout`（需 `Hr` 燃烧冲刺）与 `Denied`（需 `Fv` 链索绑定）两个播报接不上，

@@ -5,7 +5,7 @@
 > 本表把每个技能的**逐级公式/常量**从 098c 代码里抽出，与 `game-core/src/skill.rs` 的 `SkillDef` 对照。
 >
 > **⚠ 重要**：098c 的 **tooltip（`w3a_strings.txt`/`aub1`）本身也常与 098c 代码不符**（如 S018B/S017/S014B）。
-> 旧文档 `SKILL_PER_LEVEL_AUDIT.md` 与 `w3a_*_crosscheck` 测试是**按 tooltip** 建立的 ⇒ 存在系统性偏差。
+> 旧文档 `archive/SKILL_PER_LEVEL_AUDIT.md` 与 `w3a_*_crosscheck` 测试是**按 tooltip** 建立的 ⇒ 存在系统性偏差。
 > 本审计一律以**代码**为准。
 
 ## 方法

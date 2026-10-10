@@ -1,3 +1,6 @@
+> ⚠ **历史归档（2026-10-10）**：早于 098c 迁移/本会话审计；**勿作真值**。
+> 真值见 `../HANDOFF.md`、`../SKILL_ALIGNMENT_LEDGER.md`、`../SKILL_CODE_AUDIT_098c.md`。
+
 # ⚠ 已被取代：战斗 / 技能逐档数值复核（098c）
 
 > **本表按 tooltip（`w3a_parsed.json` 的 `aub1` 文本）建立，已多处与 098c 代码不符**
