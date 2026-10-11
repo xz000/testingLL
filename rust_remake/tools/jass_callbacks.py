@@ -18,6 +18,16 @@ def load():
     return re.split(r"[\r\n]+", open(PATH, "rb").read().decode("latin-1"))
 
 
+def aliases(lines):
+    """`set X=Condition(function Y)` → {X: Y}（hv/jv/Gv/Jv 存的是这些 boolexpr 别名）。"""
+    m = {}
+    for l in lines:
+        r = re.match(r"set (\w+)\s*=\s*Condition\(function (\w+)\)", l)
+        if r:
+            m[r.group(1)] = r.group(2)
+    return m
+
+
 def func(lines, name):
     i = next((k for k, l in enumerate(lines) if l.startswith("function " + name + " ")), None)
     if i is None:
@@ -28,6 +38,7 @@ def func(lines, name):
 
 def main():
     lines = load()
+    al = aliases(lines)
     for name in sys.argv[1:]:
         body = func(lines, name)
         print(f"===== {name} =====")
@@ -37,7 +48,9 @@ def main():
         for l in body:
             m = re.match(r"set (" + "|".join(KEYS) + r")\[([^\]]+)\]\s*=(.*)", l)
             if m:
-                print(f"  {m.group(1)}[{m.group(2)}] = {m.group(3).strip()}")
+                v = m.group(3).strip()
+                res = f"  → {al[v]}" if v in al else ""
+                print(f"  {m.group(1)}[{m.group(2)}] = {v}{res}")
         # 也打印 OO 生成与 SetUnitScale
         for l in body:
             if "OO(2" in l or "SetUnitScale" in l or "bO(" in l or "CO(" in l:
