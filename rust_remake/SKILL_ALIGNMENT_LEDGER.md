@@ -881,7 +881,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - ⚠ **修正（2026-10-10）**：本段旧结论「不存在 098b 依据的实现」**已被推翻**——基线实为
   「098b 事实 + 098c tooltip + 占位」的**混合物**；实锤如 S018B 的 **45% 减速 = 098b 独有**（已删）、
   S015A 速度/射程 = 占位（098b/098c 都是 1200/1000）。详见 `SKILL_CODE_AUDIT_098c.md`。
-- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）。
+- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）→**51**（S003 命中分支，§16.1）。
 - 说明：S018B 数值/减速/时长/`PX→DX`、S015B 步长、S017A 伤害/时长/AoE、S008A 砸柱、S014B 伤害、S007/S010 平加移速 均不改快照格式，故不升协议。
 
 ---
@@ -1185,7 +1185,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 > 我方另有 **F 树**（S001/S020/S021）不在 098c 7 槽内（开放问题 §16.3）。
 
-### 16.1 F5 · S003 追踪命中分支（`lb`）
+### 16.1 F5 · S003 追踪命中分支（`lb`）— ✅ **已实现（协议 51）**
 
 **目标（098c `lb`，`wR(Vr,45)` 门内）**：
 
@@ -1204,7 +1204,9 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 3. **队友**：不伤/不爆/不加速，仅销毁。
 4. **自撞**：保留 AoE（非`Hr`→kb1.3；`Hr`→kb1）+ 移速（+50 / +100）+ `Hr` 时 `burning=false`+`cur_vel*=0.2`。
 
-**测试**：`s003_can_hit_teammate_for_speed_buff`（改为“队友无效”）、`s003_damage_grows_with_flight_time`（异队直伤）、`s003_hitting_own_caster_burns_out`（自撞）。❗ 改逻辑 → 再升协议。
+**测试**：`s003_teammate_hit_is_transparent`（原 `..._for_speed_buff` 重写：队友无伤/无增益且穿透）、`s003_damage_grows_with_flight_time`（异队直伤）、`s003_hitting_own_caster_burns_out`（自撞）。❗ 已升协议 **50→51**。
+
+**实现记录**：异队直伤 `.95` + `push_knockback`；自撞按 `burning`(Hr) 分 kb1/kb1.3 + 飞 100/50 + `Hr` 时 `burning=false/kb_vel,cur_vel,control.vel ×0.2`；队友 `homing_keep`（不销毁、穿透）。
 
 **命中集（已核）**：`Pb` 设 `Nv[Nb]=true`、`bv[Nb]=true` ⇒ S003 **从出生起可撞任意单位（含自己/队友）**。⇒ 我方需把 homing 命中集由 `nearest_hit`（仅敌）改为 `nearest_hit_any`（任意活人），再在 handler 分支；命中即销毁。
 

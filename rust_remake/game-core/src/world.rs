@@ -3121,7 +3121,8 @@ impl World {
                         // 命中术士时本体**不直伤**，而是 AoE；伤害随飞行时间增长：
                         // `Kb = 总寿命-2.25-剩余`，`kb = (6+L) + 2.5*Kb/2.25`（Kb>0 时）——我们的 `gx` 即 `6+L`。
                         let homing = *proj == crate::skill::W098bProjKind::Homing;
-                        let homing_self = homing && victim == pr.owner;
+                        // 098c `lb`：命中**队友（同队异主）**时两分支都不入 ⇒ 无效果且**不销毁**（穿过）。
+                        let mut homing_keep = false;
                         let hit_dmg = if homing {
                             homing_missile_damage(*gx, *life, *remaining)
                         } else {
@@ -3179,30 +3180,46 @@ impl World {
                         if let Some(total) = ignite {
                             ignites.push((pr.owner, pr.pos, *total, (*debuff_dur).max(Fix64::from_num(W098B_IGNITE_SECONDS))));
                         }
-                        if let Some(br) = blast {
+                        if homing {
+                            // S003 追踪（098c `lb`）：命中后按 **主/队** 分派（命中集含自己/队友）。
+                            let owner_team = self.players.get(pr.owner as usize).map(|p| p.team);
+                            let victim_team = self.players.get(victim as usize).map(|p| p.team);
+                            if victim_team != owner_team {
+                                // **异队**：直伤 `kb(nr)` + 击退 `.95`；**无 AoE、无移速**。
+                                events.push((victim, hit_dmg, Some(pr.owner)));
+                                if dd.length_squared() > Fix64::ZERO {
+                                    let vmana = self.players[victim as usize].mana;
+                                    let atk_gn = self.players.get(pr.owner as usize).map(|a| a.gn_factor()).unwrap_or(1.0);
+                                    let vic_hn = self.players[victim as usize].dmg_taken_mult;
+                                    let kb = warlock_ki_knockback(vmana, hit_dmg, Fix64::from_num(0.95), atk_gn, vic_hn);
+                                    pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
+                                }
+                            } else if victim == pr.owner {
+                                // **自撞（同主）**：AoE + 移速。
+                                // `Hr`（硬体/冲刺）→ `TI(...,1,...)`（kb 1、半径 ×.45/.39）+ 自 **+100** 移速 4s + 停冲刺；
+                                // 非 `Hr` → `tI(...,1.3,...)`（kb `kb_ji`、半径 ×.39）+ 自 **+50** 移速 4s。
+                                if let Some(br) = blast {
+                                    let burning = self.players[victim as usize].burning;
+                                    let r = if burning { *br * Fix64::from_num(0.45 / 0.39) } else { *br };
+                                    let aoe_kb = if burning { Fix64::ONE } else { *kb_ji };
+                                    expiry_blasts.push((pr.owner, pr.pos, r, hit_dmg, aoe_kb, *blast_floor, hit_dmg));
+                                    if burning {
+                                        speed_steals.push((pr.owner, 100.0, 4.0, pr.owner));
+                                        homing_burnouts.push(pr.owner);
+                                    } else {
+                                        let dur = 4.0 * debuff_dur.to_num::<f64>().max(1.0);
+                                        speed_steals.push((pr.owner, 50.0, dur, pr.owner));
+                                    }
+                                }
+                            } else {
+                                // **队友（同队异主）**：098c `lb` 两分支都不入 ⇒ 无效果**且不销毁**（穿过）。
+                                homing_keep = true;
+                            }
+                        } else if let Some(br) = blast {
                             // 098c：爆炸写在 `Jv`（销毁回调）→ **被打掉时必炸**（命中单位/弹体/柱子都会 `IA→Jv`），
                             // 半径 `160×(1+.12xi)`、伤害 `blast_dmg`、衰减地板 `blast_floor`。
                             // （陨石 S008A 不走 W098b 路径，而是 `DelayedBlast`；岩浆 S008B 的炸在 `Gv`。）
-                            // S003：伤害 = 飞行时间成长的 `hit_dmg`；自撞时半径改用 `.45√(14+xi)`（= ×.45/.39）。
-                            let (r, dmg) = if homing {
-                                (if homing_self { *br * Fix64::from_num(0.45 / 0.39) } else { *br }, hit_dmg)
-                            } else {
-                                (*br, *blast_dmg)
-                            };
-                            // 098c `lb`：自撞（`Hr` 分支）用 `TI(...,1,...)` → AoE 击退系数 1.0；
-                            // 其余（同主非 Hr）用 `tI(...,1.3,...)` → `*kb_ji`。
-                            let aoe_kb = if homing_self { Fix64::ONE } else { *kb_ji };
-                            expiry_blasts.push((pr.owner, pr.pos, r, dmg, aoe_kb, *blast_floor, hit_dmg));
-                            // S003 命中术士后的移速变化（098c `lb`）：
-                            //   自撞 → 施法者 +100 移速（`LO(Jb,4*jn)` 4s 后归还）+ 速度 ×.2（下方延迟处理）
-                            //   其他 → 目标 +50 移速（4*jn 秒）
-                            let dur = 4.0 * debuff_dur.to_num::<f64>().max(1.0);
-                            if homing && homing_self {
-                                speed_steals.push((pr.owner, 100.0, 4.0, pr.owner));
-                                homing_burnouts.push(pr.owner);
-                            } else if homing {
-                                speed_steals.push((victim, 50.0, dur, pr.owner));
-                            }
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, hit_dmg));
                         }
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
                         match on_hit {
@@ -3447,9 +3464,10 @@ impl World {
                                 }
                                 None => pr.alive = false, // 无下一目标：消失
                             }
-                        } else if *proj != crate::skill::W098bProjKind::Boomerang && !weaken_ally_keep {
+                        } else if *proj != crate::skill::W098bProjKind::Boomerang && !weaken_ally_keep && !homing_keep {
                             // S014B 命中**友军**（098c `oc` 友军分支）**不销毁**弹体：改为增益 + 转向最近的敌人继续飞；
                             // 其余情形（含 S014A 命中友军、S014B 命中敌人）都在 `vc`/`oc` 末尾 `IA(nr)` 销毁。
+                            // S003 命中**队友**（`homing_keep`）同样不销毁（098c `lb` 两分支都不入）。
                             pr.alive = false;
                         }
                     }
@@ -3845,10 +3863,15 @@ impl World {
                 }
             }
         }
-        // S003 自撞 Burn out：施法者速度 ×0.2（098c `lb`：`Q[Vr]=.2*Q[Vr]; S[Vr]=.2*S[Vr]`）。
+        // S003 自撞 Burn out（098c `lb` Hr 分支）：`Hr=false, ev=0, Q*=0.2, U=w=0`——结束硬体冲刺并大幅减速。
         for pid in homing_burnouts.drain(..) {
             if let Some(p) = self.players.get_mut(pid as usize) {
+                p.burning = false;
                 p.cur_vel = p.cur_vel * Fix64::from_num(0.2);
+                p.kb_vel = p.kb_vel * Fix64::from_num(0.2);
+                if let Some(c) = p.control.as_mut() {
+                    c.vel = c.vel * Fix64::from_num(0.2);
+                }
             }
         }
         // S014B：命中友军后清 `bv/Nv`（`oc`：`set bv[nr]=false` / `set Nv[nr]=false`）。
@@ -8545,10 +8568,10 @@ mod tests {
         assert_eq!(world.players[0].hp, hp0, "自撞不应自伤");
     }
 
-    /// S003 追踪弹：**能命中队友**（098c `Nv[Nb]=true`）——但命中队友＝**+50 移速 buff**（`gR(Vr,hR+50)`），
-    /// **不是伤害**（因为它的伤害走 `tI` AoE，而 `tI` 同样过滤 `cn[id]!=cn[施法者]` → 队友不受 AoE 伤）。
+    /// S003 追踪弹：命中**队友（同队异主）**——098c `lb` 的 `Vv==Vv`（自）与 `cn!=cn`（敌）两分支都不入
+    /// ⇒ **无伤害、无增益、且不销毁**（穿过队友，继续飞向目标）。
     #[test]
-    fn s003_can_hit_teammate_for_speed_buff() {
+    fn s003_teammate_hit_is_transparent() {
         let mut world = World::new(3, 1152);
         world.obstacles.clear();
         world.sandbox = true;
@@ -8560,9 +8583,10 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(4.0), Fix64::ZERO);
         world.players[1].move_target = None;
         world.players[2].team = 1;
-        world.players[2].pos = Vec2::new(d60(10.0), Fix64::ZERO); // 锁定目标
+        world.players[2].pos = Vec2::new(d60(10.0), Fix64::ZERO); // 锁定目标（队友后面）
         world.players[2].move_target = None;
         let hp1 = world.players[1].hp;
+        let hp2 = world.players[2].hp;
         world.step(vec![
             PlayerInput { cast: Some((SkillId::S003, Some(Vec2::new(d60(10.0), Fix64::ZERO)))), ..Default::default() },
             PlayerInput::default(),
@@ -8573,10 +8597,11 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(
-            world.players[1].has_buff(BuffKind::SpeedSteal(0.0)),
-            "命中队友应给 +50 移速（098c `gR(Vr,hR(Vr)+50)`）"
+            !world.players[1].has_buff(BuffKind::SpeedSteal(0.0)),
+            "命中队友不应给移速（098c `lb` 队友分支无效果）"
         );
-        assert_eq!(world.players[1].hp, hp1, "命中队友不应造成伤害（AoE 也过滤同队）");
+        assert_eq!(world.players[1].hp, hp1, "命中队友不应造成伤害");
+        assert!(world.players[2].hp < hp2, "应穿过队友、继续命中后面的敌人");
     }
 
     /// S003 追踪弹：锁定点击处最近敌人全速直追——目标横移也能转向命中。
