@@ -2018,6 +2018,10 @@ impl Game {
             return;
         };
         let Some(skill) = profile.bound_skill(key) else { return };
+        // 098c：F 槽（S001/S020/S021）是原生/角色技能，不可商店升级。
+        if !key.tree().is_purchasable() {
+            return;
+        }
         // 升级上限 = 098c 基础档数 + 技能上限突破（乔丹原生购买项）；upgrade_skill 内部亦校验。
         let lv = profile.skill_level(skill);
         let cap = game_core::skill::DefTable::max_level(skill) + profile.cap_bonus_for_skill(skill);
@@ -2042,6 +2046,10 @@ impl Game {
         let Some(&skill) = key.tree().skills_in_tree().get(i) else {
             return;
         };
+        // 098c：F 槽不可购买/升级。
+        if !key.tree().is_purchasable() {
+            return;
+        }
         // 先只读判断该技能是否已购买（借用随即结束，避免与后续 &mut 借用冲突）
         let owned = self
             .meta
@@ -5274,6 +5282,7 @@ impl Game {
                                     let selected = self.learn_skill_index == Some(i);
                                     let r = graphics::Rect::new(rx, ry, content_w, ui::theme::ROW_H);
                                     let hover = r.contains(mouse);
+                                    let purchasable = key.tree().is_purchasable();
                                     let cost = me.purchase_cost(*skill);
                                     let affordable = me.gold >= cost;
                                     // 行用中性基础名（去掉 ·形态 后缀；形态见详情面板）
@@ -5286,7 +5295,9 @@ impl Game {
                                     } else {
                                         ui::RowState::Normal
                                     };
-                                    let label = if bound_here {
+                                    let label = if !purchasable {
+                                        format!("{} {}  （原生技能）", i + 1, form_name)
+                                    } else if bound_here {
                                         i18n::tf("{i} {name}  ✓已购", &[("i", (i + 1).to_string()), ("name", form_name.to_string())])
                                     } else if tree_locked {
                                         i18n::tf("{i} {name}  （同树已锁定）", &[("i", (i + 1).to_string()), ("name", form_name.to_string())])
@@ -5317,7 +5328,9 @@ impl Game {
                                         let on = me.forms.get(skill.as_u32() as usize).copied().unwrap_or(false);
                                         let name = game_core::skill::DefTable::neutral_name(skill);
                                         // 标题：名称 + 已购等级/上限 / 价格
-                                        let head = if owned {
+                                        let head = if !key.tree().is_purchasable() {
+                                            format!("{}  Lv{} （原生技能）", i18n::t(name), lv)
+                                        } else if owned {
                                             let jb = me.jordan_breaks_for_skill(skill);
                                             if jb > 0 {
                                                 i18n::tf("{name}  Lv{lv} / {cap}  （已购买，乔丹 +{jb}）", &[("name", i18n::t(name).to_string()), ("lv", lv.to_string()), ("cap", cap.to_string()), ("jb", (2 * jb).to_string())])
@@ -5384,7 +5397,9 @@ impl Game {
                                         // 购买 / 升级按钮：未拥有=购买 1 级，已拥有=升级；已满级=乔丹之石突破。
                                         // 098c `Hf`：一颗戒指（5G）只换一次 +2、用掉即消耗，**想再 +2 必须再花 5 金**（无次数上限）。
                                         let can_break = owned && lv >= cap;
-                                        let (label, enabled) = if owned {
+                                        let (label, enabled) = if !key.tree().is_purchasable() {
+                                            ("（原生技能，不可购买）".to_string(), false)
+                                        } else if owned {
                                             if lv >= cap {
                                                 if can_break {
                                                     // 098c `Hf`：一颗戒指（5G）只换一次 +2，用掉即消耗，但**可反复购买**。

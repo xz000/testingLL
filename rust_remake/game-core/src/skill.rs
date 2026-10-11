@@ -45,6 +45,14 @@ impl SkillTree {
         !matches!(self, SkillTree::F)
     }
 
+    /// 该树是否可在商店**购买/升级**。
+    /// 098c：只有 **F 槽不可**（S001/S020/S021 是 Warlock **原生/角色**技能——
+    /// `uabi="S128,S000,S001"`、S020=化身/S021=国王由 `fI`/`vI` 替换；`kf` 无对应研究）。
+    /// 天罚的强化只经**鲜血之剑**（`Zr`）。
+    pub fn is_purchasable(self) -> bool {
+        !matches!(self, SkillTree::F)
+    }
+
     /// 技能树的中文名（UI 显示）。
     pub fn name_zh(self) -> &'static str {
         match self {

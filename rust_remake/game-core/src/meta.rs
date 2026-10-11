@@ -566,6 +566,10 @@ impl PlayerProfile {
     ///
     /// 注：升级是对已购技能升等级（1→2→…），不触发同树互斥，也不受涨价影响。
     pub fn upgrade_skill(&mut self, skill: SkillId, cost: i32) -> bool {
+        // 098c：F 槽（S001/S020/S021）是原生/角色技能，**不可商店升级**；天罚强化只经鲜血之剑。
+        if !skill.tree().is_purchasable() {
+            return false;
+        }
         if self.gold < cost {
             return false;
         }
@@ -650,6 +654,10 @@ impl PlayerProfile {
     /// 即**一颗戒指只换一次 +2**，想再突破必须**再花 5 金**；故此处按次收费、不设次数上限。
     /// 戒指物品 `I00E` 只是 war3 载体（状态全在 `iV` flag 里），我方**不占物品栏**。
     pub fn break_cap_for(&mut self, skill: SkillId) -> bool {
+        // F 槽不可突破（非购买项）。
+        if !skill.tree().is_purchasable() {
+            return false;
+        }
         let Some(key) = Self::key_of_skill(skill) else {
             return false;
         };
@@ -1812,6 +1820,19 @@ mod tests {
         assert_eq!(p.skill_level(SkillId::S000), 1);
         assert_eq!(p.skill_level(SkillId::S001), 1);
         assert_eq!(p.purchased_spell_count(), 0, "默认技能不应计为“已购”");
+    }
+
+    /// 098c：F 槽（S001/S020/S021）是原生/角色技能，**不可商店购买/升级/突破**；
+    /// 天罚强化只经鲜血之剑（`Zr`）。S000（G 槽）仍可升级（`R002`）。
+    #[test]
+    fn role_skills_not_purchasable_or_upgradable() {
+        let mut p = PlayerProfile::new(0, 8);
+        p.gold = 200;
+        assert!(!p.upgrade_skill(SkillId::S001, 12), "天罚不可商店升级（098c 无研究）");
+        assert!(!p.break_cap_for(SkillId::S001), "天罚不可乔丹突破");
+        assert_eq!(p.gold, 200, "拒绝时不应扣金");
+        // 对照：普通树可升级。
+        assert!(p.upgrade_skill(SkillId::S000, 5), "火球可升级（R002）");
     }
 
     #[test]
