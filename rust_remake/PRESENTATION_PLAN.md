@@ -2,7 +2,7 @@
 
 > 前提（archive/PORT_098B_DECISIONS.md D13 / D14）：098c 大量表现是 **war3 引擎局限下的变通**；我们只复刻**信息与手感**，
 > 用原生载体呈现。原则：**表现层全部是客户端本地效果，不进快照、不影响确定性**（不改 `PROTOCOL_VERSION`）。
-> 关联：`AUDIO_PLAN.md` / `AUDIO_SCRIPT.md`（音效）· `archive/UI_AUDIT.md` · `JASS_AUDIT_098c.md`。
+> 关联：`archive/AUDIO_PLAN.md` / `archive/AUDIO_SCRIPT.md`（音效）· `archive/UI_AUDIT.md` · `archive/JASS_AUDIT_098c.md`。
 > 代码位置：`client/src/main.rs`（绘制 `draw_scene` / HUD）、`client/src/ui.rs`（theme/text/HitRegistry）。
 
 ---

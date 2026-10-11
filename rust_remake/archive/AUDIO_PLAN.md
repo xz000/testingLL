@@ -1,5 +1,7 @@
 # 音效与本地设置规划（2026-09-13）
 
+> ⚠ **历史归档（2026-10-10）**：已实施完成 / 已被取代（见 `../DOCS_INDEX.md` C 类）。保留作参考，**勿作真值**；文内相对链接可能已失效。
+
 > 目标：给表现层 P2（音效）一份**可施工**清单，并规划承载「音量/静音」的**主菜单设置界面**。
 > **本清单直接来自 098c JASS 实证**（`war3map_pretty.j` 的 `CreateSound`/`StartSound`），是权威来源。
 > 关联：`PRESENTATION_PLAN.md`（P1–P6）· `archive/HANDOVER.md` · `JASS_AUDIT_098c.md`。

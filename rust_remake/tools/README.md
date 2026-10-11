@@ -127,10 +127,21 @@ field(4) + type(4) + cstring    + trailer(4)   # 字符串
 ## 6. `gen_demo_icon_pack.py` — 生成演示图标包
 
 生成一个覆盖全部技能 / 物品键的「演示图标包」（汉字 + 底色方块，占位风格），用于测试
-本地图标包与创意工坊上传。详见 `ICON_PACK_PLAN.md`。
+本地图标包与创意工坊上传。详见 `archive/ICON_PACK_PLAN.md`。
 
 - 依赖：**Pillow**（`pip install pillow`）+ 仓库字体 `assets/fonts/LXGWWenKaiMonoLite-Medium.ttf`。
 - 键表来源：调用客户端 `cargo run -q -p client -- --dump-icon-keys`（**权威**，不在 Python 里重复维护 id/名字）。
 - 用法：`python tools/gen_demo_icon_pack.py [输出目录]`（默认 `%APPDATA%/warlock_brawl/icons/DemoIconPack`）。
 - 产物：`icons/skill/*.png`、`icons/item/*.png`、`circle_brawl_pack.ini`、`keys.txt`、`preview.png`。
 - 回游戏「设置 → 图标包」选 `Demo Icon Pack` 即可看到；真实包同名替换 PNG 即可。
+
+## 7. `jass_find.py` — 检索 098c raw `war3map.j`
+
+```bash
+python tools/jass_find.py "^function mI "
+python tools/jass_find.py "jn\\[" --ctx 1
+```
+
+- raw `.j` 用 **`CR` 分行**（LF 仅 85 处），`findstr`/多数编辑器会数错行；本脚本按 `[\r\n]+` 切分。
+- ⚠ **行号口径**：与历史文档（旧 `Select-String`）**不可比**——引用一律以**函数名**为准。
+- 供「与 JASS 对齐」核对（见 `SKILL_ALIGNMENT_LEDGER.md` §14、`JASS_FIELDS_098c.md`）。

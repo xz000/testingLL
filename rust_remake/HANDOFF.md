@@ -29,7 +29,7 @@
 | `JASS_FIELDS_098c.md` | 权威（字段语义） | 两字母字段/回调语义（`Q/S`=每 tick、`mI` 的 `lI`=击退%、`yO/oR` DoT、`wR` 废参、`Jv`≠`Gv`、`kv` vs `Kv`、两种“镜面反射”） |
 | `098C_DIFF.md` | 系统级差异 | 098b↔098c 大系统差异（魔法张力/移动/物理/成长/计分/回血/岩浆）。**A1–A8 全部结案**；**A2 移动模型已收口**（详台账 §12/§13）|
 | `ITEM_AUDIT_098c.md` / `ECONOMY_RECHECK.md` | 权威 | 道具 24 格 / 经济奖励 |
-| `KNOCKBACK_ALIGNMENT.md` | 权威 | 击退系数逐技能 |
+| `SKILL_ALIGNMENT_LEDGER.md` §14 | 权威 | **击退系数逐技能 + JASS↔Rust 全量对齐矩阵**（原 `archive/KNOCKBACK_ALIGNMENT.md` 已并入并归档）|
 | `EXIT_MENU_RECONNECT_PLAN.md` | 设计档（联机） | Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列） |
 | `archive/CODE_PHASE_RECORD.md` | 记录 | 代码阶段改动汇总（commit hash） |
 | ⚠ `archive/SKILL_PER_LEVEL_AUDIT.md` | **已被取代** | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 以 `SKILL_CODE_AUDIT_098c.md` 为准 |

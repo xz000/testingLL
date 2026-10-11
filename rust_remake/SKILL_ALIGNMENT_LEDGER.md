@@ -7,7 +7,7 @@
 >    `war3map_pretty.j` 仅用于**定位行号**（它会把 `elseif` 拆成 `else`+嵌套 `if`，**不可用于控制流**）。
 >    **tooltip 可能过时**（本会话已抓到多例 `098c tooltip ≠ 098c 代码`），只作旁证。
 > 2. 每条结论**必须带函数名 + 行号**（例：`Sb`(11342)）。没有行号的结论一律视为**未复核**。
-> 3. `JASS_AUDIT_098c.md` 里的 "✅" **不再默认可信**：本文复核过的才算；发现旧结论有错 → 同时更正审计并在此记录。
+> 3. `archive/JASS_AUDIT_098c.md` 里的 "✅" **不再默认可信**：本文复核过的才算；发现旧结论有错 → 同时更正审计并在此记录。
 > 4. 改快照字段 / 按 tag 编码的枚举（`BuffKind`/`W098bOnHit`）→ bump **`PROTOCOL_VERSION`**（`game-core/src/lib.rs`），并同步 `world_ser.rs` 的 ser+de+往返。
 > 5. **逐技能「代码」基准审计**见 **`SKILL_CODE_AUDIT_098c.md`**（把每个技能的 damage/duration/cooldown/range/speed 从 098c 代码抽出与 def 对照）。
 
@@ -1003,7 +1003,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 ## 14. JASS↔Rust 全量对齐矩阵（2026-10-10 收尾普查）
 
-> 性质：**索引/总览**——把散落在 `SKILL_CODE_AUDIT_098c.md`（逐技能数值）、`KNOCKBACK_ALIGNMENT.md`（击退）、
+> 性质：**索引/总览**——把散落在 `SKILL_CODE_AUDIT_098c.md`（逐技能数值）、`archive/KNOCKBACK_ALIGNMENT.md`（击退）、
 > `JASS_FIELDS_098c.md`（字段）、本台账 §3/§9/§12/§13 的结论收敛成**一张权威表**，**不替代**上述明细。
 > **行号口径**：raw `war3map.j`（`CR` 分行）与历史文档（`Select-String`）**行号不可比**；本节以**函数名**为准，
 > 行号仅辅助。检索工具：`tools/jass_find.py <regex>`（按 `[\r\n]+` 切分，内容真值）。

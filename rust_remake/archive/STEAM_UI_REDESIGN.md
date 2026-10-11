@@ -1,5 +1,7 @@
 # Steam 大厅界面改造（对齐技能/商店风格）
 
+> ⚠ **历史归档（2026-10-10）**：已实施完成 / 已被取代（见 `../DOCS_INDEX.md` C 类）。保留作参考，**勿作真值**；文内相对链接可能已失效。
+
 > 目标：把「选择 Steam 联机 → 进入房间之前」的几个界面，改成与**技能/商店页**一致的风格与交互。
 > 本文只做规划；**待确认后逐步实施**。关联：`ROOM_UI_REVIEW.md`、`SETTINGS_ALIGNMENT_AUDIT.md`。
 > 代码位置：`client/src/main.rs`（绘制 `draw_menu` / `draw_steam_lobby_list` / `draw_steam_connecting`）、

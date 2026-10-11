@@ -1,7 +1,7 @@
 # 对局内退出菜单 + 重连 规划（EXIT_MENU_RECONNECT_PLAN.md）
 
 > 创建 2026-09-27（v2）。目标：把「对局中按 Esc 立即退回主菜单」改成**确认式退出菜单**，并补全**重连**的界面与入口。
-> 本文只做规划，**未改代码**。关联：`RECONNECT.md` · `STEAM_MULTIPLAYER_PLAN.md` · `UI_MASTER_PLAN.md` · `FRAME_SYNC_*`。
+> 本文只做规划，**未改代码**。关联：`RECONNECT.md` · `archive/STEAM_MULTIPLAYER_PLAN.md` · `archive/UI_MASTER_PLAN.md` · `FRAME_SYNC_*`。
 > 阅读顺序：§0 现状 → §1 术语 → §2 决策 → §3 状态机 → §4 退出菜单 → §5 重连 → §6 Q3/Q4 权衡 → §7 改动点 → §8 实施 → §9 测试 → §10 风险 → §11 待确认。
 
 ---
@@ -30,7 +30,7 @@
 | 快照 | host 本地 `set_snapshot` 每 `SNAPSHOT_EVERY=30` 帧（≈0.5s）；**广播**每 `SNAPSHOT_BROADCAST_EVERY=150` 帧（≈2.5s，仅 Steam） | `main.rs` |
 | **LAN** client 判掉线 | `stale_ticks>=CLIENT_STALE_TICKS(180≈3s)` → `conn_dropped=true` → 冻结世界 → `draw_reconnect_overlay` → 按 `R` → `poll_reconnect` | `main.rs` 6767 / 2875 / 4403 |
 | **Steam** client 判掉线 | `steam_cli_stale_ticks>=180` → `steam_migrating=true` → **主机迁移** | `main.rs` ~6597 / `steam.rs::poll_steam_migration` |
-| Steam 主机迁移 | 已完整实现（三阶段，真机复验通过） | `STEAM_MULTIPLAYER_PLAN.md` |
+| Steam 主机迁移 | 已完整实现（三阶段，真机复验通过） | `archive/STEAM_MULTIPLAYER_PLAN.md` |
 | 帧缓冲 | `frame_buf_capacity=60` 帧（≈1s）→ 超过 1s 的缺口靠**快照**而非帧补发 | `net/src/lockstep.rs` |
 
 ### 0.3 关键数值（用于窗口/节奏判断）
@@ -173,7 +173,7 @@
 ### 5.4 Steam 归并细节（D2-A）
 - 删除 `steam::poll_steam_reconnect`（及其 `conn_dropped` 门控），掉线统一走 `steam_migrating` 状态机。
 - `poll_steam_migration` 阶段 A 已是「发 ReconnectReq 等应答/超时」；只需在其外层加「自动重试节流 + UI 状态」。
-- 修正 `RECONNECT.md` / `STEAM_MULTIPLAYER_PLAN.md` 里过时描述。
+- 修正 `RECONNECT.md` / `archive/STEAM_MULTIPLAYER_PLAN.md` 里过时描述。
 - 需保留「原 host 还活着」的早退（收到来自旧 host 的任意包即恢复），现状已有。
 
 ### 5.5 LAN 的处理（无迁移，D4/D5）
@@ -217,7 +217,7 @@
 - 收益有限：Steam（主线）天然稳定身份；LAN 是备胎，崩溃重启接回是低频场景。
 
 **LAN host 迁移的障碍**
-- 迁移依赖「全体成员一致视图」来选举同一新 host；Steam 用大厅（`lobby_members`）保证一致性，**LAN 无中心成员视图**，client 之间互不知晓 → 做不到确定性选举（`STEAM_MULTIPLAYER_PLAN.md` 的核心洞察）。
+- 迁移依赖「全体成员一致视图」来选举同一新 host；Steam 用大厅（`lobby_members`）保证一致性，**LAN 无中心成员视图**，client 之间互不知晓 → 做不到确定性选举（`archive/STEAM_MULTIPLAYER_PLAN.md` 的核心洞察）。
 - 工程量大、且与「Steam 为核心、LAN 为备胎」定位相悖。
 
 **建议结论（D4）**：
@@ -258,7 +258,7 @@
 
 ### E4 Steam 重连归并（D2-A）
 - 删 `poll_steam_reconnect`；掉线 UI/手动重试接到 `poll_steam_migration` 阶段 A。
-- 修正 `RECONNECT.md` / `STEAM_MULTIPLAYER_PLAN.md` 过时描述。
+- 修正 `RECONNECT.md` / `archive/STEAM_MULTIPLAYER_PLAN.md` 过时描述。
 - 测试：迁移阶段 A 早退/超时分支纯逻辑；真机复验（双账号，调网络）。
 
 > **实施顺序（按 D5「Steam 优先」调整）**：E1 → E2 → **E4** → E3 →（可选）E5。
@@ -301,7 +301,7 @@
 - 掉线角色「幽灵化/无敌」等**玩法**改动。
 - 观战、投降/投票结束、真正的暂停（多人）。
 - LAN 成员一致视图 / LAN 主机迁移。
-- 语音、Steam 富状态扩展等（见 `STEAM_MULTIPLAYER_PLAN.md`）。
+- 语音、Steam 富状态扩展等（见 `archive/STEAM_MULTIPLAYER_PLAN.md`）。
 
 ## 13. 记录
 - 2026-09-27：v1 初版（审计 + 设计骨架）。
