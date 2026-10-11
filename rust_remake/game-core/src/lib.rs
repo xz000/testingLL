@@ -86,4 +86,6 @@ pub fn version() -> &'static str {
 /// 自撞→AoE（`Hr`→kb1+飞+停冲刺 / 否则 kb1.3+50）；队友→**无效且不销毁（穿过）**（纯逻辑）。
 /// v52（2026-10-10）：S017B 沉默改为 **098c `AC` 逐技能槽**——新增 `Player.silenced_trees`（快照）；
 /// 时长 `(5+ 攻方S017等级 − 受害该树等级)*jn比`（R 槽 ×0.5）、`diff<-2` 免；F 树不参与。
-pub const PROTOCOL_VERSION: u32 = 52;
+/// v53（2026-10-10）：熔岩靴 `kC` 对齐——nova 在岩浆上触发 `kC` **三个 nova 都有**（含 S020）；
+/// 且 `mC`(S001)/`QC`(S021) 为 `kC 异或 FX`（激活即**免自伤**），而 `qC`(S020) 仍**无条件** `FX(20)`。
+pub const PROTOCOL_VERSION: u32 = 53;

@@ -881,7 +881,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - ⚠ **修正（2026-10-10）**：本段旧结论「不存在 098b 依据的实现」**已被推翻**——基线实为
   「098b 事实 + 098c tooltip + 占位」的**混合物**；实锤如 S018B 的 **45% 减速 = 098b 独有**（已删）、
   S015A 速度/射程 = 占位（098b/098c 都是 1200/1000）。详见 `SKILL_CODE_AUDIT_098c.md`。
-- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）→**51**（S003 命中分支，§16.1）→**52**（`Player.silenced_trees` 逐槽沉默，§16.2）。
+- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）→**51**（S003 命中分支，§16.1）→**52**（`Player.silenced_trees` 逐槽沉默，§16.2）→**53**（熔岩靴 kC：三 nova 触发 + S001/S021 免自伤）。
 - 说明：S018B 数值/减速/时长/`PX→DX`、S015B 步长、S017A 伤害/时长/AoE、S008A 砸柱、S014B 伤害、S007/S010 平加移速 均不改快照格式，故不升协议。
 
 ---
@@ -1090,7 +1090,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 | ~~`Ev[na]`~~ | ✅ `na`=14=S018类（§15.1）|
 | ~~`Hr` 精确语义~~ | ✅ 仅 `AB`(S012A) 置 true（`6133`）⇒ ≈ 我方 `burning`（仅撞柱 `WA`/命中 `CA`/盾 `fC` 分支用）|
 | ~~`ov`/`Bv`/`cv`/`Cv`~~ | ✅ 不适用：`ov` 仅 `ZA` 一处，而 `ZA`=装饰物 `xN` 的**落地回调**（`Hv[xN]=Bx`）；`Bv`=地形碎石；`cv` 我方盾反射等效；`Cv` 未用 |
-| **`kC`/`nV` 危险地形护盾** | 📋 **唯一真残留**（= 熔岩靴的**主动交互**，非新系统）：`qa[ja]`=本回合危险地形（`nA`: `Fn-=To` = 我方圈外岩浆 9/s **已等价**）；卖/买熔岩靴 `To×.96/.94/.92`（**被动已建模**）并置 `nV`（就绪）。当 `(有靴)&&(在岩浆上)&&(放 nova S001/S020/S021)` → `kC`：**自伤→岩浆免疫**（`To/=8` 3/4/5s、奶 6/8/10、`nV=false`，25s 后就绪）。实现量小（复用岩浆判定 + 档位）。|
+| ~~`kC`/`nV` 危险地形护盾~~ | ✅ **已对齐（v53）**：熔岩靴充能就绪（`nV`）+ 站岩浆上 + 放 nova → `kC`（`LavaShield` 87.5% 3/4/5s + CD25s，**已实现**）。**本次修**：①`kC` **三个 nova 都有**（之前漏 S020）；②`mC`/`QC` 为 `kC 异或 FX`（激活=**免自伤**）；`qC`(S020) 仍**无条件** `FX(20)`（原图不一致，以代码为准）。测试 `nova_on_lava_boots_kc_vs_self_damage_matches_098c`。|
 | 高度系统 `M/T/ho/Z/Hv` | — War3 专属，我方 2D 化 ⇒ 不适用 |
 | ~~S005 反射条件~~ | `fC` 读 `Ev`/`Hr` | ✅ **已修（§15.1）**：`proj_class` 按 `Ev` 映射（`Ev==9` 从未设置）|
 | S008A 被暗物质拉 | `hc` 排除 `Ev==8` | ✅ **已修（§15.2）**：`step_gravity_pull_projectiles` 排除 `DelayedBlast` |

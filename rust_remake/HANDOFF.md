@@ -13,7 +13,7 @@
   **审计已无已知未闭合项**。
 - **联机（Steam）**：R 系列全部完成——掉线/迁移 UI、崩溃重开归队(R5c)、被取代 host 归队(R6b)、
   联机暂停(R7a–d)、有界追赶(R8)、防脑裂。见 `EXIT_MENU_RECONNECT_PLAN.md`。
-- **协议号 `PROTOCOL_VERSION = 52`**（`game-core/src/lib.rs`；变更史见其上方注释）。
+- **协议号 `PROTOCOL_VERSION = 53`**（`game-core/src/lib.rs`；变更史见其上方注释）。
 - **A2 移动模型已收口（2026-10-10）**：冰面阻尼时间化 `0.98^(5/9)`；**击退并入走位**（`Player.kb_vel` 与自走并存相加，可边走边滑；协议 49）；仅普通加速时间**有意保留**（对帧同步手感更好）。见台账 §12/§13。
 - **关键教训**：本仓库基线**既非 098b 也非 098c**，而是「098b 事实 + 098c tooltip + 占位」的混合物；
   **098c 的 tooltip 也常与 098c 代码不符** ⇒ **唯一真值是 098c 代码**。
@@ -51,7 +51,7 @@
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
 - 测试：**client 119 / game-core 331 / net 47 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
-- `PROTOCOL_VERSION = 52`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。
+- `PROTOCOL_VERSION = 53`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
 

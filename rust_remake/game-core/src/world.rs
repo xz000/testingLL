@@ -5429,11 +5429,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                 let gx = stats.damage + Fix64::from_num(world.players[idx as usize].item_fx.smite_bonus);
                 // 熔岩靴激活（098c I00J-L「熔岩上天罚后激活」，M5/D8）：站熔岩 + 持靴 + CD 到期
                 // → 挂 LavaShield（87.5% 抵抗 3/4/5s）；CD 25s 在 step tick 递减。
-                if matches!(
-                    kind,
-                    crate::skill::W098bNovaKind::Smiting | crate::skill::W098bNovaKind::Devotion
-                ) && ppos.length_squared() > world.arena_radius * world.arena_radius
-                {
+                // 098c `nV && TerrainType(施法者)==qa[ja]`（= 熔岩靴充能就绪 & 站在危险地形/圈外岩浆）
+                // → 触发 `kC`。**三个 nova 都有此分支**（`mC`/`qC`/`QC`）。
+                let mut lava_shield_fired = false;
+                if ppos.length_squared() > world.arena_radius * world.arena_radius {
                     let p = &mut world.players[idx as usize];
                     if p.lava_boot_cd <= Fix64::ZERO
                         && p.item_fx.lava_resist_secs > 0.0
@@ -5441,21 +5440,27 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     {
                         p.add_buff(BuffKind::LavaShield, p.item_fx.lava_resist_secs);
                         p.lava_boot_cd = Fix64::from_num(25.0);
+                        lava_shield_fired = true;
                     }
                 }
                 // 098c FX 自伤（`mC`/`qC`/`QC` 顺序：**FX 在前、AoE/`DX` 在后**）——
                 // 先扣施法者 HP（下限 0.5，不可自杀），再算 AoE（否则满血时吸血被 `max_hp` 截断）。
+                // `mC`/`QC`：`if <kC> then ... else FX ... endif` → **kC 异或 FX**（激活了 kC 就免自伤）；
+                // `qC`(S020)：`if <kC> then kC endif` 后 **无条件 `FX(ii,20)`** → 两者都做（原图不一致，以代码为准）。
+                let fx_applies = !(lava_shield_fired && kind != crate::skill::W098bNovaKind::Catastrophe);
                 if let Some(p) = world.players.get_mut(idx as usize) {
                     if p.alive {
-                        let hp = p.hp.to_num::<f64>();
-                        // S020 灾变固定 20（`FX(ii,20)`）；S001/S021 用 `cX`(=gx)（`FX(ii,cX)`）。
-                        let dmg = if kind == crate::skill::W098bNovaKind::Catastrophe {
-                            20.0
-                        } else {
-                            gx.to_num::<f64>()
-                        };
-                        p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
-                        // 098c `qC`：`dX(ri,$A)` → 张力 +10（仅灾变）。
+                        if fx_applies {
+                            let hp = p.hp.to_num::<f64>();
+                            // S020 灾变固定 20（`FX(ii,20)`）；S001/S021 用 `cX`(=gx)（`FX(ii,cX)`）。
+                            let dmg = if kind == crate::skill::W098bNovaKind::Catastrophe {
+                                20.0
+                            } else {
+                                gx.to_num::<f64>()
+                            };
+                            p.hp = if hp <= dmg + 0.5 { Fix64::from_num(0.5) } else { p.hp - Fix64::from_num(dmg) };
+                        }
+                        // 098c `qC`：`dX(ri,$A)` → 张力 +10（仅灾变，**无条件**，不随自伤一起跳过）。
                         if kind == crate::skill::W098bNovaKind::Catastrophe {
                             p.mana += 10.0;
                         }
@@ -9864,6 +9869,42 @@ mod tests {
         assert!(no > 0.0, "出圈应掉血");
         assert!((b1 / no - 0.96).abs() < 0.05, "靴1 被动应 ≈×.96，实际 {:.3}", b1 / no);
         assert!((b3 / no - 0.92).abs() < 0.05, "靴3 被动应 ≈×.92，实际 {:.3}", b3 / no);
+    }
+
+    /// 098c nova 在岩浆上的 `kC`/`FX` 结构差异（**三招不一致**，以代码为准）：
+    /// `mC`(S001)/`QC`(S021) = `if kC then ... else FX` ⇒ 激活 kC **免自伤**；
+    /// `qC`(S020) = `if kC endif` 后**无条件** `FX(ii,20)` ⇒ 仍自伤。
+    #[test]
+    fn nova_on_lava_boots_kc_vs_self_damage_matches_098c() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let run = |skill: SkillId, boots: bool| -> f64 {
+            let mut w = World::new(1, 1307);
+            w.obstacles.clear();
+            w.base_regen = 0.0;
+            if boots {
+                w.players[0].set_items(&[crate::item::ItemId::LavaBoots1]);
+            }
+            w.players[0].pos = Vec2::new(w.arena_radius + Fix64::from_num(10.0), Fix64::ZERO);
+            let hp0 = w.players[0].hp.to_num::<f64>();
+            w.step(vec![PlayerInput { cast: Some((skill, None)), ..Default::default() }], dt);
+            let none = vec![PlayerInput::default()];
+            for _ in 0..90 {
+                w.step(none.clone(), dt);
+            }
+            hp0 - w.players[0].hp.to_num::<f64>()
+        };
+        let s001_boots = run(SkillId::S001, true);
+        let s001_none = run(SkillId::S001, false);
+        let s020_boots = run(SkillId::S020, true);
+        assert!(s001_boots < 12.0, "S001+鞄：kC 应免自伤（仅岩浆伤），实际 {s001_boots:.1}");
+        assert!(
+            s001_none > s001_boots + 8.0,
+            "S001 无鞄应多出 10 自伤，实际 {s001_none:.1} vs {s001_boots:.1}"
+        );
+        assert!(
+            s020_boots > s001_boots + 12.0,
+            "S020+鞄：`qC` 仍无条件 FX(20)，实际 {s020_boots:.1} vs S001 {s001_boots:.1}"
+        );
     }
 
     /// 鲜血之剑的回血是**天罚专属**（`mC` 的 `DX((Zr+1)*n)`）：普通伤害不回血。
