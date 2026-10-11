@@ -13,7 +13,8 @@
   **审计已无已知未闭合项**。
 - **联机（Steam）**：R 系列全部完成——掉线/迁移 UI、崩溃重开归队(R5c)、被取代 host 归队(R6b)、
   联机暂停(R7a–d)、有界追赶(R8)、防脑裂。见 `EXIT_MENU_RECONNECT_PLAN.md`。
-- **协议号 `PROTOCOL_VERSION = 48`**（`game-core/src/lib.rs`；变更史见其上方注释）。
+- **协议号 `PROTOCOL_VERSION = 49`**（`game-core/src/lib.rs`；变更史见其上方注释）。
+- **A2 移动模型已收口（2026-10-10）**：冰面阻尼时间化 `0.98^(5/9)`；**击退并入走位**（`Player.kb_vel` 与自走并存相加，可边走边滑；协议 49）；仅普通加速时间**有意保留**（对帧同步手感更好）。见台账 §12/§13。
 - **关键教训**：本仓库基线**既非 098b 也非 098c**，而是「098b 事实 + 098c tooltip + 占位」的混合物；
   **098c 的 tooltip 也常与 098c 代码不符** ⇒ **唯一真值是 098c 代码**。
 
@@ -26,7 +27,7 @@
 | `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）** | 逐技能 §3/§9 事实表 + 状态列（✅/🔧/⚠/📋）；§11 基准审计；协议史 |
 | `SKILL_CODE_AUDIT_098c.md` | **权威（代码基准）** | 逐技能按 **098c 代码** 抽出的 damage/duration/cooldown/range/speed 公式，与 def 对照 |
 | `JASS_FIELDS_098c.md` | 权威（字段语义） | 两字母字段/回调语义（`Q/S`=每 tick、`mI` 的 `lI`=击退%、`yO/oR` DoT、`wR` 废参、`Jv`≠`Gv`、`kv` vs `Kv`、两种“镜面反射”） |
-| `098C_DIFF.md` | 系统级差异 | 098b↔098c 大系统差异（魔法张力/移动/物理/成长/计分/回血/岩浆）。**A1/A3–A8 结案**；**A2 移动模型仍待讨论**（❗2026-10-10 更正：通用移动**无**右键冲量，那仅属 S012B 凤凰）|
+| `098C_DIFF.md` | 系统级差异 | 098b↔098c 大系统差异（魔法张力/移动/物理/成长/计分/回血/岩浆）。**A1–A8 全部结案**；**A2 移动模型已收口**（详台账 §12/§13）|
 | `ITEM_AUDIT_098c.md` / `ECONOMY_RECHECK.md` | 权威 | 道具 24 格 / 经济奖励 |
 | `KNOCKBACK_ALIGNMENT.md` | 权威 | 击退系数逐技能 |
 | `EXIT_MENU_RECONNECT_PLAN.md` | 设计档（联机） | Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列） |
@@ -47,8 +48,8 @@
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 119 / game-core 326 / net 47 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
-- `PROTOCOL_VERSION = 48`——**只要动了会进快照的字段就必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。
+- 测试：**client 119 / game-core 331 / net 47 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
+- `PROTOCOL_VERSION = 49`——**只要动了会进快照的字段就必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
 
