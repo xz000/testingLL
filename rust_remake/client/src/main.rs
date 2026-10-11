@@ -3312,9 +3312,14 @@ impl Game {
                 draw_ring!(ring, Color::from_rgba(220, 240, 255, 180));
                 ring += 4.0;
             }
-            // 禁锢（Tied）/沉默 → 紫灰环
-            if p.tied() || p.silenced() {
-                draw_ring!(ring, Color::from_rgba(170, 130, 200, 200));
+            // 禁锢（Tied）→ 青绿环（与沉默区分）
+            if p.tied() {
+                draw_ring!(ring, Color::from_rgba(120, 210, 130, 200));
+                ring += 4.0;
+            }
+            // 098c `AC` 沉默（任一技能槽被沉默 / 全局）→ 纯紫环（War3 `SilenceTarget` 的 2D 化）
+            if p.silenced() || p.silenced_trees.iter().any(|s| *s > Fix64::ZERO) {
+                draw_ring!(ring, Color::from_rgba(180, 90, 255, 215));
                 ring += 4.0;
             }
             // 国王（模式 4）→ 金皇冠环（最外层）
@@ -4958,6 +4963,14 @@ impl Game {
                         }
 
                         let skill = me.bound_skill(*key);
+                        // 098c `AC` **逐技能槽沉默**：该树被沉默 → 底板变暗 + 紫色描边（与冷却的蓝色遮罩区分）。
+                        let tree_silenced = skill.map(|s| me_player.tree_silenced(s.tree())).unwrap_or(false);
+                        if tree_silenced {
+                            let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), rect, Color::from_rgba(70, 25, 95, 150))?;
+                            canvas.draw(&dim, graphics::DrawParam::new());
+                            let sb = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(3.0), rect, Color::from_rgba(195, 110, 255, 240))?;
+                            canvas.draw(&sb, graphics::DrawParam::new());
+                        }
                         let slot_center = Point2 { x: bx + slot_w / 2.0, y: y0 + 22.0 };
                         // 链激活时 Y 槽实为 S031「锁链附加」（Release/Induce）——098c 隐藏 S019、显示 S031。
                         let chain_here = if skill == Some(SkillId::S019) {
@@ -5035,6 +5048,10 @@ impl Game {
                                     Point2 { x: cx, y: y0 + slot_h - 14.0 },
                                     true,
                                 )?;
+                            }
+                            // 逐槽沉默角标（098c `AC`）：紫色「默」（右上角，避开形态角标）。
+                            if tree_silenced {
+                                draw_text(canvas, ctx, "默", 15.0, Color::from_rgb(230, 165, 255), Point2 { x: bx + slot_w - 12.0, y: y0 + 9.0 }, true)?;
                             }
                         }
                     }
@@ -11743,8 +11760,8 @@ fn active_status_icons(p: &game_core::player::Player) -> Vec<StatusIcon> {
     if p.tied() {
         v.push(StatusIcon { label: "束", color: [190, 140, 220] });
     }
-    if p.silenced() {
-        v.push(StatusIcon { label: "默", color: [210, 120, 210] });
+    if p.silenced() || p.silenced_trees.iter().any(|s| *s > Fix64::ZERO) {
+        v.push(StatusIcon { label: "默", color: [200, 110, 255] });
     }
     if p.has_buff(BuffKind::Pancake) {
         v.push(StatusIcon { label: "饼", color: [220, 190, 140] });
