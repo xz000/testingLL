@@ -360,6 +360,9 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     for bf in &p.buffs {
         encode_buff(o, bf);
     }
+    for s in &p.silenced_trees {
+        wfix(o, *s);
+    }
     wopt_vec(o, p.shadow_anchor);
     wfix(o, p.shadow_window);
     match p.kick {
@@ -533,6 +536,10 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     for bf in buffs.iter_mut() {
         *bf = decode_buff(b, p)?;
     }
+    let mut silenced_trees = [Fix64::ZERO; crate::skill::SkillTree::COUNT];
+    for s in silenced_trees.iter_mut() {
+        *s = fixat(b, p)?;
+    }
     let shadow_anchor = opt_vec(b, p)?;
     let shadow_window = fixat(b, p)?;
     let kick = if u8at(b, p)? != 0 {
@@ -626,6 +633,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.pull = pull;
     pl.cur_vel = cur_vel;
     pl.kb_vel = kb_vel;
+    pl.silenced_trees = silenced_trees;
     pl.buffs = buffs;
     pl.shadow_anchor = shadow_anchor;
     pl.shadow_window = shadow_window;

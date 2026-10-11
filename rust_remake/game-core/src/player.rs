@@ -251,6 +251,9 @@ pub struct Player {
     pub kb_vel: Vec2,
     /// 统一 buff 槽（加速 / 护盾 / 隐身 / 束缚 / 疾跑等）。
     pub buffs: [Buff; MAX_BUFFS],
+    /// 098c `AC` **逐技能槽沉默**剩余时长（索引 = `SkillTree::index`）：>0 则该树技能不可施放。
+    /// 时长 = `攻方S017等级 − 受害该树等级` 推导（详见 `world.rs` 双生弹线段处理）。
+    pub silenced_trees: [Fix64; crate::skill::SkillTree::COUNT],
     /// 影身（C3）锚点：存在时再次施法影身可传送回该点（持久的特殊状态，非计时 buff）。
     pub shadow_anchor: Option<Vec2>,
     /// 影身记号的有效倒计时（C3 `maxshadowtime`）：到期自动传回锚点并清记号。
@@ -386,6 +389,7 @@ impl Player {
             cur_vel: Vec2::ZERO,
             kb_vel: Vec2::ZERO,
             buffs: [Buff::new(BuffKind::Speed(1.0), 0.0); MAX_BUFFS],
+            silenced_trees: [Fix64::ZERO; crate::skill::SkillTree::COUNT],
             shadow_anchor: None,
             shadow_window: Fix64::ZERO,
             kick: None,
@@ -646,8 +650,14 @@ impl Player {
     }
 
     /// 沉默（B4-Y）：禁施法但可移动。
+    /// 注：098c 的 `AC` 是**逐技能槽**（`silenced_trees`）；本全局位保留给其它/旧路径。
     pub fn silenced(&self) -> bool {
         self.has_buff(BuffKind::Silenced)
+    }
+
+    /// 某技能树当前是否被 `AC` 沉默（098c 逐槽）。
+    pub fn tree_silenced(&self, tree: crate::skill::SkillTree) -> bool {
+        self.silenced_trees[tree.index()] > Fix64::ZERO
     }
 
     /// 命中敌人后的伤害成长（098c：Gn ×= 1.1，D9 批次1）。
@@ -831,6 +841,16 @@ impl Player {
                 // 定点残差防护：小于极小阈值视为已到期（避免 0 附近残留一个极小正值永不归零）。
                 if b.remaining < eps {
                     b.remaining = Fix64::ZERO;
+                }
+            }
+        }
+
+        // 098c `AC` 逐技能槽沉默计时。
+        for s in self.silenced_trees.iter_mut() {
+            if *s > Fix64::ZERO {
+                *s = (*s - dt).max(Fix64::ZERO);
+                if *s < eps {
+                    *s = Fix64::ZERO;
                 }
             }
         }

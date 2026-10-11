@@ -1298,6 +1298,10 @@ impl World {
                 } else {
                     skill
                 };
+                // 098c `AC` **逐技能槽沉默**：该技能所属树被沉默 → 拒施（与全局 `silenced()`/`tied()` 并行）。
+                if p.tree_silenced(skill.tree()) {
+                    continue;
+                }
                 // C3 影身·召回：已有锚点时再按影身 = 立即传回（原版 `BackToShadow` 忽略冷却）
                 if skill == SkillId::Shadow && p.shadow_anchor.is_some() {
                     let anchor = p.shadow_anchor.take().unwrap();
@@ -4205,7 +4209,7 @@ impl World {
                     by_owner.push((o, vec![pos], dur));
                 }
             }
-            for (owner, pts, dur) in by_owner {
+            for (owner, pts, _dur) in by_owner {
                 let owner_team = self.players.get(owner as usize).map(|p| p.team);
                 for pair in pts.chunks(2) {
                     if pair.len() < 2 {
@@ -4232,10 +4236,52 @@ impl World {
                         }
                     }
                     if !hits.is_empty() {
-                        let ojn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
+                        // 098c `AC(受害, 攻方)`：**逐 7 技能槽**沉默。
+                        // 基准 = 攻方 S017 等级；对照 = 受害该树已购技能等级；`diff>= -2` 且受害有该槽 →
+                        // 沉默 `(5+diff)*jn[攻]/jn[受]` 秒（**R 槽（098c slot3）再 ×0.5**）。
+                        // F 树不在 098c 7 槽内 → 不沉默；`nc`/`JO`/`Jn` 只是表现/统计 → 不建模。
+                        let att_s017 = self
+                            .players
+                            .get(owner as usize)
+                            .map(|o| o.skill_levels[crate::skill::SkillId::S017.as_u32() as usize] as f64)
+                            .unwrap_or(0.0);
+                        let att_jn = self.players.get(owner as usize).map(|o| o.jn()).unwrap_or(1.0);
                         for v in &hits {
                             if let Some(p) = self.players.get_mut(*v as usize) {
-                                p.add_debuff(BuffKind::Silenced, dur, ojn);
+                                let ratio = att_jn / p.jn();
+                                for tree in [
+                                    crate::skill::SkillTree::G,
+                                    crate::skill::SkillTree::D,
+                                    crate::skill::SkillTree::E,
+                                    crate::skill::SkillTree::R,
+                                    crate::skill::SkillTree::T,
+                                    crate::skill::SkillTree::Y,
+                                    crate::skill::SkillTree::C,
+                                ] {
+                                    if !tree.silenced_by_ac() {
+                                        continue;
+                                    }
+                                    // 受害在该树已购的技能及其等级（每树只选一个）。
+                                    let owned = tree
+                                        .skills_in_tree()
+                                        .iter()
+                                        .map(|s| (*s, p.skill_levels[s.as_u32() as usize]))
+                                        .find(|(_, l)| *l > 0);
+                                    let Some((_sk, lvl)) = owned else { continue };
+                                    let diff = att_s017 - lvl as f64;
+                                    if diff < -2.0 {
+                                        continue; // 等级差过小：该槽免疫
+                                    }
+                                    let mut d = (5.0 + diff) * ratio;
+                                    if tree == crate::skill::SkillTree::R {
+                                        d *= 0.5; // 098c slot3（`Wr`）特殊 0.5×
+                                    }
+                                    let idx = tree.index();
+                                    let dfix = Fix64::from_num(d.max(0.0));
+                                    if dfix > p.silenced_trees[idx] {
+                                        p.silenced_trees[idx] = dfix;
+                                    }
+                                }
                             }
                         }
                         // 098c `AC`：`aR(被沉默者)` —— 断其自己的链（弹体已 `mem::take` 到 `ps`）。
@@ -13105,11 +13151,51 @@ mod tests {
         let mut silenced = false;
         for _ in 0..150 {
             world.step(none.clone(), dt);
-            if world.players[1].has_buff(BuffKind::Silenced) {
+            // 098c `AC`：逐技能槽沉默（`silenced_trees`），不再用全局 `Silenced`。
+            if world.players[1].silenced_trees.iter().any(|s| *s > Fix64::ZERO) {
                 silenced = true;
             }
         }
-        assert!(silenced, "双生弹到期应在两弹间连线并沉默线段附近的敌人");
+        assert!(silenced, "双生弹到期应在两弹间连线并逐槽沉默线段附近的敌人");
+    }
+
+    /// 098c `AC` 沉默：**逐技能槽** + 时长随**等级差**（`(5+diff)`）、`diff<-2` 免、R 槽 ×0.5。
+    #[test]
+    fn ac_silence_per_tree_scales_with_level_gap() {
+        use crate::skill::SkillTree;
+        let mut world = World::new(2, 4242);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].team = 0;
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].forms[SkillId::S017.as_u32() as usize] = true; // B=沉默
+        world.players[0].skill_levels[SkillId::S017.as_u32() as usize] = 5; // 攻方 S017 等级 5
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(Fix64::from_num(900.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        // 受害：G 树 S000 满级 8（diff=-3 → **免疫**）；D 树 S002 等级 1（diff=4 → 沉默 9s）。
+        world.players[1].skill_levels[SkillId::S000.as_u32() as usize] = 8;
+        world.players[1].skill_levels[SkillId::S002.as_u32() as usize] = 1;
+        world.step(vec![
+            PlayerInput { cast: Some((SkillId::S017, Some(Vec2::new(Fix64::from_num(900.0), Fix64::ZERO)))), ..Default::default() },
+            PlayerInput::default(),
+        ], dt);
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..150 {
+            world.step(none.clone(), dt);
+        }
+        assert!(
+            !world.players[1].tree_silenced(SkillTree::G),
+            "G 树等级 8、攻方 5 → diff=-3 → 免疫沉默"
+        );
+        assert!(
+            world.players[1].tree_silenced(SkillTree::D),
+            "D 树等级 1、攻方 5 → diff=4 → 应被沉默"
+        );
+        let d = world.players[1].silenced_trees[SkillTree::D.index()].to_num::<f64>();
+        assert!(d > 7.0 && d <= 9.0, "D 树沉默应≈9s（(5+4)），实际 {d}");
     }
 
     /// S017B 沉默：目标禁施法但可移动；S017A 缠绕：目标定身（move_target 被清）。
@@ -13135,18 +13221,21 @@ mod tests {
         for _ in 0..30 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[0].has_buff(BuffKind::Silenced), "B 形态应施加沉默");
-        // 沉默中无法施法
+        assert!(
+            world.players[0].silenced_trees.iter().any(|s| *s > Fix64::ZERO),
+            "B 形态应施加逐槽沉默（098c `AC`）"
+        );
+        // 098c `AC`：被沉默的是受害者**已购技能所在树**——默认 G 树（S000）被沉默，F 树（S001）不在 7 槽内不受影响。
         world.players[0].caster = crate::skill::Caster::new();
         let m0 = world.players[0].move_target;
         world.step(vec![
-            PlayerInput { cast: Some((SkillId::S001, None)), ..Default::default() },
+            PlayerInput { cast: Some((SkillId::S000, None)), ..Default::default() },
             PlayerInput::default(),
         ], dt);
         for _ in 0..5 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[0].caster.is_busy() == false, "沉默者施法应被拒（不进入施法状态）");
+        assert!(world.players[0].caster.is_busy() == false, "被沉默树（G/S000）施法应被拒");
         let _ = m0;
         // A 形态缠绕：定身（move_target 被清除）
         let mut world2 = World::new(2, 1005);
@@ -14123,7 +14212,10 @@ mod tests {
         for _ in 0..80 {
             w.step(vec![PlayerInput::default(), PlayerInput::default()], dt);
         }
-        assert!(w.players[0].has_buff(BuffKind::Silenced), "p0 应被沉默");
+        assert!(
+            w.players[0].silenced_trees.iter().any(|s| *s > Fix64::ZERO),
+            "p0 应被逐槽沉默"
+        );
         assert!(
             !w.projectiles.iter().any(|p| matches!(&p.kind, ProjectileKind::Tether { owner, .. } if *owner == 0)),
             "沉默应断被沉默者自己的链"

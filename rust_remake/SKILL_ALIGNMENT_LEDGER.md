@@ -881,7 +881,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - ⚠ **修正（2026-10-10）**：本段旧结论「不存在 098b 依据的实现」**已被推翻**——基线实为
   「098b 事实 + 098c tooltip + 占位」的**混合物**；实锤如 S018B 的 **45% 减速 = 098b 独有**（已删）、
   S015A 速度/射程 = 占位（098b/098c 都是 1200/1000）。详见 `SKILL_CODE_AUDIT_098c.md`。
-- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）→**51**（S003 命中分支，§16.1）。
+- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）→**51**（S003 命中分支，§16.1）→**52**（`Player.silenced_trees` 逐槽沉默，§16.2）。
 - 说明：S018B 数值/减速/时长/`PX→DX`、S015B 步长、S017A 伤害/时长/AoE、S008A 砸柱、S014B 伤害、S007/S010 平加移速 均不改快照格式，故不升协议。
 
 ---
@@ -1212,7 +1212,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 **残留未知（不影响）**：`kb(nr)`（飞行成长伤害）我方已有 `homing_missile_damage`；`Iv/ar` 充能只是统计。
 
-### 16.2 F6 · 沉默 `AC`
+### 16.2 F6 · 沉默 `AC` — ✅ **已实现（协议 52）**
 
 **目标（098c `AC(OC,cb)`）**：对受害者 `OC` 的 **7 个技能槽**逐个：若 `diff = S017L[cb] − slotL[OC] >= -2` 且 `slotL[OC] > 0`，则该槽技能被禁用
 `OX = (5+diff) × jn[cb]/jn[OC]` 秒（**slot3 特殊：`OX=0.5*(5+diff)*bC`**）；另 `aR(OC)`（断自己的链）；命中>2 播 “Silencer”。
@@ -1224,7 +1224,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 **施法门**：`handle_casts` 前查 `silenced_trees[skill.tree()] > 0` → 拒绝（客户端按钮置灰）。
 **树等级**：取受害者在该树已购技能的等级（`skill_levels[该技能]`）。
 
-**测试**：新增 `silence_blocks_only_target_tree`、`silence_duration_scales_with_level_gap`；改 `s017b_twins_silence_along_line_at_expiry`。
+**实现记录**：`Player.silenced_trees: [Fix64; 8]`（+快照）；`handle_casts` 按 `skill.tree()` 拦；twin 段按 7 槽算 `(5+diff)*jn比`（R×0.5，`diff<-2` 免）。测试 `ac_silence_per_tree_scales_with_level_gap`（G 满级免疫 / D 秒 9s）；改 `s017b_twins_silence_along_line_at_expiry` / `s017_silence_blocks_cast_tied_blocks_move`（改施 S000）/ `silence_breaks_targets_own_chain`。**客户端按钮置灰暂未做**（可选）。
 
 ### 16.3 深挖判断：F5/F6 已足够，余项均为表象
 

@@ -23,6 +23,28 @@ pub enum SkillTree {
 }
 
 impl SkillTree {
+    /// 我方技能树数量（索引空间）。
+    pub const COUNT: usize = 8;
+
+    /// 树的稳定索引（用于 `Player.silenced_trees` 等数组）。
+    pub fn index(self) -> usize {
+        match self {
+            SkillTree::C => 0,
+            SkillTree::R => 1,
+            SkillTree::E => 2,
+            SkillTree::D => 3,
+            SkillTree::Y => 4,
+            SkillTree::T => 5,
+            SkillTree::F => 6,
+            SkillTree::G => 7,
+        }
+    }
+
+    /// 098c `AC` 沉默的 7 个技能槽对应的树（**不含 F**：098c 7 槽 = S000/D/E/R/T/Y/C）。
+    pub fn silenced_by_ac(self) -> bool {
+        !matches!(self, SkillTree::F)
+    }
+
     /// 技能树的中文名（UI 显示）。
     pub fn name_zh(self) -> &'static str {
         match self {
