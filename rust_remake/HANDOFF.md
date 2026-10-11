@@ -24,7 +24,7 @@
 
 | 文件 | 权威性 | 读什么 |
 |---|---|---|
-| `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）** | 逐技能 §3/§9 事实表 + 状态列（✅/🔧/⚠/📋）；§11 基准审计；协议史 |
+| `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）** | 逐技能 §3/§9 事实表 + 状态列（✅/🔧/⚠/📋）；§11 基准审计；§12/§13 A2 移动；**§14 JASS↔Rust 全量对齐矩阵** |
 | `SKILL_CODE_AUDIT_098c.md` | **权威（代码基准）** | 逐技能按 **098c 代码** 抽出的 damage/duration/cooldown/range/speed 公式，与 def 对照 |
 | `JASS_FIELDS_098c.md` | 权威（字段语义） | 两字母字段/回调语义（`Q/S`=每 tick、`mI` 的 `lI`=击退%、`yO/oR` DoT、`wR` 废参、`Jv`≠`Gv`、`kv` vs `Kv`、两种“镜面反射”） |
 | `098C_DIFF.md` | 系统级差异 | 098b↔098c 大系统差异（魔法张力/移动/物理/成长/计分/回血/岩浆）。**A1–A8 全部结案**；**A2 移动模型已收口**（详台账 §12/§13）|
@@ -38,6 +38,8 @@
 ## 2. 真值来源（**代码是真值**，tooltip 只作交叉验证）
 
 - JASS 反编译：`../098c/out/war3map.j`（337KB **raw**，**不要**用 `war3map_pretty.j`——它会把 `elseif` 拆坏）。
+- ⚠ **行号口径**：raw 用 `CR` 分行，`findstr`/多数编辑器会数错行；历史文档行号来自旧 `Select-String`，**与 raw 不可比**。
+  用 **`tools/jass_find.py <regex>`**（按 `[\r\n]+` 切分）检索；引用一律以**函数名**为准。
 - 技能 tooltip：`../098c/out/w3a_strings.txt`；原始数据：`../098c/out/w3a_parsed.json`。
 - 098b（**仅用于对照历史，不作真值**）：`../ce/ce_old98b/war3map.j.dec`、`../ce/ce_extract/*`。
 - ⚠ 已知 **098c tooltip ≠ 098c 代码** 的例子（一律取**代码**）：

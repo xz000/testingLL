@@ -29,6 +29,7 @@
 | 11 | **基准审计**（本会话全部改动对照 098c + 协议史）|
 | 12 | **A2 移动/击退物理对账**（2026-10-10 逐行核实）|
 | 13 | **击退并入走位**（✅ 已实现，协议 49）|
+| 14 | **JASS↔Rust 全量对齐矩阵**（技能/机制/交叉核对/存疑清单）|
 
 > （编号沿用历史，**未重排**以免破坏其它文档对 `§x` 的引用。）
 
@@ -61,6 +62,10 @@
 ---
 
 ## 0. 工具
+
+- `tools/scan_skill_dispatch.py`——扫 `SC` 分支锚点。
+- `tools/jass_find.py <regex> [--ctx N]`——检索 raw `war3map.j`（按 `[\r\n]+` 切分，内容真值；
+  **行号与历史文档 `Select-String` 口径不可比**，引用以**函数名**为准）。
 
 ```powershell
 python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行号」锚点表（tools/skill_dispatch.txt）
@@ -993,5 +998,106 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - 风险：改击退手感（滑行 + 可走）→ 旧调参/测试需重标；`control` 语义收窄可能影响某些强制位移调用点（需全局搜 `push(`/`push_knockback(`）。
 - 回退：单 commit（先加字段/序列化→再改逻辑），可 `git revert`。
 - 顺序建议：① 加 `kb_vel` 字段 + 序列化 + 协议 49（行为不变）→ ② 切逻辑 → ③ 调测试。**均已按此完成**（commit `1e8b4a9` 字段/协议、`7d9ac83` 逻辑+测试）。
+
+---
+
+## 14. JASS↔Rust 全量对齐矩阵（2026-10-10 收尾普查）
+
+> 性质：**索引/总览**——把散落在 `SKILL_CODE_AUDIT_098c.md`（逐技能数值）、`KNOCKBACK_ALIGNMENT.md`（击退）、
+> `JASS_FIELDS_098c.md`（字段）、本台账 §3/§9/§12/§13 的结论收敛成**一张权威表**，**不替代**上述明细。
+> **行号口径**：raw `war3map.j`（`CR` 分行）与历史文档（`Select-String`）**行号不可比**；本节以**函数名**为准，
+> 行号仅辅助。检索工具：`tools/jass_find.py <regex>`（按 `[\r\n]+` 切分，内容真值）。
+> **状态**：✅=代码一致 ｜ 🔧=本会话已修 ｜ ⚠=已知差异/近似 ｜ 📋=真缺口未做 ｜ —=不适用。
+
+### 14.1 技能矩阵（S000–S031）
+
+| 技能 | 098c 入口函数 | 代码真值要义（详见 `SKILL_CODE_AUDIT`）| 我方实现 | 验证测试 | 状态 |
+|---|---|---|---|---|---|
+| S000 火球 | `Ab`/`ib`/`ab`/`Eb`（窗口）; `Rb`/`Ib` 到寿; `Xb`/`Ob` 撞毁 | 直伤 `6.3+.7Xv`；杖 `5+.5Xv`；点燃 `2.5(1.2+.2Xv)`/`6(1.2+.2Xv)`；寿命 `1+.1ei`；未设 `Av`(无) ⇒ `T/T/T` | `W098bProjKind::Fireball` + `fireball_burn` + 窗口 | `s000_*`/`firestaff_window_opens_on_nova_cast`/`s000_window_doubles_ignite_param` | 🔧 |
+| S001 天罚 | `mC` | 伤 `10+Zr`；自伤 `FX`；张力恢复 `DX((Zr+1)n)`；kb `1-d/1000`；面具 `vi×2` | `NovaSmite` + `explode_at`(吸血/张力) | `s001_*`/`smite_knockback_uses_1_minus_d_over_1000` | 🔧 |
+| S002 闪电 | `jb`/`Bb` | 伤 `6+L`; kb `.95`；引爆己方火球；`xi` AoE | `LightningBolt` | `s002_*` | ✅/⚠(友弹分支未建模) |
+| S003 追踪 | `Pb`/`lb`/`Lb`/`mb`/`Mb` | 直伤 `6+Ur`；死亡 AoE `7+Xv`；寿命 `4.5(1+1.5·.1ei)`；kb 直伤 `.95`/AoE `1.3`/自撞 `1`；继承速度 | `Homing` | `s003_*` | ✅ |
+| S004 回旋镖 | `Ub`/`Sb`/`Tb`/`ub`/`sb` | 伤 `6.4+.8Xv`；kb `.95`；`xi` 追加 `SI .5·.95`；`Av=T/—/T`、`xv=1` | `Boomerang` | `s004_*` | 🔧 |
+| S005 反射盾 | `gC`/`fC`/`FC`/`DC` | `(2.6+.2zr)·jn`（L≤6→3.8）；**反射条件**：非 `Ev 9/na`，且（弹体 或 `Hr` 硬体单位）| `BuffKind::Reflect` | `shield_reflects_and_expires` | ✅/⚠(Hr/Ev 过滤未建模) |
+| S006 回溯 | `GC`/`RR` | `3.6·jn`；恢复 pos/hp/动量/momentum | `Rewind` | `s006_rewind_restores_position_and_hp` | ✅ |
+| S007 急行 | `KR`(+`Jb`/`DR`/`AA`) | `(6.2+.8zr)·jn`；吸收 `3+2zr`；`FlatSpeed(+35)` | `BuffKind::Haste`/`FlatSpeed` | `s007_haste_absorbs_damage_into_speed` | 🔧 |
+| S008A 陨石 | `iB`; 落地 `oB`; 每帧 `rB` | 中心 `12+2Xv`；引信 `1.35`；**砸柱**（小写 `kv` 全表 + `Dv/fv`）| DelayedBlast + 砸柱 | `s008_*` | 🔧 |
+| S008B 岩浆 | `OB`; 命中 `Na`; 撞毁 `EB`/`ba` | 撞柱 `10+2Xv`（kb `.8`）；寿命 `2(1+.1ei)` | `Magma`/`pillar_dmg` | `s008b_magma_*` | ✅/⚠(撞柱不给玩家击退) |
+| S009 分裂 | `GB`; `FB`/`Wi`; `DB`/`yi`; `dB`(碎片); `CB`/`wi`(小子弹); `cB` | 父弹恒 `3`；碎片 `2.5+.5Xv`；A 父弹 `Av=T/T/T`、B `—/—/T`、碎片 `—/—/T`、小子弹 `T/—/T` | `Splitter` + `col_mask` | `s009_*`/`w098b_col_mask_matches_098c` | 🔧 |
+| S010 疾风/隐身 | `RB`/`IB`; 命中 `CA`/`AB` | A `3.1·jn`+`FlatSpeed(200)`；B `4·jn`+`FlatSpeed(100)` | `BuffKind` + `FlatSpeed` | `s010_form_a_charge_vs_b_invisibility` | 🔧 |
+| S011 闪现 | `HB`/`jB` | 射程 `700+70Wr` | Blink | `s011_blink_moves_within_range` | ✅ |
+| S012A 冲撞 | `AB`; 命中 `CA`; `Hr` | 初速 `1300`、衰减 `Gr·.04`；射程 `(650+50Wr)(1+.1ei)`；`Hr` 硬体 | Dash + `burning` | `s012_*` | ✅ |
+| S012B 凤凰 | `WB`; 重定向 `UB`; 到寿 `PB` | `3.1·jn`；弹 `1.4(1+.1ei)` | Phoenix | `s012b_phoenix_redirect_*` | ✅ |
+| S013 换位 | `MB`/`pB`; 命中 `LB`; 到点 `KB`; 销毁 `mB` | A speed `1700`、B speed `800`；A `Av=T/false/T`、B `false/T/T`（B 只碰弹体/障碍）| `Swap`/`CarrySelf` | `s013_*` | 🔧 |
+| S014A 汲取·减速 | `ac`/`vc` | 伤 `5+Xv`、kb `.2`；移速 `−70`；回血球 `gv=…(1+.08vi)` | `DrainSlow`+`drain_orbs` | `s014a_*` | ✅ |
+| S014B 汲取·削弱 | `oc`/`ic` | 伤 `4+Xv`、kb `.6`；`Gn×.5`；时长 `(6+1.5Xv)·jn攻/jn受` | `Weaken`+`GnMult` | `s014b_*` | 🔧 |
+| S015A 流射 | `Xc`/`Ji=nc` | 伤 `2.4+.2Xv`；每 `.08s`；**speed 1200**、寿命 `.833(1+.1ei)`；kb `.6` | `SweepState` | `s015a_stream_speed_and_range_match_098c` | 🔧 |
+| S015B 簇射 | `Ac`/`Ki=Vc` | 伤 `2.6+.4Xv`；5 发、步长 `5.5°`；speed 800；kb `.65` | Scatter | `s015b_*`/`t2_volley_and_sweep_spawn_many` | 🔧 |
+| S016 弹跳 | `Gc`/`gc`/`Fc`/`mb`; `Dc`/`dc`/`cc`/`Nc`(充能) | 伤 `gv(5+Xv)`；每跳 `×.75`、地板 `.2`；kb `1.15`；重定向提前量 | `Bouncer`/`SoulReturn` | `s016_*` | ✅ |
+| S017A 缠绕 | `rC`; 命中 `eC`/`yc` | **伤 0**；`(4+.25L)·jn攻/jn受`；`xi>0` AoE `170√(1+.3xi)`；`R(4+.25L)` | `Tied` + `yc` | `s017_cripple_*` | 🔧 |
+| S017B 双生 | `CC`; 到期 `cC`→`BC` | 两枚（后 `210`、`±.3`）、speed 900；`Av=false/T/false`；到期**线段沉默** `AC` | `TwinSilence` | `s017b_twins_silence_along_line_at_expiry` | 🔧 |
+| S018A 暗物质 | `Jc`; 每帧 `hc`; 到寿 `Ea`/`jc` | `0.1+.2Yr`/tick；life `2.25(1+.1ei)`；`Ev=na`、只 `Av+3` | DarkMatter zone | `s018a_*`/`s018_gravity_*` | ✅ |
+| S018B 力场 | `Mc`; 到点 `Lc`; 攻击 `kc` | DPS `1+1.25Yr`；奶 `(.13+.03Yr)/.18`；`5·jn`；**无减速**；`Av=false`(弹体) | `StarField`/ForceField | `s018b_force_field_*` | 🔧 |
+| S019 锁链 | `uc`(蓝)/`Uc`(红); `sc`/`pc`/`tc`/`Tc` | `.2Yr`/tick；红链命中队友+100 移速 `4s`；`Ev=Xa` | `Tether`/`TetherAnchor` | `s019_*`/`s031_release_and_induce` | ✅ |
+| S020 灾变 | `qC`; 归还 `pC` | 阶段 `11/12/14`；自伤 `FX(20)`；张力 `dX(10)`；自身 `FlatSpeed(+50)`；kb `1` | `Catastrophe` | `s020_catastrophe_*` | 🔧 |
+| S021 虔诚 | `QC`; 归还 `YB` | 伤 `10+Zr`；队友 `BX(cX/2)+DX(cX/2)+FlatSpeed(+60)`；kb `1-d/1000` | `Devotion` | `s021_devotion_*` | 🔧 |
+| S022 镜像 | （不在 `uC` 派发）| — | 占位 | `s022_mirror_*` | — |
+
+### 14.2 生成 / 碰撞标志（`Av`/`xv`/`Rv`）
+
+> 已**固化为可执行约束**：`w098b_col_mask(id, alt)`（`world.rs`）+ 测试 `world::tests::w098b_col_mask_matches_098c`（19 项）。
+> 权威表见 `SKILL_CODE_AUDIT_098c.md`「生成标志逐技能核对」。
+> **误读历史**：S004（漏无 `Av+2`）、S013 A（无 `+2`）/ B（无 `+1`）、S009 A/B（顶部 `Av+3`）——均已修（`1c6b253`）。
+
+### 14.3 机制矩阵
+
+| 机制 | 098c（出处）| 我方 | 状态 |
+|---|---|---|---|
+| 魔法张力 `gn`=MANA（≠蓝耗）| `hI`→`dX`(受伤+)、`PX`→`DX(heal/2)`、岩浆 `dX`、吸血 `DX`、回血球 `DX` | `Player.mana` + 各路径 | ✅ |
+| 击退 `mI`/`KI` | `LI=('d'+gn)·HX·Gn·hn·.03·Hn·lI`；进同一 `Q`；`fv`/`Dv` 特例 | `kb_vel`(与走位同源) + `push_knockback` | ✅（§12/§13）|
+| 移动 | 右键 `nD` 不改移动；`ua` 三分支；无点击冲量 | `step_velocity`（保留加速时间）| ✅（§12）|
+| 物理碰撞 | 动量交换 `(dv[a]+dv[b]+2)/4`；扫掠 `t∈[0,1]`；墙 `-v·0.5` | 动量交换 ✅；CCD 不做（有意）；墙 n/a | ✅/— |
+| 柱子 | `gv=HP(40)`、`Rv=35`、`WA` 反射 `v-(1+xv)(v·n)n` | `Obstacle{hp=40,r=35}` + `PLAYER_OBS_RESTITUTION` | ✅ |
+| 状态时长 `jn` | `jn→1.0`；怀表 ×1.15/1.25 | `Player::jn()` + `add_buff`/`add_debuff` + 怀表道具 | ✅ |
+| 治疗 `PX` | 治疗 + 扣 `x/2` 蓝(=张力) | `heals` 队列 `mana-=x/2` | ✅ |
+| DoT `yO`/`oR` | 每 `0.25s` 结算 `ZO/OX·.25`；总=`ZO` | 统一 DoT tick | ✅ |
+| 硬体 `Hr` | `AB` 设 true；`WA` 不反弹；`CA`/`fC` 分支 | `Player.burning`（近似）| ⚠ 部分 |
+| 沉默 `AC` | 遍历 7 槽→禁 5 个技能、`jn` 比、`Silencer` 播报 | `BuffKind::Silenced`（禁施法占位）| 📋 真缺口 |
+| 危险地形 `kC` | 在危险地形施法→护盾而非自伤 | 未建模 | 📋 小 |
+| 缩圈/岩浆/计分/经济/道具 | — | — | ✅（另见 `ECONOMY_RECHECK`/`ITEM_AUDIT`）|
+| 快照 `GC`/`RR` | pos/hp/张力/动量/硬体 | `Rewind`（含 `kb_vel`）| ✅ |
+
+### 14.4 三文档一致性交叉核对（本次发现，已校对）
+
+| 项 | 旧文档表述 | 实际（本工具核实）| 处置 |
+|---|---|---|---|
+| `jn` 实现状态 | `JASS_FIELDS` 表标 **“未实现（我方按固定时长）”** | **已实现**：`Player::jn()` + `add_buff/add_debuff` + 怀表 `I00M/I00N`（`jn_scales_buff_and_debuff_durations`）| 更正 `JASS_FIELDS` |
+| `Ev[]` 读取 | `JASS_FIELDS` 标 **“全文件未见读”** | **有读**：`6045/7137/7678/7689/7693/7700`（`hc` 排除 `Ev==8/na`；`fC` 排除 `Ev∈{2,9,16,17,na}`）| 更正 `JASS_FIELDS` |
+| `Hr` 设置者 | 台账 §7 记 “`AB` 6123” | 唯一 `Hr=true` = `6133`（S012A 冲撞/燃烧冲刺）；`yc` 置 false | 一致（行号口径不同）|
+| `ov` 阻尼 | 台账 §7 标 “待办” | 仅 3 处：默认 `1`，`ZA` 设 `.97` | 保留待办（低影响）|
+
+### 14.5 未逐行复核 / 存疑清单（**显式，勿当已核**）
+
+> 与 `JASS_FIELDS_098c.md §5` 对齐；凡此表内项，**不得**在下游结论中当“已对齐”引用。
+
+| 项 | 已知 | 待办 |
+|---|---|---|
+| `AC` 沉默系统 | 禁 7 槽技能、`jn` 比、`Silencer` | 📋 结构化实现（`BuffKind::Silenced` 占位）|
+| `To[id]` | 初 `.9`；`kC` 里 `To*=8 / /8`；`Jn+=To/2` | `To` 到底乘在哪（疑“危险地形/护盾”倍率）|
+| `Jn[id*12+j]` | `yc`/`AC` 累加 | 二维矩阵含义（疑“互相伤害/沉默统计”）|
+| `Ev[na]`/`na` | 值 `14`（`$E`）| `na` 具体代表哪类（S018 暗物质/力场用）|
+| `Hr` 精确语义 | `AB` 硬体；`CA/fC/WA` 分支 | 与 `burning` 是否等价（目前近似）|
+| `ov`/`Bv`/`cv`/`Cv` | 阻尼/撞一切/碰撞优先级/可推挤 | 我方以固定顺序/等效实现——是否要建模 |
+| S005 反射条件 | `fC` 读 `Ev`/`Hr` | 我方未按 `Ev`/`Hr` 过滤 |
+| S008B 撞柱击退 | `Na`: `mI(...,.8)` | 我方撞柱只扣柱血、不给玩家击退（`KNOCKBACK §3.2`）|
+| S002 友弹 AoE | `Bb`: `pI(...,.6)` | 闪电视为瞬时光束、未建模（`KNOCKBACK §3.3`）|
+| S003 敌直伤支 | `lb`: `mI(...,.95)` 无 AoE | 我方 `Homing` 命中统一 AoE（`KNOCKBACK §3.1`）|
+| 高度系统 `M/T/ho/Z/Hv` | 飞行高度/落地 | War3 专属，我方 2D 化 → 不适用 |
+
+### 14.6 本会话已闭合（代码基准）
+
+`S008A 砸柱`、`S014B 伤 4+L`、`S015B 步长 5.5°`、`S017A 无伤+时长+xi AoE`、`S018B 线性 DPS/奶率/5jn/删减速`、
+`S020/S021 平加移速`、`治疗 PX→DX`、`S000 火法杖 7251 窗口`、`S009/S004/S013 col_mask`、`S017B 双生弹`、
+**A2 移动/击退物理**（冰面时间化 + 击退并入走位，协议 49）。
 
 
