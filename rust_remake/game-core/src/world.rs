@@ -993,6 +993,7 @@ impl World {
                         p.mana = rw.mana + rw.mana_keep * (p.mana - rw.mana);
                     }
                     p.cur_vel = rw.cur_vel;
+                    p.kb_vel = rw.kb_vel;
                     p.control = rw.control;
                     p.burning = rw.burning;
                     p.clear_debuffs();
@@ -5484,6 +5485,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 mana: p.mana,
                                 mana_keep: keep,
                                 cur_vel: p.cur_vel,
+                                kb_vel: p.kb_vel,
                                 control: p.control,
                                 burning: p.burning,
                                 remaining: stats.duration,

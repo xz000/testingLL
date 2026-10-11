@@ -78,4 +78,6 @@ pub fn version() -> &'static str {
 /// 速度 700→**1200**、射程 360→**1000·(1+.1ei)**（旧值为占位，与 098b/098c 均不符）。
 /// v48（2026-10-10）：S017B 双生弹结构重做——新增 `W098bOnHit::TwinSilence`（序列化 tag 14）；
 /// 两枚孪生弹（只碰弹体）到期在两弹间**连线沉默**（098c `CC`/`cC`/`BC`），无直接伤害。
-pub const PROTOCOL_VERSION: u32 = 48;
+/// v49（2026-10-10）：新增 `Player.kb_vel`（+ `Rewind.kb_vel`）——击退/冲量分量与自走**并存相加**
+/// （098c `Q` = 走位 `Y` + 冲量 `(Q−Y)`），逐帧单独衰减。序列化新增，故必须 +1。
+pub const PROTOCOL_VERSION: u32 = 49;

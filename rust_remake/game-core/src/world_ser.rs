@@ -294,6 +294,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
             wu64(o, rw.mana.to_bits());
             wu64(o, rw.mana_keep.to_bits());
             wvec(o, rw.cur_vel);
+            wvec(o, rw.kb_vel);
             wu8(o, rw.control.is_some() as u8);
             if let Some(c) = rw.control {
                 wvec(o, c.vel);
@@ -355,6 +356,7 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     }
     wvec(o, p.pull);
     wvec(o, p.cur_vel);
+    wvec(o, p.kb_vel);
     for bf in &p.buffs {
         encode_buff(o, bf);
     }
@@ -455,6 +457,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
         let mana = f64::from_bits(u64at(b, p)?);
         let mana_keep = f64::from_bits(u64at(b, p)?);
         let cur_vel = vecat(b, p)?;
+        let kb_vel = vecat(b, p)?;
         let control = if u8at(b, p)? != 0 {
             let vel = vecat(b, p)?;
             let remaining = fixat(b, p)?;
@@ -471,6 +474,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
             mana,
             mana_keep,
             cur_vel,
+            kb_vel,
             control,
             burning,
             remaining,
@@ -524,6 +528,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     };
     let pull = vecat(b, p)?;
     let cur_vel = vecat(b, p)?;
+    let kb_vel = vecat(b, p)?;
     let mut buffs = [Buff::new(BuffKind::Speed(1.0), 0.0); crate::player::MAX_BUFFS];
     for bf in buffs.iter_mut() {
         *bf = decode_buff(b, p)?;
@@ -620,6 +625,7 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.control = control;
     pl.pull = pull;
     pl.cur_vel = cur_vel;
+    pl.kb_vel = kb_vel;
     pl.buffs = buffs;
     pl.shadow_anchor = shadow_anchor;
     pl.shadow_window = shadow_window;

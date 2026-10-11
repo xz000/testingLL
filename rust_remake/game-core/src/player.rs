@@ -92,6 +92,8 @@ pub struct Rewind {
     pub mana_keep: f64,
     /// 动量（098c `Q/S`）：自走速度。
     pub cur_vel: Vec2,
+    /// 击退/冲量分量（098c `Q−Y`）。
+    pub kb_vel: Vec2,
     /// 强制位移状态（098c `Q/S/U/w` 的给定速度分量）。
     pub control: Option<Control>,
     /// 硬体状态（098c `Hr`）。
@@ -243,6 +245,10 @@ pub struct Player {
     pub pull: Vec2,
     /// 当前自走运动速度（单位 / 秒）。用于起步/刹停的加速度/减速度积分（平滑手感）。
     pub cur_vel: Vec2,
+    /// 击退/冲量分量（098c `Q−Y` 中的 `Q−Y`）：与自走 `cur_vel` **并存相加**，逐帧**单独**衰减。
+    /// 与 `control` 的区别：`control` 是**替换式**强制位移（冲刺/踢击）；`kb_vel` 与自走同时生效
+    /// ⇒ 被击退时**仍能按移动命令走位**（可边走边滑/可操控，098c 语义）。
+    pub kb_vel: Vec2,
     /// 统一 buff 槽（加速 / 护盾 / 隐身 / 束缚 / 疾跑等）。
     pub buffs: [Buff; MAX_BUFFS],
     /// 影身（C3）锚点：存在时再次施法影身可传送回该点（持久的特殊状态，非计时 buff）。
@@ -378,6 +384,7 @@ impl Player {
             control: None,
             pull: Vec2::ZERO,
             cur_vel: Vec2::ZERO,
+            kb_vel: Vec2::ZERO,
             buffs: [Buff::new(BuffKind::Speed(1.0), 0.0); MAX_BUFFS],
             shadow_anchor: None,
             shadow_window: Fix64::ZERO,
