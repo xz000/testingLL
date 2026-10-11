@@ -3113,7 +3113,6 @@ impl World {
                             reflect_projs.push((pi, victim, normal));
                             continue;
                         }
-                        let skip = *target;
                         // ── S003 追踪弹特例（098c `lb` 10961 / `kb` 10941）─────────────────────────
                         // `Nv[Nb]=true` **且** `bv[Nb]=true` → 可撞同队、也可撞自己（施法者）；
                         // 命中术士时本体**不直伤**，而是 AoE；伤害随飞行时间增长：
@@ -3417,8 +3416,11 @@ impl World {
                                     }
                                 }
                             }
-                            let skip_id = skip.unwrap_or(victim);
-                            // 098c `Fc`(13764)：重定向目标 = 全场最近的 `gX != Fv[nr]`（**仅**排除上一跳受害者）。
+                            // 098c：`gc` 先 `set Fv[nr]=Vr`（**当前**受害者）再 `IA`→`Fc`，`Fc` 排除的正是
+                            //   **当前**受害者（不是上一跳的那个）⇒ `skip_id` 必须用 `victim`。
+                            //   （此前用 `*target`=上一跳受害者是错误建模：命中第三着时排除错人。）
+                            let skip_id = victim;
+                            // 098c `Fc`(13764)：重定向目标 = 全场最近的 `gX != Fv[nr]`（**仅**排除当前受害者）。
                             //   **不排除 owner**——`gc` 命中异队后置 `Nv/bv=true`，且英雄单位 `FR` 带 `Nv=true`
                             //   （碰撞过滤 4388 同 owner 需 `bv[gX] and nv[fA]==1` **且** `Nv[gX] and Nv[fA]`）
                             //   ⇒ 弹体（含首跳后）可回到施法者自己（同队不伤，仅弹跳）。旧实现首跳额外排除 owner，已移除。
@@ -11187,7 +11189,10 @@ mod tests {
             dt,
         );
         let none = vec![PlayerInput::default(); 3];
-        for _ in 0..120 {
+        // 只跑 ~1.2s：包住「首跳命中敌1（~0.86s）+ 第二跳命中敌2（~1.07s）」，
+        // **不能跑长**——098c 弹体命中即续命、会在敌1/敌2/owner 间持续 ping-pong，
+        // 跑久会让同一目标多次命中使差异断言失效。
+        for _ in 0..72 {
             world.step(none.clone(), dt);
         }
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
@@ -11234,6 +11239,55 @@ mod tests {
             }
         }
         assert!(returned, "弹体应在命中唯一敌人后回飞向施法者（098c Fc 不排除 owner）");
+    }
+
+    /// 098c `gc` 复核：弹体回弹到**施法者自己**后——不伤（同队）、但 `gv` 仍衰减 ×0.75、
+    /// 然后 `Fc` 重新瞄准最近的敌人（施法者作“中继”）→ 弹体再飞向敌人。
+    #[test]
+    fn s016_bounce_caster_hit_decays_and_reaims_at_enemy() {
+        let mut world = World::new(2, 0x601c);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        let hp_caster = world.players[0].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let (mut saw_neg, mut reaim_pos, mut min_gx) = (false, false, f64::INFINITY);
+        for _ in 0..240 {
+            world.step(none.clone(), dt);
+            if let Some((gx, vx)) = world.projectiles.iter().find_map(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, gx, vel, .. } => {
+                    Some((gx.to_num::<f64>(), vel.x.to_num::<f64>()))
+                }
+                _ => None,
+            }) {
+                min_gx = min_gx.min(gx);
+                if vx < 0.0 {
+                    saw_neg = true;
+                }
+                if saw_neg && vx > 0.0 {
+                    reaim_pos = true;
+                }
+            }
+        }
+        let d0 = (hp_caster - world.players[0].hp).to_num::<f64>();
+        assert!(d0.abs() < 0.01, "施法者被自己弹体命中不应受伤，实际 {d0}");
+        assert!(saw_neg && reaim_pos, "弹体应先回飞施法者、再重新矄准敌人（relay）");
+        assert!(
+            min_gx < 6.0 * 0.75 * 0.99,
+            "弹到施法者也算一跳 ⇒ gv 应再衰减一次（应 <4.5），实际 min={min_gx}"
+        );
     }
 
     /// 098c S016 A **不逐帧制导**（`Gc` 只设 `hv`/`Jv`、**无 `jv`**）：即使弹体带 `chase`，

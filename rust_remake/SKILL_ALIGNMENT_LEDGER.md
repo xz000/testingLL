@@ -1385,7 +1385,8 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 **我方修正**：
 - **差异2**（`cf93f9f`）：无新目标时**不再销毁**（继续飞、靠 `ev` 到期消失）。
 - **差异1**（本轮）：**移除首跳 owner 排除** ⇒ 弹体可回弹施法者（同队不伤），与 `Fc` 一致。
-- 测试：新增 `s016_bounce_first_hop_can_return_to_caster`；`s016_bounce_jumps_with_decay` 废弃“应消失 / 3 跳上限”断言（**前提错误**），改为只验衰减。
+- **差异3（建模 bug，本轮）**：重定向排除的应是**当前受害者**。098c `gc` 先 `set Fv[nr]=Vr`（当前受害者）再 `IA`→`Fc`，`Fc` 排除的正是当前受害者；我方原用 `skip.unwrap_or(victim)`（`*target`=**上一跳**受害者）⇒ 命中第三着时排错人（后果：弹到 owner 后不再回瞄敌人、甚至回瞄自己）。修为 `skip_id = victim`。
+- 测试：新增 `s016_bounce_first_hop_can_return_to_caster`、`s016_bounce_caster_hit_decays_and_reaims_at_enemy`（弹到自己→不伤+`gv`再衰减+回瞄敌人）；`s016_bounce_jumps_with_decay` 废弃“应消失/3 跳上限”错误前提、并缩短窗口到只含前两跳（修正后弹体会持续 ping-pong）。
 
 
 
