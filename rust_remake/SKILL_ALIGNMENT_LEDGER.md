@@ -1206,7 +1206,9 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 **测试**：`s003_can_hit_teammate_for_speed_buff`（改为“队友无效”）、`s003_damage_grows_with_flight_time`（异队直伤）、`s003_hitting_own_caster_burns_out`（自撞）。❗ 改逻辑 → 再升协议。
 
-**开放问题**：我方 homing 初始命中集是“敌人”（`nearest_hit`）——098c `lb` 的队友分支需弹体可碰队友（`Nv/bv`）。是否同步放宽命中集，还是仅按“不可能碰到队友”保留？
+**命中集（已核）**：`Pb` 设 `Nv[Nb]=true`、`bv[Nb]=true` ⇒ S003 **从出生起可撞任意单位（含自己/队友）**。⇒ 我方需把 homing 命中集由 `nearest_hit`（仅敌）改为 `nearest_hit_any`（任意活人），再在 handler 分支；命中即销毁。
+
+**残留未知（不影响）**：`kb(nr)`（飞行成长伤害）我方已有 `homing_missile_damage`；`Iv/ar` 充能只是统计。
 
 ### 16.2 F6 · 沉默 `AC`
 
@@ -1222,7 +1224,18 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 **测试**：新增 `silence_blocks_only_target_tree`、`silence_duration_scales_with_level_gap`；改 `s017b_twins_silence_along_line_at_expiry`。
 
-### 16.3 开放问题（需拍板）
+### 16.3 深挖判断：F5/F6 已足够，余项均为表象
+
+| 项 | 是否影响功能对齐 | 结论 |
+|---|---|---|
+| `VC` 的 `EC='W000'+XC` 按钮 | 否（UI 占位按钮）| 不建模 |
+| `Jn[id*12+j] += JN/3` | 否（全图未读）| 不建模 |
+| `NC*bC` 静默光环时长 | 否（视觉）| 不建模 |
+| `aC` 恢复时 `W000+RE=false` | 否 | 不建模 |
+
+⇒ **F6 不再深挖**（功能面已完整）；**F5 命中集已定**（任一活人）。可直接实施。
+
+### 16.3b 开放问题（需拍板）
 1. **F6 粒度**：改为**逐树**（贴 098c）还是一次到位？保留全局 `Silenced` 作旧路径吗？
 2. **F 树**（S001/S020/S021）：098c 7 槽不含它 → `AC` 不沉默（拟按此）；确认？
 3. **F5 队友分支**：我方 homing 默认只锁敌人（`nearest_hit`）→ 队友分支实际不触发；是否放宽命中集（结构更大）？
