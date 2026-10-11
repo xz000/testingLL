@@ -36,6 +36,9 @@ pub const MAX_HP: f64 = Balance::default().max_hp;
 /// 098b 击退衰减（D8）：`jr=Hr×(1-.96)` 出处——击退速度每 0.03s ×0.96；
 /// 换算到 1/60 步长：0.96^((1/60)/0.03) = 0.96^(5/9) ≈ 0.97759。
 pub const W098B_KB_DECAY_PER_FRAME: f64 = 0.977_59; // = 0.96^(5/9)（const 不能调 powf，预计算）
+/// 冰面阻尼（098c `ua==3` 支 `×0.98/帧@0.03s`）：换算到 1/60 = `0.98^(5/9) ≈ 0.988_84`。
+/// 走位滑行与击退衰减**同用**它（098c 冰面两者都在同一 `Q←(Q+…)×0.98` 里）。
+pub const ICE_DECAY_PER_FRAME: f64 = 0.988_84; // = 0.98^(5/9)
 /// 衰减模型名义时长上限（秒）：初速 2000 衰减到阈值约需 2.6s，留余量防数值残留。
 pub const W098B_KB_MAX_TIME: f64 = 3.5;
 /// 自走起步的加速度（速度/秒²）。决定起步多快到达满速。
@@ -799,7 +802,7 @@ impl Player {
                 // 冰面（D14）：乘法摩擦 ×0.98/帧（098c 原参数）——到达清除目标后带着
                 // 动量自然滑过、滑停（约 0.3 秒衰减到 12%，滑距 ≈ 速度×50 帧）。
                 if self.on_ice {
-                    self.cur_vel = self.cur_vel * Fix64::from_num(0.98);
+                    self.cur_vel = self.cur_vel * Fix64::from_num(ICE_DECAY_PER_FRAME);
                 } else {
                     self.cur_vel = Self::brake(self.cur_vel, Fix64::from_num(DECEL) * dt);
                 }
@@ -832,7 +835,7 @@ impl Player {
                 // 098b 衰减（D8）：每帧 ×0.9776（=0.96^(5/9)，jr=Hr×(1-.96) 的 0.96/0.03s
                 // 换算到 1/60 步长），低于 5 单位/秒视为停止。
                 // 冰面（D14）：阻尼更弱 ×0.985——被击退在冰上滑更远。
-                let f = if self.on_ice { 0.985 } else { W098B_KB_DECAY_PER_FRAME };
+                let f = if self.on_ice { ICE_DECAY_PER_FRAME } else { W098B_KB_DECAY_PER_FRAME };
                 c.vel = c.vel * Fix64::from_num(f);
                 if c.vel.length() < Fix64::from_num(5.0) {
                     stop_control = true;
@@ -1091,6 +1094,13 @@ mod tests {
 
     fn near(a: Fix64, b: f64, tol: f64) -> bool {
         (a.to_num::<f64>() - b).abs() < tol
+    }
+
+    #[test]
+    fn ice_decay_matches_098c() {
+        // 098c 冰面 `ua==3`：`Q←(Q+...)*0.98`（每 0.03s 帧）⇒ 1/60 步长 = `0.98^(5/9)`。
+        let want = 0.98_f64.powf(5.0 / 9.0);
+        assert!((ICE_DECAY_PER_FRAME - want).abs() < 1e-4, "冰面阻尼应 =0.98^(5/9)≈{want}，实际 {ICE_DECAY_PER_FRAME}");
     }
 
     #[test]
