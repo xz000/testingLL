@@ -3460,7 +3460,11 @@ impl World {
                                         pr.alive = false;
                                     }
                                 }
-                                None => pr.alive = false, // 无下一目标：消失
+                                // 差异2（2026-10-11 对齐）：098c `Fc` 即使 **找不到新目标（`zO=0`）也不销毁弹体**
+                                //   ——只是把 `ev` 重置、弹体继续飞，**靠单跳寿命到期才消失**（`Gv==null` → 普通 `iO`）。
+                                //   旧实现直接 `alive=false`，已改为**不销毁**（继续飞、`remaining` 自然归零）。
+                                //   （实局中 `Fc` 总能把施法者当作 `!=Fv[nr]` 的目标，`zO=0` 几乎不可达。）
+                                None => {}
                             }
                         } else if *proj != crate::skill::W098bProjKind::Boomerang && !weaken_ally_keep && !homing_keep {
                             // S014B 命中**友军**（098c `oc` 友军分支）**不销毁**弹体：改为增益 + 转向最近的敌人继续飞；
