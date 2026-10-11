@@ -28,6 +28,7 @@
 | 10 | 待复核清单（按风险）|
 | 11 | **基准审计**（本会话全部改动对照 098c + 协议史）|
 | 12 | **A2 移动/击退物理对账**（2026-10-10 逐行核实）|
+| 13 | **击退并入走位（重构设计，待动手）**|
 
 > （编号沿用历史，**未重排**以免破坏其它文档对 `§x` 的引用。）
 
@@ -936,4 +937,59 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - 保留 `control` 仅给**冲刺 / 强制位移**（`S012A` 等）。
 - 测试：`knockback_scales_with_attacker_gn_and_victim_hn`、`knockback_slides_further_on_ice`、`collision_exchanges_momentum`、`smite_knockback_*`、`s001_smiting_*`、`out_of_bounds` 等——预计多需微调。
 - 协议：若只改 `cur_vel` 语义（不用新字段）→ **不动协议**；若拆“击退分量”需新字段→升协议。
+
+---
+
+## 13. 击退并入走位（重构设计，**待动手**）
+
+> 目标：对齐 098c「击退与走位同源」——将 KI 击退从「`control` 接管、逐帧提前 return」改为「与走位**共存/相加**」，并按 098c 只衰减“超出走位目标的部分”。
+
+### 13.1 原理（098c）
+
+- `Q` = 总速度；`Y` = 走位目标速度（`gv·dir`）；每帧 `Q=(Q−Y_old)·0.96+Y_new` ⇒ **`(Q−Y)`（击退/冲量分量）衰减**、`Y`（走位）保留。
+- 击退 `mI`：`Q += LI·dir`（加进总速度）。
+- 故：击退期间**仍按 `Y` 走位**、可转向/叠加。
+
+### 13.2 数据模型选型（推荐 **B**）
+
+- **A（复用 `cur_vel`）**：把击退加进 `cur_vel`，另存 `Y` 以衰减 `(cur_vel−Y)`。改动散、与现有 `move_toward(cur_vel→desired)` 纠缠，不推荐。
+- **B（新增 `kb_vel: Vec2`）—推荐**：`kb_vel` = 击退分量（等价 098c 的 `Q−Y`）；位置 = `cur_vel + kb_vel + pull`；每帧只衰减 `kb_vel`。与现有走位/控制解耦，最贴近 098c。
+- `control` 保留给**冲刺/强制位移**（替换式，098c 另有 `Hr`/瞬时位移语义）。
+
+### 13.3 每帧顺序（`step_velocity`）
+
+1. `dash_active` → 直线冲刺（现状）。
+2. `control`（非击退的强制位移/冲刺）→ 替换式（现状，提前 return）。
+3. 否则：走位 `cur_vel → desired`（现状，**保留加速时间**）→ `pos += (cur_vel + kb_vel + pull)·dt`。
+4. `tick_buffs`：`kb_vel *= decay`（普通 `0.96^(5/9)` / 冰 `ICE_DECAY_PER_FRAME`）；`len<5/s` 清零。
+
+### 13.4 `push_knockback` 改法
+
+- 不再写 `control`，改为 `self.kb_vel += dir*v0`（`v0 = |vel|×(1−effective_kb_reduction())`，保持现公式）。
+- `Control.decay` 字段与 `push_knockback` 对 `control` 的写入**移除**；`Control` 只用于 `push`（恒速）。
+
+### 13.5 快照 / 回滚 / 协议
+
+- `Player.kb_vel: Vec2` 影响模拟 → **`world_ser` 必须序列化** → `PROTOCOL_VERSION` **48→49**。
+- `Player.rewind`（S006）：快照/回滚增加 `kb_vel`（与 `cur_vel`/`control` 同类）。
+- 确定性：kb_vel 进状态哈希（自动）。
+
+### 13.6 其它依赖
+
+- `world::player_velocity()`（供 S003 继承速度 / S016 提前量）→ 需包含 `kb_vel`（即 `cur_vel + kb_vel + pull`，无 control/dash 时）。
+- `effective_kb_reduction()` 保留。
+- 冰面：`kb_vel` 衰减用 `ICE_DECAY_PER_FRAME`（已就绪）。
+
+### 13.7 测试清单
+
+- **新增**：`knockback_allows_walking`（被击退期间发移动命令 → 净位移含命令方向）；`kb_vel_decays_and_clears`。
+- **需复查/微调**：`knockback_scales_with_attacker_gn_and_victim_hn`、`knockback_slides_further_on_ice`、`collision_exchanges_momentum`、`smite_knockback_uses_1_minus_d_over_1000`、`s001_death_mask_*`、`mana_tension_gain_and_knockback_scaling`、`s012_dash_*`（dash 仍走 `control`，应不受影响）、`out_of_bounds_drains_hp`。
+- 往返：`world_ser::snapshot_roundtrip_*`（新字段）。
+
+### 13.8 风险 / 回退
+
+- 风险：改击退手感（滑行 + 可走）→ 旧调参/测试需重标；`control` 语义收窄可能影响某些强制位移调用点（需全局搜 `push(`/`push_knockback(`）。
+- 回退：单 commit（先加字段/序列化→再改逻辑），可 `git revert`。
+- 顺序建议：**① 先加 `kb_vel` 字段 + 序列化 + 协议 49（行为不变、kb_vel 恒 0）** → ② 再切 `push_knockback`/`step_velocity` 逻辑 → ③ 调测试。每步一个 commit。
+
 
