@@ -1564,8 +1564,14 @@ impl World {
         let per_frame = Fix64::from_num(MISSILE_PULL_FORCE * dt.to_num::<f64>() / 0.03);
         for pr in self.projectiles.iter_mut() {
             // 不拖场自己；也不拖同类持续场（对齐 098c 排除 `na` 场）。
+            // 098c `hc` 还排除 `Ev==8`（S008A 陨石弹）——我方陨石是静态 `DelayedBlast` 落点，一并排除。
             if !pr.alive
-                || matches!(pr.kind, ProjectileKind::Gravity { .. } | ProjectileKind::Star { .. })
+                || matches!(
+                    pr.kind,
+                    ProjectileKind::Gravity { .. }
+                        | ProjectileKind::Star { .. }
+                        | ProjectileKind::DelayedBlast { .. }
+                )
             {
                 continue;
             }
