@@ -12,7 +12,8 @@
 //! - 怀表：自身增益时长 ×M、受到减益时长 ÷M（`buff_dur_mult`/`debuff_dur_mult`）。
 //!
 //! 武器改件（面具吸血 / 火球法杖点燃改写 / 鲜血之剑·守护之盾的天罚强化）字段已建模，
-//! 战斗钩子 TODO（M3 2c）。
+//! 战斗钩子**已实现**（吸血 `lifesteal`、火法杖 `fireball_burn` + `I00D` 7251 窗口、
+//! 守护之盾 `aegis`）。
 //!
 //! 买价（`cost`）/卖出价（`sell`）：**已按 098c 真值校准**（2026-09-09）。
 //! 买价取自 098c `war3map_pretty.j` 商店训练价 `bD`（10579+，`ID(id,AD,..)` 的 AD，
@@ -117,7 +118,7 @@ pub struct ItemEffects {
     pub aegis_kb_reduction: f64,
     /// 死亡面具：天罚下吸血/回血翻倍（098c mC 实证 vi×2）。
     pub scourge_double: bool,
-    /// 火球点燃改写（火球法杖；TODO 2c）。
+    /// 火球点燃改写（火球法杖）：命中附加点燃；持 `I00D` 时另开 7251 窗口（`FireStaffWindow`）。
     pub fireball_burn: bool,
     /// 自身增益时长乘数（怀表 1.15/1.25）。
     pub buff_dur_mult: f64,

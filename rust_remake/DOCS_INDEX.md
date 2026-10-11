@@ -4,13 +4,13 @@
 > 入口是 **`HANDOFF.md`**；真值永远是 **098c 代码**（`098c/out/war3map.j`）。
 >
 > **2026-10-10 整理**：根目录只留 **A（真值）+ B（在办）**；已完成/被取代的一律移入 **`archive/`**（顶部带历史横幅）。
-> 检索 098c 用 `tools/jass_find.py <regex>`（见 `tools/README.md`）。
+> 检索 098c 用 `tools/jass_find.py <regex>` 等（见 `tools/README.md` §7：`jass_find`/`jass_where`/`jass_func`/`dump_tooltips`）。
 
 ## A. 权威 / 真值（活，改动须同步）
 
 | 文档 | 角色 |
 |---|---|
-| `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）**：逐技能 098c 事实表 + 状态列；§11 基准审计；§12/§13 A2 移动；**§14 JASS↔Rust 全量对齐矩阵**；协议史 |
+| `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）**：逐技能 098c 事实表 + 状态列；§11 基准审计；§12/§13 A2 移动；**§14 JASS↔Rust 全量对齐矩阵**；§15 缺口/近似深挖；§16 F5/F6 规划；§17 血剑 & F 槽；**§18 技能描述审计**；协议史 |
 | `SKILL_CODE_AUDIT_098c.md` | **代码基准审计**：逐技能从 098c 代码抽 damage/duration/cooldown/range/speed + 生成标志，与 def 对照 |
 | `JASS_FIELDS_098c.md` | 098c 两字母字段/回调语义（`Q/S`、`mI.lI`、`yO,oR`、`Jv`≠`Gv`、`kv` vs `Kv`、`jn`、`Hr`…）|
 | `ITEM_AUDIT_098c.md` | 道具 24 格逐项（买/卖/效果）|

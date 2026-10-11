@@ -135,13 +135,24 @@ field(4) + type(4) + cstring    + trailer(4)   # 字符串
 - 产物：`icons/skill/*.png`、`icons/item/*.png`、`circle_brawl_pack.ini`、`keys.txt`、`preview.png`。
 - 回游戏「设置 → 图标包」选 `Demo Icon Pack` 即可看到；真实包同名替换 PNG 即可。
 
-## 7. `jass_find.py` — 检索 098c raw `war3map.j`
+## 7. JASS 检索工具（098c 与 JASS 对齐用）
+
+> raw `.j` 用 **`CR` 分行**（LF 仅 85 处），`findstr`/多数编辑器会数错行；下列脚本按 `[\r\n]+` 切分。
+> ⚠ **行号口径**：与历史文档（旧 `Select-String`）**不可比**——引用一律以**函数名**为准。
+
+| 脚本 | 用途 |
+|---|---|
+| `jass_find.py <regex> [--ctx N]` | 检索 raw `war3map.j`（按 `[\r\n]+` 切分）；`--file` 可指定其它 `.j`（如 098b）|
+| `jass_where.py <行号…>` | 给出行号所属**函数**（| `--file`，`--stdin`）|
+| `jass_func.py <函数名…>` | 打印整函数（`--contains` 模糊）|
+| `dump_tooltips.py [S0xx…]` | 从 `098c/out/w3a_parsed.json` 抽 `anam`/`aub1`（**tooltip 原文**；⚠ tooltip≠code）|
 
 ```bash
 python tools/jass_find.py "^function mI "
-python tools/jass_find.py "jn\\[" --ctx 1
+python tools/jass_where.py 7899 8003
+python tools/jass_func.py mC qC QC
+python tools/dump_tooltips.py S008 S009
 ```
 
-- raw `.j` 用 **`CR` 分行**（LF 仅 85 处），`findstr`/多数编辑器会数错行；本脚本按 `[\r\n]+` 切分。
-- ⚠ **行号口径**：与历史文档（旧 `Select-String`）**不可比**——引用一律以**函数名**为准。
-- 供「与 JASS 对齐」核对（见 `SKILL_ALIGNMENT_LEDGER.md` §14、`JASS_FIELDS_098c.md`）。
+- 供「与 JASS 对齐」核对：见 `SKILL_ALIGNMENT_LEDGER.md` §14（矩阵）/§15–§18（逐项复核）、`JASS_FIELDS_098c.md`。
+- （w3q 升级价：布局特殊，已不在本目录脚本内；结论固化在 `ECONOMY_RECHECK.md` §3。）

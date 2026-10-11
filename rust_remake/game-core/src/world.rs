@@ -1075,10 +1075,9 @@ impl World {
             }
             if !self.sandbox && p.pos.length() > self.arena_radius && !on_ice_now {
                 // 球心已出圈：持续掉血。回去靠自己走位。（boost 期间返一半回血）
-                // 圈外 = 熔岩（098b 语义统一，D8）：踩上即受 Uo×10=9/s；
-                // 熔岩靴抵抗 87.5%（M5 简化为常驻被动；098b 原版为「熔岩上天罚激活 3-5s
-                // 窗口 + CD25s」，激活式 TODO）、-0.1 hp/s 惩罚照常生效。
-                // 熔岩靴激活窗口内 ×12.5%；窗口外吃全额（激活条件见 Nova 臂，D8/M5）。
+                // 圈外 = 熔岩：踩上即受 9/s；熔岩靴**被动** `To` 倍率（.96/.94/.92）常驻；
+                // **激活窗口**（`kC` 的 `To/=8`，87.5% 抵抗 3/4/5s、CD25s）见 Nova 臂；
+                // -0.1 hp/s 惩罚照常生效。
                 let shielded = p.has_buff(BuffKind::LavaShield);
                 // 熔岩靴：**被动** `To` 倍率（.96/.94/.92）常驻；激活窗口（`kC` 的 `To/=8`）再 ×12.5%。
                 let lava_mult = if shielded { 1.0 - p.item_fx.lava_resist_frac } else { 1.0 };
