@@ -880,7 +880,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - ⚠ **修正（2026-10-10）**：本段旧结论「不存在 098b 依据的实现」**已被推翻**——基线实为
   「098b 事实 + 098c tooltip + 占位」的**混合物**；实锤如 S018B 的 **45% 减速 = 098b 独有**（已删）、
   S015A 速度/射程 = 占位（098b/098c 都是 1200/1000）。详见 `SKILL_CODE_AUDIT_098c.md`。
-- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）。
+- 快照字段变更累计：`PROTOCOL_VERSION` **41→42**（S008B `pillar_dmg`）→**43**（S009 `col_mask`/`s009_role`）→**44**（`W098bOnHit::StarField`，S018B）→**45**（`BuffKind::FireStaffWindow`）→**46**（`BuffKind::FlatSpeed`，S020/S021 平加移速）→**47**（`SweepState.range`，S015A 射程）→**48**（`W098bOnHit::TwinSilence`，S017B）→**49**（`Player.kb_vel`/`Rewind.kb_vel`，击退并入走位）→**50**（S005 `Ev` 反射类别 + S008A 不被暗物质拉，§15.1/§15.2）。
 - 说明：S018B 数值/减速/时长/`PX→DX`、S015B 步长、S017A 伤害/时长/AoE、S008A 砸柱、S014B 伤害、S007/S010 平加移速 均不改快照格式，故不升协议。
 
 ---
