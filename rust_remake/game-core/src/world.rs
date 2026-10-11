@@ -492,7 +492,8 @@ fn player_velocity(p: &crate::player::Player) -> Vec2 {
     } else {
         p.cur_vel
     };
-    base + p.pull
+    // 098c 总速度 `Q`：冲刺/强制位移/自走 + 击退分量 + 场效应。
+    base + p.kb_vel + p.pull
 }
 
 impl ProjectileKind {
@@ -1634,6 +1635,13 @@ impl World {
                                 c.vel.y = -c.vel.y * rest;
                             }
                         }
+                        // 击退分量同样逐轴半速反弹（098c `Q` 是同一向量）。
+                        if p.kb_vel.x * dir.x < Fix64::ZERO {
+                            p.kb_vel.x = -p.kb_vel.x * rest;
+                        }
+                        if p.kb_vel.y * dir.y < Fix64::ZERO {
+                            p.kb_vel.y = -p.kb_vel.y * rest;
+                        }
                         if p.dash_active {
                             if p.dash_vel.x * dir.x < Fix64::ZERO {
                                 p.dash_vel.x = -p.dash_vel.x * rest;
@@ -1721,6 +1729,7 @@ impl World {
         p.pos = pos;
         p.move_target = None;
         p.control = None;
+        p.kb_vel = Vec2::ZERO;
         p.kick = None;
         p.rewind = None;
         p.blink2_window = None;
@@ -2438,6 +2447,7 @@ impl World {
                             p.pos = o.pos;
                             p.move_target = None;
                             p.control = None; // 与 098c `IssueImmediateOrderById` 相近：清移动指令
+                            p.kb_vel = Vec2::ZERO;
                             self.obstacles[oi].pos = old;
                         }
                         pr.alive = false;
@@ -2453,6 +2463,7 @@ impl World {
                             p.pos = o.pos;
                             p.move_target = None;
                             p.control = None;
+                            p.kb_vel = Vec2::ZERO;
                             self.obstacles[oi].pos = old;
                         }
                         pr.alive = false;
@@ -9459,13 +9470,7 @@ mod tests {
             DmgFalloff::None, // 看击退，与 S001 实际调用一致（伤害不衰减）
             KbAttn::Mul(Fix64::from_num(1000.0)),
         );
-        let vel = |i: usize| {
-            w.players[i]
-                .control
-                .as_ref()
-                .map(|c| c.vel.length().to_num::<f64>())
-                .unwrap_or(0.0)
-        };
+        let vel = |i: usize| w.players[i].kb_vel.length().to_num::<f64>();
         let (v1, v2) = (vel(1), vel(2));
         assert!(v1 > v2, "近处击退应更强: {v1} vs {v2}");
         // `1-d/1000`: 100→0.9、200→0.8 → 比值≈0.889；
@@ -9570,11 +9575,11 @@ mod tests {
         assert!(w.players[0].windwalk_state > before_ww, "招架应刷新风步");
         assert!(!w.players[0].parry_ready, "招架后 gr 应进入冷却");
         assert!(w.players[0].parry_cd > Fix64::ZERO);
-        assert!(w.players[1].control.is_some(), "攻击者应被击退");
-        assert!(w.players[0].control.is_some(), "风步者自己应被击退");
-        // 方向：敌人沿 +x 远离风步者（control.vel.x > 0）；风步者沿 −x 远离敌人（< 0）。
-        assert!(w.players[1].control.as_ref().unwrap().vel.x > Fix64::ZERO, "敌人应被推离风步者（+x）");
-        assert!(w.players[0].control.as_ref().unwrap().vel.x < Fix64::ZERO, "风步者应被推离敌人（−x）");
+        assert!(w.players[1].kb_vel != Vec2::ZERO, "攻击者应被击退");
+        assert!(w.players[0].kb_vel != Vec2::ZERO, "风步者自己应被击退");
+        // 方向：敌人沿 +x 远离风步者（kb_vel.x > 0）；风步者沿 −x 远离敌人（< 0）。
+        assert!(w.players[1].kb_vel.x > Fix64::ZERO, "敌人应被推离风步者（+x）");
+        assert!(w.players[0].kb_vel.x < Fix64::ZERO, "风步者应被推离敌人（−x）");
         assert!(w.players[0].contact_by_enemy.is_none(), "瞬态应被清除");
 
         // `NA`：0.5s 后 `gr` 恢复（仍在风步）。
@@ -9594,7 +9599,7 @@ mod tests {
         w.players[0].contact_by_enemy = Some(1);
         w.process_parry(Fix64::from_num(1.0 / 60.0));
         assert!(w.players[0].parry_ready, "同队接触不应触发招架");
-        assert!(w.players[0].control.is_none());
+        assert!(w.players[0].kb_vel == Vec2::ZERO);
         // 非风步 → 不招架。
         w.players[1].team = 1;
         w.players[0].windwalk_state = Fix64::ZERO;
@@ -9903,6 +9908,7 @@ mod tests {
             // 每轮拉回原位并清掉残留击退 control 再放。
             world.players[1].pos = Vec2::new(d60(3.0), Fix64::ZERO);
             world.players[1].control = None;
+            world.players[1].kb_vel = Vec2::ZERO;
             world.players[1].move_target = None;
             let hp = world.players[1].hp;
             // 清冷却以连放（灾变 CD 3s）
@@ -13420,7 +13426,7 @@ mod tests {
         assert!(v_final < 1.0, "冰面摩擦应使角色最终停住，残余速度 {v_final}");
     }
 
-    /// 击退地形阻尼（D14）：冰面被击退滑更远（×0.985 vs ×0.9776）。
+    /// 击退地形阻尼：冰面被击退滑更远（`×0.98^(5/9)≈0.98884` vs 普通 `×0.96^(5/9)≈0.9776`）。
     #[test]
     fn knockback_slides_further_on_ice() {
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -13443,6 +13449,31 @@ mod tests {
         let normal = run(false);
         let icy = run(true);
         assert!(icy > normal * 1.3, "冰面击退滑距应显著更远（{} vs {}）", icy, normal);
+    }
+
+    /// 击退并入走位（098c `Q = Y + (Q−Y)`）：被击退期间**仍能按移动命令走位**（可边走边滑）。
+    #[test]
+    fn knockback_allows_walking() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        let mut w = World::new(1, 707);
+        w.obstacles.clear();
+        w.sandbox = true;
+        w.players[0].pos = Vec2::ZERO;
+        w.players[0].move_target = None;
+        // 施加 +x 击退，同时持续下达 **+y** 方向的移动命令（与击退垂直）。
+        // 若击退“接管走位”（旧行为），则 y 不动；098c 同源则应两者叠加。
+        w.players[0].push_knockback(Vec2::new(Fix64::from_num(600.0), Fix64::ZERO));
+        let target = Vec2::new(Fix64::ZERO, Fix64::from_num(5000.0));
+        for _ in 0..20 {
+            w.step(vec![PlayerInput { set_target: Some(target), ..Default::default() }], dt);
+        }
+        let p = &w.players[0];
+        assert!(p.pos.x > Fix64::from_num(50.0), "击退应产生 +x 位移，x={:?}", p.pos.x);
+        assert!(
+            p.pos.y > Fix64::from_num(50.0),
+            "击退期间应能按命令走 +y（098c 同源相加），y={:?}",
+            p.pos.y
+        );
     }
 
     /// 冰面不被岩浆侵蚀：冰面上的点即使出圈也不掉血。

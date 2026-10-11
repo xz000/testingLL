@@ -446,17 +446,15 @@ impl Player {
         });
     }
 
-    /// 098b 击退（D8 衰减模型）：初速按有效击退减免缩放，每帧 ×0.9776 衰减至自然停止。
-    /// 用于 098b 名册的 KI 击退；Unity 版旧技能仍走恒速 [`Self::push`]。
+    /// 098c `mI`/`KI` 击退：初速按有效击退减免缩放，**累加**到 [`Self::kb_vel`]（与自走并存相加），
+    /// 逐帧 ×0.9776（普通）/ ×0.98^(5/9)（冰）衰减至自然停止（`tick_buffs` 中处理）。
+    /// 与 [`Self::push`] 的区别：`push` 是**替换式**强制位移；击退与自走**同源** ⇒ 被击退时**仍能走位**。
     pub fn push_knockback(&mut self, vel: Vec2) {
         // 初速按有效击退减免缩放（attr+物品取 max，D8）。
         let v0 = vel.length() * Fix64::from_num(1.0 - self.effective_kb_reduction());
         let dir = if vel.length_squared() > Fix64::ZERO { vel.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
-        self.control = Some(Control {
-            vel: dir * v0,
-            remaining: Fix64::from_num(W098B_KB_MAX_TIME),
-            decay: true,
-        });
+        // 098c `Q += LI·dir`：加进同一速度（可叠加、可边走边滑）。
+        self.kb_vel += dir * v0;
     }
 
     /// 是否正处于强制位移（不受自走控制）。
@@ -762,14 +760,15 @@ impl Player {
         if self.dash_active {
             self.cur_vel = Vec2::ZERO;
             self.pos += self.dash_vel * dt;
+            self.pos += self.kb_vel * dt;
             self.pos += self.pull * dt;
             return;
         }
-        // 1) 强制位移：定格速推进，重置自走惯性。decay=true 走 098b 衰减模型。
+        // 1) 强制位移：定格速推进，重置自走惯性。
         if let Some(c) = &self.control {
             self.cur_vel = Vec2::ZERO;
-            // decay=true：本帧速度衰减与终止判定在下方「强制位移计时」可变块统一处理。
             self.pos += c.vel * dt;
+            self.pos += self.kb_vel * dt;
             self.pos += self.pull * dt;
             return;
         }
@@ -816,6 +815,8 @@ impl Player {
             }
         }
         self.pos += self.cur_vel * dt;
+        // 击退/冲量分量（098c `Q−Y`）：与自走**并存相加** ⇒ 被击退时可边走边滑。
+        self.pos += self.kb_vel * dt;
         // 附加速度（力场）永远叠加。
         self.pos += self.pull * dt;
     }
@@ -834,26 +835,25 @@ impl Player {
             }
         }
 
-        // 强制位移计时
+        // 强制位移计时（仅 `push` 恒速：`push_knockback` 已改用 kb_vel，不再走此处）
         let mut stop_control = false;
         if let Some(c) = &mut self.control {
             c.remaining = (c.remaining - dt).max(Fix64::ZERO);
-            if c.decay {
-                // 098b 衰减（D8）：每帧 ×0.9776（=0.96^(5/9)，jr=Hr×(1-.96) 的 0.96/0.03s
-                // 换算到 1/60 步长），低于 5 单位/秒视为停止。
-                // 冰面（D14）：阻尼更弱 ×0.985——被击退在冰上滑更远。
-                let f = if self.on_ice { ICE_DECAY_PER_FRAME } else { W098B_KB_DECAY_PER_FRAME };
-                c.vel = c.vel * Fix64::from_num(f);
-                if c.vel.length() < Fix64::from_num(5.0) {
-                    stop_control = true;
-                }
-            }
             if c.remaining < eps {
                 stop_control = true;
             }
         }
         if stop_control {
             self.control = None;
+        }
+        // 击退/冲量分量衰减（098c `Q=(Q−Y)*0.96+Y`）：普通每帧 ×0.96^(5/9)、冰面 ×0.98^(5/9)，
+        // 低于 5 单位/秒视为停止。只衰减 kb_vel，**不影响自走** cur_vel。
+        if self.kb_vel != Vec2::ZERO {
+            let f = if self.on_ice { ICE_DECAY_PER_FRAME } else { W098B_KB_DECAY_PER_FRAME };
+            self.kb_vel = self.kb_vel * Fix64::from_num(f);
+            if self.kb_vel.length() < Fix64::from_num(5.0) {
+                self.kb_vel = Vec2::ZERO;
+            }
         }
         // 踢击窗口计时
         if let Some(k) = &mut self.kick {
