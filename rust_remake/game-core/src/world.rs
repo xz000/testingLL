@@ -3418,14 +3418,13 @@ impl World {
                                 }
                             }
                             let skip_id = skip.unwrap_or(victim);
-                            // 首跳后 `Nv/bv=true` → 可打同队/自己（`target` 已被前一次重定向置位 = “已弹过”）。
-                            let post_first = skip.is_some();
+                            // 098c `Fc`(13764)：重定向目标 = 全场最近的 `gX != Fv[nr]`（**仅**排除上一跳受害者）。
+                            //   **不排除 owner**——`gc` 命中异队后置 `Nv/bv=true`，且英雄单位 `FR` 带 `Nv=true`
+                            //   （碰撞过滤 4388 同 owner 需 `bv[gX] and nv[fA]==1` **且** `Nv[gX] and Nv[fA]`）
+                            //   ⇒ 弹体（含首跳后）可回到施法者自己（同队不伤，仅弹跳）。旧实现首跳额外排除 owner，已移除。
                             let mut best: Option<(Fix64, u32)> = None;
                             for q in self.players.iter() {
                                 if !q.alive || q.id == skip_id {
-                                    continue;
-                                }
-                                if !post_first && q.id == pr.owner {
                                     continue;
                                 }
                                 let ds = (q.pos - pr.pos).length_squared();
@@ -3433,9 +3432,8 @@ impl World {
                                     best = Some((ds, q.id));
                                 }
                             }
-                            match best {
-                                Some((_, nid)) => {
-                                    let ndd = self.players[nid as usize].pos - pr.pos;
+                            if let Some((_, nid)) = best {
+                                let ndd = self.players[nid as usize].pos - pr.pos;
                                     if ndd.length_squared() > Fix64::ZERO {
                                         // 098c `Fc`(13764)：用**提前量**解算朝新目标的速度：
                                         //   `dir` = 弹→目标单位向量；`tvel` = 目标当前速度；
@@ -3459,13 +3457,11 @@ impl World {
                                     } else {
                                         pr.alive = false;
                                     }
-                                }
-                                // 差异2（2026-10-11 对齐）：098c `Fc` 即使 **找不到新目标（`zO=0`）也不销毁弹体**
-                                //   ——只是把 `ev` 重置、弹体继续飞，**靠单跳寿命到期才消失**（`Gv==null` → 普通 `iO`）。
-                                //   旧实现直接 `alive=false`，已改为**不销毁**（继续飞、`remaining` 自然归零）。
-                                //   （实局中 `Fc` 总能把施法者当作 `!=Fv[nr]` 的目标，`zO=0` 几乎不可达。）
-                                None => {}
                             }
+                            // 差异2（2026-10-11 对齐）：098c `Fc` 即使 **找不到新目标（`zO=0`）也不销毁弹体**
+                            //   ——只是把 `ev` 重置、弹体继续飞，**靠单跳寿命到期才消失**（`Gv==null` → 普通 `iO`）。
+                            //   旧实现直接 `alive=false`，已改为**不销毁**（继续飞、`remaining` 自然归零）。
+                            //   （实局中 `Fc` 总能把施法者当作 `!=Fv[nr]` 的目标，`zO=0` 几乎不可达。）
                         } else if *proj != crate::skill::W098bProjKind::Boomerang && !weaken_ally_keep && !homing_keep {
                             // S014B 命中**友军**（098c `oc` 友军分支）**不销毁**弹体：改为增益 + 转向最近的敌人继续飞；
                             // 其余情形（含 S014A 命中友军、S014B 命中敌人）都在 `vc`/`oc` 末尾 `IA(nr)` 销毁。
@@ -11162,8 +11158,7 @@ mod tests {
         assert!(max_rem > 700.0, "流射射程应 ~1000（1+.1ei）（旧占位 360），最大剩余 {max_rem}");
     }
 
-    /// S016 弹跳弹：两敌布阵——第一跳全额 6、跳向第二敌 ×0.8≈4.8；寿命耗尽后消失。
-    ///（跳序由 nearest 决定；击退方向沿来向推离，不会把目标推进下一跳判定圈。）
+    /// S016 弹跳弹：两敌布阵——第一跳全额 6、跳向第二敌 ×0.75×Gn1.1≈4.95（`gv` 衰减，非 tooltip 的 20%）。
     #[test]
     fn s016_bounce_jumps_with_decay() {
         let mut world = World::new(3, 955);
@@ -11173,17 +11168,19 @@ mod tests {
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
         world.players[0].move_target = None;
-        // 衰减击退（D8）位移 ~1335 沿弹向（+x）：敌2 放命中点垂直方向 -850（< 900 弹程，
-        // 且 1 被推 +x 远离第二跳路径 → 不会三跳往返）。
-        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        // 因 098c `Fc` **不排除 owner**（弹体可回飞施法者），本测试要保证“第二跳目标是敌2”：
+        //   · 施法者在原点；两敌都放在 **14m=840**（< 单跳射程 900，首跳可在 `ev` 内命中）；
+        //   · 敌2 放在命中点垂直 3m 处 ⇒ 首跳后弹体（在敌1处）离敌2(180) 比离 owner(840) 近；
+        //   · 首跳击退把敌1 沿 +x 推远 → 不会重新靠近第二跳路径。
+        world.players[1].pos = Vec2::new(d60(14.0), Fix64::ZERO);
         world.players[1].move_target = None;
-        world.players[2].pos = Vec2::new(d60(5.0), Fix64::from_num(-850.0));
+        world.players[2].pos = Vec2::new(d60(14.0), d60(3.0));
         world.players[2].move_target = None;
         let hp1 = world.players[1].hp;
         let hp2 = world.players[2].hp;
         world.step(
             vec![
-                PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(14.0), Fix64::ZERO)))), ..Default::default() },
                 PlayerInput::default(),
                 PlayerInput::default(),
             ],
@@ -11196,18 +11193,47 @@ mod tests {
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
         assert!((d1 - 6.0).abs() < 0.3, "第一跳应全额 6，实际 {d1}");
-        // 098c A 形态（`gc` 13833）：`set gv[nr]=.75*gv[nr]` → 衰减 **×0.75**（**不是** tooltip 写的 20%）；
+        // 098c A 形态（`gc`）：`set gv[nr]=.75*gv[nr]` → 衰减 **×0.75**（**不是** tooltip 写的 20%）；
         // 再乘施法者 Gn=1.1（首次命中后成长）→ 第二跳 = 6×0.75×1.1 ≈ 4.95。
         assert!((d2 - 6.0 * 0.75 * 1.1).abs() < 0.3, "第二跳应 ×0.75×Gn1.1≈4.95，实际 {d2}");
-        // 末跳命中时寿命重置（~0.94s），到 2.2s 时必已耗尽（3 跳上限由全场扫描+飞程自然保证）。
-        for _ in 0..40 {
+        // 注：098c `Fc` **不排除 owner** 且无硬计数 ⇒ 只要每跳在 `ev` 内命中，弹体会在两敌（乃至 owner）间持续
+        //   ping-pong；**不再**断言“寿命耗尽即消失”（旧断言基于错误前提，已废）。回弹 owner 由两人局测试覆盖。
+    }
+
+    /// 098c `Fc` 复核：重定向只排除上一跳受害者（`gX!=Fv[nr]`），**不排除 owner**（英雄 `FR` 带 `Nv=true`，
+    /// 碰撞过滤同 owner 需 `bv[gX] and nv[fA]==1` **且** `Nv[gX] and Nv[fA]`）⇒
+    /// 两人局命中唯一敌人后，弹体应回飞向施法者自己（同队不伤，仅弹跳）。
+    #[test]
+    fn s016_bounce_first_hop_can_return_to_caster() {
+        let mut world = World::new(2, 0x601b);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S016, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let mut returned = false;
+        for _ in 0..120 {
             world.step(none.clone(), dt);
+            if world.projectiles.iter().any(|p| match p.kind {
+                ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, vel, .. } => vel.x < Fix64::ZERO,
+                _ => false,
+            }) {
+                returned = true;
+                break;
+            }
         }
-        let still = world
-            .projectiles
-            .iter()
-            .any(|pr| matches!(pr.kind, ProjectileKind::W098b { proj: crate::skill::W098bProjKind::Bounce, .. }));
-        assert!(!still, "弹跳弹寿命逐跳耗尽后应消失，不得无限弹");
+        assert!(returned, "弹体应在命中唯一敌人后回飞向施法者（098c Fc 不排除 owner）");
     }
 
     /// 098c S016 A **不逐帧制导**（`Gc` 只设 `hv`/`Jv`、**无 `jv`**）：即使弹体带 `chase`，
