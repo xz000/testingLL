@@ -431,6 +431,31 @@ const W098B_COL_UNIT: u8 = 1 << 0;
 const W098B_COL_MISSILE: u8 = 1 << 1;
 const W098B_COL_OBSTACLE: u8 = 1 << 2;
 const W098B_COL_ALL: u8 = W098B_COL_UNIT | W098B_COL_MISSILE | W098B_COL_OBSTACLE;
+
+/// 098c 弹体**逐弹碰撞掩码**（`Av[+1/+2/+3]`：与 英雄 / 弹体 / 障碍(柱) 碰撞；spawn 未设 = false）。
+/// 这是 `SKILL_CODE_AUDIT_098c.md`「生成标志逐技能核对表」的**可执行约束**——
+/// 防止 S009/S004/S013 那一类“漏读 `Av`”的误读回归。
+pub(crate) fn w098b_col_mask(id: crate::skill::SkillId, alt: bool) -> u8 {
+    use crate::skill::SkillId::*;
+    match (id, alt) {
+        // S004 回旋镖 `Ub`：`Av[+1/+3]`（**无 +2**）。
+        (S004, _) => W098B_COL_UNIT | W098B_COL_OBSTACLE,
+        // S009 A 父弹 `GB`：`Av[+1/+2/+3]`（顶部 `Av[+3]` + else 支 `Av[+1/+2]`）。
+        (S009, false) => W098B_COL_ALL,
+        // S009 B 父弹 `GB`：仅 `Av[+3]`（**只与障碍碰**）。
+        (S009, true) => W098B_COL_OBSTACLE,
+        // S013 A 换位 `MB`：`Av[+1/+3]`（**无 +2**）。
+        (S013, false) => W098B_COL_UNIT | W098B_COL_OBSTACLE,
+        // S013 B 搬运 `pB`：`Av[+2/+3]`（**无 +1**，不命中单位）。
+        (S013, true) => W098B_COL_MISSILE | W098B_COL_OBSTACLE,
+        // S017B 双生弹 `CC`：仅 `Av[+2]`（只与弹体碰）。
+        (S017, true) => W098B_COL_MISSILE,
+        // S019 链弹 `uc`/`Uc`：`Av[+1/+3]`（**无 +2**）。
+        (S019, _) => W098B_COL_UNIT | W098B_COL_OBSTACLE,
+        // 其余（S000/S003/S008B/S014/S015/S016/S017A/S012B…）：三态全开。
+        _ => W098B_COL_ALL,
+    }
+}
 /// S009 小子弹生成队列项：(owner, 位置, 速度, gx, 速度标量, 半径, 寿命, kb_ji)。
 type SpawnBullet = (u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64, Fix64);
 /// S009 A 碎片生成队列项：(owner, 位置, 速度, gx, kb_ji)。
@@ -5221,31 +5246,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             emit_angle: 0.0,
                             // 逐弹碰撞掩码（098c `Av`）：S009 A 父弹 = 单位+弹体（**不撞障碍**，穿柱）；
                             // S009 B 父弹 = 均不碰撞（纯发射器）；其余 = 全开。
-                            col_mask: if id == crate::skill::SkillId::S009 && !alt {
-                                // 098c `GB` A 父弹：顶部 `Av[+3]=true` + else 支 `Av[+1/+2]=true` ⇒ **三态全开**。
-                                W098B_COL_ALL
-                            } else if id == crate::skill::SkillId::S009 && alt {
-                                // 098c `GB` B 父弹：仅顶部 `Av[+3]=true`（**只与障碍碰**，`xv=1` 反弹）。
-                                W098B_COL_OBSTACLE
-                            } else if on_hit == crate::skill::W098bOnHit::ChainPull
-                                || on_hit == crate::skill::W098bOnHit::RedChain
-                            {
-                                // S019 链弹 `uc`/`Uc`：只设 `Av[+1/+3]`（术士+障碍）——**无 `Av[+2]`** → 不与其他弹体互撞。
-                                W098B_COL_UNIT | W098B_COL_OBSTACLE
-                            } else if proj == crate::skill::W098bProjKind::Boomerang {
-                                // S004 回旋镖（098c `Ub`）：`Av[+1]=true`、`Av[+3]=true`、**无 `Av[+2]`**
-                                // → 不与其他弹体互撞（旧默认 ALL 会撞弹体）。
-                                W098B_COL_UNIT | W098B_COL_OBSTACLE
-                            } else if id == crate::skill::SkillId::S013 && !alt {
-                                // S013 A 换位（098c `MB`）：`Av[+1]=true Av[+2]=false Av[+3]=true`。
-                                W098B_COL_UNIT | W098B_COL_OBSTACLE
-                            } else if id == crate::skill::SkillId::S013 && alt {
-                                // S013 B 搬运（098c `pB`）：`Av[+1]=false Av[+2]=true Av[+3]=true`
-                                // → **不命中单位**（“搬运”靠到点 `Gv` 传送施法者）。
-                                W098B_COL_MISSILE | W098B_COL_OBSTACLE
-                            } else {
-                                W098B_COL_ALL
-                            },
+                            // 098c `Av` 掩码（见 `w098b_col_mask`，含 S004/S009/S013/S017B/S019 的逐一核对）。
+                            col_mask: w098b_col_mask(id, alt),
                             s009_role: if id == crate::skill::SkillId::S009 && !alt {
                                 S009_ROLE_A_PARENT
                             } else if id == crate::skill::SkillId::S009 && alt {
@@ -12385,6 +12387,40 @@ mod tests {
             world.obstacles.first().map(|o| o.hp < hp0).unwrap_or(true),
             "A 父弹撞柱应造成 3 伤害（098c FB `mI(...,3,1.4)`）"
         );
+    }
+
+    /// 098c 生成标志（`Av[+1/+2/+3]`）逐技能核对——见 `SKILL_CODE_AUDIT_098c.md`「生成标志表」。
+    /// 把该表变成**可执行约束**，防止 S009/S004/S013 那一类“漏读 `Av`”的误读回归。
+    #[test]
+    fn w098b_col_mask_matches_098c() {
+        use crate::skill::SkillId::*;
+        let all = W098B_COL_UNIT | W098B_COL_MISSILE | W098B_COL_OBSTACLE;
+        let uo = W098B_COL_UNIT | W098B_COL_OBSTACLE;
+        let mo = W098B_COL_MISSILE | W098B_COL_OBSTACLE;
+        let t: &[(SkillId, bool, u8, &str)] = &[
+            (S000, false, all, "Ab 火球 +1/2/3"),
+            (S003, false, all, "Pb 追踪 +1/2/3"),
+            (S004, false, uo, "Ub 回旋镖 +1/+3（无 +2）"),
+            (S008, true, all, "OB 岩浆 +1/2/3"),
+            (S009, false, all, "GB A 父弹 +1/2/3"),
+            (S009, true, W098B_COL_OBSTACLE, "GB B 父弹 仅+3"),
+            (S013, false, uo, "MB 换位 +1/+3（无 +2）"),
+            (S013, true, mo, "pB 搬运 +2/+3（无 +1）"),
+            (S014, false, all, "ac 汲取 A +1/2/3"),
+            (S014, true, all, "ac 汲取 B +1/2/3"),
+            (S015, false, all, "Xc 流射 +1/2/3"),
+            (S015, true, all, "Ac 簇射 +1/2/3"),
+            (S016, false, all, "Gc 弹跳 A +1/2/3"),
+            (S016, true, all, "Dc 弹跳 B +1/2/3"),
+            (S017, false, all, "rC 缠绕 +1/2/3"),
+            (S017, true, W098B_COL_MISSILE, "CC 双生弹 仅+2"),
+            (S019, false, uo, "uc 蓝链 +1/+3（无 +2）"),
+            (S019, true, uo, "Uc 红链 +1/+3（无 +2）"),
+            (S012, true, all, "tB 凤凰弹 +1/2/3"),
+        ];
+        for (id, alt, want, why) in t {
+            assert_eq!(w098b_col_mask(*id, *alt), *want, "{why}（{id:?} alt={alt}）");
+        }
     }
 
     /// S009 小子弹撞柱（`Av[+3]`+`xv=-1`，`BB` 只对 `nv==1` 伤害）→ **被销毁、不伤柱**。
