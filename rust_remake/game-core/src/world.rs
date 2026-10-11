@@ -10560,7 +10560,7 @@ mod tests {
             alive: true,
         });
         // 敌人坐在 施法者(0)→柱子(180) 的线附近（垂直 20 < 75）。
-        let mut keep = |w: &mut World| {
+        let keep = |w: &mut World| {
             w.players[0].pos = Vec2::ZERO;
             w.players[1].pos = Vec2::new(d60(30.0), Fix64::ZERO); // 远离束，避免干扰
             w.players[2].pos = Vec2::new(Fix64::from_num(90.0), Fix64::from_num(20.0));
