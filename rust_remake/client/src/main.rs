@@ -3739,7 +3739,7 @@ impl Game {
                     canvas.draw(&dot, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::DelayedBlast { radius, remaining, .. } => {
-                    // 陨石落点（098c `oB`）：地面目标环 + 随剩余时间收缩的落地指示（无飞行弹体）。
+                    // 陨石落点（098c `oB`）：地面目标环 + 随剩余时间收缩的落地指示。
                     let br = (radius.to_num::<f32>() * self.scale).max(8.0);
                     let ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(2.0), Point2 { x: px, y: py }, br, 0.6, Color::from_rgba(255, 150, 60, 210))?;
                     canvas.draw(&ring, graphics::DrawParam::new());
@@ -3747,6 +3747,12 @@ impl Game {
                     let ir = (br * (1.0 - frac)).max(2.0);
                     let inner = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(3.0), Point2 { x: px, y: py }, ir, 0.6, Color::from_rgba(255, 220, 140, 230))?;
                     canvas.draw(&inner, graphics::DrawParam::new());
+                    // 098c `iB`：陨石是**可见的下落弹体**（`jv=rB` 每帧降高度 `740.741*.03`，初始≈`1000`）
+                    // → 画一颗从天而降的熔岩球（越接近落地越靠下、越亮）。
+                    let fall = 1000.0 * self.scale * (1.0 - frac);
+                    let mcol = Color::from_rgba(255, 170, 70, (150.0 + 100.0 * frac) as u8);
+                    let meteor = Mesh::new_circle(&ctx.gfx, DrawMode::fill(), Point2 { x: px, y: py - fall }, (br * 0.32).max(5.0), 0.5, mcol)?;
+                    canvas.draw(&meteor, graphics::DrawParam::new());
                 }
                 game_core::world::ProjectileKind::Clone { owner, .. } => {
                     // 镜像分身（C 栏）：半透明圆，沿用所有者的队伍色以便辨识。
