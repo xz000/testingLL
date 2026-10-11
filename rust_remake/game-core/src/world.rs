@@ -80,7 +80,8 @@ struct ProjExplosion {
 pub enum ProjClass {
     /// 默认：可被反射，反射后**归属改为盾主**（如 S000 火球 / S003 追踪 Ev=3）。
     ReflectTransfer,
-    /// **不反射**：098c `Ev==9`（S009 分裂）与 `Ev==na`(14)（S018 引力/力场等）。
+    /// **不反射**：098c `Ev==na`(14)（S018 引力/力场）。
+    /// ❗ `fC` 还排除 `Ev==9`，但 **`Ev=9` 全图从未被设置**（死条件）——S009 实为 `Ev=0` ⇒ **可反射**。
     NoReflect,
     /// S004 回旋镖（Ev=2）：反射后转入回程，**不改归属**。
     Boomerang,
@@ -92,6 +93,33 @@ pub enum ProjClass {
     Twin,
     /// 不参与玩家/盾碰撞的弹体（如 S014 回血球）：不会被反射。
     Inert,
+}
+
+/// 弹体的 S005 反射类别（098c `fC` 的 `Ev` 过滤 + 改归属规则）。
+///
+/// **真值**（`098c/out/war3map.j` 全位检）：`Ev` 仅这 7 处被设置——`2`=S004、`3`=S003、`8`=S008A、`16`=S008B、
+/// `na(14)`=S018、`Xa(15)`=S019、`17`=S017B；**其余（S000/S002/S009/S014/S015/S016…）均为 0**。`Ev==9` 从未出现。
+/// `fC`：不反射 `Ev∈{9,na}` 或非硬体单位；**改归属**排除 `Ev∈{2,16,Xa,17}`。⇒ 实际只有 **S018** 不反射。
+fn proj_class(
+    id: crate::skill::SkillId,
+    alt: bool,
+    proj: crate::skill::W098bProjKind,
+    on_hit: crate::skill::W098bOnHit,
+) -> ProjClass {
+    use crate::skill::{SkillId, W098bOnHit, W098bProjKind};
+    if id == SkillId::S018 {
+        ProjClass::NoReflect // Ev==na(14)
+    } else if proj == W098bProjKind::Boomerang {
+        ProjClass::Boomerang // Ev==2
+    } else if id == SkillId::S008 && alt {
+        ProjClass::Magma // Ev==16
+    } else if on_hit == W098bOnHit::RedChain {
+        ProjClass::RedChain // Ev==Xa(15)
+    } else if id == SkillId::S017 && alt {
+        ProjClass::Twin // Ev==17
+    } else {
+        ProjClass::ReflectTransfer // 含 S009（Ev=0）、S003（Ev=3）、S000/S002/S014/S015/S016 等
+    }
 }
 
 /// 链（Tether）的锚点：术士玩家或静态障碍（柱子）。
@@ -3917,7 +3945,7 @@ impl World {
                     blast_floor: Fix64::ZERO,
                     blast_on_expiry: false,
                     is_fireball: false,
-                    class: ProjClass::NoReflect, // S009 分裂子弹（Ev==9）
+                    class: ProjClass::ReflectTransfer, // S009 子弹无 `Ev`(0) ⇒ 可反射（`Ev==9` 从未设置）
                     direct_dmg: None, // 碎片用分级 `gx`（098c `CB`：`2.5+.5*Xv`）
                     chase: None,
                     col_mask: W098B_COL_UNIT | W098B_COL_OBSTACLE,
@@ -3962,7 +3990,7 @@ impl World {
                     blast_floor: Fix64::ZERO,
                     blast_on_expiry: false,
                     is_fireball: false,
-                    class: ProjClass::NoReflect,
+                    class: ProjClass::ReflectTransfer, // S009 碎片无 `Ev`(0)；本体只撞障碍，不受盾影响
                     direct_dmg: None,
                     chase: None,
                     col_mask: W098B_COL_OBSTACLE,
@@ -5287,20 +5315,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             blast_dmg: staff_blast.unwrap_or(gx),
                             blast_on_expiry: id == crate::skill::SkillId::S008 && alt,
                             is_fireball: id == crate::skill::SkillId::S000,
-                            // S005 反射类别（098c `Ev`）：回旋镖反射转回程；岩浆/链弹/双生弹反射保留归属；其余反射改归属。
-                            class: if id == crate::skill::SkillId::S009 {
-                                ProjClass::NoReflect
-                            } else if proj == crate::skill::W098bProjKind::Boomerang {
-                                ProjClass::Boomerang
-                            } else if id == crate::skill::SkillId::S008 && alt {
-                                ProjClass::Magma
-                            } else if on_hit == crate::skill::W098bOnHit::RedChain {
-                                ProjClass::RedChain
-                            } else if id == crate::skill::SkillId::S017 && alt {
-                                ProjClass::Twin
-                            } else {
-                                ProjClass::ReflectTransfer
-                            },
+                            // S005 反射类别（098c `Ev`，见 `proj_class`）：回旋镖反射转回程；岩浆/链弹/双生弹反射保留归属；S018 不反射；其余反射改归属。
+                            class: proj_class(id, alt, proj, on_hit),
                             // 098c `FB`(12220)：S009 父弹命中固定 `3`（`mI(nr,Vr,3,1.4)`）；
                             // 碎裂出的碎片仍用分级的 `gx`（`2.5+.5*L`，上方 spawn 处传 `*gx`）。
                             direct_dmg: if id == crate::skill::SkillId::S009 {
@@ -7711,9 +7727,10 @@ mod tests {
         assert_eq!(owner, 0, "反弹后归属应改为盾主");
     }
 
-    /// S005 反射盾**不反射** `Ev==9`（S009 分裂）类弹体。
+    /// S005 反射盾**不反射** `Ev==na`(14)（S018 类）弹体（`NoReflect` 类）。
+    /// 注：原名为 `shield_does_not_reflect_s009` —— 属误读（`Ev==9` 从未设置，S009 实为可反射），2026-10-10 更正。
     #[test]
-    fn shield_does_not_reflect_s009() {
+    fn shield_does_not_reflect_no_reflect_class() {
         let mut world = World::new(2, 78);
         let dt = Fix64::from_num(1.0 / 60.0);
         world.players[0].pos = Vec2::ZERO;
@@ -7762,12 +7779,31 @@ mod tests {
             pos: Vec2::new(Fix64::from_num(5.0), Fix64::ZERO),
             alive: true,
         });
-        // S009 不能反射 → 直接命中扣血（与上面反射用例相反）。
+        // S018 类不能反射 → 直接命中扣血（与上面反射用例相反）。
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         for _ in 0..10 {
             world.step(none.clone(), dt);
         }
-        assert!(world.players[0].hp < hp0, "S009 分裂弹不应被反射，应直接命中扣血");
+        assert!(world.players[0].hp < hp0, "NoReflect 类弹体不应被反射，应直接命中扣血");
+    }
+
+    /// S005 反射类别映射对齐 098c `Ev`（`proj_class`）：只有 S018 不反射；S009 可反射。
+    #[test]
+    fn proj_class_matches_098c_ev() {
+        use crate::skill::{SkillId, W098bOnHit, W098bProjKind};
+        let s = W098bProjKind::Straight;
+        let ki = W098bOnHit::Ki;
+        assert_eq!(proj_class(SkillId::S009, false, s, ki), ProjClass::ReflectTransfer, "S009 无 Ev ⇒ 可反射");
+        assert_eq!(proj_class(SkillId::S009, true, s, ki), ProjClass::ReflectTransfer);
+        assert_eq!(proj_class(SkillId::S018, false, s, ki), ProjClass::NoReflect, "S018 Ev==na ⇒ 不反射");
+        assert_eq!(proj_class(SkillId::S018, true, s, ki), ProjClass::NoReflect);
+        assert_eq!(proj_class(SkillId::S004, false, W098bProjKind::Boomerang, ki), ProjClass::Boomerang, "S004 Ev==2");
+        assert_eq!(proj_class(SkillId::S008, true, s, ki), ProjClass::Magma, "S008B Ev==16");
+        assert_eq!(proj_class(SkillId::S019, false, s, W098bOnHit::RedChain), ProjClass::RedChain, "S019 Ev==Xa");
+        assert_eq!(proj_class(SkillId::S017, true, s, ki), ProjClass::Twin, "S017B Ev==17");
+        // S003（Ev=3）与 S000/S002/S014/S015/S016 等无 Ev ⇒ 改归属反射。
+        assert_eq!(proj_class(SkillId::S003, false, W098bProjKind::Homing, ki), ProjClass::ReflectTransfer);
+        assert_eq!(proj_class(SkillId::S000, false, s, ki), ProjClass::ReflectTransfer);
     }
 
     #[test]
