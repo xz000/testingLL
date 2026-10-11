@@ -26,7 +26,7 @@
 | `SKILL_ALIGNMENT_LEDGER.md` | **主台账（活）** | 逐技能 §3/§9 事实表 + 状态列（✅/🔧/⚠/📋）；§11 基准审计；协议史 |
 | `SKILL_CODE_AUDIT_098c.md` | **权威（代码基准）** | 逐技能按 **098c 代码** 抽出的 damage/duration/cooldown/range/speed 公式，与 def 对照 |
 | `JASS_FIELDS_098c.md` | 权威（字段语义） | 两字母字段/回调语义（`Q/S`=每 tick、`mI` 的 `lI`=击退%、`yO/oR` DoT、`wR` 废参、`Jv`≠`Gv`、`kv` vs `Kv`、两种“镜面反射”） |
-| `098C_DIFF.md` | 系统级差异 | 098b↔098c 的大系统差异（魔法张力/移动模型/物理/成长/计分/回血/岩浆），A1–A8 均已结案 |
+| `098C_DIFF.md` | 系统级差异 | 098b↔098c 大系统差异（魔法张力/移动/物理/成长/计分/回血/岩浆）。**A1/A3–A8 结案**；**A2 移动模型仍待讨论**（❗2026-10-10 更正：通用移动**无**右键冲量，那仅属 S012B 凤凰）|
 | `ITEM_AUDIT_098c.md` / `ECONOMY_RECHECK.md` | 权威 | 道具 24 格 / 经济奖励 |
 | `KNOCKBACK_ALIGNMENT.md` | 权威 | 击退系数逐技能 |
 | `EXIT_MENU_RECONNECT_PLAN.md` | 设计档（联机） | Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列） |
