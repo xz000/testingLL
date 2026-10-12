@@ -1547,6 +1547,52 @@ impl<T: Transport> ClientLockstep<T> {
         Ok(self.try_advance())
     }
 
+    /// 学习期专用：排空 transport 收包（缓存快照/在线集/暂停视图/状态哈希/Takeover），**不推进帧、不 step 世界**；
+    /// 返回是否收到了来自 host 的**任意**包。供上层做"学习期存活判定"——学习期没有帧可数，只能用"是否收到 host 包"。
+    pub fn pump_learning(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
+        let mut any = false;
+        loop {
+            match self.transport.recv_from(rcv) {
+                Ok(Some((n, from))) => {
+                    if from == self.host {
+                        any = true;
+                    }
+                    if let Some(pkt) = Packet::decode(&rcv[..n]) {
+                        match pkt {
+                            Packet::Snapshot { world_bytes, seq, .. } => {
+                                self.latest_snapshot = Some((world_bytes, seq));
+                            }
+                            Packet::Participants { ids } => {
+                                if from == self.host {
+                                    self.latest_participants = Some(ids);
+                                }
+                            }
+                            Packet::PauseState { paused, by, resume_in, remaining } => {
+                                self.pause = PauseView { paused, by, resume_in, remaining };
+                            }
+                            Packet::StateHash { seq, hash } => {
+                                self.record_state_hash(seq, hash);
+                            }
+                            Packet::Takeover { seq, participants } => {
+                                self.latest_takeover = Some((from, seq, participants));
+                            }
+                            Packet::Leave { identity } => {
+                                if from == self.host {
+                                    self.host_left = Some(identity);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Ok(None) => break,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(any)
+    }
+
     /// 处理 host 广播的 `Resync`：把本端起点 seq 对齐到该 seq（配合快照重建后使用）。
     /// 返回是否收到并应用了 Resync。
     pub fn apply_resync(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
@@ -2359,6 +2405,22 @@ mod tests {
         host.poll(&mut rcv);
         let (_wb, _seq, yi) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到快照");
         assert_eq!(yi, 2, "应答应带该端当前 world index（client_indices[c]）");
+    }
+
+    /// E1：学习期 `pump_learning` —— 缓存 host 静态快照并报告存活；无包时返回 false。
+    #[test]
+    fn pump_learning_caches_snapshot_and_reports_liveness() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        assert!(!cli.pump_learning(&mut rcv).unwrap(), "无包 → 非存活");
+        // 先让 host 记下 client peer（否则 broadcast 无人可发）。
+        cli.send_input(&[0]).unwrap();
+        host.poll(&mut rcv);
+        host.broadcast_snapshot(vec![1, 2, 3], 9, 0xFF);
+        assert!(cli.pump_learning(&mut rcv).unwrap(), "收到 host 快照 → 存活");
+        assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 9)), "应缓存快照");
     }
 
     /// L3：client 主动离开广播 → host **立即**标记其掉线（不等空闲阈值），在线集随之更新。
