@@ -588,7 +588,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 每参战等级 `Zr` | `Zr` 由**物品 16（鲜血之剑）**升级递增（`iV[16]=true; Zr+=1`，且 `SetUnitAbilityLevel('S001',1+Zr)`），伤害 `cX=10+Zr`、恢复 `(Zr+1)` | ✅ `Zr = item_fx.smite_bonus`（鲜血之剑 1/2 → 1/2）；伤害 `10+smite_bonus` | ✅ |
 | **Denied** | 若某个术士 `Fv[gX]==ii`（其链接目标=施法者）且（在危险地形 or `kr[Vv[gX]]` or `Fr[gX]`）→ `aR(gX)` **断链**（`nv[nR]==2` 弹体则 `iO`）+ “Denied”红字/音效 | ✓ 我们有 `smite_denied_breaks_link_on_special_target` | ✅ |
 | 物品 12（`iV[$C+24*ri]`） | 施法时 `vi[ri] = 2*vi[ri]`（**生命偷取 `vi` 翻倍**），结束恢复 | ✅ = `ItemId::FireMask`（`scourge_double`）；包裹 `explode_at` 前后各翻/复原 `mastery[0]` 与 `item_fx.lifesteal`；`explode_at` 已补攻方吸血 | ✅ |
-| 物品 13（火法杖） | `LC`(15459)：注册「7251 窗口」`4*jn` 秒（+血精灵武器特效）；窗口内火球走 `Eb` | ✅ 已实现（2026-10-10，协议 45）：`BuffKind::FireStaffWindow`（nova S001/S020/S021 施放开窗）；窗口内火球点燃 ×2.4、时长 `5*jn`；无杖不点燃。测试 `firestaff_window_opens_on_nova_cast`/`s000_window_doubles_ignite_param` | 🔧 |
+| 物品 13（火法杖） | `LC`(15459)：注册「7251 窗口」`4*jn` 秒（+血精灵武器特效）；窗口内火球走 `Eb` | ✅ 已实现（2026-10-10，协议 45）：`BuffKind::FireStaffWindow`（nova S001/S020/S021 施放开窗）；窗口内火球点燃 ×2.4、时长 `5*jn`；无杖不点燃。测试 `firestaff_window_opens_on_nova_cast`/`s000_window_doubles_ignite_param` | ✅ |
 | 危险地形变体 | `if nV[ri] and 地形==火灾 then kC(ri,ii)`：`To[id]/=8`、`nV[id]=false`、`GX(1,0,id)`，按物品 19/20/其他给 `KC=6/8/10` + DivineShield 特效 + `JC`/`jC` 回调 | ✅ 已实现（§14.5，协议 53）：熔岩靴三 nova 触发 kC；`mC`/`QC` 免自伤。测试 `nova_on_lava_boots_kc_vs_self_damage_matches_098c` | ✅ |
 
 ---
@@ -723,7 +723,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **快照** | 用**合成对象 id** `IR=ii+500` 存一份副本：`K/L/Q/S/U/w/Y/z/G/ev/Hr` 全部拷入；另外 `CreateUnit('thrd')` 白影（`SetUnitVertexColor(...,75)` 半透）+ 加 `'Atsi'` | 我方 = `Rewind` 快照（pos/hp/mana/cur_vel/**kb_vel**/control/burning）延迟回滚 | ✅（§22 功能等价）|
 | 定时 | `le[ii] = LO(function RR, **3.6*jn[ri]**, ii, IR, ne, **Fn[ri]（HP）**, **gn[ri]（蓝）**, facing)` | 我方 3.6s ✓（待核） | ✅ |
 | **回滚（`RR`）** | ① `K/L/Q/S/U/w/Y/z[施法者]=快照`（位置+速度+加速度全还原）；`aR` 断链；`VR(false)`；`G/ev/Hr` 还原（`Hr` 真则 `hv=ni; Rv=Do`）；`SetUnitX/Y` + 停止指令；② **HP**：`if Fn[id]<ve then Fn[id]=ve`（`ve`=快照 HP）⇒ **只回补到快照血量，不会反向扣血**；③ **蓝**：`AR=(0.8-zr[id]/10)*(gn[id]-ee)`，`AR>=0` 才应用（`ee`=快照蓝）⇒ **只保留 `(0.8−0.1L)` 的正向蓝量变化**（花掉的蓝不返还） | ✅ 位置/HP/动量/硬体还原（`world.rs:926`）：`p.hp.max(rw.hp)` = **只补不回**（对 `if Fn<ve then Fn=ve`）；**张力**即本作的 `mana`：`if p.mana>rw.mana { p.mana = rw.mana + keep*(p.mana-rw.mana) }`（`world.rs:934`，=对 `gn=ee+(.8-.1zr)(gn-ee)`）；清减益已做；测试 `s006_rewind_restores_position_and_hp` | ✅ |
-| 收尾 | `SetUnitFacing` + 特效 + `RemoveUnit(F[IR])` + `le[ii]=0` + `JO(...,ae)`（清 buff） | — | 📋 |
+| 收尾 | `SetUnitFacing` + 特效 + `RemoveUnit(F[IR])` + `le[ii]=0` + `JO(...,ae)`（清 buff） | ✅（表现/内部；本作无白影单位；`aR` 断链）|
 | tooltip 的伤害保留% | tooltip（`w3a` `aub1`）逐级：L1 **70%**…L7 10% / L8 **“NO damage”** = `(80−10L)%` | ⚠ **tooltip 与代码不一致**：该 `(.8−zr/10)` 因子在 JASS 里**只作用于 `gn`（张力/蓝）**（`RR` 行 2638），**HP 是全量还原**（行 2635 `set Fn[id]=ve`，仅在当前血低于快照时补回）——全库搜 `(.8-` 仅此一处。我方按代码（全量回血 + 张力 keep）。**2026-10-09 用户裁定：按代码（A）**——tooltip 过时，不实现 X% 伤害保留 | ✅ |
 
 ### S007 急行（Haste）✅ 已普查（未动代码）
@@ -742,7 +742,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 |---|---|---|---|
 | **S010 A（RB）** | `fr[ii]=true`；`gR(ii, hR(ii)+**Dr=200**)`（**移速 +200**，tooltip“200 movement speed bonus” ✓）；`hv=ni`；`Rv=Do=60`；`UnitAddAbility('Agho')`（幽灵/隐身）；`LO(DR, **3.1*jn**)` | 我方 S010A ✓（测试 `s010_form_a_charge_vs_b_invisibility`） | ✅ |
 | **S010 B（IB）** | `gr[ii]=true`；`gR(+**Dr/2=100**)`；`hv=ni`；`Rv=60`；`'Agho'`；`LO(AA, **4*jn**)`；`AA` 到期 `gR(Yv,hR(Yv)-Dr/2.)`（扣回 100） | 我方 S010B ✓ | ✅ |
-| **S012 A（AB，冲撞）** | 方向=点击点−施法者；`Hr=true`；`Q=Gr*dir`、`U=hr*dir`（**`Gr=$514*.03=39`/tick=1300/s；`hr=Gr*(1-.96)=Gr*.04=1.56`/tick**）；每帧 `Q+=U`（**推力**）+ 常规移动 `×.96` 阻尼；射程上限 `(650+50*Wr)(1+.1ei)`；`ev=Rr/Gr*.03+3*.03`；`hv=ni`；`Rv=60` | ⚠ 我方 S012A = **恒定 1300/s**（测试 `s012_dash_*`）；098c 是 **推力 `Q+=U` + 阻尼**（与 A2 移动模型同源）→ **归入 A2 讨论** | ⚠（A2 耦合） |📋 |
+| **S012 A（AB，冲撞）** | 方向=点击点−施法者；`Hr=true`；`Q=Gr*dir`、`U=hr*dir`（**`Gr=$514*.03=39`/tick=1300/s；`hr=Gr*(1-.96)=Gr*.04=1.56`/tick**）；每帧 `Q+=U`（**推力**）+ 常规移动 `×.96` 阻尼；射程上限 `(650+50*Wr)(1+.1ei)`；`ev=Rr/Gr*.03+3*.03`；`hv=ni`；`Rv=60` | ⚠ 我方 S012A = **恒定 1300/s**（测试 `s012_dash_*`）；098c 是 **推力 `Q+=U` + 阻尼**（与 A2 移动模型同源）→ **归入 A2** | ⚠（A2 **有意保留**：恒定推力 vs 098c 加速+阻尼；见 §12/§13）|
 | **`CA` 碰撞（招架/命中）** | 只有当 `nv[Vr]==1`（撞术士）且异队：① `fr`（隐身背刺）→ `mI(nr,Vr, **4.6+0.8*wr[Vv]**, 1)`（tooltip“Damage 5.4/6.2/7…” L1=4.6+0.8=**5.4** ✓）；若同时 `Hr`（隐身+冲撞叠加）→ `4.6+.8wr + 5+.4Wr`、击退 .75、且 `FX(nr, 5+.4Wr)` **自伤**；② 仅 `Hr`（冲撞）→ `mI(nr,Vr, **5+0.4*Wr**, 1)` + `FX(nr, 5+.4Wr)` **自伤** + `BA()`；`xi>0` 时还有额外分支 | 我方招架/背刺/自伤均有测试 ✓ | ✅ |
 | 撞柱/地形 | `AB` 设 `Hr=true` 后由 `WA()` 推挤；`Hr` 在 `fC`（反射盾）里会被当作“可反射对象” | 我方冲刺撞柱由 `resolve_obstacles` 截断（见 `s012_dash_does_not_bounce_off_obstacle`） | ✅ 近似 |
 
