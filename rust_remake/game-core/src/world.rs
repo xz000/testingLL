@@ -4671,9 +4671,14 @@ impl World {
             if self.players[ai].team == self.players[i].team {
                 continue;
             }
-            // 刷新风步（098c `Xr`，封顶 5s）。
+            // 098c `CA` 4150：刷新量 = `+1.5*jn[施法者]`（不是硬编码 1.5），上限 5s。
+            let jn = self.players[i].jn();
             self.players[i].windwalk_state =
-                (self.players[i].windwalk_state + Fix64::from_num(1.5)).min(Fix64::from_num(5.0));
+                (self.players[i].windwalk_state + Fix64::from_num(1.5 * jn)).min(Fix64::from_num(5.0));
+            // 098c `CA` 4157：`call gR(nr,hR(nr)+Dr/2)`（`Dr=$C8=200`）⇒ 招架时**自身移速 +100**
+            //（持续到风步结束，随刷新延长）。
+            let ww_dur = self.players[i].windwalk_state.to_num::<f64>();
+            self.players[i].add_buff(BuffKind::FlatSpeed(100.0), ww_dur);
             self.players[i].parry_ready = false;
             self.players[i].parry_cd = Fix64::from_num(0.5);
             // 互相击退（`MI`）：把攻击者推开、自己推开，均乘 `100/(100+gn)`。
@@ -9789,8 +9794,15 @@ mod tests {
         w.players[0].parry_ready = true;
         w.players[0].contact_by_enemy = Some(1);
         let before_ww = w.players[0].windwalk_state;
+        let spd_before = w.players[0].base_speed_for_test();
         w.process_parry(Fix64::from_num(1.0 / 60.0));
         assert!(w.players[0].windwalk_state > before_ww, "招架应刷新风步");
+        // 098c `CA` 4157：`gR(nr,hR(nr)+Dr/2)`（`Dr=200`）⇒ 招架时**自身移速 +100**。§21.2⑦
+        let spd_after = w.players[0].base_speed_for_test();
+        assert!(
+            (spd_after - spd_before - Fix64::from_num(100.0)).abs() < Fix64::from_num(0.01),
+            "招架应 +100 移速：{spd_before:?} -> {spd_after:?}"
+        );
         assert!(!w.players[0].parry_ready, "招架后 gr 应进入冷却");
         assert!(w.players[0].parry_cd > Fix64::ZERO);
         assert!(w.players[1].kb_vel != Vec2::ZERO, "攻击者应被击退");
