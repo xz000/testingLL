@@ -440,6 +440,25 @@ fn encode_player(o: &mut Vec<u8>, p: &Player) {
     wu32(o, p.cmd_head as u32);
     wu32(o, p.cmd_len as u32);
     wu8(o, p.alive as u8);
+    // 以下状态此前**未编码** → 快照重建后被重置为默认，导致重连/迁移后与 host 分叉（DESYNC）。
+    // 顺序必须与 `decode_player` 一致。
+    wu8(o, p.boomerang_side as u8);
+    wfix(o, p.windwalk_state);
+    wu8(o, p.on_ice as u8);
+    match p.respawn_at {
+        Some(v) => {
+            wu8(o, 1);
+            wfix(o, v);
+        }
+        None => wu8(o, 0),
+    }
+    wf64(o, p.doom);
+    wfix(o, p.doom_remaining);
+    wf64(o, p.dur_mult);
+    wf64(o, p.dmg_taken_mult);
+    wf64(o, p.lava_taken_mult);
+    wf64(o, p.role_kb_mult);
+    wf64(o, p.role_regen_mult);
 }
 
 fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
@@ -605,6 +624,22 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
         return None;
     }
     let alive = u8at(b, p)? != 0;
+    // 补充状态（顺序须与 `encode_player` 一致）。
+    let boomerang_side = u8at(b, p)? != 0;
+    let windwalk_state = fixat(b, p)?;
+    let on_ice = u8at(b, p)? != 0;
+    let respawn_at = if u8at(b, p)? != 0 {
+        Some(fixat(b, p)?)
+    } else {
+        None
+    };
+    let doom = f64::from_bits(u64at(b, p)?);
+    let doom_remaining = fixat(b, p)?;
+    let dur_mult = f64::from_bits(u64at(b, p)?);
+    let dmg_taken_mult = f64::from_bits(u64at(b, p)?);
+    let lava_taken_mult = f64::from_bits(u64at(b, p)?);
+    let role_kb_mult = f64::from_bits(u64at(b, p)?);
+    let role_regen_mult = f64::from_bits(u64at(b, p)?);
 
     let mut pl = Player::new(id, Vec2::ZERO, Fix64::ONE);
     pl.id = id;
@@ -659,6 +694,17 @@ fn decode_player(b: &[u8], p: &mut usize, np: usize) -> Option<Player> {
     pl.cmd_head = cmd_head;
     pl.cmd_len = cmd_len;
     pl.alive = alive;
+    pl.boomerang_side = boomerang_side;
+    pl.windwalk_state = windwalk_state;
+    pl.on_ice = on_ice;
+    pl.respawn_at = respawn_at;
+    pl.doom = doom;
+    pl.doom_remaining = doom_remaining;
+    pl.dur_mult = dur_mult;
+    pl.dmg_taken_mult = dmg_taken_mult;
+    pl.lava_taken_mult = lava_taken_mult;
+    pl.role_kb_mult = role_kb_mult;
+    pl.role_regen_mult = role_regen_mult;
     Some(pl)
 }
 
@@ -1027,6 +1073,17 @@ pub fn world_to_bytes(w: &World) -> Vec<u8> {
     for k in &w.pending_kings {
         wu32(&mut o, *k);
     }
+    // 房间设置标量（此前**未编码** → 快照重建后被重置为默认 → 重连/迁移后与 host 分叉=DESYNC）。
+    // 顺序必须与 `world_from_bytes` 一致。
+    wf64(&mut o, w.base_regen);
+    wfix(&mut o, w.shrink_delay_secs);
+    wfix(&mut o, w.shrink_total_secs);
+    wfix(&mut o, w.shrink_ref_radius);
+    wfix(&mut o, w.damage_mult);
+    wfix(&mut o, w.knockback_mult);
+    wfix(&mut o, w.lava_damage_mult);
+    wu8(&mut o, w.pillar_mode);
+    wu8(&mut o, w.ice_mode);
     o
 }
 
@@ -1134,8 +1191,18 @@ pub fn world_from_bytes(b: &[u8]) -> Option<World> {
         }
         pending_kings.push(k);
     }
-    // 倍率（房间设置）不是世界状态，快照不含；重建后用 `configure_mults` 重新对齐（默认 1.0）。
-    Some(World { players, arena_radius, base_regen: crate::balance::Balance::default().hp_regen, shrink_delay_secs: Fix64::from_num(crate::balance::Balance::default().shrink_delay_secs), shrink_total_secs: Fix64::from_num(crate::world::DEFAULT_SHRINK_TOTAL_SECS), shrink_ref_radius: arena_radius, damage_mult: Fix64::ONE, knockback_mult: Fix64::ONE, lava_damage_mult: Fix64::ONE, pillar_mode: 1, ice_mode: 1, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice, combat_events: Vec::new() })
+    // 房间设置标量（顺序须与 `world_to_bytes` 一致）：以前以为“重建后用 `configure_*` 对齐”，
+    // 但重连/迁移时配置是在快照**之前**套用的，会被快照重建重置 → 改为随快照同步。
+    let base_regen = f64::from_bits(u64at(b, &mut p)?);
+    let shrink_delay_secs = fixat(b, &mut p)?;
+    let shrink_total_secs = fixat(b, &mut p)?;
+    let shrink_ref_radius = fixat(b, &mut p)?;
+    let damage_mult = fixat(b, &mut p)?;
+    let knockback_mult = fixat(b, &mut p)?;
+    let lava_damage_mult = fixat(b, &mut p)?;
+    let pillar_mode = u8at(b, &mut p)?;
+    let ice_mode = u8at(b, &mut p)?;
+    Some(World { players, arena_radius, base_regen, shrink_delay_secs, shrink_total_secs, shrink_ref_radius, damage_mult, knockback_mult, lava_damage_mult, pillar_mode, ice_mode, sandbox, round_seed, obstacles, projectiles, eliminated_order, kills_this_round, round_number, damage_matrix, avatar_score, time, lightning_visual, mode, avatar, kings, f_override, round_forced, pending_avatar, pending_kings, shrink_timer, ice, combat_events: Vec::new() })
 }
 
 /// 序列化用的便捷接口：`World::to_bytes` / `from_bytes`（依赖本模块）。
@@ -1285,6 +1352,57 @@ mod tests {
         assert_ne!(state_hash(&a), state_hash(&c), "不同世界应得不同哈希");
         // `state_hash` 与「先序列化再 state_hash_bytes」必须一致（host 每帧复用一份字节）。
         assert_eq!(state_hash(&a), state_hash_bytes(&world_to_bytes(&a)));
+    }
+
+    /// v57 回归：房间设置标量 + `Player` 补充状态必须随快照往返保真（此前漏编码 → 重连/迁移后 DESYNC）。
+    #[test]
+    fn roundtrip_preserves_room_config_and_player_extra_state() {
+        let mut w = World::new(2, 123);
+        // 房间设置标量：直接改字段（不用 configure_shrink，免得重置 shrink_timer 干扰断言）。
+        w.base_regen = 0.7;
+        w.shrink_delay_secs = Fix64::from_num(3.5);
+        w.shrink_total_secs = Fix64::from_num(42.0);
+        w.shrink_ref_radius = Fix64::from_num(321.0);
+        w.damage_mult = Fix64::from_num(1.4);
+        w.knockback_mult = Fix64::from_num(0.8);
+        w.lava_damage_mult = Fix64::from_num(0.3);
+        w.pillar_mode = 2;
+        w.ice_mode = 0;
+        // Player 补充状态。
+        {
+            let p = &mut w.players[0];
+            p.boomerang_side = true;
+            p.windwalk_state = Fix64::from_num(1.25);
+            p.on_ice = true;
+            p.respawn_at = Some(Fix64::from_num(4.5));
+            p.doom = 0.6;
+            p.doom_remaining = Fix64::from_num(2.5);
+            p.dur_mult = 1.2;
+            p.dmg_taken_mult = 0.85;
+            p.lava_taken_mult = 0.4;
+            p.role_kb_mult = 1.3;
+            p.role_regen_mult = 2.0;
+        }
+        let bytes = world_to_bytes(&w);
+        let back = world_from_bytes(&bytes).expect("应能解码");
+        assert_eq!(state_hash(&w), state_hash(&back), "roundtrip 后哈希须一致（防再次漏序列化）");
+        // 逐字段敏感性：改一个值 → 哈希必须不同（否则又是“漏编码”）。
+        let base = state_hash(&w);
+        let mut w2 = w.clone();
+        w2.damage_mult = Fix64::from_num(9.0);
+        assert_ne!(base, state_hash(&w2), "damage_mult 应影响哈希");
+        let mut w3 = w.clone();
+        w3.pillar_mode = 1;
+        assert_ne!(base, state_hash(&w3), "pillar_mode 应影响哈希");
+        let mut w4 = w.clone();
+        w4.players[0].role_kb_mult = 9.0;
+        assert_ne!(base, state_hash(&w4), "player.role_kb_mult 应影响哈希");
+        let mut w5 = w.clone();
+        w5.players[0].respawn_at = None;
+        assert_ne!(base, state_hash(&w5), "player.respawn_at 应影响哈希");
+        let mut w6 = w.clone();
+        w6.players[0].boomerang_side = false;
+        assert_ne!(base, state_hash(&w6), "player.boomerang_side 应影响哈希");
     }
 
     #[test]

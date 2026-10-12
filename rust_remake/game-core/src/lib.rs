@@ -97,4 +97,8 @@ pub fn version() -> &'static str {
 /// S000/S002 `xi` AoE **排除直击者**（098c `Iv` 位集）；S009 A 父弹 `gB`（命中/撞柱/撞弹体 → 碎片+`xi` AoE）；
 /// S013A 到点**传送施法者**（+`life=min(点击,900(1+.1ei))/1700`）；S010/S012 招架 **+100 移速** + 刷新乘 `jn`；
 /// S004/S003 补 `xi` AoE；**守护之盾 `HC` 改为任一 F nova 施放即消耗充能**（`mC`/`qC`/`QC` 三处同构，不要求命中）。
-pub const PROTOCOL_VERSION: u32 = 56;
+/// v57（2026-10-13）：**快照补全模拟状态**——`World` 房间配置标量（回血/缩圈延迟与总时长/参考半径/
+/// 伤害·击退·熔岩倍率/柱子·冰面模式）+ `Player` 11 个状态字段（`boomerang_side`/`windwalk_state`/`on_ice`/
+/// `respawn_at`/`doom`/`doom_remaining`/`dur_mult`/`dmg_taken_mult`/`lava_taken_mult`/`role_kb_mult`/`role_regen_mult`）
+/// 以前未序列化 → 重连/归队/迁移后重建为默认值 ⇒ 与 host 永久分叉（DESYNC）。**快照格式变更**。
+pub const PROTOCOL_VERSION: u32 = 57;
