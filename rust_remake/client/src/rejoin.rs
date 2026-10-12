@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 /// 会话文件格式版本（改格式时 +1，旧格式直接忽略）。
 pub const FORMAT_VERSION: u32 = 1;
-/// 会话有效期（秒）：超过则视为过期忽略（避免重开到很久以前的旧局）。
-pub const MAX_AGE_SECS: u64 = 30 * 60;
+// 会话有效期不再是固定常量：由 `LocalSettings.rejoin_window` 提供（`2h/12h/24h/不限`），
+// 传给 [`RejoinSession::is_fresh`]。真正的判定仍是"重进大厅是否成功"。
 
 /// 一份「上一局」的重连会话描述。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,9 +34,15 @@ pub struct RejoinSession {
 }
 
 impl RejoinSession {
-    /// 是否仍新鲜（`now - saved_at <= MAX_AGE_SECS`）。时钟回拨（`now < saved_at`）视为不新鲜。
-    pub fn is_fresh(&self, now: u64) -> bool {
-        now >= self.saved_at_unix && now - self.saved_at_unix <= MAX_AGE_SECS
+    /// 是否仍新鲜：`now - saved_at <= max_age`。`max_age = None` 表示**不限**；时钟回拨（`now < saved_at`）视为不新鲜。
+    pub fn is_fresh(&self, now: u64, max_age: Option<u64>) -> bool {
+        if now < self.saved_at_unix {
+            return false;
+        }
+        match max_age {
+            Some(max) => now - self.saved_at_unix <= max,
+            None => true,
+        }
     }
 
     /// 紧凑 `key=value` 文本（行分隔；人类可读，便于调试）。
@@ -175,10 +181,14 @@ mod tests {
     #[test]
     fn freshness_boundaries() {
         let s = sample(); // saved_at = 1_791_475_000
-        assert!(s.is_fresh(s.saved_at_unix), "刚存 = 新鲜");
-        assert!(s.is_fresh(s.saved_at_unix + MAX_AGE_SECS), "正好过期边界内 = 新鲜");
-        assert!(!s.is_fresh(s.saved_at_unix + MAX_AGE_SECS + 1), "超过有效期 = 过期");
-        assert!(!s.is_fresh(s.saved_at_unix - 1), "时钟回拨 = 不新鲜");
+        let two_h = Some(2 * 3600);
+        assert!(s.is_fresh(s.saved_at_unix, two_h), "刚存 = 新鲜");
+        assert!(s.is_fresh(s.saved_at_unix + 2 * 3600, two_h), "正好边界 = 新鲜");
+        assert!(!s.is_fresh(s.saved_at_unix + 2 * 3600 + 1, two_h), "超过 = 过期");
+        assert!(!s.is_fresh(s.saved_at_unix - 1, two_h), "时钟回拨 = 不新鲜");
+        // 不限：很久之后仍新鲜（时钟回拨仍不新鲜）
+        assert!(s.is_fresh(s.saved_at_unix + 100 * 3600, None), "不限 = 永不过期");
+        assert!(!s.is_fresh(s.saved_at_unix - 1, None), "不限但时钟回拨仍不新鲜");
     }
 
     #[test]

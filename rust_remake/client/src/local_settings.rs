@@ -66,6 +66,8 @@ pub struct LocalSettings {
     pub fullscreen: FullscreenPref,
     /// 边缘滚屏：鼠标移至窗口边缘时持续平移相机（默认关；窗口化也会生效）。
     pub edge_scroll: bool,
+    /// 归队会话有效期（主菜单「重新加入上一局」提示保留多久）。
+    pub rejoin_window: RejoinWindow,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
@@ -333,6 +335,7 @@ impl Default for LocalSettings {
             window_resolution: ResolutionPref::R1280x720,
             fullscreen: FullscreenPref::Windowed,
             edge_scroll: false,
+            rejoin_window: RejoinWindow::H12,
         }
     }
 }
@@ -575,6 +578,59 @@ pub fn clamp_cam_pan_speed(v: f32) -> f32 {
     }
 }
 
+/// 归队会话有效期：主菜单「重新加入上一局」提示保留多久。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum RejoinWindow {
+    H2,
+    H12,
+    H24,
+    /// 不限（仍以"重进大厅是否成功"为真正判定）。
+    Unlimited,
+}
+
+impl RejoinWindow {
+    /// 持久化代号。
+    pub fn code(self) -> &'static str {
+        match self {
+            RejoinWindow::H2 => "2h",
+            RejoinWindow::H12 => "12h",
+            RejoinWindow::H24 => "24h",
+            RejoinWindow::Unlimited => "unlimited",
+        }
+    }
+
+    /// 由代号解析（未知 → 默认 12h）。
+    pub fn from_code(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "2h" | "2" => RejoinWindow::H2,
+            "24h" | "24" => RejoinWindow::H24,
+            "unlimited" | "inf" | "none" | "0" => RejoinWindow::Unlimited,
+            _ => RejoinWindow::H12,
+        }
+    }
+
+    /// 有效秒数；`None` = 不限。（仅 Steam 的启动过滤用；非 Steam 构建允许未使用。）
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    pub fn secs(self) -> Option<u64> {
+        match self {
+            RejoinWindow::H2 => Some(2 * 3600),
+            RejoinWindow::H12 => Some(12 * 3600),
+            RejoinWindow::H24 => Some(24 * 3600),
+            RejoinWindow::Unlimited => None,
+        }
+    }
+
+    /// 下一个选项（UI 左右切换用，循环）。
+    pub fn next(self) -> Self {
+        match self {
+            RejoinWindow::H2 => RejoinWindow::H12,
+            RejoinWindow::H12 => RejoinWindow::H24,
+            RejoinWindow::H24 => RejoinWindow::Unlimited,
+            RejoinWindow::Unlimited => RejoinWindow::H2,
+        }
+    }
+}
+
 /// 全屏模式偏好。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(clippy::enum_variant_names)]
@@ -793,6 +849,7 @@ pub fn parse(text: &str) -> LocalSettings {
             "edge_scroll" => {
                 s.edge_scroll = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
             }
+            "rejoin_window" => s.rejoin_window = RejoinWindow::from_code(v),
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -849,13 +906,14 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
     out.push_str(&format!(
-        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\nedge_scroll={}\n",
+        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\nedge_scroll={}\nrejoin_window={}\n",
         s.training_bots,
         s.training_move.code(),
         s.cam_pan_speed,
         s.window_resolution.code(),
         s.fullscreen.code(),
-        if s.edge_scroll { 1 } else { 0 }
+        if s.edge_scroll { 1 } else { 0 },
+        s.rejoin_window.code()
     ));
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -935,6 +993,7 @@ mod tests {
             window_resolution: ResolutionPref::R1600x900,
             fullscreen: FullscreenPref::Borderless,
             edge_scroll: true,
+            rejoin_window: RejoinWindow::H24,
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -1058,6 +1117,28 @@ mod tests {
         assert_eq!(s.window_resolution, ResolutionPref::R1280x720, "缺行 → 默认 1280×720");
         assert_eq!(s.fullscreen, FullscreenPref::Windowed, "缺行 → 默认窗口化");
         assert!(!s.edge_scroll, "缺行 → 默认关");
+        assert_eq!(s.rejoin_window, RejoinWindow::H12, "缺行 → 默认 12h");
+    }
+
+    #[test]
+    fn rejoin_window_parse_cycle_secs_and_roundtrip() {
+        assert_eq!(LocalSettings::default().rejoin_window, RejoinWindow::H12);
+        assert_eq!(parse("rejoin_window=2h\n").rejoin_window, RejoinWindow::H2);
+        assert_eq!(parse("rejoin_window=24h\n").rejoin_window, RejoinWindow::H24);
+        assert_eq!(parse("rejoin_window=unlimited\n").rejoin_window, RejoinWindow::Unlimited);
+        assert_eq!(parse("rejoin_window=junk\n").rejoin_window, RejoinWindow::H12, "非法→默认");
+        // 循环顺序
+        assert_eq!(RejoinWindow::H2.next(), RejoinWindow::H12);
+        assert_eq!(RejoinWindow::H24.next(), RejoinWindow::Unlimited);
+        assert_eq!(RejoinWindow::Unlimited.next(), RejoinWindow::H2);
+        // 秒数
+        assert_eq!(RejoinWindow::H2.secs(), Some(2 * 3600));
+        assert_eq!(RejoinWindow::H12.secs(), Some(12 * 3600));
+        assert_eq!(RejoinWindow::H24.secs(), Some(24 * 3600));
+        assert_eq!(RejoinWindow::Unlimited.secs(), None);
+        // roundtrip
+        let back = parse(&serialize(&parse("rejoin_window=2h\n")));
+        assert_eq!(back.rejoin_window, RejoinWindow::H2);
     }
 
     #[test]

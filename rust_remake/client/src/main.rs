@@ -570,9 +570,10 @@ enum SetRow {
     Resolution,
     Fullscreen,
     EdgeScroll,
+    RejoinWindow,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 25] = [
+const SETTINGS_ROWS: [(SetRow, &str); 26] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -598,6 +599,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 25] = [
     (SetRow::Resolution, "分辨率"),
     (SetRow::Fullscreen, "全屏模式"),
     (SetRow::EdgeScroll, "边缘滚屏"),
+    (SetRow::RejoinWindow, "归队会话时长"),
 ];
 
 /// 设置界面一屏可见行数（超出则滚动；行高 = 内容带 / 可见行数）。
@@ -1459,6 +1461,9 @@ impl Game {
         let seed = 20260812u64;
         let local_settings_path = local_settings::default_path();
         let local_settings = local_settings::load(&local_settings_path);
+        // 归队会话有效期（供启动时过滤"上一局"提示；仅 Steam 用到）。
+        #[cfg(feature = "steam")]
+        let rejoin_max_age = local_settings.rejoin_window.secs();
         // Solo 训练场（含主菜单占位）：世界 = 「你 + N 个靶子」（靶子数来自训练场设置）→
         // 不再用 sandbox：出界/缩圈/回合结算全走真实机制；meta 只记录你（靶子无 profile）。
         let is_solo_app = matches!(app, AppState::Solo | AppState::MainMenu);
@@ -1760,7 +1765,7 @@ impl Game {
                 // R5c：启动时读回上次会话；仅保留「新鲜 + 协议一致」的，供主菜单提示。
                 let now = unix_now();
                 rejoin::load(&rejoin::default_path()).filter(|s| {
-                    s.is_fresh(now) && s.protocol_version == game_core::PROTOCOL_VERSION
+                    s.is_fresh(now, rejoin_max_age) && s.protocol_version == game_core::PROTOCOL_VERSION
                 })
             },
             #[cfg(feature = "steam")]
@@ -9692,6 +9697,11 @@ impl Game {
                 self.local_settings.edge_scroll = !self.local_settings.edge_scroll;
                 self.upload_cloud_settings(); // 跨机偏好 → 入云
             }
+            Some(SetRow::RejoinWindow) => {
+                // 归队会话时长：循环切档（2h/12h/24h/不限）。
+                self.local_settings.rejoin_window = self.local_settings.rejoin_window.next();
+                self.upload_cloud_settings(); // 跨机偏好 → 入云
+            }
             Some(SetRow::Keybinds) => {
                 self.keybinds_open = true;
                 self.keybinds_sel = 0;
@@ -9733,6 +9743,7 @@ impl Game {
                     | SetRow::Resolution
                     | SetRow::Fullscreen
                     | SetRow::EdgeScroll
+                    | SetRow::RejoinWindow
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -9765,6 +9776,7 @@ impl Game {
                     | SetRow::Resolution
                     | SetRow::Fullscreen
                     | SetRow::EdgeScroll
+                    | SetRow::RejoinWindow
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -10152,10 +10164,11 @@ impl Game {
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
     fn cloud_settings_payload(&self) -> String {
         format!(
-            "{}cam_pan_speed={}\nedge_scroll={}\n",
+            "{}cam_pan_speed={}\nedge_scroll={}\nrejoin_window={}\n",
             self.keybinds_payload(),
             self.local_settings.cam_pan_speed,
-            if self.local_settings.edge_scroll { 1 } else { 0 }
+            if self.local_settings.edge_scroll { 1 } else { 0 },
+            self.local_settings.rejoin_window.code()
         )
     }
 
@@ -10216,10 +10229,13 @@ impl Game {
                 self.local_settings.key_mute = parsed.key_mute;
                 self.local_settings.key_form_switch = parsed.key_form_switch;
                 self.local_settings.key_shop_cat = parsed.key_shop_cat;
-                // 旧档只含键位：仅当载荷带显示字段时才覆盖本机显示偏好，避免被默认值冲掉。
+                // 旧档只含键位：仅当载荷带对应字段时才覆盖本机偏好，避免被默认值冲掉。
                 if text.contains("cam_pan_speed=") {
                     self.local_settings.cam_pan_speed = parsed.cam_pan_speed;
                     self.local_settings.edge_scroll = parsed.edge_scroll;
+                }
+                if text.contains("rejoin_window=") {
+                    self.local_settings.rejoin_window = parsed.rejoin_window;
                 }
                 local_settings::save(&self.local_settings_path, &self.local_settings);
                 eprintln!(
@@ -10604,6 +10620,13 @@ impl Game {
                     i18n::t("关").to_string()
                 }
             }
+            Some(SetRow::RejoinWindow) => i18n::t(match self.local_settings.rejoin_window {
+                local_settings::RejoinWindow::H2 => "2 小时",
+                local_settings::RejoinWindow::H12 => "12 小时",
+                local_settings::RejoinWindow::H24 => "24 小时",
+                local_settings::RejoinWindow::Unlimited => "不限",
+            })
+            .to_string(),
             Some(SetRow::Keybinds) => {
                 let n = self.local_settings.non_default_binds();
                 if n == 0 {
