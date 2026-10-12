@@ -1642,7 +1642,8 @@ impl DefTable {
                     radius: Fix64::from_num(29.0),
                     life: Fix64::from_num(4.5),
                     // 098c `lb`：命中同主（自撞）为 AoE，`tI(...,1.3,...)`（`Hr` 分支为 `TI(...,1,...)`）。
-                    // 本值即 AoE 击退系数（自撞的 1.0 在 world.rs 里按 `homing_self` 覆盖）。
+                    // 本值即**敌方直击**的击退系数；**自撞分支的 AoE**（击退 1.0、半径 `78√(14+xi)`、地板 `.5`）
+                    // 由 world.rs 生成处为 S003 **注入 `blast`** 承担（无 `homing_self` 这个符号）。
                     kb_ji: Fix64::from_num(1.3),
                     ignite: None,
                     blast: None,

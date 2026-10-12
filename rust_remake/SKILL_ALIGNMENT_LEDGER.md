@@ -1459,5 +1459,20 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 5. **S004 / S003 `xi` AoE**（复用 #1 的 victim 排除）。
 6. **注释订正** a–f（纯文档，可 `--no-verify`）。
 
+### 21.6 本轮修复记录（2026-10-11，已全部完成）
+
+| 步骤 | 内容 | commit |
+|---|---|---|
+| ①② | S000/S002 `xi` AoE **排除直击者**（`explode_at_ex`/`splash_damage_ex` + `expiry_blasts` 带排除项；`ar[i]=2^i` = `Iv` 位集语义）| `c7b68c3` |
+| ③ | S009 A 父弹 `gB`：命中/撞柱也生成碎片 + `xi` AoE（旧只到点）| `69490dc` |
+| ④ | S013A 到点传送施法者 + `life=min(点击,900(1+.1ei))/1700+.03` | `c75fd9d` |
+| ⑦⑧ | S010/S012 招架 +100 移速（`Dr/2`）+ 刷新乘 `jn` | `87a31c7` |
+| ⑤⑥ | S004（`Sb`）/S003（`Lb`）补 `xi` AoE | `9b44980` |
+| a–f | 注释/命名订正（§21.3 全 6 项）| （本提交）|
+
+**回归**：`game-core` **341** 测试全绿（新增 `s009a_parent_hit_spawns_fragment`、`s013a_teleports_to_landing_point_when_no_hit`、`s004_xi_hit_aoe_splashes_bystander`）；`cargo clippy --workspace -- -D warnings` 干净；每步走 pre-commit 全门禁。
+
+**仍遗留**（非本清单）：① S009 撞**弹体**销毁路径的 `gB` 未接线（罕见）；② 已知近似项（S005 buff 替身 / S006 快照 / S007 吸收细节 / S018B 链接 `659` / S020 staged）；③ 真机验收（协议 55+）待做。
+
 
 

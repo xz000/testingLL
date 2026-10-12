@@ -3525,7 +3525,7 @@ impl World {
                 }
                 ProjectileKind::Gravity { radius, damage_per_sec, .. } => {
                     // 黑洞（A 形态）：伤害半径比拉拽半径小（098c `hc`：`Rr<75000`≈274²；拉拽为 600²）。
-                    // `damage_per_sec` 已是每秒 DPS（每 tick 0.1+0.2×等级 ÷ 0.06 换算，见 skill.rs）。
+                    // `damage_per_sec` 已是每秒 DPS（每 tick 0.1+0.2×等级 ÷ **0.18**（`je` 每 6 帧）换算，见 skill.rs）。
                     let owner = pr.owner;
                     let oteam = self.players.get(owner as usize).map(|p| p.team);
                     let dmg_r = (*radius).min(Fix64::from_num(DARK_MATTER_DAMAGE_RADIUS));
@@ -5450,8 +5450,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Fix64::ZERO
                             },
                             emit_angle: 0.0,
-                            // 逐弹碰撞掩码（098c `Av`）：S009 A 父弹 = 单位+弹体（**不撞障碍**，穿柱）；
-                            // S009 B 父弹 = 均不碰撞（纯发射器）；其余 = 全开。
+                            // 逐弹碰撞掩码（098c `Av`）：**S009 A 父弹 = 三态全开（`Av[+1/+2/+3]`，会撞柱、被柱挡下销毁）**；
+                            // **S009 B 父弹 = 仅障碍（`Av[+3]`，撞柱以 `xv=1` 反弹）**；其余见 `w098b_col_mask`。
                             // 098c `Av` 掩码（见 `w098b_col_mask`，含 S004/S009/S013/S017B/S019 的逐一核对）。
                             col_mask: w098b_col_mask(id, alt),
                             s009_role: if id == crate::skill::SkillId::S009 && !alt {
@@ -5737,7 +5737,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                     crate::skill::W098bUtilKind::Charge => {
-                        // 疾风步·冲锋（098c RB，B4）：移速 buff + 接触踢击窗口（撞敌背刺伤害 5.4+0.2947L，098c）。
+                        // 疾风步·冲锋（098c RB，B4）：移速 buff + 接触踢击窗口（撞敌冲锋伤害 `4.6+.8L` = `5.4+0.8(L-1)`，098c `CA`）。
                         // 098c RB 两形态都挂 'Agho' 隐身（war3map_pretty.j:5781-5804），A 形态（冲锋）同样隐身。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             p.add_buff(BuffKind::Stealth, dur);
@@ -10501,9 +10501,9 @@ mod tests {
         assert!((manad - 10.0).abs() < 1e-6, "张力应 +10，实际 {manad}");
     }
 
-    /// S021 虔诚：伤敌人 + 自奶 gx×0.5（无队伍时只奶自己）。
+    /// S021 虔诚（098c `QC`）：伤敌人；**治疗只给队友**（`gX!=ii`），施法者自身走 `else FX(cX)` = **自伤 10**。
     #[test]
-    fn s021_devotion_hurts_enemy_and_heals_self() {
+    fn s021_devotion_hurts_enemy_and_self_damages_only() {
         let mut world = World::new(2, 965);
         world.base_regen = 0.0; // 本测试只验证其他机制：屏蔽基础回血漂移
         world.obstacles.clear();
@@ -12752,7 +12752,7 @@ mod tests {
         assert!(!world.players[0].charging, "B 形态不应置 `charging`");
         assert!(world2.players[0].kick.is_some(), "A 形态应有接触踢击窗口");
         let kick_dmg = world2.players[0].kick.as_ref().unwrap().push_damage.to_num::<f64>();
-        assert!((kick_dmg - 5.4).abs() < 0.1, "冲锋踢击伤害应 5.4+0.2947L（L1=5.4，098c 背刺），实际 {kick_dmg}");
+        assert!((kick_dmg - 5.4).abs() < 0.1, "冲锋踢击伤害应 4.6+0.8L（L1=5.4；斜率 0.8，非 0.2947），实际 {kick_dmg}");
     }
 
     /// S010A 冲锋的额外 AoE（098c `bA`）**由范围精通门控**：`xi[id]>0` 才以攻方为圆心再放一个 AoE。
@@ -12801,7 +12801,7 @@ mod tests {
     /// S009 双形态：目标（A）到点碎裂出弹片；区域（B）飞行中持续撒侧弹。
     #[test]
     fn s009_form_splitter_target_burst_and_area_emit() {
-        // A 形态：朝远处射 → 到点碎裂出 6 枚弹片
+        // A 形态：朝远处射 → 到点（`DB`）生成 **1 个碎片**（`dB`），碎片再每 0.12s 喷 2 枚小子弹
         let mut world = World::new(1, 997);
         world.obstacles.clear();
         world.sandbox = true;
