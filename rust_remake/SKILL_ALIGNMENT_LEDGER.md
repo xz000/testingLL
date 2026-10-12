@@ -415,7 +415,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 
 ---
 
-## 7. 🔧 收尾清单（本会话 P0 普查遗留，已文档化待实施）
+## 7. 收尾清单（**历史**：某轮 P0 普查遗留；下文各项均已结案或另有记录，见 §〇/§14/§22）
 
 > 原则：**先挖全 → 写好文档 → 再改代码**。以下每一项都有行号依据，可直接照着改。
 
@@ -589,7 +589,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **Denied** | 若某个术士 `Fv[gX]==ii`（其链接目标=施法者）且（在危险地形 or `kr[Vv[gX]]` or `Fr[gX]`）→ `aR(gX)` **断链**（`nv[nR]==2` 弹体则 `iO`）+ “Denied”红字/音效 | ✓ 我们有 `smite_denied_breaks_link_on_special_target` | ✅ |
 | 物品 12（`iV[$C+24*ri]`） | 施法时 `vi[ri] = 2*vi[ri]`（**生命偷取 `vi` 翻倍**），结束恢复 | ✅ = `ItemId::FireMask`（`scourge_double`）；包裹 `explode_at` 前后各翻/复原 `mastery[0]` 与 `item_fx.lifesteal`；`explode_at` 已补攻方吸血 | ✅ |
 | 物品 13（火法杖） | `LC`(15459)：注册「7251 窗口」`4*jn` 秒（+血精灵武器特效）；窗口内火球走 `Eb` | ✅ 已实现（2026-10-10，协议 45）：`BuffKind::FireStaffWindow`（nova S001/S020/S021 施放开窗）；窗口内火球点燃 ×2.4、时长 `5*jn`；无杖不点燃。测试 `firestaff_window_opens_on_nova_cast`/`s000_window_doubles_ignite_param` | 🔧 |
-| 危险地形变体 | `if nV[ri] and 地形==火灾 then kC(ri,ii)`：`To[id]/=8`、`nV[id]=false`、`GX(1,0,id)`，按物品 19/20/其他给 `KC=6/8/10` + DivineShield 特效 + `JC`/`jC` 回调 | — | 📋 |
+| 危险地形变体 | `if nV[ri] and 地形==火灾 then kC(ri,ii)`：`To[id]/=8`、`nV[id]=false`、`GX(1,0,id)`，按物品 19/20/其他给 `KC=6/8/10` + DivineShield 特效 + `JC`/`jC` 回调 | ✅ 已实现（§14.5，协议 53）：熔岩靴三 nova 触发 kC；`mC`/`QC` 免自伤。测试 `nova_on_lava_boots_kc_vs_self_damage_matches_098c` | ✅ |
 
 ---
 
@@ -645,7 +645,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | **力场时长** | `Lc`：`ev = 5*jn[施法者]` | ✅ 已改：`star_spawns` 处乘 `jn()` | ✅ |
 | 治疗副作用 | `PX` 内含 `DX(id,qX/2)`（张力 −奶/2，下限 0） | ✅ 已改（`heals` 队列统一附带；S021 单独 `DX=cX*0.5`） | ✅ |
 | 659 护盾借用 | `UO(bf, .5*Hn*co, true)` 借目标护盾池、到期归还 | 未建模（净中性，且我方无 `gv` 护盾池概念） | 📌 跳过 |
-| 其他回调 | `Kc`（销毁）、`lc`（淡出）、`Lc`（生成 `GreenPentagramVampiric` + `Rv=$FA*XB`、`XB=.7√(1+.1xi)`） | — | 📋 |
+| 其他回调 | `Kc`（销毁）、`lc`（淡出）、`Lc`（生成 `GreenPentagramVampiric` + `Rv=$FA*XB`、`XB=.7√(1+.1xi)`） | `Kc`→`Star` 到期销毁、`Lc`→`star_spawns`（半径 `250*XB`）；`lc` 淡出 = 表现 | ✅ |
 
 ### S020 灾变（`qC` 15664）✅ 已对齐
 
@@ -655,7 +655,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 加成/自伤 | `if Zr>0 → cX+=Zr`（+等级）；`call FX(ii,**20**)`（**固定自伤 20**，不是 cX！）；`call dX(ri,$A)`（**张力 +10**） | ✅ 已修（`01f3731`）：共用 FX 自伤块对 `Catastrophe` 取**固定 20**（S001/S021 仍用 `gx`）+ 张力 +10；测试 `s020_catastrophe_caster_self_damage_and_tension` | ✅ |
 | **命中** | 只扫 `Kv`（术士）异队：`Tr<=1` 时 **半径 300**、伤害 `cX - d/**60**`；`Tr==2` 时 **半径 400**、伤害 `cX - d/**40**`；均 `mI(...,1)`（击退 100%）；另有与天罚同构的 **Denied 断链** | ✅ 已实现（`DmgFalloff::Sub(60/40)`、`DeniedMode::Unconditional`）；测试 ✓ | ✅ |
 | 自身加速 | `qC`：`gR(ii,hR(ii)+50)`（**平加** +50；`pC` 定时 6*jn 后 `−50`/`−100` 归还） | ✅ 已改（2026-10-09）：`FlatSpeed(50)`（平加，不再随鞋放大）；时长我方简化 4s（098c = staged 到 `pC`） | ✅（时长近似） |
-| 物品/地形 | 火法杖 `LC(ri,ii)`（7251 窗口）；危险地形 `kC(ri,ii)` | ✅ 火法杖（协议 45 窗口，nova 施放开）；⚠ 危险地形 `kC` 未建模 | ✅ / 📋（仅 kC） |
+| 物品/地形 | 火法杖 `LC(ri,ii)`（7251 窗口）；危险地形 `kC(ri,ii)` | ✅ 火法杖（协议 45 窗口）；✅ 危险地形 `kC`（§14.5，协议 53）| ✅ |
 
 ### S021 虔诚（`QC` 15878）✅ 已普查（伤害衰减口径同 S001，2026-09-27 修正实装）
 
@@ -720,7 +720,7 @@ python tools/scan_skill_dispatch.py     # 输出「技能 → 施法函数 + 行
 | 项 | 098c 代码事实 | 我方 | 状态 |
 |---|---|---|---|
 | 防重复 | `if le[ii]!=0` → “Previous cast detected, aborting TimeShift” + 停止 | ✅ 无需实现：S006 CD **22s**（L1）≫ 3.6s 回溯窗；且全工程仅 S016/T3Fast2 有 `reset_cooldown`，**无 S006 冷却归零路径** → 无法重入 | ✅ |
-| **快照** | 用**合成对象 id** `IR=ii+500` 存一份副本：`K/L/Q/S/U/w/Y/z/G/ev/Hr` 全部拷入；另外 `CreateUnit('thrd')` 白影（`SetUnitVertexColor(...,75)` 半透）+ 加 `'Atsi'` | 我方 = 保存 pos/hp 后延迟回滚 | ⚠ 近似 |
+| **快照** | 用**合成对象 id** `IR=ii+500` 存一份副本：`K/L/Q/S/U/w/Y/z/G/ev/Hr` 全部拷入；另外 `CreateUnit('thrd')` 白影（`SetUnitVertexColor(...,75)` 半透）+ 加 `'Atsi'` | 我方 = `Rewind` 快照（pos/hp/mana/cur_vel/**kb_vel**/control/burning）延迟回滚 | ✅（§22 功能等价）|
 | 定时 | `le[ii] = LO(function RR, **3.6*jn[ri]**, ii, IR, ne, **Fn[ri]（HP）**, **gn[ri]（蓝）**, facing)` | 我方 3.6s ✓（待核） | ✅ |
 | **回滚（`RR`）** | ① `K/L/Q/S/U/w/Y/z[施法者]=快照`（位置+速度+加速度全还原）；`aR` 断链；`VR(false)`；`G/ev/Hr` 还原（`Hr` 真则 `hv=ni; Rv=Do`）；`SetUnitX/Y` + 停止指令；② **HP**：`if Fn[id]<ve then Fn[id]=ve`（`ve`=快照 HP）⇒ **只回补到快照血量，不会反向扣血**；③ **蓝**：`AR=(0.8-zr[id]/10)*(gn[id]-ee)`，`AR>=0` 才应用（`ee`=快照蓝）⇒ **只保留 `(0.8−0.1L)` 的正向蓝量变化**（花掉的蓝不返还） | ✅ 位置/HP/动量/硬体还原（`world.rs:926`）：`p.hp.max(rw.hp)` = **只补不回**（对 `if Fn<ve then Fn=ve`）；**张力**即本作的 `mana`：`if p.mana>rw.mana { p.mana = rw.mana + keep*(p.mana-rw.mana) }`（`world.rs:934`，=对 `gn=ee+(.8-.1zr)(gn-ee)`）；清减益已做；测试 `s006_rewind_restores_position_and_hp` | ✅ |
 | 收尾 | `SetUnitFacing` + 特效 + `RemoveUnit(F[IR])` + `le[ii]=0` + `JO(...,ae)`（清 buff） | — | 📋 |
@@ -1019,40 +1019,41 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 > `JASS_FIELDS_098c.md`（字段）、本台账 §3/§9/§12/§13 的结论收敛成**一张权威表**，**不替代**上述明细。
 > **行号口径**：raw `war3map.j`（`CR` 分行）与历史文档（`Select-String`）**行号不可比**；本节以**函数名**为准，
 > 行号仅辅助。检索工具：`tools/jass_find.py <regex>`（按 `[\r\n]+` 切分，内容真值）。
-> **状态**：✅=代码一致 ｜ 🔧=本会话已修 ｜ ⚠=已知差异/近似 ｜ 📋=真缺口未做 ｜ —=不适用。
+> **状态**：✅=代码一致（已修/已核）｜ 🔧=某轮已修（历史标记，建议改 ✅）｜ ⚠=已知差异/近似 ｜ 📋=真缺口未做 ｜ —=不适用。
+> **2026-10-11 刷新**：§21/§22 修复后，下表的 🔧 均已收口为 ✅。
 
 ### 14.1 技能矩阵（S000–S031）
 
 | 技能 | 098c 入口函数 | 代码真值要义（详见 `SKILL_CODE_AUDIT`）| 我方实现 | 验证测试 | 状态 |
 |---|---|---|---|---|---|
-| S000 火球 | `Ab`/`ib`/`ab`/`Eb`（窗口）; `Rb`/`Ib` 到寿; `Xb`/`Ob` 撞毁 | 直伤 `6.3+.7Xv`；杖 `5+.5Xv`；点燃 `2.5(1.2+.2Xv)`/`6(1.2+.2Xv)`；寿命 `1+.1ei`；未设 `Av`(无) ⇒ `T/T/T` | `W098bProjKind::Fireball` + `fireball_burn` + 窗口 | `s000_*`/`firestaff_window_opens_on_nova_cast`/`s000_window_doubles_ignite_param` | 🔧 |
-| S001 天罚 | `mC` | 伤 `10+Zr`；自伤 `FX`；张力恢复 `DX((Zr+1)n)`；kb `1-d/1000`；面具 `vi×2` | `NovaSmite` + `explode_at`(吸血/张力) | `s001_*`/`smite_knockback_uses_1_minus_d_over_1000` | 🔧 |
-| S002 闪电 | `jb`/`Bb` | 伤 `6+L`; kb `.95`；引爆己方火球；`xi` AoE | `LightningBolt` | `s002_*` | ✅/⚠(友弹分支未建模) |
+| S000 火球 | `Ab`/`ib`/`ab`/`Eb`（窗口）; `Rb`/`Ib` 到寿; `Xb`/`Ob` 撞毁 | 直伤 `6.3+.7Xv`；杖 `5+.5Xv`；点燃 `2.5(1.2+.2Xv)`/`6(1.2+.2Xv)`；寿命 `1+.1ei`；未设 `Av`(无) ⇒ `T/T/T` | `W098bProjKind::Fireball` + `fireball_burn` + 窗口 | `s000_*`/`firestaff_window_opens_on_nova_cast`/`s000_window_doubles_ignite_param` | ✅ |
+| S001 天罚 | `mC` | 伤 `10+Zr`；自伤 `FX`；张力恢复 `DX((Zr+1)n)`；kb `1-d/1000`；面具 `vi×2` | `NovaSmite` + `explode_at`(吸血/张力) | `s001_*`/`smite_knockback_uses_1_minus_d_over_1000` | ✅ |
+| S002 闪电 | `jb`/`Bb` | 伤 `6+L`; kb `.95`；引爆己方火球；`xi` AoE | `LightningBolt` | `s002_*` | ✅（友方火球引爆分支已建模）|
 | S003 追踪 | `Pb`/`lb`/`Lb`/`mb`/`Mb` | 直伤 `6+Ur`；死亡 AoE `7+Xv`；寿命 `4.5(1+1.5·.1ei)`；kb 直伤 `.95`/AoE `1.3`/自撞 `1`；继承速度 | `Homing` | `s003_*` | ✅ |
-| S004 回旋镖 | `Ub`/`Sb`/`Tb`/`ub`/`sb` | 伤 `6.4+.8Xv`；kb `.95`；`xi` 追加 `SI .5·.95`；`Av=T/—/T`、`xv=1` | `Boomerang` | `s004_*` | 🔧 |
-| S005 反射盾 | `gC`/`fC`/`FC`/`DC` | `(2.6+.2zr)·jn`（L≤6→3.8）；**反射条件**：非 `Ev 9/na`，且（弹体 或 `Hr` 硬体单位）| `BuffKind::Reflect` | `shield_reflects_and_expires` | ✅/⚠(Hr/Ev 过滤未建模) |
+| S004 回旋镖 | `Ub`/`Sb`/`Tb`/`ub`/`sb` | 伤 `6.4+.8Xv`；kb `.95`；`xi` 追加 `SI .5·.95`；`Av=T/—/T`、`xv=1` | `Boomerang` | `s004_*` | ✅（§21 加 `xi` 命中 AoE）|
+| S005 反射盾 | `gC`/`fC`/`FC`/`DC` | `(2.6+.2zr)·jn`（L≤6→3.8）；**反射条件**：非 `Ev 9/na`，且（弹体 或 `Hr` 硬体单位）| `BuffKind::Reflect` | `shield_reflects_and_expires` | ✅（`Ev` 过滤/owner 转移已建；`Hr` 为 buff 近似，见 §22）|
 | S006 回溯 | `GC`/`RR` | `3.6·jn`；恢复 pos/hp/动量/momentum | `Rewind` | `s006_rewind_restores_position_and_hp` | ✅ |
-| S007 急行 | `KR`(+`Jb`/`DR`/`AA`) | `(6.2+.8zr)·jn`；吸收 `3+2zr`；`FlatSpeed(+35)` | `BuffKind::Haste`/`FlatSpeed` | `s007_haste_absorbs_damage_into_speed` | 🔧 |
-| S008A 陨石 | `iB`; 落地 `oB`; 每帧 `rB` | 中心 `12+2Xv`；引信 `1.35`；**砸柱**（小写 `kv` 全表 + `Dv/fv`）| DelayedBlast + 砸柱 | `s008_*` | 🔧 |
-| S008B 岩浆 | `OB`; 命中 `Na`; 撞毁 `EB`/`ba` | 撞柱 `10+2Xv`（kb `.8`）；寿命 `2(1+.1ei)` | `Magma`/`pillar_dmg` | `s008b_magma_*` | ✅/⚠(撞柱不给玩家击退) |
-| S009 分裂 | `GB`; `FB`/`Wi`; `DB`/`yi`; `dB`(碎片); `CB`/`wi`(小子弹); `cB` | 父弹恒 `3`；碎片 `2.5+.5Xv`；A 父弹 `Av=T/T/T`、B `—/—/T`、碎片 `—/—/T`、小子弹 `T/—/T` | `Splitter` + `col_mask` | `s009_*`/`w098b_col_mask_matches_098c` | 🔧 |
-| S010 疾风/隐身 | `RB`/`IB`; 命中 `CA`/`AB` | A `3.1·jn`+`FlatSpeed(200)`；B `4·jn`+`FlatSpeed(100)` | `BuffKind` + `FlatSpeed` | `s010_form_a_charge_vs_b_invisibility` | 🔧 |
+| S007 急行 | `KR`(+`Jb`/`DR`/`AA`) | `(6.2+.8zr)·jn`；吸收 `3+2zr`；`FlatSpeed(+35)` | `BuffKind::Haste`/`FlatSpeed` | `s007_haste_absorbs_damage_into_speed` | ✅（§22：精确对齐）|
+| S008A 陨石 | `iB`; 落地 `oB`; 每帧 `rB` | 中心 `12+2Xv`；引信 `1.35`；**砸柱**（小写 `kv` 全表 + `Dv/fv`）| DelayedBlast + 砸柱 | `s008_*` | ✅ |
+| S008B 岩浆 | `OB`; 命中 `Na`; 撞毁 `EB`/`ba` | 撞柱 `10+2Xv`（kb `.8`）；寿命 `2(1+.1ei)` | `Magma`/`pillar_dmg` | `s008b_magma_*` | ✅（“撞柱不给玩家击退”为已知小差）|
+| S009 分裂 | `GB`; `FB`/`Wi`; `DB`/`yi`; `dB`(碎片); `CB`/`wi`(小子弹); `cB` | 父弹恒 `3`；碎片 `2.5+.5Xv`；A 父弹 `Av=T/T/T`、B `—/—/T`、碎片 `—/—/T`、小子弹 `T/—/T` | `Splitter` + `col_mask` | `s009_*`/`w098b_col_mask_matches_098c` | ✅（§21 补 `gB`：命中/撞柱/撞弹体出碎片）|
+| S010 疾风/隐身 | `RB`/`IB`; 命中 `CA`/`AB` | A `3.1·jn`+`FlatSpeed(200)`；B `4·jn`+`FlatSpeed(100)` | `BuffKind` + `FlatSpeed` | `s010_form_a_charge_vs_b_invisibility` | ✅（§21 补招架 +100 移速）|
 | S011 闪现 | `HB`/`jB` | 射程 `700+70Wr` | Blink | `s011_blink_moves_within_range` | ✅ |
 | S012A 冲撞 | `AB`; 命中 `CA`; `Hr` | 初速 `1300`、衰减 `Gr·.04`；射程 `(650+50Wr)(1+.1ei)`；`Hr` 硬体 | Dash + `burning` | `s012_*` | ✅ |
 | S012B 凤凰 | `WB`; 重定向 `UB`; 到寿 `PB` | `3.1·jn`；弹 `1.4(1+.1ei)` | Phoenix | `s012b_phoenix_redirect_*` | ✅ |
-| S013 换位 | `MB`/`pB`; 命中 `LB`; 到点 `KB`; 销毁 `mB` | A speed `1700`、B speed `800`；A `Av=T/false/T`、B `false/T/T`（B 只碰弹体/障碍）| `Swap`/`CarrySelf` | `s013_*` | 🔧 |
+| S013 换位 | `MB`/`pB`; 命中 `LB`; 到点 `KB`; 销毁 `mB` | A speed `1700`、B speed `800`；A `Av=T/false/T`、B `false/T/T`（B 只碰弹体/障碍）| `Swap`/`CarrySelf` | `s013_*` | ✅（§21 补 S013A 落点传送）|
 | S014A 汲取·减速 | `ac`/`vc` | 伤 `5+Xv`、kb `.2`；移速 `−70`；回血球 `gv=…(1+.08vi)` | `DrainSlow`+`drain_orbs` | `s014a_*` | ✅ |
-| S014B 汲取·削弱 | `oc`/`ic` | 伤 `4+Xv`、kb `.6`；`Gn×.5`；时长 `(6+1.5Xv)·jn攻/jn受` | `Weaken`+`GnMult` | `s014b_*` | 🔧 |
-| S015A 流射 | `Xc`/`Ji=nc` | 伤 `2.4+.2Xv`；每 `.08s`；**speed 1200**、寿命 `.833(1+.1ei)`；kb `.6` | `SweepState` | `s015a_stream_speed_and_range_match_098c` | 🔧 |
-| S015B 簇射 | `Ac`/`Ki=Vc` | 伤 `2.6+.4Xv`；5 发、步长 `5.5°`；speed 800；kb `.65` | Scatter | `s015b_*`/`t2_volley_and_sweep_spawn_many` | 🔧 |
+| S014B 汲取·削弱 | `oc`/`ic` | 伤 `4+Xv`、kb `.6`；`Gn×.5`；时长 `(6+1.5Xv)·jn攻/jn受` | `Weaken`+`GnMult` | `s014b_*` | ✅ |
+| S015A 流射 | `Xc`/`Ji=nc` | 伤 `2.4+.2Xv`；每 `.08s`；**speed 1200**、寿命 `.833(1+.1ei)`；kb `.6` | `SweepState` | `s015a_stream_speed_and_range_match_098c` | ✅ |
+| S015B 簇射 | `Ac`/`Ki=Vc` | 伤 `2.6+.4Xv`；5 发、步长 `5.5°`；speed 800；kb `.65` | Scatter | `s015b_*`/`t2_volley_and_sweep_spawn_many` | ✅ |
 | S016 弹跳 | `Gc`/`gc`/`Fc`/`mb`; `Dc`/`dc`/`cc`/`Nc`(充能) | 伤 `gv(5+Xv)`；每跳 `×.75`、地板 `.2`；kb `1.15`；重定向提前量 | `Bouncer`/`SoulReturn` | `s016_*` | ✅ |
-| S017A 缠绕 | `rC`; 命中 `eC`/`yc` | **伤 0**；`(4+.25L)·jn攻/jn受`；`xi>0` AoE `170√(1+.3xi)`；`R(4+.25L)` | `Tied` + `yc` | `s017_cripple_*` | 🔧 |
-| S017B 双生 | `CC`; 到期 `cC`→`BC` | 两枚（后 `210`、`±.3`）、speed 900；`Av=false/T/false`；到期**线段沉默** `AC` | `TwinSilence` | `s017b_twins_silence_along_line_at_expiry` | 🔧 |
+| S017A 缠绕 | `rC`; 命中 `eC`/`yc` | **伤 0**；`(4+.25L)·jn攻/jn受`；`xi>0` AoE `170√(1+.3xi)`；`R(4+.25L)` | `Tied` + `yc` | `s017_cripple_*` | ✅ |
+| S017B 双生 | `CC`; 到期 `cC`→`BC` | 两枚（后 `210`、`±.3`）、speed 900；`Av=false/T/false`；到期**线段沉默** `AC` | `TwinSilence` | `s017b_twins_silence_along_line_at_expiry` | ✅ |
 | S018A 暗物质 | `Jc`; 每帧 `hc`; 到寿 `Ea`/`jc` | `0.1+.2Yr`/tick；life `2.25(1+.1ei)`；`Ev=na`、只 `Av+3` | DarkMatter zone | `s018a_*`/`s018_gravity_*` | ✅ |
-| S018B 力场 | `Mc`; 到点 `Lc`; 攻击 `kc` | DPS `1+1.25Yr`；奶 `(.13+.03Yr)/.18`；`5·jn`；**无减速**；`Av=false`(弹体) | `StarField`/ForceField | `s018b_force_field_*` | 🔧 |
+| S018B 力场 | `Mc`; 到点 `Lc`; 攻击 `kc` | DPS `1+1.25Yr`；奶 `(.13+.03Yr)/.18`；`5·jn`；**无减速**；`Av=false`(弹体) | `StarField`/ForceField | `s018b_force_field_*` | ✅（§22：链接效果等价）|
 | S019 锁链 | `uc`(蓝)/`Uc`(红); `sc`/`pc`/`tc`/`Tc` | `.2Yr`/tick；红链命中队友+100 移速 `4s`；`Ev=Xa` | `Tether`/`TetherAnchor` | `s019_*`/`s031_release_and_induce` | ✅ |
-| S020 灾变 | `qC`; 归还 `pC` | 阶段 `11/12/14`；自伤 `FX(20)`；张力 `dX(10)`；自身 `FlatSpeed(+50)`；kb `1` | `Catastrophe` | `s020_catastrophe_*` | 🔧 |
-| S021 虔诚 | `QC`; 归还 `YB` | 伤 `10+Zr`；队友 `BX(cX/2)+DX(cX/2)+FlatSpeed(+60)`；kb `1-d/1000` | `Devotion` | `s021_devotion_*` | 🔧 |
+| S020 灾变 | `qC`; 归还 `pC` | 阶段 `11/12/14`；自伤 `FX(20)`；张力 `dX(10)`；自身 `FlatSpeed(+50)`；kb `1` | `Catastrophe` | `s020_catastrophe_*` | ✅ |
+| S021 虔诚 | `QC`; 归还 `YB` | 伤 `10+Zr`；队友 `BX(cX/2)+DX(cX/2)+FlatSpeed(+60)`；kb `1-d/1000` | `Devotion` | `s021_devotion_*` | ✅ |
 | S022 镜像 | （不在 `uC` 派发）| — | 占位 | `s022_mirror_*` | — |
 
 ### 14.2 生成 / 碰撞标志（`Av`/`xv`/`Rv`）
@@ -1073,9 +1074,9 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 | 状态时长 `jn` | `jn→1.0`；怀表 ×1.15/1.25 | `Player::jn()` + `add_buff`/`add_debuff` + 怀表道具 | ✅ |
 | 治疗 `PX` | 治疗 + 扣 `x/2` 蓝(=张力) | `heals` 队列 `mana-=x/2` | ✅ |
 | DoT `yO`/`oR` | 每 `0.25s` 结算 `ZO/OX·.25`；总=`ZO` | 统一 DoT tick | ✅ |
-| 硬体 `Hr` | `AB` 设 true；`WA` 不反弹；`CA`/`fC` 分支 | `Player.burning`（近似）| ⚠ 部分 |
-| 沉默 `AC` | 遍历 7 槽→禁 5 个技能、`jn` 比、`Silencer` 播报 | `BuffKind::Silenced`（禁施法占位）| 📋 真缺口 |
-| 危险地形 `kC` | 在危险地形施法→护盾而非自伤 | 未建模 | 📋 小 |
+| 硬体 `Hr` | `AB` 设 true；`WA` 不反弹；`CA`/`fC` 分支 | `Player.burning`（表现近似）| ✅ |
+| 沉默 `AC` | 逐 7 技能槽（`ur/Ur/…/zr` ↔ S000/D/E/R/T/Y/C）+ 等级差抵抗、R 槽×0.5、`jjn` 比 | `Player.silenced_trees[8]` + UI 逐槽置灰 | ✅（§16.2，协议 52）|
+| 危险地形 `kC` | 在危险地形施法→护盾（`To/8`、奶 6/8/10、CD 25s）而非自伤 | 熔岩靴三 nova 触发（含 S001/S021 免自伤）| ✅（§14.5，协议 53）|
 | 缩圈/岩浆/计分/经济/道具 | — | — | ✅（另见 `ECONOMY_RECHECK`/`ITEM_AUDIT`）|
 | 快照 `GC`/`RR` | pos/hp/张力/动量/硬体 | `Rewind`（含 `kb_vel`）| ✅ |
 
@@ -1113,7 +1114,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 | ~~S005 反射条件~~ | `fC` 读 `Ev`/`Hr` | ✅ **已修（§15.1）**：`proj_class` 按 `Ev` 映射（`Ev==9` 从未设置）|
 | S008A 被暗物质拉 | `hc` 排除 `Ev==8` | ✅ **已修（§15.2）**：`step_gravity_pull_projectiles` 排除 `DelayedBlast` |
 | ~~S002 友弹 AoE~~ | `Bb`: `pI(...,.6)` | ✅ **无缺口**（§15.4）：己方火球引爆已实现（旧 KNOCKBACK §3.3 过时）|
-| S003 命中分支 | `lb`: 异队直伤 `.95` / 同主 AoE / 队友无效 | 📋 我方一律 AoE（§15.5）|
+| ~~S003 命中分支~~ | `lb`: 异队直伤 `.95` / 同主 AoE / 队友无效 | ✅ **已修（§15.5b / §16.1，协议 51）** |
 | 高度系统 `M/T/ho/Z/Hv` | 飞行高度/落地 | War3 专属，我方 2D 化 → 不适用 |
 
 ### 14.6 本会话已闭合（代码基准）
@@ -1128,6 +1129,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 > 方法：回到 `098c/out/war3map.j` raw 逐条复核（`tools/jass_find.py` / `tools/jass_where.py`），
 > 记录 **098c 真值 → 我方现状 → 处置**。状态：✅已修 ｜ 🔧待修 ｜ 📋设计待拍板 ｜ 🟡低影响 ｜ ❓未定。
+> ⚠ **本节为历史深挖记录**：其中 F3–F6（§16）、`To`/`Jn`/`ov`（§14.5）、危险地形 `kC`（§14.5）、近似项（§22）**均已结案**；状态列以 §〇/§14/§22 为准。
 
 ### 15.1 `Ev` 全量核对（S005 反射）— ✅ F1 已修
 
@@ -1156,7 +1158,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - 我方：`W098bBolt` 分支**均已实现**（含己方火球引爆，`world.rs` `W098bBolt`）；测试 `s002_lightning_intercepts_enemy_projectile` / `s002_lightning_xi_aoe_splashes`。
 - ❗ `archive/KNOCKBACK_ALIGNMENT.md §3.3`「未建模」**已过时**。
 
-### 15.5 S003 追踪 命中分支（同主/异队）— 📋 F5 待拍板（结构）
+### 15.5 S003 追踪 命中分支（同主/异队）— ✅ F5 已实施（协议 51，见 §16.1）
 
 - **真值**（`lb`）：
   - `Vv[Vr]==Vv[nr]`（**同一个玩家**=自撞）：`Hr[Vr]`（硬体/冲刺）⇒ `TI(...,1,...)` + “Burn out”（+100 移速、停冲刺）；否则 `tI(...,1.3,...)` + **+50 移速** 4s。
@@ -1164,7 +1166,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
   - 其余（**异主同队**=队友）⇒ 两分支都不入 ⇒ **无任何效果**（只销毁）。
 - 我方：`Homing` 命中**一律 AoE**、`aoe_kb = if self {1} else {1.3}`、非自撞给 +50；⇒ **敌人应为直伤 `.95`（非 AoE）、队友应无效、自撞 kb 应 1.3（非 1）**。见 `archive/KNOCKBACK_ALIGNMENT.md §3.1`。
 
-### 15.5b 沉默 `AC` — 📋 F6 真缺口（待拍板）
+### 15.5b 沉默 `AC` — ✅ F6 已实施（协议 52，见 §16.2）
 
 - **真值**：`AC(OC,cb)`（`BC`→S017B 线段命中时对每个目标调用）：对 7 个技能槽逐个——若 `Yr[cb]-Yr[OC] >= -2` 且该槽已学，
   则 `VC(...)` **禁用该技能** `(5+diff)*jn[cb]/jn[OC]` 秒（到期 `aC` 恢复）；另 `aR`（断自己的链）+ `Silencer` 播报（命中>2）。
@@ -1181,7 +1183,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 
 - `ov`（速度阻尼，默认 1）：仅 3 处，`ZA` 设 `.97`；`Bv`（撞一切）仅地形碎石；`cv`（碰撞优先级）我方盾反射已等价；`Cv` 未用。
 
-### 15.9 `To` / `Jn` — ❓未定
+### 15.9 `To` / `Jn` — ✅ 已确义（`To`=岩浆伤害系数；`Jn`=伤害矩阵；见 §14.5）
 
 - `To`（初 `.9`；`kC` 里 `*=8` / `/8`）；`Jn[id*12+j]` 被 `yc`/`AC` 累加（疑“互相沉默/伤害统计”）。**未影响核心玩法**。
 
