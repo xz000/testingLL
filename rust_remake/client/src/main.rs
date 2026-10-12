@@ -568,9 +568,10 @@ enum SetRow {
     Lang,
     CamPanSpeed,
     Resolution,
+    Fullscreen,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 23] = [
+const SETTINGS_ROWS: [(SetRow, &str); 24] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -594,6 +595,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 23] = [
     (SetRow::Lang, "语言"),
     (SetRow::CamPanSpeed, "相机平移速度"),
     (SetRow::Resolution, "分辨率"),
+    (SetRow::Fullscreen, "全屏模式"),
 ];
 
 /// 设置界面一屏可见行数（超出则滚动；行高 = 内容带 / 可见行数）。
@@ -4753,31 +4755,69 @@ impl Game {
         false
     }
 
-    /// 应用显示设置（窗口尺寸/全屏）。启动与改设置后调用（需 `ctx`）。
-    fn apply_display_settings(&mut self, ctx: &mut Context) {
-        use ggez::conf::WindowMode;
-        let (w, h) = match self.local_settings.window_resolution.fixed_dimensions() {
+    /// 窗口化时要用的窗口尺寸（固定档；自适应则按当前显示器物理尺寸算）。
+    fn windowed_size(&self, ctx: &Context) -> (f32, f32) {
+        match self.local_settings.window_resolution.fixed_dimensions() {
             Some(dims) => dims,
             None => {
-                // 自适应：按当前显示器（逻辑）尺寸算一个不超出的 16:9 尺寸。
                 let (mw, mh) = ctx
                     .gfx
                     .window()
                     .current_monitor()
                     .map(|m| {
                         let sz = m.size();
-                        let scale = m.scale_factor() as f32;
-                        (sz.width as f32 / scale, sz.height as f32 / scale)
+                        (sz.width as f32, sz.height as f32)
                     })
                     .unwrap_or((1280.0, 720.0));
                 local_settings::adaptive_window_size(mw, mh)
             }
-        };
-        let mode = WindowMode::default().dimensions(w, h).resizable(true);
-        if let Err(e) = ctx.gfx.set_mode(mode) {
-            eprintln!("[display] 应用窗口设置失败（忽略）：{e:?}");
-        } else {
-            eprintln!("[display] 窗口 {}×{}", w as i32, h as i32);
+        }
+    }
+
+    /// 应用显示设置（窗口尺寸/全屏）。启动与改设置后调用（需 `ctx`）。
+    fn apply_display_settings(&mut self, ctx: &mut Context) {
+        use ggez::conf::{FullscreenType, WindowMode};
+        use local_settings::FullscreenPref;
+        match self.local_settings.fullscreen {
+            FullscreenPref::Windowed => {
+                let (w, h) = self.windowed_size(ctx);
+                let mode = WindowMode::default()
+                    .dimensions(w, h)
+                    .resizable(true)
+                    .fullscreen_type(FullscreenType::Windowed);
+                if let Err(e) = ctx.gfx.set_mode(mode) {
+                    eprintln!("[display] 应用窗口设置失败（忽略）：{e:?}");
+                } else {
+                    eprintln!("[display] 窗口 {}×{}", w as i32, h as i32);
+                }
+            }
+            FullscreenPref::Borderless => {
+                // 无边框全屏：跟随当前显示器，零约束（ggez `Desktop`）。
+                if let Err(e) = ctx.gfx.set_fullscreen(FullscreenType::Desktop) {
+                    eprintln!("[display] 无边框全屏失败（忽略）：{e:?}");
+                } else {
+                    eprintln!("[display] 无边框全屏");
+                }
+            }
+            FullscreenPref::Exclusive => {
+                // 独占全屏：以当前显示器物理尺寸匹配一个 video mode；失败回退无边框。
+                let target = ctx.gfx.window().current_monitor().map(|m| m.size());
+                let ok = match target {
+                    Some(sz) => {
+                        let mode = WindowMode::default()
+                            .dimensions(sz.width as f32, sz.height as f32)
+                            .fullscreen_type(FullscreenType::True);
+                        ctx.gfx.set_mode(mode).is_ok()
+                    }
+                    None => false,
+                };
+                if ok {
+                    eprintln!("[display] 独占全屏");
+                } else {
+                    eprintln!("[display] 独占全屏不可用，回退无边框全屏");
+                    let _ = ctx.gfx.set_fullscreen(FullscreenType::Desktop);
+                }
+            }
         }
     }
 
@@ -9617,7 +9657,18 @@ impl Game {
             }
             Some(SetRow::Resolution) => {
                 // 分辨率：循环切档（含自适应）；下一帧按需应用窗口尺寸。
-                self.local_settings.window_resolution = self.local_settings.window_resolution.next();
+                // 全屏时分辨率跟随显示器，此行无效（给出提示）。
+                if self.local_settings.fullscreen.is_fullscreen() {
+                    self.settings_flash(i18n::t("全屏时分辨率跟随显示器").to_string());
+                } else {
+                    self.local_settings.window_resolution =
+                        self.local_settings.window_resolution.next();
+                    self.pending_display_apply = true;
+                }
+            }
+            Some(SetRow::Fullscreen) => {
+                // 全屏模式：循环切档（窗口化/无边框/独占）；下一帧应用。
+                self.local_settings.fullscreen = self.local_settings.fullscreen.next();
                 self.pending_display_apply = true;
             }
             Some(SetRow::Keybinds) => {
@@ -9659,6 +9710,7 @@ impl Game {
                     | SetRow::Lang
                     | SetRow::CamPanSpeed
                     | SetRow::Resolution
+                    | SetRow::Fullscreen
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -9689,6 +9741,7 @@ impl Game {
                     | SetRow::Lang
                     | SetRow::CamPanSpeed
                     | SetRow::Resolution
+                    | SetRow::Fullscreen
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -10464,10 +10517,22 @@ impl Game {
             },
             Some(SetRow::GenerateExample) => i18n::t("[生成]").to_string(),
             Some(SetRow::CamPanSpeed) => format!("{:.2}×", self.local_settings.cam_pan_speed),
-            Some(SetRow::Resolution) => match self.local_settings.window_resolution.fixed_dimensions() {
-                Some((w, h)) => format!("{}×{}", w as i32, h as i32),
-                None => i18n::t("自适应（跟随显示器）").to_string(),
-            },
+            Some(SetRow::Resolution) => {
+                if self.local_settings.fullscreen.is_fullscreen() {
+                    i18n::t("跟随显示器").to_string()
+                } else {
+                    match self.local_settings.window_resolution.fixed_dimensions() {
+                        Some((w, h)) => format!("{}×{}", w as i32, h as i32),
+                        None => i18n::t("自适应（跟随显示器）").to_string(),
+                    }
+                }
+            }
+            Some(SetRow::Fullscreen) => i18n::t(match self.local_settings.fullscreen {
+                local_settings::FullscreenPref::Windowed => "窗口化",
+                local_settings::FullscreenPref::Borderless => "无边框全屏",
+                local_settings::FullscreenPref::Exclusive => "独占全屏",
+            })
+            .to_string(),
             Some(SetRow::Keybinds) => {
                 let n = self.local_settings.non_default_binds();
                 if n == 0 {
@@ -12452,8 +12517,10 @@ fn main() -> GameResult {
         .build()?;
 
     let mut game = Game::new(&mut ctx, app)?;
-    // 自适应分辨率：建窗后按当前显示器算一次（固定档已在建窗时生效）。
-    if game.local_settings.window_resolution == local_settings::ResolutionPref::Adaptive {
+    // 自适应分辨率 / 全屏：建窗后按当前显示器算一次（固定窗口档已在建窗时生效）。
+    if game.local_settings.window_resolution == local_settings::ResolutionPref::Adaptive
+        || game.local_settings.fullscreen.is_fullscreen()
+    {
         game.apply_display_settings(&mut ctx);
     }
     // `--lang` 命令行覆盖（不开 Steam 也能测英文）：优先于 Steam 与本地设置，不写回磁盘。

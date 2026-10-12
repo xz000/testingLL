@@ -62,6 +62,8 @@ pub struct LocalSettings {
     pub cam_pan_speed: f32,
     /// 窗口分辨率偏好（窗口化尺寸；渲染仍固定逻辑分辨率 + letterbox）。
     pub window_resolution: ResolutionPref,
+    /// 全屏模式偏好（窗口化/无边框全屏/独占全屏）。
+    pub fullscreen: FullscreenPref,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
@@ -327,6 +329,7 @@ impl Default for LocalSettings {
             training_move: TrainingMove::Wander,
             cam_pan_speed: DEFAULT_CAM_PAN_SPEED,
             window_resolution: ResolutionPref::R1280x720,
+            fullscreen: FullscreenPref::Windowed,
         }
     }
 }
@@ -569,6 +572,52 @@ pub fn clamp_cam_pan_speed(v: f32) -> f32 {
     }
 }
 
+/// 全屏模式偏好。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
+pub enum FullscreenPref {
+    /// 窗口化（默认）。
+    Windowed,
+    /// 无边框全屏（`FullscreenType::Desktop`；跟随显示器，多显示器友好）。
+    Borderless,
+    /// 独占全屏（`FullscreenType::True`；需显示器支持该 video mode）。
+    Exclusive,
+}
+
+impl FullscreenPref {
+    /// 持久化代号。
+    pub fn code(self) -> &'static str {
+        match self {
+            FullscreenPref::Windowed => "windowed",
+            FullscreenPref::Borderless => "borderless",
+            FullscreenPref::Exclusive => "exclusive",
+        }
+    }
+
+    /// 由代号解析（未知 → 窗口化）。
+    pub fn from_code(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "borderless" | "desktop" | "fullscreen" => FullscreenPref::Borderless,
+            "exclusive" | "true" => FullscreenPref::Exclusive,
+            _ => FullscreenPref::Windowed,
+        }
+    }
+
+    /// 下一个选项（UI 左右切换用，循环）。
+    pub fn next(self) -> Self {
+        match self {
+            FullscreenPref::Windowed => FullscreenPref::Borderless,
+            FullscreenPref::Borderless => FullscreenPref::Exclusive,
+            FullscreenPref::Exclusive => FullscreenPref::Windowed,
+        }
+    }
+
+    /// 是否为全屏（非窗口化）。
+    pub fn is_fullscreen(self) -> bool {
+        !matches!(self, FullscreenPref::Windowed)
+    }
+}
+
 /// 窗口分辨率偏好（窗口化时的窗口尺寸；渲染仍固定逻辑分辨率 + letterbox）。
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ResolutionPref {
@@ -737,6 +786,7 @@ pub fn parse(text: &str) -> LocalSettings {
                 }
             }
             "window_resolution" => s.window_resolution = ResolutionPref::from_code(v),
+            "fullscreen" => s.fullscreen = FullscreenPref::from_code(v),
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -793,11 +843,12 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
     out.push_str(&format!(
-        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\n",
+        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\n",
         s.training_bots,
         s.training_move.code(),
         s.cam_pan_speed,
-        s.window_resolution.code()
+        s.window_resolution.code(),
+        s.fullscreen.code()
     ));
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -875,6 +926,7 @@ mod tests {
             training_move: TrainingMove::Still,
             cam_pan_speed: 2.5,
             window_resolution: ResolutionPref::R1600x900,
+            fullscreen: FullscreenPref::Borderless,
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -996,6 +1048,26 @@ mod tests {
         assert_eq!(s.skill_key(0), 'q', "旧技能键仍应保留");
         assert_eq!(s.cam_pan_speed, DEFAULT_CAM_PAN_SPEED, "缺行 → 默认 1.0");
         assert_eq!(s.window_resolution, ResolutionPref::R1280x720, "缺行 → 默认 1280×720");
+        assert_eq!(s.fullscreen, FullscreenPref::Windowed, "缺行 → 默认窗口化");
+    }
+
+    #[test]
+    fn fullscreen_pref_parse_cycle_and_roundtrip() {
+        let d = LocalSettings::default();
+        assert_eq!(d.fullscreen, FullscreenPref::Windowed);
+        assert_eq!(parse("fullscreen=borderless\n").fullscreen, FullscreenPref::Borderless);
+        assert_eq!(parse("fullscreen=exclusive\n").fullscreen, FullscreenPref::Exclusive);
+        assert_eq!(parse("fullscreen=junk\n").fullscreen, FullscreenPref::Windowed);
+        // 循环顺序
+        assert_eq!(FullscreenPref::Windowed.next(), FullscreenPref::Borderless);
+        assert_eq!(FullscreenPref::Borderless.next(), FullscreenPref::Exclusive);
+        assert_eq!(FullscreenPref::Exclusive.next(), FullscreenPref::Windowed);
+        assert!(!FullscreenPref::Windowed.is_fullscreen());
+        assert!(FullscreenPref::Borderless.is_fullscreen());
+        assert!(FullscreenPref::Exclusive.is_fullscreen());
+        // roundtrip
+        let back = parse(&serialize(&parse("fullscreen=exclusive\n")));
+        assert_eq!(back.fullscreen, FullscreenPref::Exclusive);
     }
 
     #[test]
