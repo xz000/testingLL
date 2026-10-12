@@ -1513,6 +1513,11 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
      - **影响面**：持守护盾者放灾变/虔诚时不会自动消耗获得 5s 减伤；放天罚时若未命中则不触发。
      - **修法（待拍板）**：把该段从 `Smiting && smite_hits>0` 门控改为“**任一 F nova（`Smiting`/`Catastrophe`/`Devotion`）施放完即检查 `aegis_charged`**”（无命中要求），时长乘 `jn`；同步 `smite_items_sword_and_shield` 测试加 S020/S021 用例。
      - **已核非问题**：我方 `aegis_charged` 在**回合重置**清（`player.rs`1026 “回合瞬态”）；098c `Ha` 不随回合清——但 `jX` 要 `iV[17]` 把关，**两边均无害**，不属差异。
+     - **文字侧交叉核对（tooltip 旁证）**：
+       - 物品 `I00H`（`w3t_strings`）：“Scourge grants **25%** damage reduction and **50%** knockback reduction. **Charges up when hitting opponents with fireball.**”（`I00I`=Aegis 2 = 75%/50%）⇒ 只说**充能方式**，**未写由哪招激活**；
+       - 三招 F 的 tooltip（`w3a_strings` idx 122/1138/1246）**均未提**守护盾；
+       ⇒ **文字侧中立**（既不支持也不否定）；**修法依据 = 代码三处同构**（铁律：代码=真值），**tooltip 不构成反证**；且从物品描述看“充能”与技能无关，反向支持“激活不应当只限 S001”。
+       ✅ 另核：`Aegis 2`(I00I) 按 §9c 为**不可得**（买自“Stone of Jordan Ring”Secret）⇒ 我方只建模 `GuardianShield1`(25%) **不算缺口**。
 
 ### 22.3 状态
 - **对齐收敛**：§14 全量矩阵 + §19 回调集 + §21 第二轮语义深挖 + §22 近似复核 ⇒ 无可复现的模拟缺口。
