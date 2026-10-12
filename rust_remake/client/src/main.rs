@@ -3323,6 +3323,10 @@ impl Game {
                 let self_ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(1.5), Point2 { x: fx, y: fy }, r + 2.0, 0.5, Color::from_rgba(255, 255, 255, 180))?;
                 canvas.draw(&self_ring, graphics::DrawParam::new());
             }
+            // L4：该玩家"已离开"（主动离开或掉线，据统一在线集）→ 灰色标记。
+            if self.player_left(pi) {
+                ui::text_center(&mut canvas, ctx, i18n::t("已离开"), 14.0, Color::from_rgba(210, 210, 210, 230), fx, fy - r - 18.0)?;
+            }
             let mut ring = r + 5.0;
             macro_rules! draw_ring {
                 ($radius:expr, $col:expr) => {{
@@ -4858,6 +4862,20 @@ impl Game {
         eprintln!("[exit] escape menu -> leave match");
         // 我离开本局：保留会话（可回主菜单重新加入）。
         self.reset_to_main_menu(true);
+    }
+
+    /// L4：世界槽位 `i` 对应的玩家是否「已离开」（主动离开或掉线）；依据 host 广播的统一在线集 `steam_online`。仅 Steam 联机有效。
+    #[cfg(feature = "steam")]
+    fn player_left(&self, i: usize) -> bool {
+        if !self.steam_active() || self.steam_participants.len() <= i {
+            return false;
+        }
+        let id = self.steam_participants[i];
+        id != 0 && !self.steam_online.contains(&id)
+    }
+    #[cfg(not(feature = "steam"))]
+    fn player_left(&self, _i: usize) -> bool {
+        false
     }
 
     /// 绘制对局内 Esc 菜单（主题风格面板 + 行；危险项二次确认提示）。
@@ -7300,7 +7318,15 @@ impl event::EventHandler for Game {
                             }
                             let enc = game_core::netcode::encode_player_input(&self.local_player_input());
                             let _ = cli.send_room_state(self.steam_local_ready, false, /* build_done 已废弃：本流程用 all_cfgs+倒计时，不再用「配好」确认 */ &enc);
-                            if let Some(ents) = cli.step_frame(&mut c_rcv).ok().flatten() {
+                            let stepped = cli.step_frame(&mut c_rcv).ok().flatten();
+                            // L4：host 广播的统一在线集（离开/掉线/重连）→ 更新"已离开"标记依据（不动 steam_participants）。
+                            if let Some(ids) = cli.take_online_participants() {
+                                if self.steam_online != ids {
+                                    logging::log(&format!("[steam-client] online set updated -> {ids:?}"));
+                                    self.steam_online = ids;
+                                }
+                            }
+                            if let Some(ents) = stepped {
                                 self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
                                 self.client_pending_max = self.client_pending_max.max(cli.pending_len());
                                 // 诊断：模拟帧间隔（>2 TICK 才打印；同时计入 5s 统计窗口）。

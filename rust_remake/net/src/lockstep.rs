@@ -1104,6 +1104,8 @@ pub struct ClientLockstep<T: Transport> {
     pause: PauseView,
     /// 缓存的「房主主动离开」通知（`identity`）；供上层立即进入迁移。
     host_left: Option<u64>,
+    /// 缓存的最近一次 host 广播的**在线集**（`Participants`）；供上层更新"已离开"标记。
+    latest_participants: Option<Vec<u64>>,
 }
 
 /// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
@@ -1126,6 +1128,7 @@ impl<T: Transport> ClientLockstep<T> {
             state_hashes: VecDeque::new(),
             pause: PauseView::default(),
             host_left: None,
+            latest_participants: None,
         }
     }
 
@@ -1169,6 +1172,11 @@ impl<T: Transport> ClientLockstep<T> {
     /// 取走缓存的「房主主动离开」通知（`identity`）。无则 None。
     pub fn take_host_left(&mut self) -> Option<u64> {
         self.host_left.take()
+    }
+
+    /// 取走缓存的**在线集**（host 广播的 `Participants`）。无则 None。
+    pub fn take_online_participants(&mut self) -> Option<Vec<u64>> {
+        self.latest_participants.take()
     }
 
     /// 向 host 发送主动离开广播（本端离开本局前调用，best-effort）。
@@ -1451,6 +1459,12 @@ impl<T: Transport> ClientLockstep<T> {
                                     self.host_left = Some(identity);
                                 }
                             }
+                            Packet::Participants { ids } => {
+                                // host 广播的**在线集**（离开/掉线/重连时更新）：缓存供上层更新"已离开"标记。
+                                if from == self.host {
+                                    self.latest_participants = Some(ids);
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -1505,6 +1519,12 @@ impl<T: Transport> ClientLockstep<T> {
                                 // 房主主动离开广播：缓存，供上层立即进入迁移（跳过 3s stale + probe）。
                                 if from == self.host {
                                     self.host_left = Some(identity);
+                                }
+                            }
+                            Packet::Participants { ids } => {
+                                // host 广播的**在线集**（离开/掉线/重连时更新）：缓存供上层更新"已离开"标记。
+                                if from == self.host {
+                                    self.latest_participants = Some(ids);
                                 }
                             }
                             _ => {}
