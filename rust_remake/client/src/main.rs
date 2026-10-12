@@ -7394,6 +7394,8 @@ impl event::EventHandler for Game {
                                     self.steam_my_index = your_index;
                                     eprintln!("[steam-rejoin] set my_index={your_index}");
                                 }
+                                // E2：据 `meta.phase` 恢复阶段（可能回到学习期）。
+                                self.pre_game_config = self.meta.phase == game_core::meta::MatchPhase::Learning;
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
                                 self.steam_new_host_id = 0;

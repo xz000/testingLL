@@ -87,6 +87,8 @@ impl Game {
                                     cli.set_my_index(your_index);
                                     self.steam_my_index = your_index;
                                 }
+                                // E2：据 `meta.phase` 恢复阶段（可能回到学习期）。
+                                self.pre_game_config = self.meta.phase == game_core::meta::MatchPhase::Learning;
                                 eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
                             }
                             self.steam_migrating = false;
