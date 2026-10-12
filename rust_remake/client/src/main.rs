@@ -4893,6 +4893,95 @@ impl Game {
         false
     }
 
+    /// E1：学习期（`MatchPhase::Learning`）的轻量网络节拍。
+    /// World 不步进、没有帧，故：
+    /// - host 每帧 `poll` + **静态快照**（world+meta，`seq` 不变）作为心跳/归队源 + 在线集广播；
+    /// - client 每帧上行 `RoomState` 心跳、收 host 包（`pump_learning`），并以"是否收到 host 包"做**学习期存活判定**。
+    #[cfg(feature = "steam")]
+    fn steam_learning_net_tick(&mut self) {
+        if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
+            let mut rcv = vec![0u8; 256 * 1024];
+            // 收心跳 / Leave / ReconnectReq / 配置。
+            host.poll(&mut rcv);
+            // 学习期也判掉线（否则 all_cfgs 会等一个已死端 → 全员卡局）。
+            for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
+                logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
+            }
+            // 在线集：变化立即 + 周期兜底（重连端握手期会丢非 Snapshot 包）。
+            let online_periodic = self.frame % ONLINE_BCAST_EVERY == 0;
+            if host.take_online_dirty() || online_periodic {
+                let ids = host.online_ids(self.steam_my_id);
+                host.broadcast_participants(&ids);
+                self.steam_online = ids;
+            }
+            // 静态快照：`seq = next_seq` 不变（世界不推进）；每帧 set 保证新鲜（`phase=Learning`），周期广播。
+            let wb = game_core::world_ser::world_to_bytes(&self.world);
+            let sb = game_core::world_ser::pack_snapshot(&wb, &self.meta);
+            host.set_snapshot(sb.clone(), host.next_seq());
+            if self.frame % SNAPSHOT_BROADCAST_EVERY == 0 {
+                host.broadcast_snapshot(sb, host.next_seq(), 0xFF);
+            }
+            self.steam_host_ls = Some(host);
+            return;
+        }
+        if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
+            let mut c_rcv = vec![0u8; 256 * 1024];
+            // 归队握手：学习期也要能完成（等 host 的静态快照重建 world+meta）。
+            if self.steam_rejoin_handshaking {
+                let got = cli
+                    .rejoin_step(&mut c_rcv, self.steam_my_id, self.steam_rejoin_ticks, RECONNECT_REQ_EVERY as u32)
+                    .ok()
+                    .flatten();
+                self.steam_rejoin_ticks = self.steam_rejoin_ticks.saturating_add(1);
+                if let Some((wb, _seq, your_index)) = got {
+                    cli.apply_resync(&mut c_rcv).ok();
+                    self.apply_snapshot_world(&wb);
+                    if your_index != 0xFF {
+                        cli.set_my_index(your_index);
+                        self.steam_my_index = your_index;
+                    }
+                    self.steam_rejoin_handshaking = false;
+                    self.steam_rejoin_ticks = 0;
+                    self.steam_cli_stale_ticks = 0;
+                    // E2：据 meta.phase 恢复阶段（可能回到学习期）。
+                    self.pre_game_config = self.meta.phase == game_core::meta::MatchPhase::Learning;
+                    eprintln!("[steam-rejoin] resumed in learning (phase={:?})", self.meta.phase);
+                    self.steam_cli_ls = Some(cli);
+                    return;
+                } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
+                    eprintln!("[steam-rejoin] learning handshake timeout -> return to menu");
+                    self.steam_rejoin_handshaking = false;
+                    self.steam_rejoin_ticks = 0;
+                    self.steam_cli_ls = Some(cli);
+                    self.reset_to_main_menu(true);
+                    self.menu_hint = i18n::t("无法重新加入上一局，已返回主菜单").to_string();
+                    return;
+                }
+                self.steam_cli_ls = Some(cli);
+                return;
+            }
+            // 心跳上行（在场）。
+            let enc = game_core::netcode::encode_player_input(&self.local_player_input());
+            let _ = cli.send_room_state(self.steam_local_ready, false, &enc);
+            // 收 host 包（缓存快照/在线集；不推进帧）。
+            let got = cli.pump_learning(&mut c_rcv).unwrap_or(false);
+            if let Some(ids) = cli.take_online_participants() {
+                self.steam_online = ids;
+            }
+            if got {
+                self.steam_cli_stale_ticks = 0;
+            } else {
+                self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
+                if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
+                    eprintln!("[steam-client] host silent in learning for {} ticks -> host-left overlay", self.steam_cli_stale_ticks);
+                    self.steam_host_left_overlay = true;
+                    self.steam_cli_stale_ticks = 0;
+                }
+            }
+            self.steam_cli_ls = Some(cli);
+        }
+    }
+
     /// 绘制对局内 Esc 菜单（主题风格面板 + 行；危险项二次确认提示）。
     fn draw_escape_menu(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
@@ -6862,6 +6951,12 @@ impl event::EventHandler for Game {
                         self.learn_dispatch_click(ctx);
                     }
                 }
+                // Steam 联机：学习期轻量网络节拍（心跳 + 静态快照 + 掉线判定 + 归队握手）。
+                #[cfg(feature = "steam")]
+                if self.steam_active() {
+                    self.steam_learning_net_tick();
+                }
+
                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
                 if self.meta.is_first_config() && self.net_host_ls.is_none() {
                     self.poll_host_join_phase();
