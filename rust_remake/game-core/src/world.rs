@@ -3617,6 +3617,40 @@ impl World {
                     let rj = ps[j].kind.obstacle_radius().unwrap_or(Fix64::ZERO);
                     let rr = ri + rj;
                     if (ps[i].pos - ps[j].pos).length_squared() <= rr * rr {
+                        // 098c `gB`（S009 A 父弹撞**弹体**也走 `FB`→`IA`→`Jv=gB`）：`xi>0` → `SI(5,.8)`
+                        //   + `dB` 生成碎片（沿当前速度向）。§21.6 遗留①。
+                        for k in [i, j] {
+                            if let ProjectileKind::W098b {
+                                s009_role: S009_ROLE_A_PARENT,
+                                gx,
+                                kb_ji,
+                                vel,
+                                ..
+                            } = &ps[k].kind
+                            {
+                                let o = ps[k].owner;
+                                let xi = self.players.get(o as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
+                                let (gx_v, kb_v) = (*gx, *kb_ji);
+                                let dirv = if vel.length_squared() > Fix64::ZERO {
+                                    vel.normalized()
+                                } else {
+                                    Vec2::new(Fix64::ONE, Fix64::ZERO)
+                                };
+                                if xi > 0.0 {
+                                    let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                                    expiry_blasts.push((
+                                        o,
+                                        ps[k].pos,
+                                        radius,
+                                        Fix64::from_num(5.0),
+                                        Fix64::from_num(0.8),
+                                        Fix64::from_num(0.15 * xi),
+                                        None,
+                                    ));
+                                }
+                                fragment_spawns.push((o, ps[k].pos, dirv * Fix64::from_num(250.0), gx_v, kb_v));
+                            }
+                        }
                         ps[i].alive = false;
                         ps[j].alive = false;
                     }
