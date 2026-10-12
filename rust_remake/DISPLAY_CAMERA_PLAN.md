@@ -72,6 +72,8 @@
 | **S4** | **边缘滚屏**：`edge_scroll` 开关（窗口化也生效）；鼠标入 `EDGE_SCROLL_MARGIN=8` 设计单位持续平移（复用 `cam_pan_speed`）| ✅ `f7a10d2` |
 
 > 实际实现与规划差异：① `edge_margin`/`edge_speed` 未做成设置项，边距用常量 8、速度复用 `cam_pan_speed`（后续想加再说）。② 自适应尺寸用显示器**物理**像素（`WindowMode.dimensions` 即物理像素，未除 `scale_factor`）。
+>
+> **Steam 云存档范围**：`cam_pan_speed` + `edge_scroll`（纯偏好）**入云**；`window_resolution` + `fullscreen`（机器相关）**仅本地**。云文件 `settings_cloud.txt`（旧 `keybinds.txt` 自动迁移）。
 
 ---
 

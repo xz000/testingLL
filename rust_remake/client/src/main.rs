@@ -790,9 +790,9 @@ struct Game {
     keybinds_capture: bool,
     /// 按键设置提示（已改 / 冲突 / 无效）。
     keybinds_msg: String,
-    /// 键位是否已从 Steam Cloud 同步过一次。
+    /// 键位/显示偏好是否已从 Steam Cloud 同步过一次。
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
-    keybinds_cloud_synced: bool,
+    cloud_settings_synced: bool,
     /// 设置页内是否打开「创意工坊物品」一屏概览。
     workshop_open: bool,
     /// 概览选中行。
@@ -1548,7 +1548,7 @@ impl Game {
             keybinds_sel: 0,
             keybinds_capture: false,
             keybinds_msg: String::new(),
-            keybinds_cloud_synced: false,
+            cloud_settings_synced: false,
             workshop_open: false,
             workshop_sel: 0,
             #[cfg(feature = "steam")]
@@ -6452,10 +6452,10 @@ impl event::EventHandler for Game {
                 t.run_callbacks();
             }
             self.poll_workshop_publish();
-            // 键位云同步：会话可用后仅做一次（云端较新则覆盖本地）。
-            if !self.keybinds_cloud_synced && self.steam_transport().is_some() {
-                self.sync_keybinds_from_cloud();
-                self.keybinds_cloud_synced = true;
+            // 键位/显示偏好云同步：会话可用后仅做一次（云端较新则覆盖本地）。
+            if !self.cloud_settings_synced && self.steam_transport().is_some() {
+                self.sync_settings_from_cloud();
+                self.cloud_settings_synced = true;
             }
         }
 
@@ -9669,6 +9669,7 @@ impl Game {
                 let step = if wrap { 0.25 } else { delta as f32 * 0.25 };
                 self.local_settings.cam_pan_speed =
                     local_settings::clamp_cam_pan_speed(self.local_settings.cam_pan_speed + step);
+                self.upload_cloud_settings(); // 跨机偏好 → 入云
             }
             Some(SetRow::Resolution) => {
                 // 分辨率：循环切档（含自适应）；下一帧按需应用窗口尺寸。
@@ -9689,6 +9690,7 @@ impl Game {
             Some(SetRow::EdgeScroll) => {
                 // 边缘滚屏开关（玩家自选；窗口化/全屏通用）。
                 self.local_settings.edge_scroll = !self.local_settings.edge_scroll;
+                self.upload_cloud_settings(); // 跨机偏好 → 入云
             }
             Some(SetRow::Keybinds) => {
                 self.keybinds_open = true;
@@ -10106,7 +10108,7 @@ impl Game {
         self.local_settings.key_form_switch = parsed.key_form_switch;
         self.local_settings.key_shop_cat = parsed.key_shop_cat;
         local_settings::save(&self.local_settings_path, &self.local_settings);
-        self.upload_keybinds();
+        self.upload_cloud_settings();
         let changed = local_settings::BIND_ACTIONS
             .iter()
             .zip(before)
@@ -10115,12 +10117,15 @@ impl Game {
         Ok(changed)
     }
 
-    /// 键位云端同步文件名。
+    /// 云同步文件名：键位 + 相机平移速度 + 边缘滚屏等**跨机偏好**
+    /// （分辨率/全屏/音量/包选择等**本机相关项不同步**）。
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
-    const KEYBINDS_CLOUD_FILE: &str = "keybinds.txt";
+    const SETTINGS_CLOUD_FILE: &str = "settings_cloud.txt";
+    /// 旧版云文件名（仅含键位）；首次读取时迁移到新档名。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    const LEGACY_KEYBINDS_CLOUD_FILE: &str = "keybinds.txt";
 
-    /// 仅含键位的同步载荷（不同步音量/包选择等本机相关项）。
-    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    /// 仅含键位的载荷（键位导出/备份用；不含音量/包选择/显示等本机相关项）。
     fn keybinds_payload(&self) -> String {
         let keys: String = self
             .local_settings
@@ -10143,29 +10148,51 @@ impl Game {
         )
     }
 
-    /// 上传键位到 Steam Cloud（Steam 构建且云可用时）。
-    fn upload_keybinds(&self) {
+    /// 云同步载荷：键位 + 相机平移速度 + 边缘滚屏（不含音量/包选择/分辨率/全屏等本机相关项）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    fn cloud_settings_payload(&self) -> String {
+        format!(
+            "{}cam_pan_speed={}\nedge_scroll={}\n",
+            self.keybinds_payload(),
+            self.local_settings.cam_pan_speed,
+            if self.local_settings.edge_scroll { 1 } else { 0 }
+        )
+    }
+
+    /// 上传云同步设置（Steam 构建且云可用时）。
+    fn upload_cloud_settings(&self) {
         #[cfg(feature = "steam")]
         if let Some(t) = self.steam_transport() {
             if t.cloud_enabled() {
-                let ok = t.cloud_write(Self::KEYBINDS_CLOUD_FILE, &self.keybinds_payload());
-                eprintln!("[keybinds] cloud upload -> {ok}");
+                let ok = t.cloud_write(Self::SETTINGS_CLOUD_FILE, &self.cloud_settings_payload());
+                eprintln!("[cloud] settings upload -> {ok}");
             }
         }
     }
 
-    /// 启动时从 Steam Cloud 拉键位（云端较新则覆盖本地）。仅 Steam 构建。
+    /// 启动时从 Steam Cloud 拉设置（云端较新则覆盖本地）。仅 Steam 构建。
     #[cfg(feature = "steam")]
-    fn sync_keybinds_from_cloud(&mut self) {
+    fn sync_settings_from_cloud(&mut self) {
         let Some(t) = self.steam_transport() else { return };
         if !t.cloud_enabled() {
             return;
         }
-        let cloud_ts = t.cloud_timestamp(Self::KEYBINDS_CLOUD_FILE);
+        // 新档名不存在时回退旧档名（仅键位），读后迁移到新档。
+        let mut file = Self::SETTINGS_CLOUD_FILE;
+        let mut cloud_ts = t.cloud_timestamp(file);
+        let mut legacy = false;
+        if cloud_ts <= 0 {
+            let old_ts = t.cloud_timestamp(Self::LEGACY_KEYBINDS_CLOUD_FILE);
+            if old_ts > 0 {
+                file = Self::LEGACY_KEYBINDS_CLOUD_FILE;
+                cloud_ts = old_ts;
+                legacy = true;
+            }
+        }
         if cloud_ts <= 0 {
             // 云端无档 → 用本地上传一次建立基线
-            let payload = self.keybinds_payload();
-            let _ = t.cloud_write(Self::KEYBINDS_CLOUD_FILE, &payload);
+            let payload = self.cloud_settings_payload();
+            let _ = t.cloud_write(Self::SETTINGS_CLOUD_FILE, &payload);
             return;
         }
         let local_ts = std::fs::metadata(&self.local_settings_path)
@@ -10174,23 +10201,39 @@ impl Game {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        if cloud_ts <= local_ts {
-            return;
+        let text = if cloud_ts > local_ts { t.cloud_read(file) } else { None };
+        // 至此不再借用 `t`（`cloud_read` 返回拥有所有权的 `String`），以下可安全改 `self`。
+        if let Some(text) = text {
+            {
+                let parsed = local_settings::parse(&text);
+                self.local_settings.skill_keys = parsed.skill_keys;
+                self.local_settings.key_stop = parsed.key_stop;
+                self.local_settings.key_cam_center = parsed.key_cam_center;
+                self.local_settings.key_cam_self = parsed.key_cam_self;
+                self.local_settings.key_cam_follow = parsed.key_cam_follow;
+                self.local_settings.key_buy = parsed.key_buy;
+                self.local_settings.key_sell = parsed.key_sell;
+                self.local_settings.key_mute = parsed.key_mute;
+                self.local_settings.key_form_switch = parsed.key_form_switch;
+                self.local_settings.key_shop_cat = parsed.key_shop_cat;
+                // 旧档只含键位：仅当载荷带显示字段时才覆盖本机显示偏好，避免被默认值冲掉。
+                if text.contains("cam_pan_speed=") {
+                    self.local_settings.cam_pan_speed = parsed.cam_pan_speed;
+                    self.local_settings.edge_scroll = parsed.edge_scroll;
+                }
+                local_settings::save(&self.local_settings_path, &self.local_settings);
+                eprintln!(
+                    "[cloud] applied cloud settings (file={file}, cloud={cloud_ts} > local={local_ts})"
+                );
+            }
         }
-        let Some(text) = t.cloud_read(Self::KEYBINDS_CLOUD_FILE) else { return };
-        let parsed = local_settings::parse(&text);
-        self.local_settings.skill_keys = parsed.skill_keys;
-        self.local_settings.key_stop = parsed.key_stop;
-        self.local_settings.key_cam_center = parsed.key_cam_center;
-        self.local_settings.key_cam_self = parsed.key_cam_self;
-        self.local_settings.key_cam_follow = parsed.key_cam_follow;
-        self.local_settings.key_buy = parsed.key_buy;
-        self.local_settings.key_sell = parsed.key_sell;
-        self.local_settings.key_mute = parsed.key_mute;
-        self.local_settings.key_form_switch = parsed.key_form_switch;
-        self.local_settings.key_shop_cat = parsed.key_shop_cat;
-        local_settings::save(&self.local_settings_path, &self.local_settings);
-        eprintln!("[keybinds] applied cloud keybinds (cloud={cloud_ts} > local={local_ts})");
+        // 迁移：读取旧档后把当前状态写回新档名，下次直接用新档。
+        if legacy {
+            if let Some(t2) = self.steam_transport() {
+                let payload = self.cloud_settings_payload();
+                let _ = t2.cloud_write(Self::SETTINGS_CLOUD_FILE, &payload);
+            }
+        }
     }
 
     /// 生成本地**示例包**（结构+清单+静音占位），并用文件管理器打开。
@@ -10811,7 +10854,7 @@ impl Game {
                     }
                     self.keybinds_msg = msg;
                     self.keybinds_capture = false;
-                    self.upload_keybinds();
+                    self.upload_cloud_settings();
                 }
             }
             return;
@@ -10876,7 +10919,7 @@ impl Game {
             self.local_settings.reset_binds();
             local_settings::save(&self.local_settings_path, &self.local_settings);
             self.keybinds_msg = i18n::t("已恢复默认").to_string();
-            self.upload_keybinds();
+            self.upload_cloud_settings();
             self.audio.play(audio::AudioCue::UiConfirm);
             return;
         }
@@ -10920,7 +10963,7 @@ impl Game {
             local_settings::save(&self.local_settings_path, &self.local_settings);
             let name = Self::bind_action_label(action);
             self.keybinds_msg = i18n::tf("已解除绑定：{name}", &[("name", name)]);
-            self.upload_keybinds();
+            self.upload_cloud_settings();
         }
         self.audio.play(audio::AudioCue::UiConfirm);
     }
