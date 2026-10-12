@@ -2168,6 +2168,13 @@ impl World {
                                 o.pos = pr.pos;
                             }
                         }
+                        // S013A 换位（098c `KB`，`Gv=si`）：**没命中任何东西**时把施法者搬到落点
+                        //（`set K[cb]=K[nr]; L[cb]=L[nr]`，`cb=Fv[nr]=ii` 施法者）。命中则走 `LB` 换位、不搬。§21.1④
+                        if *on_hit == crate::skill::W098bOnHit::SwapTarget {
+                            if let Some(o) = self.players.get_mut(pr.owner as usize) {
+                                o.pos = pr.pos;
+                            }
+                        }
                         // S017B 双生弹（098c `cC`）：到期时入队，稍后在帧末与同伴配对连线沉默。
                         if *on_hit == crate::skill::W098bOnHit::TwinSilence {
                             twin_ends.push((pr.owner, pr.pos, debuff_dur.to_num::<f64>()));
@@ -5152,6 +5159,17 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     } else {
                         life = Fix64::from_num(0.12 * eim);
+                    }
+                }
+                // S013A 换位（098c `MB` 6467）：`ev = min(点击距离, 900*(1+.1*ei))/1700 + .03`
+                //   → 飞到**点击点**（=落点）；未命中时 `KB`(`Gv=si`) 把施法者搬过去（见 `step_projectiles` 到期处理）。
+                if id == crate::skill::SkillId::S013 && !alt {
+                    if let Some(t) = target {
+                        let cap = Fix64::from_num(900.0 * (1.0 + 0.1 * ei));
+                        let d = (t - ppos).length().min(cap);
+                        if speed > Fix64::ZERO {
+                            life = d / speed + Fix64::from_num(0.03);
+                        }
                     }
                 }
                 // 远程精通（xi，R00I）：`xi>0` 时火球**被打掉**（命中/撞柱 → `IA` → `Jv=Xb`/`Ob`）在命中点做 AoE：
@@ -8945,6 +8963,39 @@ mod tests {
             )),
             "交换后弹体应销毁"
         );
+    }
+
+    /// S013A 换位（098c `KB`，`Gv=si`）：**没命中任何东西**时施法者瞬移到落点
+    ///（`set K[cb]=K[nr]`，非互换）。§21.1④
+    #[test]
+    fn s013a_teleports_to_landing_point_when_no_hit() {
+        let mut world = World::new(2, 0x1302);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(Fix64::ZERO, d60(30.0)); // 远离弹道，避免命中
+        world.players[1].move_target = None;
+        world.players[0].skill_levels[SkillId::S013.as_u32() as usize] = 1;
+        let start = world.players[0].pos;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S013, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        for _ in 0..90 {
+            world.step(none.clone(), dt);
+        }
+        let moved = (world.players[0].pos - start).length().to_num::<f64>();
+        assert!(moved > 250.0, "无命中时 S013A 应瞬移到落点(~300)，实际位移 {moved}");
+        // 098c `ev = 点击/1700 + .03` ⇒ 落点 ≈ 300 + 0.03×1700 ≈ 351。
+        let d = world.players[0].pos.length().to_num::<f64>();
+        assert!((250.0..=420.0).contains(&d), "应落在点击点附近(~350)，实际 {d}");
     }
 
     /// 弹体互撞（098c `Av`→ 简化互毁）：两队火球对飞应互毁、不伤及玩家。
