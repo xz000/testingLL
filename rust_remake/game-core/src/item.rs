@@ -110,7 +110,7 @@ pub struct ItemEffects {
     pub smite_recover: f64,
     /// 天罚（S001）伤害平加（鲜血之剑 +1/+2；098c mC 实证 cX = 10 + Zr）。
     pub smite_bonus: f64,
-    /// 守护之盾充能窗口受伤减免（0.25/0.75；火球命中充能 → 天罚后 5s，见 world）。
+    /// 守护之盾充能窗口受伤减免（0.25；火球命中充能 → **任一 F 大招（天罚/灾变/虔诚）**后 5s，见 world）。
     pub smite_reduction: f64,
     /// 持有守护之盾（098c 充能判定；充能状态存 Player::aegis_charged）。
     pub aegis: bool,
@@ -214,8 +214,8 @@ pub const ITEMS: &[ItemDef] = &[
     ItemDef { id: ItemId::BloodSword1, family: ItemFamily::BloodSword, tier: 1, cost: 8, sell: 7, name: "鲜血之剑 1", desc: "天罚伤害 +1；天罚命中每敌减张力 2；可升 1 次", fx: ItemEffects { smite_bonus: 1.0, smite_recover: 2.0, ..fx() } },
     // I00G 鲜血之剑 2：Zr=2 → +2 伤；减张力 (Zr+1)=3/敌（买 8；卖 24 @ED 10498）
     ItemDef { id: ItemId::BloodSword2, family: ItemFamily::BloodSword, tier: 2, cost: 8, sell: 24, name: "鲜血之剑 2", desc: "天罚伤害 +2；天罚命中每敌减张力 3", fx: ItemEffects { smite_bonus: 2.0, smite_recover: 3.0, ..fx() } },
-    // I00H 守护之盾：火球命中充能 → 天罚释放 5s 内受伤-25% 击退-50%（HC 实证）；HP 上限-10（买 13 @bD 10758）
-    ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 13, sell: 12, name: "守护之盾", desc: "火球命中充能：天罚后5s 受伤-25% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.25, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
+    // I00H 守护之盾：火球命中充能 → **任一 F 大招（天罚/灾变/虔诚）**释放 5s 内受伤-25% 击退-50%（HC 实证，协议 56）；HP 上限-10（买 13 @bD 10758）
+    ItemDef { id: ItemId::GuardianShield1, family: ItemFamily::GuardianShield, tier: 1, cost: 13, sell: 12, name: "守护之盾", desc: "火球命中充能：任一 F 大招（天罚/灾变/虔诚）后 5s 受伤-25% 击退-50%；生命-10", fx: ItemEffects { smite_reduction: 0.25, aegis: true, aegis_kb_reduction: 0.5, hp_add: -10.0, ..fx() } },
     // I00I 守护之盾 2：098c **不可获得**（`UnitAddItemById`/`bD` 全图从不创建，JASS 核实）⇒ 已移除。
     // I00J 熔岩靴 1：+15 移速 / 熔岩上用天罚激活抵抗 87.5%×3s / -0.1 回复惩罚（激活式，D8；买 7 @bD 10784）
     ItemDef { id: ItemId::LavaBoots1, family: ItemFamily::LavaBoots, tier: 1, cost: 7, sell: 5, name: "熔岩靴 1", desc: "移速+15；熔岩伤-4%（被动）+ 天罚激活 -87.5%×3s CD25s；回复-0.1/s；可升 2 次", fx: ItemEffects { speed_add: 15.0, lava_resist_frac: 0.875, lava_resist_secs: 3.0, lava_passive_mult: 0.96, regen_penalty: 0.1, ..fx() } },
