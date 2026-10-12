@@ -548,7 +548,7 @@ const EN: &[(&str, &str)] = &[
     ("连接未能恢复，已返回主菜单", "Connection could not be recovered; returned to the main menu"),
     ("无法确定新主机，已返回主菜单", "Could not determine a new host; returned to the main menu"),
     // ---- R5c：崩溃重开归队 ----
-    ("检测到未结束的上一局：回车/Y 重新加入，Esc 忽略", "Unfinished previous match detected: Enter/Y to rejoin, Esc to ignore"),
+    ("检测到未结束的上一局：按 Y 重新加入，Esc 忽略", "Unfinished previous match detected: press Y to rejoin, Esc to ignore"),
     ("正在重新加入上一局…（{secs}s）", "Rejoining the previous match… ({secs}s)"),
     ("你已被接管，正在重新加入…（{secs}s）", "You were taken over; rejoining… ({secs}s)"),
     ("无法重新加入上一局，已返回主菜单", "Could not rejoin the previous match; returned to the main menu"),

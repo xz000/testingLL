@@ -6583,10 +6583,10 @@ impl event::EventHandler for Game {
             use ggez::input::mouse::MouseButton;
             let just = |k: char| ctx.keyboard.is_logical_key_just_pressed(&Key::Character(k.to_string().into()));
             let just_named = |n: NamedKey| ctx.keyboard.is_logical_key_just_pressed(&Key::Named(n));
-            // R5c：上一局归队提示（回车/Y 加入，Esc 忽略）。
+            // R5c：上一局归队提示（**Y 加入**，Esc 忽略；不再用回车，避免与界面确认键冲突）。
             #[cfg(feature = "steam")]
             if let Some(rj) = self.steam_rejoin_prompt.clone() {
-                if just_named(NamedKey::Enter) || just('y') || just('Y') {
+                if just('y') || just('Y') {
                     let lobby = rj.lobby_id;
                     self.steam_rejoin_prompt = None;
                     self.steam_rejoin_target = Some(rj);
@@ -11635,7 +11635,7 @@ impl Game {
         // R5c：上一局归队提示。
         #[cfg(feature = "steam")]
         if self.steam_rejoin_prompt.is_some() {
-            draw_text(&mut canvas, ctx, i18n::t("检测到未结束的上一局：回车/Y 重新加入，Esc 忽略"), 19.0, graphics::Color::from_rgb(140, 230, 160), Point2 { x: cx, y: sh - 110.0 }, true)?;
+            draw_text(&mut canvas, ctx, i18n::t("检测到未结束的上一局：按 Y 重新加入，Esc 忽略"), 19.0, graphics::Color::from_rgb(140, 230, 160), Point2 { x: cx, y: sh - 110.0 }, true)?;
         }
         canvas.finish(ctx)?;
         Ok(())
