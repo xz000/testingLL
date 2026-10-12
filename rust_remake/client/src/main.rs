@@ -567,9 +567,10 @@ enum SetRow {
     Mute,
     Lang,
     CamPanSpeed,
+    Resolution,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 22] = [
+const SETTINGS_ROWS: [(SetRow, &str); 23] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -592,6 +593,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 22] = [
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
     (SetRow::CamPanSpeed, "相机平移速度"),
+    (SetRow::Resolution, "分辨率"),
 ];
 
 /// 设置界面一屏可见行数（超出则滚动；行高 = 内容带 / 可见行数）。
@@ -770,6 +772,8 @@ struct Game {
     icon_bank: icons::IconBank,
     /// 待重载音频（改包后置位，`update` 里带 `ctx` 重载）。
     pending_audio_reload: bool,
+    /// 待应用显示设置（改分辨率/全屏后置位，`update` 里带 `ctx` 应用）。
+    pending_display_apply: bool,
     /// 创意工坊订阅状态缓存（`(已订阅, 已就绪)`；`None` = Steam 不可用）。打开设置时刷新。
     workshop_counts: Option<(usize, usize)>,
     /// 设置页「试听 BGM 场景」的临时场景覆盖（`None` = 跟随游戏状态）；关设置时清除。
@@ -1533,6 +1537,7 @@ impl Game {
             icon_packs,
             icon_bank,
             pending_audio_reload: false,
+            pending_display_apply: false,
             workshop_counts: None,
             audition_scene: None,
             keybinds_open: false,
@@ -4748,6 +4753,34 @@ impl Game {
         false
     }
 
+    /// 应用显示设置（窗口尺寸/全屏）。启动与改设置后调用（需 `ctx`）。
+    fn apply_display_settings(&mut self, ctx: &mut Context) {
+        use ggez::conf::WindowMode;
+        let (w, h) = match self.local_settings.window_resolution.fixed_dimensions() {
+            Some(dims) => dims,
+            None => {
+                // 自适应：按当前显示器（逻辑）尺寸算一个不超出的 16:9 尺寸。
+                let (mw, mh) = ctx
+                    .gfx
+                    .window()
+                    .current_monitor()
+                    .map(|m| {
+                        let sz = m.size();
+                        let scale = m.scale_factor() as f32;
+                        (sz.width as f32 / scale, sz.height as f32 / scale)
+                    })
+                    .unwrap_or((1280.0, 720.0));
+                local_settings::adaptive_window_size(mw, mh)
+            }
+        };
+        let mode = WindowMode::default().dimensions(w, h).resizable(true);
+        if let Err(e) = ctx.gfx.set_mode(mode) {
+            eprintln!("[display] 应用窗口设置失败（忽略）：{e:?}");
+        } else {
+            eprintln!("[display] 窗口 {}×{}", w as i32, h as i32);
+        }
+    }
+
     /// 清空本机在对局中的临时输入残留（打开退出菜单时调用）。
     fn clear_match_transient_input(&mut self) {
         self.player_target = None;
@@ -6337,6 +6370,11 @@ impl event::EventHandler for Game {
             );
         }
 
+        // 显示设置（分辨率/全屏）：改设置后带 `ctx` 应用。
+        if self.pending_display_apply {
+            self.pending_display_apply = false;
+            self.apply_display_settings(ctx);
+        }
         // 音频包/BGM（纯客户端）：改包后重扫重载（需 `ctx`）；每帧推进 BGM 场景 + 淡入淡出。
         if self.pending_audio_reload {
             self.pending_audio_reload = false;
@@ -9577,6 +9615,11 @@ impl Game {
                 self.local_settings.cam_pan_speed =
                     local_settings::clamp_cam_pan_speed(self.local_settings.cam_pan_speed + step);
             }
+            Some(SetRow::Resolution) => {
+                // 分辨率：循环切档（含自适应）；下一帧按需应用窗口尺寸。
+                self.local_settings.window_resolution = self.local_settings.window_resolution.next();
+                self.pending_display_apply = true;
+            }
             Some(SetRow::Keybinds) => {
                 self.keybinds_open = true;
                 self.keybinds_sel = 0;
@@ -9615,6 +9658,7 @@ impl Game {
                     SetRow::Mute
                     | SetRow::Lang
                     | SetRow::CamPanSpeed
+                    | SetRow::Resolution
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -9644,6 +9688,7 @@ impl Game {
                     SetRow::Mute
                     | SetRow::Lang
                     | SetRow::CamPanSpeed
+                    | SetRow::Resolution
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -10419,6 +10464,10 @@ impl Game {
             },
             Some(SetRow::GenerateExample) => i18n::t("[生成]").to_string(),
             Some(SetRow::CamPanSpeed) => format!("{:.2}×", self.local_settings.cam_pan_speed),
+            Some(SetRow::Resolution) => match self.local_settings.window_resolution.fixed_dimensions() {
+                Some((w, h)) => format!("{}×{}", w as i32, h as i32),
+                None => i18n::t("自适应（跟随显示器）").to_string(),
+            },
             Some(SetRow::Keybinds) => {
                 let n = self.local_settings.non_default_binds();
                 if n == 0 {
@@ -12387,16 +12436,26 @@ fn main() -> GameResult {
     logging::log(&format!("[main] app = {:?} args = {:?}", app, args[1..].to_vec()));
     logging::log("[main] building ggez context (window)...");
 
+    // 显示设置：窗口化尺寸在建窗时即生效（自适应需 ctx 知道显示器，建窗后另算）。
+    let pre_settings = local_settings::load(&local_settings::default_path());
+    let (win_w, win_h) = pre_settings
+        .window_resolution
+        .fixed_dimensions()
+        .unwrap_or((1280.0, 720.0));
     let (mut ctx, event_loop) = ggez::ContextBuilder::new("frame-sync-arena", "remake")
         .window_setup(ggez::conf::WindowSetup::default().title("圆圈之战 Circle Brawl"))
         .window_mode(
             ggez::conf::WindowMode::default()
-                .dimensions(1280.0, 720.0)
+                .dimensions(win_w, win_h)
                 .resizable(true),
         )
         .build()?;
 
     let mut game = Game::new(&mut ctx, app)?;
+    // 自适应分辨率：建窗后按当前显示器算一次（固定档已在建窗时生效）。
+    if game.local_settings.window_resolution == local_settings::ResolutionPref::Adaptive {
+        game.apply_display_settings(&mut ctx);
+    }
     // `--lang` 命令行覆盖（不开 Steam 也能测英文）：优先于 Steam 与本地设置，不写回磁盘。
     if let Some(pref) = parse_lang_arg(&args) {
         game.lang_override = Some(pref);

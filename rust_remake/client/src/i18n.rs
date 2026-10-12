@@ -345,6 +345,8 @@ const EN: &[(&str, &str)] = &[
     ("静音", "Mute"),
     ("语言", "Language"),
     ("相机平移速度", "Camera Pan Speed"),
+    ("分辨率", "Resolution"),
+    ("自适应（跟随显示器）", "Auto (fit monitor)"),
     ("自动（跟随 Steam）", "Auto (follow Steam)"),
     ("开（静音）", "On (Muted)"),
     ("返回  [Esc]", "Back  [Esc]"),

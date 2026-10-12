@@ -60,6 +60,8 @@ pub struct LocalSettings {
     pub training_move: TrainingMove,
     /// 相机平移速度倍率（`0.25..=3.0`，默认 1.0）。作用于方向键平移与边缘滚屏。
     pub cam_pan_speed: f32,
+    /// 窗口分辨率偏好（窗口化尺寸；渲染仍固定逻辑分辨率 + letterbox）。
+    pub window_resolution: ResolutionPref,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
@@ -324,6 +326,7 @@ impl Default for LocalSettings {
             training_bots: DEFAULT_TRAINING_BOTS,
             training_move: TrainingMove::Wander,
             cam_pan_speed: DEFAULT_CAM_PAN_SPEED,
+            window_resolution: ResolutionPref::R1280x720,
         }
     }
 }
@@ -566,6 +569,68 @@ pub fn clamp_cam_pan_speed(v: f32) -> f32 {
     }
 }
 
+/// 窗口分辨率偏好（窗口化时的窗口尺寸；渲染仍固定逻辑分辨率 + letterbox）。
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ResolutionPref {
+    R1280x720,
+    R1600x900,
+    R1920x1080,
+    /// 按显示器尺寸自动选一个不超出的 16:9 尺寸。
+    Adaptive,
+}
+
+impl ResolutionPref {
+    /// 持久化代号。
+    pub fn code(self) -> &'static str {
+        match self {
+            ResolutionPref::R1280x720 => "1280x720",
+            ResolutionPref::R1600x900 => "1600x900",
+            ResolutionPref::R1920x1080 => "1920x1080",
+            ResolutionPref::Adaptive => "auto",
+        }
+    }
+
+    /// 由代号解析（未知 → 默认 1280×720）。
+    pub fn from_code(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "1920x1080" | "1080p" => ResolutionPref::R1920x1080,
+            "1600x900" => ResolutionPref::R1600x900,
+            "auto" | "adaptive" => ResolutionPref::Adaptive,
+            _ => ResolutionPref::R1280x720,
+        }
+    }
+
+    /// 固定档窗口尺寸；`Adaptive` → `None`（运行时按显示器算）。
+    pub fn fixed_dimensions(self) -> Option<(f32, f32)> {
+        match self {
+            ResolutionPref::R1280x720 => Some((1280.0, 720.0)),
+            ResolutionPref::R1600x900 => Some((1600.0, 900.0)),
+            ResolutionPref::R1920x1080 => Some((1920.0, 1080.0)),
+            ResolutionPref::Adaptive => None,
+        }
+    }
+
+    /// 下一个选项（UI 左右切换用，循环）。
+    pub fn next(self) -> Self {
+        match self {
+            ResolutionPref::R1280x720 => ResolutionPref::R1600x900,
+            ResolutionPref::R1600x900 => ResolutionPref::R1920x1080,
+            ResolutionPref::R1920x1080 => ResolutionPref::Adaptive,
+            ResolutionPref::Adaptive => ResolutionPref::R1280x720,
+        }
+    }
+}
+
+/// 由显示器（逻辑）尺寸算一个「自适应」窗口尺寸：保持 16:9、不超过显示器、高度留少量边距。
+pub fn adaptive_window_size(mon_w: f32, mon_h: f32) -> (f32, f32) {
+    let mon_w = if mon_w.is_finite() && mon_w > 0.0 { mon_w } else { 1280.0 };
+    let mon_h = if mon_h.is_finite() && mon_h > 0.0 { mon_h } else { 720.0 };
+    // 宽度铺满，但高度不超过显示器 92%（留给标题栏/任务栏），再约束回 16:9。
+    let h = (mon_w * 9.0 / 16.0).min(mon_h * 0.92);
+    let w = h * 16.0 / 9.0;
+    (w.round().max(320.0), h.round().max(180.0))
+}
+
 /// 解析 `key=value` 文本；未知键 / 非法值忽略，缺失项用默认。
 pub fn parse(text: &str) -> LocalSettings {
     let mut s = LocalSettings::default();
@@ -671,6 +736,7 @@ pub fn parse(text: &str) -> LocalSettings {
                     s.cam_pan_speed = clamp_cam_pan_speed(x);
                 }
             }
+            "window_resolution" => s.window_resolution = ResolutionPref::from_code(v),
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -727,10 +793,11 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
     out.push_str(&format!(
-        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\n",
+        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\n",
         s.training_bots,
         s.training_move.code(),
-        s.cam_pan_speed
+        s.cam_pan_speed,
+        s.window_resolution.code()
     ));
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -807,6 +874,7 @@ mod tests {
             training_bots: 4,
             training_move: TrainingMove::Still,
             cam_pan_speed: 2.5,
+            window_resolution: ResolutionPref::R1600x900,
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -927,6 +995,31 @@ mod tests {
         assert_eq!(s.key_shop_cat, DEFAULT_KEY_SHOP_CAT, "缺行 → 默认 B/N/M");
         assert_eq!(s.skill_key(0), 'q', "旧技能键仍应保留");
         assert_eq!(s.cam_pan_speed, DEFAULT_CAM_PAN_SPEED, "缺行 → 默认 1.0");
+        assert_eq!(s.window_resolution, ResolutionPref::R1280x720, "缺行 → 默认 1280×720");
+    }
+
+    #[test]
+    fn resolution_pref_parse_cycle_and_adaptive_size() {
+        let d = LocalSettings::default();
+        assert_eq!(d.window_resolution, ResolutionPref::R1280x720);
+        assert_eq!(parse("window_resolution=1920x1080\n").window_resolution, ResolutionPref::R1920x1080);
+        assert_eq!(parse("window_resolution=auto\n").window_resolution, ResolutionPref::Adaptive);
+        assert_eq!(parse("window_resolution=junk\n").window_resolution, ResolutionPref::R1280x720);
+        // 循环顺序
+        assert_eq!(ResolutionPref::R1280x720.next(), ResolutionPref::R1600x900);
+        assert_eq!(ResolutionPref::R1920x1080.next(), ResolutionPref::Adaptive);
+        assert_eq!(ResolutionPref::Adaptive.next(), ResolutionPref::R1280x720);
+        // 固定档尺寸
+        assert_eq!(ResolutionPref::R1600x900.fixed_dimensions(), Some((1600.0, 900.0)));
+        assert_eq!(ResolutionPref::Adaptive.fixed_dimensions(), None);
+        // roundtrip
+        let back = parse(&serialize(&parse("window_resolution=auto\n")));
+        assert_eq!(back.window_resolution, ResolutionPref::Adaptive);
+        // 自适应尺寸：16:9、不超显示器、高度留边距
+        assert_eq!(adaptive_window_size(2560.0, 1600.0), (2560.0, 1440.0));
+        assert_eq!(adaptive_window_size(1920.0, 1080.0), (1766.0, 994.0));
+        // 非法显示器尺寸 → 回退到 1280×720 基准
+        assert_eq!(adaptive_window_size(0.0, f32::NAN), (1178.0, 662.0));
     }
 
     #[test]
