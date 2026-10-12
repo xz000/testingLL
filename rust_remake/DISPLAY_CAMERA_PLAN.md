@@ -1,7 +1,9 @@
 # 显示 / 相机 设置 规划（DISPLAY_CAMERA_PLAN.md）
 
 > 目标（用户 2026-10-11）：**分辨率**、**全屏模式**、**全屏下鼠标贴边的镜头移动（边缘滚屏）**、**相机平移速度设置**。
-> 本文只做规划，**未改代码**。关联：`HANDOFF.md` · `DOCS_INDEX.md`。
+> **状态（2026-10-11）：S1–S4 全部实施完成**（`d0a6675` S1 / `55e2919` S2 / `7c35928` S3 / `f7a10d2` S4），client 124 单测全绿。真机手感验收待做。
+>
+> 本文只做规划。关联：`HANDOFF.md` · `DOCS_INDEX.md`。
 > 阅读：§0 现状 → §1 事实（ggez API）→ §2 决策 → §3 实施顺序 → §4 改动点 → §5 测试 → §6 风险。
 
 ---
@@ -62,12 +64,14 @@
 
 > 三步共享同一骨架（`LocalSettings` 加字段 → 设置界面加"显示"组行 → 启动时应用 → 运行时应用）。
 
-| 步 | 内容 | 风险 |
+| 步 | 内容 | 状态 |
 |---|---|---|
-| **S1** | **相机平移速度设置**：`cam_pan_speed` + 设置行 + `PAN_SPEED * cam_pan_speed` | 极低（先建骨架）|
-| **S2** | **分辨率**：`window_resolution`（`1280×720/1600×900/1920×1080/Adaptive`）；启动 `WindowMode.dimensions` + 运行时 `set_mode` | 低 |
-| **S3** | **全屏**：`fullscreen`（`Windowed/Borderless/Exclusive`）；`set_fullscreen`；全屏时分辨率行→"跟随显示器"；`Exclusive` 用 `video_modes()` 过滤合法档 + 失败回退 | 中（独占边界）|
-| **S4** | **边缘滚屏**：`edge_scroll/edge_margin/edge_speed`；相机更新时按鼠标位置（`ctx.mouse` 设计坐标 vs `ui::UI_W/H`）持续平移，复用 S1 的速度系数 | 低 |
+| **S1** | **相机平移速度设置**：`cam_pan_speed` + 设置行 + `PAN_SPEED * cam_pan_speed`（也作用于边缘滚屏） | ✅ `d0a6675` |
+| **S2** | **分辨率**：`window_resolution`（`1280×720/1600×900/1920×1080/Adaptive`）；建窗 `WindowMode.dimensions` + 运行时 `set_mode`；自适应 按显示器**物理尺寸**算 16:9 | ✅ `55e2919` |
+| **S3** | **全屏**：`fullscreen`（`Windowed/Borderless/Exclusive`）；全屏时分辨率行→"跟随显示器"；`Exclusive` 以显示器**物理尺寸**匹配 video mode，失败回退无边框 | ✅ `7c35928` |
+| **S4** | **边缘滚屏**：`edge_scroll` 开关（窗口化也生效）；鼠标入 `EDGE_SCROLL_MARGIN=8` 设计单位持续平移（复用 `cam_pan_speed`）| ✅ `f7a10d2` |
+
+> 实际实现与规划差异：① `edge_margin`/`edge_speed` 未做成设置项，边距用常量 8、速度复用 `cam_pan_speed`（后续想加再说）。② 自适应尺寸用显示器**物理**像素（`WindowMode.dimensions` 即物理像素，未除 `scale_factor`）。
 
 ---
 

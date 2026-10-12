@@ -25,7 +25,7 @@
 |---|---|
 | `EXIT_MENU_RECONNECT_PLAN.md` | 联机：Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列）记录 |
 | `LEAVE_REJOIN_PLAN.md` | **主动离开 + 三因归队 设计**（主动/掉线/崩溃都能归队；待拍板 L-D1–L-D5）|
-| `DISPLAY_CAMERA_PLAN.md` | **显示/相机设置**（分辨率/全屏/边缘滚屏/平移速度；待实施 S1–S4）|
+| `DISPLAY_CAMERA_PLAN.md` | **显示/相机设置**（分辨率/全屏/边缘滚屏/平移速度；S1–S4 已完成 `d0a6675`/`55e2919`/`7c35928`/`f7a10d2`）|
 | `RECONNECT.md` | 掉线/重连机制设计 |
 | `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案 |
 | `PRESENTATION_PLAN.md` | 表现层（P1–P6）：飘字/横幅/音效/特效 |
