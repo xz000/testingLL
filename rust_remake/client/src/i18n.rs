@@ -344,6 +344,7 @@ const EN: &[(&str, &str)] = &[
     ("内置", "Built-in"),
     ("静音", "Mute"),
     ("语言", "Language"),
+    ("相机平移速度", "Camera Pan Speed"),
     ("自动（跟随 Steam）", "Auto (follow Steam)"),
     ("开（静音）", "On (Muted)"),
     ("返回  [Esc]", "Back  [Esc]"),

@@ -566,9 +566,10 @@ enum SetRow {
     Keybinds,
     Mute,
     Lang,
+    CamPanSpeed,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 21] = [
+const SETTINGS_ROWS: [(SetRow, &str); 22] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -590,6 +591,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 21] = [
     (SetRow::Keybinds, "按键设置"),
     (SetRow::Mute, "静音"),
     (SetRow::Lang, "语言"),
+    (SetRow::CamPanSpeed, "相机平移速度"),
 ];
 
 /// 设置界面一屏可见行数（超出则滚动；行高 = 内容带 / 可见行数）。
@@ -1908,8 +1910,9 @@ impl Game {
                 dy += 1.0;
             }
             if dx != 0.0 || dy != 0.0 {
-                self.cam.x += dx * (sw / self.scale) * PAN_SPEED * dt;
-                self.cam.y += dy * (sh / self.scale) * PAN_SPEED * dt;
+                let pan = PAN_SPEED * self.local_settings.cam_pan_speed;
+                self.cam.x += dx * (sw / self.scale) * pan * dt;
+                self.cam.y += dy * (sh / self.scale) * pan * dt;
                 manual = true; // 手动平移 → 解除跟随
             }
 
@@ -9568,6 +9571,12 @@ impl Game {
             Some(SetRow::GenerateExample) => {
                 self.generate_example_pack();
             }
+            Some(SetRow::CamPanSpeed) => {
+                // 相机平移速度：点击/回车步进 0.25，方向键按 delta 微调；夹紧 0.25..=3.0。
+                let step = if wrap { 0.25 } else { delta as f32 * 0.25 };
+                self.local_settings.cam_pan_speed =
+                    local_settings::clamp_cam_pan_speed(self.local_settings.cam_pan_speed + step);
+            }
             Some(SetRow::Keybinds) => {
                 self.keybinds_open = true;
                 self.keybinds_sel = 0;
@@ -9605,6 +9614,7 @@ impl Game {
                     SetRow::Music => self.local_settings.music_volume,
                     SetRow::Mute
                     | SetRow::Lang
+                    | SetRow::CamPanSpeed
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -9633,6 +9643,7 @@ impl Game {
                     SetRow::Music => self.local_settings.music_volume = v,
                     SetRow::Mute
                     | SetRow::Lang
+                    | SetRow::CamPanSpeed
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -10407,6 +10418,7 @@ impl Game {
                 None => i18n::t("跟随场景").to_string(),
             },
             Some(SetRow::GenerateExample) => i18n::t("[生成]").to_string(),
+            Some(SetRow::CamPanSpeed) => format!("{:.2}×", self.local_settings.cam_pan_speed),
             Some(SetRow::Keybinds) => {
                 let n = self.local_settings.non_default_binds();
                 if n == 0 {

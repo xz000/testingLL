@@ -58,6 +58,8 @@ pub struct LocalSettings {
     pub training_bots: u8,
     /// 训练场：靶子移动方式（默认漫游）。
     pub training_move: TrainingMove,
+    /// 相机平移速度倍率（`0.25..=3.0`，默认 1.0）。作用于方向键平移与边缘滚屏。
+    pub cam_pan_speed: f32,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
@@ -321,6 +323,7 @@ impl Default for LocalSettings {
             key_shop_cat: DEFAULT_KEY_SHOP_CAT,
             training_bots: DEFAULT_TRAINING_BOTS,
             training_move: TrainingMove::Wander,
+            cam_pan_speed: DEFAULT_CAM_PAN_SPEED,
         }
     }
 }
@@ -549,6 +552,20 @@ pub const TRAINING_BOTS_MAX: u8 = 5;
 /// 训练场默认靶子数。
 pub const DEFAULT_TRAINING_BOTS: u8 = 3;
 
+/// 相机平移速度倍率的合法范围与默认值。
+pub const CAM_PAN_SPEED_MIN: f32 = 0.25;
+pub const CAM_PAN_SPEED_MAX: f32 = 3.0;
+pub const DEFAULT_CAM_PAN_SPEED: f32 = 1.0;
+
+/// 夹紧相机平移速度倍率（`NaN` → 默认）。
+pub fn clamp_cam_pan_speed(v: f32) -> f32 {
+    if v.is_nan() {
+        DEFAULT_CAM_PAN_SPEED
+    } else {
+        v.clamp(CAM_PAN_SPEED_MIN, CAM_PAN_SPEED_MAX)
+    }
+}
+
 /// 解析 `key=value` 文本；未知键 / 非法值忽略，缺失项用默认。
 pub fn parse(text: &str) -> LocalSettings {
     let mut s = LocalSettings::default();
@@ -649,6 +666,11 @@ pub fn parse(text: &str) -> LocalSettings {
                 }
             }
             "training_move" => s.training_move = TrainingMove::from_code(v),
+            "cam_pan_speed" => {
+                if let Ok(x) = v.parse::<f32>() {
+                    s.cam_pan_speed = clamp_cam_pan_speed(x);
+                }
+            }
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -705,9 +727,10 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
     out.push_str(&format!(
-        "training_bots={}\ntraining_move={}\n",
+        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\n",
         s.training_bots,
-        s.training_move.code()
+        s.training_move.code(),
+        s.cam_pan_speed
     ));
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -783,6 +806,7 @@ mod tests {
             key_shop_cat: [BindKey::Char('n'), BindKey::Named(NamedBind::Enter), BindKey::Char('q')],
             training_bots: 4,
             training_move: TrainingMove::Still,
+            cam_pan_speed: 2.5,
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -902,6 +926,7 @@ mod tests {
         assert_eq!(s.bind_key(BindAction::FormSwitch), DEFAULT_KEY_FORM_SWITCH, "缺行 → 默认 B");
         assert_eq!(s.key_shop_cat, DEFAULT_KEY_SHOP_CAT, "缺行 → 默认 B/N/M");
         assert_eq!(s.skill_key(0), 'q', "旧技能键仍应保留");
+        assert_eq!(s.cam_pan_speed, DEFAULT_CAM_PAN_SPEED, "缺行 → 默认 1.0");
     }
 
     #[test]
@@ -977,6 +1002,22 @@ mod tests {
         let old = parse("master_volume=0.5\n");
         assert_eq!(old.training_bots, DEFAULT_TRAINING_BOTS);
         assert_eq!(old.training_move, TrainingMove::Wander);
+    }
+
+    #[test]
+    fn cam_pan_speed_parse_clamp_and_roundtrip() {
+        let d = LocalSettings::default();
+        assert_eq!(d.cam_pan_speed, DEFAULT_CAM_PAN_SPEED);
+        // 超范围夹紧
+        assert_eq!(parse("cam_pan_speed=9\n").cam_pan_speed, CAM_PAN_SPEED_MAX);
+        assert_eq!(parse("cam_pan_speed=0.1\n").cam_pan_speed, CAM_PAN_SPEED_MIN);
+        assert_eq!(parse("cam_pan_speed=2\n").cam_pan_speed, 2.0);
+        // 非法/缺项 → 默认
+        assert_eq!(parse("cam_pan_speed=abc\n").cam_pan_speed, DEFAULT_CAM_PAN_SPEED);
+        assert_eq!(parse("master_volume=0.5\n").cam_pan_speed, DEFAULT_CAM_PAN_SPEED);
+        // roundtrip
+        let back = parse(&serialize(&parse("cam_pan_speed=1.75\n")));
+        assert_eq!(back.cam_pan_speed, 1.75);
     }
 
     #[test]
