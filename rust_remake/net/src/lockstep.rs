@@ -214,9 +214,9 @@ impl<T: Transport> HostLockstep<T> {
     /// 把当前整场 World 快照广播给所有 client（并本地保存），让每个端都持有最新快照、具备「host 掉线时接管」的能力。
     /// 语义同 `set_snapshot`：`world_bytes` 反映「已处理完 seq-1 帧」的世界状态，接任者应重建后从 seq 继续。
     /// 调用方应在「World 已应用完第 seq 帧」后传下一帧号 `host.next_seq()`。
-    pub fn broadcast_snapshot(&mut self, world_bytes: Vec<u8>, seq: u64) {
+    pub fn broadcast_snapshot(&mut self, world_bytes: Vec<u8>, seq: u64, your_index: u8) {
         self.snapshot = Some((world_bytes.clone(), seq));
-        let pkt = Packet::Snapshot { world_bytes, seq };
+        let pkt = Packet::Snapshot { world_bytes, seq, your_index };
         let enc = pkt.encode();
         for peer in self.client_peers.iter().flatten() {
             let _ = self.transport.send_to(&enc, peer);
@@ -927,7 +927,10 @@ impl<T: Transport> HostLockstep<T> {
                                 };
                                 if may_respond {
                                     if let Some((wb, seq)) = self.snapshot.as_ref() {
-                                        let snap_pkt = Packet::Snapshot { world_bytes: wb.clone(), seq: *seq };
+                                        // 告知重连端它**当前**的世界 index（迁移/接管后可能变）；客户端据此校正
+                                        // `steam_my_index` 与上行输入 index，否则会控制错角色、且 host 等不到其输入而卡死。
+                                        let yi = c.map(|c| self.client_indices[c]).unwrap_or(0xFF);
+                                        let snap_pkt = Packet::Snapshot { world_bytes: wb.clone(), seq: *seq, your_index: yi };
                                         let _ = self.transport.send_to(&snap_pkt.encode(), &from);
                                     }
                                     let rseq = self.snapshot.as_ref().map(|(_, s)| *s);
@@ -1135,6 +1138,11 @@ impl<T: Transport> ClientLockstep<T> {
     /// R7：当前 host 广播的暂停状态视图。
     pub fn pause_view(&self) -> &PauseView {
         &self.pause
+    }
+
+    /// 校正本端 player index（归队/迁移后由 host 下发的 `Snapshot.your_index` 设定）。
+    pub fn set_my_index(&mut self, idx: u8) {
+        self.my_index = idx;
     }
 
     /// R7：向 host 发送暂停/恢复请求（`resume`=true 为请求恢复）。
@@ -1391,7 +1399,7 @@ impl<T: Transport> ClientLockstep<T> {
         identity: u64,
         tick: u32,
         interval: u32,
-    ) -> io::Result<Option<(Vec<u8>, u64)>> {
+    ) -> io::Result<Option<(Vec<u8>, u64, u8)>> {
         if tick % interval.max(1) == 0 {
             self.send_reconnect_req(identity)?;
         }
@@ -1399,14 +1407,14 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 尝试收 host 回给重连者的整场快照：返回 `Some((world_bytes, seq))`；当前没有则 None。
-    pub fn recv_snapshot(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<u8>, u64)>> {
+    pub fn recv_snapshot(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Vec<u8>, u64, u8)>> {
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
-                    if let Some(Packet::Snapshot { world_bytes, seq }) = Packet::decode(&rcv[..n]) {
+                    if let Some(Packet::Snapshot { world_bytes, seq, your_index }) = Packet::decode(&rcv[..n]) {
                         // R4①：只接受当前 host 的快照（迁移时先 retarget 再收，host 已更新）。
                         if from == self.host {
-                            return Ok(Some((world_bytes, seq)));
+                            return Ok(Some((world_bytes, seq, your_index)));
                         }
                     }
                 }
@@ -1441,7 +1449,7 @@ impl<T: Transport> ClientLockstep<T> {
                                     got = true;
                                 }
                             }
-                            Packet::Snapshot { world_bytes, seq } => {
+                            Packet::Snapshot { world_bytes, seq, .. } => {
                                 // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
                                 self.latest_snapshot = Some((world_bytes, seq));
                             }
@@ -1499,7 +1507,7 @@ impl<T: Transport> ClientLockstep<T> {
                                     self.pending.insert(pos, (seq, entries));
                                 }
                             }
-                            Packet::Snapshot { world_bytes, seq } => {
+                            Packet::Snapshot { world_bytes, seq, .. } => {
                                 // 顺带缓存 host 主动广播的最新媒体快照（不应用、不推进），供「host 掉线接管」用。
                                 self.latest_snapshot = Some((world_bytes, seq));
                             }
@@ -2099,9 +2107,9 @@ mod tests {
         assert!(cli.rejoin_step(&mut rcv, 555, 1, 15).unwrap().is_none());
         assert!(ht.recv_from(&mut hrcv).unwrap().is_none(), "未到 interval 不应重发");
         // host 发 Snapshot → rejoin_step 返回它。
-        let snap = Packet::Snapshot { world_bytes: vec![9, 8, 7], seq: 42 };
+        let snap = Packet::Snapshot { world_bytes: vec![9, 8, 7], seq: 42, your_index: 1 };
         ht.send_to(&snap.encode(), &host_peer).unwrap();
-        assert_eq!(cli.rejoin_step(&mut rcv, 555, 2, 15).unwrap(), Some((vec![9, 8, 7], 42)));
+        assert_eq!(cli.rejoin_step(&mut rcv, 555, 2, 15).unwrap(), Some((vec![9, 8, 7], 42, 1)));
     }
 
     /// R6a：HostLockstep 可取出底层 transport，并据此重建 ClientLockstep（host→client 归队用）。
@@ -2262,7 +2270,7 @@ mod tests {
         host.poll(&mut rcv); // host 处理 ReconnectReq，回 Snapshot 并广播 Resync
 
         // client 收 Snapshot：应得到最近快照及其 seq（= host 下一帧号）。
-        let (wb, seq) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到 Snapshot");
+        let (wb, seq, _yi) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到 Snapshot");
         let expect_seq_at_snap = String::from_utf8(wb).unwrap();
         assert!(expect_seq_at_snap.starts_with("snap@"), "快照应为 host 最近保存的那份");
         assert_eq!(seq, host.next_seq(), "快照 seq 应为 host 当前下一帧号");
@@ -2336,6 +2344,21 @@ mod tests {
             set_target: Some(game_core::fix::Vec2::new(i.into(), 0.into())),
             ..Default::default()
         })
+    }
+
+    /// v58：重连应答的快照应携带该端**当前**世界索引（迁移/接管后可能变 → 客户端据此校正 self_index）。
+    #[test]
+    fn reconnect_reply_carries_current_world_index() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 3, true); // host + 两个 client（index 1/2）
+        host.set_client_identities(&[Some(1001), Some(1002)]);
+        host.set_snapshot(vec![1, 2, 3], 55); // 回包需要已有快照
+        let mut cli = ClientLockstep::new(ct, 99, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        cli.send_reconnect_req(1002).unwrap(); // 身份 1002 → client 槽 1 → world index 2
+        host.poll(&mut rcv);
+        let (_wb, _seq, yi) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到快照");
+        assert_eq!(yi, 2, "应答应带该端当前 world index（client_indices[c]）");
     }
 
     /// L3：client 主动离开广播 → host **立即**标记其掉线（不等空闲阈值），在线集随之更新。
@@ -2453,7 +2476,7 @@ mod tests {
         let before = cli.expect_seq();
         cli.send_reconnect_req(cli_identity).unwrap();
         host.poll(&mut rcv);
-        let (wb, seq) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到 Snapshot");
+        let (wb, seq, _yi) = cli.recv_snapshot(&mut rcv).unwrap().expect("应收到 Snapshot");
         assert!(String::from_utf8(wb).unwrap().starts_with("snap@"), "应为 host 最近保存的快照");
         assert_eq!(seq, host.next_seq(), "快照 seq 应为 host 当前下一帧号");
         assert_eq!(cli.expect_seq(), before, "收到 Snapshot 但未 Resync 前基线不变");
@@ -2496,7 +2519,7 @@ mod tests {
         let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
         let mut rcv = [0u8; 16384];
         // 注入一份旧快照（seq=10）让 client 缓存。
-        let snap = Packet::Snapshot { world_bytes: vec![1, 2, 3], seq: 10 };
+        let snap = Packet::Snapshot { world_bytes: vec![1, 2, 3], seq: 10, your_index: 0xFF };
         ht.send_to(&snap.encode(), &Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001)))).unwrap();
         cli.step_frame(&mut rcv).unwrap();
         assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 10)));
@@ -2514,7 +2537,7 @@ mod tests {
         let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
         let mut rcv = [0u8; 16384];
         // 向 client 注入一份快照（seq=42）并让它缓存。
-        let snap = Packet::Snapshot { world_bytes: vec![1, 2, 3], seq: 42 };
+        let snap = Packet::Snapshot { world_bytes: vec![1, 2, 3], seq: 42, your_index: 0xFF };
         ht.send_to(&snap.encode(), &Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001)))).unwrap();
         cli.step_frame(&mut rcv).unwrap();
         assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 42)), "client 应已缓存快照");
@@ -2580,7 +2603,7 @@ mod tests {
         let mut cli = ClientLockstep::new(ht, 2, host_peer.clone()); // player2 (新 host)
         let mut rcv = [0u8; 16384];
         // 注入快照到 cli(ht) 的 inbox（借 p1t 向 host 发），让 cli 缓存。
-        let snap = Packet::Snapshot { world_bytes: vec![9, 9, 9], seq: 7 };
+        let snap = Packet::Snapshot { world_bytes: vec![9, 9, 9], seq: 7, your_index: 0xFF };
         p1t.send_to(&snap.encode(), &host_peer).unwrap();
         cli.step_frame(&mut rcv).unwrap();
         // 原 3 人局：host(player0) 掉线，本端(player2) 接管。其他参与端 index = [0(掉线原host), 1(在线player1)]。
@@ -2659,7 +2682,7 @@ mod tests {
         host.poll(&mut rcv);
 
         // host 广播一份快照（seq=10，字节任意确定性内容）。
-        host.broadcast_snapshot(b"snap@10".to_vec(), 10);
+        host.broadcast_snapshot(b"snap@10".to_vec(), 10, 0xFF);
         assert_eq!(host.current_snapshot(), Some(&(b"snap@10".to_vec(), 10)), "host 本地也应保存最新快照");
 
         // client 正常 step_frame 收包：应缓存该快照到 latest_snapshot，但 expect_seq 不变（不推进）。
@@ -2670,7 +2693,7 @@ mod tests {
         assert_eq!(cached, (b"snap@10".to_vec(), 10), "缓存内容与 host 广播一致");
 
         // 再广播新快照覆盖旧值。
-        host.broadcast_snapshot(b"snap@11".to_vec(), 11);
+        host.broadcast_snapshot(b"snap@11".to_vec(), 11, 0xFF);
         let _ = cli.step_frame(&mut rcv).unwrap();
         assert_eq!(cli.cached_snapshot(), Some((b"snap@11".to_vec(), 11)), "新快照覆盖旧缓存");
     }

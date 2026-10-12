@@ -135,7 +135,8 @@ impl<T: Transport> NetLink<T> {
             return Ok(None);
         };
         ls.send_reconnect_req(self.identity)?;
-        ls.recv_snapshot(&mut self.rcv)
+        // 局域网无主机迁移，`your_index` 无关紧要 → 丢弃，保持返回签名不变。
+        Ok(ls.recv_snapshot(&mut self.rcv)?.map(|(wb, seq, _)| (wb, seq)))
     }
 
     /// 重连拿到快照后，把本端基线对齐到快照 seq（处理 host 广播的 `Resync`）。
@@ -458,14 +459,14 @@ mod tests {
         // 快照：host 当前 World -> 字节 -> 封装 Packet::Snapshot（模拟真实回传）。
         let seq_at = host.next_seq();
         let world_bytes = game_core::world_ser::world_to_bytes(&whost);
-        let snap_pkt = net::Packet::Snapshot { world_bytes, seq: seq_at };
+        let snap_pkt = net::Packet::Snapshot { world_bytes, seq: seq_at, your_index: 0xFF };
         let snap_bytes = snap_pkt.encode();
         let snap_back = net::Packet::decode(&snap_bytes).expect("Snapshot 应可编解码");
 
         // 重连：恢复 active；重连者从字节重建 World 并接到当前 seq。
         host.unmark_dropped(1);
         let world_bytes = match snap_back {
-            net::Packet::Snapshot { world_bytes, seq } => {
+            net::Packet::Snapshot { world_bytes, seq, .. } => {
                 cli.set_start_seq(seq);
                 world_bytes
             }

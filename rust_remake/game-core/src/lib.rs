@@ -101,4 +101,6 @@ pub fn version() -> &'static str {
 /// 伤害·击退·熔岩倍率/柱子·冰面模式）+ `Player` 11 个状态字段（`boomerang_side`/`windwalk_state`/`on_ice`/
 /// `respawn_at`/`doom`/`doom_remaining`/`dur_mult`/`dmg_taken_mult`/`lava_taken_mult`/`role_kb_mult`/`role_regen_mult`）
 /// 以前未序列化 → 重连/归队/迁移后重建为默认值 ⇒ 与 host 永久分叉（DESYNC）。**快照格式变更**。
-pub const PROTOCOL_VERSION: u32 = 57;
+/// v58（2026-10-13）：`Packet::Snapshot` 增 `your_index: u8`——主机在重连应答里告知归队端**当前世界索引**
+/// （迁移/接管后可能变），客户端据此校正 `steam_my_index` 与上行输入 index；修“归队后控制错角色 + host 等不到输入而卡死”。
+pub const PROTOCOL_VERSION: u32 = 58;

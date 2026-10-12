@@ -80,9 +80,13 @@ impl Game {
                         if from != old_host {
                             continue; // 非旧 host（如新 host）的包：忽略。
                         }
-                        if let net::Packet::Snapshot { world_bytes, seq } = pkt {
+                        if let net::Packet::Snapshot { world_bytes, seq, your_index } = pkt {
                             cli.apply_resync(rcv).ok();
                             if self.apply_snapshot_world(&world_bytes) {
+                                if your_index != 0xFF {
+                                    cli.set_my_index(your_index);
+                                    self.steam_my_index = your_index;
+                                }
                                 eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
                             }
                             self.steam_migrating = false;
@@ -159,7 +163,7 @@ impl Game {
                 // S7：用 Takeover 携带的基线 seq 把本端期望帧对齐到新 host（接管基线），
                 // 避免各端因帧序不一致在接管后卡在缺口处反复请求重传（包括无缓存快照的早期接管）。
                 cli.set_start_seq(seq);
-                if let Ok(Some((wb, _))) = cli.recv_snapshot(rcv) {
+                if let Ok(Some((wb, _, _))) = cli.recv_snapshot(rcv) {
                     self.apply_snapshot_world(&wb);
                 }
                 cli.apply_resync(rcv).ok();
@@ -242,7 +246,7 @@ impl Game {
         // S1 诊断：广播的快照字节数（迁移基线）。若接近接收端缓冲上限（256KiB）需留意，避免被 transport 静默丢弃。
         eprintln!("[steam-host] TAKEOVER broadcast snapshot: {} bytes (seq={seq})", wb.len());
         host.broadcast_takeover(seq, new_online.clone());
-        host.broadcast_snapshot(wb.clone(), seq);
+        host.broadcast_snapshot(wb.clone(), seq, 0xFF);
         // S2：单发 Takeover 给旧 host，令其标记 superseded 并停止作为权威（防脑裂）。
         host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
         eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");

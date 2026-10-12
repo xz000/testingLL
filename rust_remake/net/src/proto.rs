@@ -101,7 +101,7 @@ pub enum Packet {
     /// `build_done` 用于「开局配置阶段」判定该端是否已配完（host 收齐所有端 build_done 才产首帧统一开战）。
     RoomState { index: u8, ready: bool, build_done: bool, input_bytes: Vec<u8> },
     /// host→重连端：整场 World 快照字节 + 接回 seq。
-    Snapshot { world_bytes: Vec<u8>, seq: u64 },
+    Snapshot { world_bytes: Vec<u8>, seq: u64, your_index: u8 },
     /// host→部分端：对齐基线（各端从此 seq 重新确认一条基线后继续）。
     Resync { seq: u64 },
     /// 新 host→其余 client：主机迁移接管信号（`seq`=接管基线，`participants`=接管后的当前在线参与玩家 SteamID）。
@@ -224,13 +224,15 @@ impl Packet {
                 v.extend_from_slice(input_bytes);
                 v
             }
-            Packet::Snapshot { world_bytes, seq } => {
+            Packet::Snapshot { world_bytes, seq, your_index } => {
                 // 长度用 u32：世界快照可超 64KiB，用 u16 会静默截断导致重连端拿到损坏快照。
-                let mut v = Vec::with_capacity(1 + 4 + world_bytes.len() + 8);
+                let mut v = Vec::with_capacity(1 + 4 + world_bytes.len() + 8 + 1);
                 v.push(TAG_SNAPSHOT);
                 v.extend_from_slice(&(world_bytes.len() as u32).to_be_bytes());
                 v.extend_from_slice(world_bytes);
                 v.extend_from_slice(&seq.to_be_bytes());
+                // `your_index`：收件方在当前世界里的 player index（迁移后可能变）；`0xFF`=非定向（周期广播）。
+                v.push(*your_index);
                 v
             }
             Packet::Resync { seq } => {
@@ -365,15 +367,16 @@ impl Packet {
                 }
                 Some(Packet::PlayerCfgAll { entries, participants })
             }
-            TAG_SNAPSHOT if buf.len() >= 5 + 8 => {
+            TAG_SNAPSHOT if buf.len() >= 14 => {
                 let len = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]) as usize;
                 let end = 5usize + len;
-                if end + 8 > buf.len() {
+                if end + 9 > buf.len() {
                     return None;
                 }
                 let world_bytes = buf[5..end].to_vec();
                 let seq = u64::from_be_bytes(buf[end..end + 8].try_into().ok()?);
-                Some(Packet::Snapshot { world_bytes, seq })
+                let your_index = buf[end + 8];
+                Some(Packet::Snapshot { world_bytes, seq, your_index })
             }
             TAG_RESYNC if buf.len() >= 9 => {
                 Some(Packet::Resync { seq: u64::from_be_bytes(buf[1..9].try_into().ok()?) })
@@ -516,7 +519,8 @@ mod tests {
             Packet::StartConfig { seq: 456 },
             Packet::RosterReady { entries: vec![(0, true), (1, false), (2, true)], manual_ms: 5000 },
             Packet::RoomState { index: 1, ready: true, build_done: true, input_bytes: vec![1, 2, 3, 4] },
-            Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456 },
+            Packet::Snapshot { world_bytes: vec![1, 2, 3, 4, 5], seq: 456, your_index: 0xFF },
+            Packet::Snapshot { world_bytes: vec![9, 8, 7], seq: 42, your_index: 1 },
             Packet::Resync { seq: 789 },
             Packet::Takeover { seq: 12345, participants: vec![111, 222, 333] },
             Packet::Participants { ids: vec![111, 222, 333] },
@@ -543,10 +547,11 @@ mod tests {
     #[test]
     fn snapshot_over_64kib_roundtrips() {
         let world_bytes = vec![0xABu8; 70_000];
-        let p = Packet::Snapshot { world_bytes: world_bytes.clone(), seq: 999 };
+        let p = Packet::Snapshot { world_bytes: world_bytes.clone(), seq: 999, your_index: 1 };
         match Packet::decode(&p.encode()).expect("应能解码大快照") {
-            Packet::Snapshot { world_bytes: got, seq } => {
+            Packet::Snapshot { world_bytes: got, seq, your_index } => {
                 assert_eq!(seq, 999);
+                assert_eq!(your_index, 1);
                 assert_eq!(got.len(), 70_000, "快照长度被截断");
                 assert_eq!(got, world_bytes);
             }

@@ -7173,7 +7173,7 @@ impl event::EventHandler for Game {
                                     // 广播快照只为本局「主机迁移/接管」，频率更低（默认 2.5s），
                                     // 其余帧只本地保存（重连时按需单发），避免每 0.5s 一个大包挤占可靠频道。
                                     if self.host_frame_count % SNAPSHOT_BROADCAST_EVERY == 0 {
-                                        host.broadcast_snapshot(sb, host.next_seq());
+                                        host.broadcast_snapshot(sb, host.next_seq(), 0xFF);
                                     } else {
                                         host.set_snapshot(sb, host.next_seq());
                                     }
@@ -7284,9 +7284,15 @@ impl event::EventHandler for Game {
                                 .ok()
                                 .flatten();
                             self.steam_rejoin_ticks = self.steam_rejoin_ticks.saturating_add(1);
-                            if let Some((wb, seq)) = got {
+                            if let Some((wb, seq, your_index)) = got {
                                 cli.apply_resync(&mut c_rcv).ok();
                                 self.apply_snapshot_world(&wb);
+                                // 迁移/接管后世界索引可能变：采用 host 下发的当前 index，避免“控制错角色 + 输入 index 不匹配而卡死”。
+                                if your_index != 0xFF {
+                                    cli.set_my_index(your_index);
+                                    self.steam_my_index = your_index;
+                                    eprintln!("[steam-rejoin] set my_index={your_index}");
+                                }
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
                                 self.steam_new_host_id = 0;
