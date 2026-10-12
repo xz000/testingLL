@@ -358,6 +358,7 @@ const EN: &[(&str, &str)] = &[
     ("12 小时", "12 hours"),
     ("24 小时", "24 hours"),
     ("不限", "Unlimited"),
+    ("上一局已结束", "The previous match has ended"),
     ("全屏时分辨率跟随显示器", "Resolution follows the monitor in fullscreen"),
     ("自动（跟随 Steam）", "Auto (follow Steam)"),
     ("开（静音）", "On (Muted)"),

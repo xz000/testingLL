@@ -122,7 +122,8 @@ impl Game {
                     eprintln!(
                         "[steam-client] cannot determine a valid new host (lobby_owner={owner}) after {MIGRATE_NO_OWNER_BAIL_TICKS} ticks; returning to menu"
                     );
-                    self.reset_to_main_menu();
+                    // 无法确定新 host：保留会话（可重试归队）。
+                    self.reset_to_main_menu(true);
                     self.menu_hint = i18n::t("无法确定新主机，已返回主菜单").to_string();
                     self.accumulator = 0.0;
                     return Ok(None);
@@ -138,7 +139,8 @@ impl Game {
             eprintln!(
                 "[steam-client] migration Phase-B STALL: 收不到新 host 的 Takeover（{MIGRATE_BAIL_TICKS} 帧），放弃并退回主菜单"
             );
-            self.reset_to_main_menu();
+            // 迁移迟迟收不到 Takeover：保留会话（可重试归队）。
+            self.reset_to_main_menu(true);
             // S3：失败不再静默——回菜单后在主菜单底部提示原因。
             self.menu_hint = i18n::t("连接未能恢复，已返回主菜单").to_string();
             self.accumulator = 0.0;

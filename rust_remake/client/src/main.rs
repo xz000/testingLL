@@ -4856,7 +4856,8 @@ impl Game {
     /// 主动离开本局（退出菜单「返回主菜单」）：复用 `reset_to_main_menu` 的全量拆除。
     fn leave_match(&mut self) {
         eprintln!("[exit] escape menu -> leave match");
-        self.reset_to_main_menu();
+        // 我离开本局：保留会话（可回主菜单重新加入）。
+        self.reset_to_main_menu(true);
     }
 
     /// 绘制对局内 Esc 菜单（主题风格面板 + 行；危险项二次确认提示）。
@@ -6796,7 +6797,8 @@ impl event::EventHandler for Game {
                     eprintln!("[meta] finished -> back to main menu");
                     // 098c `yx`（Rescue）是终局过场的第二音；我们在离开结算画面时播一次。
                     self.audio.play(audio::AudioCue::AnnFinish);
-                    self.reset_to_main_menu();
+                    // 对局结束：干净离场 → 清会话。
+                    self.reset_to_main_menu(false);
                 }
                 Ok(())
             }
@@ -6936,7 +6938,8 @@ impl event::EventHandler for Game {
                                         self.accumulator = 0.0;
                                         return Ok(());
                                     }
-                                    self.reset_to_main_menu();
+                                    // 转 client 归队失败：回菜单但保留会话（可再试）。
+                                    self.reset_to_main_menu(true);
                                     self.accumulator = 0.0;
                                     return Ok(());
                                 }
@@ -7064,8 +7067,8 @@ impl event::EventHandler for Game {
                                     self.accumulator = 0.0;
                                     return Ok(());
                                 }
-                                // 无法定位新 host：退回主菜单（保留归队提示由下次启动处理）。
-                                self.reset_to_main_menu();
+                                // 无法定位新 host：退回主菜单但保留会话（可重试归队）。
+                                self.reset_to_main_menu(true);
                                 self.accumulator = 0.0;
                                 return Ok(());
                             }
@@ -7244,7 +7247,8 @@ impl event::EventHandler for Game {
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
                                 self.steam_new_host_id = 0;
-                                self.reset_to_main_menu();
+                                // 归队握手超时：保留会话（可重试），仅回菜单。
+                                self.reset_to_main_menu(true);
                                 self.menu_hint = i18n::t("无法重新加入上一局，已返回主菜单").to_string();
                                 self.accumulator = 0.0;
                                 return Ok(());
@@ -7833,7 +7837,11 @@ impl Game {
     }
 
     /// 把整场对抗（Finished）退回主菜单：放弃当前网络连接，重建为 MainMenu 的训练场占位世界/meta，并清空所有运行状态。
-    fn reset_to_main_menu(&mut self) {
+    /// `keep_rejoin`：是否**保留归队会话**并可回主菜单重新加入。
+    /// - `true`（我离开本局/迁移失败/归队超时）→ 保留磁盘会话 + 回填主菜单提示；
+    /// - `false`（对局结束/干净退出房间）→ 清会话与提示。
+    #[cfg_attr(not(feature = "steam"), allow(unused_variables))]
+    fn reset_to_main_menu(&mut self, keep_rejoin: bool) {
         // 主菜单与 Solo 共用同一份训练场世界/配置（金币 9999 / 轮数不终局）。
         let (w, m) = solo_world_and_meta(self.local_settings.training_bots);
         self.world = w;
@@ -7918,12 +7926,21 @@ impl Game {
             self.pause_confirm = false;
             self.pause_pending = None;
             self.pause_toast = (String::new(), 0.0);
-            // R5c：干净离场 → 清除归队会话（不再提示重新加入）。
-            rejoin::clear(&rejoin::default_path());
-            self.steam_rejoin_prompt = None;
+            // R5c：归队会话按离开性质处理（保留 = 可回主菜单重新加入）。
             self.steam_rejoin_target = None;
             self.steam_rejoin_handshaking = false;
             self.steam_rejoin_ticks = 0;
+            if keep_rejoin {
+                // 保留磁盘会话；回填主菜单提示（同进程内立即生效，无需重开）。
+                let now = unix_now();
+                let max_age = self.local_settings.rejoin_window.secs();
+                self.steam_rejoin_prompt = rejoin::load(&rejoin::default_path()).filter(|s| {
+                    s.is_fresh(now, max_age) && s.protocol_version == game_core::PROTOCOL_VERSION
+                });
+            } else {
+                rejoin::clear(&rejoin::default_path());
+                self.steam_rejoin_prompt = None;
+            }
             // 进房时 `steam_sess` 会被消费掉（传输归 lockstep），回到主菜单后可再初始化一次
             // （否则好友邀请与房间列表在主菜单上会永久失效）。
             self.steam_session_tried = false;
@@ -8060,7 +8077,8 @@ impl Game {
         eprintln!("[steam] leave room -> main menu");
         self.steam_lobby_id = None;
         self.steam_room_locked = false;
-        self.reset_to_main_menu();
+        // 干净退出房间（尚在对局前）→ 清会话。
+        self.reset_to_main_menu(false);
     }
 
     /// Steam 房间/就绪阶段（每帧）：client 每帧上行「就绪+在场」合包；host poll 收各端、全员就绪倒数计时进配置。
@@ -9082,6 +9100,12 @@ impl Game {
                 eprintln!("[steam] lobby op failed: {e:?}");
                 // 失败提示上屏：返回大厅菜单后用红字展示，避免只 eprintln 用户看不到。
                 self.steam_lobby_error = Some(i18n::tf("加入失败：{err}", &[("err", e.to_string())]));
+                // 若本次是「重新加入上一局」尝试失败（大厅已关等）⇒ 判定上一局已结束：清会话。
+                if self.steam_rejoin_target.take().is_some() {
+                    rejoin::clear(&rejoin::default_path());
+                    self.steam_rejoin_prompt = None;
+                    self.menu_hint = i18n::t("上一局已结束").to_string();
+                }
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
                 // 收回主菜单态（CLI 直通时 app 是 SteamHost/SteamJoin，不清回会有崩溃/黑屏风险）。
