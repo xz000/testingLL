@@ -569,9 +569,10 @@ enum SetRow {
     CamPanSpeed,
     Resolution,
     Fullscreen,
+    EdgeScroll,
 }
 
-const SETTINGS_ROWS: [(SetRow, &str); 24] = [
+const SETTINGS_ROWS: [(SetRow, &str); 25] = [
     (SetRow::Master, "主音量"),
     (SetRow::Sfx, "音效音量"),
     (SetRow::SfxPack, "音效包"),
@@ -596,6 +597,7 @@ const SETTINGS_ROWS: [(SetRow, &str); 24] = [
     (SetRow::CamPanSpeed, "相机平移速度"),
     (SetRow::Resolution, "分辨率"),
     (SetRow::Fullscreen, "全屏模式"),
+    (SetRow::EdgeScroll, "边缘滚屏"),
 ];
 
 /// 设置界面一屏可见行数（超出则滚动；行高 = 内容带 / 可见行数）。
@@ -1921,6 +1923,19 @@ impl Game {
                 self.cam.x += dx * (sw / self.scale) * pan * dt;
                 self.cam.y += dy * (sh / self.scale) * pan * dt;
                 manual = true; // 手动平移 → 解除跟随
+            }
+
+            // 边缘滚屏（玩家开关）：鼠标进入窗口边缘 `EDGE_SCROLL_MARGIN` 设计单位内 → 持续平移
+            // （复用平移速度；窗口化也会生效，不区分全屏）。
+            if self.local_settings.edge_scroll {
+                let em = ui::mouse_design(ctx);
+                let (ex, ey) = edge_scroll_dir(em.x, em.y, sw, sh, EDGE_SCROLL_MARGIN);
+                if ex != 0.0 || ey != 0.0 {
+                    let pan = PAN_SPEED * self.local_settings.cam_pan_speed;
+                    self.cam.x += ex * (sw / self.scale) * pan * dt;
+                    self.cam.y += ey * (sh / self.scale) * pan * dt;
+                    manual = true; // 边缘滚屏 → 解除跟随
+                }
             }
 
             // 中键拖拽：世界随光标移动（保持光标下的世界点不动）
@@ -9671,6 +9686,10 @@ impl Game {
                 self.local_settings.fullscreen = self.local_settings.fullscreen.next();
                 self.pending_display_apply = true;
             }
+            Some(SetRow::EdgeScroll) => {
+                // 边缘滚屏开关（玩家自选；窗口化/全屏通用）。
+                self.local_settings.edge_scroll = !self.local_settings.edge_scroll;
+            }
             Some(SetRow::Keybinds) => {
                 self.keybinds_open = true;
                 self.keybinds_sel = 0;
@@ -9711,6 +9730,7 @@ impl Game {
                     | SetRow::CamPanSpeed
                     | SetRow::Resolution
                     | SetRow::Fullscreen
+                    | SetRow::EdgeScroll
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -9742,6 +9762,7 @@ impl Game {
                     | SetRow::CamPanSpeed
                     | SetRow::Resolution
                     | SetRow::Fullscreen
+                    | SetRow::EdgeScroll
                     | SetRow::SfxPack
                     | SetRow::MusicPack
                     | SetRow::IconPack
@@ -10533,6 +10554,13 @@ impl Game {
                 local_settings::FullscreenPref::Exclusive => "独占全屏",
             })
             .to_string(),
+            Some(SetRow::EdgeScroll) => {
+                if self.local_settings.edge_scroll {
+                    i18n::t("开").to_string()
+                } else {
+                    i18n::t("关").to_string()
+                }
+            }
             Some(SetRow::Keybinds) => {
                 let n = self.local_settings.non_default_binds();
                 if n == 0 {
@@ -11963,6 +11991,30 @@ fn next_cam_follow(cur: bool, toggle: bool, manual: bool) -> bool {
     }
 }
 
+/// 边缘滚屏边距（设计空间单位）：鼠标进入窗口边缘这么多像素内即持续平移。
+const EDGE_SCROLL_MARGIN: f32 = 8.0;
+
+/// 边缘滚屏方向（纯函数，便于单测）：鼠标在设计空间 `(mx,my)`、场地 `w×h`。
+/// 返回 `(dx,dy)`，各分量 ∈ `{-1,0,1}`（越出左/上边 → `-1`，越出右/下边 → `+1`）。
+fn edge_scroll_dir(mx: f32, my: f32, w: f32, h: f32, margin: f32) -> (f32, f32) {
+    let margin = margin.max(0.0);
+    let dx = if mx < margin {
+        -1.0
+    } else if mx > w - margin {
+        1.0
+    } else {
+        0.0
+    };
+    let dy = if my < margin {
+        -1.0
+    } else if my > h - margin {
+        1.0
+    } else {
+        0.0
+    };
+    (dx, dy)
+}
+
 /// 按键设置列表里的一行：分组标题或可绑动作。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum KeybindRow {
@@ -12802,6 +12854,24 @@ mod tests {
         // 手动操作优先：同一帧「平移 + 按键」也解除（不会被重新打开）
         assert!(!next_cam_follow(true, true, true));
         assert!(!next_cam_follow(false, false, true));
+    }
+
+    #[test]
+    fn edge_scroll_dir_edges_and_center() {
+        use super::edge_scroll_dir;
+        // 中心不滚
+        assert_eq!(edge_scroll_dir(640.0, 360.0, 1280.0, 720.0, 8.0), (0.0, 0.0));
+        // 四边
+        assert_eq!(edge_scroll_dir(3.0, 360.0, 1280.0, 720.0, 8.0), (-1.0, 0.0));
+        assert_eq!(edge_scroll_dir(1277.0, 360.0, 1280.0, 720.0, 8.0), (1.0, 0.0));
+        assert_eq!(edge_scroll_dir(640.0, 3.0, 1280.0, 720.0, 8.0), (0.0, -1.0));
+        assert_eq!(edge_scroll_dir(640.0, 717.0, 1280.0, 720.0, 8.0), (0.0, 1.0));
+        // 角落 → 斜向；letterbox 越界（负/超）也计入
+        assert_eq!(edge_scroll_dir(1.0, 719.0, 1280.0, 720.0, 8.0), (-1.0, 1.0));
+        assert_eq!(edge_scroll_dir(-40.0, 400.0, 1280.0, 720.0, 8.0), (-1.0, 0.0));
+        assert_eq!(edge_scroll_dir(1320.0, 400.0, 1280.0, 720.0, 8.0), (1.0, 0.0));
+        // 边距 0 → 仅严格越界才算
+        assert_eq!(edge_scroll_dir(0.0, 0.0, 1280.0, 720.0, 0.0), (0.0, 0.0));
     }
 
     #[test]

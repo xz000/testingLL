@@ -352,6 +352,7 @@ const EN: &[(&str, &str)] = &[
     ("无边框全屏", "Borderless Fullscreen"),
     ("独占全屏", "Exclusive Fullscreen"),
     ("跟随显示器", "Follow monitor"),
+    ("边缘滚屏", "Edge Scrolling"),
     ("全屏时分辨率跟随显示器", "Resolution follows the monitor in fullscreen"),
     ("自动（跟随 Steam）", "Auto (follow Steam)"),
     ("开（静音）", "On (Muted)"),

@@ -64,6 +64,8 @@ pub struct LocalSettings {
     pub window_resolution: ResolutionPref,
     /// 全屏模式偏好（窗口化/无边框全屏/独占全屏）。
     pub fullscreen: FullscreenPref,
+    /// 边缘滚屏：鼠标移至窗口边缘时持续平移相机（默认关；窗口化也会生效）。
+    pub edge_scroll: bool,
 }
 
 /// 技能键默认值（`CastKey::ALL` 顺序：C/R/E/D/Y/T/F/G）。
@@ -330,6 +332,7 @@ impl Default for LocalSettings {
             cam_pan_speed: DEFAULT_CAM_PAN_SPEED,
             window_resolution: ResolutionPref::R1280x720,
             fullscreen: FullscreenPref::Windowed,
+            edge_scroll: false,
         }
     }
 }
@@ -787,6 +790,9 @@ pub fn parse(text: &str) -> LocalSettings {
             }
             "window_resolution" => s.window_resolution = ResolutionPref::from_code(v),
             "fullscreen" => s.fullscreen = FullscreenPref::from_code(v),
+            "edge_scroll" => {
+                s.edge_scroll = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+            }
             "skill_keys" => {
                 let mut it = v.split(',').map(|t| t.trim());
                 for slot in s.skill_keys.iter_mut() {
@@ -843,12 +849,13 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
     out.push_str(&format!(
-        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\n",
+        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\nedge_scroll={}\n",
         s.training_bots,
         s.training_move.code(),
         s.cam_pan_speed,
         s.window_resolution.code(),
-        s.fullscreen.code()
+        s.fullscreen.code(),
+        if s.edge_scroll { 1 } else { 0 }
     ));
     for (id, fid) in &s.published {
         out.push_str(&format!("published.{id}={fid}\n"));
@@ -927,6 +934,7 @@ mod tests {
             cam_pan_speed: 2.5,
             window_resolution: ResolutionPref::R1600x900,
             fullscreen: FullscreenPref::Borderless,
+            edge_scroll: true,
         };
         let back = parse(&serialize(&s));
         assert_eq!(back, s);
@@ -1049,6 +1057,18 @@ mod tests {
         assert_eq!(s.cam_pan_speed, DEFAULT_CAM_PAN_SPEED, "缺行 → 默认 1.0");
         assert_eq!(s.window_resolution, ResolutionPref::R1280x720, "缺行 → 默认 1280×720");
         assert_eq!(s.fullscreen, FullscreenPref::Windowed, "缺行 → 默认窗口化");
+        assert!(!s.edge_scroll, "缺行 → 默认关");
+    }
+
+    #[test]
+    fn edge_scroll_parses_and_roundtrips() {
+        assert!(!LocalSettings::default().edge_scroll);
+        assert!(parse("edge_scroll=1\n").edge_scroll);
+        assert!(parse("edge_scroll=on\n").edge_scroll);
+        assert!(!parse("edge_scroll=0\n").edge_scroll);
+        assert!(!parse("edge_scroll=junk\n").edge_scroll);
+        let back = parse(&serialize(&parse("edge_scroll=yes\n")));
+        assert!(back.edge_scroll);
     }
 
     #[test]
