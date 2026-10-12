@@ -5684,12 +5684,22 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         }
                     }
                 }
-                // 守护之盾充能（098c HC/jX）：火球命中已充能 → 本次天罚获 5s 减伤/减击退窗口。
-                if kind == crate::skill::W098bNovaKind::Smiting && smite_hits > 0 {
+                // 守护之盾（098c `HC`/`jX`）：**任一 F nova（天罚 `mC` / 灾变 `qC` / 虔诚 `QC`）施放后**，
+                //   若已充能（`Ha`，火球命中时置位）→ 消耗 + 给施法者挂 `'aegs'`（`hn/=4/3` 受伤 ×0.75、
+                //   `Hn/=2` 击退半减），时长 **`5*jn`**。098c 三处（`mC` 7953 / `qC` 8077 / `QC` 8165）
+                //   条件完全相同：`if iV[17+24*ri] and Ha[ri]`，**与 nova 是否命中无关**（§22.2③）。
+                let is_f_nova = matches!(
+                    kind,
+                    crate::skill::W098bNovaKind::Smiting
+                        | crate::skill::W098bNovaKind::Catastrophe
+                        | crate::skill::W098bNovaKind::Devotion
+                );
+                if is_f_nova {
                     let p = &mut world.players[idx as usize];
                     if p.aegis_charged {
                         p.aegis_charged = false;
-                        p.add_buff(BuffKind::Aegis, 5.0);
+                        let jn = p.jn();
+                        p.add_buff(BuffKind::Aegis, 5.0 * jn);
                     }
                 }
             }
@@ -9357,6 +9367,37 @@ mod tests {
         // 天罚后获得 5s 减伤窗口（Aegis buff）
         assert!(world.players[0].has_buff(BuffKind::Aegis), "天罚后应挂 5s 减伤窗口");
         let _ = hp0;
+    }
+
+    /// 098c `HC`：**任一 F nova（天罚/灾变/虔诚）施放即消耗守护充能**
+    ///（`mC`7953 / `qC`8077 / `QC`8165 三处同构），且**不要求 nova 命中**。§22.2③
+    #[test]
+    fn any_f_nova_consumes_aegis_charge_without_hits() {
+        let dt = Fix64::from_num(1.0 / 60.0);
+        for skill in [SkillId::S001, SkillId::S020, SkillId::S021] {
+            let mut world = World::new(2, 0x8801);
+            world.obstacles.clear();
+            world.sandbox = true;
+            world.base_regen = 0.0;
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[0].set_items(&[crate::item::ItemId::GuardianShield1]);
+            // 敌人远在 250 半径外 → nova **一个都没命中**（验证“不要求命中”）。
+            world.players[1].pos = Vec2::new(d60(60.0), Fix64::ZERO);
+            world.players[1].move_target = None;
+            world.players[0].aegis_charged = true; // 已充能（等效火球命中后）
+            world.players[0].caster = crate::skill::Caster::new();
+            world.step(
+                vec![PlayerInput { cast: Some((skill, None)), ..Default::default() }, PlayerInput::default()],
+                dt,
+            );
+            let none = vec![PlayerInput::default(); 2];
+            for _ in 0..90 {
+                world.step(none.clone(), dt);
+            }
+            assert!(!world.players[0].aegis_charged, "{skill:?} 施放应消耗守护充能（即使未命中）");
+            assert!(world.players[0].has_buff(BuffKind::Aegis), "{skill:?} 施放后应挂 'aegs' 减伤窗口");
+        }
     }
 
     /// 098c `MC`（死亡面具）：天罚期间生命偷取 `vi` **翻倍**（`vi=2*vi`→结束复原）。
