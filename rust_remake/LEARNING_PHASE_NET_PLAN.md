@@ -66,14 +66,16 @@ World 学习期**不步进**，不能靠"帧"做心跳。做法：**把 Fighting
 ---
 
 ## 3. 分阶段实施（每步 1 commit）
-| 步 | 内容 | 依赖 |
+| 步 | 内容 | 状态 |
 |---|---|---|
-| **E1** | **学习期心跳 + 静态快照**：host 每帧 poll + `SNAPSHOT_EVERY` 静态快照 + 在线集；client 心跳上行 + 收快照 + 学习期存活计数。→ 归队端能拿到快照 | — |
-| **E2** | **归队按阶段恢复**：`apply_snapshot_world` 后据 `meta.phase` 进学习/战斗态 | E1 |
-| **E3** | **学习期掉线/离开**：host 处理 `Leave` + `auto_drop_idle`；被 drop 者由 `all_cfgs` 排除 → **退出不卡局**；恒桩子、可归队 | E1 |
-| **E5** | **R7e 学习期暂停**（host 权威冻结 `learn_remaining`） | E1 |
+| **E1** | **学习期心跳 + 静态快照**：host 每帧 poll + 静态快照（`seq` 不变）+ 在线集 + auto_drop；client 心跳上行 + `pump_learning` 收包 + 学习期存活判定 + 归队握手 | ✅ `522725b`+`c46ac50` |
+| **E2** | **归队按阶段恢复**：`apply_snapshot_world` 后据 `meta.phase` 置 `pre_game_config`（主循环/迁移/学习期三处）| ✅ `8a886bb` |
+| **E3** | **学习期掉线/离开**：host `poll` + `auto_drop_idle`；被 drop 者由 `all_cfgs` 排除 → **不卡局**；恒桩子、可归队 | ✅（由 E1 覆盖，`8a886bb`）|
+| **E5** | **R7e 学习期暂停**（host 权威冻结 `learn_remaining`） | ⏸ 待做 |
 
 > 说明：原 **E4（人数重排）已删除**——重排会破坏归队（槽位没了）且需按 id 全量重编号，**改为一律恒桩子**。
+>
+> **E5 设计要点**（待拍板）：学习期无帧，R7 的暂停仲裁是“帧驱动”的，直接复用不顺。最简可行：host 当唯一权威 —自持 `learn_paused`，各端在暂停期间**不推进 `tick_learning`**；用**静态快照里的 `meta.learn_remaining`** 对齐（天然携带 host 剩余时间）。需定：暂停入口（复用 R7b 菜单项？）、是否带额度/确认、频率（学习期快照广播从 2.5s 提到 0.5s 以免倒计时跳变）。
 
 ---
 
