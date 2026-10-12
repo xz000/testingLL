@@ -156,6 +156,10 @@ const SNAPSHOT_EVERY: u64 = 30;
 /// 必须为 `SNAPSHOT_EVERY` 的整数倍。约 2.5 秒。
 #[cfg(feature = "steam")]
 const SNAPSHOT_BROADCAST_EVERY: u64 = 150;
+/// host：在线集（谁“已离开”）除变化时立即广播外，每隔多少帧**兜底重播**一次（约 2s）。
+/// 重连端在归队握手期会丢掉非 Snapshot 包（`recv_snapshot` 只认 Snapshot），靠周期重播收敛。
+#[cfg(feature = "steam")]
+const ONLINE_BCAST_EVERY: u64 = 120;
 /// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
 const CLIENT_STALE_TICKS: u64 = 180;
 /// Steam（client）：进入迁移后，探测“host 是否还在”的帧数（发 ReconnectReq 等 Snapshot 应答）。约 1 秒。
@@ -7127,11 +7131,13 @@ impl event::EventHandler for Game {
                             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues"));
                             }
-                            // 在线集变化（主动离开/掉线/重连）→ 广播统一在线集（各端据标"已离开"、迁移时据此选举）。
-                            if host.take_online_dirty() {
+                            // 在线集变化（主动离开/掉线/重连）→ 立即广播；否则每 ~2s 兜底重播（重连端握手期会丢非 Snapshot 包）。
+                            // 同时用同一份刷新**房主自己**的 `steam_online`，使房主界面也正确标“已离开”。
+                            let online_periodic = self.host_frame_count % ONLINE_BCAST_EVERY == 0;
+                            if host.take_online_dirty() || online_periodic {
                                 let ids = host.online_ids(self.steam_my_id);
                                 host.broadcast_participants(&ids);
-                                logging::log(&format!("[steam-host] online set changed -> participants={ids:?}"));
+                                self.steam_online = ids.clone();
                             }
                             if let Some((seq, frame)) = host.try_emit() {
                                 takeover_bcast = false; // 首个在线 client 已连上，停止广播 Takeover
