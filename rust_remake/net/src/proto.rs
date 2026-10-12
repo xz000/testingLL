@@ -52,6 +52,11 @@ pub const TAG_PAUSE_REQ: u8 = 20;
 /// R7：host→所有 client 暂停状态（权威）。`paused`=当前是否暂停，`by`=发起者身份，
 /// `resume_in`=恢复倒计时剩余帧（>0 表示正在恢复；0 且 paused 表示暂停中），`remaining`=各参与者剩余暂停次数。
 pub const TAG_PAUSE_STATE: u8 = 21;
+/// 主动离场广播：client→host（非房主主动离开）或 host→all（房主主动离开），`identity`=离场者稳定身份。
+/// 运行期包（不进 World），best-effort；丢失由 3s 掉线兜底。
+/// - host 收到 → 立即 `mark_dropped` + 更新并广播在线集；
+/// - client 收房主发的 → 立即进入迁移选举（跳过 3s stale + probe）。
+pub const TAG_LEAVE: u8 = 22;
 
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
@@ -110,6 +115,8 @@ pub enum Packet {
     PauseReq { identity: u64, resume: bool },
     /// R7：host→所有 client 暂停状态（权威）。`remaining`=各参与者剩余暂停次数（id, left）。
     PauseState { paused: bool, by: u64, resume_in: u16, remaining: Vec<(u64, u8)> },
+    /// 主动离场广播（见 `TAG_LEAVE`）。
+    Leave { identity: u64 },
 }
 
 impl Packet {
@@ -276,6 +283,12 @@ impl Packet {
                     v.extend_from_slice(&id.to_be_bytes());
                     v.push(*left);
                 }
+                v
+            }
+            Packet::Leave { identity } => {
+                let mut v = Vec::with_capacity(9);
+                v.push(TAG_LEAVE);
+                v.extend_from_slice(&identity.to_be_bytes());
                 v
             }
         }
@@ -461,6 +474,10 @@ impl Packet {
                 }
                 Some(Packet::PauseState { paused, by, resume_in, remaining })
             }
+            TAG_LEAVE if buf.len() >= 9 => {
+                let identity = u64::from_be_bytes(buf[1..9].try_into().ok()?);
+                Some(Packet::Leave { identity })
+            }
             _ => None,
         }
     }
@@ -504,6 +521,7 @@ mod tests {
             Packet::Takeover { seq: 12345, participants: vec![111, 222, 333] },
             Packet::Participants { ids: vec![111, 222, 333] },
             Packet::StateHash { seq: 120, hash: 0xDEAD_BEEF_1234_5678 },
+            Packet::Leave { identity: 76561198043985466 },
             Packet::PauseReq { identity: 9001, resume: false },
             Packet::PauseReq { identity: 9001, resume: true },
             Packet::PauseState {

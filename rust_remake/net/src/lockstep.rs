@@ -100,6 +100,8 @@ pub struct HostLockstep<T: Transport> {
     local_cfg: Option<Vec<u8>>,
     /// 各 client 是否已判定掉线（不再要求其输入；其帧用默认输入占位）。
     dropped: Vec<bool>,
+    /// 在线集自上次取用后是否变化（离开/掉线/重连）→ 上层据此重新广播。
+    online_dirty: bool,
     /// 各 client 的稳定端点（掉线丢失 `client_peers` 后仍保留，用于把重连请求的 from 映射回槽位）。
     client_addr: Vec<Option<Peer>>,
     /// 各 client 的稳定身份（u64：Steam=SteamID；局域网=握手时登记的随机/指定身份）。重连按身份找回槽位。
@@ -173,6 +175,7 @@ impl<T: Transport> HostLockstep<T> {
             cfgs: vec![None; expected],
             local_cfg: None,
             dropped: vec![false; expected],
+            online_dirty: false,
             client_addr: vec![None; expected],
             client_identities: vec![None; expected],
             idle_ticks: vec![0; expected],
@@ -623,6 +626,7 @@ impl<T: Transport> HostLockstep<T> {
             self.dropped[c] = true;
             self.latest_input[c] = Some(default_input_bytes());
             self.client_peers[c] = None; // 不再向它广播
+            self.online_dirty = true;
         }
     }
 
@@ -631,6 +635,39 @@ impl<T: Transport> HostLockstep<T> {
         if let Some(c) = self.slot_of(client_seq) {
             self.dropped[c] = false;
             self.latest_input[c] = None; // 等重连端重新上行，poll 会重记 peer
+            self.online_dirty = true;
+        }
+    }
+
+    /// 当前"在线"参与玩家身份（按 new index 排列；排除已掉线/主动离开者）。
+    /// 供 host 广播**统一在线集**：各端据此标"已离开"，迁移时据此选举。
+    pub fn online_ids(&self, host_id: u64) -> Vec<u64> {
+        let mut ids = Vec::new();
+        if self.local_base > 0 {
+            ids.push(host_id);
+        }
+        for c in 0..self.expected {
+            if self.is_active(c) && !self.dropped[c] {
+                let id = match &self.client_peers[c] {
+                    Some(Peer::Steam { id, .. }) => *id,
+                    _ => self.client_identities[c].unwrap_or(0),
+                };
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    /// 在线集是否自上次取用后发生变化（离开/掉线/重连）→ 上层据此重新广播。
+    pub fn take_online_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.online_dirty)
+    }
+
+    /// host→all：广播主动离场（房主自己离开前调用，best-effort）。
+    pub fn broadcast_leave(&mut self, identity: u64) {
+        let enc = Packet::Leave { identity }.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
         }
     }
 
@@ -842,6 +879,21 @@ impl<T: Transport> HostLockstep<T> {
                                     let _ = self.transport.send_to(&pkt.encode(), &from);
                                 }
                             }
+                            Packet::Leave { identity } => {
+                                // 主动离开：按稳定身份（回退来源端点）找回槽位，**立即**标记掉线（不等 180 tick 空闲）。
+                                let c = if identity != 0 {
+                                    self.client_identities
+                                        .iter()
+                                        .position(|i| *i == Some(identity))
+                                        .or_else(|| self.client_addr.iter().position(|a| *a == Some(from)))
+                                } else {
+                                    self.client_addr.iter().position(|a| *a == Some(from))
+                                };
+                                if let Some(c) = c {
+                                    let idx = self.client_indices[c];
+                                    self.mark_dropped(idx);
+                                }
+                            }
                             Packet::ReconnectReq { identity, .. } => {
                                 // 客户端请求重连：优先按稳定身份找回槽位（Steam=SteamID），否则按来源端点。
                                 // 找回后恢复为活跃、重记 peer、把当前快照回给它，并广播 Resync(seq) 让全员对齐基线。
@@ -1050,6 +1102,8 @@ pub struct ClientLockstep<T: Transport> {
     state_hashes: VecDeque<(u64, u64)>,
     /// R7：host 广播的暂停状态（权威视图）。
     pause: PauseView,
+    /// 缓存的「房主主动离开」通知（`identity`）；供上层立即进入迁移。
+    host_left: Option<u64>,
 }
 
 /// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
@@ -1071,6 +1125,7 @@ impl<T: Transport> ClientLockstep<T> {
             latest_takeover: None,
             state_hashes: VecDeque::new(),
             pause: PauseView::default(),
+            host_left: None,
         }
     }
 
@@ -1109,6 +1164,18 @@ impl<T: Transport> ClientLockstep<T> {
     /// 取走缓存的 `Takeover`（`(来源, 基线 seq, 更新后的参与集)`）。无则 None。
     pub fn take_latest_takeover(&mut self) -> Option<(Peer, u64, Vec<u64>)> {
         self.latest_takeover.take()
+    }
+
+    /// 取走缓存的「房主主动离开」通知（`identity`）。无则 None。
+    pub fn take_host_left(&mut self) -> Option<u64> {
+        self.host_left.take()
+    }
+
+    /// 向 host 发送主动离开广播（本端离开本局前调用，best-effort）。
+    pub fn send_leave(&mut self, identity: u64) -> io::Result<()> {
+        self.transport
+            .send_to(&Packet::Leave { identity }.encode(), &self.host)
+            .map(|_| ())
     }
 
     /// 从 transport 读一个包并返回其来源 + 解码结果（供迁移/探测时区分包来自谁，避免误判）。
@@ -1378,6 +1445,12 @@ impl<T: Transport> ClientLockstep<T> {
                                 // R7：缓存 host 权威暂停状态。
                                 self.pause = PauseView { paused, by, resume_in, remaining };
                             }
+                            Packet::Leave { identity } => {
+                                // 房主主动离开广播：缓存，供上层立即进入迁移。
+                                if from == self.host {
+                                    self.host_left = Some(identity);
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -1427,6 +1500,12 @@ impl<T: Transport> ClientLockstep<T> {
                             Packet::PauseState { paused, by, resume_in, remaining } => {
                                 // R7：缓存 host 权威暂停状态。
                                 self.pause = PauseView { paused, by, resume_in, remaining };
+                            }
+                            Packet::Leave { identity } => {
+                                // 房主主动离开广播：缓存，供上层立即进入迁移（跳过 3s stale + probe）。
+                                if from == self.host {
+                                    self.host_left = Some(identity);
+                                }
                             }
                             _ => {}
                         }
@@ -2237,6 +2316,42 @@ mod tests {
             set_target: Some(game_core::fix::Vec2::new(i.into(), 0.into())),
             ..Default::default()
         })
+    }
+
+    /// L3：client 主动离开广播 → host **立即**标记其掉线（不等空闲阈值），在线集随之更新。
+    #[test]
+    fn host_leave_marks_client_dropped_immediately() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        let cli_id = 0xAABB_CCDD_u64;
+        host.set_client_identities(&[Some(cli_id)]);
+        let _ = host.take_online_dirty(); // 清初始
+        // 初始在线集含 host + client
+        assert_eq!(host.online_ids(1), vec![1, cli_id]);
+        // client 主动离开
+        cli.send_leave(cli_id).unwrap();
+        host.poll(&mut rcv);
+        // 立即掉线 + 在线集更新 + dirty 置位
+        assert!(host.take_online_dirty(), "leave 应置 online_dirty");
+        assert_eq!(host.online_ids(1), vec![1], "在线集应排除已离开的 client");
+    }
+
+    /// L3：client 收房主「主动离开」广播 → 缓存，供上层立即进入迁移。
+    #[test]
+    fn client_caches_host_leave_from_host() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        // 先让 client 上行一次，使 host 记下其 peer（才能广播到它）。
+        cli.send_input(&[0]).unwrap();
+        host.poll(&mut rcv);
+        host.broadcast_leave(42);
+        assert!(cli.step_frame(&mut rcv).unwrap().is_none(), "无权威帧");
+        assert_eq!(cli.take_host_left(), Some(42), "应缓存房主离开通知");
+        assert_eq!(cli.take_host_left(), None, "取后应清");
     }
 
     /// 自动掉线判定（切片1运行时版）：client 停发输入 → host 每帧 poll 累计空闲 → 达阈值 auto_drop_idle 自动掉线，不再卡全队。

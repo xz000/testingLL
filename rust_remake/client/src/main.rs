@@ -7082,6 +7082,12 @@ impl event::EventHandler for Game {
                             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues"));
                             }
+                            // 在线集变化（主动离开/掉线/重连）→ 广播统一在线集（各端据标"已离开"、迁移时据此选举）。
+                            if host.take_online_dirty() {
+                                let ids = host.online_ids(self.steam_my_id);
+                                host.broadcast_participants(&ids);
+                                logging::log(&format!("[steam-host] online set changed -> participants={ids:?}"));
+                            }
                             if let Some((seq, frame)) = host.try_emit() {
                                 takeover_bcast = false; // 首个在线 client 已连上，停止广播 Takeover
                                 if seq < 30 {
@@ -7349,6 +7355,16 @@ impl event::EventHandler for Game {
                                 }
                                 steps_this_update += 1;
                             } else {
+                                // 房主主动离开广播 → 立即进入迁移选举（跳过 3s stale + probe）。
+                                if cli.take_host_left().is_some() {
+                                    logging::log("[steam-client] host broadcast Leave -> immediate migration");
+                                    self.steam_migrating = true;
+                                    self.steam_migrate_ticks = MIGRATE_PROBE_TICKS; // 跳过探测阶段，直接选举
+                                    self.steam_new_host_id = 0;
+                                    self.steam_cli_stale_ticks = 0;
+                                    self.accumulator = 0.0;
+                                    break;
+                                }
                                 // R7：暂停中不累计掉线计数（否则暂停超时会被误判为 host 掉线而触发迁移）。
                                 if cli.pause_view().paused {
                                     self.steam_cli_stale_ticks = 0;
