@@ -3203,7 +3203,7 @@ impl World {
                             let owner_team = self.players.get(pr.owner as usize).map(|p| p.team);
                             let victim_team = self.players.get(victim as usize).map(|p| p.team);
                             if victim_team != owner_team {
-                                // **异队**：直伤 `kb(nr)` + 击退 `.95`；**无 AoE、无移速**。
+                                // **异队**：直伤 `kb(nr)` + 击退 `.95`。
                                 events.push((victim, hit_dmg, Some(pr.owner)));
                                 if dd.length_squared() > Fix64::ZERO {
                                     let vmana = self.players[victim as usize].mana;
@@ -3211,6 +3211,22 @@ impl World {
                                     let vic_hn = self.players[victim as usize].dmg_taken_mult;
                                     let kb = warlock_ki_knockback(vmana, hit_dmg, Fix64::from_num(0.95), atk_gn, vic_hn);
                                     pushes.push((victim, dd.normalized() * kb, W098B_KB_TIME, true));
+                                }
+                                // 098c `Lb`（S003 的 `Jv` 销毁回调）：`if xi>0 then SI(nr,7.+1.*Xv[nr],1)`
+                                //   ⇒ 命中（`IA` 销毁）时在命中点 AoE（半径 `160(1+.12xi)`、kb 1、地板 `.15xi`）；
+                                //   `lb` 已置 `Iv[nr]` ⇒ **排除直击者**。§21.2⑥
+                                let xi = self.players.get(pr.owner as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
+                                if xi > 0.0 {
+                                    let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                                    expiry_blasts.push((
+                                        pr.owner,
+                                        pr.pos,
+                                        radius,
+                                        *gx + Fix64::ONE,
+                                        Fix64::ONE,
+                                        Fix64::from_num(0.15 * xi),
+                                        Some(victim),
+                                    ));
                                 }
                             } else if victim == pr.owner {
                                 // **自撞（同主）**：AoE + 移速。
@@ -3630,6 +3646,25 @@ impl World {
                 ProjectileKind::W098b { radius, .. } => (ps[pi].pos, *radius),
                 _ => continue,
             };
+            // 098c `Sb`：`if xi[Vv[nr]]>0 then Iv+=…; call SI(nr,6.4+.8*Xv[nr],.5*PI)`（`PI=.95`）
+            //   ⇒ 命中点 AoE（半径 `160(1+.12xi)`、伤害 = 直伤 `gx`(=6.4+.8L)、kb `.5*.95=.475`、
+            //   地板 `.15xi`）；`Iv` 已置 ⇒ **排除直击者**。§21.2⑤
+            if let ProjectileKind::W098b { gx, .. } = &ps[pi].kind {
+                let o = ps[pi].owner;
+                let xi = self.players.get(o as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
+                if xi > 0.0 {
+                    let aoe_r = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                    expiry_blasts.push((
+                        o,
+                        cur_pos,
+                        aoe_r,
+                        *gx,
+                        Fix64::from_num(0.475),
+                        Fix64::from_num(0.15 * xi),
+                        Some(victim),
+                    ));
+                }
+            }
             let Some(vp) = self.players.get(victim as usize) else { continue };
             let (vpos, vradius) = (vp.pos, vp.radius);
             let to_target = vpos - cur_pos;
@@ -8918,6 +8953,47 @@ mod tests {
         assert!((s0 - s1).abs() < s0 * 0.08 + 40.0, "xv=1 → 满反弹（速率基本不变）：{s0:.1} → {s1:.1}");
         assert!(d >= Fix64::from_num(77.0), "应被推出柱面（半径 38+40）：{d}");
         assert_eq!(world.obstacles[0].hp, 400, "回旋镖撞柱不应造成柱子伤害（098c `Sb`）");
+    }
+
+    /// 098c `Sb`：S004 回旋镖 `xi>0` 时命中点 AoE（半径 `160(1+.12xi)`、伤害=直伤 `gx`、kb `.475`），
+    /// 排除直击者（`Iv`）。§21.2⑤
+    #[test]
+    fn s004_xi_hit_aoe_splashes_bystander() {
+        let run = |xi: u8| -> f64 {
+            let mut world = World::new(3, 0x4001);
+            world.obstacles.clear();
+            world.sandbox = true;
+            world.base_regen = 0.0;
+            let dt = Fix64::from_num(1.0 / 60.0);
+            world.players[0].pos = Vec2::ZERO;
+            world.players[0].move_target = None;
+            world.players[0].mastery[1] = xi;
+            world.players[0].skill_levels[SkillId::S004.as_u32() as usize] = 1;
+            world.players[1].team = 1;
+            world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO); // 直击
+            world.players[1].move_target = None;
+            world.players[2].team = 1;
+            world.players[2].pos = Vec2::new(d60(5.0), d60(1.5)); // 旁观者：距命中点 90 < 半径 198
+            world.players[2].move_target = None;
+            let hp2 = world.players[2].hp;
+            world.step(
+                vec![
+                    PlayerInput { cast: Some((SkillId::S004, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                    PlayerInput::default(),
+                    PlayerInput::default(),
+                ],
+                dt,
+            );
+            let none = vec![PlayerInput::default(); 3];
+            for _ in 0..120 {
+                world.step(none.clone(), dt);
+            }
+            (hp2 - world.players[2].hp).to_num::<f64>()
+        };
+        let d_xi = run(2);
+        let d_plain = run(0);
+        assert!(d_xi > 1.0, "xi=2 时应 AoE 波及旁观者，实际 {d_xi}");
+        assert!(d_plain < d_xi * 0.5, "xi=0 时不应有此 AoE（旁及应远小于有 xi）：plain={d_plain} xi={d_xi}");
     }
 
     /// S013A 移形换位：**可与柱子互换位置**（098c `MB`/`LB`：`if nv[Vr]==3 then SetUnitX/Y(...)`）。
