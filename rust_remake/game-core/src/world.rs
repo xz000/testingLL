@@ -2637,6 +2637,18 @@ impl World {
                         if let ProjectileKind::W098b { blast: Some(br), blast_dmg, kb_ji, blast_floor, .. } = &pr.kind {
                             expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, None));
                         }
+                        // 098c `gB`（S009 目标形态父弹）：撞柱也走 `FB`→`IA`→`Jv=gB` ⇒ `xi>0` 的 `SI(5,.8)` + `dB` 碎片；
+                        //   碎片方向 = `Y/z` = `-TX`（`FB` 对柱设 `Y[nr]=-TX`，`TX` 为弹→柱）= 远离柱子的 `normal`。
+                        if let ProjectileKind::W098b { s009_role: S009_ROLE_A_PARENT, gx: sgx, kb_ji: skb, .. } = &pr.kind {
+                            let o = pr.owner;
+                            let xi = self.players.get(o as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
+                            let (gx_v, kb_v) = (*sgx, *skb);
+                            if xi > 0.0 {
+                                let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                                expiry_blasts.push((o, pr.pos, radius, Fix64::from_num(5.0), Fix64::from_num(0.8), Fix64::from_num(0.15 * xi), None));
+                            }
+                            fragment_spawns.push((o, pr.pos, normal * Fix64::from_num(250.0), gx_v, kb_v));
+                        }
                         pr.alive = false; // 被柱子挡下：直接消失
                     }
                     break;
@@ -3045,7 +3057,7 @@ impl World {
                         }
                     }
                 }
-                ProjectileKind::W098b { proj, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, direct_dmg, life, remaining, col_mask, .. } => {
+                ProjectileKind::W098b { proj, vel, radius, gx, kb_ji, ignite, blast, target, speed, on_hit, debuff_dur, lightning_dmg, weaken_armed, blast_dmg, blast_floor, is_fireball, class, direct_dmg, life, remaining, col_mask, s009_role, .. } => {
                     // 098b 弹体命中：KI/FI 结算（PORT_098B_DECISIONS.md D3/M1）——
                     // FI 伤害 = gx × Gn[攻] × hn[守]（M1 Gn/hn=1，框架位预留）；
                     // KI 击退初速 = (100+目标魔法) × gx × kb_ji（动态，D9），方向沿弹-目标连线。
@@ -3471,6 +3483,19 @@ impl World {
                             // S014B 命中**友军**（098c `oc` 友军分支）**不销毁**弹体：改为增益 + 转向最近的敌人继续飞；
                             // 其余情形（含 S014A 命中友军、S014B 命中敌人）都在 `vc`/`oc` 末尾 `IA(nr)` 销毁。
                             // S003 命中**队友**（`homing_keep`）同样不销毁（098c `lb` 两分支都不入）。
+                            // 098c `gB`（S009 目标形态父弹的**销毁回调**，`Jv=Yi`）：命中单位 → `FB`→`IA`→`Jv=gB`
+                            //   = `if xi>0 then SI(nr,5,.8)`@命中点 + **`dB` 生成 1 个碎片**（沿当前速度）
+                            //（到点 `DB` 只 `dB`，见上方 expiry 分支）。`Iv` 已含直击者 ⇒ 该 AoE 排除直击者。
+                            if *s009_role == S009_ROLE_A_PARENT {
+                                let o = pr.owner;
+                                let xi = self.players.get(o as usize).map(|p| p.mastery[1] as f64).unwrap_or(0.0);
+                                if xi > 0.0 {
+                                    let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi));
+                                    expiry_blasts.push((o, pr.pos, radius, Fix64::from_num(5.0), Fix64::from_num(0.8), Fix64::from_num(0.15 * xi), Some(victim)));
+                                }
+                                let dirv = if vel.length_squared() > Fix64::ZERO { vel.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) };
+                                fragment_spawns.push((o, pr.pos, dirv * Fix64::from_num(250.0), *gx, *kb_ji));
+                            }
                             pr.alive = false;
                         }
                     }
@@ -12676,8 +12701,9 @@ mod tests {
     }
 
     /// S009 A 父弹（098c `GB`）：顶部 `Av[+3]=true` + else 支 `Av[+1/+2]=true` ⇒ **三态全开**，
-    /// 即**会撞柱**：`hv=FB` 对柱 `mI(nr,Vr,3,1.4)` → 柱 −3 且父弹销毁（无碎片）。
-    /// （此前台账/实现误作“A 穿柱”，系对 `GB` 顶部 `Av[+3]=true` 的漏读。）
+    /// 即**会撞柱**：`hv=FB` 对柱 `mI(nr,Vr,3,1.4)` → 柱 −3 且父弹销毁。
+    /// 销毁走 `Jv=Yi=gB` ⇒ **生成 1 个碎片**（098c `gB` 无条件 `dB`；§21.1③）。
+    /// （此前台账/实现误作“A 穿柱”与“撞柱无碎片”，均系漏读。）
     #[test]
     fn s009a_parent_collides_with_pillar() {
         let mut world = World::new(2, 0x9001);
@@ -12705,11 +12731,49 @@ mod tests {
                 seen_fragment = true;
             }
         }
-        assert!(!seen_fragment, "A 父弹应撞柱被销毁（不出碎片）");
+        assert!(seen_fragment, "A 父弹撞柱应生成碎片（098c gB→dB）");
         assert!(
             world.obstacles.first().map(|o| o.hp < hp0).unwrap_or(true),
             "A 父弹撞柱应造成 3 伤害（098c FB `mI(...,3,1.4)`）"
         );
+    }
+
+    /// 098c `gB`（S009 A 父弹 `Jv=Yi`）：**命中敌人**（`FB`）也会 `IA→Jv=gB` ⇒ **生成 1 个碎片**
+    /// （不仅到点 `DB` 才碎片）；有 `xi` 时还附 `SI(5,.8)` AoE。§21.1③
+    #[test]
+    fn s009a_parent_hit_spawns_fragment() {
+        let mut world = World::new(2, 0x9004);
+        world.obstacles.clear();
+        world.sandbox = true;
+        world.base_regen = 0.0;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].team = 1;
+        world.players[1].pos = Vec2::new(d60(5.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.players[0].caster = crate::skill::Caster::new();
+        let hp1 = world.players[1].hp;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S009, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(); 2];
+        let mut seen_fragment = false;
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            if world.projectiles.iter().any(|p| {
+                matches!(p.kind, ProjectileKind::W098b { s009_role: S009_ROLE_A_FRAGMENT, .. })
+            }) {
+                seen_fragment = true;
+                break;
+            }
+        }
+        assert!(world.players[1].hp < hp1, "A 父弹应命中敌人（直伤固定 3）");
+        assert!(seen_fragment, "命中敌人也应生成碎片（098c gB→dB）");
     }
 
     /// 098c 生成标志（`Av[+1/+2/+3]`）逐技能核对——见 `SKILL_CODE_AUDIT_098c.md`「生成标志表」。
