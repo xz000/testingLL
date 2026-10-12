@@ -1518,7 +1518,16 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
        - 物品 `I00H`（`w3t_strings`）：“Scourge grants **25%** damage reduction and **50%** knockback reduction. **Charges up when hitting opponents with fireball.**”（`I00I`=Aegis 2 = 75%/50%）⇒ 只说**充能方式**，**未写由哪招激活**；
        - 三招 F 的 tooltip（`w3a_strings` idx 122/1138/1246）**均未提**守护盾；
        ⇒ **文字侧中立**（既不支持也不否定）；**修法依据 = 代码三处同构**（铁律：代码=真值），**tooltip 不构成反证**；且从物品描述看“充能”与技能无关，反向支持“激活不应当只限 S001”。
-       ✅ 另核：`Aegis 2`(I00I) 按 §9c 为**不可得**（买自“Stone of Jordan Ring”Secret）⇒ 我方只建模 `GuardianShield1`(25%) **不算缺口**。
+       ✅ 另核：**`Aegis 2`(I00I) 是遗留的死物品**（详见 §22.4）⇒ 我方只建模 `GuardianShield1`(25%) **不算缺口**。
+
+### 22.4 `Aegis 2`(I00I) 核实——**遗留死物品，不可得**
+
+| 维度 | 事实 |
+|---|---|
+| 数据 | `w3t_strings`：`I00I` 名 `Aegis 2`，tooltip“Scourge grants **75%** damage reduction and 50% knockback reduction；Penalty: max HP **−10**；Sell **24**”；购买线索写“Buy The Stone of Jordan Ring” |
+| **获得路径** | ❗**全 `war3map.j` 中 `I00I` 只出现在出售处理（10480）**：`elseif GetItemTypeId(...)=='I00I' then +24 gold; iV[18]=false` —— **没有任何代码授予它**（对比 `I00H` 在 10708 `UnitAddItemById('I00H'); iV[17]=true; jX(id)`） |
+| 效果实现 | 即使有 `I00I`，共享的 `HC` 也是**硬编码** `hn/=4/3`（=**25%**）—— **75% 从未实现** |
+| 结论 | `I00I` 是**数据里残留、代码从未接线**的死物品（命名“Aegis 2”/“Buy The Stone of Jordan Ring”均为旧版遗留）⇒ **不可得**；我方只建模 `GuardianShield1`(25%) **正确、不算缺口**。 |
 
 ### 22.3 状态
 - **对齐收敛**：§14 全量矩阵 + §19 回调集 + §21 第二轮语义深挖 + §22 近似复核 ⇒ 无可复现的模拟缺口。
