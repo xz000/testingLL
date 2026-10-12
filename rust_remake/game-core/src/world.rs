@@ -488,6 +488,8 @@ pub(crate) fn w098b_col_mask(id: crate::skill::SkillId, alt: bool) -> u8 {
 type SpawnBullet = (u32, Vec2, Vec2, Fix64, Fix64, Fix64, Fix64, Fix64);
 /// S009 A 碎片生成队列项：(owner, 位置, 速度, gx, kb_ji)。
 type SpawnFragment = (u32, Vec2, Vec2, Fix64, Fix64);
+/// 延迟 AoE 队列项：(owner, 中心, 半径, 伤害, ji, 地板, 排除 victim)。
+type ExpiryBlast = (u32, Vec2, Fix64, Fix64, Fix64, Fix64, Option<u32>);
 /// S009 分裂的逐弹角色：驱动发射器与到点碎裂。
 const S009_ROLE_NONE: u8 = 0;
 const S009_ROLE_A_PARENT: u8 = 1;
@@ -1924,7 +1926,7 @@ impl World {
         // T3b 命中的子弹生成的回返镖：(owner, pos, dir, speed)
         let mut returners: Vec<(u32, Vec2, Vec2, Fix64)> = Vec::new();
         // 098b AoE 爆炸（陨石命中/到期）：中心 KI 全额、线性距离衰减到 20%（近似 qI 衰减）。
-        let mut expiry_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64, Fix64)> = Vec::new(); // (owner, 中心, 半径, 伤害, ji, 地板, gx)
+        let mut expiry_blasts: Vec<ExpiryBlast> = Vec::new();
         // 陨石落点（098c `oB`）：(owner, 落点, 半径, 中心伤害, kb_ji, 衰减分母)
         let mut delayed_blasts: Vec<(u32, Vec2, Fix64, Fix64, Fix64, Fix64)> = Vec::new();
         // 碎裂/侧弹生成队列（B4：S009 目标形态到点碎裂、区域形态螺旋侧弹）
@@ -2225,7 +2227,7 @@ impl World {
                         // S008B 岩浆的 `Gv[Nb]=ba` 才是“到寿爆炸”。用 `blast_on_expiry` 区分。
                         if let Some(br) = blast {
                             if *blast_on_expiry {
-                                expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *gx));
+                                expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, None));
                             }
                         }
                         // S009·目标形态到点（098c `DB` → `dB`）：生成 **1 个「碎片」**（速度 250 沿父弹
@@ -2633,7 +2635,7 @@ impl World {
                         // 098c：弹体撞柱同样走自己的 `hv` → `IA(nr)` → `Jv`（销毁回调）
                         // ⇒ **S000 火球的 AoE 在撞柱时也会炸**（`Xb`），而 S008B 的 `blast_on_expiry` 与之无关。
                         if let ProjectileKind::W098b { blast: Some(br), blast_dmg, kb_ji, blast_floor, .. } = &pr.kind {
-                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, *blast_dmg));
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, None));
                         }
                         pr.alive = false; // 被柱子挡下：直接消失
                     }
@@ -3199,7 +3201,7 @@ impl World {
                                     let burning = self.players[victim as usize].burning;
                                     let r = if burning { *br * Fix64::from_num(0.45 / 0.39) } else { *br };
                                     let aoe_kb = if burning { Fix64::ONE } else { *kb_ji };
-                                    expiry_blasts.push((pr.owner, pr.pos, r, hit_dmg, aoe_kb, *blast_floor, hit_dmg));
+                                    expiry_blasts.push((pr.owner, pr.pos, r, hit_dmg, aoe_kb, *blast_floor, None));
                                     if burning {
                                         speed_steals.push((pr.owner, 100.0, 4.0, pr.owner));
                                         homing_burnouts.push(pr.owner);
@@ -3216,7 +3218,8 @@ impl World {
                             // 098c：爆炸写在 `Jv`（销毁回调）→ **被打掉时必炸**（命中单位/弹体/柱子都会 `IA→Jv`），
                             // 半径 `160×(1+.12xi)`、伤害 `blast_dmg`、衰减地板 `blast_floor`。
                             // （陨石 S008A 不走 W098b 路径，而是 `DelayedBlast`；岩浆 S008B 的炸在 `Gv`。）
-                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, hit_dmg));
+                            // 098c：`ib`/`Bb`/`Sb` 命中时把直击者加入 `Iv` 位集 → `Xb`/`Lb` 的 `SI`→`pI` **跳过直击者**（§21.1）。
+                            expiry_blasts.push((pr.owner, pr.pos, *br, *blast_dmg, *kb_ji, *blast_floor, Some(victim)));
                         }
                         // on_hit 命中副作用（M2 批次C）：S017 残废 / S019 拉拽（KI 伤害照常）。
                         match on_hit {
@@ -4044,8 +4047,8 @@ impl World {
                 alive: true,
             });
         }
-        for (owner, center, br, dmg, ji, floor, _gx) in expiry_blasts.drain(..) {
-            self.explode_at(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, DeniedMode::Off, DmgFalloff::FloorMul(floor), KbAttn::Fixed);
+        for (owner, center, br, dmg, ji, floor, excl) in expiry_blasts.drain(..) {
+            self.explode_at_ex(center, owner, br, dmg, Fix64::from_num(100.0) * dmg * ji, false, DeniedMode::Off, DmgFalloff::FloorMul(floor), KbAttn::Fixed, excl);
         }
         // 陨石落地（098c `oB`）：中心伤害 `12+2L`，随距离衰减 `(1 - d/(400+40xi))`，同队/自身免疫。
         for (owner, center, radius, damage, kb_ji, denom) in delayed_blasts.drain(..) {
@@ -4393,9 +4396,15 @@ impl World {
     /// `exclude_owner`：以自身为中心的 nova（098b S001/S020/S021）不伤施法者。
     /// `denied`：天罚系 nova（S001/S020/S021）的「Denied 断链」模式（098c `mC`/`qC`/`QC`）。
     /// `bomb_force`：击退初速基数（098c 动态击退按受击者 mana 在内部放大，D9）。
-    #[allow(clippy::too_many_arguments)]
     /// 返回被命中的**非施法者**玩家数（098c mC 的 n：鲜血之剑/面具回血按命中敌人数结算）。
+    #[allow(clippy::too_many_arguments)]
     fn explode_at(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, denied: DeniedMode, dmg_falloff: DmgFalloff, kb_attn: KbAttn) -> u32 {
+        self.explode_at_ex(pos, owner, radius, damage, bomb_force, exclude_owner, denied, dmg_falloff, kb_attn, None)
+    }
+
+    /// `explode_at` 内核（§21.1）：额外 `exclude_victim` = **排除直击者**（098c `Iv` 位集语义：`ib`/`Bb`/`Sb` 先把直击者加入 `Iv`，`pI` 再跳过 → 直击者不吃同点 AoE）。
+    #[allow(clippy::too_many_arguments)]
+    fn explode_at_ex(&mut self, pos: Vec2, owner: u32, radius: Fix64, damage: Fix64, bomb_force: Fix64, exclude_owner: bool, denied: DeniedMode, dmg_falloff: DmgFalloff, kb_attn: KbAttn, exclude_victim: Option<u32>) -> u32 {
         // 纯表现：记录一次爆炸（客户端画扩散圆环）。不参与快照/哈希。
         self.combat_events.push(CombatEvent::Explode { pos, radius });
         let r_sq = radius * radius;
@@ -4416,7 +4425,11 @@ impl World {
         // 098c `hI` 的攻方吸血（`PX(HI,HX*.08*vi)` + 物品 `lifesteal`）：累计对敌造成的伤害后回血。
         let mut dealt_enemy = Fix64::ZERO;
         for p in self.players.iter_mut() {
-            if !p.alive || (exclude_owner && p.id == owner) || Some(p.team) == owner_team {
+            if !p.alive
+                || (exclude_owner && p.id == owner)
+                || Some(p.team) == owner_team
+                || Some(p.id) == exclude_victim
+            {
                 continue;
             }
             let d = p.pos - pos;
@@ -5803,11 +5816,12 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     let seg_end = origin + dir * best_t;
                     world.lightning_visual.push((origin, seg_end, Fix64::from_num(0.1)));
                     // 098c `sI`：命中（战/弹）时在撞击点做范围精通 AoE（`uI` 仍为真）。
-                    let aoe_at_hit = |w: &mut World| {
+                    // `victim` = 直击者（命中单位时传入）→ `sI`→`pI` 跳过 `Iv` 位集里的直击者（§21.1）。
+                    let aoe_at_hit = |w: &mut World, victim: Option<u32>| {
                         if xi_aoe > 0.0 {
                             let radius = Fix64::from_num(SI_RADIUS_BASE * (1.0 + 0.12 * xi_aoe));
                             let qi = 0.15 * xi_aoe;
-                            if splash_damage(&mut w.players, seg_end, idx, gx, radius, qi, w.damage_mult) > 0 {
+                            if splash_damage_ex(&mut w.players, seg_end, idx, gx, radius, qi, w.damage_mult, victim) > 0 {
                                 w.combat_events.push(CombatEvent::Splash { pos: seg_end, radius });
                             }
                         }
@@ -5824,7 +5838,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 p.push_knockback(dir * kb * world.knockback_mult);
                             }
                         }
-                        aoe_at_hit(world);
+                        aoe_at_hit(world, Some(pid));
                         break;
                     }
                     if let Some(pi) = best_proj {
@@ -5854,7 +5868,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             if let Some(r) = blast {
                                 world.explode_at(ppos, owner, r, blast_dmg, Fix64::from_num(100.0) * blast_dmg * kb_ji_p, false, DeniedMode::Off, DmgFalloff::FloorMul(blast_floor), KbAttn::Fixed);
                             }
-                            aoe_at_hit(world);
+                            aoe_at_hit(world, None);
                             break;
                         }
                     }
@@ -6906,10 +6920,25 @@ fn splash_damage(
     qi: f64,
     damage_mult: Fix64,
 ) -> u32 {
+    splash_damage_ex(players, center, owner, base, radius, qi, damage_mult, None)
+}
+
+/// `splash_damage` 内核（§21.1）：额外 `exclude_victim` = **排除直击者**（098c `sI`→`pI` 的 `Iv` 位集语义）。
+#[allow(clippy::too_many_arguments)]
+fn splash_damage_ex(
+    players: &mut [Player],
+    center: Vec2,
+    owner: u32,
+    base: Fix64,
+    radius: Fix64,
+    qi: f64,
+    damage_mult: Fix64,
+    exclude_victim: Option<u32>,
+) -> u32 {
     let mut hits: u32 = 0;
     let owner_team = players.get(owner as usize).map(|p| p.team);
     for p in players.iter_mut() {
-        if !p.alive || p.id == owner || Some(p.team) == owner_team {
+        if !p.alive || p.id == owner || Some(p.team) == owner_team || Some(p.id) == exclude_victim {
             continue;
         }
         let dist = (p.pos - center).length();
@@ -10169,6 +10198,7 @@ mod tests {
         world.players[1].move_target = None;
         world.players[2].pos = Vec2::new(d60(3.0), d60(2.0)); // 距撞击点 120 < 256
         world.players[2].move_target = None;
+        let hp1 = world.players[1].hp;
         let hp2 = world.players[2].hp;
         world.players[0].caster = crate::skill::Caster::new();
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -10185,6 +10215,10 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[2].hp < hp2, "范围精通>0 时闪电应溅射到撞击点附近（实际 hp2 {hp2} -> {}）", world.players[2].hp);
+        // 098c `Bb`：直击者加入 `Iv` 位集 → `sI`→`pI` **跳过直击者** ⇒ 直击者只吃 `mI(cX)` 直伤（≈7），
+        // **不再**叠同点 AoE（否则 ≈2×7=14）。§21.1
+        let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
+        assert!(d1 > 4.0 && d1 < 10.0, "直击者应只吃直伤（≈7，不含同点 AoE）：{d1}");
     }
 
     /// S018B 力场弹（098c `Mc`）：**850/s 飞行弹**到点才生成力场（非立即），且飞行弹不参与碰撞。
@@ -12093,8 +12127,9 @@ mod tests {
         }
         let d1 = (hp1 - world.players[1].hp).to_num::<f64>();
         let d2 = (hp2 - world.players[2].hp).to_num::<f64>();
-        // 直中目标吃“直伤 + 同点 AoE”两份（`ib` 的 `mI` + `Xb` 的 `SI`）→ ≈ 2×7 = 14
-        assert!(d1 > 10.0, "直中目标应吃直伤 + 同点 AoE：{d1}");
+        // 098c：`ib` 命中后把直击者加入 `Iv` 位集 → `Xb` 的 `SI`→`pI` **跳过直击者** ⇒
+        // 直中目标只吃**直伤**（≈7），**不再**叠同点 AoE（旧断言“两份 ≈14”系误读，§21.1）。
+        assert!(d1 > 5.0 && d1 < 9.5, "直中目标应只吃直伤（≈7，不含同点 AoE）：{d1}");
         assert!(d2 > 1.0, "旁观者（命中点侧向 180 < 半径 198）应被 AoE 波及：{d2}");
     }
 
