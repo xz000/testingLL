@@ -360,6 +360,8 @@ const EN: &[(&str, &str)] = &[
     ("不限", "Unlimited"),
     ("上一局已结束", "The previous match has ended"),
     ("已离开", "Left"),
+    ("你是房主：离开后其他人会接管本局；你可在主菜单重新加入", "You are the host: leaving lets others take over; you can rejoin from the main menu"),
+    ("离开后你可在主菜单重新加入本局", "You can rejoin this match from the main menu after leaving"),
     ("全屏时分辨率跟随显示器", "Resolution follows the monitor in fullscreen"),
     ("自动（跟随 Steam）", "Auto (follow Steam)"),
     ("开（静音）", "On (Muted)"),

@@ -4860,6 +4860,17 @@ impl Game {
     /// 主动离开本局（退出菜单「返回主菜单」）：复用 `reset_to_main_menu` 的全量拆除。
     fn leave_match(&mut self) {
         eprintln!("[exit] escape menu -> leave match");
+        #[cfg(feature = "steam")]
+        if self.steam_active() {
+            // 先写会话（保留，供回菜单后重新加入），再广播"主动离开"，最后退房回菜单。
+            self.persist_rejoin_session();
+            if let Some(h) = self.steam_host_ls.as_mut() {
+                h.broadcast_leave(self.steam_my_id);
+            } else if let Some(c) = self.steam_cli_ls.as_mut() {
+                let _ = c.send_leave(self.steam_my_id);
+            }
+            eprintln!("[exit] steam leave broadcast sent (host={})", self.steam_host_ls.is_some());
+        }
         // 我离开本局：保留会话（可回主菜单重新加入）。
         self.reset_to_main_menu(true);
     }
@@ -4926,11 +4937,27 @@ impl Game {
         }
         // 底部提示：房主离开时给出警告（避免不知情地中断他人）。
         let leave_idx = items.iter().position(|c| *c == EscapeChoice::LeaveMatch).unwrap_or(usize::MAX);
-        let warn: Option<String> = match self.app {
-            AppState::LanHost { .. } => Some(i18n::t("你是房主：返回主菜单会中断所有人的对局").to_string()),
+        let warn: Option<String> = {
             #[cfg(feature = "steam")]
-            AppState::SteamHost { .. } => Some(i18n::t("你是房主：返回主菜单会让其他人尝试接管本局").to_string()),
-            _ => None,
+            {
+                if matches!(self.app, AppState::SteamHost { .. }) {
+                    Some(i18n::t("你是房主：离开后其他人会接管本局；你可在主菜单重新加入").to_string())
+                } else if self.steam_active() {
+                    Some(i18n::t("离开后你可在主菜单重新加入本局").to_string())
+                } else if matches!(self.app, AppState::LanHost { .. }) {
+                    Some(i18n::t("你是房主：返回主菜单会中断所有人的对局").to_string())
+                } else {
+                    None
+                }
+            }
+            #[cfg(not(feature = "steam"))]
+            {
+                if matches!(self.app, AppState::LanHost { .. }) {
+                    Some(i18n::t("你是房主：返回主菜单会中断所有人的对局").to_string())
+                } else {
+                    None
+                }
+            }
         };
         #[cfg(feature = "steam")]
         let steam_multiplayer_hint = self.steam_active() && !self.steam_paused_now();
