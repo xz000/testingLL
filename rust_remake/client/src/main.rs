@@ -8272,6 +8272,22 @@ impl Game {
                 eprintln!("[steam-roster] roster updated: {new_len} member(s)");
             }
             self.steam_roster = roster;
+            // 首局学习期尚未做配置同步 → `steam_participants` 还空。此时用 **roster 兜底**填上
+            // （roster 的 slot == 初始 player index），否则“学习期 host 掉线→迁移接管”会因参与列表为空
+            // 而建成 1 人局（实测 TAKEOVER player 0/1）。配置同步后会被真值覆盖。
+            if self.steam_participants.is_empty() {
+                let mut pairs: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
+                pairs.sort_by_key(|(s, _)| *s);
+                self.steam_participants = pairs.into_iter().map(|(_, id)| id).collect();
+                self.steam_online = self.steam_participants.clone();
+            }
+        }
+        // host：同步刷新 lockstep 的 client 身份表（late-join 端此前会缺 id → participant_ids 产出 0）。
+        if self.steam_host_ls.is_some() {
+            let ids: Vec<Option<u64>> = self.steam_roster.iter().skip(1).map(|(_, _, id)| Some(*id)).collect();
+            if let Some(h) = self.steam_host_ls.as_mut() {
+                h.set_client_identities(&ids);
+            }
         }
     }
 
