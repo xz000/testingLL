@@ -4908,12 +4908,12 @@ impl Game {
                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
             }
             // 在线集：变化立即 + 周期兜底（重连端握手期会丢非 Snapshot 包）。
-            let online_periodic = self.frame % ONLINE_BCAST_EVERY == 0;
-            if host.take_online_dirty() || online_periodic {
-                let ids = host.online_ids(self.steam_my_id);
-                host.broadcast_participants(&ids);
-                self.steam_online = ids;
-            }
+            // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
+            // 也同步"已离开"。
+            host.take_online_dirty();
+            let ids = host.online_ids(self.steam_my_id);
+            host.broadcast_participants(&ids);
+            self.steam_online = ids;
             // 静态快照：`seq = next_seq` 不变（世界不推进）；每帧 set 保证新鲜（`phase=Learning`），周期广播。
             let wb = game_core::world_ser::world_to_bytes(&self.world);
             let sb = game_core::world_ser::pack_snapshot(&wb, &self.meta);
@@ -4943,9 +4943,10 @@ impl Game {
                     self.steam_rejoin_handshaking = false;
                     self.steam_rejoin_ticks = 0;
                     self.steam_cli_stale_ticks = 0;
-                    // E2：据 meta.phase 恢复阶段（可能回到学习期）。
-                    self.pre_game_config = self.meta.phase == game_core::meta::MatchPhase::Learning;
-                    eprintln!("[steam-rejoin] resumed in learning (phase={:?})", self.meta.phase);
+                    // E2：只有"首局配置"才是 pre_game_config（它=配置同步的 stage_first，会重建世界！）；
+                    // 局间学习期归队必须为 false，否则重建世界→清零累计状态→DESYNC。
+                    self.pre_game_config = self.meta.is_first_config();
+                    eprintln!("[steam-rejoin] resumed in learning (phase={:?}, first={})", self.meta.phase, self.pre_game_config);
                     self.steam_cli_ls = Some(cli);
                     return;
                 } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
@@ -7394,8 +7395,8 @@ impl event::EventHandler for Game {
                                     self.steam_my_index = your_index;
                                     eprintln!("[steam-rejoin] set my_index={your_index}");
                                 }
-                                // E2：据 `meta.phase` 恢复阶段（可能回到学习期）。
-                                self.pre_game_config = self.meta.phase == game_core::meta::MatchPhase::Learning;
+                                // E2：只有"首局配置"才是 pre_game_config（=配置同步的 stage_first，会重建世界！）。
+                                self.pre_game_config = self.meta.is_first_config();
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
                                 self.steam_new_host_id = 0;
