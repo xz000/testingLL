@@ -4915,6 +4915,19 @@ impl Game {
         false
     }
 
+    /// 诊断（Bug1）：打印“已离开”标记的依据（`me_idx` / 全量参与 / 在线集 / 标记到的槽位）。
+    #[cfg(feature = "steam")]
+    fn log_marker_diag(&self) {
+        let left: Vec<usize> = (0..self.world.players.len()).filter(|&i| self.player_left(i)).collect();
+        eprintln!(
+            "[marker-diag] me_idx={} participants={:?} online={:?} left_idx={:?}",
+            self.self_index(),
+            self.steam_participants,
+            self.steam_online,
+            left
+        );
+    }
+
     /// E1：学习期（`MatchPhase::Learning`）的轻量网络节拍。
     /// World 不步进、没有帧，故：
     /// - host 每帧 `poll` + **静态快照**（world+meta，`seq` 不变）作为心跳/归队源 + 在线集广播；
@@ -6963,6 +6976,12 @@ impl event::EventHandler for Game {
                 self.accumulator = 0.0;
                 return Ok(());
             }
+        }
+
+        // 诊断（Bug1 排查）：节流打印“已离开”标记依据，供多机比对（约每 2s 一次）。
+        #[cfg(feature = "steam")]
+        if self.steam_active() && self.frame % 120 == 0 {
+            self.log_marker_diag();
         }
 
         match self.meta.phase {
