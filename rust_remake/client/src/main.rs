@@ -994,6 +994,9 @@ struct Game {
     /// Steam（client）：连续未收到权威帧的 tick 数（Steam 战斗端掉线探测；对齐局域网 stale_ticks）。
     #[cfg(feature = "steam")]
     steam_cli_stale_ticks: u64,
+    /// 学习期：上次已上报 host 的本机配置（`PlayerConfig` 字节）。变则重发，避免崩溃/掉线时丢购买。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    steam_last_sent_cfg: Vec<u8>,
     /// Steam：本局参与玩家的稳定身份（SteamID）按 new index 排列（host 广播 `Participants` 后保存，**原始、不变**）。
     /// world index → SteamID 的映射：对局开始时确定，迁移时据此定位本端 world index 与掉线 host 的 index。
     #[cfg(feature = "steam")]
@@ -1378,6 +1381,7 @@ impl Game {
         let steam_my_id: u64 = 0;
         #[cfg(feature = "steam")]
         let steam_cli_stale_ticks: u64 = 0;
+        let steam_last_sent_cfg: Vec<u8> = Vec::new();
         #[cfg(feature = "steam")]
         let steam_participants: Vec<u64> = Vec::new();
         #[cfg(feature = "steam")]
@@ -1664,6 +1668,7 @@ impl Game {
             steam_my_id,
             #[cfg(feature = "steam")]
             steam_cli_stale_ticks,
+            steam_last_sent_cfg,
             #[cfg(feature = "steam")]
             steam_participants,
             #[cfg(feature = "steam")]
@@ -4990,6 +4995,12 @@ impl Game {
             // 心跳上行（在场）。
             let enc = game_core::netcode::encode_player_input(&self.local_player_input());
             let _ = cli.send_room_state(self.steam_local_ready, false, &enc);
+            // 购买是**本地**行为：配置一变就上报 host（崩溃/掉线来不及告别也能保住购买）。
+            let cfg = self.local_player_cfg();
+            if !cfg.is_empty() && self.steam_last_sent_cfg != cfg {
+                let _ = cli.send_cfg(&cfg);
+                self.steam_last_sent_cfg = cfg;
+            }
             // 收 host 包（缓存快照/在线集；不推进帧）。
             let got = cli.pump_learning(&mut c_rcv).unwrap_or(false);
             if let Some(ids) = cli.take_online_participants() {
