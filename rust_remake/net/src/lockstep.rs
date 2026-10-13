@@ -248,9 +248,12 @@ impl<T: Transport> HostLockstep<T> {
     /// 身份优先取 `client_peers` 里真实连接来源的 SteamID（处理输入时记录），
     /// 而非 `client_identities`（该表来自建厅时的 session，client 加入后可能没刷新而缺 id）。
     pub fn participant_ids(&self, host_id: u64) -> Vec<u64> {
-        let mut ids = Vec::new();
+        // ⚠ 必须**按真实 player index 排序**，不能假设“host = index 0 排最前”：
+        // 主机迁移后新 host 的 index 可能 ≠ 0（如原 host 掉线、新 host 原为 1），而世界索引不重排
+        // ⇒ 若把 host 硬排第一，`steam_participants[i]` 就与世界 index i 错位（归队索引/“已离开”标记/下次选举全错）。
+        let mut pairs: Vec<(u8, u64)> = Vec::new();
         if self.local_base > 0 {
-            ids.push(host_id); // host = new index 0
+            pairs.push((self.host_index, host_id));
         }
         for c in 0..self.expected {
             if self.is_active(c) {
@@ -258,10 +261,11 @@ impl<T: Transport> HostLockstep<T> {
                     Some(Peer::Steam { id, .. }) => *id,
                     _ => self.client_identities[c].unwrap_or(0),
                 };
-                ids.push(id);
+                pairs.push((self.client_indices[c], id));
             }
         }
-        ids
+        pairs.sort_by_key(|(i, _)| *i);
+        pairs.into_iter().map(|(_, id)| id).collect()
     }
 
     /// 迁移接管后：向所有在线 client 广播 `Takeover`（声明本端为新 host、基线 seq、更新后的参与集）。
@@ -642,9 +646,10 @@ impl<T: Transport> HostLockstep<T> {
     /// 当前"在线"参与玩家身份（按 new index 排列；排除已掉线/主动离开者）。
     /// 供 host 广播**统一在线集**：各端据此标"已离开"，迁移时据此选举。
     pub fn online_ids(&self, host_id: u64) -> Vec<u64> {
-        let mut ids = Vec::new();
+        // 同 `participant_ids`：按真实 player index 排序（迁移后 host 的 index 可能 ≠ 0）。
+        let mut pairs: Vec<(u8, u64)> = Vec::new();
         if self.local_base > 0 {
-            ids.push(host_id);
+            pairs.push((self.host_index, host_id));
         }
         for c in 0..self.expected {
             if self.is_active(c) && !self.dropped[c] {
@@ -652,10 +657,11 @@ impl<T: Transport> HostLockstep<T> {
                     Some(Peer::Steam { id, .. }) => *id,
                     _ => self.client_identities[c].unwrap_or(0),
                 };
-                ids.push(id);
+                pairs.push((self.client_indices[c], id));
             }
         }
-        ids
+        pairs.sort_by_key(|(i, _)| *i);
+        pairs.into_iter().map(|(_, id)| id).collect()
     }
 
     /// 在线集是否自上次取用后发生变化（离开/掉线/重连）→ 上层据此重新广播。
@@ -2421,6 +2427,22 @@ mod tests {
         host.broadcast_snapshot(vec![1, 2, 3], 9, 0xFF);
         assert!(cli.pump_learning(&mut rcv).unwrap(), "收到 host 快照 → 存活");
         assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 9)), "应缓存快照");
+    }
+
+    /// 迁移后：`participant_ids`/`online_ids` 必须**按真实 player index 排序**（host 不一定 index 0）。
+    #[test]
+    fn participant_ids_sorted_by_player_index_after_migration() {
+        let (ht, _ct) = pair();
+        let mut host = HostLockstep::new(ht, 3, true);
+        // 模拟“原 host(0) 掉线、新 host 原为 1”的迁移后布局：host_index=1，client_indices=[0,2]。
+        host.host_index = 1;
+        host.client_indices = vec![0, 2];
+        host.set_client_identities(&[Some(1000), Some(2000)]); // 槽0→index0 的 id=1000；槽1→index2 的 id=2000
+        assert_eq!(host.participant_ids(999), vec![1000, 999, 2000], "应按 index 排：index0=1000, index1=host, index2=2000");
+        assert_eq!(host.online_ids(999), vec![1000, 999, 2000], "online 集同样按 index 排");
+        // 掉线 index0 后：online 只剩 host(index1)+index2。
+        host.mark_dropped(0);
+        assert_eq!(host.online_ids(999), vec![999, 2000]);
     }
 
     /// L3：client 主动离开广播 → host **立即**标记其掉线（不等空闲阈值），在线集随之更新。
