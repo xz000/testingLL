@@ -8213,9 +8213,20 @@ impl Game {
     #[cfg(feature = "steam")]
     fn steam_refresh_roster(&mut self) {
         let Some(lid) = self.steam_lobby_id else { return; };
-        let Some(ls) = self.steam_host_ls.as_ref() else { return; };
-        let t = ls.transport_ref();
-        let host_id = t.steam_id();
+        // host **或 client** 都要刷新：client 以前只在进房那一刻取一次名单快照，
+        // 之后有人加入/离开都看不到（实测“host/client2 见 3 人、先到的 client1 只见 2 人”）。
+        // client 取**房主**的 SteamID 用于定槽位（host=槽 0）。
+        let (t, host_id) = if let Some(ls) = self.steam_host_ls.as_ref() {
+            (ls.transport_ref(), ls.transport_ref().steam_id())
+        } else if let Some(cli) = self.steam_cli_ls.as_ref() {
+            let hid = match cli.host_peer() {
+                net::transport::Peer::Steam { id, .. } => id,
+                _ => 0,
+            };
+            (cli.transport_ref(), hid)
+        } else {
+            return;
+        };
         let mm = t.matchmaking();
         let lobby = net_steam::steamworks::LobbyId::from_raw(lid);
         let members: Vec<net_steam::lobby::SteamID> = mm.lobby_members(lobby).iter().map(|s| net_steam::lobby::SteamID(s.raw())).collect();
@@ -8234,9 +8245,9 @@ impl Game {
         self.steam_last_roster_len = new_len;
         if changed {
             if prev_len > new_len && prev_len > 1 {
-                eprintln!("[steam-host] a player left the room (members {prev_len} -> {new_len}), waiting");
+                eprintln!("[steam-roster] a player left the room (members {prev_len} -> {new_len}), waiting");
             } else {
-                eprintln!("[steam-host] roster updated: {new_len} member(s)");
+                eprintln!("[steam-roster] roster updated: {new_len} member(s)");
             }
             self.steam_roster = roster;
         }
@@ -8617,7 +8628,7 @@ impl Game {
             // 注：旧的「配好 build_done」机制已废弃（本流程用 all_cfgs 配置同步 + 倒计时驱动），故无字段需清。
             self.net_cfg = NetCfgSync::Idle;
         }
-        // host：节流刷新成员名单（client 加入后 host 界面才能显示新成员）。
+        // host 与 client 都节流刷新成员名单（读到 lobby 实际成员，后者加入/离开都能看到）。
         self.steam_roster_refresh_ticks = self.steam_roster_refresh_ticks.wrapping_add(1);
         if self.steam_roster_refresh_ticks % 30 == 1 {
             self.steam_refresh_roster();
