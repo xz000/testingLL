@@ -156,4 +156,24 @@ World 学习期**不步进**，不能靠"帧"做心跳。做法：**把 Fighting
 | 学习期频率 | **与对战期同节奏**（每帧 poll/心跳 + `SNAPSHOT_EVERY` 快照），不新增常量 |
 | 归队恢复 | 按 `meta.phase`（可能回学习期） |
 | 记分 | 走现状：打完才结算；局散不计分；桩子自然末位/剩者胜 |
-| R7e | **做**，排最后（E5）|
+| R7e | **暂缓**（先不做；设计已记 §1.5）|
+
+---
+
+## 7. 实测发现的 bug 与修复（2026-10-13，3 账号真机）
+
+> E1–E3 落地后经真机反复测试，暴露并修复了多条**既有 + 新引入**的问题。存档便于回溯。
+
+| # | 现象 | 根因 | 修复（commit）|
+|---|---|---|---|
+| 1 | 房间里 host/client2 见 3 人、**先加入的 client 只见 2 人** | `steam_refresh_roster` 只在 `steam_host_ls` 存在时跑（**仅 host** 刷新）；client 进房取一次名单快照后不更新 | client 也刷新名单（用房主 SteamID 定槽位）· `8c6ea6d` |
+| 2 | **卡在准备界面**（host 一直 `present_clients=1/2`） | `LobbyPlayerTable` 按 **SteamID 升序**排槽 → 后加入者（SteamID 更小）把已有玩家槽位**挤后**；各端 `steam_my_index` 进房后不更新 → **两名 client 撞同一 index** | roster 变化时**重算本端索引**并同步 `cli.set_my_index` · `fe11064` |
+| 3 | 进首轮学习**界面空白**（房间列表已消失、商店没出） | `draw_meta_overlay` 的 `Learning` 分支 `profiles.find(player_id==self_index())` 失败即 `return`；**早加入者** world/profiles 按进房时人数建，后被挤后 `self_index` 越界 | 进首局配置按当前人数**重建 world** + 学习界面**兜底**（不空白）· `22c65f5` |
+| 4 | 学习期退出**再归队丢购买技能** | 配置同步开始时 host `reset_cfgs()` 把离开者学习期发来的 `PlayerCfg` 一并清掉，而它已 drop、**无法重发** | `reset_cfgs` **保留掉线端** cfg · `cc6d15c`；+ 学习期 cfg **一变就上报**（崩溃/掉线也保住）· `9b0cf07` |
+| 5 | **「已离开」标记多机不一致** | 配置同步广播**全量**列表，client 收到后把 `steam_online` 也设全量（=无标记）；而 host 的 `steam_online` 是**在线子集**（=有标记） | 配置同步**只设 `steam_participants`** + host **紧跟广播在线子集** · `227c79f`；host 改用同源 `participant_ids` · `cc6d15c` |
+| 6 | 学习期**房主退出→迁移接管建成 1 人局**（`TAKEOVER player 0/1`）+ 对端 `Phase-B STALL` 回菜单 | roster 兜底填 `steam_participants` 写在 `if changed` **内**，而进房时 `steam_roster` 已填好 → `changed=false` 跳过填充 → `steam_participants` 空 | 兜底填充**移出 `if changed`** · `3cde649` |
+
+**相关能力/提示：**
+- 学习期 host 掉线/退出 → **走主机迁移继续本局**（不再覆盖层结束）· `4082ae2`；主动退出也先广播 `Leave`。
+- 学习期购买**实时上报**（配置一变即 `send_cfg`）· `9b0cf07`。
+- 排查用临时诊断 `marker-diag`（`2e9061d`）**已移除**（`093d870`）。
