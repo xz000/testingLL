@@ -8307,15 +8307,6 @@ impl Game {
                 eprintln!("[steam-roster] roster updated: {new_len} member(s)");
             }
             self.steam_roster = roster;
-            // 首局学习期尚未做配置同步 → `steam_participants` 还空。此时用 **roster 兜底**填上
-            // （roster 的 slot == 初始 player index），否则“学习期 host 掉线→迁移接管”会因参与列表为空
-            // 而建成 1 人局（实测 TAKEOVER player 0/1）。配置同步后会被真值覆盖。
-            if self.steam_participants.is_empty() {
-                let mut pairs: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
-                pairs.sort_by_key(|(s, _)| *s);
-                self.steam_participants = pairs.into_iter().map(|(_, id)| id).collect();
-                self.steam_online = self.steam_participants.clone();
-            }
             // ⚠ 槽位会随成员加入而**变**（表 = host 槽0 + 其余按 SteamID 升序）——后加入者 SteamID 更小时，
             // 已在房玩家的槽位被挤后。各端必须在 roster 变化时**重算本端世界索引**，否则两名 client 会撞同一
             // index（都当自己是 slot1）→ host 只收到一个的 RoomState → 卡在准备界面。
@@ -8334,6 +8325,15 @@ impl Game {
                     }
                 }
             }
+        }
+        // 首局学习期尚未配置同步 → `steam_participants` 可能仍空；用 **roster 兜底**填上（**无论 roster 是否刚变化**：
+        // 进房时 `steam_roster` 已由 `finish_enter_steam_mode` 填好 → `changed=false` 会跳过填充）。
+        // 否则“学习期 host 掉线→迁移接管”会因参与列表为空而建成 1 人局（实测 TAKEOVER player 0/1）。
+        if self.steam_participants.is_empty() && !self.steam_roster.is_empty() {
+            let mut pairs: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
+            pairs.sort_by_key(|(s, _)| *s);
+            self.steam_participants = pairs.into_iter().map(|(_, id)| id).collect();
+            self.steam_online = self.steam_participants.clone();
         }
         // host：同步刷新 lockstep 的 client 身份表（late-join 端此前会缺 id → participant_ids 产出 0）。
         if self.steam_host_ls.is_some() {
