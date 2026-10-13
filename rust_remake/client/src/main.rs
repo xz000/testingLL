@@ -8281,6 +8281,24 @@ impl Game {
                 self.steam_participants = pairs.into_iter().map(|(_, id)| id).collect();
                 self.steam_online = self.steam_participants.clone();
             }
+            // ⚠ 槽位会随成员加入而**变**（表 = host 槽0 + 其余按 SteamID 升序）——后加入者 SteamID 更小时，
+            // 已在房玩家的槽位被挤后。各端必须在 roster 变化时**重算本端世界索引**，否则两名 client 会撞同一
+            // index（都当自己是 slot1）→ host 只收到一个的 RoomState → 卡在准备界面。
+            let my_slot = self
+                .steam_roster
+                .iter()
+                .find(|(_, _, id)| *id == self.steam_my_id)
+                .map(|(s, _, _)| *s);
+            if let Some(slot) = my_slot {
+                if slot != self.steam_my_index {
+                    eprintln!("[steam-roster] my slot {} -> {}", self.steam_my_index, slot);
+                    self.steam_my_index = slot;
+                    // 上行 `RoomState` 用的是 **lockstep 的**`my_index`，必须一并更新（否则仍发旧 index）。
+                    if let Some(cli) = self.steam_cli_ls.as_mut() {
+                        cli.set_my_index(slot);
+                    }
+                }
+            }
         }
         // host：同步刷新 lockstep 的 client 身份表（late-join 端此前会缺 id → participant_ids 产出 0）。
         if self.steam_host_ls.is_some() {
