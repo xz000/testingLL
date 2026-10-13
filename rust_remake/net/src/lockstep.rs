@@ -793,8 +793,14 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 清空已收集的配置（本局同步完成后调用，供下一局复用）。
     pub fn reset_cfgs(&mut self) {
-        for c in self.cfgs.iter_mut() {
-            *c = None;
+        // 只清**未掉线**端的 cfg：
+        // - 活跃端会在配置同步（ClientWait）里**重发**，清了无妨；
+        // - 掉线端（如学习期离开者）**无法重发** → 必须保留最后一次 cfg，否则配置同步会把它当默认
+        //   （这就是“学习期买过技能、退出再归队丢技能”的根因）。
+        for c in 0..self.expected {
+            if !self.dropped[c] {
+                self.cfgs[c] = None;
+            }
         }
         self.local_cfg = None;
     }
@@ -2401,6 +2407,22 @@ mod tests {
             set_target: Some(game_core::fix::Vec2::new(i.into(), 0.into())),
             ..Default::default()
         })
+    }
+
+    /// `reset_cfgs` 必须**保留掉线端**的 cfg（它无法重发，否则丢购买），只清活跃端。
+    #[test]
+    fn reset_cfgs_preserves_dropped_client_cfg() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 3, true); // host + client1/2
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))));
+        let mut rcv = [0u8; 4096];
+        cli.send_cfg(&[7, 7]).unwrap(); // index=1 → 槽 0
+        host.poll_cfg(&mut rcv);
+        host.cfgs[1] = Some(vec![8, 8]); // 另一活跃端（槽 1）
+        host.mark_dropped(1); // 槽 0 掉线
+        host.reset_cfgs();
+        assert!(host.cfgs[0].is_some(), "掉线端的 cfg 必须保留（否则丢购买）");
+        assert!(host.cfgs[1].is_none(), "活跃端 cfg 应被清（会重发）");
     }
 
     /// v58：重连应答的快照应携带该端**当前**世界索引（迁移/接管后可能变 → 客户端据此校正 self_index）。

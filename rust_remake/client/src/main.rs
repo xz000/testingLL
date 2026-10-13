@@ -4934,6 +4934,9 @@ impl Game {
             // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
             // 也同步"已离开"。
             host.take_online_dirty();
+            // 与 client 同源：用 `participant_ids`（按真实 index 排序）维护全量参与列表，
+            // 避免 host 的 `steam_participants` 与 client 的（配置同步下发）顺序不一致 → 标记错位。
+            self.steam_participants = host.participant_ids(self.steam_my_id);
             let ids = host.online_ids(self.steam_my_id);
             host.broadcast_participants(&ids);
             self.steam_online = ids;
@@ -7282,6 +7285,7 @@ impl event::EventHandler for Game {
                             // 同时用同一份刷新**房主自己**的 `steam_online`，使房主界面也正确标“已离开”。
                             let online_periodic = self.host_frame_count % ONLINE_BCAST_EVERY == 0;
                             if host.take_online_dirty() || online_periodic {
+                                self.steam_participants = host.participant_ids(self.steam_my_id);
                                 let ids = host.online_ids(self.steam_my_id);
                                 host.broadcast_participants(&ids);
                                 self.steam_online = ids.clone();
