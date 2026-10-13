@@ -114,11 +114,12 @@ World 学习期**不步进**，不能靠"帧"做心跳。做法：**把 Fighting
 | D2 | 同上但 **3 人局**：A 离开，host+B+C 继续 | 剩余三人正常开局 |
 > 关键字：`[steam-host] AUTO-DROP client N (learning idle) -> continue`。
 
-**E. 学习期·房主掉线**
+**E. 学习期·房主掉线/退出 → 主机迁移（已优化，`4082ae2`）**
 | # | 步骤 | 预期 |
 |---|---|---|
-| E1 | host 在学习期被杀进程/断网 | client 约 3s 后出现「房主已离开」覆盖层；可 Esc/Q 关闭回菜单 |
-> 关键字：`[steam-client] host silent in learning for 180 ticks -> host-left overlay`。
+| E1 | host 在学习期被杀进程/断网/主动退出游戏 | 其余端约 3s（或收到 `Leave` 立即）进入**迁移**：选举新 host 接管，**本局继续**（商店/倒计时照常，不再弹覆盖层结束）|
+> 关键字：`[steam-client] host silent in learning for 180 ticks -> migration` → `elected new host` / `TAKEOVER`。
+> 实现：学习期 client 掉线判定后置 `steam_migrating`，复用**对战期同一迁移状态机**（`poll_steam_migration` + `steam_do_takeover`，阶段无关：学习期也有缓存快照）；主动“退出游戏”也会先广播 `Leave`。
 
 **F. 过渡一致性（学习期→战斗）**
 | # | 步骤 | 预期 |
