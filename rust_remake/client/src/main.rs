@@ -4879,6 +4879,13 @@ impl Game {
             return;
         }
         self.persist_rejoin_session();
+        // 学习期离开：先把当前购买/绑定发给 host（否则配置同步会用它为默认 → 重连回来丢技能）。
+        let cfg = self.local_player_cfg();
+        if !cfg.is_empty() {
+            if let Some(c) = self.steam_cli_ls.as_mut() {
+                let _ = c.send_cfg(&cfg);
+            }
+        }
         if let Some(h) = self.steam_host_ls.as_mut() {
             h.broadcast_leave(self.steam_my_id);
         } else if let Some(c) = self.steam_cli_ls.as_mut() {
@@ -7193,6 +7200,9 @@ impl event::EventHandler for Game {
                                 // 广播本局参与玩家 SteamID（按 new index），供各端在 host 掉线时确定性选举新 host。
                                 let pids = host.participant_ids(self.steam_my_id);
                                 host.broadcast_participants(&pids);
+                                // 配置同步的全量列表只保证 `steam_participants`；“在线子集”（含“已离开”标记）
+                                // 需紧接着广播一次，否则 client 的 `steam_online` 停在“全量” → 与 host 的标记不一致。
+                                host.mark_online_dirty();
                                 let stage = if stage_first { "pre-game" } else { "next round" };
                                 eprintln!("[steam-host] synced {} player configs -> {stage} (round {}), participants={p}, ids={pids:?}", all.len(), self.meta.round);
                                 host.reset_cfgs();
@@ -7373,7 +7383,8 @@ impl event::EventHandler for Game {
                                 // 收 host 广播的本局参与玩家 SteamID（按 new index），供 host 掉线时确定性选举新 host。
                                 if let Ok(Some(ids)) = cli.recv_participants(&mut c_rcv) {
                                     self.steam_participants = ids.clone();
-                                    self.steam_online = ids.clone(); // 初始在线集 = 全参与
+                                    // 注意：**不**在此设 `steam_online`（它=在线子集，由 host 随后广播），
+                                    // 否则 client 会停在“全量在线” → 与 host 的“已离开”标记不一致。
                                     eprintln!("[steam-client] got participants ids={ids:?}");
                                 }
                                 self.steam_cli_ls = Some(cli); // 归还 cli，释放 borrow 后重建 world

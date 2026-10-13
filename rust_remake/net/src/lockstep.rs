@@ -669,6 +669,11 @@ impl<T: Transport> HostLockstep<T> {
         std::mem::take(&mut self.online_dirty)
     }
 
+    /// 强制置位“在线集已变”，让上层尽快重播一次（如配置同步广播全量后）。
+    pub fn mark_online_dirty(&mut self) {
+        self.online_dirty = true;
+    }
+
     /// host→all：广播主动离场（房主自己离开前调用，best-effort）。
     pub fn broadcast_leave(&mut self, identity: u64) {
         let enc = Packet::Leave { identity }.encode();
