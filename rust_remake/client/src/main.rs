@@ -5397,8 +5397,16 @@ impl Game {
                 };
                 ui::text_right(canvas, ctx, &learn_note, 20.0, ui::theme::ok(), sw - 16.0, sh * 0.055)?;
 
-                // 我的档案（顶部一行）
-                let Some(me) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) else {
+                // 我的档案（顶部一行）。兜底：索引对不上时也不空白（优先按 id，其次按位置，最后取首个）。
+                let my_idx = self.self_index();
+                let Some(me) = self
+                    .meta
+                    .profiles
+                    .iter()
+                    .find(|p| p.player_id == my_idx)
+                    .or_else(|| self.meta.profiles.get(my_idx as usize))
+                    .or_else(|| self.meta.profiles.first())
+                else {
                     return Ok(());
                 };
                 let info = i18n::tf(
@@ -8700,6 +8708,13 @@ impl Game {
             return Ok(());
         }
         if entered_config {
+            // 早加入者的 world/profiles 是**进房时**按当时大厅人数建的（可能少于现在）；而槽位/索引按**当前**
+            // 大厅算 ⇒ `self_index()` 可能超出 profiles 范围 → 学习界面查不到本机档案而“空白”。
+            // 进首局配置时按当前成员数重建（配置同步时还会按真实参与集再建一次），保证索引覆盖。
+            let n = self.steam_roster.len().max(2);
+            if n > self.world.players.len() {
+                self.stage_world_for_participants(n, STEAM_SEED);
+            }
             self.steam_in_lobby = false;
             self.meta.begin_first_round_config(); // 首局进配置学习（倒计时归零开战）
             self.pre_game_config = true; // 供 Fighting 分支 stage_first 判断（首局重建 world）
