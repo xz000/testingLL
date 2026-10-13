@@ -4768,6 +4768,8 @@ impl Game {
                                 return true;
                             }
                             EscapeChoice::QuitGame => {
+                                // 主动退出游戏：广播 Leave（best-effort，别人立即迁移）再退出。
+                                self.broadcast_steam_leave();
                                 ctx.request_quit();
                                 return true;
                             }
@@ -4864,20 +4866,28 @@ impl Game {
     /// 主动离开本局（退出菜单「返回主菜单」）：复用 `reset_to_main_menu` 的全量拆除。
     fn leave_match(&mut self) {
         eprintln!("[exit] escape menu -> leave match");
-        #[cfg(feature = "steam")]
-        if self.steam_active() {
-            // 先写会话（保留，供回菜单后重新加入），再广播"主动离开"，最后退房回菜单。
-            self.persist_rejoin_session();
-            if let Some(h) = self.steam_host_ls.as_mut() {
-                h.broadcast_leave(self.steam_my_id);
-            } else if let Some(c) = self.steam_cli_ls.as_mut() {
-                let _ = c.send_leave(self.steam_my_id);
-            }
-            eprintln!("[exit] steam leave broadcast sent (host={})", self.steam_host_ls.is_some());
-        }
+        self.broadcast_steam_leave();
         // 我离开本局：保留会话（可回主菜单重新加入）。
         self.reset_to_main_menu(true);
     }
+
+    /// 主动离开/退出前：写会话（保留，供重新加入）+ 广播 `Leave`（best-effort），
+    /// 让其余端**立即**开始迁移（不必等 3s 心跳超时）。host/client 通用。
+    #[cfg(feature = "steam")]
+    fn broadcast_steam_leave(&mut self) {
+        if !self.steam_active() {
+            return;
+        }
+        self.persist_rejoin_session();
+        if let Some(h) = self.steam_host_ls.as_mut() {
+            h.broadcast_leave(self.steam_my_id);
+        } else if let Some(c) = self.steam_cli_ls.as_mut() {
+            let _ = c.send_leave(self.steam_my_id);
+        }
+        eprintln!("[exit] steam leave broadcast sent (host={})", self.steam_host_ls.is_some());
+    }
+    #[cfg(not(feature = "steam"))]
+    fn broadcast_steam_leave(&mut self) {}
 
     /// L4：世界槽位 `i` 对应的玩家是否「已离开」（主动离开或掉线）；依据 host 广播的统一在线集 `steam_online`。仅 Steam 联机有效。
     #[cfg(feature = "steam")]
@@ -4897,8 +4907,10 @@ impl Game {
     /// World 不步进、没有帧，故：
     /// - host 每帧 `poll` + **静态快照**（world+meta，`seq` 不变）作为心跳/归队源 + 在线集广播；
     /// - client 每帧上行 `RoomState` 心跳、收 host 包（`pump_learning`），并以"是否收到 host 包"做**学习期存活判定**。
+    ///
+    /// 学习期 host 掉线/退出 → 也走**主机迁移**（与对战期同一状态机），而不是直接弹覆盖层结束整局。
     #[cfg(feature = "steam")]
-    fn steam_learning_net_tick(&mut self) {
+    fn steam_learning_net_tick(&mut self) -> GameResult<()> {
         if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
             let mut rcv = vec![0u8; 256 * 1024];
             // 收心跳 / Leave / ReconnectReq / 配置。
@@ -4907,7 +4919,6 @@ impl Game {
             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
             }
-            // 在线集：变化立即 + 周期兜底（重连端握手期会丢非 Snapshot 包）。
             // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
             // 也同步"已离开"。
             host.take_online_dirty();
@@ -4922,10 +4933,18 @@ impl Game {
                 host.broadcast_snapshot(sb, host.next_seq(), 0xFF);
             }
             self.steam_host_ls = Some(host);
-            return;
+            return Ok(());
         }
         if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
             let mut c_rcv = vec![0u8; 256 * 1024];
+            // 迁移中：推进迁移状态机（学习期 host 掉线/退出也做迁移，继续这局）。
+            if self.steam_migrating {
+                let leftover = self.poll_steam_migration(cli, &mut c_rcv)?;
+                if let Some(cli) = leftover {
+                    self.steam_cli_ls = Some(cli);
+                }
+                return Ok(());
+            }
             // 归队握手：学习期也要能完成（等 host 的静态快照重建 world+meta）。
             if self.steam_rejoin_handshaking {
                 let got = cli
@@ -4948,7 +4967,7 @@ impl Game {
                     self.pre_game_config = self.meta.is_first_config();
                     eprintln!("[steam-rejoin] resumed in learning (phase={:?}, first={})", self.meta.phase, self.pre_game_config);
                     self.steam_cli_ls = Some(cli);
-                    return;
+                    return Ok(());
                 } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
                     eprintln!("[steam-rejoin] learning handshake timeout -> return to menu");
                     self.steam_rejoin_handshaking = false;
@@ -4956,10 +4975,10 @@ impl Game {
                     self.steam_cli_ls = Some(cli);
                     self.reset_to_main_menu(true);
                     self.menu_hint = i18n::t("无法重新加入上一局，已返回主菜单").to_string();
-                    return;
+                    return Ok(());
                 }
                 self.steam_cli_ls = Some(cli);
-                return;
+                return Ok(());
             }
             // 心跳上行（在场）。
             let enc = game_core::netcode::encode_player_input(&self.local_player_input());
@@ -4974,13 +4993,16 @@ impl Game {
             } else {
                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
                 if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
-                    eprintln!("[steam-client] host silent in learning for {} ticks -> host-left overlay", self.steam_cli_stale_ticks);
-                    self.steam_host_left_overlay = true;
+                    eprintln!("[steam-client] host silent in learning for {} ticks -> migration", self.steam_cli_stale_ticks);
+                    self.steam_migrating = true;
+                    self.steam_migrate_ticks = 0;
+                    self.steam_new_host_id = 0;
                     self.steam_cli_stale_ticks = 0;
                 }
             }
             self.steam_cli_ls = Some(cli);
         }
+        Ok(())
     }
 
     /// 绘制对局内 Esc 菜单（主题风格面板 + 行；危险项二次确认提示）。
@@ -6955,7 +6977,7 @@ impl event::EventHandler for Game {
                 // Steam 联机：学习期轻量网络节拍（心跳 + 静态快照 + 掉线判定 + 归队握手）。
                 #[cfg(feature = "steam")]
                 if self.steam_active() {
-                    self.steam_learning_net_tick();
+                    self.steam_learning_net_tick()?;
                 }
 
                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
