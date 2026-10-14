@@ -21,6 +21,15 @@
 
 use super::*;
 
+/// 快照的 `meta.phase` 是否 = `Learning`（用于“拒绝迟到的更早阶段快照”）。解码失败 → false。
+#[cfg_attr(not(feature = "steam"), allow(dead_code))]
+fn snapshot_phase_is_learning(world_bytes: &[u8]) -> bool {
+    matches!(
+        game_core::world_ser::snapshot_from_bytes(world_bytes).map(|(_, m)| m.phase),
+        Some(game_core::meta::MatchPhase::Learning)
+    )
+}
+
 /// R3'：确定性选举新 host = Steam 仲裁的当前 `lobby_owner`（`owner`），全员从后端读到同一值。
 /// 仅当 owner 合法（非 0 / 非旧 host / 在本局在线参与集）时返回它；**否则返回 0（不选举）**。
 ///
@@ -81,6 +90,13 @@ impl Game {
                             continue; // 非旧 host（如新 host）的包：忽略。
                         }
                         if let net::Packet::Snapshot { world_bytes, seq, your_index } = pkt {
+                            // 忽略“更早阶段”的迟到快照：本端已进对局(Fighting)，但收到的快照还是学习期(Learning)
+                            // （迁移后配置同步期间频繁出现的在途静态快照）→ 采纳会把自己打回学习期并循环。
+                            if snapshot_phase_is_learning(&world_bytes)
+                                && self.meta.phase == game_core::meta::MatchPhase::Fighting
+                            {
+                                continue;
+                            }
                             cli.apply_resync(rcv).ok();
                             if self.apply_snapshot_world(&world_bytes) {
                                 if your_index != 0xFF {
@@ -166,7 +182,12 @@ impl Game {
                 // 避免各端因帧序不一致在接管后卡在缺口处反复请求重传（包括无缓存快照的早期接管）。
                 cli.set_start_seq(seq);
                 if let Ok(Some((wb, _, _))) = cli.recv_snapshot(rcv) {
-                    self.apply_snapshot_world(&wb);
+                    // 同样：不要把已进对局的本端用一份学习期快照打回去。
+                    if !(snapshot_phase_is_learning(&wb)
+                        && self.meta.phase == game_core::meta::MatchPhase::Fighting)
+                    {
+                        self.apply_snapshot_world(&wb);
+                    }
                 }
                 cli.apply_resync(rcv).ok();
                 self.steam_migrating = false;
