@@ -1144,6 +1144,8 @@ pub struct ClientLockstep<T: Transport> {
     pause: PauseView,
     /// 缓存的「房主主动离开」通知（`identity`）；供上层立即进入迁移。
     host_left: Option<u64>,
+    /// 最近收到的 host 静态快照里的 `meta.learn_remaining`（学习期倒计时；供上层“偏差过大才对齐”）。
+    host_learn_remaining: Option<f64>,
     /// 缓存的最近一次 host 广播的**在线集**（`Participants`）；供上层更新"已离开"标记。
     latest_participants: Option<Vec<u64>>,
 }
@@ -1168,8 +1170,14 @@ impl<T: Transport> ClientLockstep<T> {
             state_hashes: VecDeque::new(),
             pause: PauseView::default(),
             host_left: None,
+            host_learn_remaining: None,
             latest_participants: None,
         }
+    }
+
+    /// host 最近广播快照里的 `meta.learn_remaining`（None = 尚未收到）；供学习期“偏差过大才对齐倒计时”。
+    pub fn host_learn_remaining(&self) -> Option<f64> {
+        self.host_learn_remaining
     }
 
     /// R7：当前 host 广播的暂停状态视图。
@@ -1597,6 +1605,12 @@ impl<T: Transport> ClientLockstep<T> {
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Snapshot { world_bytes, seq, .. } => {
+                                // 学习期也顺带解出 host 的 `learn_remaining`（供“偏差过大才对齐”）。
+                                if from == self.host {
+                                    if let Some((_, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {
+                                        self.host_learn_remaining = Some(m.learn_remaining);
+                                    }
+                                }
                                 self.latest_snapshot = Some((world_bytes, seq));
                             }
                             Packet::Participants { ids } => {

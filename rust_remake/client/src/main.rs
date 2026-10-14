@@ -160,6 +160,10 @@ const SNAPSHOT_BROADCAST_EVERY: u64 = 150;
 /// 重连端在归队握手期会丢掉非 Snapshot 包（`recv_snapshot` 只认 Snapshot），靠周期重播收敛。
 #[cfg(feature = "steam")]
 const ONLINE_BCAST_EVERY: u64 = 120;
+/// 学习期：本机 `learn_remaining` 与 host 快照里的相差超过此值才对齐（秒）。
+/// 阈值要 > 快照传输/广播延迟（~2.5s），避免正常倒数被反复回跳；只纠正显著不同步（如迁移后）。
+#[cfg(feature = "steam")]
+const LEARN_RESYNC_THRESHOLD_SECS: f64 = 3.0;
 /// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
 const CLIENT_STALE_TICKS: u64 = 180;
 /// Steam（client）：进入迁移后，探测“host 是否还在”的帧数（发 ReconnectReq 等 Snapshot 应答）。约 1 秒。
@@ -5018,6 +5022,16 @@ impl Game {
             let got = cli.pump_learning(&mut c_rcv).unwrap_or(false);
             if let Some(ids) = cli.take_online_participants() {
                 self.steam_online = ids;
+            }
+            // P3：迁移后两端“学习倒数”可能不同步 → 偏差过大时以 host 快照的 `learn_remaining` 对齐。
+            if let Some(host_rem) = cli.host_learn_remaining() {
+                if (self.meta.learn_remaining - host_rem).abs() > LEARN_RESYNC_THRESHOLD_SECS {
+                    eprintln!(
+                        "[steam-client] learn_remaining resync {:.1} -> {:.1}",
+                        self.meta.learn_remaining, host_rem
+                    );
+                    self.meta.learn_remaining = host_rem;
+                }
             }
             if got {
                 self.steam_cli_stale_ticks = 0;
