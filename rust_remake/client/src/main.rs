@@ -7377,20 +7377,32 @@ impl event::EventHandler for Game {
                             // S2/S4：本 host 收到新 host 的 Takeover → 已被取缔（如客户端误判旧 host 掉线）。
                             // 停止作为权威、退回主菜单，避免与新 host 双权威脑裂（孤儿 host 续产帧）。
                             if host.is_superseded() {
-                                eprintln!("[steam-host] SUPERSEDED: 收到新 host 的 Takeover，已取缔，转入归队");
-                                // R6b：记录到的新 host（Takeover 来源）→ 转 client 归队；无来源则回主菜单。
+                                // 双保险②：只采纳**当前 lobby owner** 的 Takeover（防非 owner 旧 host 自封顶人）。
                                 let new_host = match host.superseded_by() {
                                     Some(net::transport::Peer::Steam { id, .. }) => id,
                                     _ => 0,
                                 };
-                                if self.steam_begin_rejoin_as_client(host, new_host) {
+                                let owner = self
+                                    .steam_lobby_id
+                                    .map(|lid| net_steam::session::lobby_owner(host.transport_ref(), lid))
+                                    .unwrap_or(0);
+                                if !steam::should_take_over(owner, new_host) {
+                                    eprintln!(
+                                        "[steam-host] 忽略非 owner 的 Takeover（from={new_host}, owner={owner}）→ 保持权威"
+                                    );
+                                    host.clear_superseded();
+                                } else {
+                                    eprintln!("[steam-host] SUPERSEDED: 收到新 host（owner）的 Takeover，已取缔，转入归队");
+                                    // R6b：记录到的新 host（Takeover 来源）→ 转 client 归队；无来源则回主菜单。
+                                    if self.steam_begin_rejoin_as_client(host, new_host) {
+                                        self.accumulator = 0.0;
+                                        return Ok(());
+                                    }
+                                    // 无法定位新 host：退回主菜单但保留会话（可重试归队）。
+                                    self.reset_to_main_menu(true);
                                     self.accumulator = 0.0;
                                     return Ok(());
                                 }
-                                // 无法定位新 host：退回主菜单但保留会话（可重试归队）。
-                                self.reset_to_main_menu(true);
-                                self.accumulator = 0.0;
-                                return Ok(());
                             }
                             // 迁移接管后：持续广播 Takeover（基线=快照 seq + 更新后的在线参与集），直到首个在线 client 连上产帧才停。
                             if takeover_bcast {
