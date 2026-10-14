@@ -39,12 +39,13 @@ fn snapshot_phase_is_learning(world_bytes: &[u8]) -> bool {
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 pub(crate) fn elect_new_host(owner: u64, old_host: u64, online: &[u64]) -> u64 {
     if owner != 0 && owner != old_host && online.contains(&owner) {
-        return owner;
+        owner
+    } else {
+        // owner 不可用（未移交/已掉线/不在线）：**不猜**（返回 0）。
+        // 曾尝试“回退到在线集最小 SteamID”，真机证明会引发自选举→接管→自栅栏退位→归队失败的连锁；
+        // 此处保持原保守语义：调用方等 Steam 移交 owner，超时则回主菜单。
+        0
     }
-    // owner 不可用（未移交 / 已掉线 / 不在线）：回退到在线集里**除旧 host 外**的最小 SteamID（确定性）。
-    // 之前此情直接返回 0 → 调用方 270 帧后“无法确定新主机”回主菜单；真机多次遇到：Steam lobby owner
-    // 仍是已掉线的旧 host，而它不在在线集里 → 明明还有在线成员却判“选举失败”。
-    online.iter().copied().filter(|&id| id != old_host).min().unwrap_or(0)
 }
 
 /// R4②：host 是否应自栅栏退位。
@@ -808,16 +809,14 @@ mod tests {
         assert!(!super::should_self_fence(9, 7, &[7]), "owner 不在参与集 → 不退位（保守）");
     }
 
-    /// owner 不可用（未移交 / 无效 / 不在参与集）时**回退到在线集中除旧 host 外的最小 SteamID**（确定性）。
+    /// owner 不可用（未移交 / 无效 / 不在参与集）时**不选举**（返回 0，不做最小 ID 回退）。
     #[test]
-    fn elect_falls_back_to_min_online_when_owner_invalid() {
-        // owner 仍是旧 host（Steam 移交未反映）→ 回退最小在线 id（排除旧 host 100）。
-        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 300);
-        // 无大厅 / owner 无效（0）→ 回退。
-        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 300);
-        // owner 不在本局在线参与集 → 回退。
-        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 300);
-        // 在线集只剩旧 host → 无人可接管，返回 0。
-        assert_eq!(elect_new_host(0, 100, &[100]), 0);
+    fn elect_returns_zero_when_owner_invalid() {
+        // owner 仍是旧 host（Steam 移交未反映）→ 不选举。
+        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 0);
+        // 无大厅 / owner 无效（0）→ 不选举。
+        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 0);
+        // owner 不在本局在线参与集（如只在大厅但未参与）→ 不选举。
+        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 0);
     }
 }

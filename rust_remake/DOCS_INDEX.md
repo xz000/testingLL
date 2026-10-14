@@ -26,6 +26,7 @@
 | `EXIT_MENU_RECONNECT_PLAN.md` | 联机：Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列）记录 |
 | `LEAVE_REJOIN_PLAN.md` | **主动离开 + 三因归队**（L1–L5 已完成；真机双账号验收清单见 §4.1）|
 | `LEARNING_PHASE_NET_PLAN.md` | **学习期联机**（已定稿：E1 心跳+快照 / E2 按阶段恢复 / E3 离开·掉线 / E5 R7e；无投降·恒桩子）|
+| `HOST_MIGRATION_LEARNING_PLAN.md` | **学习期房主退出/主机迁移规划**（在办：不变量/已确证故障/根因 M1–M4；撤自选举回归后按步实施）|
 | `DISPLAY_CAMERA_PLAN.md` | **显示/相机设置**（分辨率/全屏/边缘滚屏/平移速度；S1–S4 已完成 `d0a6675`/`55e2919`/`7c35928`/`f7a10d2`）|
 | `RECONNECT.md` | 掉线/重连机制设计 |
 | `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案 |
