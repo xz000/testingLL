@@ -4928,6 +4928,13 @@ impl Game {
             let mut rcv = vec![0u8; 256 * 1024];
             // 收心跳 / Leave / ReconnectReq / 配置。
             host.poll(&mut rcv);
+            // M2：把**新收到的购买**增量应用到 `meta`（学习期也 host 权威）⇒ 静态快照即“聚合真值”，
+            // 迁移/归队都能保住所有人的购买 + 金币（否则只缓冲在 `cfgs`、等到配置同步才应用）。
+            let new_cfgs = host.drain_new_cfgs();
+            let applied_cfgs = !new_cfgs.is_empty();
+            if applied_cfgs {
+                self.apply_player_cfgs(&new_cfgs);
+            }
             // 学习期也判掉线（否则 all_cfgs 会等一个已死端 → 全员卡局）。
             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
@@ -4945,7 +4952,9 @@ impl Game {
             let wb = game_core::world_ser::world_to_bytes(&self.world);
             let sb = game_core::world_ser::pack_snapshot(&wb, &self.meta);
             host.set_snapshot(sb.clone(), host.next_seq());
-            if self.frame % SNAPSHOT_BROADCAST_EVERY == 0 {
+            // 应用了 cfg（有新购买）就**立即**广播一份聚合快照，使各端 `cached` 始终≈最新；
+            // 否则按周期广播。迁移几乎零丢失。
+            if applied_cfgs || self.frame % SNAPSHOT_BROADCAST_EVERY == 0 {
                 host.broadcast_snapshot(sb, host.next_seq(), 0xFF);
             }
             self.steam_host_ls = Some(host);
@@ -7230,9 +7239,17 @@ impl event::EventHandler for Game {
                                 eprintln!("[steam-host] synced {} player configs -> {stage} (round {}), participants={p}, ids={pids:?}", all.len(), self.meta.round);
                                 host.reset_cfgs();
                                 self.steam_host_ls = Some(host); // 归还 host，释放 borrow 后重建 world
+                                // M3（P1）：首局重建时**保留当前已有的 profile**（按 player_id），再叠 `all`——
+                                // 保旧 host（及其他未被 `all` 覆盖者）的购买/金币；迁移后各端 adopt 同一快照 ⇒ 种子一致。
+                                let old_profiles: Vec<game_core::meta::PlayerProfile> = self.meta.profiles.clone();
                                 // 首局开局：把 world/meta 重建为本局参与玩家数（不满员时两端角色一致）；此后多局沿用。
                                 if stage_first {
                                     self.stage_world_for_participants(p, STEAM_SEED);
+                                    for prof in self.meta.profiles.iter_mut() {
+                                        if let Some(o) = old_profiles.iter().find(|x| x.player_id == prof.player_id) {
+                                            *prof = o.clone();
+                                        }
+                                    }
                                 }
                                 self.apply_player_cfgs(&all);
                                 self.teardown_round_end();
@@ -7418,7 +7435,14 @@ impl event::EventHandler for Game {
                                     let p = participants.len();
                                     let me_orig = self.steam_my_index;
                                     let me_new = participants.iter().position(|&x| x == me_orig).unwrap_or(0) as u8;
+                                    // M3（P1）：保留当前已有 profile（按 player_id）再叠 `all`，保未覆盖者的购买/金币。
+                                    let old_profiles: Vec<game_core::meta::PlayerProfile> = self.meta.profiles.clone();
                                     self.stage_world_for_participants(p, STEAM_SEED);
+                                    for prof in self.meta.profiles.iter_mut() {
+                                        if let Some(o) = old_profiles.iter().find(|x| x.player_id == prof.player_id) {
+                                            *prof = o.clone();
+                                        }
+                                    }
                                     self.steam_my_index = me_new;
                                     eprintln!("[steam-client] reindexed me orig={me_orig} -> new={me_new}");
                                 }

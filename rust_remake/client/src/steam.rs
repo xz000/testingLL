@@ -249,6 +249,10 @@ impl Game {
         eprintln!("[steam-host] TAKEOVER broadcast snapshot: {} bytes (seq={seq})", wb.len());
         host.broadcast_takeover(seq, new_online.clone());
         host.broadcast_snapshot(wb.clone(), seq, 0xFF);
+        // 立即广播**在线子集**（排除已掉线的旧 host）→ 各端据此把旧 host 标为“已离开”；并置脏位供后续重播。
+        host.mark_online_dirty();
+        let online_ids = host.online_ids(self.steam_my_id);
+        host.broadcast_participants(&online_ids);
         // S2：单发 Takeover 给旧 host，令其标记 superseded 并停止作为权威（防脑裂）。
         host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
         eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");

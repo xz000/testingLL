@@ -8,6 +8,10 @@
 /logs/
 /logs_host/
 /logs_client/
+# 多机测试时拷回的日志目录（勿提交）
+/logs_2/
+/logs_3/
+/logs_*/
 *日志*.txt
 
 # 临时/一次性调查脚本与输出

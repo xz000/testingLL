@@ -96,6 +96,8 @@ pub struct HostLockstep<T: Transport> {
     pub frame_buf_capacity: usize,
     /// 各 client 上报的玩家配置（`PlayerCfg` 字节；下标=client 序号 - local_base）。
     cfgs: Vec<Option<Vec<u8>>>,
+    /// 各 client 的 cfg 自上次取用后是否新到 → 供上层在学习期**增量应用**到 `meta`。
+    cfgs_dirty: Vec<bool>,
     /// host 自身（player 0）上报的配置（学习阶段结束时设定）。
     local_cfg: Option<Vec<u8>>,
     /// 各 client 是否已判定掉线（不再要求其输入；其帧用默认输入占位）。
@@ -173,6 +175,7 @@ impl<T: Transport> HostLockstep<T> {
             frame_buf: VecDeque::new(),
             frame_buf_capacity: 60,
             cfgs: vec![None; expected],
+            cfgs_dirty: vec![false; expected],
             local_cfg: None,
             dropped: vec![false; expected],
             online_dirty: false,
@@ -664,6 +667,21 @@ impl<T: Transport> HostLockstep<T> {
         pairs.into_iter().map(|(_, id)| id).collect()
     }
 
+    /// 取走自上次调用以来**新收到**的 cfg（每个槽位取最新一份，附其 player index）；
+    /// 供 host 在学习期把购买**增量应用**到 `meta`（而不是只缓冲到配置同步）。
+    pub fn drain_new_cfgs(&mut self) -> Vec<(u8, Vec<u8>)> {
+        let mut out = Vec::new();
+        for c in 0..self.expected {
+            if self.cfgs_dirty[c] {
+                self.cfgs_dirty[c] = false;
+                if let Some(b) = &self.cfgs[c] {
+                    out.push((self.client_indices[c], b.clone()));
+                }
+            }
+        }
+        out
+    }
+
     /// 在线集是否自上次取用后发生变化（离开/掉线/重连）→ 上层据此重新广播。
     pub fn take_online_dirty(&mut self) -> bool {
         std::mem::take(&mut self.online_dirty)
@@ -713,6 +731,7 @@ impl<T: Transport> HostLockstep<T> {
                                 self.client_peers[c] = Some(from);
                             }
                             self.cfgs[c] = Some(bytes);
+                            self.cfgs_dirty[c] = true;
                         }
                     }
                 }
@@ -887,6 +906,7 @@ impl<T: Transport> HostLockstep<T> {
                                     }
                                     self.client_addr[c] = Some(from);
                                     self.cfgs[c] = Some(bytes);
+                                    self.cfgs_dirty[c] = true;
                                 }
                             }
                             Packet::ReqFrame { seq } => {
@@ -2407,6 +2427,20 @@ mod tests {
             set_target: Some(game_core::fix::Vec2::new(i.into(), 0.into())),
             ..Default::default()
         })
+    }
+
+    /// `drain_new_cfgs`：新收到的 cfg 取一次，之后清空（供 host 学习期增量应用到 meta）。
+    #[test]
+    fn drain_new_cfgs_returns_each_new_cfg_once() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))));
+        let mut rcv = [0u8; 4096];
+        assert!(host.drain_new_cfgs().is_empty(), "初始无");
+        cli.send_cfg(&[1, 2, 3]).unwrap();
+        host.poll(&mut rcv);
+        assert_eq!(host.drain_new_cfgs(), vec![(1u8, vec![1u8, 2, 3])]);
+        assert!(host.drain_new_cfgs().is_empty(), "取后应清");
     }
 
     /// `reset_cfgs` 必须**保留掉线端**的 cfg（它无法重发，否则丢购买），只清活跃端。
