@@ -132,6 +132,11 @@ pub struct HostLockstep<T: Transport> {
     superseded: bool,
     /// R6b：若被取缔，记录发来 `Takeover` 的端（通常即新 host），供上层转 client 归队。
     superseded_by: Option<Peer>,
+    /// 旧 host 退位通知：一次性单发可能丢 → 暂存目标与包体，在若干 tick 内重发，缩短僵尸窗口。
+    old_host_notice: Option<Peer>,
+    old_host_notice_pkt: Vec<u8>,
+    old_host_notice_left: u32,
+    old_host_notice_tick: u32,
     /// R7：本 host 的稳定身份（用于暂停额度列表与自暂停）。0=未知。
     local_identity: u64,
     /// R7：当前是否已暂停（暂停期间 `try_emit` 不产帧）。
@@ -191,6 +196,10 @@ impl<T: Transport> HostLockstep<T> {
             alive_tick: 0,
             superseded: false,
             superseded_by: None,
+            old_host_notice: None,
+            old_host_notice_pkt: Vec::new(),
+            old_host_notice_left: 0,
+            old_host_notice_tick: 0,
             local_identity: 0,
             paused: false,
             pause_by: 0,
@@ -291,9 +300,15 @@ impl<T: Transport> HostLockstep<T> {
 
     /// S2：新 host 接管时，额外向「被取缔的旧 host」单发 `Takeover`，
     /// 使其 `HostLockstep` 标记 `superseded` 并停止作为权威（防脑裂/孤儿 host 续产帧）。
+    /// 因单发可能丢，会暂存并在后续 tick 重发数次（见 `poll` 尾部）。
     pub fn notify_old_host_takeover(&mut self, old_host: Peer, seq: u64, participants: Vec<u64>) {
         let pkt = Packet::Takeover { seq, participants };
-        let _ = self.transport.send_to(&pkt.encode(), &old_host);
+        let enc = pkt.encode();
+        let _ = self.transport.send_to(&enc, &old_host);
+        self.old_host_notice = Some(old_host);
+        self.old_host_notice_pkt = enc;
+        self.old_host_notice_left = 12; // ~6s @ 每 30 tick 重发一次（促旧 host 尽快退位）
+        self.old_host_notice_tick = 0;
     }
 
     /// S2/S4：本 host 是否已被新 host 的 `Takeover` 取缔（上层据此降级/退回主菜单）。
@@ -1029,6 +1044,17 @@ impl<T: Transport> HostLockstep<T> {
             }
             if !self.dropped[c] && self.latest_input[c].is_none() {
                 self.idle_ticks[c] += 1;
+            }
+        }
+        // M5+：重发「旧 host 已被取缔」的 `Takeover` 通知：一次性单发可能丢，重发数次促其尽快退位。
+        if self.old_host_notice_left > 0 {
+            self.old_host_notice_tick = self.old_host_notice_tick.wrapping_add(1);
+            if self.old_host_notice_tick % 30 == 0 {
+                if let Some(p) = self.old_host_notice {
+                    let pkt = self.old_host_notice_pkt.clone();
+                    let _ = self.transport.send_to(&pkt, &p);
+                }
+                self.old_host_notice_left -= 1;
             }
         }
     }
@@ -2275,6 +2301,26 @@ mod tests {
         // FakeTransport 的 recv_from 固定回对端地址（client_peer=4001）。
         assert_eq!(host.superseded_by(), Some(Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4001)))), "应记录来源端为新 host");
         assert!(host.try_emit().is_none(), "被取缔后不再产帧");
+    }
+
+    /// M5+：旧 host 退位通知（`notify_old_host_takeover`）在单发丢失时应被重发。
+    #[test]
+    fn notify_old_host_takeover_is_resent() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let old = Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4001)));
+        let mut rcv = [0u8; 4096];
+        host.notify_old_host_takeover(old, 7, vec![1, 2]);
+        for _ in 0..31 {
+            host.poll(&mut rcv);
+        }
+        let mut takeovers = 0;
+        while let Some(bytes) = ct.inbox.borrow_mut().pop_front() {
+            if matches!(Packet::decode(&bytes), Some(Packet::Takeover { .. })) {
+                takeovers += 1;
+            }
+        }
+        assert!(takeovers >= 2, "旧 host 退位通知应被重发，实际 {takeovers}");
     }
 
     /// R7：暂停仲裁 + 恢复倒计时 + 额度扣减 + client 收到状态。

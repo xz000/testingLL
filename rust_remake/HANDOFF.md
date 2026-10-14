@@ -52,7 +52,7 @@
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 125 / game-core 343 / net 56 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
+- 测试：**client 125 / game-core 343 / net 57 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
 - `PROTOCOL_VERSION = 58`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。（运行期包如 `Packet::Leave`/`ParticipantsAll` **不进 World ⇒ 不升协议**。）
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
