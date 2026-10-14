@@ -1100,6 +1100,11 @@ struct Game {
     /// Steam：房主提前离开后的提示覆盖层（`true`=显示「房主已离开」，等待用户按 Q 返回，不再静默 reset）。
     #[cfg(feature = "steam")]
     steam_host_left_overlay: bool,
+    /// 【临时实验 Step 0b】自动抢 owner 的 tick 计数 / 是否已抢到（成功后停）。测完删。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    exp_grab_ticks: u32,
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    exp_grab_won: bool,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -1737,6 +1742,8 @@ impl Game {
             steam_lobby_error: None,
             #[cfg(feature = "steam")]
             steam_host_left_overlay: false,
+            exp_grab_ticks: 0,
+            exp_grab_won: false,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -6750,6 +6757,9 @@ impl event::EventHandler for Game {
         // 房主提前离开后的提示覆盖层：暂停房间输入，等用户按 Q/回车/Esc 返回主菜单（不再静默 reset）。
         #[cfg(feature = "steam")]
         if self.steam_host_left_overlay {
+            // 【临时实验 Step 0b】覆盖层期间也让 F6/F7 可用，且每 ~2s 自动抢一次（验证“房主断网后能否抢/多人抢谁赢”）。
+            self.experiment_auto_grab();
+            let _ = self.experiment_owner_key(ctx);
             let dismiss = ctx
                 .keyboard
                 .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Escape))
@@ -8453,6 +8463,54 @@ impl Game {
         self.reset_to_main_menu(false);
     }
 
+    /// 【临时实验 Step 0】F6=抢 owner / F7=读 owner+成员；返回是否按了实验键。
+    #[cfg(feature = "steam")]
+    fn experiment_owner_key(&mut self, ctx: &Context) -> bool {
+        use ggez::input::keyboard::Key;
+        let f6 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F6));
+        let f7 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F7));
+        if !(f6 || f7) {
+            return false;
+        }
+        self.experiment_owner_io(f7);
+        true
+    }
+
+    /// 【临时实验】`read_only=true` 读 owner+成员；否则尝试 `SetLobbyOwner(me)` 并打印。
+    #[cfg(feature = "steam")]
+    fn experiment_owner_io(&mut self, read_only: bool) {
+        let Some(lid) = self.steam_lobby_id else { return };
+        let Some(t) = self
+            .steam_host_ls
+            .as_ref()
+            .map(|h| h.transport_ref())
+            .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
+        else {
+            return;
+        };
+        let me = self.steam_my_id;
+        let members = net_steam::session::experiment_lobby_member_ids(t, lid);
+        if read_only {
+            let owner = net_steam::session::lobby_owner(t, lid);
+            eprintln!("[experiment] READ owner={owner} members={members:?} (me={me})");
+        } else {
+            let (ok, after) = net_steam::session::experiment_set_lobby_owner(t, lid, me);
+            eprintln!("[experiment] GRAB(me={me}) ok={ok} owner_after={after} members={members:?}");
+            if ok {
+                self.exp_grab_won = true;
+            }
+        }
+    }
+
+    /// 【临时实验】覆盖层期间每 ~2s 自动抢一次 owner（成功后停）。
+    #[cfg(feature = "steam")]
+    fn experiment_auto_grab(&mut self) {
+        self.exp_grab_ticks = self.exp_grab_ticks.wrapping_add(1);
+        if !self.exp_grab_won && self.exp_grab_ticks % 120 == 0 {
+            self.experiment_owner_io(false);
+        }
+    }
+
     /// Steam 房间/就绪阶段（每帧）：client 每帧上行「就绪+在场」合包；host poll 收各端、全员就绪倒数计时进配置。
     #[cfg(feature = "steam")]
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
@@ -8487,33 +8545,10 @@ impl Game {
             self.accumulator = 0.0;
             return Ok(());
         }
-        // 【临时实验 Step 0】F6：尝试把大厅 owner 改成“我自己”（验证非 owner 成员能否改 owner）。
-        // F7：只读打印当前 `GetLobbyOwner`（在其余两台机器上按，核对是否都跟随变化）。
-        // 键位避开默认绑定（F9=暂停/F10=静音）。测完删除本块与 `net_steam::session::experiment_set_lobby_owner`。
-        if !panel_open && !self.room_cfg_edit {
-            let f6 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F6));
-            let f7 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F7));
-            if f6 || f7 {
-                if let Some(lid) = self.steam_lobby_id {
-                    let t = self
-                        .steam_host_ls
-                        .as_ref()
-                        .map(|h| h.transport_ref())
-                        .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()));
-                    if let Some(t) = t {
-                        let me = self.steam_my_id;
-                        if f6 {
-                            let (ok, after) = net_steam::session::experiment_set_lobby_owner(t, lid, me);
-                            eprintln!("[experiment] F6 SetLobbyOwner(me={me}) ok={ok} owner_after={after}");
-                        } else {
-                            let owner = net_steam::session::lobby_owner(t, lid);
-                            eprintln!("[experiment] F7 GetLobbyOwner={owner} (me={me})");
-                        }
-                    }
-                }
-                self.accumulator = 0.0;
-                return Ok(());
-            }
+        // 【临时实验 Step 0】F6=抢 owner / F7=读 owner+成员（键位避开 F9=暂停/F10=静音）。测完删。
+        if self.experiment_owner_key(ctx) {
+            self.accumulator = 0.0;
+            return Ok(());
         }
         // `E` **已退休**：房间名/备注并入设置编辑器的 `[A]房间` 分组（按 `O` 打开）。
         // 这里不再读取 `E`，该键在本界面为空闲。
