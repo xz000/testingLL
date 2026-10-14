@@ -1108,6 +1108,11 @@ struct Game {
     /// A：大厅等待「Steam 移除断线房主并移交 owner」的帧计数（上限 ~60s）。
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
     steam_host_wait_ticks: u32,
+    /// 大厅孤岛检测：节流计数 + 连续命中次数（自认在大厅但 Steam 成员表已无自己 → 回主菜单）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    steam_lobby_orphan_check: u32,
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    steam_lobby_orphan_strikes: u32,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -1746,6 +1751,8 @@ impl Game {
             #[cfg(feature = "steam")]
             steam_host_left_overlay: false,
             steam_host_wait_ticks: 0,
+            steam_lobby_orphan_check: 0,
+            steam_lobby_orphan_strikes: 0,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -8550,6 +8557,39 @@ impl Game {
     fn steam_lobby_update(&mut self, ctx: &Context, dt: f64) -> GameResult {
         use ggez::input::keyboard::Key;
         use ggez::input::mouse::MouseButton;
+        // 孤岛检测：自认在大厅里，但 Steam 成员表已无自己（被移出，如断网超时被踢）→ 回主菜单（保留会话）。
+        // 每 ~0.5s 查一次，连续 4 次（~2s）才判定，避免建房/瞬断的假阳性。
+        self.steam_lobby_orphan_check = self.steam_lobby_orphan_check.wrapping_add(1);
+        if self.steam_lobby_orphan_check % 30 == 0 {
+            let orphaned = match self.steam_lobby_id {
+                Some(lid) => {
+                    let t = self
+                        .steam_host_ls
+                        .as_ref()
+                        .map(|h| h.transport_ref())
+                        .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()));
+                    match t {
+                        Some(t) => !net_steam::session::lobby_member_ids(t, lid).contains(&self.steam_my_id),
+                        None => false,
+                    }
+                }
+                None => false,
+            };
+            if orphaned {
+                self.steam_lobby_orphan_strikes = self.steam_lobby_orphan_strikes.saturating_add(1);
+            } else {
+                self.steam_lobby_orphan_strikes = 0;
+            }
+            if self.steam_lobby_orphan_strikes >= 4 {
+                eprintln!("[steam-lobby] 已被移出大厅（成员表无自己）→ 回主菜单（保留会话）");
+                self.steam_lobby_orphan_strikes = 0;
+                self.steam_lobby_orphan_check = 0;
+                self.reset_to_main_menu(true);
+                self.menu_hint = i18n::t("你已被移出房间，已返回主菜单").to_string();
+                self.accumulator = 0.0;
+                return Ok(());
+            }
+        }
         // 「邀请好友」面板展开时由面板优先吃键（I/Q 收起、↑↓ 选择、回车 邀请、A 开 Steam 邀请窗口、R 刷新）。
         // 面板是**非模态**的：下面房间的网络逻辑（上行/广播/倒计时）照常每帧跑，
         // 否则 host 打开面板挑人时 client 会因收不到 host 心跳而判定「host 已离开」自动退房。
