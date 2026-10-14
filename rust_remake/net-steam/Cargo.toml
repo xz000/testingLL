@@ -16,5 +16,6 @@ net = { path = "../net" }
 game-core = { path = "../game-core" }
 # 可选：仅在 `steam` feature 下启用。非 vendored = 连系统安装的 Steam runtime（配合 steam_appid.txt）。
 # 版本经确认 rsproxy/crates-io 可解析的稳定版为 0.13.1（rust-version 1.80）。
-# 【临时实验 Step 0】额外开启 `raw-bindings` 以访问 `steamworks::sys` 调 `SetLobbyOwner`；测完连同代码一起移除。
-steamworks = { version = "0.13", optional = true, features = ["raw-bindings"] }
+# 可选：仅在 `steam` feature 下启用。非 vendored = 连系统安装的 Steam runtime（配合 steam_appid.txt）。
+# 版本经确认 rsproxy/crates-io 可解析的稳定版为 0.13.1（rust-version 1.80）。
+steamworks = { version = "0.13", optional = true }

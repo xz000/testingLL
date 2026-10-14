@@ -105,20 +105,8 @@ pub fn lobby_owner(transport: &SteamTransport, lobby: u64) -> u64 {
     transport.matchmaking().lobby_owner(LobbyId::from_raw(lobby)).raw()
 }
 
-/// 【临时实验，Step 0】尝试把大厅 owner 改成 `new_owner`（走 raw `sys`，安全层未封装 `SetLobbyOwner`）。
-/// 目的：验证**非 owner 成员**能否改 owner、以及 owner “在线但隔离”时能否成功 → 决定 P1/P2。
-/// 返回 `(SetLobbyOwner 的返回值, 调用后 `GetLobbyOwner` 读到的 owner)`。测完应删除本函数与调用点。
-pub fn experiment_set_lobby_owner(transport: &SteamTransport, lobby: u64, new_owner: u64) -> (bool, u64) {
-    use steamworks::sys;
-    let ok = unsafe {
-        let mm = sys::SteamAPI_SteamMatchmaking_v009();
-        sys::SteamAPI_ISteamMatchmaking_SetLobbyOwner(mm, lobby, new_owner)
-    };
-    (ok, lobby_owner(transport, lobby))
-}
-
-/// 【临时实验】当前大厅成员 SteamID 列表（服务端权威，用于观察房主何时从成员表消失）。
-pub fn experiment_lobby_member_ids(transport: &SteamTransport, lobby: u64) -> Vec<u64> {
+/// 当前大厅成员 SteamID 列表（服务端权威；用于检测断线房主何时被移出、owner 何时移交）。
+pub fn lobby_member_ids(transport: &SteamTransport, lobby: u64) -> Vec<u64> {
     use steamworks::LobbyId;
     transport
         .matchmaking()

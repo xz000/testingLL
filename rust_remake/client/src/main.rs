@@ -176,10 +176,11 @@ const STALE_HINT_TICKS: u64 = 30;
 /// S4：迁移阶段 A 重发 `ReconnectReq` 的间隔帧数（约 0.25s；host 侧另有回包限速）。
 #[cfg(feature = "steam")]
 const RECONNECT_REQ_EVERY: u64 = 15;
-/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（**约 10s**，D1）→ 回菜单，不做最小 ID 回退。
-/// 为什么是 10s：Steam 在 owner 离开大厅后**自动移交**给剩余成员，但崩溃/强杀时要等 Steam 后端检测断线，可能滞后几秒。
+/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（**约 60s**）→ 回菜单，不做最小 ID 回退。
+/// 为什么是 60s：Step 0 真机实测——Steam 要等它判定断线房主超时（**约 ~40s**）才把房主移出大厅并自动移交 owner；
+/// 因此必须等得够久（不能像以前只等 10s 就放弃）。
 #[cfg(feature = "steam")]
-const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 600;
+const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 3600;
 /// “被遗弃 host”自检：应到客户端全掉线持续 **约 10s** → 旧 host 自判被孤立，主动退位 + 退大厅。
 #[cfg(feature = "steam")]
 const DESERTED_HOST_TICKS: u64 = 600;
@@ -337,6 +338,10 @@ const LOBBY_REFRESH_COOLDOWN_SECS: f64 = 4.0;
 /// Steam 房间（client）：连续这么多帧收不到 host 的 `RosterReady` 广播，即判定 host 已离开（自动退出房间回主菜单）。约 4 秒。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
+/// A：房主沉默后，等待「Steam 移除断线房主并自动移交 owner」的上限（约 60s）。
+/// Step 0 实测 Steam 约 ~40s 才把断线房主移出大厅并移交；超时才提示回菜单（保留会话）。
+#[cfg(feature = "steam")]
+const STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS: u32 = 3600;
 /// Rich Presence：相同内容的最小重写间隔（秒）。内容变化时立即写，否则节流（Steam 对频繁 set 有限速）。
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
@@ -1100,11 +1105,9 @@ struct Game {
     /// Steam：房主提前离开后的提示覆盖层（`true`=显示「房主已离开」，等待用户按 Q 返回，不再静默 reset）。
     #[cfg(feature = "steam")]
     steam_host_left_overlay: bool,
-    /// 【临时实验 Step 0b】自动抢 owner 的 tick 计数 / 是否已抢到（成功后停）。测完删。
+    /// A：大厅等待「Steam 移除断线房主并移交 owner」的帧计数（上限 ~60s）。
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
-    exp_grab_ticks: u32,
-    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
-    exp_grab_won: bool,
+    steam_host_wait_ticks: u32,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -1742,8 +1745,7 @@ impl Game {
             steam_lobby_error: None,
             #[cfg(feature = "steam")]
             steam_host_left_overlay: false,
-            exp_grab_ticks: 0,
-            exp_grab_won: false,
+            steam_host_wait_ticks: 0,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -6757,9 +6759,22 @@ impl event::EventHandler for Game {
         // 房主提前离开后的提示覆盖层：暂停房间输入，等用户按 Q/回车/Esc 返回主菜单（不再静默 reset）。
         #[cfg(feature = "steam")]
         if self.steam_host_left_overlay {
-            // 【临时实验 Step 0b】覆盖层期间也让 F6/F7 可用，且每 ~2s 自动抢一次（验证“房主断网后能否抢/多人抢谁赢”）。
-            self.experiment_auto_grab();
-            let _ = self.experiment_owner_key(ctx);
+            // A：房主沉默后**不退出房间**，等 Steam 移除断线房主并自动移交 owner（Step 0 实测约 ~40s）。
+            self.steam_host_wait_ticks = self.steam_host_wait_ticks.saturating_add(1);
+            if self.steam_cli_ls.is_some() && self.steam_lobby_try_adopt_new_owner() {
+                // 已接管/重定向 → 结束等待，继续正常大厅流程。
+                self.steam_host_left_overlay = false;
+                self.steam_host_wait_ticks = 0;
+                self.steam_lobby_silent_ticks = 0;
+                self.accumulator = 0.0;
+                return Ok(());
+            }
+            if self.steam_host_wait_ticks < STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS {
+                // 仍在等待（覆盖层显示“正在等待 Steam 移交房主…”）。
+                self.accumulator = 0.0;
+                return Ok(());
+            }
+            // 超时（Steam 一直未移交）→ 允许用户回主菜单（保留会话）。
             let dismiss = ctx
                 .keyboard
                 .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Escape))
@@ -6769,6 +6784,7 @@ impl event::EventHandler for Game {
                     .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Enter));
             if dismiss {
                 self.steam_host_left_overlay = false;
+                self.steam_host_wait_ticks = 0;
                 self.steam_leave_room();
                 self.accumulator = 0.0;
                 return Ok(());
@@ -8463,52 +8479,62 @@ impl Game {
         self.reset_to_main_menu(false);
     }
 
-    /// 【临时实验 Step 0】F6=抢 owner / F7=读 owner+成员；返回是否按了实验键。
+    /// A：大厅阶段房主沉默后，**等待 Steam 移除断线房主并自动移交 owner**。
+    /// 返回 `true` = 已检测到移交并完成接管/重定向（调用方应清除等待状态）。
+    /// 依据（Step 0 真机）：owner 在场时成员改不了 owner；Steam 约 ~40s 后把断线房主移出大厅并把 owner 交给某成员。
     #[cfg(feature = "steam")]
-    fn experiment_owner_key(&mut self, ctx: &Context) -> bool {
-        use ggez::input::keyboard::Key;
-        let f6 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F6));
-        let f7 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F7));
-        if !(f6 || f7) {
+    fn steam_lobby_try_adopt_new_owner(&mut self) -> bool {
+        let Some(lid) = self.steam_lobby_id else { return false };
+        let Some(t) = self.steam_cli_ls.as_ref().map(|c| c.transport_ref()) else {
+            return false;
+        };
+        let owner = net_steam::session::lobby_owner(t, lid);
+        if owner == 0 {
             return false;
         }
-        self.experiment_owner_io(f7);
+        // owner 必须已经是个“仍在成员表里的在线成员”（否则仍是旧 host / 无效）。
+        if !net_steam::session::lobby_member_ids(t, lid).contains(&owner) {
+            return false;
+        }
+        let my_host_id = match self.steam_cli_ls.as_ref().map(|c| c.host_peer()) {
+            Some(net::transport::Peer::Steam { id, .. }) => id,
+            _ => 0,
+        };
+        if owner == my_host_id {
+            return false; // 还是旧 host，继续等 Steam 移交
+        }
+        if owner == self.steam_my_id {
+            // Steam 把 owner 移交给了我 → 接管大厅 host。
+            return self.steam_lobby_become_host();
+        }
+        // 移交给别的成员 → 重定向到新 owner。
+        if let Some(cli) = self.steam_cli_ls.as_mut() {
+            cli.retarget_host(net::transport::Peer::Steam { id: owner, conn: None });
+        }
+        eprintln!("[steam-client] Steam 已移交 owner={owner} → 重定向到新 host");
         true
     }
 
-    /// 【临时实验】`read_only=true` 读 owner+成员；否则尝试 `SetLobbyOwner(me)` 并打印。
+    /// A：在大厅阶段从 client 切换为 host（Steam 把 owner 移交给了我）。
     #[cfg(feature = "steam")]
-    fn experiment_owner_io(&mut self, read_only: bool) {
-        let Some(lid) = self.steam_lobby_id else { return };
-        let Some(t) = self
-            .steam_host_ls
-            .as_ref()
-            .map(|h| h.transport_ref())
-            .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
-        else {
-            return;
-        };
-        let me = self.steam_my_id;
-        let members = net_steam::session::experiment_lobby_member_ids(t, lid);
-        if read_only {
-            let owner = net_steam::session::lobby_owner(t, lid);
-            eprintln!("[experiment] READ owner={owner} members={members:?} (me={me})");
-        } else {
-            let (ok, after) = net_steam::session::experiment_set_lobby_owner(t, lid, me);
-            eprintln!("[experiment] GRAB(me={me}) ok={ok} owner_after={after} members={members:?}");
-            if ok {
-                self.exp_grab_won = true;
-            }
-        }
-    }
-
-    /// 【临时实验】覆盖层期间每 ~2s 自动抢一次 owner（成功后停）。
-    #[cfg(feature = "steam")]
-    fn experiment_auto_grab(&mut self) {
-        self.exp_grab_ticks = self.exp_grab_ticks.wrapping_add(1);
-        if !self.exp_grab_won && self.exp_grab_ticks % 120 == 0 {
-            self.experiment_owner_io(false);
-        }
+    fn steam_lobby_become_host(&mut self) -> bool {
+        let Some(cli) = self.steam_cli_ls.take() else { return false };
+        let transport = cli.into_transport();
+        let n = self.steam_roster.len().max(2);
+        let mut host = net::lockstep::HostLockstep::new(transport, n, true);
+        let ids: Vec<Option<u64>> = self
+            .steam_roster
+            .iter()
+            .map(|(_, _, id)| *id)
+            .filter(|id| *id != self.steam_my_id)
+            .map(Some)
+            .collect();
+        host.set_client_identities(&ids);
+        self.steam_host_ls = Some(host);
+        self.steam_cli_ls = None;
+        self.steam_my_index = 0;
+        eprintln!("[steam-client] Steam 已把 owner 移交给我 → 接管大厅 host");
+        true
     }
 
     /// Steam 房间/就绪阶段（每帧）：client 每帧上行「就绪+在场」合包；host poll 收各端、全员就绪倒数计时进配置。
@@ -8542,11 +8568,6 @@ impl Game {
             || ctx.keyboard.is_logical_key_just_pressed(&Key::Character("Q".into()));
         if q_pressed && !panel_open && !self.room_cfg_edit {
             self.steam_leave_room();
-            self.accumulator = 0.0;
-            return Ok(());
-        }
-        // 【临时实验 Step 0】F6=抢 owner / F7=读 owner+成员（键位避开 F9=暂停/F10=静音）。测完删。
-        if self.experiment_owner_key(ctx) {
             self.accumulator = 0.0;
             return Ok(());
         }
@@ -12048,7 +12069,7 @@ impl Game {
         Ok(())
     }
 
-    /// 房主提前离开后的提示覆盖层：避免静默 reset 让用户一脸懵；按 Q / 回车 / Esc 返回主菜单。
+    /// 房主提前离开后的提示覆盖层（A）：等待 Steam 移除断线房主并自动移交 owner；超时后可按 Q 返回主菜单。
     #[cfg(feature = "steam")]
     fn draw_steam_host_left_overlay(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
@@ -12056,9 +12077,17 @@ impl Game {
         let (sw, sh) = (ui::UI_W, ui::UI_H);
         let cx = sw / 2.0;
         let cy = sh / 2.0;
-        draw_text(&mut canvas, ctx, "房主已离开房间", 44.0, graphics::Color::from_rgb(255, 130, 120), Point2 { x: cx, y: cy - 40.0 }, true)?;
-        draw_text(&mut canvas, ctx, "房主已退出或断开，本场无法继续", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: cy + 8.0 }, true)?;
-        draw_text(&mut canvas, ctx, "按 Q / 回车 / Esc 返回主菜单", 20.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: cy + 56.0 }, true)?;
+        let waiting = self.steam_host_wait_ticks < STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS;
+        draw_text(&mut canvas, ctx, "房主已断开", 44.0, graphics::Color::from_rgb(255, 130, 120), Point2 { x: cx, y: cy - 40.0 }, true)?;
+        if waiting {
+            let secs = (STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS.saturating_sub(self.steam_host_wait_ticks)) / 60;
+            let line = format!("正在等待 Steam 移交房主…（最多约 {secs}s）");
+            draw_text(&mut canvas, ctx, &line, 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: cy + 8.0 }, true)?;
+            draw_text(&mut canvas, ctx, "Steam 会自动把房主移交给仍在线的成员（约需数十秒）", 20.0, graphics::Color::from_rgb(170, 178, 190), Point2 { x: cx, y: cy + 44.0 }, true)?;
+        } else {
+            draw_text(&mut canvas, ctx, "等待 Steam 移交超时", 22.0, graphics::Color::from_rgb(200, 205, 215), Point2 { x: cx, y: cy + 8.0 }, true)?;
+            draw_text(&mut canvas, ctx, "按 Q / 回车 / Esc 返回主菜单", 20.0, graphics::Color::from_rgb(150, 200, 255), Point2 { x: cx, y: cy + 56.0 }, true)?;
+        }
         canvas.finish(ctx)?;
         Ok(())
     }
