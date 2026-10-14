@@ -166,10 +166,50 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 旧 host 最终会因 `Takeover` 重发或 owner 移交而自栅栏退位；若已退到菜单则无 host 身份。
 
 **可选加固**（将来若发现问题再做）：
-1. ✅ **已做（`<本次>`）**：`notify_old_host_takeover` **重发** —— 接管时暂存通知，`poll` 尾部每 30 tick(0.5s) 重发一次、共 12 次(~6s)，
+1. ✅ **已做（`2ff05ee`）**：`notify_old_host_takeover` **重发** —— 接管时暂存通知，`poll` 尾部每 30 tick(0.5s) 重发一次、共 12 次(~6s)，
    提高到达率，促旧 host 尽快退位（`HostLockstep` 新增 `old_host_notice*` 字段 + `poll` 重发；net 单测 `notify_old_host_takeover_is_resent`）。
-2. ✅ **已做（`<本次>`）**：**旧 host 自判“被遗弃”** —— `HostLockstep::all_clients_dropped()` 判定
+2. ✅ **已做（`3ae9bbb`）**：**旧 host 自判“被遗弃”** —— `HostLockstep::all_clients_dropped()` 判定
    “应到客户端≥1 且全部掉线”；`poll` 累计 `deserted_ticks`；达 `DESERTED_HOST_TICKS=600`(~10s) →
    旧 host 自判被孤立，**主动退位 + 退大厅**（促 Steam 移交 owner）。学习期/对局期两条 host 分支均接线。
    （已确认：主动退出路径本就会 `leave_lobby` + 清 host 身份，不会僵尸；崩溃=进程消亡；此条覆盖唯一的“活着但 P2P 隔离”。）
 3. 记录/限流：对“非当前 host”的包做丢弃计数，便于诊断僵尸窗口时长。
+
+---
+
+## 11. 网络隔离 owner 的迁移缺口（2026-10-14 真机新发现，**待规划/未开工**）
+
+### 11.1 现象（日志）
+- `cannot determine a valid new host (lobby_owner=43985466) after 600 ticks; returning to menu`（多台、多次）。
+- 含义：**旧 host 网络被隔离（但并未退出大厅）时，Steam 的 `lobby_owner` 一直停在它身上、不会自动移交**；
+  现有“只认 owner”的选举无解 → 10s 用尽 → 回菜单。
+- 对比：旧 host **主动退出** 会 `leave_lobby`，Steam 随即移交 owner → 那条路径正常（已验证）。
+
+### 11.2 关键未知：剩余成员能不能改 owner？
+- SDK 有 `ISteamMatchmaking::SetLobbyOwner(lobby, newOwner)`：`steamworks::sys` 已 re-export（`lib.rs:10`），
+  `SteamAPI_SteamMatchmaking_v009()` + `SteamAPI_ISteamMatchmaking_SetLobbyOwner(...)` 均可用（技术上**可调**）。
+- 但 **调用权限/语义未验证**：非 owner 成员能否调？在当前 owner “在线但隔离”时能否成功？
+- → **Step 0 小实验（3 账号）先验证**：非 owner 调 `SetLobbyOwner` 把 owner 改给某人，能否成功、`GetLobbyOwner` 是否立即更新。
+
+### 11.3 你提的两个担心（均成立）
+1. **共识出的新 host 过不了 owner 判定 → 自栅栏退位**：是的。`should_self_fence` 只认 `lobby_owner`，
+   所以若共识 host ≠ Steam owner，它一接管就会被判“owner 不是我”而退位（这正是之前 cascade 的机制）。
+   ⇒ 若走“不改 owner”的共识路线，**必须同时改自栅栏口径**（不能只看 owner）。
+2. **旧 host 恢复重连后自认 owner**：是的。`host_steam_id()`（`session.rs:1066`）= 玩家表槽0 / `lobby_owner`；
+   旧 host 一回来就会把自己当 host。⇒ 需要**恢复协议**（见 11.4 P2）。
+
+### 11.4 两条路线（Step 0 结果决定）
+- **P1（`SetLobbyOwner` 可用）— 推荐**：
+  - 剩余玩家**共识**选出新 host（确定性），由任一成员/新 host 调 `SetLobbyOwner` → `lobby_owner` **收敛**到新 host；
+  - **保持不变量“host = owner”不变**，现有选举/自栅栏/迁移机制**原样可用**；
+  - 旧 host 恢复后读到 `owner != me` → 自栅栏退位。改动最小。
+- **P2（`SetLobbyOwner` 不可用/不可靠）— 解耦**：
+  - 定义 **`consensus_host(participants, online)`**（确定性、各端一致；建议取 `participants` 中**最靠前的在线者**）；
+  - **自栅栏/接管校验改为**：仅当 “`owner ∈ 在线集` **且** `owner != 共识 host`” 才退位（owner 不再唯一决定）；
+  - **重连端默认当 client**：先把**真正的当前 host id 写进大厅元数据**（同 `ROOM_NAME_KEY` 机制），接管时更新；
+    重连端读到 “host != me” → 以 client 归队；旧 host 若仍是 Steam owner，顺手 `SetLobbyOwner(当前host)` 纠正 Steam；
+  - 共识 host id 随 `Takeover` / `ParticipantsAll`（已加的包）传播。
+
+### 11.5 决策点（待你拍板）
+- **Step 0**：是否做这个 3 账号 `SetLobbyOwner` 权限小实验？
+- 若 P2：共识函数用 “在线集最小 SteamID” 还是 “`participants` 里最靠前的在线者”？（推荐后者：`participants` 是权威顺序，天然一致）
+- 重连端“默认 client + 读大厅元数据确定当前 host”这个恢复协议是否接受？（是 P2 的必要组成，P1 下也更稳）
