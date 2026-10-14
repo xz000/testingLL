@@ -92,7 +92,9 @@ $prevEnc = [Console]::OutputEncoding
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 & $exe @argsList 2>&1 | ForEach-Object {
-    Out-Host $_
+    # 注意：`Out-Host $_` 在本机 PowerShell 会报 PositionalParameterNotFound（`-InputObject` 非位置参数）
+    # → 控制台每行都刷错（但日志文件仍照常写）。改用显式 `-InputObject`。
+    Out-Host -InputObject $_
     try { [System.IO.File]::AppendAllText($logFile, "$_`r`n", $utf8NoBom) } catch {}
 }
 try { [Console]::OutputEncoding = $prevEnc } catch {}
