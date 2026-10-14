@@ -8618,7 +8618,6 @@ impl Game {
                     self.steam_roster_ready = entries.clone();
                     // 持久记录 host 广播的手动倒计时剩余毫秒（仅收到新快照时更新，避免没收到包的帧回退闪烁）。
                     self.steam_manual_ms = manual_ms;
-                    eprintln!("[steam-client] roster ready snapshot: {entries:?} manual_ms={manual_ms}");
                     let roster_cnt = self.world.players.len();
                     // 持久记录：仅在收到新快照时更新；若本帧恰好没收到广播，沿用上次快照，
                     // 避免“按 U 就绪 / 倒计时”在没收到广播的帧回退 false 而闪烁。

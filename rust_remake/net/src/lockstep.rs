@@ -1148,6 +1148,8 @@ pub struct ClientLockstep<T: Transport> {
     host_learn_remaining: Option<f64>,
     /// 缓存的最近一次 host 广播的**在线集**（`Participants`）；供上层更新"已离开"标记。
     latest_participants: Option<Vec<u64>>,
+    /// 诊断：是否已就“收到非 host 的快照”告警一次（避免刷屏）。
+    warned_nonhost_snapshot: bool,
 }
 
 /// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
@@ -1172,6 +1174,7 @@ impl<T: Transport> ClientLockstep<T> {
             host_left: None,
             host_learn_remaining: None,
             latest_participants: None,
+            warned_nonhost_snapshot: false,
         }
     }
 
@@ -1593,18 +1596,28 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 学习期专用：排空 transport 收包（缓存快照/在线集/暂停视图/状态哈希/Takeover），**不推进帧、不 step 世界**；
-    /// 返回是否收到了来自 host 的**任意**包。供上层做"学习期存活判定"——学习期没有帧可数，只能用"是否收到 host 包"。
+    /// 返回是否收到了**任意包**（学习期存活判定——学习期没有帧可数，只能用“是否还在收包”；
+    /// 星形拓扑下 client 只与 host 直连，故“完全无包”≈“host 真掉线”）。
     pub fn pump_learning(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
         let mut any = false;
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
-                    if from == self.host {
-                        any = true;
-                    }
+                    // 学习期存活判定：**任一收到包**都算“会话仍活”。星形拓扑下 client 只与 host 直连，
+                    // 故“完全没有包”≈“host 真掉线”；不必（也不能）只认 `from == self.host`——
+                    // 否则一旦 `self.host` 指错（迁移/归队后指向已沉默的 peer），快照仍在到达也会被误判“host silent”。
+                    any = true;
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Snapshot { world_bytes, seq, .. } => {
+                                // 诊断：非 host 发来的快照（说明 self.host 可能指错或存在双 host）。
+                                if from != self.host && !self.warned_nonhost_snapshot {
+                                    self.warned_nonhost_snapshot = true;
+                                    eprintln!(
+                                        "[steam-client] learning snapshot from NON-host {:?} (my host={:?}) —— self.host 可能已过期",
+                                        from, self.host
+                                    );
+                                }
                                 // 学习期也顺带解出 host 的 `learn_remaining`（供“偏差过大才对齐”）。
                                 if from == self.host {
                                     if let Some((_, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {

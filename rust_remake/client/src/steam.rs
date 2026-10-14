@@ -39,10 +39,12 @@ fn snapshot_phase_is_learning(world_bytes: &[u8]) -> bool {
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 pub(crate) fn elect_new_host(owner: u64, old_host: u64, online: &[u64]) -> u64 {
     if owner != 0 && owner != old_host && online.contains(&owner) {
-        owner
-    } else {
-        0
+        return owner;
     }
+    // owner 不可用（未移交 / 已掉线 / 不在线）：回退到在线集里**除旧 host 外**的最小 SteamID（确定性）。
+    // 之前此情直接返回 0 → 调用方 270 帧后“无法确定新主机”回主菜单；真机多次遇到：Steam lobby owner
+    // 仍是已掉线的旧 host，而它不在在线集里 → 明明还有在线成员却判“选举失败”。
+    online.iter().copied().filter(|&id| id != old_host).min().unwrap_or(0)
 }
 
 /// R4②：host 是否应自栅栏退位。
@@ -109,6 +111,8 @@ impl Game {
                             }
                             self.steam_migrating = false;
                             self.steam_migrate_ticks = 0;
+                            // 迁移结束（恢复）后清零学习期沉默计数，避免迁移前的累计值立刻再次触发迁移。
+                            self.steam_cli_stale_ticks = 0;
                             return Ok(Some(cli));
                         }
                         // 旧 host 的其它包（Frame/StateHash）：它还在，但不足以补齐缺口，继续等 Snapshot。
@@ -193,6 +197,8 @@ impl Game {
                 self.steam_migrating = false;
                 self.steam_migrate_ticks = 0;
                 self.steam_new_host_id = 0;
+                // 迁移结束（重定向到新 host）后清零学习期沉默计数。
+                self.steam_cli_stale_ticks = 0;
                 eprintln!("[steam-client] migrated to new host (seq={seq}), resuming lockstep");
                 Ok(Some(cli))
             } else {
@@ -775,14 +781,16 @@ mod tests {
         assert!(!super::should_self_fence(9, 7, &[7]), "owner 不在参与集 → 不退位（保守）");
     }
 
-    /// owner 不可用（未移交 / 无效 / 不在参与集）时**不选举**（返回 0，不再做最小 ID 回退）。
+    /// owner 不可用（未移交 / 无效 / 不在参与集）时**回退到在线集中除旧 host 外的最小 SteamID**（确定性）。
     #[test]
-    fn elect_returns_zero_when_owner_invalid() {
-        // owner 仍是旧 host（Steam 移交未反映）→ 不选举。
-        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 0);
-        // 无大厅 / owner 无效（0）→ 不选举。
-        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 0);
-        // owner 不在本局在线参与集（如只在大厅但未参与）→ 不选举。
-        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 0);
+    fn elect_falls_back_to_min_online_when_owner_invalid() {
+        // owner 仍是旧 host（Steam 移交未反映）→ 回退最小在线 id（排除旧 host 100）。
+        assert_eq!(elect_new_host(100, 100, &[100, 500, 300]), 300);
+        // 无大厅 / owner 无效（0）→ 回退。
+        assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 300);
+        // owner 不在本局在线参与集 → 回退。
+        assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 300);
+        // 在线集只剩旧 host → 无人可接管，返回 0。
+        assert_eq!(elect_new_host(0, 100, &[100]), 0);
     }
 }
