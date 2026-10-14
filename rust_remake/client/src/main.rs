@@ -7227,7 +7227,7 @@ impl event::EventHandler for Game {
                                 // 提前记住参与玩家数（host 只读）与首局标志，归还 host 后据此重建 world。
                                 let p = host.participants_count();
                                 let stage_first = self.pre_game_config;
-                                let all = match host.collect_cfgs() {
+                                let mut all = match host.collect_cfgs() {
                                     Some(a) => a,
                                     None => {
                                         eprintln!("[cfg-sync] 配置未收齐（竞态），本轮放弃同步，下一帧重试");
@@ -7236,6 +7236,15 @@ impl event::EventHandler for Game {
                                         return Ok(());
                                     }
                                 };
+                                // **host 权威补齐**：把未被各端 cfg 覆盖的参与者（如已掉线的旧 host）从 host 的 `meta`
+                                // 补成条目，让**各端应用同一份**（否则各端按各自 local meta 当种子 → 分叉/立即 DESYNC）。
+                                // 注：必须在 `stage_world_for_participants` 之前读（它会重置 `self.meta`）。
+                                for prof in self.meta.profiles.iter() {
+                                    let idx = prof.player_id as u8;
+                                    if !all.iter().any(|(i, _)| *i == idx) {
+                                        all.push((idx, game_core::progress::PlayerConfig::from_profile(prof).encode()));
+                                    }
+                                }
                                 // 诊断：host 收集到各端配置的绑定（确认 client 上报的绑定是否到了 host）。
                                 for (h_i, h_bytes) in &all {
                                     if let Some(h_cfg) = game_core::progress::PlayerConfig::decode(h_bytes) {
@@ -7253,17 +7262,10 @@ impl event::EventHandler for Game {
                                 eprintln!("[steam-host] synced {} player configs -> {stage} (round {}), participants={p}, ids={pids:?}", all.len(), self.meta.round);
                                 host.reset_cfgs();
                                 self.steam_host_ls = Some(host); // 归还 host，释放 borrow 后重建 world
-                                // M3（P1）：首局重建时**保留当前已有的 profile**（按 player_id），再叠 `all`——
-                                // 保旧 host（及其他未被 `all` 覆盖者）的购买/金币；迁移后各端 adopt 同一快照 ⇒ 种子一致。
-                                let old_profiles: Vec<game_core::meta::PlayerProfile> = self.meta.profiles.clone();
                                 // 首局开局：把 world/meta 重建为本局参与玩家数（不满员时两端角色一致）；此后多局沿用。
+                                // 未覆盖参与者（已掉线旧 host）的购买/金币由上面“补齐 all”统一保证，无需本地种子。
                                 if stage_first {
                                     self.stage_world_for_participants(p, STEAM_SEED);
-                                    for prof in self.meta.profiles.iter_mut() {
-                                        if let Some(o) = old_profiles.iter().find(|x| x.player_id == prof.player_id) {
-                                            *prof = o.clone();
-                                        }
-                                    }
                                 }
                                 self.apply_player_cfgs(&all);
                                 self.teardown_round_end();
@@ -7449,14 +7451,7 @@ impl event::EventHandler for Game {
                                     let p = participants.len();
                                     let me_orig = self.steam_my_index;
                                     let me_new = participants.iter().position(|&x| x == me_orig).unwrap_or(0) as u8;
-                                    // M3（P1）：保留当前已有 profile（按 player_id）再叠 `all`，保未覆盖者的购买/金币。
-                                    let old_profiles: Vec<game_core::meta::PlayerProfile> = self.meta.profiles.clone();
                                     self.stage_world_for_participants(p, STEAM_SEED);
-                                    for prof in self.meta.profiles.iter_mut() {
-                                        if let Some(o) = old_profiles.iter().find(|x| x.player_id == prof.player_id) {
-                                            *prof = o.clone();
-                                        }
-                                    }
                                     self.steam_my_index = me_new;
                                     eprintln!("[steam-client] reindexed me orig={me_orig} -> new={me_new}");
                                 }
