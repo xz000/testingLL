@@ -52,8 +52,8 @@
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 125 / game-core 343 / net 54 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
-- `PROTOCOL_VERSION = 57`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。
+- 测试：**client 125 / game-core 343 / net 56 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体见 `check.ps1`。
+- `PROTOCOL_VERSION = 58`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。（运行期包如 `Packet::Leave`/`ParticipantsAll` **不进 World ⇒ 不升协议**。）
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
 
@@ -80,6 +80,7 @@
    - **`LEAVE_REJOIN_PLAN.md`**：主动离开（房主/玩家）**立即**生效 + **三因（主动/掉线/崩溃）都能归队**。**L1–L5 已完成**（`4980321`/`4019e5c`/`3a8f386`/`9888ba6`/`3e52f2d`）：会话时长设置项(入云)、`reset_to_main_menu(keep_rejoin)`、`Packet::Leave`+统一在线集、"已离开"标记、接线+文案。**已真机验证**（3 账号：对战期/学习期的离开→归队、房主迁移、控制角色/标记一致、无 DESYNC；清单见该文档 §4.1）。协议 **58**（`Leave` 为运行期包；57=快照补全、58=归队索引，修归队 DESYNC/卡死）。
    - **`DISPLAY_CAMERA_PLAN.md`**：分辨率（自适应+全屏跟随）/全屏（Desktop 默认、True 附加）/边缘滚屏（玩家开关）/相机平移速度；**S1–S4 已完成**（`d0a6675`/`55e2919`/`7c35928`/`f7a10d2`），client 124 单测全绿；真机手感验收待做。
    - **`LEARNING_PHASE_NET_PLAN.md`**：学习期联机。**E1–E3 已完成并真机验证**（心跳+静态快照 / 按 `meta.phase` 恢复 / 掉线·离开=恒桩子·可归队·不卡局）；**学习期房主退出/掉线已改走主机迁移**（`4082ae2`）；**E5（R7e 学习期暂停）暂缓**。真机暴露并修复的一系列问题见该文档 **§7「实测发现的 bug 与修复」**（房间槽位重算、学习界面空白、配置同步抹 cfg、`steam_participants` 兜底、标记不一致、学习期丢购买等，均含 commit）。
+   - **`HOST_MIGRATION_LEARNING_PLAN.md`**：学习期房主退出/**主机迁移**专项。**M0–M5 全部完成并真机验收**（3 账号“房主退出→重开→连回”）：撤自选举回归 `5b4ec99`；M1 诊断 + M2 全量名单权威下发 `748f626`；M3(D1=10s 等 owner 移交、取消共识) + M4 断言 `e6ff182`；M5 修 `host_left` 跨迁移残留 `91c83f7`。验收：`Phase-B STALL`/`cannot determine`/`DESYNC`/`M4`/`panic` 均 0；❌ 不做共识（唯一权威 = Steam `lobby_owner`）。
 
 ## 6. 每步的完成标准
 

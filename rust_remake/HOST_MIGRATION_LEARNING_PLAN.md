@@ -106,13 +106,22 @@ F3 修复已确证生效：`logs_3@222710` 出现
 2. **M1（已完成 `748f626`）**：诊断 —— `Leave`/`silent`/`NO frames` 补发送者(`self.host`) 与 leaver 身份。
 3. **M2（已完成 `748f626`）**：新增运行期包 `ParticipantsAll`（TAG 23），host 学习期每 2s 广播**全量名单**；
    client 采纳维护 `steam_participants`；大厅 roster 只用于 UI（不再兜底对局名单）。
-4. **M3（已完成 `<本次>`）**：D1 `MIGRATE_NO_OWNER_BAIL_TICKS` 270→**600**（~10s）；选举保持**只认 owner、不共识**；
+4. **M3（已完成 `e6ff182`）**：D1 `MIGRATE_NO_OWNER_BAIL_TICKS` 270→**600**（~10s）；选举保持**只认 owner、不共识**；
    确认退位/被取代路径**不发 Leave**（已核：`steam_begin_rejoin_as_client` 不发）。
-5. **M4（已完成 `<本次>`）**：迁移/恢复后 `log_migration_consistency` 自检（`participants != world.players` 即告警）；
+5. **M4（已完成 `e6ff182`）**：迁移/恢复后 `log_migration_consistency` 自检（`participants != world.players` 即告警）；
    接管侧继续用 `ae8e551` 的补齐兜底。
+6. **M5（已完成 `91c83f7`）**：修 `host_left` 跨迁移残留 —— `retarget_host` 清空 `host_left`；
+   学习期也消费 `host_left`（与 Fighting 同口径，立即迁移）。真机 M1 日志坐实：旧 host 迁移前发的 `Leave`
+   会在重定向后被当成“当前 host 离开”而误迁移。
 
-> 待真机：M1 日志里那条 `host broadcast Leave (leaver=..., sender/host=...)` 的**真实来源**；
-> 以及 owner 未移交时是否在 10s 内由 Steam 成功移交。
+## 6.1 真机验收结论（2026-10-14，三次 3 账号“房主退出→重开→连回”）
+
+- ✅ **M1 生效**：`host broadcast Leave (leaver=..., sender/host=...)` 抓到 F5 真因（`host_left` 跨迁移残留）；
+  修后 `sender/host == leaver` 始终一致，且学习期 Leave 走 `host broadcast Leave in learning ... -> immediate migration`。
+- ✅ **M2 生效**：三端 `participants(full) <- host: [43985466, 63417, 94062]` 一致。
+- ✅ 迁移链全面通过：选举=owner、`TAKEOVER ... player 1/3`（人数对）、含带进度快照的接管（`migrated to new host (seq=2314)`）；
+  **`Phase-B STALL` / `cannot determine a valid new host` / `DESYNC` / `M4 不一致` / `panic` 均为 0**。
+- ℹ️ 观察到一次 `learning snapshot from NON-host 43985466`（旧 host 被取代后短暂仍发快照），**已被 `from == self.host` 正确忽略**（见 §10）。
 
 ---
 
@@ -137,3 +146,26 @@ F3 修复已确证生效：`logs_3@222710` 出现
   唯一权威 = `lobby_owner`。共识只会引入脑裂风险（真机已验：自选举→接管→自栅栏退位连锁），故不做。
 - **关键修复**：`owner == old_host` **不等于** owner 失效——只要 **owner ∈ 在线集**，它就是合法 host（重定向/等待），
   这既修 F5 cascade，也让 F2 从“误选举”变为“等 Steam 移交”。
+
+---
+
+## 9. 状态：已完成（2026-10-14）
+
+M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（在办）** 中现归为**已收尾的联机设计档**，
+后续如再动学习期迁移请先更新本文档。
+
+---
+
+## 10. 后续可选：僵尸 host 退位加固（非阻塞，未做）
+
+**现象**：旧 host 被取代后可能**短暂仍持有 host 身份并继续广播周期快照**（真机见
+`learning snapshot from NON-host 43985466`）。窗口来自：①新 host 的 `notify_old_host_takeover` 是**一次性单播**、可能丢；
+②Steam **owner 尚未移交**时旧 host 的 `should_self_fence`（只认 owner）不触发；③刚从对局退到菜单的状态切换瞬。
+
+**为何无害**：各端**只认 `self.host` 的包**（不变量 I5）→ 旧 host 的快照/帧/Leave 全被丢弃；
+旧 host 最终会因 `Takeover` 重发或 owner 移交而自栅栏退位；若已退到菜单则无 host 身份。
+
+**可选加固**（将来若发现问题再做）：
+1. `notify_old_host_takeover` **重发数次**（而非一次），提高到达率；
+2. 旧 host 自栅栏更积极（一旦观察到“他人 Takeover / owner 已变 / 自己的权威回声消失”即退位）；
+3. 记录/限流：对“非当前 host”的包做丢弃计数，便于诊断僵尸窗口时长。
