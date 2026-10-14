@@ -180,6 +180,9 @@ const RECONNECT_REQ_EVERY: u64 = 15;
 /// 为什么是 10s：Steam 在 owner 离开大厅后**自动移交**给剩余成员，但崩溃/强杀时要等 Steam 后端检测断线，可能滞后几秒。
 #[cfg(feature = "steam")]
 const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 600;
+/// “被遗弃 host”自检：应到客户端全掉线持续 **约 10s** → 旧 host 自判被孤立，主动退位 + 退大厅。
+#[cfg(feature = "steam")]
+const DESERTED_HOST_TICKS: u64 = 600;
 /// R5c：归队握手超时（帧，约 15s）→ 放弃并回主菜单。仅 Steam。
 #[cfg(feature = "steam")]
 const REJOIN_TIMEOUT_TICKS: u32 = 900;
@@ -4944,6 +4947,16 @@ impl Game {
             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
             }
+            // “被遗弃 host”自检（学习期同对局期）：全客户端长时间无响应 → 自判被孤立，退位 + 退大厅。
+            if host.deserted_ticks() >= DESERTED_HOST_TICKS {
+                eprintln!(
+                    "[steam-host] DESERTED: 所有客户端长时间无响应，自判被孤立 -> 退出大厅/对局"
+                );
+                self.steam_host_ls = Some(host);
+                self.reset_to_main_menu(true);
+                self.menu_hint = i18n::t("连接未能恢复，已返回主菜单").to_string();
+                return Ok(());
+            }
             // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
             // 也同步"已离开"。
             host.take_online_dirty();
@@ -7171,6 +7184,19 @@ impl event::EventHandler for Game {
                     // 对局中也刷新 ping（HUD 显示到对端的延迟，卡顿来源一眼可辨）。
                     self.steam_refresh_network_info(ctx);
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
+                        // “被遗弃 host”自检：应到客户端≥1 且全部长时间无响应（~10s）→ 自判被孤立
+                        // （典型：本端与新 host 的 P2P 隔离、收不到 `Takeover` 且 owner 未移交）→
+                        // 主动退位 + 退大厅（促 Steam 移交 owner），避免继续当“僵尸 host”。
+                        if host.deserted_ticks() >= DESERTED_HOST_TICKS {
+                            eprintln!(
+                                "[steam-host] DESERTED: 所有客户端长时间无响应，自判被孤立 -> 退出大厅/对局"
+                            );
+                            self.steam_host_ls = Some(host);
+                            self.reset_to_main_menu(true);
+                            self.menu_hint = i18n::t("连接未能恢复，已返回主菜单").to_string();
+                            self.accumulator = 0.0;
+                            return Ok(());
+                        }
                         // R4②：host 自栅栏——定期查 Steam 仲裁的 lobby owner；若已不是自己 → 判定被取代，退位。
                         // 走 Steam 后端（lobby_owner），即使与新旧 host 的 P2P 被隔离也能生效，封堵“僵尸 host”。
                         if self.steam_net_ticks % 30 == 1 {

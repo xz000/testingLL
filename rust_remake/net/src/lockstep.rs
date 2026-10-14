@@ -137,6 +137,9 @@ pub struct HostLockstep<T: Transport> {
     old_host_notice_pkt: Vec<u8>,
     old_host_notice_left: u32,
     old_host_notice_tick: u32,
+    /// “被遗弃 host”自检：应到客户端≥1 且**全部已掉线**连续的 tick 数（见 `all_clients_dropped`）。
+    /// 达阈值 → 上层判定自己被孤立（旧 host 未收到 Takeover 的情况），主动退位/退大厅。
+    deserted_ticks: u64,
     /// R7：本 host 的稳定身份（用于暂停额度列表与自暂停）。0=未知。
     local_identity: u64,
     /// R7：当前是否已暂停（暂停期间 `try_emit` 不产帧）。
@@ -200,6 +203,7 @@ impl<T: Transport> HostLockstep<T> {
             old_host_notice_pkt: Vec::new(),
             old_host_notice_left: 0,
             old_host_notice_tick: 0,
+            deserted_ticks: 0,
             local_identity: 0,
             paused: false,
             pause_by: 0,
@@ -1057,6 +1061,23 @@ impl<T: Transport> HostLockstep<T> {
                 self.old_host_notice_left -= 1;
             }
         }
+        // “被遗弃 host”自检：应到客户端≥1 且全部已掉线 → 累计；否则清零。
+        if self.all_clients_dropped() {
+            self.deserted_ticks = self.deserted_ticks.saturating_add(1);
+        } else {
+            self.deserted_ticks = 0;
+        }
+    }
+
+    /// 应到客户端≥1 且**全部已掉线**（主动离开 / 空闲超时 / 被取代）。
+    /// 供上层判定“被遗弃的 host”（此时它可能已与全体 P2P 隔离、且收不到新 host 的 `Takeover`）。
+    pub fn all_clients_dropped(&self) -> bool {
+        !self.client_indices.is_empty() && (0..self.client_indices.len()).all(|c| self.dropped[c])
+    }
+
+    /// “被遗弃 host”连续 tick 数（详见 `all_clients_dropped`）。
+    pub fn deserted_ticks(&self) -> u64 {
+        self.deserted_ticks
     }
 
     /// **固定节拍**：每个 tick 必定产一帧（除非已被取缔），**不再要求“收齐全部输入”**。
@@ -2321,6 +2342,23 @@ mod tests {
             }
         }
         assert!(takeovers >= 2, "旧 host 退位通知应被重发，实际 {takeovers}");
+    }
+
+    /// M5+：“被遗弃 host”自检 —— 应到客户端全掉线时 `deserted_ticks` 递增。
+    #[test]
+    fn deserted_host_detects_all_clients_dropped() {
+        let (ht, _ct) = pair();
+        let mut host = HostLockstep::new(ht, 3, true); // host + 2 clients
+        let mut rcv = [0u8; 4096];
+        assert!(!host.all_clients_dropped(), "初始无掉线");
+        host.poll(&mut rcv);
+        assert_eq!(host.deserted_ticks(), 0);
+        host.mark_dropped(1);
+        assert!(!host.all_clients_dropped(), "仅一个掉线不算被遗弃");
+        host.mark_dropped(2);
+        assert!(host.all_clients_dropped(), "全部掉线");
+        host.poll(&mut rcv);
+        assert_eq!(host.deserted_ticks(), 1, "全掉线 → 累计 deserted tick");
     }
 
     /// R7：暂停仲裁 + 恢复倒计时 + 额度扣减 + client 收到状态。
