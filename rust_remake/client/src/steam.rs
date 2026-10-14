@@ -230,10 +230,37 @@ impl Game {
             net::transport::Peer::Steam { id, .. } => id,
             _ => 0,
         };
+        self.apply_snapshot_world(&effective_snap.0);
+        // 修复：`steam_participants` 可能**短于真实对局人数**（学习期早于配置同步时靠大厅 roster 兜底，
+        // 后加入者可能不在里面）→ 接管时构建的 `client_peers` 会漏掉在线端，对端收不到 `Takeover`/帧 →
+        // Phase-B STALL。以「快照重建后的世界人数」为准，缺的槽位用 `steam_online` 里尚未出现的 id（升序）补齐。
+        let world_n = self.world.players.len().max(1);
+        if self.steam_participants.len() < world_n {
+            let before = self.steam_participants.clone();
+            let mut missing: Vec<u64> = self
+                .steam_online
+                .iter()
+                .copied()
+                .filter(|id| !self.steam_participants.contains(id))
+                .collect();
+            missing.sort_unstable();
+            for id in missing {
+                if self.steam_participants.len() >= world_n {
+                    break;
+                }
+                self.steam_participants.push(id);
+            }
+            while self.steam_participants.len() < world_n {
+                self.steam_participants.push(0);
+            }
+            eprintln!(
+                "[steam-host] TAKEOVER 补齐参与列表（世界 {world_n} 人）：{:?} -> {:?}",
+                before, self.steam_participants
+            );
+        }
         // 本端 world index = 在原始参与列表中的位置（对局开始时确定，迁移不变）。
         let my_index = self.steam_participants.iter().position(|&id| id == self.steam_my_id).unwrap_or(0) as u8;
         let total = self.steam_participants.len().max(1);
-        self.apply_snapshot_world(&effective_snap.0);
         // 更新在线参与集：排除掉线的旧 host（供下一次迁移选举）。
         let new_online: Vec<u64> = self.steam_online.iter().filter(|&&id| id != old_host_id).copied().collect();
         self.steam_online = new_online.clone();
