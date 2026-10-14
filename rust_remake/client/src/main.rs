@@ -176,9 +176,10 @@ const STALE_HINT_TICKS: u64 = 30;
 /// S4：迁移阶段 A 重发 `ReconnectReq` 的间隔帧数（约 0.25s；host 侧另有回包限速）。
 #[cfg(feature = "steam")]
 const RECONNECT_REQ_EVERY: u64 = 15;
-/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（约 4.5s）→ 回菜单，不做最小 ID 回退。
+/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（**约 10s**，D1）→ 回菜单，不做最小 ID 回退。
+/// 为什么是 10s：Steam 在 owner 离开大厅后**自动移交**给剩余成员，但崩溃/强杀时要等 Steam 后端检测断线，可能滞后几秒。
 #[cfg(feature = "steam")]
-const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 270;
+const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 600;
 /// R5c：归队握手超时（帧，约 15s）→ 放弃并回主菜单。仅 Steam。
 #[cfg(feature = "steam")]
 const REJOIN_TIMEOUT_TICKS: u32 = 900;

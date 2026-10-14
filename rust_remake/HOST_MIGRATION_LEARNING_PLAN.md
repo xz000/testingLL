@@ -102,11 +102,17 @@ F3 修复已确证生效：`logs_3@222710` 出现
 
 ## 6. 分步与提交
 
-1. **M0（已完成）**：撤回 `elect_new_host` 回退回归。
-2. **M1 诊断**：Leave/超时补 sender 与 host 指针日志。
-3. **M2 单一参与者来源**：host 学习期广播全量名单 + client 采纳。
-4. **M3 严格化**：接管前 owner 校验 + owner 未移交的等待上限 + 退位不广播 Leave。
-5. **M4 断言**：迁移后人数/索引一致性校验。
+1. **M0（已完成 `5b4ec99`）**：撤回 `elect_new_host` 回退回归。
+2. **M1（已完成 `748f626`）**：诊断 —— `Leave`/`silent`/`NO frames` 补发送者(`self.host`) 与 leaver 身份。
+3. **M2（已完成 `748f626`）**：新增运行期包 `ParticipantsAll`（TAG 23），host 学习期每 2s 广播**全量名单**；
+   client 采纳维护 `steam_participants`；大厅 roster 只用于 UI（不再兜底对局名单）。
+4. **M3（已完成 `<本次>`）**：D1 `MIGRATE_NO_OWNER_BAIL_TICKS` 270→**600**（~10s）；选举保持**只认 owner、不共识**；
+   确认退位/被取代路径**不发 Leave**（已核：`steam_begin_rejoin_as_client` 不发）。
+5. **M4（已完成 `<本次>`）**：迁移/恢复后 `log_migration_consistency` 自检（`participants != world.players` 即告警）；
+   接管侧继续用 `ae8e551` 的补齐兜底。
+
+> 待真机：M1 日志里那条 `host broadcast Leave (leaver=..., sender/host=...)` 的**真实来源**；
+> 以及 owner 未移交时是否在 10s 内由 Steam 成功移交。
 
 ---
 

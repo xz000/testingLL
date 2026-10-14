@@ -109,6 +109,7 @@ impl Game {
                                 // E2：只有"首局配置"才是 pre_game_config（=配置同步的 stage_first，会重建世界！）。
                                 self.pre_game_config = self.meta.is_first_config();
                                 eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
+                                self.log_migration_consistency("resume");
                             }
                             self.steam_migrating = false;
                             self.steam_migrate_ticks = 0;
@@ -192,6 +193,7 @@ impl Game {
                         && self.meta.phase == game_core::meta::MatchPhase::Fighting)
                     {
                         self.apply_snapshot_world(&wb);
+                        self.log_migration_consistency("migrated");
                     }
                 }
                 cli.apply_resync(rcv).ok();
@@ -321,6 +323,19 @@ impl Game {
         // 接管后持续广播 Takeover，直到首个在线 client 连上（产帧成功）才停，避免晚进入迁移的 client 错过。
         self.steam_host_broadcasting_takeover = true;
         Ok(())
+    }
+
+    /// M4：迁移后一致性自检——名单人数应等于世界人数；不一致则告警（便于定位“少一人”类问题）。
+    #[cfg(feature = "steam")]
+    fn log_migration_consistency(&self, tag: &str) {
+        let n = self.world.players.len();
+        let p = self.steam_participants.len();
+        if p != n {
+            eprintln!(
+                "[steam] M4 不一致({tag}): participants({p}) != world.players({n}); participants={:?}",
+                self.steam_participants
+            );
+        }
     }
 
     /// C1/R5b：用快照字节（含 world+meta）重建世界与对局状态；重连/迁移/归队共用。成功返回 true。
