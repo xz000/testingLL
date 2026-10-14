@@ -1292,8 +1292,11 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 迁移：把 host peer 重定向到新 host。
+    /// 同时**丢弃旧 host 的 host-scoped 缓存**（尤其 `host_left`）：否则旧 host 迁移前发来的 `Leave`
+    /// 会在重定向后被当成“当前 host 离开”而误触发一次多余迁移（真机 M1 已坐实）。
     pub fn retarget_host(&mut self, new_host: Peer) {
         self.host = new_host;
+        self.host_left = None;
     }
 
     /// 尝试收新 host 广播的 `Takeover`（主机迁移接管信号）：返回 `Some((来源, seq, 更新后的参与集))`；当前没有则 None。
@@ -2607,6 +2610,22 @@ mod tests {
         assert!(cli.step_frame(&mut rcv).unwrap().is_none(), "无权威帧");
         assert_eq!(cli.take_host_left(), Some(42), "应缓存房主离开通知");
         assert_eq!(cli.take_host_left(), None, "取后应清");
+    }
+
+    /// M5：重定向到新 host 时必须丢弃旧 host 残留的 `host_left`（否则旧 Leave 会被当成“当前 host 离开”误迁移）。
+    #[test]
+    fn retarget_host_clears_cached_leave() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        cli.send_input(&[0]).unwrap();
+        host.poll(&mut rcv);
+        host.broadcast_leave(42);
+        assert!(cli.step_frame(&mut rcv).unwrap().is_none(), "无权威帧");
+        // 尚未取出时重定向到新 host。
+        cli.retarget_host(Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4001))));
+        assert_eq!(cli.take_host_left(), None, "重定向应丢弃旧 host 的残留 Leave");
     }
 
     /// 自动掉线判定（切片1运行时版）：client 停发输入 → host 每帧 poll 累计空闲 → 达阈值 auto_drop_idle 自动掉线，不再卡全队。

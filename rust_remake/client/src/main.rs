@@ -5027,6 +5027,20 @@ impl Game {
             }
             // 收 host 包（缓存快照/在线集；不推进帧）。
             let got = cli.pump_learning(&mut c_rcv).unwrap_or(false);
+            // 学习期也要消费 `host_left`（与 Fighting 同口径）：房主主动离开 → 立即迁移（跳过 3s stale）。
+            // 否则缓存会残留到重定向之后，在 Fighting 被当成“当前 host 离开”误触发迁移（M1 真机）。
+            if let Some(left_id) = cli.take_host_left() {
+                let hp = cli.host_peer();
+                eprintln!(
+                    "[steam-client] host broadcast Leave in learning (leaver={left_id}, host={hp:?}) -> immediate migration"
+                );
+                self.steam_migrating = true;
+                self.steam_migrate_ticks = MIGRATE_PROBE_TICKS; // 跳过探测阶段，直接选举
+                self.steam_new_host_id = 0;
+                self.steam_cli_stale_ticks = 0;
+                self.steam_cli_ls = Some(cli);
+                return Ok(());
+            }
             if let Some(ids) = cli.take_online_participants() {
                 self.steam_online = ids;
             }
