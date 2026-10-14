@@ -1596,17 +1596,20 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 学习期专用：排空 transport 收包（缓存快照/在线集/暂停视图/状态哈希/Takeover），**不推进帧、不 step 世界**；
-    /// 返回是否收到了**任意包**（学习期存活判定——学习期没有帧可数，只能用“是否还在收包”；
-    /// 星形拓扑下 client 只与 host 直连，故“完全无包”≈“host 真掉线”）。
+    /// 返回是否收到了来自 host 的**任意**包（学习期存活判定——学习期没有帧可数，只能用“是否还在收 host 包”；
+    /// 星形拓扑下 client 只与 host 直连，故“收不到 host 包”≈“host 真掉线”）。
     pub fn pump_learning(&mut self, rcv: &mut [u8]) -> io::Result<bool> {
         let mut any = false;
         loop {
             match self.transport.recv_from(rcv) {
                 Ok(Some((n, from))) => {
-                    // 学习期存活判定：**任一收到包**都算“会话仍活”。星形拓扑下 client 只与 host 直连，
-                    // 故“完全没有包”≈“host 真掉线”；不必（也不能）只认 `from == self.host`——
-                    // 否则一旦 `self.host` 指错（迁移/归队后指向已沉默的 peer），快照仍在到达也会被误判“host silent”。
-                    any = true;
+                    // 学习期存活判定：**只认来自 host 的包**（本工程为星形拓扑：client 只与 host 直连，
+                    // 只有 host 向 client 广播；故“收不到 host 包”≈“host 真掉线”）。
+                    // 注意：不要放宽为“任意包”——否则一旦 `self.host` 指错（迁移/归队后停留在一个已沉默的 peer），
+                    // 别的 peer 的在途包会掩盖问题，该迁移的反而不迁移。
+                    if from == self.host {
+                        any = true;
+                    }
                     if let Some(pkt) = Packet::decode(&rcv[..n]) {
                         match pkt {
                             Packet::Snapshot { world_bytes, seq, .. } => {
