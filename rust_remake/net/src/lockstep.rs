@@ -246,6 +246,15 @@ impl<T: Transport> HostLockstep<T> {
         }
     }
 
+    /// host→all：广播**全量参与名单**（含离场占位 id），供各端维护 `steam_participants`。
+    pub fn broadcast_participants_all(&mut self, ids: &[u64]) {
+        let pkt = Packet::ParticipantsAll { ids: ids.to_vec() };
+        let enc = pkt.encode();
+        for peer in self.client_peers.iter().flatten() {
+            let _ = self.transport.send_to(&enc, peer);
+        }
+    }
+
     /// 本局参与玩家的稳定身份（SteamID）按 new index 排列：new index 0 = host，其后按参与 client 槽位序。
     /// 供 host 广播 `Participants`（各端据此在 host 掉线时确定性选举新 host）。
     /// 身份优先取 `client_peers` 里真实连接来源的 SteamID（处理输入时记录），
@@ -1148,6 +1157,9 @@ pub struct ClientLockstep<T: Transport> {
     host_learn_remaining: Option<f64>,
     /// 缓存的最近一次 host 广播的**在线集**（`Participants`）；供上层更新"已离开"标记。
     latest_participants: Option<Vec<u64>>,
+    /// 缓存的 host 广播的**全量参与名单**（`ParticipantsAll`）：按 player index 排列（含离场占位 id）。
+    /// 学习期就下发，供各端维护 `steam_participants`（迁移选举/索引），不靠大厅 roster 兜底。
+    latest_all_participants: Option<Vec<u64>>,
     /// 诊断：是否已就“收到非 host 的快照”告警一次（避免刷屏）。
     warned_nonhost_snapshot: bool,
 }
@@ -1174,6 +1186,7 @@ impl<T: Transport> ClientLockstep<T> {
             host_left: None,
             host_learn_remaining: None,
             latest_participants: None,
+            latest_all_participants: None,
             warned_nonhost_snapshot: false,
         }
     }
@@ -1233,6 +1246,11 @@ impl<T: Transport> ClientLockstep<T> {
     /// 取走缓存的**在线集**（host 广播的 `Participants`）。无则 None。
     pub fn take_online_participants(&mut self) -> Option<Vec<u64>> {
         self.latest_participants.take()
+    }
+
+    /// 取走缓存的**全量参与名单**（host 广播的 `ParticipantsAll`）。无则 None。
+    pub fn take_all_participants(&mut self) -> Option<Vec<u64>> {
+        self.latest_all_participants.take()
     }
 
     /// 向 host 发送主动离开广播（本端离开本局前调用，best-effort）。
@@ -1632,6 +1650,11 @@ impl<T: Transport> ClientLockstep<T> {
                             Packet::Participants { ids } => {
                                 if from == self.host {
                                     self.latest_participants = Some(ids);
+                                }
+                            }
+                            Packet::ParticipantsAll { ids } => {
+                                if from == self.host {
+                                    self.latest_all_participants = Some(ids);
                                 }
                             }
                             Packet::PauseState { paused, by, resume_in, remaining } => {
@@ -2518,6 +2541,20 @@ mod tests {
         host.broadcast_snapshot(vec![1, 2, 3], 9, 0xFF);
         assert!(cli.pump_learning(&mut rcv).unwrap(), "收到 host 快照 → 存活");
         assert_eq!(cli.cached_snapshot(), Some((vec![1, 2, 3], 9)), "应缓存快照");
+    }
+
+    /// M2：host 广播全量参与名单 → client 在 `pump_learning` 缓存并可取用。
+    #[test]
+    fn pump_learning_caches_all_participants() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(std::net::SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        cli.send_input(&[0]).unwrap();
+        host.poll(&mut rcv);
+        host.broadcast_participants_all(&[1000, 2000, 0]);
+        let _ = cli.pump_learning(&mut rcv).unwrap();
+        assert_eq!(cli.take_all_participants(), Some(vec![1000, 2000, 0]));
     }
 
     /// 迁移后：`participant_ids`/`online_ids` 必须**按真实 player index 排序**（host 不一定 index 0）。

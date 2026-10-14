@@ -4952,6 +4952,12 @@ impl Game {
             let ids = host.online_ids(self.steam_my_id);
             host.broadcast_participants(&ids);
             self.steam_online = ids;
+            // M2：周期性广播**全量参与名单**（含离场占位 id）——各端据此维护 `steam_participants`，
+            // 不再靠大厅 roster 兜底（后加入者可能不在 roster 里 → 名单偏短 → 迁移漏端 Phase-B STALL）。
+            // 名单静态、体积小，2s 一次足够（迁移检测至少 3s）。
+            if self.frame % ONLINE_BCAST_EVERY == 0 {
+                host.broadcast_participants_all(&self.steam_participants.clone());
+            }
             // 静态快照：`seq = next_seq` 不变（世界不推进）；每帧 set 保证新鲜（`phase=Learning`），周期广播。
             let wb = game_core::world_ser::world_to_bytes(&self.world);
             let sb = game_core::world_ser::pack_snapshot(&wb, &self.meta);
@@ -5023,6 +5029,13 @@ impl Game {
             if let Some(ids) = cli.take_online_participants() {
                 self.steam_online = ids;
             }
+            // M2：采纳 host 下发的**全量参与名单**（权威），不再靠大厅 roster 兜底。
+            if let Some(all) = cli.take_all_participants() {
+                if self.steam_participants != all {
+                    eprintln!("[steam-client] participants(full) <- host: {all:?}");
+                    self.steam_participants = all;
+                }
+            }
             // P3：迁移后两端“学习倒数”可能不同步 → 偏差过大时以 host 快照的 `learn_remaining` 对齐。
             if let Some(host_rem) = cli.host_learn_remaining() {
                 if (self.meta.learn_remaining - host_rem).abs() > LEARN_RESYNC_THRESHOLD_SECS {
@@ -5038,7 +5051,7 @@ impl Game {
             } else {
                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
                 if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
-                    eprintln!("[steam-client] host silent in learning for {} ticks -> migration", self.steam_cli_stale_ticks);
+                    eprintln!("[steam-client] host silent in learning for {} ticks -> migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
                     self.steam_migrating = true;
                     self.steam_migrate_ticks = 0;
                     self.steam_new_host_id = 0;
@@ -7609,8 +7622,12 @@ impl event::EventHandler for Game {
                                 steps_this_update += 1;
                             } else {
                                 // 房主主动离开广播 → 立即进入迁移选举（跳过 3s stale + probe）。
-                                if cli.take_host_left().is_some() {
-                                    logging::log("[steam-client] host broadcast Leave -> immediate migration");
+                                // M1 诊断：打印离开者身份 + 发送者(self.host) —— 用于查清"那条 Leave 到底谁发的"。
+                                if let Some(left_id) = cli.take_host_left() {
+                                    let hp = cli.host_peer();
+                                    logging::log(&format!(
+                                        "[steam-client] host broadcast Leave (leaver={left_id}, sender/host={hp:?}) -> immediate migration"
+                                    ));
                                     self.steam_migrating = true;
                                     self.steam_migrate_ticks = MIGRATE_PROBE_TICKS; // 跳过探测阶段，直接选举
                                     self.steam_new_host_id = 0;
@@ -7626,7 +7643,7 @@ impl event::EventHandler for Game {
                                 // 本帧无权威帧：累计掉线计数，超阈值进入「主机迁移/重连探测」（host 可能掉线）。
                                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
                                 if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
-                                    eprintln!("[steam-client] NO frames for {} ticks -> entering reconnect-probe / host-migration", self.steam_cli_stale_ticks);
+                                    eprintln!("[steam-client] NO frames for {} ticks -> entering reconnect-probe / host-migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
                                     self.steam_migrating = true;
                                     self.steam_migrate_ticks = 0;
                                     self.steam_new_host_id = 0;

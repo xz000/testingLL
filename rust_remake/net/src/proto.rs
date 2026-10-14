@@ -58,6 +58,11 @@ pub const TAG_PAUSE_STATE: u8 = 21;
 /// - client 收房主发的 → 立即进入迁移选举（跳过 3s stale + probe）。
 pub const TAG_LEAVE: u8 = 22;
 
+/// host→all：本局**全量参与名单**（含已离场者的占位 id，按 player index 排列）。
+/// 与 `TAG_PARTICIPANTS`（在线子集，供"已离开"标记）区分：此包是学习期就下发的**权威名单**，
+/// 各端据此维护 `steam_participants`（迁移选举/索引），不再靠大厅 roster 兜底。运行期包，不进 World。
+pub const TAG_PARTICIPANTS_ALL: u8 = 23;
+
 /// 一帧内各玩家的 `(玩家序号, 输入字节)`（已拷贝）。
 pub type FrameData = Vec<(u8, Vec<u8>)>;
 
@@ -109,6 +114,8 @@ pub enum Packet {
     Takeover { seq: u64, participants: Vec<u64> },
     /// host→所有 client：本局参与玩家的稳定身份（SteamID）列表（选举新 host 用）。
     Participants { ids: Vec<u64> },
+    /// host→all：本局全量参与名单（含离场占位 id），按 player index 排列。见 `TAG_PARTICIPANTS_ALL`。
+    ParticipantsAll { ids: Vec<u64> },
     /// host→所有 client：周期性世界状态哈希（分歧检测）。`hash` = host 应用完 `seq` 帧后世界状态的哈希。
     StateHash { seq: u64, hash: u64 },
     /// R7：client→host 暂停/恢复请求（`resume`=true 为恢复）。
@@ -254,6 +261,15 @@ impl Packet {
             Packet::Participants { ids } => {
                 let mut v = Vec::with_capacity(1 + 2 + ids.len() * 8);
                 v.push(TAG_PARTICIPANTS);
+                v.extend_from_slice(&(ids.len() as u16).to_be_bytes());
+                for id in ids {
+                    v.extend_from_slice(&id.to_be_bytes());
+                }
+                v
+            }
+            Packet::ParticipantsAll { ids } => {
+                let mut v = Vec::with_capacity(1 + 2 + ids.len() * 8);
+                v.push(TAG_PARTICIPANTS_ALL);
                 v.extend_from_slice(&(ids.len() as u16).to_be_bytes());
                 for id in ids {
                     v.extend_from_slice(&id.to_be_bytes());
@@ -449,6 +465,19 @@ impl Packet {
                 }
                 Some(Packet::Participants { ids })
             }
+            TAG_PARTICIPANTS_ALL if buf.len() >= 3 => {
+                let count = u16::from_be_bytes([buf[1], buf[2]]) as usize;
+                let end = 3usize + count * 8;
+                if end > buf.len() {
+                    return None;
+                }
+                let mut ids = Vec::with_capacity(count);
+                for i in 0..count {
+                    let off = 3 + i * 8;
+                    ids.push(u64::from_be_bytes(buf[off..off + 8].try_into().ok()?));
+                }
+                Some(Packet::ParticipantsAll { ids })
+            }
             TAG_STATE_HASH if buf.len() >= 17 => {
                 let seq = u64::from_be_bytes(buf[1..9].try_into().ok()?);
                 let hash = u64::from_be_bytes(buf[9..17].try_into().ok()?);
@@ -524,6 +553,7 @@ mod tests {
             Packet::Resync { seq: 789 },
             Packet::Takeover { seq: 12345, participants: vec![111, 222, 333] },
             Packet::Participants { ids: vec![111, 222, 333] },
+            Packet::ParticipantsAll { ids: vec![111, 222, 333, 0] },
             Packet::StateHash { seq: 120, hash: 0xDEAD_BEEF_1234_5678 },
             Packet::Leave { identity: 76561198043985466 },
             Packet::PauseReq { identity: 9001, resume: false },
