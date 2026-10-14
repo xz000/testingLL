@@ -105,6 +105,18 @@ pub fn lobby_owner(transport: &SteamTransport, lobby: u64) -> u64 {
     transport.matchmaking().lobby_owner(LobbyId::from_raw(lobby)).raw()
 }
 
+/// 【临时实验，Step 0】尝试把大厅 owner 改成 `new_owner`（走 raw `sys`，安全层未封装 `SetLobbyOwner`）。
+/// 目的：验证**非 owner 成员**能否改 owner、以及 owner “在线但隔离”时能否成功 → 决定 P1/P2。
+/// 返回 `(SetLobbyOwner 的返回值, 调用后 `GetLobbyOwner` 读到的 owner)`。测完应删除本函数与调用点。
+pub fn experiment_set_lobby_owner(transport: &SteamTransport, lobby: u64, new_owner: u64) -> (bool, u64) {
+    use steamworks::sys;
+    let ok = unsafe {
+        let mm = sys::SteamAPI_SteamMatchmaking_v009();
+        sys::SteamAPI_ISteamMatchmaking_SetLobbyOwner(mm, lobby, new_owner)
+    };
+    (ok, lobby_owner(transport, lobby))
+}
+
 /// 诊断/控制（R0）：向大厅广播一条消息（经 **Steam 后端**，非 P2P relay）。返回是否成功。
 /// 真机验证 V1（房主离开后大厅聊天是否仍可用）；后续 B 方案的 epoch 宣告也会走这条路径。
 pub fn send_lobby_chat(transport: &SteamTransport, lobby: u64, bytes: &[u8]) -> bool {

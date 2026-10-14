@@ -8487,6 +8487,34 @@ impl Game {
             self.accumulator = 0.0;
             return Ok(());
         }
+        // 【临时实验 Step 0】F9：尝试把大厅 owner 改成“我自己”（验证非 owner 成员能否改 owner）。
+        // F10：只读打印当前 `GetLobbyOwner`（在其余两台机器上按，核对是否都跟随变化）。
+        // 测完删除本块与 `net_steam::session::experiment_set_lobby_owner`。
+        if !panel_open && !self.room_cfg_edit {
+            let f9 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F9));
+            let f10 = ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F10));
+            if f9 || f10 {
+                if let Some(lid) = self.steam_lobby_id {
+                    let t = self
+                        .steam_host_ls
+                        .as_ref()
+                        .map(|h| h.transport_ref())
+                        .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()));
+                    if let Some(t) = t {
+                        let me = self.steam_my_id;
+                        if f9 {
+                            let (ok, after) = net_steam::session::experiment_set_lobby_owner(t, lid, me);
+                            eprintln!("[experiment] F9 SetLobbyOwner(me={me}) ok={ok} owner_after={after}");
+                        } else {
+                            let owner = net_steam::session::lobby_owner(t, lid);
+                            eprintln!("[experiment] F10 GetLobbyOwner={owner} (me={me})");
+                        }
+                    }
+                }
+                self.accumulator = 0.0;
+                return Ok(());
+            }
+        }
         // `E` **已退休**：房间名/备注并入设置编辑器的 `[A]房间` 分组（按 `O` 打开）。
         // 这里不再读取 `E`，该键在本界面为空闲。
         // 倒计时锁定窗口：仅 host 端维护 `steam_was_all_ready`/`steam_countdown`；client 端恒为 false/0 → locked=false。
