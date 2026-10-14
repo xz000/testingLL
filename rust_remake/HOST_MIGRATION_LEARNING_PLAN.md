@@ -197,19 +197,49 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 2. **旧 host 恢复重连后自认 owner**：是的。`host_steam_id()`（`session.rs:1066`）= 玩家表槽0 / `lobby_owner`；
    旧 host 一回来就会把自己当 host。⇒ 需要**恢复协议**（见 11.4 P2）。
 
-### 11.4 两条路线（Step 0 结果决定）
-- **P1（`SetLobbyOwner` 可用）— 推荐**：
-  - 剩余玩家**共识**选出新 host（确定性），由任一成员/新 host 调 `SetLobbyOwner` → `lobby_owner` **收敛**到新 host；
-  - **保持不变量“host = owner”不变**，现有选举/自栅栏/迁移机制**原样可用**；
-  - 旧 host 恢复后读到 `owner != me` → 自栅栏退位。改动最小。
-- **P2（`SetLobbyOwner` 不可用/不可靠）— 解耦**：
-  - 定义 **`consensus_host(participants, online)`**（确定性、各端一致；建议取 `participants` 中**最靠前的在线者**）；
-  - **自栅栏/接管校验改为**：仅当 “`owner ∈ 在线集` **且** `owner != 共识 host`” 才退位（owner 不再唯一决定）；
-  - **重连端默认当 client**：先把**真正的当前 host id 写进大厅元数据**（同 `ROOM_NAME_KEY` 机制），接管时更新；
-    重连端读到 “host != me” → 以 client 归队；旧 host 若仍是 Steam owner，顺手 `SetLobbyOwner(当前host)` 纠正 Steam；
-  - 共识 host id 随 `Takeover` / `ParticipantsAll`（已加的包）传播。
+### 11.4 两条路线（Step 0 实测结果：**P1 ❌ 不可行**）
+- **P1（`SetLobbyOwner` 可用）— ❌ 排除**：实测非 owner 调用 `SetLobbyOwner` 返回 **`ok=false`、owner 不变**
+  （`logs_2/3`：`F6 SetLobbyOwner(me=...) ok=false owner_after=<旧owner>`）→ **剩余成员改不了 owner**。
+  且 `[netdiag]` 显示房主断网后 owner 也**不变**（Steam 不因“隔离”而移交）→ 只能走 P2。
+- **P2（`SetLobbyOwner` 不可用/不可靠）— 采用**：见 §12。
 
 ### 11.5 决策点（待你拍板）
-- **Step 0**：是否做这个 3 账号 `SetLobbyOwner` 权限小实验？
-- 若 P2：共识函数用 “在线集最小 SteamID” 还是 “`participants` 里最靠前的在线者”？（推荐后者：`participants` 是权威顺序，天然一致）
-- 重连端“默认 client + 读大厅元数据确定当前 host”这个恢复协议是否接受？（是 P2 的必要组成，P1 下也更稳）
+- **Step 0**：✅ 已做，结论 **P1 不可行**（`ok=false`）。
+- 共识函数：建议 “**`participants`（权威顺序）里最靠前的、仍在线的**者”（天然各端一致）。
+- 重连端“默认 client + 读当前 host id”恢复协议：待确认。
+
+---
+
+## 12. P2 方案：基于**大厅聊天（服务端转发）**的 host epoch + 共识（规划中，未开工）
+
+### 12.1 为什么用大厅聊天
+- Step 0 已证：**owner 不可由成员强制改**，且隔离时不自移交 → 必须**自建权威**。
+- 真机日志有 `[netdiag] LobbyChatMsg recv: ... from=...` → **Steam 大厅聊天 = 服务端转发，不依赖 P2P**（P2P 隔离时仍可用）。
+- 代码已有 `send_lobby_chat`（`session.rs`）；注释已预留“epoch 宣告走这条路径”。
+- **大厅成员列表**（`lobby_members`）也是 Steam 服务端权威、各端一致 → 可作选举的“成员集”。
+
+### 12.2 机制：host epoch + 确定性继任
+- **宣告**：host 每 ~1s 经大厅聊天发 `HOST <epoch> <hostId>`；各端记录**已知最大 epoch**。
+- **丢主判定**：T 秒（建议 3s）未收到新 `HOST` → 疑 host 掉线。
+- **共识（确定性）**：继任者 = **当前大厅成员里 SteamID 最小、且不是旧 host 的那个**；各端算得一致，
+  （若我就是→）我宣告 `HOST <epoch+1> <me>` 并成为权威；其余端采纳。
+- **冲突**：**epoch 大者胜**；同 epoch → 取 id 小者。
+- **恢复**：旧 host 回来读到 `HOST epoch' > 自忆 epoch`（或 host != me）→ **不再当 host**，作 client 加入。
+
+### 12.3 对现有不变量/代码的影响
+- 不变量 I1/I2 从“host = `lobby_owner`”改为“**host = 已知最大 epoch 的宣告者**”；`lobby_owner` 降为**提示**。
+- `should_self_fence`：由“owner != me”改为“**已知 host epoch > 自忆 epoch 或 已知 host != me**” → 退位。
+- 重连端**默认 client**，读（P2P 或大厅聊天）当前 host id 决定。
+- 旧 host 的 `host_left_overlay`/自栅栏路径改为看 epoch。
+
+### 12.4 分期（**先大厅层，不碰游戏内逻辑** —— 按你的建议）
+- **E1（纯观察，零风险）**：在大厅/准备阶段实现 epoch 宣告 + 丢主检测 + 继任计算，**只打日志**
+  （“我算出的继任者 = X，与本端成员表 = [...]”），**不改实际谁当 host**。目标：3 账号真机验证
+  **“剩余成员对继任者的计算结果一致”**，以及大厅聊天在隔离时确实可达。
+- **E2**：让 E1 的继任者**真的接管**（大厅准备阶段：接管倒计时/开始游戏权限）+ 旧 host 恢复后自动降为 client。
+- **E3**：把同一套 epoch/共识接入**对局期**主机迁移（替换/兑底现有的 owner-选举路径）。
+
+### 12.5 待确认
+- 大厅聊天消息格式（前缀/版本）与刷新频度（~1s）可以吗？
+- 继任者 = “成员表里最小的、非旧 host” 可以吗？（也可用“成员表槽位序最靠前者”）
+- 是否先做 **E1（纯观察日志）**？
