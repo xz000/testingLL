@@ -19,10 +19,15 @@
 use net::transport::{Peer, Transport};
 use std::collections::{HashMap, VecDeque};
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Steam 消息传输：持有已初始化 Client。
 pub struct SteamTransport {
     client: steamworks::Client,
+    /// 本端与 **Steam 服务器**的连接是否在线（`SteamServersConnected/Disconnected` 回调维护）。
+    /// 用于“自己掉线”判定（区别于“对方掉线”）：离线时不据空的成员表/停帧误判。
+    servers_online: Arc<AtomicBool>,
     /// 已注册的 Steam 回调句柄（`CallbackHandle` 被 drop 即注销，故必须持有）。
     callback_handles: Vec<steamworks::CallbackHandle>,
     /// 可靠发送补发队列：`send_to` 因「会话尚未建立 / 暂不可发」而失败时，不丢包而是入队，
@@ -93,6 +98,7 @@ impl SteamTransport {
         Ok(SteamTransport {
             client,
             callback_handles: Vec::new(),
+            servers_online: Arc::new(AtomicBool::new(true)),
             pending_sends: HashMap::new(),
             send_fail_logs: 0,
             direct_sends: 0,
@@ -102,6 +108,25 @@ impl SteamTransport {
             recv_tag_room: 0,
             recv_queue: VecDeque::new(),
         })
+    }
+
+    /// 注册 `SteamServersConnected/Disconnected` 回调（维护 `servers_online`）。初始化后调用一次。
+    pub fn register_server_callbacks(&mut self) {
+        let flag = self.servers_online.clone();
+        self.register_callback(move |_cb: steamworks::SteamServersDisconnected| {
+            flag.store(false, Ordering::Relaxed);
+            eprintln!("[steam] SteamServersDisconnected → 本地与 Steam 服务器断连");
+        });
+        let flag2 = self.servers_online.clone();
+        self.register_callback(move |_cb: steamworks::SteamServersConnected| {
+            flag2.store(true, Ordering::Relaxed);
+            eprintln!("[steam] SteamServersConnected → 本地与 Steam 服务器恢复连接");
+        });
+    }
+
+    /// 本端与 Steam 服务器是否在线（用于“自己掉线”判定）。未注册回调时恒为 true。
+    pub fn servers_online(&self) -> bool {
+        self.servers_online.load(Ordering::Relaxed)
     }
 
     /// pump 待处理 Steam 回调（大厅 / 会话建立）。建议每帧调用。

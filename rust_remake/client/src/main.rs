@@ -4964,7 +4964,8 @@ impl Game {
                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
             }
             // “被遗弃 host”自检（学习期同对局期）：全客户端长时间无响应 → 自判被孤立，退位 + 退大厅。
-            if host.deserted_ticks() >= DESERTED_HOST_TICKS {
+            // S3：本端自己与 Steam 断开时不判（可能只是我本地断网；恢复后由自栅栏按 owner 判定）。
+            if self.steam_servers_online() && host.deserted_ticks() >= DESERTED_HOST_TICKS {
                 eprintln!(
                     "[steam-host] DESERTED: 所有客户端长时间无响应，自判被孤立 -> 退出大厅/对局"
                 );
@@ -5090,8 +5091,8 @@ impl Game {
                     self.meta.learn_remaining = host_rem;
                 }
             }
-            if got {
-                self.steam_cli_stale_ticks = 0;
+            if got || !self.steam_servers_online() {
+                self.steam_cli_stale_ticks = 0; // S3：自己离线时不计入“host 掉线”
             } else {
                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
                 if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
@@ -7220,7 +7221,8 @@ impl event::EventHandler for Game {
                         // “被遗弃 host”自检：应到客户端≥1 且全部长时间无响应（~10s）→ 自判被孤立
                         // （典型：本端与新 host 的 P2P 隔离、收不到 `Takeover` 且 owner 未移交）→
                         // 主动退位 + 退大厅（促 Steam 移交 owner），避免继续当“僵尸 host”。
-                        if host.deserted_ticks() >= DESERTED_HOST_TICKS {
+                        // S3：本端自己与 Steam 断开时不判（避免本地断网就退位）。
+                        if self.steam_servers_online() && host.deserted_ticks() >= DESERTED_HOST_TICKS {
                             eprintln!(
                                 "[steam-host] DESERTED: 所有客户端长时间无响应，自判被孤立 -> 退出大厅/对局"
                             );
@@ -7715,6 +7717,11 @@ impl event::EventHandler for Game {
                                     break;
                                 }
                                 // 本帧无权威帧：累计掉线计数，超阈值进入「主机迁移/重连探测」（host 可能掉线）。
+                                // S3：若本端自己与 Steam 断开（本地断网），不计入“host 掉线”（可能只是我这边）。
+                                if !self.steam_servers_online() {
+                                    self.steam_cli_stale_ticks = 0;
+                                    break;
+                                }
                                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
                                 if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
                                     eprintln!("[steam-client] NO frames for {} ticks -> entering reconnect-probe / host-migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
@@ -8486,6 +8493,16 @@ impl Game {
         self.reset_to_main_menu(false);
     }
 
+    /// S3：本端与 Steam 服务器是否在线（用于“自己掉线”判定）；无 transport 时按在线处理（保守）。
+    #[cfg(feature = "steam")]
+    fn steam_servers_online(&self) -> bool {
+        self.steam_host_ls
+            .as_ref()
+            .map(|h| h.transport_ref().servers_online())
+            .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref().servers_online()))
+            .unwrap_or(true)
+    }
+
     /// A：大厅阶段房主沉默后，**等待 Steam 移除断线房主并自动移交 owner**。
     /// 返回 `true` = 已检测到移交并完成接管/重定向（调用方应清除等待状态）。
     /// 依据（Step 0 真机）：owner 在场时成员改不了 owner；Steam 约 ~40s 后把断线房主移出大厅并把 owner 交给某成员。
@@ -8561,7 +8578,9 @@ impl Game {
         // 每 ~0.5s 查一次，连续 4 次（~2s）才判定，避免建房/瞬断的假阳性。
         self.steam_lobby_orphan_check = self.steam_lobby_orphan_check.wrapping_add(1);
         if self.steam_lobby_orphan_check % 30 == 0 {
-            let orphaned = match self.steam_lobby_id {
+            // S3：仅在本端与 Steam 服务器**在线**时才判“被移出”（离线时成员表为空是假阳性）。
+            let orphaned = self.steam_servers_online()
+                && match self.steam_lobby_id {
                 Some(lid) => {
                     let t = self
                         .steam_host_ls

@@ -560,6 +560,8 @@ impl SteamSession {
     /// 初始化 Steam 会话（每进程一个）。`virtual_port` 为 P2P 虚拟端口（host/peer 需一致）。
     pub fn init(app_id: u32, virtual_port: i32) -> io::Result<SteamSession> {
         let mut transport = SteamTransport::init(app_id, virtual_port)?;
+        // S3：注册 Steam 服务器连接状态回调（供“自己掉线”判定）。
+        transport.register_server_callbacks();
         let join_requests = Arc::new(Mutex::new(VecDeque::new()));
         // 好友从好友列表点「加入游戏」（game 已在跑）→ Steam 给大厅 id。
         {
