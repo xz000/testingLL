@@ -325,12 +325,6 @@ impl<T: Transport> HostLockstep<T> {
         self.superseded_by
     }
 
-    /// 双保险：收到非 owner 的 `Takeover` 被上层否决时，清除 `superseded`，继续作为权威。
-    pub fn clear_superseded(&mut self) {
-        self.superseded = false;
-        self.superseded_by = None;
-    }
-
     /// R7：登记本 host 稳定身份（用于暂停额度列表与自暂停）。
     pub fn set_local_identity(&mut self, id: u64) {
         self.local_identity = id;
@@ -2328,22 +2322,6 @@ mod tests {
         // FakeTransport 的 recv_from 固定回对端地址（client_peer=4001）。
         assert_eq!(host.superseded_by(), Some(Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4001)))), "应记录来源端为新 host");
         assert!(host.try_emit().is_none(), "被取缔后不再产帧");
-    }
-
-    /// 双保险：`clear_superseded` 可在“非 owner 的 Takeover 被否决”时恢复权威。
-    #[test]
-    fn clear_superseded_restores_authority() {
-        let (ht, mut ct) = pair();
-        let mut host = HostLockstep::new(ht, 2, true);
-        let pkt = Packet::Takeover { seq: 5, participants: vec![1, 2] };
-        let from = ct.local();
-        ct.send_to(&pkt.encode(), &from).unwrap();
-        let mut rcv = [0u8; 4096];
-        host.poll(&mut rcv);
-        assert!(host.is_superseded());
-        host.clear_superseded();
-        assert!(!host.is_superseded(), "清除后恢复权威");
-        assert_eq!(host.superseded_by(), None);
     }
 
     /// M5+：旧 host 退位通知（`notify_old_host_takeover`）在单发丢失时应被重发。

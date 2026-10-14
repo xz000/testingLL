@@ -176,11 +176,11 @@ const STALE_HINT_TICKS: u64 = 30;
 /// S4：迁移阶段 A 重发 `ReconnectReq` 的间隔帧数（约 0.25s；host 侧另有回包限速）。
 #[cfg(feature = "steam")]
 const RECONNECT_REQ_EVERY: u64 = 15;
-/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（**约 60s**）→ 回菜单，不做最小 ID 回退。
-/// 为什么是 60s：Step 0 真机实测——Steam 要等它判定断线房主超时（**约 ~40s**）才把房主移出大厅并自动移交 owner；
-/// 因此必须等得够久（不能像以前只等 10s 就放弃）。
+/// R3'：owner 迟迟未移交（无法确定合法新 host）时的兜底拍数（**约 120s**）→ 回菜单。
+/// 为什么是 120s：Step 0 真机实测——Steam 要等它判定断线房主超时（观测到 **~20–94s 波动**）才把房主移出大厅并自动移交 owner；
+/// 因此必须等得够久（60s 仍不够）。
 #[cfg(feature = "steam")]
-const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 3600;
+const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 7200;
 /// “被遗弃 host”自检：应到客户端全掉线持续 **约 10s** → 旧 host 自判被孤立，主动退位 + 退大厅。
 #[cfg(feature = "steam")]
 const DESERTED_HOST_TICKS: u64 = 600;
@@ -338,10 +338,10 @@ const LOBBY_REFRESH_COOLDOWN_SECS: f64 = 4.0;
 /// Steam 房间（client）：连续这么多帧收不到 host 的 `RosterReady` 广播，即判定 host 已离开（自动退出房间回主菜单）。约 4 秒。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
-/// A：房主沉默后，等待「Steam 移除断线房主并自动移交 owner」的上限（约 60s）。
-/// Step 0 实测 Steam 约 ~40s 才把断线房主移出大厅并移交；超时才提示回菜单（保留会话）。
+/// A：房主沉默后，等待「Steam 移除断线房主并自动移交 owner」的上限（约 120s）。
+/// Step 0 实测 Steam 约 ~20–94s（波动）才移交；120s 更是保险余量。超时才提示回菜单（保留会话）。
 #[cfg(feature = "steam")]
-const STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS: u32 = 3600;
+const STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS: u32 = 7200;
 /// Rich Presence：相同内容的最小重写间隔（秒）。内容变化时立即写，否则节流（Steam 对频繁 set 有限速）。
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
@@ -7377,32 +7377,20 @@ impl event::EventHandler for Game {
                             // S2/S4：本 host 收到新 host 的 Takeover → 已被取缔（如客户端误判旧 host 掉线）。
                             // 停止作为权威、退回主菜单，避免与新 host 双权威脑裂（孤儿 host 续产帧）。
                             if host.is_superseded() {
-                                // 双保险②：只采纳**当前 lobby owner** 的 Takeover（防非 owner 旧 host 自封顶人）。
+                                eprintln!("[steam-host] SUPERSEDED: 收到新 host 的 Takeover，已取缔，转入归队");
+                                // R6b：记录到的新 host（Takeover 来源）→ 转 client 归队；无来源则回主菜单。
                                 let new_host = match host.superseded_by() {
                                     Some(net::transport::Peer::Steam { id, .. }) => id,
                                     _ => 0,
                                 };
-                                let owner = self
-                                    .steam_lobby_id
-                                    .map(|lid| net_steam::session::lobby_owner(host.transport_ref(), lid))
-                                    .unwrap_or(0);
-                                if !steam::should_take_over(owner, new_host) {
-                                    eprintln!(
-                                        "[steam-host] 忽略非 owner 的 Takeover（from={new_host}, owner={owner}）→ 保持权威"
-                                    );
-                                    host.clear_superseded();
-                                } else {
-                                    eprintln!("[steam-host] SUPERSEDED: 收到新 host（owner）的 Takeover，已取缔，转入归队");
-                                    // R6b：记录到的新 host（Takeover 来源）→ 转 client 归队；无来源则回主菜单。
-                                    if self.steam_begin_rejoin_as_client(host, new_host) {
-                                        self.accumulator = 0.0;
-                                        return Ok(());
-                                    }
-                                    // 无法定位新 host：退回主菜单但保留会话（可重试归队）。
-                                    self.reset_to_main_menu(true);
+                                if self.steam_begin_rejoin_as_client(host, new_host) {
                                     self.accumulator = 0.0;
                                     return Ok(());
                                 }
+                                // 无法定位新 host：退回主菜单但保留会话（可重试归队）。
+                                self.reset_to_main_menu(true);
+                                self.accumulator = 0.0;
+                                return Ok(());
                             }
                             // 迁移接管后：持续广播 Takeover（基线=快照 seq + 更新后的在线参与集），直到首个在线 client 连上产帧才停。
                             if takeover_bcast {

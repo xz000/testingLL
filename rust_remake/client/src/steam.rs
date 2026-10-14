@@ -57,13 +57,6 @@ pub(crate) fn should_self_fence(owner: u64, me: u64, participants: &[u64]) -> bo
     owner != 0 && owner != me && (participants.is_empty() || participants.contains(&owner))
 }
 
-/// 双保险：只有**当前 Steam lobby owner** 才能接管为 host / 其 `Takeover` 才被采纳。
-/// 防“非 owner 旧 host 复活自封 host”顶掉现任（真机已观测到）。纯函数，便于单测。
-#[cfg_attr(not(feature = "steam"), allow(dead_code))]
-pub(crate) fn should_take_over(owner: u64, candidate: u64) -> bool {
-    owner != 0 && owner == candidate
-}
-
 impl Game {
     /// Steam（client）主机迁移状态机：每帧在「收不到权威帧、疑似 host 掉线」后调用。
     /// 分两阶段：
@@ -182,42 +175,12 @@ impl Game {
             return Ok(None); // 不归还 cli（reset_to_main_menu 已清 steam_cli_ls），避免呆cli被重新存回。
         }
         if self.steam_new_host_id == self.steam_my_id {
-            // 双保险①：只有**当前 Steam lobby owner** 才能接管（防“非 owner 旧 host 复活自封 host”顶掉现任）。
-            let owner = self
-                .steam_lobby_id
-                .map(|lid| net_steam::session::lobby_owner(cli.transport_ref(), lid))
-                .unwrap_or(0);
-            if !should_take_over(owner, self.steam_my_id) {
-                eprintln!(
-                    "[steam-client] 拒绝接管：本端非当前 lobby owner（owner={owner}, me={}）→ 放弃本次迁移，继续等待",
-                    self.steam_my_id
-                );
-                self.steam_migrating = false;
-                self.steam_new_host_id = 0;
-                self.steam_migrate_ticks = 0;
-                return Ok(Some(cli));
-            }
             self.steam_do_takeover(cli, rcv)?;
             Ok(None)
         } else {
             // 优先用 fighting 阶段缓存的 Takeover，否则从传输收（新 host 会持续广播直到首个 client 连上）。
             let takeover = cli.take_latest_takeover().or_else(|| cli.recv_takeover(rcv).ok().flatten());
             if let Some((from, seq, online)) = takeover {
-                // 双保险②：只接受**当前 lobby owner** 发来的 Takeover（防旧 host 自封顶人）。
-                let from_id = match from {
-                    net::transport::Peer::Steam { id, .. } => id,
-                    _ => 0,
-                };
-                let owner = self
-                    .steam_lobby_id
-                    .map(|lid| net_steam::session::lobby_owner(cli.transport_ref(), lid))
-                    .unwrap_or(0);
-                if !should_take_over(owner, from_id) {
-                    eprintln!(
-                        "[steam-client] 忽略非 owner 的 Takeover（from={from_id}, owner={owner}）→ 继续等真 owner"
-                    );
-                    return Ok(Some(cli));
-                }
                 // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打；并同步更新在线参与集。
                 self.steam_online = online; // 排除掉线 host 后的在线参与集（供下一次迁移选举）
                 cli.retarget_host(from);
@@ -870,13 +833,5 @@ mod tests {
         assert_eq!(elect_new_host(0, 100, &[100, 500, 300]), 0);
         // owner 不在本局在线参与集（如只在大厅但未参与）→ 不选举。
         assert_eq!(elect_new_host(999, 100, &[100, 500, 300]), 0);
-    }
-
-    /// 双保险：只有**当前 lobby owner** 才能接管 / 其 Takeover 才被采纳。
-    #[test]
-    fn take_over_only_for_current_owner() {
-        assert!(super::should_take_over(500, 500), "owner=候选 → 可接管");
-        assert!(!super::should_take_over(500, 100), "非 owner 候选 → 拒绝");
-        assert!(!super::should_take_over(0, 0), "无 owner → 拒绝");
     }
 }
