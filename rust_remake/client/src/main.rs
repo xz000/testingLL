@@ -8511,7 +8511,11 @@ impl Game {
         if let Some(cli) = self.steam_cli_ls.as_mut() {
             cli.retarget_host(net::transport::Peer::Steam { id: owner, conn: None });
         }
-        eprintln!("[steam-client] Steam 已移交 owner={owner} → 重定向到新 host");
+        eprintln!(
+            "[steam-client] A: Steam 已移交 owner={owner} → 重定向到新 host（本次自 host 沉默起等了 {} ticks ≈ {:.1}s；旧host={my_host_id}）",
+            self.steam_host_wait_ticks,
+            self.steam_host_wait_ticks as f64 / 60.0
+        );
         true
     }
 
@@ -8533,7 +8537,11 @@ impl Game {
         self.steam_host_ls = Some(host);
         self.steam_cli_ls = None;
         self.steam_my_index = 0;
-        eprintln!("[steam-client] Steam 已把 owner 移交给我 → 接管大厅 host");
+        eprintln!(
+            "[steam-client] A: Steam 已把 owner 移交给我 → 接管大厅 host（本次自 host 沉默起等了 {} ticks ≈ {:.1}s）",
+            self.steam_host_wait_ticks,
+            self.steam_host_wait_ticks as f64 / 60.0
+        );
         true
     }
 
