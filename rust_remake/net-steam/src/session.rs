@@ -600,14 +600,17 @@ impl SteamSession {
             );
         });
         // H4：`LobbyDataUpdate` —— `RequestLobbyData` 的应答（`success=false` ⇒ 大厅不存在）。
-        // 只记“大厅自身数据”（member==0）的更新。
+        // 注：对“大厅自身数据”的更新，`m_ulSteamIDMember` == 该大厅 id（**不是 0**）；
+        // 这里全部记录，由上层按 lobby id 匹配。
         let lobby_data_updates: Arc<Mutex<VecDeque<(u64, bool)>>> = Arc::new(Mutex::new(VecDeque::new()));
         {
             let q = lobby_data_updates.clone();
             transport.register_callback(move |cb: steamworks::LobbyDataUpdate| {
-                if cb.member.raw() == 0 {
-                    q.lock().unwrap().push_back((cb.lobby.raw(), cb.success));
-                }
+                eprintln!(
+                    "[netdiag] LobbyDataUpdate: lobby={} member={} success={}",
+                    cb.lobby.raw(), cb.member.raw(), cb.success
+                );
+                q.lock().unwrap().push_back((cb.lobby.raw(), cb.success));
             });
         }
         Ok(SteamSession {
