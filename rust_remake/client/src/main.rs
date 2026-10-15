@@ -1806,11 +1806,10 @@ impl Game {
             steam_played_with: Vec::new(),
             #[cfg(feature = "steam")]
             steam_rejoin_prompt: {
-                // R5c：启动时读回上次会话；仅保留「新鲜 + 协议一致」的，供主菜单提示。
+                // H1：启动时读历史里“最新未结束”的会话；仅保留“归队候选（未结束+新鲜+协议一致+matchkey 对）”。
                 let now = unix_now();
-                rejoin::load(&rejoin::default_path()).filter(|s| {
-                    s.is_fresh(now, rejoin_max_age) && s.protocol_version == game_core::PROTOCOL_VERSION
-                })
+                rejoin::latest_active(&rejoin::default_path())
+                    .filter(|s| s.is_candidate(now, rejoin_max_age, net_steam::session::MATCH_VALUE))
             },
             #[cfg(feature = "steam")]
             steam_rejoin_target: None,
@@ -6881,7 +6880,8 @@ impl event::EventHandler for Game {
                     self.accumulator = 0.0;
                     return Ok(());
                 } else if just_named(NamedKey::Escape) {
-                    rejoin::clear(&rejoin::default_path());
+                    // H1：用户忽略 → 标“已结束”（不删历史，也不再提示）。
+                    rejoin::mark_ended(&rejoin::default_path(), rj.lobby_id);
                     self.steam_rejoin_prompt = None;
                     self.accumulator = 0.0;
                     return Ok(());
@@ -8363,17 +8363,16 @@ impl Game {
             self.steam_rejoin_target = None;
             self.steam_rejoin_handshaking = false;
             self.steam_rejoin_ticks = 0;
-            if keep_rejoin {
-                // 保留磁盘会话；回填主菜单提示（同进程内立即生效，无需重开）。
-                let now = unix_now();
-                let max_age = self.local_settings.rejoin_window.secs();
-                self.steam_rejoin_prompt = rejoin::load(&rejoin::default_path()).filter(|s| {
-                    s.is_fresh(now, max_age) && s.protocol_version == game_core::PROTOCOL_VERSION
-                });
-            } else {
-                rejoin::clear(&rejoin::default_path());
-                self.steam_rejoin_prompt = None;
+            // H1：历史记录——离场/回菜单**保留**（不删）；只有“对局正常结束”（`keep_rejoin=false`）才把当前局标 ended。
+            let now = unix_now();
+            let max_age = self.local_settings.rejoin_window.secs();
+            if !keep_rejoin {
+                if let Some(lid) = self.steam_lobby_id {
+                    rejoin::mark_ended(&rejoin::default_path(), lid);
+                }
             }
+            self.steam_rejoin_prompt = rejoin::latest_active(&rejoin::default_path())
+                .filter(|s| s.is_candidate(now, max_age, net_steam::session::MATCH_VALUE));
             // 进房时 `steam_sess` 会被消费掉（传输归 lockstep），回到主菜单后可再初始化一次
             // （否则好友邀请与房间列表在主菜单上会永久失效）。
             self.steam_session_tried = false;
@@ -8555,8 +8554,8 @@ impl Game {
         eprintln!("[steam] leave room -> main menu");
         self.steam_lobby_id = None;
         self.steam_room_locked = false;
-        // 干净退出房间（尚在对局前）→ 清会话。
-        self.reset_to_main_menu(false);
+        // H1：退房**不再清除**归队历史（保留历史，可随时再连回）；仅“对局正常结束”标 ended。
+        self.reset_to_main_menu(true);
     }
 
     /// S3：本端与 Steam 服务器是否在线（用于“自己掉线”判定）；无 transport 时按在线处理（保守）。
@@ -9760,8 +9759,9 @@ impl Game {
                 // 失败提示上屏：返回大厅菜单后用红字展示，避免只 eprintln 用户看不到。
                 self.steam_lobby_error = Some(i18n::tf("加入失败：{err}", &[("err", e.to_string())]));
                 // 若本次是「重新加入上一局」尝试失败（大厅已关等）⇒ 判定上一局已结束：清会话。
-                if self.steam_rejoin_target.take().is_some() {
-                    rejoin::clear(&rejoin::default_path());
+                if let Some(rj) = self.steam_rejoin_target.take() {
+                    // H1：归队尝试失败（大厅已关等）⇒ 判定该局已结束：标 ended（不删历史）。
+                    rejoin::mark_ended(&rejoin::default_path(), rj.lobby_id);
                     self.steam_rejoin_prompt = None;
                     self.menu_hint = i18n::t("上一局已结束").to_string();
                 }
@@ -9989,6 +9989,14 @@ impl Game {
         let mut parts: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
         parts.sort_unstable();
         let participants: Vec<u64> = parts.into_iter().map(|(_, id)| id).collect();
+        // 房主 SteamID（能读则读，读不到填 0）+ 房间名（供主菜单提示）。
+        let host_id = self
+            .steam_host_ls
+            .as_ref()
+            .map(|h| net_steam::session::lobby_owner(h.transport_ref(), lobby_id))
+            .or_else(|| self.steam_cli_ls.as_ref().map(|c| net_steam::session::lobby_owner(c.transport_ref(), lobby_id)))
+            .unwrap_or(0);
+        let room_name = self.steam_current_room_info().0;
         let s = rejoin::RejoinSession {
             lobby_id,
             match_key: net_steam::session::MATCH_VALUE.to_string(),
@@ -9996,8 +10004,13 @@ impl Game {
             participants,
             protocol_version: game_core::PROTOCOL_VERSION,
             saved_at_unix: unix_now(),
+            ended: false,
+            round: self.meta.round,
+            host_id,
+            room_name,
         };
-        rejoin::save(&rejoin::default_path(), &s);
+        // H1：追加/就地更新到历史（不删旧条目）。
+        rejoin::push(&rejoin::default_path(), &s);
         eprintln!("[steam-rejoin] persisted session for lobby {lobby_id} ({} participants)", s.participants.len());
     }
 
