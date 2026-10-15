@@ -168,10 +168,10 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 **可选加固**（将来若发现问题再做）：
 1. ✅ **已做（`2ff05ee`）**：`notify_old_host_takeover` **重发** —— 接管时暂存通知，`poll` 尾部每 30 tick(0.5s) 重发一次、共 12 次(~6s)，
    提高到达率，促旧 host 尽快退位（`HostLockstep` 新增 `old_host_notice*` 字段 + `poll` 重发；net 单测 `notify_old_host_takeover_is_resent`）。
-2. ✅ **已做（`3ae9bbb`）**：**旧 host 自判“被遗弃”** —— `HostLockstep::all_clients_dropped()` 判定
-   “应到客户端≥1 且全部掉线”；`poll` 累计 `deserted_ticks`；达 `DESERTED_HOST_TICKS=600`(~10s) →
-   旧 host 自判被孤立，**主动退位 + 退大厅**（促 Steam 移交 owner）。学习期/对局期两条 host 分支均接线。
-   （已确认：主动退出路径本就会 `leave_lobby` + 清 host 身份，不会僵尸；崩溃=进程消亡；此条覆盖唯一的“活着但 P2P 隔离”。）
+2. ❌ **已撤销（`253f1d9`）**：**旧 host 自判“被遗弃”** —— 曾用 `all_clients_dropped`+`deserted_ticks`
+   在全客户端掉线 ~10s 后自退，但**用户体验不佳**（用户定调）：现改为 **host 继续单人对桩子打下去**，不自动退。
+   真正的“被取代/P2P 隔离”仍由**自栅栏（按 `lobby_owner`）**处理，或用户自行 Esc 退。
+   （`HostLockstep::all_clients_dropped`/`deserted_ticks` API 保留但不接主循环。）
 3. 记录/限流：对“非当前 host”的包做丢弃计数，便于诊断僵尸窗口时长。
 
 ---
