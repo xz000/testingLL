@@ -342,11 +342,6 @@ const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
 /// Step 0 实测 Steam 约 ~20–94s（波动）才移交；120s 更是保险余量。超时才提示回菜单（保留会话）。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS: u32 = 7200;
-/// S5：Steam 重连后刷新大厅状态（`RequestLobbyData`）的 burst 时长（帧，~30s）与其间隔（帧，~2s）。
-#[cfg(feature = "steam")]
-const LOBBY_REFRESH_BURST_TICKS: u32 = 1800;
-#[cfg(feature = "steam")]
-const LOBBY_REFRESH_EVERY: u32 = 120;
 /// Rich Presence：相同内容的最小重写间隔（秒）。内容变化时立即写，否则节流（Steam 对频繁 set 有限速）。
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
@@ -1118,9 +1113,6 @@ struct Game {
     steam_lobby_orphan_check: u32,
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
     steam_lobby_orphan_strikes: u32,
-    /// S5：重连后刷新大厅状态的 burst 剩余帧数（>0 时每 `LOBBY_REFRESH_EVERY` 帧调一次 `RequestLobbyData`）。
-    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
-    steam_lobby_refresh_burst: u32,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -1761,7 +1753,6 @@ impl Game {
             steam_host_wait_ticks: 0,
             steam_lobby_orphan_check: 0,
             steam_lobby_orphan_strikes: 0,
-            steam_lobby_refresh_burst: 0,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -5064,6 +5055,7 @@ impl Game {
                     // E2：只有"首局配置"才是 pre_game_config（它=配置同步的 stage_first，会重建世界！）；
                     // 局间学习期归队必须为 false，否则重建世界→清零累计状态→DESYNC。
                     self.pre_game_config = self.meta.is_first_config();
+                    self.steam_rebuild_roster(cli.transport_ref()); // S6：归队后按参与顺序重建名单（恢复角色头像）
                     eprintln!("[steam-rejoin] resumed in learning (phase={:?}, first={})", self.meta.phase, self.pre_game_config);
                     self.steam_cli_ls = Some(cli);
                     return Ok(());
@@ -7145,6 +7137,12 @@ impl event::EventHandler for Game {
                 #[cfg(feature = "steam")]
                 if self.steam_active() {
                     self.steam_learning_net_tick()?;
+                    // 归队/迁移可能在本帧把阶段切到 Fighting（快照显示对局已开）→
+                    // 按旧阶段继续走“学习倒计时”会立即滑进 `ClientWait` 卡死（画面冻结）。
+                    if self.meta.phase != MatchPhase::Learning {
+                        self.accumulator = 0.0;
+                        return Ok(());
+                    }
                 }
 
                 // 局域网 host：首局配置阶段仍收 client 加入（避免先到的 client 握手超时）。
@@ -7582,6 +7580,7 @@ impl event::EventHandler for Game {
                                 // 收 host 广播的本局参与玩家 SteamID（按 new index），供 host 掉线时确定性选举新 host。
                                 if let Ok(Some(ids)) = cli.recv_participants(&mut c_rcv) {
                                     self.steam_participants = ids.clone();
+                                    self.steam_rebuild_roster(cli.transport_ref()); // S6：参与名单确定后按它重建头像/名单（对齐世界索引）
                                     // 注意：**不**在此设 `steam_online`（它=在线子集，由 host 随后广播），
                                     // 否则 client 会停在“全量在线” → 与 host 的“已离开”标记不一致。
                                     eprintln!("[steam-client] got participants ids={ids:?}");
@@ -7633,6 +7632,7 @@ impl event::EventHandler for Game {
                                 self.steam_rejoin_ticks = 0;
                                 self.steam_new_host_id = 0;
                                 self.steam_cli_stale_ticks = 0;
+                                self.steam_rebuild_roster(cli.transport_ref()); // S6：归队后按参与顺序重建名单（恢复角色头像）
                                 eprintln!("[steam-rejoin] resumed from snapshot seq={seq}");
                             } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
                                 eprintln!("[steam-rejoin] handshake timeout -> return to menu");
@@ -8556,15 +8556,30 @@ impl Game {
             .unwrap_or(true)
     }
 
-    /// S5：重连后刷新大厅状态（`RequestLobbyData`）——重连回调置位时刷一次，之后 ~30s 内每 ~2s 兜底几次。
+    /// S6：按**权威参与顺序**（`steam_participants`）重建头像/名单（`steam_roster`）。
+    /// 用于归队/接管/配置同步后：`LobbyPlayerTable` 槽位与世界索引可能不一致，而头像按 `slot == player.id` 取 →
+    /// 必须用参与顺序对齐，否则角色头像会丢失（真机：Y 归队后无头像）。
+    #[cfg(feature = "steam")]
+    fn steam_rebuild_roster(&mut self, t: &net_steam::SteamTransport) {
+        if self.steam_participants.is_empty() {
+            return;
+        }
+        let fr = t.friends();
+        let mut roster = Vec::with_capacity(self.steam_participants.len());
+        for (i, id) in self.steam_participants.iter().enumerate() {
+            let name = fr
+                .get_friend(net_steam::steamworks::SteamId::from_raw(*id))
+                .name();
+            roster.push((i as u8, name, *id));
+        }
+        self.steam_roster = roster;
+    }
+
+    /// S5：重连后刷新大厅状态（`RequestLobbyData`）——重连回调置位时刷**一次**。
     /// 补上离线期间错过的成员/owner 推送（否则本端可能停滞在陈旧的 owner，如“旧 host 自以为仍是 owner”）。
     #[cfg(feature = "steam")]
     fn steam_lobby_refresh_tick(&mut self) {
-        let Some(lid) = self.steam_lobby_id else {
-            self.steam_lobby_refresh_burst = 0;
-            return;
-        };
-        // 重连回调置的刷新请求（在借用内取走）。
+        let Some(lid) = self.steam_lobby_id else { return };
         let req = self
             .steam_host_ls
             .as_ref()
@@ -8572,23 +8587,17 @@ impl Game {
             .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
             .map(|t| t.take_lobby_refresh_request())
             .unwrap_or(false);
-        if req {
-            self.steam_lobby_refresh_burst = LOBBY_REFRESH_BURST_TICKS;
-            eprintln!("[steam] Steam 重连 → 刷新大厅状态 RequestLobbyData(lobby={lid})");
+        if !req {
+            return;
         }
-        let due = self.steam_lobby_refresh_burst > 0 && self.steam_lobby_refresh_burst % LOBBY_REFRESH_EVERY == 0;
-        if req || due {
-            if let Some(t) = self
-                .steam_host_ls
-                .as_ref()
-                .map(|h| h.transport_ref())
-                .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
-            {
-                let _ = t.request_lobby_data(lid);
-            }
-        }
-        if self.steam_lobby_refresh_burst > 0 {
-            self.steam_lobby_refresh_burst -= 1;
+        eprintln!("[steam] Steam 重连 → 刷新大厅状态 RequestLobbyData(lobby={lid})");
+        if let Some(t) = self
+            .steam_host_ls
+            .as_ref()
+            .map(|h| h.transport_ref())
+            .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
+        {
+            let _ = t.request_lobby_data(lid);
         }
     }
 
