@@ -8583,6 +8583,12 @@ impl Game {
                 .name();
             roster.push((i as u8, name, *id));
         }
+        if self.net_diag {
+            eprintln!(
+                "[netdiag] S6 rebuild roster from participants: {:?}",
+                roster.iter().map(|(s, _, id)| (*s, *id)).collect::<Vec<_>>()
+            );
+        }
         self.steam_roster = roster;
     }
 

@@ -571,6 +571,14 @@ impl Game {
             }
         }
         // t 到此不再使用 → 可以改 self 了。
+        if self.net_diag {
+            eprintln!(
+                "[netdiag] avatar fetch: roster={:?} fetched_new={} cached={}",
+                self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect::<Vec<_>>(),
+                fetched.len(),
+                self.steam_avatars.len()
+            );
+        }
         self.steam_pings = pings;
         for (id, mut rgba, side) in fetched {
             // 裁成内切圆：角色/化身上的头像是叠在圆形角色体里的，方形图会在四角露方角。
