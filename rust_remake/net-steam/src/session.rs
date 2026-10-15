@@ -554,6 +554,8 @@ pub struct LobbyInfo {
     pub mode: u8,
     /// 联机兼容版本（元数据 `room_version`；旧房/缺省为 `None`）。
     pub version: Option<u32>,
+    /// 大厅 `matchkey` 元数据（用于确认“这个大厅是我们游戏的”，H4 探活用）。
+    pub matchkey: Option<String>,
 }
 
 impl SteamSession {
@@ -970,6 +972,7 @@ impl SteamSession {
             let mode = mm.lobby_data(l, ROOM_MODE_KEY).and_then(|s| s.parse().ok()).unwrap_or(1);
             let version = mm.lobby_data(l, ROOM_VERSION_KEY).and_then(|s| s.parse().ok());
             let settings = mm.lobby_data(l, ROOM_SETTINGS_KEY);
+            let matchkey = mm.lobby_data(l, MATCH_KEY);
             out.push(LobbyInfo {
                 id: l.raw(),
                 owner,
@@ -980,6 +983,7 @@ impl SteamSession {
                 mode,
                 version,
                 settings,
+                matchkey,
             });
         }
         LobbyListProgress::Done(Ok(out))

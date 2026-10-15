@@ -1279,6 +1279,15 @@ struct Game {
     /// H2：归队提示的附加说明（如“上一局版本不同，无法连回”）；无则 None。
     #[cfg(feature = "steam")]
     steam_rejoin_note: Option<String>,
+    /// H4：归队探活——正在探测的大厅 id（None=未进行中）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_probe: Option<u64>,
+    /// H4：探活已等帧数（超时保护）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_probe_ticks: u32,
+    /// H4：下次可探活的帧号（节流 ~10s；用 `frame`，因为它在大菜单也递增）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_next_probe: u64,
     /// R5c：玩家确认归队时暂存的目标（进房成功后据此走归队而非新开局）。
     #[cfg(feature = "steam")]
     steam_rejoin_target: Option<rejoin::RejoinSession>,
@@ -1833,6 +1842,12 @@ impl Game {
                         })
                 })
             },
+            #[cfg(feature = "steam")]
+            steam_rejoin_probe: None,
+            #[cfg(feature = "steam")]
+            steam_rejoin_probe_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_rejoin_next_probe: 0,
             #[cfg(feature = "steam")]
             steam_rejoin_target: None,
             #[cfg(feature = "steam")]
@@ -6873,6 +6888,8 @@ impl event::EventHandler for Game {
             {
                 self.steam_ensure_session();
                 self.steam_poll_join_requests(ctx);
+                // H4：对“提示中的上一局”做大厅探活（节流；不在列表 → 标 ended 并撤下提示）。
+                self.steam_rejoin_probe_tick();
                 // 会话就绪后读取 Steam 语言并应用（`Auto` 偏好时生效；手动固定不受影响）。
                 self.steam_sync_language();
                 // 被邀请进房后本帧不再处理菜单输入。
@@ -8512,6 +8529,66 @@ impl Game {
             _ => {
                 self.steam_rejoin_prompt = None;
                 self.steam_rejoin_note = None;
+            }
+        }
+    }
+
+    /// H4：归队探活——主菜单上对“提示中的大厅”用 `RequestLobbyList` + `matchkey` 判断是否还在。
+    /// 不在 → 标 ended 并刷新提示（撤下）；网络失败 → **保守保留**（不改变 ended）。节流 ~10s。
+    #[cfg(feature = "steam")]
+    fn steam_rejoin_probe_tick(&mut self) {
+        if self.steam_rejoin_prompt.is_none() {
+            self.steam_rejoin_probe = None;
+            self.steam_rejoin_probe_ticks = 0;
+            return;
+        }
+        if self.steam_rejoin_probe.is_none() {
+            if self.frame < self.steam_rejoin_next_probe {
+                return; // 冷却中
+            }
+            let target = self.steam_rejoin_prompt.as_ref().map(|rj| rj.lobby_id);
+            if let Some(sess) = self.steam_sess.as_mut() {
+                if sess.start_list_lobbies(240).is_ok() {
+                    self.steam_rejoin_probe = target;
+                    self.steam_rejoin_probe_ticks = 0;
+                }
+            }
+            return;
+        }
+        self.steam_rejoin_probe_ticks = self.steam_rejoin_probe_ticks.saturating_add(1);
+        let prog = self.steam_sess.as_mut().map(|s| s.tick_lobby_list());
+        match prog {
+            Some(net_steam::session::LobbyListProgress::Done(Ok(list))) => {
+                let target = self.steam_rejoin_probe.take().unwrap_or(0);
+                let info = list
+                    .iter()
+                    .find(|i| i.id == target && i.matchkey.as_deref() == Some(net_steam::session::MATCH_VALUE));
+                if let Some(info) = info {
+                    // 在 → 保留提示，并（若提示里房名为空）用实时房名补上。
+                    if let Some(rj) = self.steam_rejoin_prompt.as_mut() {
+                        if rj.room_name.trim().is_empty() && !info.name.trim().is_empty() {
+                            rj.room_name = info.name.clone();
+                        }
+                    }
+                } else {
+                    eprintln!("[steam-rejoin] H4 探活：大厅 {target} 已不在列表 → 标已结束");
+                    rejoin::mark_ended(&rejoin::default_path(), target);
+                    self.refresh_rejoin_prompt();
+                }
+                self.steam_rejoin_probe_ticks = 0;
+                self.steam_rejoin_next_probe = self.frame.saturating_add(600);
+            }
+            Some(net_steam::session::LobbyListProgress::Done(Err(e))) => {
+                eprintln!("[steam-rejoin] H4 探活失败（保守保留提示）：{e}");
+                self.steam_rejoin_probe = None;
+                self.steam_rejoin_probe_ticks = 0;
+                self.steam_rejoin_next_probe = self.frame.saturating_add(600);
+            }
+            Some(net_steam::session::LobbyListProgress::Pending) => {}
+            Some(net_steam::session::LobbyListProgress::Idle) | None => {
+                // 会话不在/被消费 → 放弃本次探测。
+                self.steam_rejoin_probe = None;
+                self.steam_rejoin_probe_ticks = 0;
             }
         }
     }
