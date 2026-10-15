@@ -481,6 +481,9 @@ pub struct SteamSession {
     /// 待处理的「加入游戏」请求（Steam 回调写入；`take_join_request` 取走）。
     /// 回调只在 `run_callbacks()` 时被泵出，所以持有会话的一端要每帧 pump。
     join_requests: Arc<Mutex<VecDeque<JoinRequest>>>,
+    /// H4：`LobbyDataUpdate` 回调记录（`(lobby_id, success)`）——用于 `RequestLobbyData` 探活。
+    /// `success=false` ⇒ 该大厅已不存在（**直接查房间**，不依赖大厅列表搜索）。
+    lobby_data_updates: Arc<Mutex<VecDeque<(u64, bool)>>>,
     /// 大厅异步操作状态（S12：发起后由 `tick_lobby` 每帧推进，避免主线程 sleep 忙等）。
     pending_lobby: Option<PendingLobbyOp>,
     /// 房间列表异步拉取状态（同上）。
@@ -596,14 +599,31 @@ impl SteamSession {
                 cb.lobby.raw(), cb.user.raw(), cb.chat_entry_type, cb.chat_id
             );
         });
+        // H4：`LobbyDataUpdate` —— `RequestLobbyData` 的应答（`success=false` ⇒ 大厅不存在）。
+        // 只记“大厅自身数据”（member==0）的更新。
+        let lobby_data_updates: Arc<Mutex<VecDeque<(u64, bool)>>> = Arc::new(Mutex::new(VecDeque::new()));
+        {
+            let q = lobby_data_updates.clone();
+            transport.register_callback(move |cb: steamworks::LobbyDataUpdate| {
+                if cb.member.raw() == 0 {
+                    q.lock().unwrap().push_back((cb.lobby.raw(), cb.success));
+                }
+            });
+        }
         Ok(SteamSession {
             transport,
             lobby: None,
             table: None,
             join_requests,
+            lobby_data_updates,
             pending_lobby: None,
             pending_list: None,
         })
+    }
+
+    /// H4：取走 `LobbyDataUpdate` 回调记录（`(lobby_id, success)`）。
+    pub fn take_lobby_data_updates(&self) -> Vec<(u64, bool)> {
+        self.lobby_data_updates.lock().unwrap().drain(..).collect()
     }
 
     /// 取走一个待处理的「加入游戏」请求（无则 `None`）。回调只在 `run_callbacks()` 时泵出，取之前应先 pump。
