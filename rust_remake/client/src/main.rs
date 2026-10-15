@@ -3868,8 +3868,11 @@ impl Game {
         }
 
         // S1/S2：等待房主横幅 / 主机迁移覆盖层（仅 Steam）。
+        // 优先级：本端与 Steam 断开（最根本） > 主机迁移/归队 > 静默等待房主。
         #[cfg(feature = "steam")]
-        if self.steam_migrating || self.steam_rejoin_handshaking {
+        if self.steam_active() && !self.steam_servers_online() {
+            self.draw_top_banner(&mut canvas, ctx, i18n::t("已与 Steam 断开，正在等待重连…"))?;
+        } else if self.steam_migrating || self.steam_rejoin_handshaking {
             self.draw_migration_overlay(&mut canvas, ctx)?;
         } else if self.steam_cli_stale_ticks >= STALE_HINT_TICKS {
             self.draw_waiting_host_banner(&mut canvas, ctx)?;
@@ -5229,11 +5232,10 @@ impl Game {
         Ok(())
     }
 
-    /// S1：静默等待房主时的非模态顶部提示（不遮挡操作）。
+    /// Steam 联机：顶部非模态横幅（不遮挡操作）。
     #[cfg(feature = "steam")]
-    fn draw_waiting_host_banner(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+    fn draw_top_banner(&self, canvas: &mut Canvas, ctx: &Context, text: &str) -> GameResult {
         let (sw, _sh) = (ui::UI_W, ui::UI_H);
-        let secs = self.steam_cli_stale_ticks as f64 / 60.0;
         let bg = Mesh::new_rectangle(
             &ctx.gfx,
             DrawMode::fill(),
@@ -5241,16 +5243,16 @@ impl Game {
             Color::from_rgba(30, 40, 60, 200),
         )?;
         canvas.draw(&bg, graphics::DrawParam::new());
-        ui::text_center(
-            canvas,
-            ctx,
-            &i18n::tf("正在等待房主…（{secs}s）", &[("secs", format!("{secs:.0}"))]),
-            18.0,
-            Color::from_rgb(200, 220, 255),
-            sw / 2.0,
-            8.0,
-        )?;
+        ui::text_center(canvas, ctx, text, 18.0, Color::from_rgb(200, 220, 255), sw / 2.0, 8.0)?;
         Ok(())
+    }
+
+    /// S1：静默等待房主时的非模态顶部提示（不遮挡操作）。
+    #[cfg(feature = "steam")]
+    fn draw_waiting_host_banner(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let secs = self.steam_cli_stale_ticks as f64 / 60.0;
+        let text = i18n::tf("正在等待房主…（{secs}s）", &[("secs", format!("{secs:.0}"))]);
+        self.draw_top_banner(canvas, ctx, &text)
     }
 
     /// S2：主机迁移期间的模态覆盖层（探测 / 选举 / 接管），spinner + 已等待秒数 + Esc 放弃提示。

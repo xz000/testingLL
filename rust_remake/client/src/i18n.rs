@@ -541,6 +541,7 @@ const EN: &[(&str, &str)] = &[
     ("按 Q / 回车 / Esc 返回主菜单", "Press Q / Enter / Esc to return to the main menu"),
     // ---- E3：掉线等待 / 主机迁移 UI ----
     ("正在等待房主…（{secs}s）", "Waiting for host… ({secs}s)"),
+    ("已与 Steam 断开，正在等待重连…", "Disconnected from Steam; waiting to reconnect…"),
     ("正在尝试重新连回房主…（{secs}s）", "Reconnecting to the host… ({secs}s)"),
     ("房主已离开，正在选拔新主机…（{secs}s）", "Host left; electing a new host… ({secs}s)"),
     ("正在接管对局…", "Taking over the match…"),
