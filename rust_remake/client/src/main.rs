@@ -5037,6 +5037,16 @@ impl Game {
             // 注：**不再因“所有客户端都掉线”而自动退出**——host 继续单人对桩子打下去（用户定调）。
             // 真正的“被取代/P2P 隔离”仍由下方/对局期的**自栅栏**（按 Steam `lobby_owner`）处理。
             // 也可以由用户自行 Esc→返回主菜单。
+            // R7e（学习期暂停）：登记身份 + 同步暂停额度 + 处理本端请求 + 推进暂停状态机（含广播 `PauseState`）。
+            host.set_local_identity(self.steam_my_id);
+            host.set_pause_budget_default(self.match_cfg.pause_budget);
+            if let Some(want) = self.pause_pending.take() {
+                let ok = if want { host.request_pause(self.steam_my_id) } else { host.request_resume() };
+                if !ok && want {
+                    eprintln!("[steam-host] pause request denied (budget/cooldown)");
+                }
+            }
+            host.tick_pause();
             // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
             // 也同步"已离开"。
             host.take_online_dirty();
@@ -5113,6 +5123,10 @@ impl Game {
             // 心跳上行（在场）。
             let enc = game_core::netcode::encode_player_input(&self.local_player_input());
             let _ = cli.send_room_state(self.steam_local_ready, false, &enc);
+            // R7e（学习期暂停）：发送本端暂停/恢复请求（由 host 仲裁后广播生效）。
+            if let Some(want) = self.pause_pending.take() {
+                let _ = cli.send_pause_req(self.steam_my_id, !want);
+            }
             // 购买是**本地**行为：配置一变就上报 host（崩溃/掉线来不及告别也能保住购买）。
             let cfg = self.local_player_cfg();
             if !cfg.is_empty() && self.steam_last_sent_cfg != cfg {
@@ -7168,8 +7182,18 @@ impl event::EventHandler for Game {
                 Ok(())
             }
             MatchPhase::Learning => {
-                // 学习阶段：轮询购买升级输入 + 计时（退出菜单打开时暂停学习期输入）。
-                if !self.escape_menu {
+                // 学习阶段：轮询购买升级输入 + 计时（退出菜单打开 / 暂停中时暂停学习期输入）。
+                let paused = {
+                    #[cfg(feature = "steam")]
+                    {
+                        self.steam_paused_now()
+                    }
+                    #[cfg(not(feature = "steam"))]
+                    {
+                        false
+                    }
+                };
+                if !self.escape_menu && !paused {
                     self.poll_learning(ctx);
                     self.poll_growth_buy(ctx);
                     self.poll_shop(ctx);
@@ -7177,6 +7201,11 @@ impl event::EventHandler for Game {
                     if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
                         self.learn_dispatch_click(ctx);
                     }
+                }
+                // R7e：学习期也支持按暂停键（弹确认框 → 确认后置 `pause_pending`）。
+                #[cfg(feature = "steam")]
+                if self.steam_active() && !self.escape_menu {
+                    self.steam_pause_try_open(ctx);
                 }
                 // Steam 联机：学习期轻量网络节拍（心跳 + 静态快照 + 掉线判定 + 归队握手）。
                 #[cfg(feature = "steam")]
@@ -8751,7 +8780,10 @@ impl Game {
     /// 否则会在还没等到 Steam 移交 owner 时就数到 0、滑进 `ClientWait` 卡死）。
     #[cfg(feature = "steam")]
     fn steam_learning_paused(&self) -> bool {
-        self.steam_migrating || self.steam_rejoin_handshaking || !self.steam_servers_online()
+        self.steam_migrating
+            || self.steam_rejoin_handshaking
+            || !self.steam_servers_online()
+            || self.steam_paused_now() // R7e：手动/仲裁暂停也冻结学习倒计时
     }
 
     /// A：大厅阶段房主沉默后，**等待 Steam 移除断线房主并自动移交 owner**。
