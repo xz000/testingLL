@@ -138,3 +138,51 @@
 - D5 历史容量 N 取多少？（建议 5）
 - D6 `ended` 条目在主菜单是否还可“手动重试归队”？（建议：显示为“已结束（可手动尝试）”，默认不主动提示）
 - D7 旧 `rejoin.txt` 如何处理？（迁移为历史首条 / 直接忽略）
+
+---
+
+## 7. H4 详细规划：用 `matchkey` + 大厅列表探活
+
+### 7.1 结论：现成机制可复用（无需新建）
+- `MATCH_KEY="matchkey"` / `MATCH_VALUE="remake_arena_v1"`（`session.rs:22/24`）；host 建房写入（`:1057`）；自动加入按它过滤（`:1012`）。
+- 现成「列大厅」：`start_list_lobbies(beats)`（`:915`）→ 每帧 `tick_lobby_list()`（`:940`）→
+  `LobbyListProgress::Done(Ok(Vec<LobbyInfo>))`；`LobbyInfo { id, owner, members, limit, name, note, mode, version, settings }`。
+- **需小改**：`LobbyInfo` 增 `matchkey: Option<String>`（读 `lobby_data(l, MATCH_KEY)`），以便确认“这个大厅是我们的”。
+
+### 7.2 两条探活通道
+- **A（仍是成员）**：直接 `SteamTransport::request_lobby_data(lobby)`（已有）+ `session::lobby_member_ids/owner`。适合进程未退（如 orphan 回菜单）。
+- **B（已非成员）**：`start_list_lobbies` + `tick_lobby_list` → 结果里找 `id == 目标` 且 `matchkey == MATCH_VALUE`。
+  - 适合：崩溃/退房后；**Steam 后端查询、不依赖 P2P**；
+  - 注意：**锁房/不可加入的大厅不会出现在列表**（视为“不可归队”，合理）；列表可能被条数上限截断（只需存在性）。
+
+### 7.3 探活状态机（client，只读、无副作用）
+- **触发**：主菜单出现 `steam_rejoin_prompt` 时；此后每 ~10s 复检（`RequestLobbyList` 有频率限制）。
+- **流程**：1) 仍是成员 → 走 A；2) 否则 → 走 B（`start_list_lobbies(240)` ≈ 4s）；
+- **结果**：
+  - **alive** → 提示增强为「上一局：<房名> · M 人 · 房主 <名>（第 N 轮）· 按 Y 归队」；
+  - **gone** → 把该历史条目标 `ended` 并**隐藏提示**（或显示“上一局已结束”）。
+
+### 7.4 与历史/提示的接线
+- 探活只针对**最新未结束**的历史条目；结果写回条目（`ended` / `last_seen_*`）。
+- **保底**：即便探活说“在”，仍以**归队尝试**为准（join/握手失败 → `ended`）。
+
+### 7.5 失败与边界
+- `RequestLobbyList` 超时/失败 → **不改变** `ended`（保守：仍提示，让用户试）；
+- 目标处于**锁房/已满**：列表不含/无法加入 → 视为不可归队（可提示“房间不可加入”）；
+- 列表可能含**同 matchkey 的其它房间** → **只按 `lobby_id` 匹配目标**，绝不“随便挑一个”；
+- 全程**只读**（不 join、不改大厅数据）。
+
+### 7.6 测试矩阵
+| 场景 | 期望 |
+|---|---|
+| 局仍在（房主在线） | 探活 alive；提示正常；Y 能归队 |
+| 局已结束（全员退出/房主解散） | 探活 gone → 标 ended、不提示 |
+| 崩溃重开、局仍在 | B 通道 alive → 提示可归队 |
+| 进程未退、被移出大厅（orphan） | A 通道 gone → 标 ended |
+| 锁房 | 视为不可归队（不提示 / 提示“不可加入”） |
+| 网络断 | 探针超时 → 保守仍提示 |
+
+### 7.7 待决策（H4）
+- D8 复检间隔（建议 ~10s）与超时（建议 4s）；
+- D9 gone 时：完全隐藏 / 显示“上一局已结束（不可归队）”；
+- D10 是否需要在提示里显示房名/人数/轮次（依赖 H2 字段）。
