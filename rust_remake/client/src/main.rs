@@ -342,6 +342,11 @@ const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
 /// Step 0 实测 Steam 约 ~20–94s（波动）才移交；120s 更是保险余量。超时才提示回菜单（保留会话）。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS: u32 = 7200;
+/// S5：Steam 重连后刷新大厅状态（`RequestLobbyData`）的 burst 时长（帧，~30s）与其间隔（帧，~2s）。
+#[cfg(feature = "steam")]
+const LOBBY_REFRESH_BURST_TICKS: u32 = 1800;
+#[cfg(feature = "steam")]
+const LOBBY_REFRESH_EVERY: u32 = 120;
 /// Rich Presence：相同内容的最小重写间隔（秒）。内容变化时立即写，否则节流（Steam 对频繁 set 有限速）。
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
@@ -1113,6 +1118,9 @@ struct Game {
     steam_lobby_orphan_check: u32,
     #[cfg_attr(not(feature = "steam"), allow(dead_code))]
     steam_lobby_orphan_strikes: u32,
+    /// S5：重连后刷新大厅状态的 burst 剩余帧数（>0 时每 `LOBBY_REFRESH_EVERY` 帧调一次 `RequestLobbyData`）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    steam_lobby_refresh_burst: u32,
     /// Steam：整个大厅流程持有的一次性 Steam 会话（进入大厅时 init 一次，建房/加入消费之；避免重复 init 单实例 steamworks）。
     #[cfg(feature = "steam")]
     steam_sess: Option<net_steam::session::SteamSession>,
@@ -1753,6 +1761,7 @@ impl Game {
             steam_host_wait_ticks: 0,
             steam_lobby_orphan_check: 0,
             steam_lobby_orphan_strikes: 0,
+            steam_lobby_refresh_burst: 0,
             #[cfg(feature = "steam")]
             steam_sess,
             #[cfg(feature = "steam")]
@@ -7088,10 +7097,11 @@ impl event::EventHandler for Game {
             }
         }
 
-        // 全局帧计数（用于 Steam 周期性自检的节流：自栅栏 / 孤岛检测等）。
+        // 全局帧计数（用于 Steam 周期性自检的节流：自栅栏 / 孤岛检测等）+ 重连后刷新大厅状态。
         #[cfg(feature = "steam")]
         {
             self.steam_net_ticks = self.steam_net_ticks.wrapping_add(1);
+            self.steam_lobby_refresh_tick();
         }
 
         match self.meta.phase {
@@ -8544,6 +8554,42 @@ impl Game {
             .map(|h| h.transport_ref().servers_online())
             .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref().servers_online()))
             .unwrap_or(true)
+    }
+
+    /// S5：重连后刷新大厅状态（`RequestLobbyData`）——重连回调置位时刷一次，之后 ~30s 内每 ~2s 兜底几次。
+    /// 补上离线期间错过的成员/owner 推送（否则本端可能停滞在陈旧的 owner，如“旧 host 自以为仍是 owner”）。
+    #[cfg(feature = "steam")]
+    fn steam_lobby_refresh_tick(&mut self) {
+        let Some(lid) = self.steam_lobby_id else {
+            self.steam_lobby_refresh_burst = 0;
+            return;
+        };
+        // 重连回调置的刷新请求（在借用内取走）。
+        let req = self
+            .steam_host_ls
+            .as_ref()
+            .map(|h| h.transport_ref())
+            .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
+            .map(|t| t.take_lobby_refresh_request())
+            .unwrap_or(false);
+        if req {
+            self.steam_lobby_refresh_burst = LOBBY_REFRESH_BURST_TICKS;
+            eprintln!("[steam] Steam 重连 → 刷新大厅状态 RequestLobbyData(lobby={lid})");
+        }
+        let due = self.steam_lobby_refresh_burst > 0 && self.steam_lobby_refresh_burst % LOBBY_REFRESH_EVERY == 0;
+        if req || due {
+            if let Some(t) = self
+                .steam_host_ls
+                .as_ref()
+                .map(|h| h.transport_ref())
+                .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref()))
+            {
+                let _ = t.request_lobby_data(lid);
+            }
+        }
+        if self.steam_lobby_refresh_burst > 0 {
+            self.steam_lobby_refresh_burst -= 1;
+        }
     }
 
     /// S4：学习期是否应**冻结倒计时**（= R7e 手动暂停的自动部分；抽成统一入口供将来复用）。

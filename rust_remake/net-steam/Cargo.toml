@@ -18,4 +18,6 @@ game-core = { path = "../game-core" }
 # 版本经确认 rsproxy/crates-io 可解析的稳定版为 0.13.1（rust-version 1.80）。
 # 可选：仅在 `steam` feature 下启用。非 vendored = 连系统安装的 Steam runtime（配合 steam_appid.txt）。
 # 版本经确认 rsproxy/crates-io 可解析的稳定版为 0.13.1（rust-version 1.80）。
-steamworks = { version = "0.13", optional = true }
+# `raw-bindings`：仅把已编译进去的 `steamworks_sys` 设为 `pub`（feature = []，无额外依赖/开销），
+# 以便调用安全层未封装的 API（`RequestLobbyData` 刷新大厅状态）。
+steamworks = { version = "0.13", optional = true, features = ["raw-bindings"] }

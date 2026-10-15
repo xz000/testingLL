@@ -28,6 +28,9 @@ pub struct SteamTransport {
     /// 本端与 **Steam 服务器**的连接是否在线（`SteamServersConnected/Disconnected` 回调维护）。
     /// 用于“自己掉线”判定（区别于“对方掉线”）：离线时不据空的成员表/停帧误判。
     servers_online: Arc<AtomicBool>,
+    /// `SteamServersConnected` 置位：请求上层“重连后刷新大厅状态”（`RequestLobbyData`），
+    /// 补上离线期间错过的成员/owner 推送（否则本端 lobby 状态会陈旧）。
+    lobby_refresh_requested: Arc<AtomicBool>,
     /// 已注册的 Steam 回调句柄（`CallbackHandle` 被 drop 即注销，故必须持有）。
     callback_handles: Vec<steamworks::CallbackHandle>,
     /// 可靠发送补发队列：`send_to` 因「会话尚未建立 / 暂不可发」而失败时，不丢包而是入队，
@@ -99,6 +102,7 @@ impl SteamTransport {
             client,
             callback_handles: Vec::new(),
             servers_online: Arc::new(AtomicBool::new(true)),
+            lobby_refresh_requested: Arc::new(AtomicBool::new(false)),
             pending_sends: HashMap::new(),
             send_fail_logs: 0,
             direct_sends: 0,
@@ -118,8 +122,11 @@ impl SteamTransport {
             eprintln!("[steam] SteamServersDisconnected → 本地与 Steam 服务器断连");
         });
         let flag2 = self.servers_online.clone();
+        let refresh = self.lobby_refresh_requested.clone();
         self.register_callback(move |_cb: steamworks::SteamServersConnected| {
             flag2.store(true, Ordering::Relaxed);
+            // 重连后置位：上层会调 `RequestLobbyData` 刷新大厅状态（补离线期间错过的推送）。
+            refresh.store(true, Ordering::Relaxed);
             eprintln!("[steam] SteamServersConnected → 本地与 Steam 服务器恢复连接");
         });
     }
@@ -127,6 +134,21 @@ impl SteamTransport {
     /// 本端与 Steam 服务器是否在线（用于“自己掉线”判定）。未注册回调时恒为 true。
     pub fn servers_online(&self) -> bool {
         self.servers_online.load(Ordering::Relaxed)
+    }
+
+    /// 取走“重连后刷新大厅状态”请求（置位由 `SteamServersConnected` 回调完成）。
+    pub fn take_lobby_refresh_request(&self) -> bool {
+        self.lobby_refresh_requested.swap(false, Ordering::Relaxed)
+    }
+
+    /// 向 Steam 服务器**重新请求大厅状态**（`RequestLobbyData`，安全层未封装 → 走 raw sys）。
+    /// 用于重连后刷新 owner/成员缓存（否则本端可能停留在陈旧的 owner）。
+    pub fn request_lobby_data(&self, lobby: u64) -> bool {
+        use steamworks::sys;
+        unsafe {
+            let mm = sys::SteamAPI_SteamMatchmaking_v009();
+            sys::SteamAPI_ISteamMatchmaking_RequestLobbyData(mm, lobby)
+        }
     }
 
     /// pump 待处理 Steam 回调（大厅 / 会话建立）。建议每帧调用。
