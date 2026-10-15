@@ -523,7 +523,9 @@ impl Game {
     /// 头像只补没缓存过的（Steam 首次进房常拉不到，下一轮自动重试）。
     #[cfg(feature = "steam")]
     pub(crate) fn steam_refresh_network_info(&mut self, ctx: &Context) {
-        self.steam_net_ticks = self.steam_net_ticks.wrapping_add(1);
+        // 注：`steam_net_ticks` 已由 `update` **每帧全局递增一次**（单一计数源）。
+        // 千万不要在这里再递增一次：那样 check 时计数恒为偶数 → `% 30 != 1` → 本函数永不执行
+        // （真机回归：对局中头像/ping 不再刷新）。
         if self.steam_net_ticks % 30 != 1 {
             return;
         }
