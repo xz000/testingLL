@@ -9810,9 +9810,9 @@ impl Game {
                 self.steam_lobby_error = Some(i18n::tf("加入失败：{err}", &[("err", e.to_string())]));
                 // 若本次是「重新加入上一局」尝试失败（大厅已关等）⇒ 判定上一局已结束：清会话。
                 if let Some(rj) = self.steam_rejoin_target.take() {
-                    // H1：归队尝试失败（大厅已关等）⇒ 判定该局已结束：标 ended（不删历史）。
+                    // H1/H2：归队尝试失败（大厅已关等）⇒ 该局标 ended（不删历史），并**回退到上一条活跃**。
                     rejoin::mark_ended(&rejoin::default_path(), rj.lobby_id);
-                    self.steam_rejoin_prompt = None;
+                    self.refresh_rejoin_prompt();
                     self.menu_hint = i18n::t("上一局已结束").to_string();
                 }
                 self.steam_lobby_pending = None;
@@ -10039,6 +10039,11 @@ impl Game {
         let mut parts: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
         parts.sort_unstable();
         let participants: Vec<u64> = parts.into_iter().map(|(_, id)| id).collect();
+        // 只有自己（尚未有人加入 / 已全部离开）→ **不作为“上一局”**：否则退房时该房会被 Steam 销毁，
+        // 却会成为“上一局”顶掉真正那局，按 Y 必然 join 失败。
+        if participants.len() < 2 {
+            return;
+        }
         // 房主 SteamID（能读则读，读不到填 0）+ 房间名（供主菜单提示）。
         let host_id = self
             .steam_host_ls

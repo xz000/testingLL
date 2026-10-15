@@ -52,9 +52,10 @@ impl RejoinSession {
         }
     }
 
-    /// 作为「归队候选」是否可用：未结束 + 新鲜 + 协议一致 + match_key 为本作值。
+    /// 作为「归队候选」是否可用：未结束 + **至少 2 人**（仅自己的房间不算“上一局”）+ 新鲜 + 协议一致 + match_key 为本作值。
     pub fn is_candidate(&self, now: u64, max_age: Option<u64>, match_value: &str) -> bool {
         !self.ended
+            && self.participants.len() >= 2
             && self.match_key == match_value
             && self.protocol_version == game_core::PROTOCOL_VERSION
             && self.is_fresh(now, max_age)
@@ -228,6 +229,9 @@ mod tests {
         let mut ended = ok.clone();
         ended.ended = true;
         assert!(!ended.is_candidate(now, Some(100), "remake_arena_v1"), "已结束不是候选");
+        let mut solo = ok.clone();
+        solo.participants = vec![solo.my_steam_id];
+        assert!(!solo.is_candidate(now, Some(100), "remake_arena_v1"), "只有自己的房间不算上一局");
         let mut pm = ok.clone();
         pm.protocol_version = 0;
         assert!(!pm.is_candidate(now, Some(100), "remake_arena_v1"), "协议不一致不是候选");
