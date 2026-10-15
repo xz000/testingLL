@@ -7790,7 +7790,8 @@ impl event::EventHandler for Game {
                                 if last % 300 == 0 {
                                     let host_id = self.steam_participants.first().copied().unwrap_or(0);
                                     logging::log(&format!(
-                                        "[stat] client seq={last} stale={} pending_max={} ping_host={:?}ms frame=[{}] in=[{}]",
+                                        "[stat] client me={} seq={last} stale={} pending_max={} ping_host={:?}ms frame=[{}] in=[{}]",
+                                        self.steam_my_index,
                                         self.steam_cli_stale_ticks,
                                         self.client_pending_max,
                                         self.steam_ping_of(host_id),

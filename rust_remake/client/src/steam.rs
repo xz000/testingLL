@@ -100,6 +100,12 @@ impl Game {
                             {
                                 continue;
                             }
+                            // 周期**广播**快照不带本端 world index（`your_index=0xFF`）→ 不能用它“恢复”：
+                            // 否则本端 index 得不到纠正（仍是“大厅槽位”），输入会发到错的槽位，
+                            // 表现为“看得到别人动、自己无法操作”。只采纳 `ReconnectReq` 的**定向应答**。
+                            if your_index == 0xFF {
+                                continue;
+                            }
                             cli.apply_resync(rcv).ok();
                             if self.apply_snapshot_world(&world_bytes) {
                                 if your_index != 0xFF {
