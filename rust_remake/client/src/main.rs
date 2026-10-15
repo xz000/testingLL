@@ -7154,6 +7154,14 @@ impl event::EventHandler for Game {
                     return Ok(());
                 }
 
+                // S4：Steam 联机——迁移/归队/本端离线期间**冻结学习倒计时**（自动暂停），
+                // 避免在等 Steam 移交 owner 时数到 0 滑进 `ClientWait` 卡死。恢复后自动继续。
+                #[cfg(feature = "steam")]
+                if self.steam_active() && self.steam_learning_paused() {
+                    self.accumulator = 0.0;
+                    return Ok(());
+                }
+
                 // 其余（联机首局/局间、单机局间）：倒计时；归零后单机直接下一局、联机进配置同步。
                 let now = self.meta.tick_learning(dt.min(0.25));
                 if self.meta.phase == MatchPhase::Fighting {
@@ -8501,6 +8509,14 @@ impl Game {
             .map(|h| h.transport_ref().servers_online())
             .or_else(|| self.steam_cli_ls.as_ref().map(|c| c.transport_ref().servers_online()))
             .unwrap_or(true)
+    }
+
+    /// S4：学习期是否应**冻结倒计时**（= R7e 手动暂停的自动部分；抽成统一入口供将来复用）。
+    /// true = 迁移中 / 归队握手中 / 本端与 Steam 断开（这些情况下不能把学习倒计时跑完，
+    /// 否则会在还没等到 Steam 移交 owner 时就数到 0、滑进 `ClientWait` 卡死）。
+    #[cfg(feature = "steam")]
+    fn steam_learning_paused(&self) -> bool {
+        self.steam_migrating || self.steam_rejoin_handshaking || !self.steam_servers_online()
     }
 
     /// A：大厅阶段房主沉默后，**等待 Steam 移除断线房主并自动移交 owner**。
