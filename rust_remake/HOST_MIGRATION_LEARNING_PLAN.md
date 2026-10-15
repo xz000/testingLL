@@ -290,3 +290,36 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 - UX：覆盖层带倒计时提示；这是**慢路径（~40s）**，取决于 Steam 超时。
 
 **若将来嫌慢**：再考虑 B（§12/§13 自建共识快路径）或 C（reform lobby）。
+
+---
+
+## 15. S 系列收尾（2026-10-15，真机验证通过）
+
+在本轮基础上继续做了 **S1–S6**（按四轮真机反馈逐步修正），现已跑通：
+「学习期房主断网 → 客户端等 Steam 移交 → 接管 → 倒计时冻结/恢复 → 配置同步 → 开局；
+旧房主恢复 → 刷新大厅状态 → 自栅栏自动降级为 client 归队 → 画面正常 + 头像恢复；全程无 DESYNC」。
+
+| 步骤 | commit | 内容 |
+|---|---|---|
+| S1 | `409a91d` | **撤掉**“只认 owner 才接管”双保险（判断不确定 + 有卡住合法接管的风险） |
+| S2 | `409a91d` | 等 owner 移交上限 **60s → 120s**（`MIGRATE_NO_OWNER_BAIL_TICKS` 与 `STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS` 均 7200） |
+| S3 | `e31f171` | `SteamServersConnected/Disconnected` 回调 → `servers_online`（区分“我掉线”vs“对方掉线”） |
+| S4 | `4eb33f1` | **学习期自动冻结**（`steam_learning_paused`）：迁移/归队/本端离线时冻结倒计时 |
+| S5 | `4ab4abb` | **重连后刷新大厅状态** `RequestLobbyData`（raw sys；重连刷**一次**，无 burst） |
+| S6 | `91ba76f` | 归队后按**权威参与顺序**重建 `steam_roster`（恢复角色头像） |
+
+### 15.1 期间修掉的真机 bug
+- **自栅栏失效**：`steam_net_ticks` 仅在大厅/Fighting 递增（学习期不增）→ `%30==1` 不命中；改为**每帧全局单次**递增。
+- **对局中头像/ping 不刷新（本会话引入的回归）**：全局递增后 `steam_refresh_network_info` 内部**又递增一次** → 检查时恒为偶数 → 函数永不执行。去掉其内部递增，保留全局单一计数源（`35b572d`）。
+- **归队后画面冻结**：归队快照把阶段切到 `Fighting`，但本帧已进入的 Learning 分支继续跑 `tick_learning` → 立即滑进 `ClientWait` 卡死；改为 `phase != Learning` 即返回（`91ba76f`）。
+- **归队后无头像**：头像按 `roster.slot == player.id` 取，归队后 `steam_roster` 未按权威参与顺序重建；新增 `steam_rebuild_roster`（`91ba76f`）。
+- **大厅“host left”误判**：新加入者在 P2P/心跳建立前就被 4s 门槛判离开；加**加入宽限**（未 heard 时 30s 才算）（`9c86632`）。
+- **断网提示缺失**：新增顶部横幅「已与 Steam 断开，正在等待重连…」（`2b40fc7`）。
+
+### 15.2 不变量更新
+- “host = `lobby_owner`”在 **A 路线**下保持；**重连后必须 `RequestLobbyData`** 才能拿到真值 owner（否则本端 lobby 状态陈旧、自栅栏不触发）。
+- 阶段切换后**不得**再用旧阶段的分支逻辑（尤其 Learning→Fighting）。
+- `steam_net_ticks` 只有一个递增点（`update` 全局）。
+
+### 15.3 基线
+- `net` 单测 **58**；`client`/`game-core` 不变；协议仍 **58**（S 系列均为运行期行为，不动快照字段）。
