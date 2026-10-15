@@ -181,9 +181,6 @@ const RECONNECT_REQ_EVERY: u64 = 15;
 /// 因此必须等得够久（60s 仍不够）。
 #[cfg(feature = "steam")]
 const MIGRATE_NO_OWNER_BAIL_TICKS: u64 = 7200;
-/// “被遗弃 host”自检：应到客户端全掉线持续 **约 10s** → 旧 host 自判被孤立，主动退位 + 退大厅。
-#[cfg(feature = "steam")]
-const DESERTED_HOST_TICKS: u64 = 600;
 /// R5c：归队握手超时（帧，约 15s）→ 放弃并回主菜单。仅 Steam。
 #[cfg(feature = "steam")]
 const REJOIN_TIMEOUT_TICKS: u32 = 900;
@@ -3403,9 +3400,9 @@ impl Game {
                 let self_ring = Mesh::new_circle(&ctx.gfx, DrawMode::stroke(1.5), Point2 { x: fx, y: fy }, r + 2.0, 0.5, Color::from_rgba(255, 255, 255, 180))?;
                 canvas.draw(&self_ring, graphics::DrawParam::new());
             }
-            // L4：该玩家"已离开"（主动离开或掉线，据统一在线集）→ 灰色标记。
+            // L4：该玩家"已离开"（主动离开或掉线，据统一在线集）→ 灰色标记（**画在角色下方**）。
             if self.player_left(pi) {
-                ui::text_center(&mut canvas, ctx, i18n::t("已离开"), 14.0, Color::from_rgba(210, 210, 210, 230), fx, fy - r - 18.0)?;
+                ui::text_center(&mut canvas, ctx, i18n::t("已离开"), 14.0, Color::from_rgba(210, 210, 210, 230), fx, fy + r + 6.0)?;
             }
             let mut ring = r + 5.0;
             macro_rules! draw_ring {
@@ -5037,17 +5034,9 @@ impl Game {
             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
                 logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
             }
-            // “被遗弃 host”自检（学习期同对局期）：全客户端长时间无响应 → 自判被孤立，退位 + 退大厅。
-            // S3：本端自己与 Steam 断开时不判（可能只是我本地断网；恢复后由自栅栏按 owner 判定）。
-            if self.steam_servers_online() && host.deserted_ticks() >= DESERTED_HOST_TICKS {
-                eprintln!(
-                    "[steam-host] DESERTED: 所有客户端长时间无响应，自判被孤立 -> 退出大厅/对局"
-                );
-                self.steam_host_ls = Some(host);
-                self.reset_to_main_menu(true);
-                self.menu_hint = i18n::t("连接未能恢复，已返回主菜单").to_string();
-                return Ok(());
-            }
+            // 注：**不再因“所有客户端都掉线”而自动退出**——host 继续单人对桩子打下去（用户定调）。
+            // 真正的“被取代/P2P 隔离”仍由下方/对局期的**自栅栏**（按 Steam `lobby_owner`）处理。
+            // 也可以由用户自行 Esc→返回主菜单。
             // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
             // 也同步"已离开"。
             host.take_online_dirty();
@@ -7319,20 +7308,8 @@ impl event::EventHandler for Game {
                     // 对局中也刷新 ping（HUD 显示到对端的延迟，卡顿来源一眼可辨）。
                     self.steam_refresh_network_info(ctx);
                     if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
-                        // “被遗弃 host”自检：应到客户端≥1 且全部长时间无响应（~10s）→ 自判被孤立
-                        // （典型：本端与新 host 的 P2P 隔离、收不到 `Takeover` 且 owner 未移交）→
-                        // 主动退位 + 退大厅（促 Steam 移交 owner），避免继续当“僵尸 host”。
-                        // S3：本端自己与 Steam 断开时不判（避免本地断网就退位）。
-                        if self.steam_servers_online() && host.deserted_ticks() >= DESERTED_HOST_TICKS {
-                            eprintln!(
-                                "[steam-host] DESERTED: 所有客户端长时间无响应，自判被孤立 -> 退出大厅/对局"
-                            );
-                            self.steam_host_ls = Some(host);
-                            self.reset_to_main_menu(true);
-                            self.menu_hint = i18n::t("连接未能恢复，已返回主菜单").to_string();
-                            self.accumulator = 0.0;
-                            return Ok(());
-                        }
+                        // 注：**不再因“所有客户端都掉线”而自动退出**——host 继续单人对桩子打下去（用户定调）。
+                        // 真正的“被取代/P2P 隔离”由下方**自栅栏**（按 Steam `lobby_owner`）处理。
                         // R4②：host 自栅栏——定期查 Steam 仲裁的 lobby owner；若已不是自己 → 判定被取代，退位。
                         // 走 Steam 后端（lobby_owner），即使与新旧 host 的 P2P 被隔离也能生效，封堵“僵尸 host”。
                         if self.steam_net_ticks % 30 == 1 {
