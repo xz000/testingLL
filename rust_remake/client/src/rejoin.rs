@@ -10,8 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
-/// 行格式版本（改格式时 +1；旧行直接忽略）。H1 起为 2。
-pub const FORMAT_VERSION: u32 = 2;
+/// 行格式版本（改格式时 +1；旧行直接忽略）。H1 起为 2；H1.2 加 `in_match` 起为 3。
+pub const FORMAT_VERSION: u32 = 3;
 /// 历史最多保留的条数（超出丢弃最旧的）。
 pub const HISTORY_MAX: usize = 5;
 
@@ -38,6 +38,8 @@ pub struct RejoinSession {
     pub host_id: u64,
     /// 房间名（提示用；可为空）。
     pub room_name: String,
+    /// **是否已进入对局**（非仅在大厅/准备界面）→ 只有“对局中”的房才可作为归队候选。
+    pub in_match: bool,
 }
 
 impl RejoinSession {
@@ -52,10 +54,10 @@ impl RejoinSession {
         }
     }
 
-    /// 作为「归队候选」是否可用：未结束 + **至少 2 人**（仅自己的房间不算“上一局”）+ 新鲜 + 协议一致 + match_key 为本作值。
+    /// 作为「归队候选」是否可用：未结束 + **曾进入对局** + 新鲜 + 协议一致 + match_key 为本作值。
     pub fn is_candidate(&self, now: u64, max_age: Option<u64>, match_value: &str) -> bool {
         !self.ended
-            && self.participants.len() >= 2
+            && self.in_match
             && self.match_key == match_value
             && self.protocol_version == game_core::PROTOCOL_VERSION
             && self.is_fresh(now, max_age)
@@ -66,7 +68,7 @@ impl RejoinSession {
         let parts: Vec<String> = self.participants.iter().map(|p| p.to_string()).collect();
         let room = self.room_name.replace(['\t', '\n', '\r'], " ");
         format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             FORMAT_VERSION,
             self.lobby_id,
             self.match_key,
@@ -74,6 +76,7 @@ impl RejoinSession {
             self.protocol_version,
             self.saved_at_unix,
             if self.ended { 1 } else { 0 },
+            if self.in_match { 1 } else { 0 },
             self.round,
             self.host_id,
             room,
@@ -84,16 +87,16 @@ impl RejoinSession {
     /// 解析单行；版本不符/字段缺失/数字非法 → `None`。
     pub fn parse_line(line: &str) -> Option<RejoinSession> {
         let f: Vec<&str> = line.trim_end().split('\t').collect();
-        if f.len() < 11 {
+        if f.len() < 12 {
             return None;
         }
         if f[0].parse::<u32>().ok()? != FORMAT_VERSION {
             return None;
         }
-        let participants = if f[10].is_empty() {
+        let participants = if f[11].is_empty() {
             Vec::new()
         } else {
-            f[10]
+            f[11]
                 .split(',')
                 .map(|s| s.parse::<u64>())
                 .collect::<Result<Vec<_>, _>>()
@@ -106,9 +109,10 @@ impl RejoinSession {
             protocol_version: f[4].parse::<u32>().ok()?,
             saved_at_unix: f[5].parse::<u64>().ok()?,
             ended: f[6] == "1",
-            round: f[7].parse::<u32>().ok()?,
-            host_id: f[8].parse::<u64>().ok()?,
-            room_name: f[9].to_string(),
+            in_match: f[7] == "1",
+            round: f[8].parse::<u32>().ok()?,
+            host_id: f[9].parse::<u64>().ok()?,
+            room_name: f[10].to_string(),
             participants,
         })
     }
@@ -189,6 +193,7 @@ mod tests {
             protocol_version: game_core::PROTOCOL_VERSION,
             saved_at_unix: saved,
             ended,
+            in_match: true,
             round: 3,
             host_id: 76561199873494062,
             room_name: "my room".to_string(),
@@ -231,7 +236,10 @@ mod tests {
         assert!(!ended.is_candidate(now, Some(100), "remake_arena_v1"), "已结束不是候选");
         let mut solo = ok.clone();
         solo.participants = vec![solo.my_steam_id];
-        assert!(!solo.is_candidate(now, Some(100), "remake_arena_v1"), "只有自己的房间不算上一局");
+        assert!(solo.is_candidate(now, Some(100), "remake_arena_v1"), "人数不是判据（对局中即可）");
+        let mut lobby_only = ok.clone();
+        lobby_only.in_match = false;
+        assert!(!lobby_only.is_candidate(now, Some(100), "remake_arena_v1"), "仅在大厅(未进对局)不是候选");
         let mut pm = ok.clone();
         pm.protocol_version = 0;
         assert!(!pm.is_candidate(now, Some(100), "remake_arena_v1"), "协议不一致不是候选");

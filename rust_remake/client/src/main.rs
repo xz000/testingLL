@@ -7129,6 +7129,10 @@ impl event::EventHandler for Game {
         {
             self.steam_net_ticks = self.steam_net_ticks.wrapping_add(1);
             self.steam_lobby_refresh_tick();
+            // H1.2：**对局中**每 ~10s 刷新一次归队会话（记录轮次/参与者；崩溃也能保住最近一局）。
+            if self.steam_active() && !self.steam_in_lobby && self.steam_net_ticks % 600 == 1 {
+                self.persist_rejoin_session();
+            }
         }
 
         match self.meta.phase {
@@ -10039,9 +10043,10 @@ impl Game {
         let mut parts: Vec<(u8, u64)> = self.steam_roster.iter().map(|(s, _, id)| (*s, *id)).collect();
         parts.sort_unstable();
         let participants: Vec<u64> = parts.into_iter().map(|(_, id)| id).collect();
-        // 只有自己（尚未有人加入 / 已全部离开）→ **不作为“上一局”**：否则退房时该房会被 Steam 销毁，
-        // 却会成为“上一局”顶掉真正那局，按 Y 必然 join 失败。
-        if participants.len() < 2 {
+        // 关键判据：**只有“已进入对局”（非仅在大厅/准备界面）才记为可归队**。
+        // 大厅里退房不该给连回；而且只有自己的房退房后会被 Steam 销毁，join 必失败。
+        let in_match = !self.steam_in_lobby;
+        if !in_match {
             return;
         }
         // 房主 SteamID（能读则读，读不到填 0）+ 房间名（供主菜单提示）。
@@ -10060,6 +10065,7 @@ impl Game {
             protocol_version: game_core::PROTOCOL_VERSION,
             saved_at_unix: unix_now(),
             ended: false,
+            in_match,
             round: self.meta.round,
             host_id,
             room_name,
