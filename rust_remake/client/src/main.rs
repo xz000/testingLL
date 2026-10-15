@@ -342,6 +342,9 @@ const STEAM_LOBBY_SILENT_TIMEOUT_TICKS: u32 = 240;
 /// Step 0 实测 Steam 约 ~20–94s（波动）才移交；120s 更是保险余量。超时才提示回菜单（保留会话）。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS: u32 = 7200;
+/// Steam 房间（client）：从未收到过 host 广播时的“加入宽限”上限（约 30s）——大 P2P 建立期间不误判“host 已离开”。
+#[cfg(feature = "steam")]
+const STEAM_LOBBY_NEVER_HEARD_TIMEOUT_TICKS: u32 = 1800;
 /// Rich Presence：相同内容的最小重写间隔（秒）。内容变化时立即写，否则节流（Steam 对频繁 set 有限速）。
 #[cfg(feature = "steam")]
 const STEAM_PRESENCE_INTERVAL_SECS: f64 = 3.0;
@@ -1141,6 +1144,12 @@ struct Game {
     /// Steam：client 连续收不到 host 广播（RosterReady 心跳）的帧数；超过 `STEAM_LOBBY_SILENT_TIMEOUT_TICKS` 判定 host 已离开。
     #[cfg(feature = "steam")]
     steam_lobby_silent_ticks: u32,
+    /// 是否已收到过 host 的 `RosterReady`（心跳）：未收到过时不以“沉默”判 host 离开，而走较长宽限。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    steam_lobby_heard_host: bool,
+    /// 进入大厅后的帧数（用于“从未听到 host”的宽限计时）。
+    #[cfg_attr(not(feature = "steam"), allow(dead_code))]
+    steam_lobby_join_ticks: u32,
     /// Steam：host 上次刷新 roster 看到的成员数（用于检测“有玩家离开”并提示 host，避免误以为卡住）。
     #[cfg(feature = "steam")]
     steam_last_roster_len: usize,
@@ -1771,6 +1780,8 @@ impl Game {
             steam_roster_refresh_ticks: 0,
             #[cfg(feature = "steam")]
             steam_lobby_silent_ticks: 0,
+            steam_lobby_heard_host: false,
+            steam_lobby_join_ticks: 0,
             #[cfg(feature = "steam")]
             steam_last_roster_len: 0,
             #[cfg(feature = "steam")]
@@ -8921,6 +8932,7 @@ impl Game {
             }
             // host 离开检测：每帧先累计“沉默”帧数；收不到 host 广播（RosterReady 心跳）累计，收到即清零。
             self.steam_lobby_silent_ticks = self.steam_lobby_silent_ticks.saturating_add(1);
+            self.steam_lobby_join_ticks = self.steam_lobby_join_ticks.saturating_add(1);
             // 单次排空读 host 房间入包：StartConfig（进配置）与 RosterReady（界面）一次分类，绝不互吞。
             let mut rcv = [0u8; 256 * 1024];
             if let Ok((got_cfg, roster)) = cli.recv_room_inbox(&mut rcv) {
@@ -8930,6 +8942,7 @@ impl Game {
                 }
                 if let Some((entries, manual_ms)) = roster {
                     self.steam_lobby_silent_ticks = 0; // 收到 host 广播 → 心跳正常。
+                    self.steam_lobby_heard_host = true;
                     self.steam_roster_ready = entries.clone();
                     // 持久记录 host 广播的手动倒计时剩余毫秒（仅收到新快照时更新，避免没收到包的帧回退闪烁）。
                     self.steam_manual_ms = manual_ms;
@@ -9049,7 +9062,10 @@ impl Game {
         // client：host 提前离开（超过 N 帧收不到 host 广播）→ 显示「房主已离开」覆盖层，等用户确认再回主菜单
         // （不再静默 reset_to_main_menu，避免用户一脸懵地回到主菜单）。
         let host_missing = self.steam_cli_ls.is_some()
-            && self.steam_lobby_silent_ticks >= STEAM_LOBBY_SILENT_TIMEOUT_TICKS;
+            && ((self.steam_lobby_heard_host
+                && self.steam_lobby_silent_ticks >= STEAM_LOBBY_SILENT_TIMEOUT_TICKS)
+                || (!self.steam_lobby_heard_host
+                    && self.steam_lobby_join_ticks >= STEAM_LOBBY_NEVER_HEARD_TIMEOUT_TICKS));
         if host_missing {
             eprintln!(
                 "[steam-client] host left (no heartbeat for {} ticks) -> show overlay",
@@ -9863,6 +9879,10 @@ impl Game {
                         net::transport::Peer::Steam { id: host_id, conn: None },
                     ));
                     self.steam_host_ls = None;
+                    // 新加入：重置“心跳/宽限”计数（未听到 host 时走较长宽限，避免 P2P 未建立就误判 host 离开）。
+                    self.steam_lobby_silent_ticks = 0;
+                    self.steam_lobby_heard_host = false;
+                    self.steam_lobby_join_ticks = 0;
                     self.app = AppState::SteamJoin { lobby_id: None };
                     n = total.max(2);
                 }
