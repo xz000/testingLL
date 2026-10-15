@@ -550,7 +550,9 @@ const EN: &[(&str, &str)] = &[
     ("无法确定新主机，已返回主菜单", "Could not determine a new host; returned to the main menu"),
     ("你已被移出房间，已返回主菜单", "You were removed from the room; returned to the main menu"),
     // ---- R5c：崩溃重开归队 ----
-    ("检测到未结束的上一局：按 Y 重新加入，Esc 忽略", "Unfinished previous match detected: press Y to rejoin, Esc to ignore"),
+    ("上一局：第 {round} 轮 · {n} 人 · 按 Y 归队，Delete 忽略", "Previous match: round {round} · {n} players · press Y to rejoin, Delete to ignore"),
+    ("上一局「{room}」：第 {round} 轮 · {n} 人 · 按 Y 归队，Delete 忽略", "Previous match \"{room}\": round {round} · {n} players · press Y to rejoin, Delete to ignore"),
+    ("上一局版本不同（v{old}≠v{now}），无法连回", "Previous match version differs (v{old}≠v{now}); cannot rejoin"),
     ("正在重新加入上一局…（{secs}s）", "Rejoining the previous match… ({secs}s)"),
     ("你已被接管，正在重新加入…（{secs}s）", "You were taken over; rejoining… ({secs}s)"),
     ("无法重新加入上一局，已返回主菜单", "Could not rejoin the previous match; returned to the main menu"),

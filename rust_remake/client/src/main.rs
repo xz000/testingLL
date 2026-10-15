@@ -1273,9 +1273,12 @@ struct Game {
     /// Steam：上次已标记「近期一起玩过」的玩家集合；成员集合变化时才重新调 `SetPlayedWith`（避免每帧刷 Steam）。
     #[cfg(feature = "steam")]
     steam_played_with: Vec<u64>,
-    /// R5c：启动时读到的「上一局」归队描述（主菜单提示用；已过期/版本不符则为 None）。
+    /// R5c / H2：启动时读到的「上一局」归队描述（主菜单提示用；已过期/版本不符则为 None）。
     #[cfg(feature = "steam")]
     steam_rejoin_prompt: Option<rejoin::RejoinSession>,
+    /// H2：归队提示的附加说明（如“上一局版本不同，无法连回”）；无则 None。
+    #[cfg(feature = "steam")]
+    steam_rejoin_note: Option<String>,
     /// R5c：玩家确认归队时暂存的目标（进房成功后据此走归队而非新开局）。
     #[cfg(feature = "steam")]
     steam_rejoin_target: Option<rejoin::RejoinSession>,
@@ -1810,6 +1813,25 @@ impl Game {
                 let now = unix_now();
                 rejoin::latest_active(&rejoin::default_path())
                     .filter(|s| s.is_candidate(now, rejoin_max_age, net_steam::session::MATCH_VALUE))
+            },
+            #[cfg(feature = "steam")]
+            steam_rejoin_note: {
+                // H2：若“最新未结束”的会话因**协议不匹配**而无法归队 → 给主菜单一条说明。
+                let now = unix_now();
+                rejoin::latest_active(&rejoin::default_path()).and_then(|s| {
+                    (s.match_key == net_steam::session::MATCH_VALUE
+                        && s.is_fresh(now, rejoin_max_age)
+                        && s.protocol_version != game_core::PROTOCOL_VERSION)
+                        .then(|| {
+                            i18n::tf(
+                                "上一局版本不同（v{old}≠v{now}），无法连回",
+                                &[
+                                    ("old", s.protocol_version.to_string()),
+                                    ("now", game_core::PROTOCOL_VERSION.to_string()),
+                                ],
+                            )
+                        })
+                })
             },
             #[cfg(feature = "steam")]
             steam_rejoin_target: None,
@@ -6879,8 +6901,8 @@ impl event::EventHandler for Game {
                     self.enter_steam_mode(ctx, false, 2, None, None);
                     self.accumulator = 0.0;
                     return Ok(());
-                } else if just_named(NamedKey::Escape) {
-                    // H1：用户忽略 → 标“已结束”（不删历史，也不再提示）。
+                } else if just_named(NamedKey::Delete) {
+                    // H1/H2：用户忽略 → 标“已结束”（不删历史，也不再提示）。用 Delete 而非 Esc（防空误触）。
                     rejoin::mark_ended(&rejoin::default_path(), rj.lobby_id);
                     self.steam_rejoin_prompt = None;
                     self.accumulator = 0.0;
@@ -8363,16 +8385,13 @@ impl Game {
             self.steam_rejoin_target = None;
             self.steam_rejoin_handshaking = false;
             self.steam_rejoin_ticks = 0;
-            // H1：历史记录——离场/回菜单**保留**（不删）；只有“对局正常结束”（`keep_rejoin=false`）才把当前局标 ended。
-            let now = unix_now();
-            let max_age = self.local_settings.rejoin_window.secs();
+            // H1/H2：历史记录——离场/回菜单**保留**（不删）；只有“对局正常结束”（`keep_rejoin=false`）才把当前局标 ended。
             if !keep_rejoin {
                 if let Some(lid) = self.steam_lobby_id {
                     rejoin::mark_ended(&rejoin::default_path(), lid);
                 }
             }
-            self.steam_rejoin_prompt = rejoin::latest_active(&rejoin::default_path())
-                .filter(|s| s.is_candidate(now, max_age, net_steam::session::MATCH_VALUE));
+            self.refresh_rejoin_prompt();
             // 进房时 `steam_sess` 会被消费掉（传输归 lockstep），回到主菜单后可再初始化一次
             // （否则好友邀请与房间列表在主菜单上会永久失效）。
             self.steam_session_tried = false;
@@ -8462,6 +8481,37 @@ impl Game {
     }
 
     /// host 在房间阶段刷新成员名单（roster）：client 加入后 host 才能看到并显示新成员。
+    /// H2：刷新归队提示——取历史里“最新未结束”的会话：候选→提示；协议不匹配→note；否则清空。
+    #[cfg(feature = "steam")]
+    fn refresh_rejoin_prompt(&mut self) {
+        let now = unix_now();
+        let max_age = self.local_settings.rejoin_window.secs();
+        match rejoin::latest_active(&rejoin::default_path()) {
+            Some(s) if s.is_candidate(now, max_age, net_steam::session::MATCH_VALUE) => {
+                self.steam_rejoin_prompt = Some(s);
+                self.steam_rejoin_note = None;
+            }
+            Some(s)
+                if s.match_key == net_steam::session::MATCH_VALUE
+                    && s.is_fresh(now, max_age)
+                    && s.protocol_version != game_core::PROTOCOL_VERSION =>
+            {
+                self.steam_rejoin_prompt = None;
+                self.steam_rejoin_note = Some(i18n::tf(
+                    "上一局版本不同（v{old}≠v{now}），无法连回",
+                    &[
+                        ("old", s.protocol_version.to_string()),
+                        ("now", game_core::PROTOCOL_VERSION.to_string()),
+                    ],
+                ));
+            }
+            _ => {
+                self.steam_rejoin_prompt = None;
+                self.steam_rejoin_note = None;
+            }
+        }
+    }
+
     /// 从 matchmaking 读 `lobby_members` → `LobbyPlayerTable`（host=槽0，其余按 SteamID 升序）保持槽位与 lockstep 一致。
     #[cfg(feature = "steam")]
     fn steam_refresh_roster(&mut self) {
@@ -12241,8 +12291,27 @@ impl Game {
         }
         // R5c：上一局归队提示。
         #[cfg(feature = "steam")]
-        if self.steam_rejoin_prompt.is_some() {
-            draw_text(&mut canvas, ctx, i18n::t("检测到未结束的上一局：按 Y 重新加入，Esc 忽略"), 19.0, graphics::Color::from_rgb(140, 230, 160), Point2 { x: cx, y: sh - 110.0 }, true)?;
+        if let Some(rj) = self.steam_rejoin_prompt.as_ref() {
+            // H2：提示带轮次/人数/房名（房名空则省略）。
+            let room = rj.room_name.trim();
+            let line = if room.is_empty() {
+                i18n::tf(
+                    "上一局：第 {round} 轮 · {n} 人 · 按 Y 归队，Delete 忽略",
+                    &[("round", rj.round.to_string()), ("n", rj.participants.len().to_string())],
+                )
+            } else {
+                i18n::tf(
+                    "上一局「{room}」：第 {round} 轮 · {n} 人 · 按 Y 归队，Delete 忽略",
+                    &[
+                        ("room", room.to_string()),
+                        ("round", rj.round.to_string()),
+                        ("n", rj.participants.len().to_string()),
+                    ],
+                )
+            };
+            draw_text(&mut canvas, ctx, &line, 19.0, graphics::Color::from_rgb(140, 230, 160), Point2 { x: cx, y: sh - 110.0 }, true)?;
+        } else if let Some(note) = self.steam_rejoin_note.as_ref() {
+            draw_text(&mut canvas, ctx, note, 19.0, graphics::Color::from_rgb(235, 190, 140), Point2 { x: cx, y: sh - 110.0 }, true)?;
         }
         canvas.finish(ctx)?;
         Ok(())
