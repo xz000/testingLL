@@ -4957,6 +4957,12 @@ impl Game {
             if self.steam_net_ticks % 30 == 1 {
                 if let Some(lid) = self.steam_lobby_id {
                     let owner = net_steam::session::lobby_owner(host.transport_ref(), lid);
+                    if self.net_diag {
+                        eprintln!(
+                            "[netdiag] SELF-FENCE check(learning): owner={owner} me={} participants={:?}",
+                            self.steam_my_id, self.steam_participants
+                        );
+                    }
                     if steam::should_self_fence(owner, self.steam_my_id, &self.steam_participants) {
                         eprintln!(
                             "[steam-host] SELF-FENCE(learning): lobby owner is {owner}, not me ({}); stepping down",
@@ -7268,6 +7274,12 @@ impl event::EventHandler for Game {
                         if self.steam_net_ticks % 30 == 1 {
                             if let Some(lid) = self.steam_lobby_id {
                                 let owner = net_steam::session::lobby_owner(host.transport_ref(), lid);
+                                if self.net_diag {
+                                    eprintln!(
+                                        "[netdiag] SELF-FENCE check(fighting): owner={owner} me={} participants={:?}",
+                                        self.steam_my_id, self.steam_participants
+                                    );
+                                }
                                 if steam::should_self_fence(owner, self.steam_my_id, &self.steam_participants) {
                                     eprintln!(
                                         "[steam-host] SELF-FENCE: lobby owner is {owner}, not me ({}); stepping down",
