@@ -8537,6 +8537,10 @@ impl Game {
     /// 不在 → 标 ended 并刷新提示（撤下）；网络失败 → **保守保留**（不改变 ended）。节流 ~10s。
     #[cfg(feature = "steam")]
     fn steam_rejoin_probe_tick(&mut self) {
+        // 启动宽限（~3s）：刚进主菜单时 Steam 会话/大厅列表可能尚未就绪，此时探活易“空列表”误判。
+        if self.frame < 180 {
+            return;
+        }
         if self.steam_rejoin_prompt.is_none() {
             self.steam_rejoin_probe = None;
             self.steam_rejoin_probe_ticks = 0;
@@ -8560,16 +8564,25 @@ impl Game {
         match prog {
             Some(net_steam::session::LobbyListProgress::Done(Ok(list))) => {
                 let target = self.steam_rejoin_probe.take().unwrap_or(0);
-                let info = list
+                // 日志：列表条数（下次可据此判“真空”还是“探错”）。
+                let found = list
                     .iter()
                     .find(|i| i.id == target && i.matchkey.as_deref() == Some(net_steam::session::MATCH_VALUE));
-                if let Some(info) = info {
+                eprintln!(
+                    "[steam-rejoin] H4 探活：列表 {} 条，目标 {target} {}",
+                    list.len(),
+                    if found.is_some() { "在" } else { "不在" }
+                );
+                if let Some(info) = found {
                     // 在 → 保留提示，并（若提示里房名为空）用实时房名补上。
                     if let Some(rj) = self.steam_rejoin_prompt.as_mut() {
                         if rj.room_name.trim().is_empty() && !info.name.trim().is_empty() {
                             rj.room_name = info.name.clone();
                         }
                     }
+                } else if list.is_empty() {
+                    // **空列表 = 未知**（请求失败/暂时为空/限速）→ 保守保留，不标 ended。
+                    eprintln!("[steam-rejoin] H4 探活：列表为空 → 保守保留提示（不判已结束）");
                 } else {
                     eprintln!("[steam-rejoin] H4 探活：大厅 {target} 已不在列表 → 标已结束");
                     rejoin::mark_ended(&rejoin::default_path(), target);
