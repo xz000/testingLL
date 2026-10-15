@@ -4952,6 +4952,24 @@ impl Game {
             let mut rcv = vec![0u8; 256 * 1024];
             // 收心跳 / Leave / ReconnectReq / 配置。
             host.poll(&mut rcv);
+            // R4②：学习期也要自栅栏——若 Steam 把 owner 移交给别人（如本端断网恢复后 owner 已变），
+            // 本端应立即退位转 client 归队，而不是继续当“僵尸 host”（修：恢复后不自动归队/回菜单）。
+            if self.steam_net_ticks % 30 == 1 {
+                if let Some(lid) = self.steam_lobby_id {
+                    let owner = net_steam::session::lobby_owner(host.transport_ref(), lid);
+                    if steam::should_self_fence(owner, self.steam_my_id, &self.steam_participants) {
+                        eprintln!(
+                            "[steam-host] SELF-FENCE(learning): lobby owner is {owner}, not me ({}); stepping down",
+                            self.steam_my_id
+                        );
+                        if self.steam_begin_rejoin_as_client(host, owner) {
+                            return Ok(());
+                        }
+                        self.reset_to_main_menu(true);
+                        return Ok(());
+                    }
+                }
+            }
             // M2：把**新收到的购买**增量应用到 `meta`（学习期也 host 权威）⇒ 静态快照即“聚合真值”，
             // 迁移/归队都能保住所有人的购买 + 金币（否则只缓冲在 `cfgs`、等到配置同步才应用）。
             let new_cfgs = host.drain_new_cfgs();
@@ -7064,9 +7082,14 @@ impl event::EventHandler for Game {
             }
         }
 
+        // 全局帧计数（用于 Steam 周期性自检的节流：自栅栏 / 孤岛检测等）。
+        #[cfg(feature = "steam")]
+        {
+            self.steam_net_ticks = self.steam_net_ticks.wrapping_add(1);
+        }
+
         match self.meta.phase {
             MatchPhase::Finished => {
-                // 整场对抗结束：不再模拟
                 self.accumulator = 0.0;
                 // 098c：`EpicVictory`（`no`）在胜负判定时播放；这里只播一次。
                 if !self.present_victory_played {
