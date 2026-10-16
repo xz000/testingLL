@@ -394,3 +394,23 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 3. 换主机后 `x/y` 能涨到 `N/N`；系统暂停仍不扣任何人的暂停额度；
 4. 被 drop 后假如又回来：`online set` 应重新包含它（“已离开”标记自动撤销）；
 5. 全域：无 `DESYNC`/`panic`/`Phase-B STALL`。
+
+### 17.6 续：F3' 的自伤与修复（F3'-b `4e3dd8d` + F3'-c `32a0272`）
+**真机（2026-10-17 00:37）现象**：学习期原房主退出 → B、C 一致地采纳 Steam owner = B（✓ 选举一致）→ B 接管后：
+`logs_3:61 TAKEOVER notified old host (**63417**)`（63417 就是 B 自己）+ ~26 条 `csteamnetworkingmessages.cpp (233) Assertion Failed: [#… pipe] Unlinking connection in state 1` + ~15 条 `[steam-p2p] session failed … ClosedByPeer remote=steamid:<自己>`；随后 `SUPERSEDED: …转入归队` → 却回了主菜单（**退出大厅**）→ Steam 把 owner 交给 C → C 接管又撞同一 bug → 整局崩解。
+
+**完整因果链**（F3' 引入）：
+1. F3' 在阶段 A→B 交界“早 retarget”，而**本端就是被选出的新宿主** → `host` 被设成**自己**；
+2. `steam_do_takeover` 用 `cli.host_peer()` 取“旧宿主” → 拿到的是**自己** → `notify_old_host_takeover(self)`（0.5s×12 重发）→ 一条**自会话**：SDK 刷断言、会话被拆（`ClosedByPeer`）；
+3. 同时，自己发出的 `Takeover` 被自己的 `poll` 读到 → `superseded = true; superseded_by = Some(self)`；
+4. host 分支见 `is_superseded()` → “转入归队” → 但 `new_host == self` → `steam_begin_rejoin_as_client` 返回 false → `reset_to_main_menu` → **离开大厅**（把局亲手拆了）；
+5. Steam 随即把 owner 交给 C；C 接管时又踩同一条链。
+
+**修复**：
+- **F3'-b `4e3dd8d`**：①选举结果 == 本端时**不早 retarget**（保留 `host` = 旧宿主，让 `steam_do_takeover` 能正确取到 `old_host_peer`）；②`steam_do_takeover` 里加防御：`old_host_id` 为 0 或 == 本端时**跳过** supersede 通知并打日志。
+- **F3'-c `32a0272`**：①`HostLockstep::poll` 的 `Takeover` 臂：来源 == `local_identity`（自会话/回环）→ **忽略**（不置 superseded）；②接管时构建完 host **立即** `set_local_identity(self.steam_my_id)`（放在广播前，保证第一帧防御就生效）。
+
+**不变量（新增）**：
+- **绝不向“本端自己”发任何控制类包**（Takeover/Leave/PauseState 等）；也**绝不将 `host` 指向本端自己**（`host == self` 会让一切“跟 host 说话”的逻辑变成自会话）。
+- 判“旧宿主是谁”必须来自**迁移入口时保存的旧 host**，不得依赖“重定向之后的 `host_peer()`”。
+- 收到来自本端的 `Takeover` 一律忽略（防回环自裁决退位）。
