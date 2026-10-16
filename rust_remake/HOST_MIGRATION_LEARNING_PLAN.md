@@ -356,3 +356,41 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 3. 系统暂停**不消耗**任何人的暂停次数（覆盖层里的“剩余暂停”列表可核对）；恢复后玩家可**立即**暂停（无冷却）；
 4. 轮次边界 `learn_remaining resync` 每个边界 ≤ 1 条且同向；
 5. 日志：每事件 1 条 `NO frames`、1 条 `elected`；`[jit] … reason=` 可读；无 `DESYNC`/`panic`/`Phase-B STALL`。
+
+## 17. F 系列：迁移期“被误掉线/无法操作”修复（2026-10-17，待真机验收）
+
+### 17.1 真机现象（三机，A=原房主/B=学习期接管的房主/C=报障端）
+- **现象**：学习期接管出的新宿主 B 在**对局期退出**后，A 接管；C **无法控制自己的角色**（但能看到别人动），且被标为**“已离开”**。
+- 日志链（`logs_2/…000235`）：
+  - `219 host broadcast Leave (leaver=63417)` → `221 elected new host=43985466` → **`222 migrated to new host (seq=0)`**（A 的真接管是 `seq=401`）
+  - `246 NO frames for 3.0s … (host=63417)`（!! 它其实指向了**已死的 B**）→ `260/261` 第二次才认到 A（`seq=401`）→ 共绕了 **≈ 5.5s**（时间戳 `1792166629927 → 1792166635244`）
+  - `logs/…000200`（A 侧）：`282 handover pause armed` / `283 paused=true by=0` → **`317 AUTO-DROP client 2 (steamid=…99873494062)`**（在系统暂停/恢复倒计时期间掉了 C）→ `340 paused=false`
+  - `logs_2:265 online set updated -> [43985466]`（在线集里没有 C 自己）
+
+### 17.2 三个根因
+| | 根因 | 证据 |
+|---|---|---|
+| **D1** | host 侧 `auto_drop_idle` 在**系统暂停期间照常计数**（`idle_ticks += 1` 在 `poll()` 尾部，每帧都跑）→ 把“正在迁移、本就静默”的端当掉线 | `AUTO-DROP client 2` 出现在 `paused=true by=0` 窗口内 |
+| **D2** | 被 drop 的端**只能靠 `ReconnectReq` 恢复**；普通心跳（`RoomState`）不解除掉线 → “被 drop 但仍在每帧上行的端”永久卡在「已离开 + 输入被默认值替代」 | 修复前 `unmark_dropped` 调用点仅 `ReconnectReq` + 局域网路径 |
+| **D3** | 阶段 B **不校验 `Takeover` 来源**，采纳了**缓存里**学习期旧宿主 B 的 Takeover（`seq=0`）→ `retarget_host(B)` + `set_start_seq(0)` | `migrated to new host (seq=0)`，且随后静默判定仍报 `host=63417` |
+
+### 17.3 改动（3 个 commit）
+- **F3' `b7215d2`（早 retarget + 交接包只认新宿主 + 定向探测收尾）**
+  - 阶段 A→B 交界（采纳 Steam owner 的瞬间）**立刻 `retarget_host(X)`**：“谁是房主”只认 Steam；`Takeover`/`Snapshot` 从此只当“接管基线 + 状态交接”。时机仍守在“阶段 A 对旧宿主探测超时之后”。
+  - 阶段 B 只认来源 == X 的交接包（缓存与实时都过滤）→ 旧缓存再也骗不到。
+  - 阶段 B 主动每 `RECONNECT_REQ_EVERY` 发定向 `ReconnectReq` 给 X，**优先用 X 的定向 `Snapshot{your_index}` 应答收尾**（不依赖广播被收到）；抽出 `finish_migration_with_snapshot()`（阶段 A/B 同构、消重），扫包时遇到的 `Takeover` 用新增的 `lockstep::cache_takeover()` 存回缓存。
+  - 顺带：迁移中的端不再对新宿主静默 → 新宿主 idle 攒不起来；其 `ReconnectReq` 会触发 host 侧现成的 `unmark_dropped`。
+- **F2 `e9665c0`（心跳即恢复）**：`RoomState` 臂里若 `dropped[c]` 则 `unmark_dropped`（**必须在写入本帧 `latest_input` 之前**——unmark 会把它置 None）并置 `online_dirty` → “已离开”标记自动撤销。新单测 `room_state_heartbeat_undrops_client`。
+- **F1 `ca29028`（系统暂停期间不判空闲）**：放进 `auto_drop_idle` 自身（`paused && by == 0` → 直接返回空），保证三处调用（学习期/对局期/局域网）都不会遗漏且可单测。新单测 `auto_drop_idle_is_skipped_during_handover_pause`。
+
+### 17.4 不变量更新
+- **“谁是房主”只认 Steam `lobby_owner`**；`Takeover`/`Snapshot` 只负责“基线 + 状态交接”，**不得**作为“谁是房主”的来源（且只采信所选新宿主的）。
+- **迁移/重连期间的静默不是“掉线”**：系统暂停期间不判空闲；被掉的端只要还有正常心跳就应自动恢复。
+- `auto_drop_idle` 的调用点不得绕过“系统暂停不判空闲”的约束（已内置）。
+
+### 17.5 验收要点（待真机）
+1. 学习期接管出的新宿主在**对局期退出** → 其余端：无“无法操作/被标已离开”；日志里**不应**出现 `AUTO-DROP` 正在迁移的那端；
+2. 迁移日志应显示一次“`elected …; retargeted early`” + 一次 `resumed from snapshot … (resume-new-host)`（或广播 Takeover 路径），**不再**出现 `seq=0` 这种被旧缓存带偏的值；
+3. 换主机后 `x/y` 能涨到 `N/N`；系统暂停仍不扣任何人的暂停额度；
+4. 被 drop 后假如又回来：`online set` 应重新包含它（“已离开”标记自动撤销）；
+5. 全域：无 `DESYNC`/`panic`/`Phase-B STALL`。
