@@ -964,6 +964,14 @@ impl<T: Transport> HostLockstep<T> {
                             }
                             Packet::RoomState { index, ready, build_done, input_bytes } => {
                                 if let Some(c) = self.slot_of(index) {
+                                    // F2：收到该槽位的**正常心跳**（`RoomState`）＝“他还活着” → 解除掉线。
+                                    // 此前只有 `ReconnectReq` 能解除掉线，导致“被 drop 但仍在每帧上行的端”永久卡在
+                                    // 「已离开（不在在线集）+ 输入被默认值替代」——真机表现为：能看到别人动、自己无法操作。
+                                    // 注：`unmark_dropped` 会把 `latest_input` 置 None，故必须在写入本帧输入**之前**调用。
+                                    if self.dropped[c] {
+                                        let idx = self.client_indices[c];
+                                        self.unmark_dropped(idx);
+                                    }
                                     // 房间阶段合包：一次更新「在场 + 就绪 + 配好 + 端点 + 空闲」。可靠的输入在场通道。
                                     self.client_peers[c] = Some(from);
                                     self.client_addr[c] = Some(from);
@@ -2866,6 +2874,34 @@ mod tests {
             assert!(host.try_emit().is_some(), "掉线后应持续产帧");
         }
         assert!(host.next_seq() > before);
+    }
+
+    /// F2：被标记掉线的槽位，收到它的**正常心跳（`RoomState`）**后应**自动恢复**为活跃（并置 online_dirty）。
+    /// 此前只能靠 `ReconnectReq` 恢复；若客户端自己不知道“我被掉了”（它收帧正常），就会永久卡在
+    /// “已离开 + 输入被忽略”，只能退房重进。
+    #[test]
+    fn room_state_heartbeat_undrops_client() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        let cli_identity = 55501u64;
+        host.set_client_identities(&[Some(cli_identity)]);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+
+        // 先建立联系（心跳 → host 挂上 peer）。注：host 自己也在在线集里（local_base>0）→ 长度 2。
+        cli.send_room_state(false, false, &encode_input(1)).unwrap();
+        host.poll(&mut rcv);
+        assert_eq!(host.online_ids(999).len(), 2, "在线集 = host + 该 client");
+
+        // 标记掉线（模拟 idle 超时）→ 在线集只剩 host
+        host.mark_dropped(1);
+        assert_eq!(host.online_ids(999).len(), 1, "掉线后在线集只剩 host");
+
+        // 再发一次普通心跳（非 ReconnectReq）→ 应自动解除掉线（并置脏位）
+        cli.send_room_state(false, false, &encode_input(2)).unwrap();
+        host.poll(&mut rcv);
+        assert_eq!(host.online_ids(999).len(), 2, "收到普通心跳应自动解除掉线");
+        assert!(host.take_online_dirty(), "解除掉线应置 online_dirty（供上层重播在线集）");
     }
 
     /// 阶段 1（Steam 战斗端等效）完整链路：对战中 client 停发 → host `auto_drop_idle` 自动掉线并靠默认占位继续产帧（不空转）
