@@ -166,6 +166,15 @@ const ONLINE_BCAST_EVERY: u64 = 120;
 const LEARN_RESYNC_THRESHOLD_SECS: f64 = 3.0;
 /// client：连续多少帧未收到权威帧判定为“掉线/等待重连”（进入重连 UI）。约 3 秒。
 const CLIENT_STALE_TICKS: u64 = 180;
+/// client：连续多少**秒**未收到 host 包（学习期）/权威帧（对局期）判定为“host 掉线”。
+/// 与 `CLIENT_STALE_TICKS`（≈3s）同义，但用**墙钟时间**——不受窗口失焦/卡帧导致的 update 频率漂移影响；
+/// 两个条件取 **或**（时间为主，旧计数作兼容兼底）。
+#[cfg(feature = "steam")]
+const STEAM_HOST_SILENT_SECS: f64 = 3.0;
+/// host（学习期）：在线集兜底重播间隔（秒）——兼作**下行心跳**（学习期没有帧可当心跳）。
+/// 判活阈值 3s > 2s，故即使丢一个包也不会误判；原先“每帧广播”（~60 个可靠包/s）已无必要。
+#[cfg(feature = "steam")]
+const STEAM_ONLINE_BCAST_SECS: f64 = 2.0;
 /// Steam（client）：进入迁移后，探测“host 是否还在”的帧数（发 ReconnectReq 等 Snapshot 应答）。约 1 秒。
 /// 超时无应答则判定 host 掉线，开始选举新 host。
 #[cfg(feature = "steam")]
@@ -1332,6 +1341,13 @@ struct Game {
     /// Steam：#4 诊断——上次记录的暂停状态（变化时打一行 `[steam-pause]` 日志）。
     #[cfg(feature = "steam")]
     steam_pause_logged: bool,
+    /// Steam（client）：上一次**收到 host 包/权威帧**的墙钟时间；`0.0` = 未开始计时。
+    /// 判活用**时间**而非帧数（不受窗口失焦/卡帧导致的 update 频率变化影响）。
+    #[cfg(feature = "steam")]
+    steam_last_host_pkt_at: f64,
+    /// Steam（host，学习期）：上一次广播在线集（兼作下行心跳）的墙钟时间。
+    #[cfg(feature = "steam")]
+    steam_last_online_bcast_at: f64,
     /// Steam：排行榜句柄槽（查找是异步回调，结果由 `run_callbacks` 推进后写回）。
     #[cfg(feature = "steam")]
     steam_lb_slot: net_steam::session::Shared<Option<net_steam::steamworks::Leaderboard>>,
@@ -1886,6 +1902,10 @@ impl Game {
             steam_rejoin_retry_at: 0.0,
             #[cfg(feature = "steam")]
             steam_pause_logged: false,
+            #[cfg(feature = "steam")]
+            steam_last_host_pkt_at: 0.0,
+            #[cfg(feature = "steam")]
+            steam_last_online_bcast_at: 0.0,
             #[cfg(feature = "steam")]
             steam_lb_slot: net_steam::session::shared(None),
             #[cfg(feature = "steam")]
@@ -5015,7 +5035,7 @@ impl Game {
     ///
     /// 学习期 host 掉线/退出 → 也走**主机迁移**（与对战期同一状态机），而不是直接弹覆盖层结束整局。
     #[cfg(feature = "steam")]
-    fn steam_learning_net_tick(&mut self) -> GameResult<()> {
+    fn steam_learning_net_tick(&mut self, now: f64) -> GameResult<()> {
         if let Some(mut host) = std::mem::take(&mut self.steam_host_ls) {
             let mut rcv = vec![0u8; 256 * 1024];
             // 收心跳 / Leave / ReconnectReq / 配置。
@@ -5068,15 +5088,20 @@ impl Game {
                 }
             }
             host.tick_pause();
-            // 学习期**每帧**广播在线集：既是心跳（否则 client 因快照 2.5s 才来一次而频繁弹"等待房主"），
-            // 也同步"已离开"。
-            host.take_online_dirty();
-            // 与 client 同源：用 `participant_ids`（按真实 index 排序）维护全量参与列表，
-            // 避免 host 的 `steam_participants` 与 client 的（配置同步下发）顺序不一致 → 标记错位。
-            self.steam_participants = host.participant_ids(self.steam_my_id);
-            let ids = host.online_ids(self.steam_my_id);
-            host.broadcast_participants(&ids);
-            self.steam_online = ids;
+            // 学习期在线集：**变化时立即广播**（“已离开”及时）+ **每 ~2s 兜底重播**（兼作下行心跳）。
+            // 判活已改为“3s 内收到过 host 包”的墙钟判据（`STEAM_HOST_SILENT_SECS`），
+            // 不再需要原先的“每帧广播”（60 个可靠包/s 纯属浪费）。
+            let online_dirty = host.take_online_dirty();
+            let online_periodic = now - self.steam_last_online_bcast_at >= STEAM_ONLINE_BCAST_SECS;
+            if online_dirty || online_periodic {
+                // 与 client 同源：用 `participant_ids`（按真实 index 排序）维护全量参与列表，
+                // 避免 host 的 `steam_participants` 与 client 的（配置同步下发）顺序不一致 → 标记错位。
+                self.steam_participants = host.participant_ids(self.steam_my_id);
+                let ids = host.online_ids(self.steam_my_id);
+                host.broadcast_participants(&ids);
+                self.steam_online = ids;
+                self.steam_last_online_bcast_at = now;
+            }
             // M2：周期性广播**全量参与名单**（含离场占位 id）——各端据此维护 `steam_participants`，
             // 不再靠大厅 roster 兜底（后加入者可能不在 roster 里 → 名单偏短 → 迁移漏端 Phase-B STALL）。
             // 名单静态、体积小，2s 一次足够（迁移检测至少 3s）。
@@ -5121,7 +5146,7 @@ impl Game {
                     }
                     self.steam_rejoin_handshaking = false;
                     self.steam_rejoin_ticks = 0;
-                    self.steam_cli_stale_ticks = 0;
+                    self.steam_note_host_alive(now);
                     // E2：只有"首局配置"才是 pre_game_config（它=配置同步的 stage_first，会重建世界！）；
                     // 局间学习期归队必须为 false，否则重建世界→清零累计状态→DESYNC。
                     self.pre_game_config = self.meta.is_first_config();
@@ -5167,6 +5192,7 @@ impl Game {
                 self.steam_migrate_ticks = MIGRATE_PROBE_TICKS; // 跳过探测阶段，直接选举
                 self.steam_new_host_id = 0;
                 self.steam_cli_stale_ticks = 0;
+                self.steam_last_host_pkt_at = 0.0; // 迁移期间暂停判活（由归队快照重新启用）
                 self.steam_cli_ls = Some(cli);
                 return Ok(());
             }
@@ -5190,16 +5216,29 @@ impl Game {
                     self.meta.learn_remaining = host_rem;
                 }
             }
-            if got || !self.steam_servers_online() {
-                self.steam_cli_stale_ticks = 0; // S3：自己离线时不计入“host 掉线”
+            if got || self.steam_learning_paused() {
+                // R7e/S3：手动暂停、迁移/归队中、或本端自己离线 → 不累计“host 掉线”
+                // （与对局期 `cli.pause_view().paused` 的豁免一一对应；见 `steam_learning_paused`）。
+                self.steam_note_host_alive(now);
             } else {
                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
-                if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
-                    eprintln!("[steam-client] host silent in learning for {} ticks -> migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
+                // 判活：墙钟（3s 无 host 包）+ 旧帧数计数双保险（学习期 host 广播 ~2s 一次，3s 阈值安全）。
+                let silent_secs = if self.steam_last_host_pkt_at > 0.0 {
+                    now - self.steam_last_host_pkt_at
+                } else {
+                    0.0
+                };
+                if silent_secs >= STEAM_HOST_SILENT_SECS || self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
+                    eprintln!(
+                        "[steam-client] host silent in learning for {silent_secs:.1}s ({} ticks) -> migration (host={:?})",
+                        self.steam_cli_stale_ticks,
+                        cli.host_peer()
+                    );
                     self.steam_migrating = true;
                     self.steam_migrate_ticks = 0;
                     self.steam_new_host_id = 0;
                     self.steam_cli_stale_ticks = 0;
+                    self.steam_last_host_pkt_at = 0.0; // 迁移期间暂停判活（由归队快照重新启用）
                 }
             }
             self.steam_cli_ls = Some(cli);
@@ -7242,7 +7281,7 @@ impl event::EventHandler for Game {
                 // Steam 联机：学习期轻量网络节拍（心跳 + 静态快照 + 掉线判定 + 归队握手）。
                 #[cfg(feature = "steam")]
                 if self.steam_active() {
-                    self.steam_learning_net_tick()?;
+                    self.steam_learning_net_tick(ctx.time.time_since_start().as_secs_f64())?;
                     // 归队/迁移可能在本帧把阶段切到 Fighting（快照显示对局已开）→
                     // 按旧阶段继续走“学习倒计时”会立即滑进 `ClientWait` 卡死（画面冻结）。
                     if self.meta.phase != MatchPhase::Learning {
@@ -7639,6 +7678,8 @@ impl event::EventHandler for Game {
                             self.accumulator = TICK;
                         }
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
+                        // 本帧墙钟（判活/心跳用；与学习期同口径）。
+                        let now = ctx.time.time_since_start().as_secs_f64();
                         // Steam client：开局配置·配置同步阶段——上报我的 PlayerCfg，等 host 广播 PlayerCfgAll 后完成。
                         if self.net_cfg == NetCfgSync::ClientWait {
                             // 保活：配置同步阶段也每帧上行（就绪 + 配好 + 在场输入），既防止 P2P 空闲被拆，
@@ -7725,7 +7766,7 @@ impl event::EventHandler for Game {
                                 self.steam_rejoin_handshaking = false;
                                 self.steam_rejoin_ticks = 0;
                                 self.steam_new_host_id = 0;
-                                self.steam_cli_stale_ticks = 0;
+                                self.steam_note_host_alive(now);
                                 self.steam_rebuild_roster(cli.transport_ref()); // S6：归队后按参与顺序重建名单（恢复角色头像）
                                 eprintln!("[steam-rejoin] resumed from snapshot seq={seq}");
                             } else if self.steam_rejoin_ticks >= REJOIN_TIMEOUT_TICKS {
@@ -7790,7 +7831,7 @@ impl event::EventHandler for Game {
                                 }
                             }
                             if let Some(ents) = stepped {
-                                self.steam_cli_stale_ticks = 0; // 收到权威帧 → 清零掉线计数
+                                self.steam_note_host_alive(now); // 收到权威帧 → 判活时间器清零
                                 self.client_pending_max = self.client_pending_max.max(cli.pending_len());
                                 // 诊断：模拟帧间隔（>2 TICK 才打印；同时计入 5s 统计窗口）。
                                 {
@@ -7855,28 +7896,35 @@ impl event::EventHandler for Game {
                                     self.steam_migrating = true;
                                     self.steam_migrate_ticks = MIGRATE_PROBE_TICKS; // 跳过探测阶段，直接选举
                                     self.steam_new_host_id = 0;
-                                    self.steam_cli_stale_ticks = 0;
+                                    self.steam_note_host_alive(now);
                                     self.accumulator = 0.0;
                                     break;
                                 }
                                 // R7：暂停中不累计掉线计数（否则暂停超时会被误判为 host 掉线而触发迁移）。
                                 if cli.pause_view().paused {
-                                    self.steam_cli_stale_ticks = 0;
+                                    self.steam_note_host_alive(now);
                                     break;
                                 }
                                 // 本帧无权威帧：累计掉线计数，超阈值进入「主机迁移/重连探测」（host 可能掉线）。
                                 // S3：若本端自己与 Steam 断开（本地断网），不计入“host 掉线”（可能只是我这边）。
                                 if !self.steam_servers_online() {
-                                    self.steam_cli_stale_ticks = 0;
+                                    self.steam_note_host_alive(now);
                                     break;
                                 }
                                 self.steam_cli_stale_ticks = self.steam_cli_stale_ticks.saturating_add(1);
-                                if self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
-                                    eprintln!("[steam-client] NO frames for {} ticks -> entering reconnect-probe / host-migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
+                                // 判活：墙钟（3s 无权威帧）+ 旧帧数计数双保险。
+                                let silent_secs = if self.steam_last_host_pkt_at > 0.0 {
+                                    now - self.steam_last_host_pkt_at
+                                } else {
+                                    0.0
+                                };
+                                if silent_secs >= STEAM_HOST_SILENT_SECS || self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
+                                    eprintln!("[steam-client] NO frames for {silent_secs:.1}s ({} ticks) -> entering reconnect-probe / host-migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
                                     self.steam_migrating = true;
                                     self.steam_migrate_ticks = 0;
                                     self.steam_new_host_id = 0;
                                     self.steam_cli_stale_ticks = 0;
+                                    self.steam_last_host_pkt_at = 0.0; // 迁移期间暂停判活（由归队快照重新启用）
                                     self.accumulator = 0.0;
                                     break;
                                 }
@@ -8417,6 +8465,8 @@ impl Game {
             self.steam_join_lobby_id = None;
             self.steam_roster_refresh_ticks = 0;
             self.steam_cli_stale_ticks = 0;
+            self.steam_last_host_pkt_at = 0.0;
+            self.steam_last_online_bcast_at = 0.0;
             self.steam_participants = Vec::new();
             self.steam_online = Vec::new();
             self.steam_migrating = false;
@@ -10036,7 +10086,7 @@ impl Game {
     /// 大厅操作完成后的落地（S12）：建 lockstep / 世界 / 战绩，并停在「房间/就绪界面」。
     /// `lobby` 已由 `tick_lobby` 的 `finalize_lobby` 写入 `sess.lobby` / `sess.table`。
     #[cfg(feature = "steam")]
-    fn finish_enter_steam_mode(&mut self, _ctx: &mut Context, lobby: net_steam::steamworks::LobbyId) {
+    fn finish_enter_steam_mode(&mut self, ctx: &mut Context, lobby: net_steam::steamworks::LobbyId) {
         let Some(kind) = self.steam_lobby_pending.take() else {
             return;
         };
@@ -10199,6 +10249,8 @@ impl Game {
         self.reconnect_attempting = false;
         self.host_frame_count = 0;
         self.steam_cli_stale_ticks = 0;
+        self.steam_last_host_pkt_at = 0.0;
+        self.steam_last_online_bcast_at = 0.0;
         self.steam_participants = Vec::new();
         self.steam_online = Vec::new();
         self.steam_migrating = false;
@@ -10234,6 +10286,11 @@ impl Game {
             eprintln!("[steam-rejoin] joined lobby, start handshake (lobby={})", rj.lobby_id);
         }
         self.persist_rejoin_session();
+        // 新会话：判活计时从“现在”开始（若 3s 内没收到 host 包/权威帧则判掉线）；
+        // 注意这里的“现在”——不能置 0.0（= 不启用），否则首包丢失时会永远不判掉线。
+        self.steam_last_host_pkt_at = ctx.time.time_since_start().as_secs_f64();
+        self.steam_last_online_bcast_at = 0.0;
+        self.steam_cli_stale_ticks = 0;
         self.accumulator = 0.0;
     }
 
@@ -10323,6 +10380,14 @@ impl Game {
         } else {
             false
         }
+    }
+
+    /// client：记下“刚收到 host 包/权威帧”的墙钟时间（时间判活，见 `STEAM_HOST_SILENT_SECS`）；
+    /// 同时清零旧帧数计数（UI/诊断仍用它：`steam_cli_stale_ticks / 60` ≈ 秒）。
+    #[cfg(feature = "steam")]
+    fn steam_note_host_alive(&mut self, now: f64) {
+        self.steam_cli_stale_ticks = 0;
+        self.steam_last_host_pkt_at = now;
     }
 
     /// #4 诊断：暂停状态发生变化时打一行日志（host 与 client 共用）。
