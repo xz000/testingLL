@@ -3948,8 +3948,8 @@ impl Game {
             self.draw_top_banner(&mut canvas, ctx, i18n::t("已与 Steam 断开，正在等待重连…"))?;
         } else if self.steam_migrating || self.steam_rejoin_handshaking {
             self.draw_migration_overlay(&mut canvas, ctx)?;
-        } else if self.steam_cli_stale_ticks >= STALE_HINT_TICKS {
-            self.draw_waiting_host_banner(&mut canvas, ctx)?;
+        } else if let Some(secs) = self.steam_waiting_host_secs(ctx.time.time_since_start().as_secs_f64()) {
+            self.draw_waiting_host_banner(&mut canvas, ctx, secs)?;
         }
 
         // R7：暂停覆盖层 / 确认框（仅 Steam，对局内；迁移/归队期间不叠加）。
@@ -5229,8 +5229,10 @@ impl Game {
                     0.0
                 };
                 if silent_secs >= STEAM_HOST_SILENT_SECS || self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
+                    // 注：判活计时器在迁移期间被置 0.0（暂停判活），此时“静默秒数”无意义 → 打 n/a（否则会输出误导性的 0.0s）。
+                    let silent_disp = if self.steam_last_host_pkt_at > 0.0 { format!("{silent_secs:.1}s") } else { "n/a".to_string() };
                     eprintln!(
-                        "[steam-client] host silent in learning for {silent_secs:.1}s ({} ticks) -> migration (host={:?})",
+                        "[steam-client] host silent in learning for {silent_disp} ({} ticks) -> migration (host={:?})",
                         self.steam_cli_stale_ticks,
                         cli.host_peer()
                     );
@@ -5346,10 +5348,30 @@ impl Game {
         Ok(())
     }
 
-    /// S1：静默等待房主时的非模态顶部提示（不遮挡操作）。
+    /// S1：「静默等待房主」横幅要不要亮（`Some(已静默秒数)` = 亮）。
+    /// **阈值必须 ≥ 该阶段的期望心跳周期**（否则心跳间隔本身就会被误报）：
+    /// - 学习期：下行心跳 = 在线集广播，周期 `STEAM_ONLINE_BCAST_SECS`(2s) → 静默超过“周期 + 0.5s”才算异常
+    ///   （即 2.5s；再晚 0.5s 就进主机迁移覆盖层，相当于“迁移前最后一秒提示”）；
+    /// - 对局期：权威帧每 tick 到 → 沿用旧阈值（`STALE_HINT_TICKS` 帧 ≈0.5s），行为与改动前一致。
     #[cfg(feature = "steam")]
-    fn draw_waiting_host_banner(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let secs = self.steam_cli_stale_ticks as f64 / 60.0;
+    fn steam_waiting_host_secs(&self, now: f64) -> Option<f64> {
+        if self.meta.phase == MatchPhase::Learning {
+            let ts = self.steam_last_host_pkt_at;
+            if ts > 0.0 && (now - ts) >= (STEAM_ONLINE_BCAST_SECS + 0.5) {
+                Some(now - ts)
+            } else {
+                None
+            }
+        } else if self.steam_cli_stale_ticks >= STALE_HINT_TICKS {
+            Some(self.steam_cli_stale_ticks as f64 / 60.0)
+        } else {
+            None
+        }
+    }
+
+    /// S1：静默等待房主时的非模态顶部提示（不遮挡操作）。`secs` = 已静默秒数。
+    #[cfg(feature = "steam")]
+    fn draw_waiting_host_banner(&self, canvas: &mut Canvas, ctx: &Context, secs: f64) -> GameResult {
         let text = i18n::tf("正在等待房主…（{secs}s）", &[("secs", format!("{secs:.0}"))]);
         self.draw_top_banner(canvas, ctx, &text)
     }
@@ -7919,7 +7941,8 @@ impl event::EventHandler for Game {
                                     0.0
                                 };
                                 if silent_secs >= STEAM_HOST_SILENT_SECS || self.steam_cli_stale_ticks >= CLIENT_STALE_TICKS {
-                                    eprintln!("[steam-client] NO frames for {silent_secs:.1}s ({} ticks) -> entering reconnect-probe / host-migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
+                                    let silent_disp = if self.steam_last_host_pkt_at > 0.0 { format!("{silent_secs:.1}s") } else { "n/a".to_string() };
+                                    eprintln!("[steam-client] NO frames for {silent_disp} ({} ticks) -> entering reconnect-probe / host-migration (host={:?})", self.steam_cli_stale_ticks, cli.host_peer());
                                     self.steam_migrating = true;
                                     self.steam_migrate_ticks = 0;
                                     self.steam_new_host_id = 0;
