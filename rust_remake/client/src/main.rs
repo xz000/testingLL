@@ -225,6 +225,13 @@ const STEAM_MAX_PLAYERS: u8 = 64;
 /// 500 拍 ≈ 25s，给慢网络/Steam 后端留足时间（此前 200 拍 ≈ 10s 偶发超时）。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_CREATE_BEATS: u32 = 500;
+/// Steam 加入大厅（按 id / 搜索加入）：**单次尝试**等待回调的最大拍数。
+/// 300 拍 ≈ 5s（join_lobby 偶尔 >4s 才回调，旧的 240 拍 ≈4s 会误报超时）。
+#[cfg(feature = "steam")]
+const STEAM_LOBBY_JOIN_BEATS: u32 = 300;
+/// Steam 按 id 加入：单次超时后的最大尝试次数（含首次）。超时会自动重试，不等同于明确拒绝。
+#[cfg(feature = "steam")]
+const STEAM_LOBBY_JOIN_ATTEMPTS: u32 = 3;
 /// Steam 建房：默认玩家数（创建房间界面的初始值）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_PLAYERS: u8 = 2;
@@ -1315,6 +1322,9 @@ struct Game {
     /// Steam：ping/头像刷新的节流计数（每 30 帧一次）。
     #[cfg(feature = "steam")]
     steam_net_ticks: u32,
+    /// Steam：#4 诊断——上次记录的暂停状态（变化时打一行 `[steam-pause]` 日志）。
+    #[cfg(feature = "steam")]
+    steam_pause_logged: bool,
     /// Steam：排行榜句柄槽（查找是异步回调，结果由 `run_callbacks` 推进后写回）。
     #[cfg(feature = "steam")]
     steam_lb_slot: net_steam::session::Shared<Option<net_steam::steamworks::Leaderboard>>,
@@ -1477,7 +1487,7 @@ impl Game {
                 let mut sess = net_steam::session::SteamSession::init(APP_ID, STEAM_VIRTUAL_PORT)
                     .map_err(ggez::GameError::from)?;
                 match lobby_id {
-                    Some(id) => sess.start_join_by_id(id, 240),
+                    Some(id) => sess.start_join_by_id(id, STEAM_LOBBY_JOIN_BEATS, STEAM_LOBBY_JOIN_ATTEMPTS),
                     None => sess.start_find_and_join(240),
                 }
                 .map_err(ggez::GameError::from)?;
@@ -1865,6 +1875,8 @@ impl Game {
             steam_avatars: Vec::new(),
             #[cfg(feature = "steam")]
             steam_net_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_pause_logged: false,
             #[cfg(feature = "steam")]
             steam_lb_slot: net_steam::session::shared(None),
             #[cfg(feature = "steam")]
@@ -7149,6 +7161,8 @@ impl event::EventHandler for Game {
         {
             self.steam_net_ticks = self.steam_net_ticks.wrapping_add(1);
             self.steam_lobby_refresh_tick();
+            // #4 诊断：暂停状态变化时打一行日志（便于把暂停与其它行为关联分析）。
+            self.steam_pause_log_tick();
             // H1.2：**对局中**每 ~10s 刷新一次归队会话（记录轮次/参与者；崩溃也能保住最近一局）。
             if self.steam_active() && !self.steam_in_lobby && self.steam_net_ticks % 600 == 1 {
                 self.persist_rejoin_session();
@@ -8400,6 +8414,7 @@ impl Game {
             self.steam_pings = Vec::new();
             self.steam_avatars = Vec::new();
             self.steam_net_ticks = 0;
+            self.steam_pause_logged = false;
             self.steam_played_with = Vec::new();
             // 本场战绩上报标记/提示条复位（下一场重新上报）。
             self.steam_stats_recorded = false;
@@ -9879,7 +9894,7 @@ impl Game {
             }
             SteamLobbyPending::Join { lobby_id } => match lobby_id {
                 // 指定大厅 id 直接加入：单阶段，4s 超时足够。
-                Some(id) => sess.start_join_by_id(*id, 240),
+                Some(id) => sess.start_join_by_id(*id, STEAM_LOBBY_JOIN_BEATS, STEAM_LOBBY_JOIN_ATTEMPTS),
                 // 按 matchkey 搜索+加入：两阶段共用 beats，给足 8s（原同步实现每阶段各 240 拍）。
                 None => sess.start_find_and_join(480),
             },
@@ -9915,6 +9930,23 @@ impl Game {
             }
             net_steam::session::LobbyProgress::Done(Err(e)) => {
                 eprintln!("[steam] lobby op failed: {e:?}");
+                let timed_out = e.kind() == std::io::ErrorKind::TimedOut;
+                // 超时（非 Steam 明确拒绝）：**不要**判定上一局已结束，保留会话/提示，让用户可再按 Y 重试。
+                if timed_out {
+                    // 清掉“本次归队目标”：避免用户改而建房/加入其它房时被误当归队处理（按 Y 会重新置位）。
+                    self.steam_rejoin_target = None;
+                    self.steam_lobby_error = Some(i18n::t("连接超时，请重试").to_string());
+                    self.menu_hint = i18n::t("连接超时，可按 Y 重试").to_string();
+                    self.steam_lobby_pending = None;
+                    self.steam_lobby_pending_since = None;
+                    self.app = AppState::MainMenu;
+                    self.steam_lobby_menu = true;
+                    self.steam_lobby_create = false;
+                    self.steam_lobby_list = false;
+                    self.steam_in_lobby = false;
+                    self.refresh_rejoin_prompt();
+                    return;
+                }
                 // 失败提示上屏：返回大厅菜单后用红字展示，避免只 eprintln 用户看不到。
                 self.steam_lobby_error = Some(i18n::tf("加入失败：{err}", &[("err", e.to_string())]));
                 // 若本次是「重新加入上一局」尝试失败（大厅已关等）⇒ 判定上一局已结束：清会话。
@@ -10229,6 +10261,23 @@ impl Game {
         }
     }
 
+    /// #4 诊断：暂停状态发生变化时打一行日志（host 与 client 共用）。
+    #[cfg(feature = "steam")]
+    fn steam_pause_log_tick(&mut self) {
+        let p = self.steam_paused_now();
+        if p != self.steam_pause_logged {
+            let v = self.steam_pause_view();
+            eprintln!(
+                "[steam-pause] paused={} by={} resume_in={} (host={})",
+                p,
+                v.by,
+                v.resume_in,
+                self.steam_host_ls.is_some()
+            );
+            self.steam_pause_logged = p;
+        }
+    }
+
     /// R7：暂停状态视图（host/client 统一口径）。
     #[cfg(feature = "steam")]
     fn steam_pause_view(&self) -> net::lockstep::PauseView {
@@ -10295,7 +10344,13 @@ impl Game {
             PauseConfirmKey::Cancel => self.pause_confirm = false,
             PauseConfirmKey::Confirm => {
                 self.pause_confirm = false;
-                self.pause_pending = Some(!self.steam_paused_now()); // true=请求暂停
+                let want = !self.steam_paused_now(); // true=请求暂停
+                eprintln!(
+                    "[steam-pause] confirm -> request want={} (host={})",
+                    want,
+                    self.steam_host_ls.is_some()
+                );
+                self.pause_pending = Some(want);
             }
             PauseConfirmKey::Ignore => {}
         }

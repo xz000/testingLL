@@ -609,6 +609,8 @@ const EN: &[(&str, &str)] = &[
     ("选中的房间已满，请换一个", "The selected room is full; pick another"),
     ("版本不符（房主 {host:?}，本端 {mine}），无法加入", "Version mismatch (host {host:?}, local {mine}); cannot join"),
     ("加入失败：{err}", "Join failed: {err}"),
+    ("连接超时，请重试", "Connection timed out; please retry"),
+    ("连接超时，可按 Y 重试", "Connection timed out; press Y to retry"),
     ("进入房间失败：{err}", "Failed to enter the room: {err}"),
     ("未命名房间", "Unnamed Room"),    ("我的房间", "My Room"),
     ("{name}的房间", "{name}'s Room"),

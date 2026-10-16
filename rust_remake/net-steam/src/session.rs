@@ -508,17 +508,23 @@ pub enum LobbyListProgress {
 }
 
 /// 进行中的大厅操作类型（驱动 `tick_lobby` 的阶段切换）。
+#[derive(Clone, Copy)]
 enum LobbyOp {
     Create,
     JoinById,
     FindJoin,
 }
 
+/// 大厅操作完成标志（true = 回调已写入结果）。
+type LobbyOpDone = std::sync::Arc<std::sync::atomic::AtomicBool>;
+/// 大厅操作结果槽（`create_lobby`/`join_lobby` 回调写入）。
+type LobbyOpSlot = std::sync::Arc<std::sync::Mutex<Option<io::Result<steamworks::LobbyId>>>>;
+
 /// 大厅异步操作的内部状态（持有 steamworks 回调完成槽，跨帧存活）。
 struct PendingLobbyOp {
     op: LobbyOp,
-    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    slot: std::sync::Arc<std::sync::Mutex<Option<io::Result<steamworks::LobbyId>>>>,
+    done: LobbyOpDone,
+    slot: LobbyOpSlot,
     ticks: u32,
     beats: u32,
     /// FindJoin 阶段 A（搜列表）的完成槽。
@@ -526,6 +532,26 @@ struct PendingLobbyOp {
     list_res: std::sync::Arc<std::sync::Mutex<Option<Vec<steamworks::LobbyId>>>>,
     /// FindJoin 阶段 B（join）是否已发起（避免每帧重复注册 join 回调）。
     phase_b_started: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// JoinById：目标大厅 id（单次尝试超时后据此重试）。
+    join_id: Option<u64>,
+    /// JoinById：已发起的尝试次数（0 = 首次）与最大尝试次数。
+    attempt: u32,
+    max_attempts: u32,
+}
+
+/// 发起一次 `join_lobby(lobby_id)` 异步操作，返回完成槽（`done`, `slot`）。
+/// 每次尝试都用**新的**槽：旧尝试的迟到回调只会写进被丢弃的旧槽，不会污染重试。
+fn spawn_join_by_id(mm: &steamworks::Matchmaking, lobby_id: u64) -> (LobbyOpDone, LobbyOpSlot) {
+    use steamworks::LobbyId;
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<io::Result<LobbyId>>));
+    let done2 = done.clone();
+    let slot2 = slot.clone();
+    mm.join_lobby(LobbyId::from_raw(lobby_id), move |r| {
+        *slot2.lock().unwrap() = Some(r.map_err(|_| io::Error::other("join lobby by id failed")));
+        done2.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    (done, slot)
 }
 
 /// 房间列表异步拉取的内部状态。
@@ -670,6 +696,9 @@ impl SteamSession {
             list_done: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             list_res: std::sync::Arc::new(std::sync::Mutex::new(None)),
             phase_b_started: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            join_id: None,
+            attempt: 0,
+            max_attempts: 0,
         });
         Ok(())
     }
@@ -883,21 +912,12 @@ impl SteamSession {
     }
 
     /// client：用 host 打印的 LobbyId 直接加入（异步，S12）。完成由 `tick_lobby` 推进。
-    pub fn start_join_by_id(&mut self, lobby_id: u64, beats: u32) -> io::Result<()> {
-        use steamworks::LobbyId;
+    /// `beats` 为**单次尝试**的超时拍数；若某次尝试超时（非明确错误）则自动重试，
+    /// 最多尝试 `max_attempts` 次（如 `start_join_by_id(id, 300, 3)` = 5s × 最多 3 次）。
+    pub fn start_join_by_id(&mut self, lobby_id: u64, beats: u32, max_attempts: u32) -> io::Result<()> {
         let mm = self.transport.matchmaking();
-        let lobby = LobbyId::from_raw(lobby_id);
         eprintln!("[steam-sess] joining lobby by id {lobby_id} ...");
-        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let slot = std::sync::Arc::new(std::sync::Mutex::new(None::<io::Result<LobbyId>>));
-        {
-            let done = done.clone();
-            let slot = slot.clone();
-            mm.join_lobby(lobby, move |r| {
-                *slot.lock().unwrap() = Some(r.map_err(|_| io::Error::other("join lobby by id failed")));
-                done.store(true, std::sync::atomic::Ordering::SeqCst);
-            });
-        }
+        let (done, slot) = spawn_join_by_id(&mm, lobby_id);
         self.pending_lobby = Some(PendingLobbyOp {
             op: LobbyOp::JoinById,
             done,
@@ -907,6 +927,9 @@ impl SteamSession {
             list_done: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             list_res: std::sync::Arc::new(std::sync::Mutex::new(None)),
             phase_b_started: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            join_id: Some(lobby_id),
+            attempt: 0,
+            max_attempts: max_attempts.max(1),
         });
         Ok(())
     }
@@ -944,6 +967,9 @@ impl SteamSession {
             list_done,
             list_res,
             phase_b_started: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            join_id: None,
+            attempt: 0,
+            max_attempts: 0,
         });
         Ok(())
     }
@@ -1021,7 +1047,30 @@ impl SteamSession {
         };
         p.ticks += 1;
         if p.ticks > p.beats {
-            return LobbyProgress::Done(Err(io::Error::other("lobby operation timed out")));
+            // JoinById 单次尝试超时（≠ Steam 明确拒绝）：自动重试（新的完成槽），
+            // 避免一次 4s 慢回调就把「连回上一局」判为失败并把该局标 ended。
+            if let (LobbyOp::JoinById, Some(lobby_id)) = (p.op, p.join_id) {
+                if p.attempt + 1 < p.max_attempts {
+                    p.attempt += 1;
+                    eprintln!(
+                        "[steam-sess] join by id timed out after {} beats, retry {}/{} ...",
+                        p.beats,
+                        p.attempt + 1,
+                        p.max_attempts
+                    );
+                    let mm = self.transport.matchmaking();
+                    let (done, slot) = spawn_join_by_id(&mm, lobby_id);
+                    p.done = done;
+                    p.slot = slot;
+                    p.ticks = 0;
+                    self.pending_lobby = Some(p);
+                    return LobbyProgress::Pending;
+                }
+            }
+            return LobbyProgress::Done(Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "lobby operation timed out",
+            )));
         }
         // FindJoin 阶段 A：等列表回来后再发起 join（阶段 B）。
         if let LobbyOp::FindJoin = p.op {
