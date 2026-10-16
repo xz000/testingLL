@@ -1100,8 +1100,20 @@ impl<T: Transport> HostLockstep<T> {
                                 // S2/S4：收到别的 host 的接管信号 → 本端已被取缔（典型：客户端误判旧 host 掉线、
                                 // 选出新 host 并广播 Takeover）。标记 superseded 并停止作为权威（try_emit 不再产帧），
                                 // 避免与新 host 双权威脑裂。R6b：记录来源，供上层转为 client 归队（连回新 host）。
-                                self.superseded = true;
-                                self.superseded_by = Some(from);
+                                //
+                                // 防御（真机 2026-10-17 坐实）：**忽略“来自本端自己”的 Takeover**。
+                                // 一旦自会话（如误将 supersede 通知发给自己）把本端围回环，会被当成“我被取缔了”→ 自我退位
+                                // → 退回主菜单并**退出大厅** → 直接摧毁本局（还会连带 Steam 把 owner 移给别人）。
+                                let from_is_me = matches!(
+                                    from,
+                                    Peer::Steam { id, .. } if self.local_identity != 0 && id == self.local_identity
+                                );
+                                if from_is_me {
+                                    eprintln!("[lockstep] 忽略来自本端自己的 Takeover（自会话/回环）");
+                                } else {
+                                    self.superseded = true;
+                                    self.superseded_by = Some(from);
+                                }
                             }
                             Packet::PauseReq { identity, resume } => {
                                 // R7：host 仲裁暂停/恢复。恢复任何人都可；暂停需额度且不在冷却。

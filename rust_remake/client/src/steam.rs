@@ -366,6 +366,10 @@ impl Game {
             identities,
             fallback,
         );
+        // 立即登记本端身份（新宿主 = 本端）：
+        // ① 供 `HostLockstep::poll` 的自会话防御用（忽略“来自自己”的 Takeover）；
+        // ② 供暂停额度列表 / 自暂停用。放在广播之前，保证第一帧就生效。
+        host.set_local_identity(self.steam_my_id);
         // 广播 Takeover（带更新后的在线参与集）+ Snapshot（接管基线）给其余在线端。
         // S7：即便没有缓存快照也必广播（基线取自本端 world），否则其余端收不到 Takeover → 零 host。
         let seq = host.next_seq();
