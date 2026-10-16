@@ -69,6 +69,7 @@ impl Game {
         &mut self,
         mut cli: net::lockstep::ClientLockstep<net_steam::SteamTransport>,
         rcv: &mut [u8],
+        now: f64,
     ) -> GameResult<Option<net::lockstep::ClientLockstep<net_steam::SteamTransport>>> {
         self.steam_migrate_ticks = self.steam_migrate_ticks.saturating_add(1);
         // —— 阶段 A：探测 host 是否还在（尚未决定新 host）。
@@ -119,8 +120,9 @@ impl Game {
                             }
                             self.steam_migrating = false;
                             self.steam_migrate_ticks = 0;
-                            // 迁移结束（恢复）后清零学习期沉默计数，避免迁移前的累计值立刻再次触发迁移。
-                            self.steam_cli_stale_ticks = 0;
+                            // 迁移结束（恢复）＝“刚收到 host 的东西”——**两本账一起复位**（计数 + 墙钟计时器）。
+                            // 只清计数会让时间判据停在 `0.0`（=暂停判活）→ 后续判活退化成“按帧数”（受帧率漂移影响）。
+                            self.steam_note_host_alive(now);
                             return Ok(Some(cli));
                         }
                         // 旧 host 的其它包（Frame/StateHash）：它还在，但不足以补齐缺口，继续等 Snapshot。
@@ -206,8 +208,8 @@ impl Game {
                 self.steam_migrating = false;
                 self.steam_migrate_ticks = 0;
                 self.steam_new_host_id = 0;
-                // 迁移结束（重定向到新 host）后清零学习期沉默计数。
-                self.steam_cli_stale_ticks = 0;
+                // 迁移结束（重定向到新 host）＝“刚收到新 host 的 Takeover”——同样**两本账一起复位**。
+                self.steam_note_host_alive(now);
                 eprintln!("[steam-client] migrated to new host (seq={seq}), resuming lockstep");
                 Ok(Some(cli))
             } else {

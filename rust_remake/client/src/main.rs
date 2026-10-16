@@ -5124,7 +5124,7 @@ impl Game {
             let mut c_rcv = vec![0u8; 256 * 1024];
             // 迁移中：推进迁移状态机（学习期 host 掉线/退出也做迁移，继续这局）。
             if self.steam_migrating {
-                let leftover = self.poll_steam_migration(cli, &mut c_rcv)?;
+                let leftover = self.poll_steam_migration(cli, &mut c_rcv, now)?;
                 if let Some(cli) = leftover {
                     self.steam_cli_ls = Some(cli);
                 }
@@ -7812,7 +7812,7 @@ impl event::EventHandler for Game {
                         // 注：Steam 掉线统一走这里（D2-A）；旧的 `poll_steam_reconnect` 因依赖从未置位的 `conn_dropped`
                         // 而不可达，已删除。
                         if self.steam_migrating {
-                            let leftover = self.poll_steam_migration(cli, &mut c_rcv)?;
+                            let leftover = self.poll_steam_migration(cli, &mut c_rcv, now)?;
                             // 若是新 host 已消费 cli（转为 host_ls），则不归还；否则归还 cli。
                             if let Some(cli) = leftover {
                                 self.steam_cli_ls = Some(cli);
