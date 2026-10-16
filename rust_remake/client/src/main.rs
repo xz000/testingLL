@@ -924,6 +924,11 @@ struct Game {
     last_ime_commit_frame: u64,
     /// 诊断（本轮加）：上一帧推进的墙钟时刻（秒）；用于打印模拟帧间隔异常（卡顿来源定位）。
     last_step_wall: f64,
+    /// 诊断：上一次“不推帧”的原因（`plain`/`paused`/`migrating`/`cfg-sync`/`rejoin`/`takeover`/`gather`）。
+    /// 供 `[jit] … sim gap` 标注原因——否则每次排查都要人肉对齐暂停/轮次/迁移三类来源（本轮教训）。
+    /// 只在 Steam 分支赋值/读取（LAN 路径暂无此需求），故按 feature 门控，避免非 steam 构建报 dead_code。
+    #[cfg(feature = "steam")]
+    jit_stall_reason: &'static str,
     /// 诊断：host 产帧间隔统计窗口（每 5s 汇总一行）。
     #[cfg(feature = "steam")]
     host_emit_stats: IntervalStats,
@@ -1682,6 +1687,8 @@ impl Game {
             // 初始为 MAX，确保首帧（frame 0，wrapping_sub 也为 0）不会误判为「本帧已 IME 提交」。
             last_ime_commit_frame: u64::MAX,
             last_step_wall: 0.0,
+            #[cfg(feature = "steam")]
+            jit_stall_reason: "plain",
             #[cfg(feature = "steam")]
             host_emit_stats: IntervalStats::default(),
             #[cfg(feature = "steam")]
@@ -5073,7 +5080,9 @@ impl Game {
             }
             // 学习期也判掉线（否则 all_cfgs 会等一个已死端 → 全员卡局）。
             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
-                logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (learning idle) -> continue"));
+                // 带上 SteamID：便于事后对号（体面信息，不看 id 很难知道是哪个玩家被掉）。
+                let sid = self.steam_participants.get(dropped_idx as usize).copied().unwrap_or(0);
+                logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (steamid={sid}, learning idle) -> continue"));
             }
             // 注：**不再因“所有客户端都掉线”而自动退出**——host 继续单人对桩子打下去（用户定调）。
             // 真正的“被取代/P2P 隔离”仍由下方/对局期的**自栅栏**（按 Steam `lobby_owner`）处理。
@@ -5124,6 +5133,7 @@ impl Game {
             let mut c_rcv = vec![0u8; 256 * 1024];
             // 迁移中：推进迁移状态机（学习期 host 掉线/退出也做迁移，继续这局）。
             if self.steam_migrating {
+                self.jit_stall_reason = "migrating";
                 let leftover = self.poll_steam_migration(cli, &mut c_rcv, now)?;
                 if let Some(cli) = leftover {
                     self.steam_cli_ls = Some(cli);
@@ -5132,6 +5142,7 @@ impl Game {
             }
             // 归队握手：学习期也要能完成（等 host 的静态快照重建 world+meta）。
             if self.steam_rejoin_handshaking {
+                self.jit_stall_reason = "rejoin";
                 let got = cli
                     .rejoin_step(&mut c_rcv, self.steam_my_id, self.steam_rejoin_ticks, RECONNECT_REQ_EVERY as u32)
                     .ok()
@@ -7480,6 +7491,7 @@ impl event::EventHandler for Game {
                         // Steam host：开局配置·配置同步阶段——收齐各端 PlayerCfg(含自身) → 广播 PlayerCfgAll → 统一开战。
                         // （与局域网 HostGather 同构；用可靠的 RoomState/每帧上行通道 + cfg 包，host 收齐即广播。）
                         if self.net_cfg == NetCfgSync::HostGather {
+                            self.jit_stall_reason = "cfg-sync";
                             // 本轮配置同步首次进入：清空上一轮残留（cfgs）+ 在途旧包，避免收到旧包当本轮配置（局间绑定被清空的竞态）。
                             if !self.host_cfg_drained {
                                 self.host_cfg_drained = true;
@@ -7614,7 +7626,8 @@ impl event::EventHandler for Game {
                             }
                             // 掉线判定（Steam 战斗端）：某 client 连续未上行超时 → 自动 drop（默认输入占位），其余端继续，不空转等它。
                             for dropped_idx in host.auto_drop_idle(HOST_DROP_TICKS) {
-                                logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (idle timeout) -> game continues"));
+                                let sid = self.steam_participants.get(dropped_idx as usize).copied().unwrap_or(0);
+                                logging::log(&format!("[steam-host] AUTO-DROP client {dropped_idx} (steamid={sid}, idle timeout) -> game continues"));
                             }
                             // 在线集变化（主动离开/掉线/重连）→ 立即广播；否则每 ~2s 兜底重播（重连端握手期会丢非 Snapshot 包）。
                             // 同时用同一份刷新**房主自己**的 `steam_online`，使房主界面也正确标“已离开”。
@@ -7647,7 +7660,8 @@ impl event::EventHandler for Game {
                                         let gap_ms = ((now - self.last_step_wall) * 1000.0) as f32;
                                         self.host_emit_stats.record(gap_ms);
                                         if gap_ms > (2.0 * TICK * 1000.0) as f32 {
-                                            logging::log(&format!("[jit] host sim gap {gap_ms:.0}ms at seq={seq}"));
+                                            logging::log(&format!("[jit] host sim gap {gap_ms:.0}ms at seq={seq} reason={}", self.jit_stall_reason));
+                                            self.jit_stall_reason = "plain";
                                         }
                                     }
                                     self.last_step_wall = now;
@@ -7703,6 +7717,7 @@ impl event::EventHandler for Game {
                         self.steam_host_ls = Some(host);
                         if host_paused {
                             // 暂停中：保持每 update 一次轮询（收暂停/恢复请求），但不让 accumulator 无限堆积。
+                            self.jit_stall_reason = "paused";
                             self.accumulator = TICK;
                         }
                     } else if let Some(mut cli) = std::mem::take(&mut self.steam_cli_ls) {
@@ -7710,6 +7725,7 @@ impl event::EventHandler for Game {
                         let now = ctx.time.time_since_start().as_secs_f64();
                         // Steam client：开局配置·配置同步阶段——上报我的 PlayerCfg，等 host 广播 PlayerCfgAll 后完成。
                         if self.net_cfg == NetCfgSync::ClientWait {
+                            self.jit_stall_reason = "cfg-sync";
                             // 保活：配置同步阶段也每帧上行（就绪 + 配好 + 在场输入），既防止 P2P 空闲被拆，
                             // 也持续向 host 续报 build_done=true（host 端判定“所有端配完”始终成立）。
                             let ref_enc = game_core::netcode::encode_player_input(&self.local_player_input());
@@ -7775,6 +7791,7 @@ impl event::EventHandler for Game {
                         let mut c_rcv = vec![0u8; 256 * 1024];
                         // R5c：归队握手——等 host 快照重建 world+meta 后再进入正常推进；超时回菜单。
                         if self.steam_rejoin_handshaking {
+                            self.jit_stall_reason = "rejoin";
                             let got = cli
                                 .rejoin_step(&mut c_rcv, self.steam_my_id, self.steam_rejoin_ticks, RECONNECT_REQ_EVERY as u32)
                                 .ok()
@@ -7818,6 +7835,7 @@ impl event::EventHandler for Game {
                         // 注：Steam 掉线统一走这里（D2-A）；旧的 `poll_steam_reconnect` 因依赖从未置位的 `conn_dropped`
                         // 而不可达，已删除。
                         if self.steam_migrating {
+                            self.jit_stall_reason = "migrating";
                             let leftover = self.poll_steam_migration(cli, &mut c_rcv, now)?;
                             // 若是新 host 已消费 cli（转为 host_ls），则不归还；否则归还 cli。
                             if let Some(cli) = leftover {
@@ -7868,7 +7886,8 @@ impl event::EventHandler for Game {
                                         let gap_ms = ((now - self.last_step_wall) * 1000.0) as f32;
                                         self.client_frame_stats.record(gap_ms);
                                         if gap_ms > (2.0 * TICK * 1000.0) as f32 {
-                                            logging::log(&format!("[jit] client sim gap {:.0}ms (next seq {})", gap_ms, cli.expect_seq()));
+                                            logging::log(&format!("[jit] client sim gap {:.0}ms (next seq {} reason={})", gap_ms, cli.expect_seq(), self.jit_stall_reason));
+                                            self.jit_stall_reason = "plain";
                                         }
                                     }
                                     self.last_step_wall = now;
@@ -7930,6 +7949,7 @@ impl event::EventHandler for Game {
                                 }
                                 // R7：暂停中不累计掉线计数（否则暂停超时会被误判为 host 掉线而触发迁移）。
                                 if cli.pause_view().paused {
+                                    self.jit_stall_reason = "paused";
                                     self.steam_note_host_alive(now);
                                     break;
                                 }
