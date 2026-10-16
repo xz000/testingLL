@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('host','join','menu')] [string]$Mode = 'menu',
     [int]$Players = 2,
     [string]$LobbyId = '',
@@ -85,6 +85,32 @@ if ($NetDiag) {
 # 故这里：设 [Console]::OutputEncoding=UTF8 + 逐行用 UTF8（无 BOM）追加到文件。
 $logDir = Join-Path $PSScriptRoot 'logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$runStart = Get-Date
+
+# ── 卡死自动转储（看门狗）──
+# 背景：真机出现过“继任房主窗口无响应（真 hang）”，但日志只是“静静停住”，无法定位。
+# 启动游戏前先拉起 tools/hang-watch.ps1：本机任一实例“窗口无响应”或“CPU 冻结 ≥8s”
+# 连续两次 → 自动 MiniDumpWriteDump 到 logs\hang-<时间>-pid<PID>.dmp，并写同名 .txt 上下文。
+# 事后只要拷 logs/ 就有现场，不需要外部工具。只监视本脚本启动之后的 client.exe。
+$watcher = Join-Path $PSScriptRoot 'tools\hang-watch.ps1'
+if (Test-Path $watcher) {
+    $ctxDesc = "mode=$Mode target=$Target players=$Players lang=$Lang netdiag=$($NetDiag.IsPresent) args=$($argsList -join ' ')"
+    try {
+        Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', ("`"$watcher`""),
+            '-GraceSeconds', '10',
+            '-HangSeconds', '8',
+            '-Context', ("`"$ctxDesc`"")
+        ) | Out-Null
+        Write-Host '== hang-watch: 已启动卡死看门狗（转储写到 logs\hang-*.dmp）==' -ForegroundColor Yellow
+    } catch {
+        Write-Host "WARN: hang-watch 启动失败：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "WARN: 未找到 $watcher，跳过卡死自动转储。" -ForegroundColor Yellow
+}
+
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logFile = Join-Path $logDir "console-$Mode-$Target-$stamp.log"
 Write-Host "== log -> $logFile =="
@@ -98,4 +124,19 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     try { [System.IO.File]::AppendAllText($logFile, "$_`r`n", $utf8NoBom) } catch {}
 }
 try { [Console]::OutputEncoding = $prevEnc } catch {}
+
+# 本次运行是否抓到卡死转储？
+$dumps = @(Get-ChildItem (Join-Path $logDir 'hang-*.dmp') -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $runStart })
+if ($dumps.Count -gt 0) {
+    Write-Host ''
+    Write-Host '!! 本次检测到卡死并已自动转储：' -ForegroundColor Red
+    foreach ($d in $dumps) {
+        $info = [System.IO.Path]::ChangeExtension($d.FullName, '.txt')
+        Write-Host ("   {0}  ({1:N1} MB)" -f $d.FullName, ($d.Length / 1MB))
+        if (Test-Path $info) { Write-Host "   上下文：$info" }
+    }
+    Write-Host '   拷 logs/ 时请把 hang-*.dmp 与同名 .txt 一起拿走。' -ForegroundColor Yellow
+} else {
+    Write-Host '[hang-watch] 本次无可用的卡死转储（正常）。' -ForegroundColor DarkGray
+}
 Pop-Location

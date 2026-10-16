@@ -156,3 +156,22 @@ python tools/dump_tooltips.py S008 S009
 
 - 供「与 JASS 对齐」核对：见 `SKILL_ALIGNMENT_LEDGER.md` §14（矩阵）/§15–§18（逐项复核）、`JASS_FIELDS_098c.md`。
 - （w3q 升级价：布局特殊，已不在本目录脚本内；结论固化在 `ECONOMY_RECHECK.md` §3。）
+
+---
+
+## 卡死自动转储（真机/多机联机测试）
+
+`tools/hang-watch.ps1`——看门狗：本机 `client.exe` 出现**真 hang**（窗口/线程不泵消息，或 CPU 完全冻结）时，
+自动把内存转储写到仓库 `logs\hang-<时间>-pid<PID>.dmp`（+ 同名 `.txt` 上下文），
+事后把 `logs/` 拷回来即有现场，不需要 procdump/WinDbg。
+
+- 由 `run-steam.ps1` **自动拉起**（无需手动）；启动时会打印 `== hang-watch: 已启动卡死看门狗 ==`。
+- 判据（实测校准）：对该进程的顶层窗口发 `SendMessageTimeout(WM_NULL/WM_GETTEXT)`，
+  **至少一个窗口超时**即初步判定（排除 `ConsoleWindowClass`/`PseudoConsoleWindow`——
+  它们由 conhost 代泵、健康时也永远响应）；连续 2 次成立才转储。
+  辅助判据：进程 CPU 时间连续 `2×HangSeconds` 秒不变（覆盖“所有线程都被阻塞”）。
+  注：`IsHungAppWindow` 实测**不可靠**（把主线程挂住 16s 仍返回 false），故不用。
+- 验证方式：用 `SuspendThread` 挂住 `client.exe` 主线程模拟真 hang → 约 9s 内自动转储成功
+  （0.2MB，探活日志 `first='Window Class'`）；恢复后看门狗会打印“恢复正常（撤销可疑计数）”。
+- 分析：`cdb -z logs\hang-*.dmp -c "~*k"`（看所有线程栈），或把 dmp 交给人/AI。
+- 多实例同机时，各 watcher 会看到同一批进程；已有转储时其余 watcher 自动跳过（不重复转储）。
