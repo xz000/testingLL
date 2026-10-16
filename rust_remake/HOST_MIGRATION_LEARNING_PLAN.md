@@ -414,3 +414,16 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 - **绝不向“本端自己”发任何控制类包**（Takeover/Leave/PauseState 等）；也**绝不将 `host` 指向本端自己**（`host == self` 会让一切“跟 host 说话”的逻辑变成自会话）。
 - 判“旧宿主是谁”必须来自**迁移入口时保存的旧 host**，不得依赖“重定向之后的 `host_peer()`”。
 - 收到来自本端的 `Takeover` 一律忽略（防回环自裁决退位）。
+
+### 17.7 续：两处 UI/流程问题（`cb9143a`）
+**（1）host 自己弹“正在等待房主…”**（用户反馈“一开始的房主会弹出正在等待房主”）
+- 根因：横幅改用墙钟后（`eb267c3`），`steam_waiting_host_secs()` 对 **host 也生效**——而 host 永远不会“收到 host 包”（`steam_last_host_pkt_at` 不会被刷新）→ 学习期 2.5s 阈值一到就一直亮（对局期走的是帧数计数、host 恒 0，所以只有学习期会现）。
+- 修法：`steam_waiting_host_secs()` 开头 `self.steam_cli_ls.as_ref()?` —— **只有 client 才有“等待房主”一说**。
+
+**（2）“房主返回主菜单后无法回连”**
+- 现象：A（原 host）在主菜单按 Y 归队 → `join by id timed out after 300 beats, retry 2/3` → `LobbyEnter … response=Error`（**Steam 明确拒绝，generic Error，属可恢复**）→ 但玩家此时已经按 Esc/Q“取消连接”，而后**再也回不去**。
+- 根因（两层）：
+  1. 主菜单 pending 的取消分支（Esc/Q）只做 `steam_lobby_pending = None` 并 `return`——**不再 `steam_poll_lobby_pending`**，所以那次 join 的结果从不被处理（日志里也没有 `lobby op failed` / `归队被拒`）；
+  2. 按 Y 归队时已把 `steam_rejoin_prompt` 清空（只保留 `steam_rejoin_target`），取消分支又没恢复它——而 **H4 探活只在“有提示”时跑** → 提示永不再生 → 玩家看不到归队提示、也没法再按 Y。
+- 修法（`cb9143a`）：取消分支里若 `steam_rejoin_target` 存在 → 取走它 + 对目标大厅 **best-effort `leave_lobby`**（防“取消后那个 join 其实成功了 → 本端静默留厅占位”）+ `refresh_rejoin_prompt()` 恢复提示 + `menu_hint` = “已取消连接上一局（可按 Y 重试）”。
+- 注：`Error` 类拒绝本身已有正确策略（`4028360`：大厅仍在就不标 ended、保留会话+提示可重试）——本次真正丢的是提示。
