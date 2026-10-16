@@ -232,6 +232,10 @@ const STEAM_LOBBY_JOIN_BEATS: u32 = 300;
 /// Steam 按 id 加入：单次超时后的最大尝试次数（含首次）。超时会自动重试，不等同于明确拒绝。
 #[cfg(feature = "steam")]
 const STEAM_LOBBY_JOIN_ATTEMPTS: u32 = 3;
+/// Steam 归队：一次失败后到下一次允许按 Y 重试的最小间隔（秒）。
+/// Steam 对 `JoinLobby` 有速率限制（`RatelimitExceeded`），连按 Y / 内部重试连发会被直接拒。
+#[cfg(feature = "steam")]
+const STEAM_REJOIN_RETRY_COOLDOWN: f64 = 5.0;
 /// Steam 建房：默认玩家数（创建房间界面的初始值）。
 #[cfg(feature = "steam")]
 const STEAM_DEFAULT_PLAYERS: u8 = 2;
@@ -1322,6 +1326,9 @@ struct Game {
     /// Steam：ping/头像刷新的节流计数（每 30 帧一次）。
     #[cfg(feature = "steam")]
     steam_net_ticks: u32,
+    /// Steam：上一次归队尝试失败的时间戳——在此之前忽略 Y（避免 `JoinLobby` 突发触发速率限制）。
+    #[cfg(feature = "steam")]
+    steam_rejoin_retry_at: f64,
     /// Steam：#4 诊断——上次记录的暂停状态（变化时打一行 `[steam-pause]` 日志）。
     #[cfg(feature = "steam")]
     steam_pause_logged: bool,
@@ -1875,6 +1882,8 @@ impl Game {
             steam_avatars: Vec::new(),
             #[cfg(feature = "steam")]
             steam_net_ticks: 0,
+            #[cfg(feature = "steam")]
+            steam_rejoin_retry_at: 0.0,
             #[cfg(feature = "steam")]
             steam_pause_logged: false,
             #[cfg(feature = "steam")]
@@ -6922,6 +6931,15 @@ impl event::EventHandler for Game {
             #[cfg(feature = "steam")]
             if let Some(rj) = self.steam_rejoin_prompt.clone() {
                 if just('y') || just('Y') {
+                    // 冷却：避免连按 Y 造成 `JoinLobby` 突发（Steam 对大厅加入有速率限制，
+                    // 连发可能适得其反 → 直接被拒）。
+                    let now = ctx.time.time_since_start().as_secs_f64();
+                    if now < self.steam_rejoin_retry_at {
+                        let secs = (self.steam_rejoin_retry_at - now).ceil() as u32;
+                        self.menu_hint = i18n::tf("请稍候 {n} 秒再试", &[("n", secs.to_string())]);
+                        self.accumulator = 0.0;
+                        return Ok(());
+                    }
                     let lobby = rj.lobby_id;
                     self.steam_rejoin_prompt = None;
                     self.steam_rejoin_target = Some(rj);
@@ -9961,6 +9979,9 @@ impl Game {
             net_steam::session::LobbyProgress::Done(Err(e)) => {
                 eprintln!("[steam] lobby op failed: {e:?}");
                 let timed_out = e.kind() == std::io::ErrorKind::TimedOut;
+                // 失败后给 Y 加冷却：连发 `JoinLobby` 会被 Steam 直接拒（速率限制）。
+                self.steam_rejoin_retry_at =
+                    ctx.time.time_since_start().as_secs_f64() + STEAM_REJOIN_RETRY_COOLDOWN;
                 // 超时（非 Steam 明确拒绝）：**不要**判定上一局已结束，保留会话/提示，让用户可再按 Y 重试。
                 if timed_out {
                     // 清掉“本次归队目标”：避免用户改而建房/加入其它房时被误当归队处理（按 Y 会重新置位）。

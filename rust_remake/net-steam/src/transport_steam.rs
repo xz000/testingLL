@@ -129,6 +129,17 @@ impl SteamTransport {
             refresh.store(true, Ordering::Relaxed);
             eprintln!("[steam] SteamServersConnected → 本地与 Steam 服务器恢复连接");
         });
+        // 诊断：把每次 `LobbyEnter` 的**响应码**打出来。
+        // 安全层的 `join_lobby` 只回 `Err(())`，吞掉了具体原因；而“房间还有空位却加入被拒”
+        // 常见于速率限制（`RatelimitExceeded`）或名额未释放（`Full`），必须靠这个区分。
+        self.register_callback(move |cb: steamworks::LobbyEnter| {
+            eprintln!(
+                "[steam-lobby] LobbyEnter lobby={} response={:?} blocked={}",
+                cb.lobby.raw(),
+                cb.chat_room_enter_response,
+                cb.blocked
+            );
+        });
     }
 
     /// 本端与 Steam 服务器是否在线（用于“自己掉线”判定）。未注册回调时恒为 true。
