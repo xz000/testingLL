@@ -114,7 +114,12 @@ impl Game {
                     //  ③ 本端随后的 `ReconnectReq` 会打到 X，X 用现成的 `unmark_dropped` + 定向
                     //     `Snapshot{your_index}` + `PauseState` 应答即可完成回归——**不依赖广播 Takeover 是否被收到**。
                     // 时机约束：必须在**阶段 A 对旧宿主探测超时之后**才换（否则会跳过“旧宿主只是暂时静默”的误判保护）。
-                    cli.retarget_host(net::transport::Peer::Steam { id: new_host_id, conn: None });
+                    // 例外：**选举结果就是本端**（我要接管）时**不早 retarget** —— 否则 `host` 会指向自己，
+                    // 而 `steam_do_takeover` 要用 `cli.host_peer()` 拿来“旧宿主是谁”（去通知它退位），
+                    // 就会变成“给自己发 supersede 通知” → Steam 自会话疯狂断言/会话失败（真机 2026-10-17 坐实）。
+                    if new_host_id != self.steam_my_id {
+                        cli.retarget_host(net::transport::Peer::Steam { id: new_host_id, conn: None });
+                    }
                     // S6：进入阶段 B 重新计时，使 MIGRATE_BAIL_TICKS 的“接管窗口”名副其实。
                     self.steam_migrate_ticks = 0;
                     eprintln!(
@@ -374,8 +379,14 @@ impl Game {
         let online_ids = host.online_ids(self.steam_my_id);
         host.broadcast_participants(&online_ids);
         // S2：单发 Takeover 给旧 host，令其标记 superseded 并停止作为权威（防脑裂）。
-        host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
-        eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");
+        // 防御：`old_host_id` 可能为 0（未知）或**就是本端**（早 retarget 的副作用 / 选举结果为本端时的边界）——
+        // 这两种情况一律**不发**：给自己发会建一条“自会话”，Steam 会刷断言且会话必失败（真机 2026-10-17）。
+        if old_host_id != 0 && old_host_id != self.steam_my_id {
+            host.notify_old_host_takeover(old_host_peer, seq, new_online.clone());
+            eprintln!("[steam-host] TAKEOVER notified old host ({old_host_id}) it is superseded");
+        } else {
+            eprintln!("[steam-host] TAKEOVER skip supersede notice (old_host={old_host_id}, me={})", self.steam_my_id);
+        }
         self.steam_my_index = my_index;
         eprintln!("[steam-host] TAKEOVER: I am new host (player {my_index}/{total}), resume seq={seq}, online={new_online:?}");
         self.steam_host_ls = Some(host);
