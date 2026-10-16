@@ -5207,10 +5207,16 @@ impl Game {
                 }
             }
             // P3：迁移后两端“学习倒数”可能不同步 → 偏差过大时以 host 快照的 `learn_remaining` 对齐。
-            if let Some(host_rem) = cli.host_learn_remaining() {
-                if (self.meta.learn_remaining - host_rem).abs() > LEARN_RESYNC_THRESHOLD_SECS {
+            // **门控**：必须（a）不在配置同步中、（b）与快照**同一轮次**——否则会把“上一轮末尾的过期快照”
+            // 倒过来对齐（真机表现为倒数 30→1.6→29.8 来回跳）；跨轮次的纠正应由轮次切换/配置同步完成。
+            if let Some((host_round, host_rem)) = cli.host_learn() {
+                let cfg_sync = !matches!(self.net_cfg, NetCfgSync::Idle);
+                if !cfg_sync
+                    && host_round == self.meta.round
+                    && (self.meta.learn_remaining - host_rem).abs() > LEARN_RESYNC_THRESHOLD_SECS
+                {
                     eprintln!(
-                        "[steam-client] learn_remaining resync {:.1} -> {:.1}",
+                        "[steam-client] learn_remaining resync {:.1} -> {:.1} (round={host_round})",
                         self.meta.learn_remaining, host_rem
                     );
                     self.meta.learn_remaining = host_rem;

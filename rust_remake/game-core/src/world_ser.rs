@@ -88,6 +88,22 @@ pub fn snapshot_from_bytes(bytes: &[u8]) -> Option<(World, MatchState)> {
     Some((world, meta))
 }
 
+/// 只解出快照里的 `MatchState`（**不反序列化 World**）。
+/// 布局：`magic | world_len | world_bytes | meta_len | meta_bytes`（meta 在尾部）→ 读两个长度、跳过 world 即可。
+/// 用途：学习期读 `learn_remaining`/`round`（每 ~2s + 购买变更）、迁移期判 `phase`（**每帧**）——
+/// 这些原先都为了一个字段解了整个 World（迁移期正是系统最紧张的时候）。格式非法返回 `None`。
+pub fn snapshot_meta_from_bytes(bytes: &[u8]) -> Option<MatchState> {
+    let mut p = 0usize;
+    if u32at(bytes, &mut p)? != SNAPSHOT_MAGIC {
+        return None;
+    }
+    let wl = u32at(bytes, &mut p)? as usize;
+    p = p.checked_add(wl)?; // 跳过 world 字节（不解析）
+    let ml = u32at(bytes, &mut p)? as usize;
+    let mb = bytes.get(p..p.checked_add(ml)?)?;
+    MatchState::from_bytes(mb)
+}
+
 // ===== 不可信输入的上界防护（RISK_ANALYSIS.md P4 / D2） =====
 //
 // 快照字节来自网络（重连 / 主机迁移），长度前缀是对方完全可控的 u32。
@@ -1502,5 +1518,31 @@ mod tests {
             snapshot_from_bytes(&world_to_bytes(&World::new(2, 1))).is_none(),
             "裸 world 字节不是快照"
         );
+    }
+
+    /// `snapshot_meta_from_bytes` 应只解 meta（结果与完整解包一致），非法 blob 返回 None。
+    #[test]
+    fn snapshot_meta_only_matches_full_unpack() {
+        let w = World::new(3, 9);
+        let mut m = crate::meta::MatchState::new(crate::meta::MatchConfig::default(), &[0, 1, 2], 34);
+        m.round = 5;
+        m.phase = crate::meta::MatchPhase::Learning;
+        m.learn_remaining = 7.25;
+        let blob = pack_snapshot(&world_to_bytes(&w), &m);
+
+        let only = snapshot_meta_from_bytes(&blob).expect("应能只解出 meta");
+        let (_, full) = snapshot_from_bytes(&blob).expect("完整解包也应成功");
+        assert_eq!(only.round, full.round);
+        assert_eq!(only.round, 5);
+        assert_eq!(only.phase, crate::meta::MatchPhase::Learning);
+        assert_eq!(only.learn_remaining, full.learn_remaining);
+        assert_eq!(only.learn_remaining, 7.25);
+
+        // 非法（魔数不符 / 裸 world）：返回 None，不能 panic
+        assert!(snapshot_meta_from_bytes(b"not a snapshot").is_none());
+        assert!(snapshot_meta_from_bytes(&world_to_bytes(&World::new(2, 1))).is_none());
+        // 截断：只要求不 panic（不保证一定是 None）
+        let cut = blob.len() - 3;
+        let _ = snapshot_meta_from_bytes(&blob[..cut]);
     }
 }

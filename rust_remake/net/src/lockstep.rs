@@ -1200,8 +1200,9 @@ pub struct ClientLockstep<T: Transport> {
     pause: PauseView,
     /// 缓存的「房主主动离开」通知（`identity`）；供上层立即进入迁移。
     host_left: Option<u64>,
-    /// 最近收到的 host 静态快照里的 `meta.learn_remaining`（学习期倒计时；供上层“偏差过大才对齐”）。
-    host_learn_remaining: Option<f64>,
+    /// 最近收到的 host 静态快照里的 `(round, meta.learn_remaining)`（学习期倒计时）。
+    /// 带 `round` 是为了让上层能判断这条快照**是否已过期**（跨轮次时不应拿旧值去对齐倒数）。
+    host_learn: Option<(u32, f64)>,
     /// 缓存的最近一次 host 广播的**在线集**（`Participants`）；供上层更新"已离开"标记。
     latest_participants: Option<Vec<u64>>,
     /// 缓存的 host 广播的**全量参与名单**（`ParticipantsAll`）：按 player index 排列（含离场占位 id）。
@@ -1231,16 +1232,17 @@ impl<T: Transport> ClientLockstep<T> {
             state_hashes: VecDeque::new(),
             pause: PauseView::default(),
             host_left: None,
-            host_learn_remaining: None,
+            host_learn: None,
             latest_participants: None,
             latest_all_participants: None,
             warned_nonhost_snapshot: false,
         }
     }
 
-    /// host 最近广播快照里的 `meta.learn_remaining`（None = 尚未收到）；供学习期“偏差过大才对齐倒计时”。
-    pub fn host_learn_remaining(&self) -> Option<f64> {
-        self.host_learn_remaining
+    /// host 最近广播快照里的 `(round, learn_remaining)`（None = 尚未收到）；
+    /// 供学习期“同轮内偏差过大才对齐倒计时”（跨轮次不对齐：那应由轮次切换/配置同步负责）。
+    pub fn host_learn(&self) -> Option<(u32, f64)> {
+        self.host_learn
     }
 
     /// R7：当前 host 广播的暂停状态视图。
@@ -1689,10 +1691,11 @@ impl<T: Transport> ClientLockstep<T> {
                                         from, self.host
                                     );
                                 }
-                                // 学习期也顺带解出 host 的 `learn_remaining`（供“偏差过大才对齐”）。
+                                // 学习期也顺带读出 host 的 `(round, learn_remaining)`（供“偏差过大才对齐”）。
+                                // 只解 meta，**不反序列化整个 World**。
                                 if from == self.host {
-                                    if let Some((_, m)) = game_core::world_ser::snapshot_from_bytes(&world_bytes) {
-                                        self.host_learn_remaining = Some(m.learn_remaining);
+                                    if let Some(m) = game_core::world_ser::snapshot_meta_from_bytes(&world_bytes) {
+                                        self.host_learn = Some((m.round, m.learn_remaining));
                                     }
                                 }
                                 self.latest_snapshot = Some((world_bytes, seq));

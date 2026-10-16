@@ -22,10 +22,11 @@
 use super::*;
 
 /// 快照的 `meta.phase` 是否 = `Learning`（用于“拒绝迟到的更早阶段快照”）。解码失败 → false。
+/// 只解 meta（跳过长 world 字节）：本函数在**迁移期间每帧**被调用，不为此反序列化整个 World。
 #[cfg_attr(not(feature = "steam"), allow(dead_code))]
 fn snapshot_phase_is_learning(world_bytes: &[u8]) -> bool {
     matches!(
-        game_core::world_ser::snapshot_from_bytes(world_bytes).map(|(_, m)| m.phase),
+        game_core::world_ser::snapshot_meta_from_bytes(world_bytes).map(|m| m.phase),
         Some(game_core::meta::MatchPhase::Learning)
     )
 }
