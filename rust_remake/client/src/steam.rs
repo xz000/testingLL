@@ -329,6 +329,14 @@ impl Game {
         self.steam_migrating = false;
         self.steam_migrate_ticks = 0;
         self.steam_new_host_id = 0;
+        // C2'：**换主机系统暂停**——接管即冻结，等各端重新联系上、由人确认后再恢复。
+        // 必须在**发出第一帧之前**、且在 `Takeover`/`Snapshot` 之后（客户端只采纳“当前 host”的 PauseState；
+        // 此时它们已处理过 Takeover → 已 retarget 到本端），暂停才能被两端同时认定。
+        // 它不消耗任何人的暂停额度、恢复也不进冷却（`by == 0` 哨兵）。
+        if let Some(host) = self.steam_host_ls.as_mut() {
+            host.request_handover_pause();
+        }
+        eprintln!("[steam-host] TAKEOVER handover pause armed (by=0 system pause; wait for clients)");
         // 接管后持续广播 Takeover，直到首个在线 client 连上（产帧成功）才停，避免晚进入迁移的 client 错过。
         self.steam_host_broadcasting_takeover = true;
         Ok(())

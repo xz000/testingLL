@@ -51,6 +51,8 @@ pub const TAG_STATE_HASH: u8 = 19;
 pub const TAG_PAUSE_REQ: u8 = 20;
 /// R7：host→所有 client 暂停状态（权威）。`paused`=当前是否暂停，`by`=发起者身份，
 /// `resume_in`=恢复倒计时剩余帧（>0 表示正在恢复；0 且 paused 表示暂停中），`remaining`=各参与者剩余暂停次数。
+/// `by == 0 && paused == true` = **系统暂停**（换主机自动暂停）；玩家暂停必须 `by != 0`（见 `request_pause`）。
+/// `present`/`total` = 换主机暂停期间的“已联系上 / 应到”玩家数（含 host；仅系统暂停时有意义）。
 pub const TAG_PAUSE_STATE: u8 = 21;
 /// 主动离场广播：client→host（非房主主动离开）或 host→all（房主主动离开），`identity`=离场者稳定身份。
 /// 运行期包（不进 World），best-effort；丢失由 3s 掉线兜底。
@@ -121,7 +123,7 @@ pub enum Packet {
     /// R7：client→host 暂停/恢复请求（`resume`=true 为恢复）。
     PauseReq { identity: u64, resume: bool },
     /// R7：host→所有 client 暂停状态（权威）。`remaining`=各参与者剩余暂停次数（id, left）。
-    PauseState { paused: bool, by: u64, resume_in: u16, remaining: Vec<(u64, u8)> },
+    PauseState { paused: bool, by: u64, resume_in: u16, present: u8, total: u8, remaining: Vec<(u64, u8)> },
     /// 主动离场广播（见 `TAG_LEAVE`）。
     Leave { identity: u64 },
 }
@@ -290,12 +292,14 @@ impl Packet {
                 v.push(if *resume { 1 } else { 0 });
                 v
             }
-            Packet::PauseState { paused, by, resume_in, remaining } => {
-                let mut v = Vec::with_capacity(1 + 1 + 8 + 2 + 2 + remaining.len() * 9);
+            Packet::PauseState { paused, by, resume_in, present, total, remaining } => {
+                let mut v = Vec::with_capacity(1 + 1 + 8 + 2 + 1 + 1 + 2 + remaining.len() * 9);
                 v.push(TAG_PAUSE_STATE);
                 v.push(if *paused { 1 } else { 0 });
                 v.extend_from_slice(&by.to_be_bytes());
                 v.extend_from_slice(&resume_in.to_be_bytes());
+                v.push(*present);
+                v.push(*total);
                 v.extend_from_slice(&(remaining.len() as u16).to_be_bytes());
                 for (id, left) in remaining {
                     v.extend_from_slice(&id.to_be_bytes());
@@ -487,13 +491,15 @@ impl Packet {
                 let identity = u64::from_be_bytes(buf[1..9].try_into().ok()?);
                 Some(Packet::PauseReq { identity, resume: buf[9] != 0 })
             }
-            TAG_PAUSE_STATE if buf.len() >= 14 => {
+            TAG_PAUSE_STATE if buf.len() >= 16 => {
                 let paused = buf[1] != 0;
                 let by = u64::from_be_bytes(buf[2..10].try_into().ok()?);
                 let resume_in = u16::from_be_bytes([buf[10], buf[11]]);
-                let n = u16::from_be_bytes([buf[12], buf[13]]) as usize;
-                let mut remaining = Vec::with_capacity(n.min((buf.len().saturating_sub(14)) / 9 + 1));
-                let mut pos = 14usize;
+                let present = buf[12];
+                let total = buf[13];
+                let n = u16::from_be_bytes([buf[14], buf[15]]) as usize;
+                let mut remaining = Vec::with_capacity(n.min((buf.len().saturating_sub(16)) / 9 + 1));
+                let mut pos = 16usize;
                 for _ in 0..n {
                     if pos + 9 > buf.len() {
                         return None;
@@ -504,7 +510,7 @@ impl Packet {
                     pos += 1;
                     remaining.push((id, left));
                 }
-                Some(Packet::PauseState { paused, by, resume_in, remaining })
+                Some(Packet::PauseState { paused, by, resume_in, present, total, remaining })
             }
             TAG_LEAVE if buf.len() >= 9 => {
                 let identity = u64::from_be_bytes(buf[1..9].try_into().ok()?);
@@ -562,9 +568,11 @@ mod tests {
                 paused: true,
                 by: 9001,
                 resume_in: 0,
+                present: 2,
+                total: 3,
                 remaining: vec![(111, 3), (222, 2), (333, 0)],
             },
-            Packet::PauseState { paused: false, by: 0, resume_in: 0, remaining: vec![] },
+            Packet::PauseState { paused: false, by: 0, resume_in: 0, present: 3, total: 3, remaining: vec![] },
         ];
         for p in cases {
             let enc = p.encode();

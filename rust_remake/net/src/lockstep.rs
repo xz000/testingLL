@@ -52,12 +52,16 @@ pub const PAUSE_COOLDOWN_TICKS: u16 = 300;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PauseView {
     pub paused: bool,
-    /// 暂停发起者稳定身份（0=无）。
+    /// 暂停发起者稳定身份（0=无）；`paused && by == 0` = **系统暂停**（换主机自动暂停）。
     pub by: u64,
     /// 恢复倒计时剩余帧（>0 表示正在恢复；0 且 `paused` 表示单纯暂停中）。
     pub resume_in: u16,
     /// 各参与者剩余暂停次数（id, left）。
     pub remaining: Vec<(u64, u8)>,
+    /// 换主机系统暂停期间的“已联系上玩家数”（含 host；非系统暂停时为 0）。
+    pub present: u8,
+    /// 换主机系统暂停期间的“应到玩家数”（含 host；非系统暂停时为 0）。
+    pub total: u8,
 }
 
 /// host 侧帧同步状态机。
@@ -156,6 +160,8 @@ pub struct HostLockstep<T: Transport> {
     pause_budget_default: u8,
     /// R7：暂停状态周期重播计数（每 15 帧重播一次，避免丢包）。
     pause_bcast: u16,
+    /// 换主机**系统暂停**标记（`paused && pause_by == 0`）：不消耗任何人额度、恢复时不设冷却。
+    pause_system: bool,
 }
 
 impl<T: Transport> HostLockstep<T> {
@@ -212,6 +218,7 @@ impl<T: Transport> HostLockstep<T> {
             pause_budget: Vec::new(),
             pause_budget_default: PAUSE_BUDGET_DEFAULT,
             pause_bcast: 0,
+            pause_system: false,
         }
     }
 
@@ -371,7 +378,52 @@ impl<T: Transport> HostLockstep<T> {
             by: self.pause_by,
             resume_in: self.pause_resume,
             remaining,
+            // 就绪度只在系统暂停（换主机）时有意义；其它时候置 0 以免误导。
+            present: if self.paused && self.pause_by == 0 { self.handover_readiness().0 } else { 0 },
+            total: if self.paused && self.pause_by == 0 { self.handover_readiness().1 } else { 0 },
         }
+    }
+
+    /// 换主机系统暂停期间的“就绪度”：`(已联系上的玩家数, 应到玩家数)`，两者**均含 host 自己**。
+    /// “已联系上” = 该 client 槽位既没被丢弃、又有 peer（说明接管后它已经向我们发过包）。
+    /// 注：不能用 `present_clients_count()` —— 它数 `latest_input.is_some()`，而 `mark_dropped` 会塞入默认
+    /// 输入，掉线者也会计为“在场”（这正是日志里暂停期间一直是 `present=2` 的原因）。
+    pub fn handover_readiness(&self) -> (u8, u8) {
+        let (mut ready, mut total) = (1u8, 1u8); // host 自己
+        for c in 0..self.expected {
+            if !self.is_active(c) {
+                continue;
+            }
+            total = total.saturating_add(1);
+            if !self.dropped[c] && self.client_peers[c].is_some() {
+                ready = ready.saturating_add(1);
+            }
+        }
+        (ready, total)
+    }
+
+    /// 换主机**系统暂停**：由新宿主在接管瞬间调用。
+    /// - **不**消耗任何人的暂停额度，也**不**进冷却（它不属于任何玩家）；
+    /// - 用 `by == 0` 作哨兵（玩家暂停必须 `by != 0`，见 `request_pause`），两端据此区分文案/规则；
+    /// - 幂等：若已处于系统暂停，只重播一次状态，不重置任何计数。
+    pub fn request_handover_pause(&mut self) {
+        if self.paused && self.pause_by == 0 {
+            self.pause_bcast = 0;
+            self.broadcast_pause_state();
+            return;
+        }
+        self.paused = true;
+        self.pause_by = 0;
+        self.pause_resume = 0; // 取消可能存在的“恢复倒计时”
+        self.pause_cooldown = 0;
+        self.pause_system = true;
+        self.pause_bcast = 0;
+        self.broadcast_pause_state();
+    }
+
+    /// 本端当前是否处于换主机系统暂停（`paused && by == 0`）。
+    pub fn is_handover_paused(&self) -> bool {
+        self.paused && self.pause_by == 0
     }
 
     /// R7：请求暂停（`by`=发起者身份）。被暂停中/冷却中/额度用尽时拒绝并返回 false。
@@ -386,6 +438,7 @@ impl<T: Transport> HostLockstep<T> {
         self.paused = true;
         self.pause_by = by;
         self.pause_resume = 0;
+        self.pause_system = false; // 玩家暂停
         self.pause_bcast = 0;
         self.broadcast_pause_state();
         true
@@ -415,7 +468,11 @@ impl<T: Transport> HostLockstep<T> {
             if self.pause_resume == 0 {
                 self.paused = false;
                 self.pause_by = 0;
-                self.pause_cooldown = PAUSE_COOLDOWN_TICKS;
+                // 系统暂停（换主机）恢复后**不设冷却**：它不该占用玩家的“冷却额度”。
+                if !self.pause_system {
+                    self.pause_cooldown = PAUSE_COOLDOWN_TICKS;
+                }
+                self.pause_system = false;
             }
             self.broadcast_pause_state();
         } else if self.pause_bcast % 15 == 0 {
@@ -431,6 +488,8 @@ impl<T: Transport> HostLockstep<T> {
             paused: v.paused,
             by: v.by,
             resume_in: v.resume_in,
+            present: v.present,
+            total: v.total,
             remaining: v.remaining,
         };
         let enc = pkt.encode();
@@ -1013,6 +1072,8 @@ impl<T: Transport> HostLockstep<T> {
                                         paused: pv.paused,
                                         by: pv.by,
                                         resume_in: pv.resume_in,
+                                        present: pv.present,
+                                        total: pv.total,
                                         remaining: pv.remaining,
                                     };
                                     let _ = self.transport.send_to(&ps.encode(), &from);
@@ -1575,9 +1636,9 @@ impl<T: Transport> ClientLockstep<T> {
                                 // 缓存 host 的周期性世界哈希，供推进到该帧时比对（分歧检测）。
                                 self.record_state_hash(seq, hash);
                             }
-                            Packet::PauseState { paused, by, resume_in, remaining } => {
+                            Packet::PauseState { paused, by, resume_in, present, total, remaining } => {
                                 // R7：缓存 host 权威暂停状态。
-                                self.pause = PauseView { paused, by, resume_in, remaining };
+                                self.pause = PauseView { paused, by, resume_in, remaining, present, total };
                             }
                             Packet::Leave { identity } => {
                                 // 房主主动离开广播：缓存，供上层立即进入迁移。
@@ -1637,9 +1698,9 @@ impl<T: Transport> ClientLockstep<T> {
                                 // 缓存 host 的周期性世界哈希，供推进到该帧时比对（分歧检测）。
                                 self.record_state_hash(seq, hash);
                             }
-                            Packet::PauseState { paused, by, resume_in, remaining } => {
+                            Packet::PauseState { paused, by, resume_in, present, total, remaining } => {
                                 // R7：缓存 host 权威暂停状态。
-                                self.pause = PauseView { paused, by, resume_in, remaining };
+                                self.pause = PauseView { paused, by, resume_in, remaining, present, total };
                             }
                             Packet::Leave { identity } => {
                                 // 房主主动离开广播：缓存，供上层立即进入迁移（跳过 3s stale + probe）。
@@ -1710,8 +1771,13 @@ impl<T: Transport> ClientLockstep<T> {
                                     self.latest_all_participants = Some(ids);
                                 }
                             }
-                            Packet::PauseState { paused, by, resume_in, remaining } => {
-                                self.pause = PauseView { paused, by, resume_in, remaining };
+                            Packet::PauseState { paused, by, resume_in, present, total, remaining } => {
+                                // C2'-b：与对局期一致——**只认当前 host** 的暂停态。
+                                // 否则迁移期间旧 host 的在途 `PauseState` 会被采纳，把本端暂停状态带偏
+                                // （而“归队/迁移中立刻知道当前暂停”由 host 对 ReconnectReq 的定向应答覆盖，不受影响）。
+                                if from == self.host {
+                                    self.pause = PauseView { paused, by, resume_in, remaining, present, total };
+                                }
                             }
                             Packet::StateHash { seq, hash } => {
                                 self.record_state_hash(seq, hash);
@@ -2405,6 +2471,43 @@ mod tests {
         host.set_pause_budget_default(0);
         assert_eq!(host.pause_budget_of(9999), 0);
         assert!(!host.request_pause(9999), "额度为 0 应拒绝暂停");
+    }
+
+    /// C2'：换主机系统暂停——不消耗任何人额度、恢复后不进冷却、幂等；就绪度只数“已联系上且未掉”的槽位。
+    #[test]
+    fn handover_pause_does_not_consume_budget_nor_cooldown() {
+        let (ht, _ct) = pair();
+        let mut host = HostLockstep::new(ht, 3, true);
+        host.set_local_identity(1000);
+        host.set_client_identities(&[Some(2000), Some(3000)]);
+        host.set_pause_budget_default(3);
+
+        host.request_handover_pause();
+        assert!(host.is_paused(), "系统暂停应生效");
+        assert!(host.is_handover_paused(), "by==0 表示系统暂停");
+        assert!(host.try_emit().is_none(), "系统暂停也不产帧");
+        assert_eq!(host.pause_budget_of(2000), 3, "系统暂停不消耗额度");
+        assert_eq!(host.pause_budget_of(3000), 3);
+        // 就绪度：刚接管时两个 client 都还没联系我们 → 1/3
+        let v = host.pause_view();
+        assert_eq!((v.present, v.total), (1, 3), "刚接管：只有 host 自己就绪");
+
+        // 幂等：重复调用不重置/不报错
+        host.request_handover_pause();
+        assert!(host.is_handover_paused());
+
+        // 恢复：走现有“任何人请求 + 倒计时”路径
+        assert!(host.request_resume());
+        for _ in 0..RESUME_COUNTDOWN_TICKS {
+            host.tick_pause();
+        }
+        assert!(!host.is_paused(), "倒计时结束应恢复");
+        // 系统暂停恢复后**不进冷却**：玩家立刻就能暂停（而非等 PAUSE_COOLDOWN_TICKS）
+        assert!(host.request_pause(1000), "系统暂停恢复后不应有冷却");
+        assert_eq!(host.pause_budget_of(1000), 2, "玩家暂停才扣额度");
+        // 非系统暂停时不再上报就绪度（避免误导）
+        let v2 = host.pause_view();
+        assert_eq!((v2.present, v2.total), (0, 0), "玩家暂停不填就绪度");
     }
 
     /// R7d：重连请求的应答里也会带当前暂停状态（暂停中归队者能立即知道被暂停）。

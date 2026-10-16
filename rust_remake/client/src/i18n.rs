@@ -573,6 +573,11 @@ const EN: &[(&str, &str)] = &[
     ("剩余暂停：{list}", "Pauses left: {list}"),
     ("你", "You"),
     ("玩家 #{id}", "Player #{id}"),
+    // ---- C2'：换主机系统暂停（接管即暂停，等人齐再恢复） ----
+    ("房主已更换，本局已暂停", "Host changed; the match is paused"),
+    ("等待玩家连接：{n}/{m}", "Waiting for players: {n}/{m}"),
+    ("按 {key} 恢复（仍有 {n} 人未回）", "Press {key} to resume ({n} still away)"),
+    ("仍有 {n} 人未回到本局，仍要恢复？（回车确认 / Esc 取消）", "{n} player(s) have not returned; resume anyway? (Enter to confirm / Esc to cancel)"),
     // ---- 对局内退出菜单（E1） ----
     ("对局菜单", "Match menu"),
     ("继续游戏", "Resume"),

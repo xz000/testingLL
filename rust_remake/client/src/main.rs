@@ -10550,13 +10550,19 @@ impl Game {
             canvas.draw(&dim, graphics::DrawParam::new());
         }
         let key = self.local_settings.bind_key(local_settings::BindAction::Pause).label();
+        // C2'：换主机**系统暂停**（`by == 0`）——文案/提示与玩家暂停不同。
+        let handover = v.paused && v.by == 0;
         let pauser = if v.by == self.steam_my_id {
             i18n::t("你").to_string()
         } else {
             self.steam_name_of(v.by)
         };
+        let need = if handover { v.total.saturating_sub(v.present) } else { 0 };
         let status = if self.pause_confirm {
-            if self.steam_paused_now() {
+            if handover && need > 0 {
+                // 软门禁：未就绪时仍可恢复，但先二次确认（仍是同一个确认框，只换文案）。
+                i18n::tf("仍有 {n} 人未回到本局，仍要恢复？（回车确认 / Esc 取消）", &[("n", need.to_string())])
+            } else if self.steam_paused_now() {
                 i18n::t("恢复本局？（回车确认 / Esc 取消）").to_string()
             } else {
                 i18n::t("暂停本局？（回车确认 / Esc 取消）").to_string()
@@ -10564,13 +10570,29 @@ impl Game {
         } else if v.resume_in > 0 {
             let secs = ((v.resume_in as f32) / 60.0).ceil() as u32;
             i18n::tf("{n} 秒后恢复…", &[("n", secs.to_string())])
+        } else if handover {
+            i18n::t("房主已更换，本局已暂停").to_string()
         } else {
             i18n::tf("{by} 暂停了本局", &[("by", pauser)])
         };
         let col = if self.pause_confirm { Color::from_rgb(255, 210, 140) } else { Color::from_rgb(255, 190, 90) };
         draw_text(canvas, ctx, &status, 34.0, col, Point2 { x: cx, y: sh * 0.40 }, true)?;
+        // 换主机暂停：第二行显示“等待玩家连接 x/y”（就绪数由 host 在 PauseState 里带过来）。
+        if handover && !self.pause_confirm && v.resume_in == 0 {
+            let line = i18n::tf(
+                "等待玩家连接：{n}/{m}",
+                &[("n", v.present.to_string()), ("m", v.total.to_string())],
+            );
+            let c = if need == 0 { Color::from_rgb(150, 230, 170) } else { Color::from_rgb(230, 200, 150) };
+            draw_text(canvas, ctx, &line, 22.0, c, Point2 { x: cx, y: sh * 0.40 + 44.0 }, true)?;
+        }
         if !self.pause_confirm && v.resume_in == 0 {
-            draw_text(canvas, ctx, &i18n::tf("按 {key} 可请求恢复（任何人）", &[("key", key.clone())]), 20.0, Color::from_rgb(180, 210, 240), Point2 { x: cx, y: sh * 0.40 + 52.0 }, true)?;
+            let hint = if handover && need > 0 {
+                i18n::tf("按 {key} 恢复（仍有 {n} 人未回）", &[("key", key.clone()), ("n", need.to_string())])
+            } else {
+                i18n::tf("按 {key} 可请求恢复（任何人）", &[("key", key.clone())])
+            };
+            draw_text(canvas, ctx, &hint, 20.0, Color::from_rgb(180, 210, 240), Point2 { x: cx, y: sh * 0.40 + 52.0 }, true)?;
         }
         // R7d：各参与者剩余次数（名字 + 剩余；本端排在前面并标注「你」）。
         let mut entries: Vec<(u64, u8)> = v.remaining.clone();
