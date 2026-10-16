@@ -8559,6 +8559,24 @@ impl Game {
     /// 以 `success` + `matchkey` 元数据判断“局还在不在”。**不依赖大厅列表搜索**
     /// （满员/不可加入的房间不出现在列表里，会漏判）。
     /// `success=false` 或 matchkey 不符 → 标 ended 并撤下提示；等待超时/网络失败 → 保守保留。节流 ~10s。
+    /// 归队/入房诊断：读大厅名额、房主、本端是否仍在名单里。
+    /// `lobby_member_count`/`lobby_members` 只在**本端属于该厅**时才有内容（否则 0/空）——
+    /// 所以 `i_am_member=true` 就是“幽灵成员”（退房未被 Steam 后端释放）的直接证据。
+    #[cfg(feature = "steam")]
+    fn steam_lobby_membership_note(&self, lobby_id: u64) -> String {
+        let Some(t) = self.steam_transport() else {
+            return "（无 Steam 传输）".to_string();
+        };
+        let mm = t.matchmaking();
+        let lobby = net_steam::steamworks::LobbyId::from_raw(lobby_id);
+        let me = t.steam_id();
+        let n = mm.lobby_member_count(lobby);
+        let limit = mm.lobby_member_limit(lobby).unwrap_or(0);
+        let owner = mm.lobby_owner(lobby).raw();
+        let i_am_member = mm.lobby_members(lobby).iter().any(|s| s.raw() == me);
+        format!("members={n} limit={limit} owner={owner} i_am_member={i_am_member}")
+    }
+
     #[cfg(feature = "steam")]
     fn steam_rejoin_probe_tick(&mut self) {
         // 启动宽限（~3s）：刚进主菜单时 Steam 会话可能尚未就绪。
@@ -8596,7 +8614,8 @@ impl Game {
                     .as_deref()
                     == Some(net_steam::session::MATCH_VALUE);
             if alive {
-                eprintln!("[steam-rejoin] H4 探活：大厅 {lid} 仍在（success + matchkey 匹配）");
+                let note = self.steam_lobby_membership_note(lid);
+                eprintln!("[steam-rejoin] H4 探活：大厅 {lid} 仍在（success + matchkey 匹配） {note}");
             } else {
                 eprintln!(
                     "[steam-rejoin] H4 探活：大厅 {lid} 已不存在/不匹配（success={ok}）→ 标已结束"
@@ -9893,8 +9912,19 @@ impl Game {
                 sess.start_host_create((*players).max(1) as u32, STEAM_LOBBY_CREATE_BEATS)
             }
             SteamLobbyPending::Join { lobby_id } => match lobby_id {
-                // 指定大厅 id 直接加入：单阶段，4s 超时足够。
-                Some(id) => sess.start_join_by_id(*id, STEAM_LOBBY_JOIN_BEATS, STEAM_LOBBY_JOIN_ATTEMPTS),
+                // 指定大厅 id 直接加入：单阶段，单次 5s、最多 3 次（超时自动重试）。
+                Some(id) => {
+                    // 归队前先确认本端**不在**该厅：“幽灵成员”会占着名额 → 加入被判满员而失败。
+                    // 仅当确实仍在名单里才 leave（不在厅时 leave 是 no-op；避免多余退厅与加入的竞态）。
+                    let lobby = net_steam::steamworks::LobbyId::from_raw(*id);
+                    let me = sess.transport.steam_id();
+                    let mm = sess.transport.matchmaking();
+                    if mm.lobby_members(lobby).iter().any(|s| s.raw() == me) {
+                        eprintln!("[steam] 归队前发现本端仍在厅内（幽灵成员）→ 先退厅再重入");
+                        mm.leave_lobby(lobby);
+                    }
+                    sess.start_join_by_id(*id, STEAM_LOBBY_JOIN_BEATS, STEAM_LOBBY_JOIN_ATTEMPTS)
+                }
                 // 按 matchkey 搜索+加入：两阶段共用 beats，给足 8s（原同步实现每阶段各 240 拍）。
                 None => sess.start_find_and_join(480),
             },
@@ -9949,12 +9979,25 @@ impl Game {
                 }
                 // 失败提示上屏：返回大厅菜单后用红字展示，避免只 eprintln 用户看不到。
                 self.steam_lobby_error = Some(i18n::tf("加入失败：{err}", &[("err", e.to_string())]));
-                // 若本次是「重新加入上一局」尝试失败（大厅已关等）⇒ 判定上一局已结束：清会话。
+                // 若本次是「重新加入上一局」尝试失败：先看**大厅是否还在**（加入被拒 ≠ 房已散）——
+                // 房间还在（matchkey 匹配）时多为“满员/名额未释放（幽灵成员）”，不该判该局结束。
                 if let Some(rj) = self.steam_rejoin_target.take() {
-                    // H1/H2：归队尝试失败（大厅已关等）⇒ 该局标 ended（不删历史），并**回退到上一条活跃**。
-                    rejoin::mark_ended(&rejoin::default_path(), rj.lobby_id);
+                    let note = self.steam_lobby_membership_note(rj.lobby_id);
+                    eprintln!("[steam-rejoin] 归队被拒：lobby={} {note}", rj.lobby_id);
+                    let lobby = net_steam::steamworks::LobbyId::from_raw(rj.lobby_id);
+                    let still_alive = self
+                        .steam_transport()
+                        .and_then(|t| t.matchmaking().lobby_data(lobby, net_steam::session::MATCH_KEY))
+                        .as_deref()
+                        == Some(net_steam::session::MATCH_VALUE);
+                    if still_alive {
+                        self.menu_hint = i18n::t("房间仍在，稍后可再按 Y 重试").to_string();
+                    } else {
+                        // H1/H2：归队尝试失败且大厅已关 ⇒ 该局标 ended（不删历史），并**回退到上一条活跃**。
+                        rejoin::mark_ended(&rejoin::default_path(), rj.lobby_id);
+                        self.menu_hint = i18n::t("上一局已结束").to_string();
+                    }
                     self.refresh_rejoin_prompt();
-                    self.menu_hint = i18n::t("上一局已结束").to_string();
                 }
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
