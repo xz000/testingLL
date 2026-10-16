@@ -80,57 +80,16 @@ impl Game {
                 let _ = cli.send_reconnect_req(self.steam_my_id);
             }
             let old_host = cli.host_peer();
-            // 探测恢复：**只有收到旧 host 的 Snapshot 才算恢复**（重建 world+meta）。
+            // 探测恢复：**只有收到旧 host 的定向 Snapshot 才算恢复**（重建 world+meta）。
             //
             // 为何不把「任意包」当恢复信号（修复 2026-10-08 真机死循环）：若本端落后超过帧缓冲
             // （frame_buf_capacity=60≈1s），仅靠锁步补帧**无法补齐**，必须靠整快照重建；
             // 若此时收到一帧/StateHash 就提前 resume，会继续卡在缺口 → 又 stale → 死循环，
             // 表现为“显示重连、操作无反应，但输入仍上行到 host（host 用 held 输入让角色继续动）”。
             // 本端在阶段 A 每 ~0.25s 重发 ReconnectReq，host 会回 Snapshot（限速≤0.5s）；
-            // 且 host 还有周期快照广播——循环读包直到读到 Snapshot 或本次无更多包。
-            loop {
-                match cli.recv_packet(rcv) {
-                    Ok(Some((from, pkt))) => {
-                        if from != old_host {
-                            continue; // 非旧 host（如新 host）的包：忽略。
-                        }
-                        if let net::Packet::Snapshot { world_bytes, seq, your_index } = pkt {
-                            // 忽略“更早阶段”的迟到快照：本端已进对局(Fighting)，但收到的快照还是学习期(Learning)
-                            // （迁移后配置同步期间频繁出现的在途静态快照）→ 采纳会把自己打回学习期并循环。
-                            if snapshot_phase_is_learning(&world_bytes)
-                                && self.meta.phase == game_core::meta::MatchPhase::Fighting
-                            {
-                                continue;
-                            }
-                            // 周期**广播**快照不带本端 world index（`your_index=0xFF`）→ 不能用它“恢复”：
-                            // 否则本端 index 得不到纠正（仍是“大厅槽位”），输入会发到错的槽位，
-                            // 表现为“看得到别人动、自己无法操作”。只采纳 `ReconnectReq` 的**定向应答**。
-                            if your_index == 0xFF {
-                                continue;
-                            }
-                            cli.apply_resync(rcv).ok();
-                            if self.apply_snapshot_world(&world_bytes) {
-                                if your_index != 0xFF {
-                                    cli.set_my_index(your_index);
-                                    self.steam_my_index = your_index;
-                                }
-                                // E2：只有"首局配置"才是 pre_game_config（=配置同步的 stage_first，会重建世界！）。
-                                self.pre_game_config = self.meta.is_first_config();
-                                eprintln!("[steam-client] host alive, resumed from snapshot seq={seq}");
-                                self.log_migration_consistency("resume");
-                            }
-                            self.steam_migrating = false;
-                            self.steam_migrate_ticks = 0;
-                            // 迁移结束（恢复）＝“刚收到 host 的东西”——**两本账一起复位**（计数 + 墙钟计时器）。
-                            // 只清计数会让时间判据停在 `0.0`（=暂停判活）→ 后续判活退化成“按帧数”（受帧率漂移影响）。
-                            self.steam_note_host_alive(now);
-                            return Ok(Some(cli));
-                        }
-                        // 旧 host 的其它包（Frame/StateHash）：它还在，但不足以补齐缺口，继续等 Snapshot。
-                    }
-                    Ok(None) => break,
-                    Err(_) => break,
-                }
+            // 且 host 还有周期快照广播——取定向 Snapshot，取到即恢复。
+            if self.finish_migration_with_snapshot(&mut cli, rcv, old_host, now, "resume") {
+                return Ok(Some(cli));
             }
             if self.steam_migrate_ticks >= MIGRATE_PROBE_TICKS {
                 // 判定 host 掉线 → 选举新 host。
@@ -147,10 +106,19 @@ impl Game {
                 let new_host_id = elect_new_host(owner, old_host_id, &self.steam_online);
                 if new_host_id != 0 {
                     self.steam_new_host_id = new_host_id;
+                    // F3'：**采纳 Steam owner 的那一刻，就把上行通道指向新宿主 X**（早 retarget）。
+                    // 为什么：
+                    //  ① “谁是房主”只认 Steam（全员同一时刻读到同一答案）；`Takeover`/`Snapshot` 从此只当
+                    //     “接管基线 + 状态交接”，不再兼作“谁是房主”的来源；
+                    //  ② 迁程中的端不再对 X 静默 → X 的 `idle_ticks` 攒不起来（不会被误 AUTO-DROP）；
+                    //  ③ 本端随后的 `ReconnectReq` 会打到 X，X 用现成的 `unmark_dropped` + 定向
+                    //     `Snapshot{your_index}` + `PauseState` 应答即可完成回归——**不依赖广播 Takeover 是否被收到**。
+                    // 时机约束：必须在**阶段 A 对旧宿主探测超时之后**才换（否则会跳过“旧宿主只是暂时静默”的误判保护）。
+                    cli.retarget_host(net::transport::Peer::Steam { id: new_host_id, conn: None });
                     // S6：进入阶段 B 重新计时，使 MIGRATE_BAIL_TICKS 的“接管窗口”名副其实。
                     self.steam_migrate_ticks = 0;
                     eprintln!(
-                        "[steam-client] host gone (probe timeout), elected new host={new_host_id} (lobby_owner={owner}, I {}), online={:?}",
+                        "[steam-client] host gone (probe timeout), elected new host={new_host_id} (lobby_owner={owner}, I {}), online={:?}; retargeted early",
                         if new_host_id == self.steam_my_id { "am new host" } else { "am client" },
                         self.steam_online
                     );
@@ -187,8 +155,28 @@ impl Game {
             self.steam_do_takeover(cli, rcv)?;
             Ok(None)
         } else {
-            // 优先用 fighting 阶段缓存的 Takeover，否则从传输收（新 host 会持续广播直到首个 client 连上）。
-            let takeover = cli.take_latest_takeover().or_else(|| cli.recv_takeover(rcv).ok().flatten());
+            // F3'：只认「我们选出的新宿主 X」的交接信息，并**主动定向探测**（不等广播）。
+            // 背景（真机 2026-10-16）：旧实现不限来源，结果把**缓存里**学习期旧宿主 B 的 `Takeover`
+            // 当成了权威 → `retarget_host(B)` + `set_start_seq(0)` → 白白绕了 ~5.5s（且被新宿主误掉线）。
+            let want = cli.host_peer(); // 阶段 A→B 交界已早 retarget 到 X
+            if self.steam_migrate_ticks % RECONNECT_REQ_EVERY == 0 {
+                let _ = cli.send_reconnect_req(self.steam_my_id);
+            }
+            // (1) 首选：X 对 `ReconnectReq` 的**定向 `Snapshot` 应答**（带 `your_index`）→ 重建 world + 恢复。
+            //     这条路不依赖“广播是否被收到”，也不再需要 Takeover 来告知“谁是房主”。
+            if self.finish_migration_with_snapshot(&mut cli, rcv, want, now, "resume-new-host") {
+                return Ok(Some(cli));
+            }
+            // (2) 兜底：X 广播的 `Takeover`（带接管基线 seq）+ 紧随的 Snapshot。**来源必须 == X**。
+            let takeover = cli
+                .take_latest_takeover()
+                .filter(|(from, _, _)| *from == want)
+                .or_else(|| {
+                    cli.recv_takeover(rcv)
+                        .ok()
+                        .flatten()
+                        .filter(|(from, _, _)| *from == want)
+                });
             if let Some((from, seq, online)) = takeover {
                 // 收到新 host 的 Takeover → 重定向 + 用其快照重建 + 对齐续打；并同步更新在线参与集。
                 self.steam_online = online; // 排除掉线 host 后的在线参与集（供下一次迁移选举）
@@ -217,6 +205,72 @@ impl Game {
                 Ok(Some(cli))
             }
         }
+    }
+
+    /// 用**指定来源**（`want`）的定向 `Snapshot` 完成迁移收尾：重建 world/meta + 纠正本端 index + 两本账复位。
+    /// 只采纳 `ReconnectReq` 的定向应答（`your_index != 0xFF`）——周期广播快照不带 index，用它“恢复”会导致
+    /// 本端 index 不被纠正（输入发到错槽位）→ “看得到别人动、自己无法操作”（已坐实）。
+    /// 返回 `true` = 已恢复（调用方应直接归还 `cli`）。
+    #[cfg(feature = "steam")]
+    fn finish_migration_with_snapshot(
+        &mut self,
+        cli: &mut net::lockstep::ClientLockstep<net_steam::SteamTransport>,
+        rcv: &mut [u8],
+        want: net::transport::Peer,
+        now: f64,
+        tag: &str,
+    ) -> bool {
+        let mut got: Option<(Vec<u8>, u64, u8)> = None;
+        loop {
+            match cli.recv_packet(rcv) {
+                Ok(Some((from, pkt))) => {
+                    if from != want {
+                        continue; // 非目标 peer 的包：忽略
+                    }
+                    match pkt {
+                        net::Packet::Snapshot { world_bytes, seq, your_index } => {
+                            if your_index == 0xFF {
+                                continue; // 广播快照：不能用来“恢复”（见本函数注释）
+                            }
+                            // 忽略“更早阶段”的迟到快照：本端已进对局(Fighting)，收到的却是学习期(Learning)快照
+                            // （迁移后配置同步期间频繁出现的在途静态快照）→ 采纳会把自己打回学习期并循环。
+                            if snapshot_phase_is_learning(&world_bytes)
+                                && self.meta.phase == game_core::meta::MatchPhase::Fighting
+                            {
+                                continue;
+                            }
+                            got = Some((world_bytes, seq, your_index));
+                            break;
+                        }
+                        // 扫包时遇到的 `Takeover`：**存回缓存**，供紧随其后的兜底路径使用（否则会被本次扫描丢掉）。
+                        net::Packet::Takeover { seq, participants } => {
+                            cli.cache_takeover(from, seq, participants);
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+        let Some((world_bytes, seq, your_index)) = got else {
+            return false;
+        };
+        cli.apply_resync(rcv).ok();
+        if self.apply_snapshot_world(&world_bytes) {
+            cli.set_my_index(your_index);
+            self.steam_my_index = your_index;
+            // E2：只有"首局配置"才是 pre_game_config（=配置同步的 stage_first，会重建世界！）。
+            self.pre_game_config = self.meta.is_first_config();
+            eprintln!("[steam-client] host alive, resumed from snapshot seq={seq} ({tag})");
+            self.log_migration_consistency(tag);
+        }
+        self.steam_migrating = false;
+        self.steam_migrate_ticks = 0;
+        self.steam_new_host_id = 0;
+        // 迁移结束 ＝“刚收到 host 的东西”——**两本账一起复位**（计数 + 墙钟计时器）。
+        self.steam_note_host_alive(now);
+        true
     }
 
     /// 迁移接管：本端被选为新 host。把原 client lockstep 转为 host lockstep，从缓存快照续打，

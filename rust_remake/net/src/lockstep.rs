@@ -1348,6 +1348,13 @@ impl<T: Transport> ClientLockstep<T> {
         self.latest_takeover.take()
     }
 
+    /// 把一条 `Takeover` 重新存回缓存。
+    /// 用途：迁移状态机在“扫包找定向 Snapshot”时会把包里拿到的 `Takeover` 先存回去，
+    /// 避免它被那个的扫描丢掉（否则只能等新宿主下一轮重播）。
+    pub fn cache_takeover(&mut self, from: Peer, seq: u64, participants: Vec<u64>) {
+        self.latest_takeover = Some((from, seq, participants));
+    }
+
     /// 取走缓存的「房主主动离开」通知（`identity`）。无则 None。
     pub fn take_host_left(&mut self) -> Option<u64> {
         self.host_left.take()
@@ -1410,6 +1417,8 @@ impl<T: Transport> ClientLockstep<T> {
     }
 
     /// 尝试收新 host 广播的 `Takeover`（主机迁移接管信号）：返回 `Some((来源, seq, 更新后的参与集))`；当前没有则 None。
+    /// 注意：与 `recv_snapshot` 一样是“扫包”，会**丢弃**扫描途中遇到的非 `Takeover` 包（包括 `Snapshot`）——
+    /// 所以调用方要么先取定向 Snapshot，要么事后能重取。
     pub fn recv_takeover(&mut self, rcv: &mut [u8]) -> io::Result<Option<(Peer, u64, Vec<u64>)>> {
         loop {
             match self.transport.recv_from(rcv) {
