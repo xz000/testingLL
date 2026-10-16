@@ -789,7 +789,16 @@ impl<T: Transport> HostLockstep<T> {
 
     /// 自动化掉线：任何一个未掉线 client 连续空闲 `threshold` 帧即标记为掉线（此后用默认输入占位、不再卡全队）。
     /// 返回本次新标记为掉线的 client 序号列表。
+    ///
+    /// **F1：换主机“系统暂停”期间（`paused && by == 0`）一律不判空闲**（直接返回空）。
+    /// 为什么：系统暂停的语义就是“接管后等还没回来的端”，而迁移中的端**本就不发上行**——
+    /// 此时它的静默是预期的；若照常计数，新宿主会把它当成“已离开”而掉掉（真机 2026-10-16 坐实：
+    /// 新宿主在 handover 暂停中 `AUTO-DROP` 了正在迁移的那端 → 对端“无法操作 + 被标已离开”）。
+    /// 放在函数内部而不是调用点，是为了保证各个调用点（学习期/对局期/局域网）都不会遗漏。
     pub fn auto_drop_idle(&mut self, threshold: u32) -> Vec<u8> {
+        if self.paused && self.pause_by == 0 {
+            return Vec::new();
+        }
         let mut out = Vec::new();
         for c in 0..self.expected {
             if !self.dropped[c] && self.idle_ticks[c] >= threshold {
@@ -2874,6 +2883,34 @@ mod tests {
             assert!(host.try_emit().is_some(), "掉线后应持续产帧");
         }
         assert!(host.next_seq() > before);
+    }
+
+    /// F1：系统（换主机）暂停期间不判空闲、不掉线；手动暂停（`by != 0`）与正常运行不受影响。
+    #[test]
+    fn auto_drop_idle_is_skipped_during_handover_pause() {
+        let (ht, ct) = pair();
+        let mut host = HostLockstep::new(ht, 2, true); // host=0 + client1
+        host.set_client_identities(&[Some(55502)]);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 16384];
+        // 先建立联系，并让 host 消费一次输入（之后 latest_input 为 None，idle 才会开始累积）
+        cli.send_room_state(false, false, &encode_input(1)).unwrap();
+        host.poll(&mut rcv);
+        host.set_local_input(Some(vec![9]));
+        assert!(host.try_emit().is_some());
+        for _ in 0..5 {
+            host.poll(&mut rcv);
+        }
+        // 系统暂停：即使 idle 已超阈值也不掉
+        host.request_handover_pause();
+        assert!(host.auto_drop_idle(1).is_empty(), "系统暂停期间不应掉线");
+        // 恢复后（玩家暂停）按正常规则判：手动暂停不影响判定
+        assert!(host.request_resume());
+        for _ in 0..RESUME_COUNTDOWN_TICKS {
+            host.tick_pause();
+        }
+        assert!(!host.is_paused());
+        assert_eq!(host.auto_drop_idle(1), vec![1], "恢复后应正常判空闲掉线");
     }
 
     /// F2：被标记掉线的槽位，收到它的**正常心跳（`RoomState`）**后应**自动恢复**为活跃（并置 online_dirty）。
