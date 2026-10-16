@@ -323,3 +323,36 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 
 ### 15.3 基线
 - `net` 单测 **58**；`client`/`game-core` 不变；协议仍 **58**（S 系列均为运行期行为，不动快照字段）。
+
+## 16. 迁移抖振治理 + 换主机系统暂停（2026-10-16，待真机验收）
+
+### 16.1 真机证据（三机，~4 分钟）
+- **迁移抖振**：C 端 20 秒内连迁 4 次、每次重选出**同一个** `lobby_owner`（43985466）；同一窗口 A 端 `AUTO-DROP client 2`、B 端 `AUTO-DROP client 0`；三端共 3 次 `[steam-p2p] session failed: ProblemDetectedLocally / MiscTimeout`。
+- **倒数抖跳**：`resync 30.0 -> 1.6` 与 `resync 1.5 -> 29.8` 相程出现（跨轮次采纳了上一轮末尾的过期快照）。
+- **误报**：`NO frames for n/a (180 ticks)` —— `n/a` 说明墙钟计时器被停在 0.0（只在“计数”触发）。
+- **大 gap 的归因**：6 个 6~37s 的 `[jit] sim gap` 全部是人肉对齐才能分清的**暂停 / 轮次切换(ClientWait) / 迁移**三类，不是 hang。
+
+### 16.2 改动（本轮 6 个 commit）
+- **C1 `38a0304`（迁移完成统一复位判活）**：两条迁移出口（阶段 A 收到方向性 Snapshot / 阶段 B 收到 Takeover）原先只清 `steam_cli_stale_ticks`，留下墙钟计时器停在 `0.0`（=暂停判活）→ 判活退化为“按帧数”（受帧率漂移影响）；改为统一 `steam_note_host_alive(now)`，`poll_steam_migration` 增 `now` 参数。
+- **C2' `172f38e`（换主机系统暂停）**：
+  - 新宿主在 `steam_do_takeover` 里、**广播 `Takeover`/`Snapshot` 之后、第一帧之前** arm 系统暂停（顺序关键：客户端只采纳“当前 host”的 `PauseState`）；
+  - 哨兵 = `paused && by == 0`（玩家暂停必须 `by != 0`，故 **不用改包结构就能区分**）；**不消耗任何人的额度、恢复不设 `PAUSE_COOLDOWN_TICKS`**、幂等（叠加第二次迁移只重播）；
+  - `PauseState` 增 `present`/`total`（运行期包，不升协议）→ 两端都能显示 `等待玩家连接 x/y`；“就绪” = `client_peers[c].is_some() && !dropped[c]`（**不能用 `present_clients_count()`**：`mark_dropped` 会塞默认输入，掉线者也计“在场”）；
+  - UI：暂停覆盖层区分系统暂停（“房主已更换，本局已暂停” + `x/y`），**软门禁**（恢复键未就绪时给二次确认，仍是同一个确认框只换文案）；恢复走现有“任何人可请求 + 3s 倒计时”。
+- **C2'-b（同 commit）**：`pump_learning` 的 `PauseState` 补 `from == self.host` 过滤（与对局期一致，防旧 host 在途暂停态在迁移期被采纳）。
+- **C3 `cdec03d`（倒数对齐门控 + 只读 meta）**：`host_learn_remaining` → `host_learn: Option<(round, remaining)>`（字段数不增）；新增 `world_ser::snapshot_meta_from_bytes()`（meta 在快照尾部，只读两个长度、跳过 world）→ `pump_learning` 与 `snapshot_phase_is_learning()`（**迁移期间每帧**调用）不再为一点 meta 反序列化整个 World；对齐仅在**同轮 且 不在配置同步**时发生。
+- **C4 `7523349`（诊断可读性）**：`[jit] host/client sim gap … reason=paused|migrating|cfg-sync|rejoin|plain`；`AUTO-DROP` 日志补 `steamid`。
+- **C5 `eb4041b`**：看门狗连续判定 2→3 次（`-ConsecutiveNeeded`）。
+
+### 16.3 不变量更新
+- **“选举”= 读 Steam `lobby_owner` + 校验**（非投票/非自选举）；宽限/暂停耗尽后**不得再选一次**（只会得到同一个 owner），按迁移失败路径处理。
+- **只有当前 host 的 `PauseState` 算数**（对局/学习两侧一致）。
+- **系统暂停不得污染玩家额度/冷却**；`paused && by == 0` 唯一表示系统暂停。
+- **推帧间隔异常必须能自证原因**（新增 `jit_stall_reason`），不允许再出现“只能人肉对齐”的日志。
+
+### 16.4 验收要点（待真机）
+1. 换主机后**必然**出现系统暂停覆盖层（学习/对局都测），`x/y` 从 `1/N` 涨到 `N/N`；
+2. 换主机窗口内**不再出现重复迁移**（原抖振目标，现由暂停保证）；暂停期间无人被 `AUTO-DROP`；
+3. 系统暂停**不消耗**任何人的暂停次数（覆盖层里的“剩余暂停”列表可核对）；恢复后玩家可**立即**暂停（无冷却）；
+4. 轮次边界 `learn_remaining resync` 每个边界 ≤ 1 条且同向；
+5. 日志：每事件 1 条 `NO frames`、1 条 `elected`；`[jit] … reason=` 可读；无 `DESYNC`/`panic`/`Phase-B STALL`。

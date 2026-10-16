@@ -78,6 +78,13 @@
 3. 其它 Steam 主线（回合/胜负/计分流程、UI/表现、实机行为验证）。
 3b. **心跳/判活机制（已统一）**：学习期与对局期**共用**同一条上行 `send_room_state`、同一个 `steam_cli_stale_ticks` 计数器与 `CLIENT_STALE_TICKS` / `HOST_DROP_TICKS` 阈值、以及“只信 host”的拓扑假设；差异只有**下行心跳载体**（学习期=在线集广播，对局期=权威帧），这是“学习期没有 tick”的必然结果，不是不一致。已做的对齐（`9a2cc48`）：①判活改**墙钟时间**为主（`STEAM_HOST_SILENT_SECS=3.0`，旧帧数计数作兼容兼底），不再受窗口失焦/卡帧导致的 update 频率漂移影响；②学习期 host 的在线集广播由“**每帧**”（~60 个可靠包/s）降为“**变化时 + 每 2s 兜底**”（`STEAM_ONLINE_BCAST_SECS`），后者兼作下行心跳；③两端保留相同的暂停/离线/迁移豁免（学习期统一用 `steam_learning_paused()`）。仍为帧数计（未改）：host 侧 `auto_drop_idle(HOST_DROP_TICKS)`（对局期按 sim tick 计，稳健；学习期按 update 计，低频时会拉长）。
 4. **剩余已知边缘**（不修，仅记录，见台账 §22.2）：S006 回溯 HP 为无条件还原（098c `max`）；S006 未还原 `ev`/面向；S020 的物品分支（`HC`/`LC`/`Zr`）近似。098c 的 `un`（热身）门控未建模。
+4b. **迁移抖振治理 + 换主机系统暂停**（`38a0304`/`cdec03d`/`7523349`/`172f38e`/`eb4041b`，**待真机验收**）：
+   - **C1** 迁移完成统一复位判活（原先只清帧数计数、墙钟计时器停在 `0.0` → 日志里 `NO frames for n/a`）；
+   - **C2'** **换主机系统暂停**：新宿主接管时（广播 `Takeover` 之后、第一帧之前）arm “系统暂停”（哨兵 `paused && by == 0`）——**不扣任何人额度、恢复不设冷却、幂等**；`PauseState` 带 `present/total`（运行期包，不升协议）→ 覆盖层显示「房主已更换，本局已暂停」+「等待玩家连接 x/y」+ **软门禁**（未就绪按恢复键先二次确认），恢复沿用“任何人可请求 + 3s 倒计时”。**它同时替掉了原计划的“8s 热身”**（暂停状态下客户端天然不判 host 静默）。
+   - **C2'-b** `pump_learning` 的 `PauseState` 补 `from == self.host`（与对局期一致）；
+   - **C3** 学习倒数对齐加**同轮 + 非配置同步**门控（修 `resync 30.0->1.6` 紧接 `1.5->29.8` 的抖跳）；顺手新增 `world_ser::snapshot_meta_from_bytes()`（只解 meta）——`pump_learning` 与 `snapshot_phase_is_learning()`（迁移期**每帧**）不再为一点 meta 反序列化整个 World；
+   - **C4** `[jit] … sim gap` 带 `reason=paused|migrating|cfg-sync|rejoin|plain`；`AUTO-DROP` 日志补 `steamid`；**C5** 看门狗连续判定 2→3 次。
+   - 详见 `HOST_MIGRATION_LEARNING_PLAN.md` **§16**（含真机证据、不变量、验收要点）。
 5. **新规划（待拍板/实施，文档已就绪）**：
    - **`LEAVE_REJOIN_PLAN.md`**：主动离开（房主/玩家）**立即**生效 + **三因（主动/掉线/崩溃）都能归队**。**L1–L5 已完成**（`4980321`/`4019e5c`/`3a8f386`/`9888ba6`/`3e52f2d`）：会话时长设置项(入云)、`reset_to_main_menu(keep_rejoin)`、`Packet::Leave`+统一在线集、"已离开"标记、接线+文案。**已真机验证**（3 账号：对战期/学习期的离开→归队、房主迁移、控制角色/标记一致、无 DESYNC；清单见该文档 §4.1）。协议 **58**（`Leave` 为运行期包；57=快照补全、58=归队索引，修归队 DESYNC/卡死）。
    - **`DISPLAY_CAMERA_PLAN.md`**：分辨率（自适应+全屏跟随）/全屏（Desktop 默认、True 附加）/边缘滚屏（玩家开关）/相机平移速度；**S1–S4 已完成**（`d0a6675`/`55e2919`/`7c35928`/`f7a10d2`），client 124 单测全绿；真机手感验收待做。
