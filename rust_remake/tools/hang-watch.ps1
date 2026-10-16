@@ -7,7 +7,7 @@ tools/hang-watch.ps1 —— 「进程卡死 → 自动转储」看门狗（零�
   记录上下文（何时卡的、什么模式启动的、判据是什么）。
   事后只要把 `logs/` 拷回来，就有现场可分析——不需要重现命令、不需要装 procdump/WinDbg。
 
-判据（实测校准过；连续 2 次轮询都成立才转储，避免误报）
+判据（实测校准过；连续 `-ConsecutiveNeeded`（默认 3）次轮询都成立才转储，避免误报）
   1) **窗口探活失败（主判据）**：对该进程的顶层窗口发 `SendMessageTimeout(WM_NULL + WM_GETTEXT)`，
      超时（返回 0）即该窗口所在线程没在泵消息。**排除控制台窗口类**（`ConsoleWindowClass` /
      `PseudoConsoleWindow` 由 conhost 代泵，健康时也永远响应，不能当探针）。
@@ -30,6 +30,8 @@ tools/hang-watch.ps1 —— 「进程卡死 → 自动转储」看门狗（零�
   -GraceSeconds  只监视“此刻之后”启动的进程（默认 10s；避免抓到上一次残留的实例）
   -ProbeTimeoutMs 单窗口探活的超时（默认 1500ms）
   -HangSeconds   判定所需的连续异常秒数（默认 8；CPU 冻结用 2 倍）
+  -ConsecutiveNeeded  连续多少次轮询都异常才转储（默认 3）——实测遇到过“关窗口瞬间”探活超时一次，
+                取 3（≈6s，poll 2s）可避免“慢退出”误抓；真实 hang（实测持续 70s）晚 2s 无影响
   -PollMs        轮询间隔（默认 2000ms）
   -StartupGrace  进程启动后的“免判”秒数（默认 20s）——避开加载/建窗期的瞬时无响应
   -MaxMinutes    最长监视时长（默认 240 分钟；被监视进程全部退出则提前结束）
@@ -44,6 +46,7 @@ param(
     [int]$GraceSeconds = 10,
     [int]$ProbeTimeoutMs = 1500,
     [int]$HangSeconds = 8,
+    [int]$ConsecutiveNeeded = 3,
     [int]$PollMs = 2000,
     [int]$StartupGrace = 20,
     [int]$MaxMinutes = 240,
@@ -192,7 +195,7 @@ try {
     exit 2
 }
 
-Log "watch start: proc=$baseName grace=${GraceSeconds}s probe=${ProbeTimeoutMs}ms hang=${HangSeconds}s poll=${PollMs}ms max=${MaxMinutes}min full=$($Full.IsPresent) context=[$Context]"
+Log "watch start: proc=$baseName grace=${GraceSeconds}s probe=${ProbeTimeoutMs}ms hang=${HangSeconds}s consecutive=${ConsecutiveNeeded} poll=${PollMs}ms max=${MaxMinutes}min full=$($Full.IsPresent) context=[$Context]"
 Log "repo=$root dumpDir=$logDir"
 
 # pid -> @{ cpu=总CPU秒; cpuSince=上一次CPU变化的时刻; bad=连续判定卡死次数; dumped=是否已转储; seen=首次发现时刻 }
@@ -251,13 +254,13 @@ while ($true) {
             $why = @()
             if ($winHung) { $why += ("window-probe-timeout[$probe]") }
             if ($cpuFrozenLong) { $why += ("cpu-frozen-{0:N1}s" -f $frozenSecs) }
-            Log "pid=$($p.Id) 可疑卡死($($why -join '+')) 连续=$($s.bad)/2 cpu=$([math]::Round($cpu,1))s"
+            Log "pid=$($p.Id) 可疑卡死($($why -join '+')) 连续=$($s.bad)/$ConsecutiveNeeded cpu=$([math]::Round($cpu,1))s"
         } else {
             if ($s.bad -gt 0) { Log "pid=$($p.Id) 恢复正常（撤销可疑计数） probe=[$probe]" }
             $s.bad = 0
         }
 
-        if ($s.bad -ge 2 -and -not $s.dumped) {
+        if ($s.bad -ge $ConsecutiveNeeded -and -not $s.dumped) {
             $s.dumped = $true
             # 若已有别的 watcher（如同一机器上多个 run-steam.ps1 各拉一个）为这个 pid 转储过，就不重复。
             $existing = @(Get-ChildItem (Join-Path $logDir "hang-*-pid$($p.Id).dmp") -ErrorAction SilentlyContinue)
