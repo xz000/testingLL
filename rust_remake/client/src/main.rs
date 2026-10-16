@@ -5366,12 +5366,16 @@ impl Game {
     }
 
     /// S1：「静默等待房主」横幅要不要亮（`Some(已静默秒数)` = 亮）。
+    /// **只在“本端是 client”时适用**：host 自己从来不收到 host 包（`steam_last_host_pkt_at` 不会被刷新），
+    /// 不过滤的话 host 在学习期会一直弹“正在等待房主…”（真机 2026-10-17 反馈）。
     /// **阈值必须 ≥ 该阶段的期望心跳周期**（否则心跳间隔本身就会被误报）：
     /// - 学习期：下行心跳 = 在线集广播，周期 `STEAM_ONLINE_BCAST_SECS`(2s) → 静默超过“周期 + 0.5s”才算异常
     ///   （即 2.5s；再晚 0.5s 就进主机迁移覆盖层，相当于“迁移前最后一秒提示”）；
     /// - 对局期：权威帧每 tick 到 → 沿用旧阈值（`STALE_HINT_TICKS` 帧 ≈0.5s），行为与改动前一致。
     #[cfg(feature = "steam")]
     fn steam_waiting_host_secs(&self, now: f64) -> Option<f64> {
+        // 只有 client 才有“等待房主”一说（host 自己就是权威，见函数注释）。
+        self.steam_cli_ls.as_ref()?;
         if self.meta.phase == MatchPhase::Learning {
             let ts = self.steam_last_host_pkt_at;
             if ts > 0.0 && (now - ts) >= (STEAM_ONLINE_BCAST_SECS + 0.5) {
@@ -6924,6 +6928,19 @@ impl event::EventHandler for Game {
                 .is_logical_key_just_pressed(&ggez::input::keyboard::Key::Named(winit::keyboard::NamedKey::Escape))
                 || Self::char_just(ctx, "q");
             if cancel {
+                // 归队特例（真机 2026-10-17）：按 Y 归队会先清掉提示（`steam_rejoin_prompt=None`）并置
+                // `steam_rejoin_target`；若此时 Esc/Q 取消，**必须把提示/会话恢复**——否则提示再也回不来
+                // （H4 探活只在有提示时跑）→ 玩家表现“无法回连”。
+                // 同时对目标大厅做一次 best-effort 退厅：防“取消后那个 join 其实成功了 → 本端静默留厅占位”。
+                if let Some(rj) = self.steam_rejoin_target.take() {
+                    if let Some(t) = self.steam_transport() {
+                        t.matchmaking()
+                            .leave_lobby(net_steam::steamworks::LobbyId::from_raw(rj.lobby_id));
+                    }
+                    self.refresh_rejoin_prompt();
+                    self.menu_hint = i18n::t("已取消连接上一局（可按 Y 重试）").to_string();
+                    eprintln!("[steam-rejoin] 用户取消归队尝试（lobby={}）→ 已恢复提示", rj.lobby_id);
+                }
                 self.steam_lobby_pending = None;
                 self.steam_lobby_pending_since = None;
                 // 关键：把 app 收回主菜单态。CLI `--steam-host/--steam-join` 直通时 app 是 SteamHost/SteamJoin，

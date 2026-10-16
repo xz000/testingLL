@@ -617,6 +617,7 @@ const EN: &[(&str, &str)] = &[
     ("连接超时，请重试", "Connection timed out; please retry"),
     ("连接超时，可按 Y 重试", "Connection timed out; press Y to retry"),
     ("房间仍在，稍后可再按 Y 重试", "The room is still up; press Y to retry in a moment"),
+    ("已取消连接上一局（可按 Y 重试）", "Cancelled joining the previous match (press Y to retry)"),
     ("请稍候 {n} 秒再试", "Please wait {n}s before retrying"),
     ("进入房间失败：{err}", "Failed to enter the room: {err}"),
     ("未命名房间", "Unnamed Room"),    ("我的房间", "My Room"),
