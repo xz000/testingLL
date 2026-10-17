@@ -482,6 +482,22 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 
 **若 E1+E2 后仍有**：属 Steam 客户端侧噪声（如退出时的 IPC），记录在案，不再折腾。
 
+**真机结果（2026-10-17 14:34 轮）**：
+| 指标 | 修前（13:54 轮） | 修后（14:34 轮） |
+|---|---|---|
+| `interfacemap … PostConnectionStateMsg` | 4 | **0** ✓ |
+| `!IsLocked` | 10（共 14 条断言） | **2** |
+| `[steam] session ready`（每机） | 每次回菜单一条 | **1**（仅启动）✓ |
+| `[steam-sess] adopt transport back…` | —— | 3/1/3 ✓ |
+| `NO frames` / `ClientWait 超时` | 0 | 0 ✓ |
+| `send=(…,queued=0)` | ✓ | ✓ |
+| `req=0`、`pending≤5`、`stale=0` | ✓ | ✓ |
+| `DESYNC`/`panic`/`AUTO-DROP` | 0 | 0 ✓ |
+
+剩余 2 条 `!IsLocked`：①一条在**学习期迁移**（`host broadcast Leave` → `retargeted early`）时；②一条在**进程退出**（`Dropping DeviceSink` 前）——都属于“不可完全避免”的时刻（SDK 会话重建立 / 进程结束），且非致命，记录在案不再折腾。
+
+**E2 功能性验证（关键）**：回菜单后 `adopt` 生效（不再重 init）；且 **H4 探活仍正常**（`LobbyDataUpdate` + “大厅仍在”）、Y 归队 `LobbyEnter Success` + `resumed from snapshot` 正常——证明“回调队列移到 transport 后 adopt 仍共享同一队列”有效。
+
 **联合验收要点（E1+E2 一起测）**：
 1. 断言计数：`!IsLocked` 预期 ≈0；`interfacemap` 预期显著下降（跑 2 轮看趋势，断言非确定性）；
 2. 回菜单日志应出现 `[steam-sess] adopt transport back into session`，且**不再**出现 `[steam] session ready`（说明没重 init）；
