@@ -3149,25 +3149,37 @@ impl Game {
     /// 关键：世界把 `move_target` 置 `None` 的原因不止“到达”（还有定身/施法/位移/停止），
     /// **不能仅凭 `move_target==None` 就清**——否则击退/位移会把玩家的移动指令永久清掉。
     /// 098c 语义：被击退后应继续走向原目标。
+    /// 判断本 tick 的位移线段 `p0 -> p1` 是否经过目标点附近（用于冰面滑过目标）。
+    fn segment_hits_point(p0: Vec2, p1: Vec2, target: Vec2, tol: Fix64) -> bool {
+        if tol < Fix64::ZERO {
+            return false;
+        }
+        let seg = p1 - p0;
+        let len2 = seg.length_squared();
+        let tol2 = tol * tol;
+        if len2 <= Fix64::from_num(1.0 / 65536.0) {
+            return (target - p0).length_squared() <= tol2;
+        }
+        let t = ((target - p0).dot(seg) / len2).max(Fix64::ZERO).min(Fix64::ONE);
+        let closest = p0 + seg * t;
+        (target - closest).length_squared() <= tol2
+    }
+
     fn should_clear_player_target(
         accepted: bool,
         in_control: bool,
         dashing: bool,
+        prev_pos: Vec2,
         pos: Vec2,
         target: Vec2,
-        vel: Vec2,
     ) -> bool {
         if !accepted || in_control || dashing {
             return false;
         }
-        // 冰面上到达目标时世界只清 `move_target`、不刹车（继续滑行）；
-        // 因此容差要覆盖“本 tick 已越过的距离 ×2”，否则 `player_target` 会被重新下发 → 标记永远不消失。
-        let mut eps = Fix64::from_num(PLAYER_TARGET_ARRIVE_EPS);
-        let slide = vel.length() * Fix64::from_num(TICK) * Fix64::from_num(2.0) + Fix64::ONE;
-        if slide > eps {
-            eps = slide;
-        }
-        (target - pos).length_squared() <= eps * eps
+        // 用“本 tick 位移线段是否穿过目标附近”判定，而不是固定距离：
+        // 冰面到达时世界只清 `move_target`、不刹车（继续滑行），一 tick 可能越过目标；
+        // 线段判定能准确识别“确实经过”，又不会在施法/击退打断时误清。
+        Self::segment_hits_point(prev_pos, pos, target, Fix64::from_num(PLAYER_TARGET_ARRIVE_EPS))
     }
 
     /// 每次世界推进后调用一次：若本机角色**刚进入**施法（前摇/后摇开始），清除待发送的移动目标。
@@ -3199,16 +3211,23 @@ impl Game {
             if let Some(p) = self.world.players.get(me as usize) {
                 if p.move_target.is_some() {
                     self.player_target_accepted = true;
-                } else if Self::should_clear_player_target(
-                    self.player_target_accepted,
-                    p.control.is_some(),
-                    p.dash_active,
-                    p.pos,
-                    t,
-                    p.cur_vel,
-                ) {
-                    self.player_target = None;
-                    self.player_target_accepted = false;
+                } else {
+                    let prev = self
+                        .prev_player_pos
+                        .get(me as usize)
+                        .copied()
+                        .unwrap_or(p.pos);
+                    if Self::should_clear_player_target(
+                        self.player_target_accepted,
+                        p.control.is_some(),
+                        p.dash_active,
+                        prev,
+                        p.pos,
+                        t,
+                    ) {
+                        self.player_target = None;
+                        self.player_target_accepted = false;
+                    }
                 }
             }
         }
@@ -14366,24 +14385,25 @@ mod tests {
     fn player_target_clear_requires_arrival_and_no_displacement() {
         use game_core::fix::{Fix64, Vec2};
         let v = |x: f64| Vec2::new(Fix64::from_num(x), Fix64::ZERO);
-        let far = v(50.0);
         let near = v(5.0);
         let target = v(0.0);
         let f = super::Game::should_clear_player_target;
         // 未被世界接受过 → 不清（避免刚下目标、world 尚未应用时丢指令）
-        assert!(!f(false, false, false, near, target, v(0.0)));
+        assert!(!f(false, false, false, target, near, target));
         // 到达附近且未处于位移/冲刺 → 清
-        assert!(f(true, false, false, near, target, v(0.0)));
+        assert!(f(true, false, false, near, target, target));
         // 远离目标 → 不清
-        assert!(!f(true, false, false, far, target, v(0.0)));
+        assert!(!f(true, false, false, v(50.0), v(60.0), target));
         // **击退中**（control）即便在目标附近也不清（核心回归）
-        assert!(!f(true, true, false, near, target, v(0.0)));
+        assert!(!f(true, true, false, near, target, target));
         // **冲刺中**同样不清
-        assert!(!f(true, false, true, near, target, v(0.0)));
+        assert!(!f(true, false, true, near, target, target));
         // 精确到达 → 清
-        assert!(f(true, false, false, target, target, v(0.0)));
-        // High-speed ice slide: one tick can overshoot the target by >12 units.
-        assert!(f(true, false, false, v(20.0), target, v(600.0)));
+        assert!(f(true, false, false, target, target, target));
+        // Ice: one tick can pass from -20 to +20; the swept segment crosses the target.
+        assert!(f(true, false, false, v(-20.0), v(20.0), target));
+        // Cast/knockback interruption: segment is far from the target, must not clear.
+        assert!(!f(true, false, false, v(100.0), v(110.0), target));
     }
 
     /// 飘字的血量变化归类：伤害为负、治疗为正、微小变化忽略。
