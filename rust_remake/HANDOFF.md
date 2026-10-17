@@ -14,7 +14,7 @@
   - **二轮深挖（§19–§22）**：§19 弹体回调集全技能复核（`hv/jv/Gv/Jv` 全对位）；§20 S016A 弹跳弹（差异1/2/3）；**§21 第二轮逐回调语义深挖并修复**——S000/S002 `xi` AoE 排除直击者、S009 `gB`（命中/撞柱/撞弹体）、S013A 落点传送、S010/S012 招架（+100 移速/`jn`）、S004/S003 `xi` AoE、6 处注释订正；**§22 近似项复核**（S005/S006/S007/S018B/S020 —— S007 精确、S018B 效果等价、余为功能等价）。
   - **审计已无已知未闭合项**（§14.5 全结案 + §22 近似复核无真缺口）。
 - **联机（Steam）**：R / M / F / E / H / L 系列全部收口（掉线/迁移 UI、崩溃重开归队、被取代 host 归队、联机暂停、有界追赶、主动离开+三因归队、学习期联机与主机迁移）。**E1/E2 后 SDK 断言 14→2**（`interfacemap` 0；剩余 2 条在迁移瞬间/进程退出）。旧设计文档见 `archive/EXIT_MENU_RECONNECT_PLAN.md`，当前迁移细节见 `HOST_MIGRATION_LEARNING_PLAN.md`。
-- **协议号 `PROTOCOL_VERSION = 64`**（`game-core/src/lib.rs`；变更史见其上方注释）。v56 = §21/§22 行为对齐；**v57 = 快照补全模拟状态**（`World` 房间配置标量 + `Player` 11 状态字段纳入 `world_ser`，修重连后 DESYNC，`a223c5a`）；**v58 = 归队索引修正**（`Packet::Snapshot` 增 `your_index`，host 重连应答下发该端当前世界索引，修迁移后“控制错角色 + host 等不到输入而卡死”，`0648241`）；**v59 = 点目标施法范围核准**（S008 陨石 `max_distance=1200` 并在权威模拟 clamp；S009/S014 按 `700*(1+.1*时间精通)`；见台账 §23）；**v60 = 位移技能与击退对齐**（S012A 冲撞替换旧击退；S013 换位/搬运不再清空 `kb_vel`；见台账 §24）；**v61 = S013 Stop 语义**（`IssueImmediateOrder` 只清移动指令，自定义 Q/S/U/w 继续 ⇒ 换位/搬运不再清 `control`）；**v62 = S012A 冲撞时长按点击距离**（`ev=Rr/Gr*.03+3*.03`，不再固定跑满 max_distance）；**v63 = S012A 的 U/w 是衰减补偿**（098c `Q*=.96` 后 `+52/s`，净 1300/s；我们的 constant-control 不再额外加 52，只清旧击退）；**v64 = S012A 去掉 +3 tick 尾部**（用户选 B：时长 = min(点击距离,最大距离)/1300，冲撞停在点击点附近；有意偏离 098c 手调余量）。
+- **协议号 `PROTOCOL_VERSION = 65`**（`game-core/src/lib.rs`；变更史见其上方注释）。v56 = §21/§22 行为对齐；**v57 = 快照补全模拟状态**（`World` 房间配置标量 + `Player` 11 状态字段纳入 `world_ser`，修重连后 DESYNC，`a223c5a`）；**v58 = 归队索引修正**（`Packet::Snapshot` 增 `your_index`，host 重连应答下发该端当前世界索引，修迁移后“控制错角色 + host 等不到输入而卡死”，`0648241`）；**v59 = 点目标施法范围核准**（S008 陨石 `max_distance=1200` 并在权威模拟 clamp；S009/S014 按 `700*(1+.1*时间精通)`；见台账 §23）；**v60 = 位移技能与击退对齐**（S012A 冲撞替换旧击退；S013 换位/搬运不再清空 `kb_vel`；见台账 §24）；**v61 = S013 Stop 语义**（`IssueImmediateOrder` 只清移动指令，自定义 Q/S/U/w 继续 ⇒ 换位/搬运不再清 `control`）；**v62 = S012A 冲撞时长按点击距离**（`ev=Rr/Gr*.03+3*.03`，不再固定跑满 max_distance）；**v63 = S012A 的 U/w 是衰减补偿**（098c `Q*=.96` 后 `+52/s`，净 1300/s；我们的 constant-control 不再额外加 52，只清旧击退）；**v64 = S012A 去掉 +3 tick 尾部**（用户选 B：时长 = min(点击距离,最大距离)/1300，冲撞停在点击点附近；有意偏离 098c 手调余量）；**v65 = S012A 正常结束保留 20% 余速**（098c `CR`：Q=.2Q，地面/冰面都有；冰面按 0.98/tick 长滑；撞人/撞墙仍急停）。
 - **A2 移动模型已收口（2026-10-10）**：冰面阻尼时间化 `0.98^(5/9)`；**击退并入走位**（`Player.kb_vel` 与自走并存相加，可边走边滑；协议 49）；仅普通加速时间**有意保留**（对帧同步手感更好）。见台账 §12/§13。
 - **关键教训**：本仓库基线**既非 098b 也非 098c**，而是「098b 事实 + 098c tooltip + 占位」的混合物；
   **098c 的 tooltip 也常与 098c 代码不符** ⇒ **唯一真值是 098c 代码**。
@@ -51,8 +51,8 @@
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 128 / game-core 349 / net 62 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体 **client 141**（见 `check.ps1`）。
-- `PROTOCOL_VERSION = 64`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。（运行期包如 `Packet::Leave`/`ParticipantsAll` **不进 World ⇒ 不升协议**。）
+- 测试：**client 128 / game-core 350 / net 62 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体 **client 141**（见 `check.ps1`）。
+- `PROTOCOL_VERSION = 65`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。（运行期包如 `Packet::Leave`/`ParticipantsAll` **不进 World ⇒ 不升协议**。）
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
 
@@ -101,7 +101,7 @@
 6. **当前主线：打磨（2026-10-17 拍板）**：
    - **顺序**：A（文档收口 + `tools/soak-report.ps1`，✅ `36b231b`/`d361510`）→ **P5**（缩圈/出界预警，✅ `1a68e9e`）→ **训练场 P1-lite**（统计 HUD + `F5` 重置 + 岩浆/缩圈/障碍开关，✅ `1c1690d`）→ **Kill feed**（✅ 同 commit）；
    - **已全部完成**（2026-10-17 打磨批次）；后续按真机反馈再排。
-   - **追加修复**：Ludicrous Kill 判定改用实时伤害矩阵 `world.round_damage_of(victim)<=0`（原用 `meta.damage_this_round`，对局中恒为 0 → 几乎每次击杀都触发，`8d606c5`）；`fd6a481` 目标点清除改为位移线段穿越；`bbb1d28` 位移技能与击退对齐（协议 60，见台账 §24）；`338e9bc` S013 Stop 只清移动指令、保留 `control`（协议 61）；`ff89904` S012A 冲撞时长按点击距离（协议 62）；`299b9f6` 冲撞不再额外加 52/s（协议 63）；`ddb71da` 去掉 +3 tick 尾部（协议 64，用户选 B）。
+   - **追加修复**：Ludicrous Kill 判定改用实时伤害矩阵 `world.round_damage_of(victim)<=0`（原用 `meta.damage_this_round`，对局中恒为 0 → 几乎每次击杀都触发，`8d606c5`）；`fd6a481` 目标点清除改为位移线段穿越；`bbb1d28` 位移技能与击退对齐（协议 60，见台账 §24）；`338e9bc` S013 Stop 只清移动指令、保留 `control`（协议 61）；`ff89904` S012A 冲撞时长按点击距离（协议 62）；`299b9f6` 冲撞不再额外加 52/s（协议 63）；`ddb71da` 去掉 +3 tick 尾部（协议 64，用户选 B）；`22dac12` 冲撞正常结束保留 20% 余速（协议 65）。
    - **音频**：创意工坊/本地包通道已完整，缺真实素材；素材到位后优先**替换 `client/assets/audio/*.wav`**（正式版与 demo 都生效），工坊包留给玩家自定义；
    - **暂缓**：P7-lite、多帧打包、观战/回放、AI 反击、En4/Scourge 模式。
 
