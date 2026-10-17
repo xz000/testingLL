@@ -192,6 +192,26 @@ mod tests {
 
     /// 统一视觉常量：取值合理、三态配色互不相同（否则"选中/悬停"就看不出来）。
     #[test]
+    fn centered_panels_fit_dynamic_aspect_widths() {
+        let fracs = [
+            (0.72, 0.76),
+            (0.66, 0.7),
+            (0.72, 0.94),
+            (0.66, 0.80),
+            (0.62, 0.42),
+            (0.5, 0.4),
+            (0.44, 0.52),
+        ];
+        for (w, h) in [(960.0, 720.0), (1280.0, 720.0), (1680.0, 720.0)] {
+            for (wf, hf) in fracs {
+                let p = centered_panel(w, h, wf, hf);
+                assert!(p.x >= -0.01 && p.y >= -0.01, "panel {wf}x{hf} negative at {w}");
+                assert!(p.x + p.w <= w + 0.01 && p.y + p.h <= h + 0.01, "panel {wf}x{hf} overflows {w}");
+            }
+        }
+    }
+
+    #[test]
     fn shared_visual_constants_are_distinct() {
         assert!(ROW_H > 0.0 && FIELD_BOX_H >= ROW_H, "输入框不应比行更矮");
         assert!(FIELD_BOX_W > 0.0 && FIELD_LABEL_W > 0.0);
