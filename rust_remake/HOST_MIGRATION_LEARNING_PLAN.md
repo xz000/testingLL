@@ -505,3 +505,43 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 4. `[netdiag] LobbyChatMsg/LobbyDataUpdate` 仍刷、头像/ping 仍刷新；
 5. `[stat] host … send=(direct,queued)` 的 `queued` **不长期增长**（若持续涨 → 说明 E1 的 1 帧延迟有影响，改用“帧戳节流的 transport 内泵”方案）；
 6. 无 `DESYNC`/`panic`/`Phase-B STALL`。
+
+### 17.10 残余风险：陈旧 owner 导致的自接管（2026-10-17 记录，**暂不改代码**）
+
+**背景**：`EXIT_MENU_RECONNECT_PLAN.md` §14.2 的 **P7**（“client 可自选为 host → 双权威”）**已不是当前代码的风险**：
+- **M3/R3'**：选举只认 Steam `lobby_owner`（`elect_new_host` 不合法即返回 0，不做最小 ID 回退）——`client/src/steam.rs:40-50`；
+- **F3'-c**：`HostLockstep::poll` 忽略来自本端的 `Takeover`——`net/src/lockstep.rs:1104-1122`；
+- 代码中没有任何“客户端自选举/自封 host”的路径。
+
+**残余风险**（本次明确记录、暂不修）：**曾经是 owner 的端，Steam 本地缓存未刷新，误以为 owner 仍是自己**。
+
+| 环节 | 现状 | 位置 |
+|---|---|---|
+| owner 读取 | `lobby_owner()` 是 **Steam 本地缓存读**，不是实时查询 | `net-steam/src/session.rs:103-105` |
+| 迁移期刷新 | 阶段 A **没有** `RequestLobbyData`；只有 H4 探活与 S5 重连会刷 | `client/src/main.rs:8837` / `9009` |
+| 选举 | 只在 probe 超时后读一次 owner；`owner == me` 即 `steam_new_host_id = me` | `client/src/steam.rs:98-140` |
+| 接管 | 随后**直接** `steam_do_takeover`，**不再次读 owner** | `client/src/steam.rs:146-162`、`steam.rs:286+` |
+| 接收端 | 收到 `Takeover` **无条件** `superseded` | `net/src/lockstep.rs:1104-1122` |
+| 兜底 | SELF-FENCE 读的**也是同一个缓存**（缓存一致时救不回来） | `client/src/main.rs:7488` |
+
+**成立条件（需同时满足）**：
+1. 该端**曾经是 owner**（普通 client 的缓存不会指向自己）；
+2. 所有权转走后其 `GetLobbyOwner` 缓存一直未更新（漏 `LobbyDataUpdate` / 重进大厅未刷新 / Steam 短暂断连）；
+3. 迁移探测触发时仍读到 `owner == me`，且 `me != old_host`、`me ∈ steam_online`；
+4. **其他端**的缓存指向别人（否则大家会跟随同一 view，反而一致）。
+
+**概率 / 证据**：正常迁移时旧 host 要么进程已死（缓存无意义），要么仍是真 owner（`elect` 返回 0，大家等移交，上限 7200 tick）。最现实的路径是“曾当过 host → 主动离开 → 回菜单 → 按 Y 归队成 client，且 owner 缓存未刷新”。**截止 2026-10-17 的全部真机日志中未出现**：所有 `elected new host=… (lobby_owner=…)` 均一致，三机一致。
+
+**后果**：
+- **一致地陈旧**（各端读到同一个“错” owner）→ 仍只有一个 host，可继续；
+- **不一致地陈旧** → 双 host / 脑裂；SELF-FENCE 因同源缓存无法纠正，最终靠 Phase-B STALL（600 tick）回菜单或 DESYNC 收场；
+- “缓存指向别人”（非自己）更常见：通常 retarget 到不认为自己是 host 的端 → Phase-B STALL → 回菜单（**安全失败**）。
+
+**处置决定：暂不改代码**。理由：
+- 无观测证据；
+- 朴素的“接收端只认 owner 来源”会因**旧 host 缓存同样滞后**而拒掉合法 `Takeover` → **僵尸 host / 双 host**（比原风险更糟）；且 `superseded` 粘滞、LAN 无 owner、每包查 SDK 等问题；
+- 若将来要封，只做**发送端确认（P7-lite）**：进入阶段 A 时 `RequestLobbyData(lobby)` 一次；读到 `owner == me` 后等 30–60 tick 复读；仍是 me 才接管，变了则跟随，读不到仍接管并记 `owner-unconfirmed`。**接收端保持现状**。代价：合法接管最多晚 ~1s（有 handover 暂停兜底）。
+
+**观测手段（若再出现疑似）**：
+- 关键字：`elected new host=`（含 `lobby_owner=`）、`TAKEOVER: I am new host`、`SELF-FENCE`、`migrated to new host`、`Phase-B STALL`；
+- 判据：同一时刻三机日志里 `lobby_owner` 是否一致、`I am new host` 是否出现两次、各端 `host` 指向是否不同。

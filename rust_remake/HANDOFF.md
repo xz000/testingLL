@@ -90,6 +90,9 @@
    - **F2** `RoomState` 即恢复（修“被 drop 后不靠 `ReconnectReq` 永不恢复”：“已离开”标记随之自动撤销）；
    - **F1** 系统暂停期间不判空闲（内置在 `auto_drop_idle`；修“接管后边等边把正在迁移的端踢掉”）。
    - 详见 `HOST_MIGRATION_LEARNING_PLAN.md` **§17**（含日志链、不变量、验收要点）。
+4d. **已知残余风险（记录，暂不修）**：
+   - **陈旧 owner 自接管**：原 P7（client 自选 host）已由 M3/R3'+F3'-c 结构性消除；但 `lobby_owner` 是 Steam 本地缓存读，迁移期无 `RequestLobbyData` 刷新，`steam_do_takeover` 前**不再复核 owner** → “曾经是 owner 且缓存未刷新”的端理论上仍会自接管（低频、**至今无真机证据**）。完整分析/代码位置/成立条件/将来若修的 P7-lite（只做发送端确认，**不做接收端 allowlist**）见 `HOST_MIGRATION_LEARNING_PLAN.md` **§17.10**。
+   - **SDK 断言**：E1+E2 后断言 14→2（`!IsLocked` 仅剩“迁移瞬间 1 条 + 进程退出 1 条”）；`interfacemap` 0；已接受为不可完全避免的 SDK 噪声（§17.9）。
 5. **新规划（待拍板/实施，文档已就绪）**：
    - **`LEAVE_REJOIN_PLAN.md`**：主动离开（房主/玩家）**立即**生效 + **三因（主动/掉线/崩溃）都能归队**。**L1–L5 已完成**（`4980321`/`4019e5c`/`3a8f386`/`9888ba6`/`3e52f2d`）：会话时长设置项(入云)、`reset_to_main_menu(keep_rejoin)`、`Packet::Leave`+统一在线集、"已离开"标记、接线+文案。**已真机验证**（3 账号：对战期/学习期的离开→归队、房主迁移、控制角色/标记一致、无 DESYNC；清单见该文档 §4.1）。协议 **58**（`Leave` 为运行期包；57=快照补全、58=归队索引，修归队 DESYNC/卡死）。
    - **`DISPLAY_CAMERA_PLAN.md`**：分辨率（自适应+全屏跟随）/全屏（Desktop 默认、True 附加）/边缘滚屏（玩家开关）/相机平移速度；**S1–S4 已完成**（`d0a6675`/`55e2919`/`7c35928`/`f7a10d2`），client 124 单测全绿；真机手感验收待做。

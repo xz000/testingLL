@@ -27,7 +27,7 @@
 | `LEAVE_REJOIN_PLAN.md` | **主动离开 + 三因归队**（L1–L5 已完成；真机双账号验收清单见 §4.1）|
 | `REJOIN_DETECT_PLAN.md` | **“连回上一局”检测机制优化规划**（在办：现状/弱点 W1–W6、方案 P1–P6；先规划未开工）|
 | `LEARNING_PHASE_NET_PLAN.md` | **学习期联机**（已定稿：E1 心跳+快照 / E2 按阶段恢复 / E3 离开·掉线 / E5 R7e；无投降·恒桩子）|
-| `HOST_MIGRATION_LEARNING_PLAN.md` | **学习期房主退出/主机迁移规划**（在办：不变量/已确证故障/根因 M1–M4；撤自选举回归后按步实施）|
+| `HOST_MIGRATION_LEARNING_PLAN.md` | **学习期房主退出/主机迁移**（M0–M5、S1–S6 已完成；§16 迁移抖振+换主机系统暂停；§17 F 系列；§17.8 报递延迟；§17.9 E1/E2；**§17.10 陈旧 owner 自接管残余风险（暂不修，含成因/证据/P7-lite 方案）**）|
 | `DISPLAY_CAMERA_PLAN.md` | **显示/相机设置**（分辨率/全屏/边缘滚屏/平移速度；S1–S4 已完成 `d0a6675`/`55e2919`/`7c35928`/`f7a10d2`）|
 | `RECONNECT.md` | 掉线/重连机制设计 |
 | `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案 |

@@ -364,6 +364,7 @@
 - **P5（鲁棒性）**：探测窗口仅 **1s**，一次 relay 抖动 >1s 就误判「host 掉线」→ 不必要的迁移（有快照兜底，但有脑裂风险与开销）。
 - **P6（语义）**：阶段 A/B 共用 `steam_migrate_ticks`，进入阶段 B 不复位 → B 的「600 帧」实际是「从进迁移起 600 帧」（B 只剩 ~540 帧）。
 - **P7（已知风险，非本次修）**：**非对称断链脑裂**——若 client↔旧 host 断、但 client↔其他 client 通，则 client 选自己为新 host 并广播 `Takeover`，旧 host 收不到 `Takeover`（`superseded` 不生效）→ 可能双权威。需后续专题。
+  - **2026-10-17 状态更新**：上述“client 自选 host”路径已被 **M3/R3'（选举只认 Steam lobby_owner）+ F3'-c（忽略本端 Takeover）结构性消除**；残留的是**“陈旧 owner 缓存导致的自接管”**（低频、无观测证据、暂不修），完整分析、代码位置、成立条件与将来若修的 P7-lite 方案见 **`HOST_MIGRATION_LEARNING_PLAN.md` §17.10**。
 
 ### 14.3 优化建议（供拍板；均为增量、不动协议）
 - **S1 早期抖动提示**：静默超过 `STALE_HINT_TICKS(30≈0.5s)` 就显示**非模态**小提示（顶部横幅）：
