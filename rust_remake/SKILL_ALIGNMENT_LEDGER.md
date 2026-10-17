@@ -1542,5 +1542,25 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - **基线**：`game-core` **341**（+3）；client 119 / steam-gui 132；net 47 / net-steam 9；clippy 干净。
 - **协议 = 56**（55→56 = §21/§22 行为对齐 + 守护盾 `HC`）。**待做**：真机验收协议 56（重点：S014 回血球 / S016 弹道 / kb_vel 击退 / 沉默逐槽 / kC 岩浆盾 / F 槽 / **守护盾 `HC` 三招消耗**；S000/S002/S003/S004/S009/S013/S010/S012 命中行为）。
 
+## 23. 点目标施法范围核准（2026-10-17，协议 59）
+
+> 起因：陨石（S008）指示线在 540 处截断，但点击远处仍落在点击点。
+> 根因：`skill_aim_hint` 对 `max_distance==0` 回退 `speed*life`（S008 = 400×1.35 = 540），而 098c `aran=1200`；`World` 对 S008A 的 `landing` 未 clamp。
+
+**统一口径**：`game_core::skill::cast_max_distance(id, alt, level, time_mastery)`，客户端指示线与权威模拟共用：
+
+- **S008**（A）：1200（098c `aran`）；B（岩浆）按投射物 `400×2.0`；
+- **S009 / S014**：`700 × (1 + 0.1×时间精通)`（JASS `hB`/`Xr`）；
+- 其余：优先 `growth.max_distance`（Blink/Dash/Swap/Bounce），否则投射物 `speed*life` / `W098bBolt::range`；
+- `None` = 不限（098c `aran=99999` 的跟随鼠标类）。
+
+**模拟**：`World::clamp_cast_target` 在 `Cmd::Cast` 与 `handle_casts` 两条入口把超距目标沿方向压到边界；陨石落点因此在 1200 内（单测 `s008_meteor_target_is_clamped_to_1200`）。
+
+**指示线**：S008 额外显示爆炸半径 `210×sqrt(1+.25×范围精通)`（与 `DelayedBlast` 同式）。
+
+**测试**：`cast_max_distance_matches_098c_caps` / `s008_meteor_target_is_clamped_to_1200`；基线 game-core **347**、client **127**（steam+gui 140）。
+
+**不变量**：以后新增/修改点目标技能，必须同时更新 `cast_max_distance`（或 `growth.max_distance`），不得在客户端另写一套范围回退。
+
 
 
