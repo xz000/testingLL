@@ -13513,6 +13513,9 @@ fn active_status_icons(p: &game_core::player::Player) -> Vec<StatusIcon> {
     if p.burning {
         v.push(StatusIcon { label: "燃", color: [255, 140, 60] });
     }
+    if p.phoenix_remaining > Fix64::ZERO {
+        v.push(StatusIcon { label: "凤", color: [255, 170, 80] });
+    }
     if p.has_buff(BuffKind::Boost) {
         v.push(StatusIcon { label: "疾", color: [130, 230, 130] });
     }
@@ -14656,6 +14659,11 @@ mod tests {
         let icons = super::active_status_icons(&p);
         assert!(icons.iter().any(|i| i.label == "格"), "招架就绪应有格");
         assert!(icons.iter().any(|i| i.label == "燃"), "燃烧应有燃");
+        p.phoenix_remaining = Fix64::ONE;
+        assert!(
+            super::active_status_icons(&p).iter().any(|i| i.label == "凤"),
+            "凤凰状态应有凤"
+        );
     }
 
     /// 技能槽显示状态：文字 / 形态角标 / 图标键三者同源（与 `icon_pack::slot_state` 一致）。
