@@ -593,7 +593,9 @@ impl SteamSession {
         let mut transport = SteamTransport::init(app_id, virtual_port)?;
         // S3：注册 Steam 服务器连接状态回调（供“自己掉线”判定）。
         transport.register_server_callbacks();
-        let join_requests = Arc::new(Mutex::new(VecDeque::new()));
+        // E2：队列的**权威位置在 transport**（见 `SteamTransport` 字段注释）——
+        // 回调持有该 `Arc`；`adopt()` 复用同一个 transport 时队列/回调自然延续。
+        let join_requests = transport.join_requests();
         // 好友从好友列表点「加入游戏」（game 已在跑）→ Steam 给大厅 id。
         {
             let q = join_requests.clone();
@@ -628,7 +630,7 @@ impl SteamSession {
         // H4：`LobbyDataUpdate` —— `RequestLobbyData` 的应答（`success=false` ⇒ 大厅不存在）。
         // 注：对“大厅自身数据”的更新，`m_ulSteamIDMember` == 该大厅 id（**不是 0**）；
         // 这里全部记录，由上层按 lobby id 匹配。
-        let lobby_data_updates: Arc<Mutex<VecDeque<(u64, bool)>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let lobby_data_updates: Arc<Mutex<VecDeque<(u64, bool)>>> = transport.lobby_data_updates();
         {
             let q = lobby_data_updates.clone();
             transport.register_callback(move |cb: steamworks::LobbyDataUpdate| {
@@ -648,6 +650,32 @@ impl SteamSession {
             pending_lobby: None,
             pending_list: None,
         })
+    }
+
+    /// E2：用**已存在**的 transport 重新构造会话壳（复用同一个 `steamworks::Client`）。
+    /// 用途：对局结束回主菜单时把 transport 从 lockstep **收回**，而不是丢弃——丢弃会等它成为最后一个
+    /// `Client` 引用 → `SteamAPI_Shutdown`；回菜单再 `SteamAPI_Init`。这种“关/重开”会引发 SDK 内部
+    /// 断言（真机：`interfacemap.cpp … PostConnectionStateMsg … failed to read result code`）且丢失回调/头像/
+    /// 排行榜句柄状态。
+    ///
+    /// 注意：**不要**在这里注册任何回调 —— `SteamTransport::init`（会话请求/失败）与 `SteamSession::init`
+    /// （邀请/LobbyChatMsg/LobbyDataUpdate）已注册过，句柄存在 transport 里；重复注册会重复分发。
+    /// 队列（`join_requests`/`lobby_data_updates`）从 transport 取（共享 `Arc`），保证旧回调写入的
+    /// 仍是新会话读取的同一队列。
+    pub fn adopt(mut transport: SteamTransport) -> SteamSession {
+        let join_requests = transport.join_requests();
+        let lobby_data_updates = transport.lobby_data_updates();
+        // 清掉上一局的在途残包/待补发队列（防污染下一局，见 `reset_inflight` 注释）。
+        transport.reset_inflight();
+        SteamSession {
+            transport,
+            lobby: None,
+            table: None,
+            join_requests,
+            lobby_data_updates,
+            pending_lobby: None,
+            pending_list: None,
+        }
     }
 
     /// H4：取走 `LobbyDataUpdate` 回调记录（`(lobby_id, success)`）。

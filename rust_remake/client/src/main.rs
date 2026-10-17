@@ -8552,6 +8552,24 @@ impl Game {
                     cli.transport_ref().matchmaking().leave_lobby(lobby);
                 }
             }
+            // E2：把 transport **收回**到 `steam_sess`（复用同一个 `steamworks::Client`），
+            // 不再“丢弃 lockstep → Client 最后一个引用消失 → SteamAPI_Shutdown；回菜单再 SteamAPI_Init”。
+            // 理由：关机/重开会在 SDK 内部报断言（真机：`interfacemap.cpp … PostConnectionStateMsg … failed`）
+            // 并导致回调句柄/头像/排行榜句柄状态重建；复用则一切延续（队列/回调已在 transport 里）。
+            // 失败回退：若取不到 lockstep（异常路径），仍走旧行为（丢弃 → 回菜单后可再 init）。
+            let reclaimed = if let Some(h) = self.steam_host_ls.take() {
+                Some(h.into_transport())
+            } else {
+                self.steam_cli_ls.take().map(|c| c.into_transport())
+            };
+            if let Some(t) = reclaimed {
+                if self.steam_sess.is_none() {
+                    self.steam_sess = Some(net_steam::session::SteamSession::adopt(t));
+                    // 会话仍在：回菜单后**不要**再 init（`steam_ensure_session` 看到 Some 就会跳过）。
+                    self.steam_session_tried = true;
+                    eprintln!("[steam-sess] adopt transport back into session (no SteamAPI shutdown/init)");
+                }
+            }
             self.steam_host_ls = None;
             self.steam_cli_ls = None;
             self.steam_in_lobby = false;

@@ -20,7 +20,9 @@ use net::transport::{Peer, Transport};
 use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+use crate::session::JoinRequest;
 
 /// Steam 消息传输：持有已初始化 Client。
 pub struct SteamTransport {
@@ -53,6 +55,14 @@ pub struct SteamTransport {
     /// 若每次都只取第一条、丢掉其余，同批次的后续消息（如 PlayerCfg 常跟在 RoomState 后到达）会被静默丢弃。
     /// 故用此缓冲承接整批、由 `recv_from` 逐条交付，保证同批次消息不丢。
     recv_queue: VecDeque<(u64, Vec<u8>)>,
+    /// E2：好友「加入游戏」请求队列——回调写入、上层取用。
+    /// **放在 transport 里**（而不是只在 `SteamSession`）：因为回调闭包持有该 `Arc`，
+    /// 而对局期间 `SteamSession` 壳会被消费掉（transport 移进 lockstep）；
+    /// 对局结束回菜单时用 `SteamSession::adopt()` 复用同一个 transport —— 队列（与回调）自然延续，
+    /// 不会出现“新会话拿到新 Arc、回调仍写旧 Arc → 邀请/H4 探活静默失效”。
+    join_requests: Arc<Mutex<VecDeque<JoinRequest>>>,
+    /// E2：`LobbyDataUpdate` 记录（H4 探活用），同上原因放 transport。
+    lobby_data_updates: Arc<Mutex<VecDeque<(u64, bool)>>>,
 }
 
 /// 一个已订阅工坊物品的状态快照（传输层解码位向，供 UI 用）。
@@ -111,7 +121,28 @@ impl SteamTransport {
             recv_tag_skill: 0,
             recv_tag_room: 0,
             recv_queue: VecDeque::new(),
+            join_requests: Arc::new(Mutex::new(VecDeque::new())),
+            lobby_data_updates: Arc::new(Mutex::new(VecDeque::new())),
         })
+    }
+
+    /// E2：好友「加入游戏」请求队列（共享 `Arc`，供 `SteamSession::init/adopt` 注册回调与取用）。
+    pub fn join_requests(&self) -> Arc<Mutex<VecDeque<JoinRequest>>> {
+        self.join_requests.clone()
+    }
+
+    /// E2：`LobbyDataUpdate` 记录队列（同上）。
+    pub fn lobby_data_updates(&self) -> Arc<Mutex<VecDeque<(u64, bool)>>> {
+        self.lobby_data_updates.clone()
+    }
+
+    /// E2：复用 transport 回菜单时清掉「上一局的在途残包 / 待补发队列」。
+    /// 为何必要：残留 `Frame` 会被下一局的 `ClientLockstep` 当成 `seq >= expect_seq` 插入 `pending`，
+    /// 若下一局打得足够长（`expect_seq` 涨到那个陈旧 seq）就会被当成真帧消费 → 潜在 desync。
+    /// 待补发队列同理（避免把上一局的输入/帧发给新一局的 peer）。
+    pub fn reset_inflight(&mut self) {
+        self.recv_queue.clear();
+        self.pending_sends.clear();
     }
 
     /// 注册 `SteamServersConnected/Disconnected` 回调（维护 `servers_online`）。初始化后调用一次。
