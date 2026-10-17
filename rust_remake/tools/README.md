@@ -175,3 +175,22 @@ python tools/dump_tooltips.py S008 S009
   （0.2MB，探活日志 `first='Window Class'`）；恢复后看门狗会打印“恢复正常（撤销可疑计数）”。
 - 分析：`cdb -z logs\hang-*.dmp -c "~*k"`（看所有线程栈），或把 dmp 交给人/AI。
 - 多实例同机时，各 watcher 会看到同一批进程；已有转储时其余 watcher 自动跳过（不重复转储）。
+
+---
+
+## 联机 soak 报告（真机验收用）
+
+`tools/soak-report.ps1`——只读日志，把多台机器的 `console-*.log` 汇总成三张表：
+
+- **Health**：`!IsLocked` / `interfacemap` 断言、`[steam] session ready`、`adopt`、`NO frames`、`ClientWait` 超时、`AUTO-DROP`、`DESYNC/panic`、`Phase-B STALL`；
+- **Migration**：选举次数、**选举结果 != `lobby_owner`**、`I am new host`、`superseded`、`migrated`、`resumed`；
+- **Traffic peaks**：`queued` / `req` / `pending` 峰值。
+
+默认每个机器目录（`logs/`、`logs_2/`、`logs_3/`）取**最新**一份 console 日志；`-All` 取全部，`-Path 'dir/*.log'` 指定文件，`-Csv` 输出表格数据。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/soak-report.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/soak-report.ps1 -Csv > soak.csv
+```
+
+判读：`Verdict=FAIL` 仅由 `DESYNC/panic`、`Phase-B STALL`、`AUTO-DROP`、或**选举结果与 `lobby_owner` 不一致**触发；`WARN` 为断言 >2、`NO frames`、`ClientWait` 超时或 `session ready` 多次（说明 SteamAPI 被重开）。
