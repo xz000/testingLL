@@ -775,9 +775,16 @@ impl Player {
             return;
         }
         // 1) 强制位移：定格速推进，重置自走惯性。
-        if let Some(c) = &self.control {
+        if self.control.is_some() {
+            let mut vel = self.control.as_ref().unwrap().vel;
+            // 098c Phoenix uses normal Q/S decay (ground .96 / ice .98) before each bO order.
+            if self.phoenix_remaining > Fix64::ZERO {
+                let f = if self.on_ice { ICE_DECAY_PER_FRAME } else { W098B_KB_DECAY_PER_FRAME };
+                vel = vel * Fix64::from_num(f);
+                self.control.as_mut().unwrap().vel = vel;
+            }
             self.cur_vel = Vec2::ZERO;
-            self.pos += c.vel * dt;
+            self.pos += vel * dt;
             self.pos += self.kb_vel * dt;
             self.pos += self.pull * dt;
             return;

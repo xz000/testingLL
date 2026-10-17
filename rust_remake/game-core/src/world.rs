@@ -5803,7 +5803,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             };
                             // 098c WB：固定时长 3.1*jn；初速度 20/tick ≈667/s；无距离 clamp、无直接接触伤害。
                             let dur_s = dur * p.jn();
-                            p.push(dir * speed, dur_s);
+                            // 098c `bO(ii,20,TX,TY)` 是**加到现有 Q/S**，不是覆盖。
+                            p.push(p.cur_vel + dir * speed, dur_s);
                             p.phoenix_remaining = Fix64::from_num(dur_s);
                         }
                     }
@@ -7346,7 +7347,8 @@ mod tests {
             dt,
         );
         let v1 = world.players[0].control.as_ref().unwrap().vel.length();
-        assert!((v1 - v0).abs() < Fix64::from_num(0.01), "no edge should not change velocity");
+        assert!(v1 < v0, "no edge only decays Q/S ({v0} -> {v1})");
+        assert!(v1 > v0 * Fix64::from_num(0.9), "decay should be small");
         // 新点地边沿 → 追加 bO 速度。
         world.step(
             vec![
@@ -7377,16 +7379,21 @@ mod tests {
         );
         let none = vec![PlayerInput::default(), PlayerInput::default()];
         let mut seen = false;
+        let mut last_vel = Fix64::ZERO;
         for _ in 0..300 {
             world.step(none.clone(), dt);
+            if world.players[0].control.is_some() {
+                last_vel = world.players[0].control.as_ref().unwrap().vel.length();
+            }
             if seen && world.players[0].control.is_none() {
                 break;
             }
             seen |= world.players[0].control.is_some();
         }
-        let v = world.players[0].cur_vel.length().to_num::<f64>();
+        let v = world.players[0].cur_vel.length();
         assert!(seen, "phoenix should start");
-        assert!(v > 500.0, "PB should keep Q/S velocity, got {v}");
+        assert!(v > Fix64::ZERO, "PB should keep the remaining Q/S velocity, got {v:?}");
+        assert!(v <= last_vel, "end velocity should be the decayed pre-end velocity ({last_vel} -> {v})");
     }
 
     #[test]
