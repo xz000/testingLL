@@ -212,6 +212,16 @@ fn should_step_more(accumulator: f64, pending_len: usize, steps_done: usize) -> 
 }
 /// 单机开局配置超时：等这么久没按开始就用默认配置自动开始第一轮（避免窗口没焦点/按键收不到导致卡死）。
 const PRE_GAME_TIMEOUT_SECS: f64 = 60.0;
+/// Fix2：配置同步（Steam `ClientWait`）期间**判活豁免**的时长上限（秒）。
+/// 同步正常几秒内完成 → 计时器保持新鲜（避免“同步完立刻误判 host 静默”）；
+/// 超过它仍未完成 → 停止豁免，让正常 3s 静默 → 迁移探测兜底。
+#[cfg(feature = "steam")]
+const CFG_SYNC_LIVENESS_GRACE_SECS: f64 = 10.0;
+/// Fix2：配置同步（Steam `ClientWait`）硬超时（秒）。
+/// `recv_cfg_all` 只认 `PlayerCfgAll`、会丢弃 `Leave`/`PauseState` 等包 → 必须自己兜底，
+/// 否则会无限卡在 ClientWait（真机曾卡过 ~40s）；超时即视为 host 可能已不在 → 进迁移探测。
+#[cfg(feature = "steam")]
+const CLIENT_CFG_WAIT_TIMEOUT_SECS: f64 = 15.0;
 /// Steamworks 应用 AppID —— 由 `appid.rs` 按 **feature** 决定（正式版 908660 / demo 1042120）。
 /// 曾经在这里写死 908660；demo 版必须换 AppID，否则会以正式版身份初始化（云/工坊/统计全作用到正式版上）。
 #[cfg(feature = "steam")]
@@ -1331,6 +1341,9 @@ struct Game {
     /// Steam：主菜单上是否已尝试过初始化会话（失败也不再每帧重试，避免刷屏 + 反复 SteamAPI_Init）。
     #[cfg(feature = "steam")]
     steam_session_tried: bool,
+    /// Fix2：进入配置同步（Steam `ClientWait`）的起点时刻（秒）；`<= 0.0` = 不在同步中。
+    #[cfg(feature = "steam")]
+    steam_cfg_wait_since: f64,
     /// Steam：各成员的 ping（毫秒），键 = SteamID；每 ~0.5s 刷新一次（帧同步对延迟敏感，值得显性展示）。
     #[cfg(feature = "steam")]
     steam_pings: Vec<(u64, i32)>,
@@ -1899,6 +1912,8 @@ impl Game {
             pause_toast: (String::new(), 0.0),
             #[cfg(feature = "steam")]
             steam_session_tried: false,
+            #[cfg(feature = "steam")]
+            steam_cfg_wait_since: 0.0,
             #[cfg(feature = "steam")]
             steam_pings: Vec::new(),
             #[cfg(feature = "steam")]
@@ -7743,6 +7758,32 @@ impl event::EventHandler for Game {
                         // Steam client：开局配置·配置同步阶段——上报我的 PlayerCfg，等 host 广播 PlayerCfgAll 后完成。
                         if self.net_cfg == NetCfgSync::ClientWait {
                             self.jit_stall_reason = "cfg-sync";
+                            // Fix2：配置同步期间判活**有界豁免** + 硬超时兜底。
+                            // - 豁免：同步期间只收 cfg 不收帧；若不刷新计时器，同步一结束就会“立刻静默超时”
+                            //   （真机 2026-10-17：`NO frames for 3.2s (67 ticks)` 紧跟在 ClientWait 之后）；
+                            // - 有界：超过 `CFG_SYNC_LIVENESS_GRACE_SECS` 不再豁免（host 真死了要能发现）；
+                            // - 硬超时：`recv_cfg_all` **只认 PlayerCfgAll、会丢弃 Leave/PauseState 等包** →
+                            //   必须自己兜底，否则会无限卡在 ClientWait（真机曾卡过 ~40s）。
+                            if self.steam_cfg_wait_since <= 0.0 {
+                                self.steam_cfg_wait_since = now;
+                            }
+                            let cfg_wait_secs = now - self.steam_cfg_wait_since;
+                            if cfg_wait_secs <= CFG_SYNC_LIVENESS_GRACE_SECS {
+                                self.steam_note_host_alive(now);
+                            }
+                            if cfg_wait_secs >= CLIENT_CFG_WAIT_TIMEOUT_SECS {
+                                eprintln!(
+                                    "[steam-client] ClientWait 超时 {cfg_wait_secs:.1}s（未收到 PlayerCfgAll）→ 进入迁移探测"
+                                );
+                                self.steam_cfg_wait_since = 0.0;
+                                self.steam_migrating = true;
+                                self.steam_migrate_ticks = 0;
+                                self.steam_new_host_id = 0;
+                                self.steam_cli_stale_ticks = 0;
+                                self.steam_cli_ls = Some(cli);
+                                self.accumulator = 0.0;
+                                return Ok(());
+                            }
                             // 保活：配置同步阶段也每帧上行（就绪 + 配好 + 在场输入），既防止 P2P 空闲被拆，
                             // 也持续向 host 续报 build_done=true（host 端判定“所有端配完”始终成立）。
                             let ref_enc = game_core::netcode::encode_player_input(&self.local_player_input());
@@ -7803,6 +7844,8 @@ impl event::EventHandler for Game {
                             self.accumulator = 0.0;
                             return Ok(()); // 同步阶段不推进战斗
                         }
+                        // Fix2：不在配置同步中 → 清掉同步计时（下次进入 ClientWait 重新起算）。
+                        self.steam_cfg_wait_since = 0.0;
                         // Steam client：就绪/配置已完成；这里上行输入 + 严格按权威帧推进（乐观预测关）。
                         // 上行用 `send_room_state`（合包，Steam P2P 下实测可靠）；`send_input` 单独发送曾实测间歇丢。
                         let mut c_rcv = vec![0u8; 256 * 1024];
@@ -8549,6 +8592,7 @@ impl Game {
             self.steam_avatars = Vec::new();
             self.steam_net_ticks = 0;
             self.steam_pause_logged = false;
+            self.steam_cfg_wait_since = 0.0;
             self.steam_played_with = Vec::new();
             // 本场战绩上报标记/提示条复位（下一场重新上报）。
             self.steam_stats_recorded = false;
@@ -10317,6 +10361,7 @@ impl Game {
         self.steam_cli_stale_ticks = 0;
         self.steam_last_host_pkt_at = 0.0;
         self.steam_last_online_bcast_at = 0.0;
+        self.steam_cfg_wait_since = 0.0;
         self.steam_participants = Vec::new();
         self.steam_online = Vec::new();
         self.steam_migrating = false;
