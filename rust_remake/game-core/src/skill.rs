@@ -1464,8 +1464,14 @@ pub fn cast_max_distance(
         DefTable::def(id)
     };
     let stats = def.stats_at(level);
+    let time_scale = 1.0 + 0.1 * time_mastery as f64;
     if stats.max_distance > Fix64::ZERO {
-        return Some(stats.max_distance);
+        let scale = match id {
+            // 098c: S012 `NB=(650+50Wr)*(1+.1ei)`；S013 900/600*(1+.1ei)；S016 同按时间精通缩放。
+            SkillId::S012 | SkillId::S013 | SkillId::S016 => time_scale,
+            _ => 1.0,
+        };
+        return Some(stats.max_distance * Fix64::from_num(scale));
     }
     match id {
         SkillId::S008 if !alt => Some(Fix64::from_num(1200.0)),
@@ -1496,13 +1502,16 @@ pub fn cast_range_limit(
         DefTable::def(id)
     };
     let stats = def.stats_at(level);
+    let time_scale = 1.0 + 0.1 * time_mastery as f64;
     match id {
         SkillId::S008 if !alt => Some(Fix64::from_num(1200.0)),
         SkillId::S009 | SkillId::S014 => {
             Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64)))
         }
-        SkillId::S011 | SkillId::S012 | SkillId::S013 => {
-            (stats.max_distance > Fix64::ZERO).then_some(stats.max_distance)
+        SkillId::S011 => (stats.max_distance > Fix64::ZERO).then_some(stats.max_distance),
+        SkillId::S012 | SkillId::S013 => {
+            (stats.max_distance > Fix64::ZERO)
+                .then_some(stats.max_distance * Fix64::from_num(time_scale))
         }
         _ => None,
     }
@@ -4137,6 +4146,9 @@ mod tests {
         assert_eq!(m(SkillId::S009, false, 1, 0), Some(700.0));
         assert_eq!(m(SkillId::S009, false, 1, 10), Some(1400.0), "700*(1+.1*time mastery)");
         assert_eq!(m(SkillId::S014, false, 1, 5), Some(1050.0));
+        assert_eq!(m(SkillId::S012, false, 1, 10), Some(1400.0), "S012 700*(1+.1*time)");
+        assert_eq!(m(SkillId::S013, false, 1, 10), Some(1800.0), "S013A 900*(1+.1*time)");
+        assert!(m(SkillId::S016, false, 1, 10).unwrap() > m(SkillId::S016, false, 1, 0).unwrap());
         assert!(m(SkillId::S000, false, 1, 0).unwrap() > 0.0);
         assert!(m(SkillId::S011, false, 1, 0).unwrap() >= 770.0, "blink growth range");
         // 只有“真正的施法距离”才用于权威 clamp；投射物航程（S000/S016 等）不 clamp。
@@ -4144,6 +4156,8 @@ mod tests {
         assert_eq!(cast_range_limit(SkillId::S000, false, 1, 0), None);
         assert_eq!(cast_range_limit(SkillId::S016, false, 1, 0), None);
         assert_eq!(cast_range_limit(SkillId::S009, false, 1, 10), Some(Fix64::from_num(1400.0)));
+        assert_eq!(cast_range_limit(SkillId::S012, false, 1, 10), Some(Fix64::from_num(1400.0)));
+        assert_eq!(cast_range_limit(SkillId::S013, true, 1, 10), Some(Fix64::from_num(1200.0)));
         assert!(cast_range_limit(SkillId::S011, false, 1, 0).is_some());
     }
 
