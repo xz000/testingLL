@@ -1,0 +1,199 @@
+# S012B 凤凰冲刺 重写计划（按 098c）
+
+> 状态：**深挖完成，未开工**（2026-10-17）。
+> 目标：把当前“直线 dash 近似”改成 098c 的 **固定时长、可点地转向、结束时保留速度** 的凤凰冲刺。
+> 会改模拟与输入协议；预计协议 **66 → 67**。
+
+## 1. 098c 真值（`war3map.j`）
+
+### 1.1 开始：`WB`
+
+```jass
+if not kr[ri] then
+    call bO(ii, 20, TX, TY)          // 初速度：+20/tick ≈ 667/s，方向 = 点击点
+    call IssueImmediateOrderById(...)
+    call SetUnitFacing(...)
+    call JO(true, ii, true, 7331, false, 0)
+    set kr[ri] = true
+    set Jr[ri] = CreateTrigger()     // EVENT_UNIT_ISSUED_POINT_ORDER -> UB
+    // 3.1 * jn[ri] 秒后 -> PB
+endif
+```
+
+- 初速度 **20/tick ≈ 667/s**；
+- 持续时间 **`3.1 × jn` 秒**（`jn` 是持续时间倍率，不是时间精通）；
+- 期间**每次点地**触发 `UB`。
+
+### 1.2 转向：`UB`（每次新点地）
+
+```jass
+set wB = SquareRoot(Q*Q + S*S)       // 当前每 tick 速度
+if Fr[gX] then                      // 风步状态
+    call tB(gX, orderX, orderY)     // 生成凤凰弹
+    call JO(...7331...)
+else
+    call bO(gX, 18*Pow(.5, wB/20), orderX, orderY)
+endif
+```
+
+- 普通状态：**追加**速度  
+  `18 × 0.5^(当前每 tick 速度 / 20)`；
+- **不是覆盖**；速度越快追加越少；
+- 只在**新的点地指令**触发，不是每帧持续触发；
+- 目标点只决定方向，**没有最大施法距离/clamp**。
+
+### 1.3 风步分支：`tB`
+
+```jass
+set ev[Nb] = 1.4*(1+.1*ei[id])       // 生命 1.4*(1+.1×时间精通)
+speed = 1000；radius = 44
+Xv = Wr + wr
+// 伤害 handler ea/xa；当前 Rust 侧按 4+0.5*(R+E 等级) 近似
+```
+
+- 只有 `Fr[gX]`（风步）时才生成；
+- 普通凤凰状态**没有** `tB` 弹体。
+
+### 1.4 结束：`PB`
+
+```jass
+call DestroyEffect(oe)
+call DestroyTrigger(Jr[id])
+set kr[id] = false
+```
+
+- **只结束状态**，不清 `Q/S`；
+- 所以结束后角色保留当前速度继续移动/滑行，不会急停；
+- 没有“20% 余速”这类二次缩放（那是 S012A 的 `CR`）。
+
+### 1.5 伤害结论
+
+- `CA` 的伤害分支只检查 `Hr`（S012A）；
+- S012B 在普通状态**没有直接接触伤害**；
+- 伤害来自风步状态下的 `tB` 弹体。
+- 当前 Rust 给 Phoenix 设置的 `p.kick`（接触伤害/击退）需要移除或确认（按 098c 应移除）。
+
+## 2. 当前 Rust 实现与差距
+
+当前 `world.rs` 的 `W098bUtilKind::Phoenix`：
+
+```rust
+let dist = stats.max_distance * ei_mult(false);
+let dur_s = (dist / speed).max(dur);
+p.push(dir * speed, dur_s);
+p.kick = Some(Kick { ... });
+p.phoenix_remaining = dur;
+```
+
+差距：
+
+| # | 当前 | 098c |
+|---|---|---|
+| 1 | 持续时间固定 `3.1` | `3.1 × jn` |
+| 2 | 转向**替换** `control.vel`，且 `set_target` 每帧都执行 | 每次**新点地**才**追加**速度 |
+| 3 | `cast_range_limit` 对 B 做距离 clamp | 无距离限制 |
+| 4 | `cast_max_distance` 对 B 乘时间精通 | 主凤凰不吃 `ei` |
+| 5 | 结束 `control` 到期后 `cur_vel=0`（burning=false） | 保留当前 `Q/S` 继续走 |
+| 6 | `p.kick` 接触伤害/击退 | 普通状态无直接伤害；仅风步 `tB` |
+| 7 | `phoenix_shots` 已有雏形 | 与 `tB` 对齐（生命/伤害/半径/速度） |
+
+## 3. 设计草案
+
+### 3.1 状态
+
+复用现有字段，尽量不新增快照字段：
+
+- `Player.phoenix_remaining: Fix64`（已有）：剩余持续时间；
+- `Player.control: Option<Control>`（已有）：凤凰期间的速度载体；
+  - `remaining = 3.1×jn`；
+  - `decay: false`；
+- `PlayerInput.phoenix_order: bool`（**新增，运行时输入字段**）：本 tick 是否有新的点地指令。
+
+不改 `Control` 结构，避免快照格式变化；只加输入字段。
+
+### 3.2 开始（cast effect）
+
+1. 方向 = 指向点击点；
+2. `p.control = Some(Control { vel: dir*667, remaining: 3.1*jn, decay:false })`；
+3. `p.phoenix_remaining = 3.1*jn`；
+4. **不**设置 `p.kick`、**不**设置 `burning`；
+5. 清 `move_target`；不 clamp 目标距离。
+
+### 3.3 转向（每 tick 输入阶段）
+
+在现有 `phoenix_remaining > 0 && control.is_some()` 分支中：
+
+- **只有 `pi.phoenix_order == true` 才执行**（新点地）；
+- 普通状态：
+  ```text
+  v_tick = |control.vel| * 0.03
+  imp = 18 * 0.5^(v_tick / 20)
+  control.vel += dir * (imp / 0.03)     // 追加，不是覆盖
+  ```
+- 风步状态（`windwalk_state > 0 && !charging`）：生成 `phoenix_shots`（tB），不追加位移；
+- 分支结束 `continue`，避免本次 `set_target` 再覆盖普通 `move_target`。
+
+### 3.4 结束
+
+在 `tick_buffs` 的 `control` 到期处：
+
+- 若 `phoenix_remaining > 0`（Phoenix 状态）：
+  - `cur_vel = control.vel`（**保留速度**）；
+  - 不要走 S012A 的 20% 余速逻辑（`burning=false`）；
+- `control=None`；`phoenix_remaining` 随后归零；
+- 之后由普通移动/冰面减速接管。
+
+### 3.5 范围与指示线
+
+- `cast_range_limit(S012, alt=true, ...) -> None`（B 无距离 clamp）；
+- `cast_max_distance(S012, alt=true, ...) -> None`（指示线跟随鼠标/只表示方向）；
+- S012A 保持现状（700×(1+.1时间精通)，clamp）。
+- 客户端 `skill_aim_hint` 对 B 返回 0 时，现有绘制自然不截断。
+
+### 3.6 输入边沿
+
+- `PlayerInput` 新增 `phoenix_order: bool`；
+- 客户端右键时设置 `pending_phoenix_order = true`；
+- `local_player_input()` 取走并写入 `phoenix_order`（与 `pending_cast` 同模式）；
+- `netcode::encode/decode_player_input` 增加 1 字节；
+- 协议 **67**（运行期输入格式变化，不是快照字段）。
+
+> 为什么不靠 `set_target` 变化判断：锁步输入每帧持续发送同一个 `set_target`；098c 只在 `EVENT_UNIT_ISSUED_POINT_ORDER` 时追加，必须显式边沿。
+
+## 4. 实施步骤（每步一个 commit）
+
+1. **输入边沿**：`PlayerInput.phoenix_order` + netcode + client pending flag + 单测往返。
+2. **B 范围/指示线**：`cast_range_limit`/`cast_max_distance` 对 S012 alt 返回 None；不影响 A。
+3. **状态机**：Phoenix 开始/转向/结束按 §3 改；移除 `p.kick`；保留速度；`jn` 时长。
+4. **风步 tB 核对**：生命/伤害/半径/速度与 JASS 一致；必要时修正。
+5. **单测**：
+   - `phoenix_duration_scales_with_jn`；
+   - `phoenix_new_order_adds_velocity_once`（同一 tick 多个 set_target 不追加，只有 phoenix_order 才追加）；
+   - `phoenix_end_preserves_velocity`（结束不归零、无 20%）；
+   - `phoenix_b_has_no_range_clamp`；
+   - `phoenix_windwalk_spawns_tb_projectile`；
+   - netcode `phoenix_order` 往返。
+6. **协议 67** + 文档（台账/审计/HANDOFF）。
+
+## 5. 风险
+
+| 风险 | 说明 | 对策 |
+|---|---|---|
+| 输入边沿丢失 | 锁步下右键频率/网络缓冲 | `PlayerInput` 显式 flag；每帧发送；单测 |
+| `control` 与普通移动冲突 | 凤凰期间 `set_target` 仍会写 `move_target` | 转向分支 `continue`，跳过普通移动 |
+| 结束速度与冰面/刹车模型 | 098c `Q/S` 保留；我们转 `cur_vel` 后由现有模型衰减 | 单测地面/冰面各一条 |
+| `jn` 来源 | 冲撞/凤凰时长倍率 | 用 `p.jn()`；确认 buff/物品生效 |
+| 风步 `tB` 伤害 | handler 未完全反编译 | 先按现有 `4+0.5*(R+E)` 近似，标注待核 |
+| 协议兼容 | 输入格式 +1 字节 | 升 67，两端同时更新 |
+| S012B 指示线 | 无距离限制，目标只表方向 | `max_dist=0`，画到鼠标；不再显示截断/红圈 |
+
+## 6. 需要拍板的细节
+
+1. **普通凤凰是否真的没有直接接触伤害**？（按 `CA` 只有 `Hr` 分支，判断为没有；需你确认是否按此重写。）
+2. 结束保留速度时，地面/冰面都保留（098c 是）；是否接受“结束后还会滑一段”？
+3. 指示线是否接受“B 不显示最大距离，只画方向线”？
+4. 协议 67 是否现在就要升（联机两端同步更新）。
+
+## 7. 结论
+
+S012B 不是“改一个时长”，而是**输入边沿 + 状态机 + 范围/指示线 + 结束速度**的组合改动。建议按 §4 的 5 个 commit 小步实施，每步 `check.ps1` + 单测，最后真机验证“点地转向、时长、结束滑行、风步弹体”。
