@@ -1465,6 +1465,8 @@ pub fn cast_max_distance(
     };
     let stats = def.stats_at(level);
     let time_scale = 1.0 + 0.1 * time_mastery as f64;
+    // 098c：S003/S004 投射物寿命/航程 +15%/级（`1+1.5*.1*ei`），其余 W098b +10%；S002 闪电也 +15%。
+    let heavy_scale = 1.0 + 0.15 * time_mastery as f64;
     if stats.max_distance > Fix64::ZERO {
         let scale = match id {
             // 098c: S012 `NB=(650+50Wr)*(1+.1ei)`；S013 900/600*(1+.1ei)；S016 同按时间精通缩放。
@@ -1478,11 +1480,19 @@ pub fn cast_max_distance(
         SkillId::S009 => Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64))),
         SkillId::S014 => Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64))),
         _ => match def.effect {
-            SkillEffect::W098bBolt { range, .. } => Some(range),
-            SkillEffect::Warlock098b { proj, speed, life, .. } => match proj {
-                W098bProjKind::Boomerang => Some(Fix64::from_num(800.0)),
-                _ => Some(speed * life),
-            },
+            // S002 闪电：JASS `jb 600*(1+.15ei)`。
+            SkillEffect::W098bBolt { range, .. } => Some(range * Fix64::from_num(heavy_scale)),
+            SkillEffect::Warlock098b { proj, speed, life, .. } => {
+                let scale = if matches!(id, SkillId::S003 | SkillId::S004) {
+                    heavy_scale
+                } else {
+                    time_scale
+                };
+                match proj {
+                    W098bProjKind::Boomerang => Some(Fix64::from_num(800.0 * heavy_scale)),
+                    _ => Some(speed * life * Fix64::from_num(scale)),
+                }
+            }
             _ => None,
         },
     }
@@ -4150,6 +4160,16 @@ mod tests {
         assert_eq!(m(SkillId::S013, false, 1, 10), Some(1800.0), "S013A 900*(1+.1*time)");
         assert!(m(SkillId::S016, false, 1, 10).unwrap() > m(SkillId::S016, false, 1, 0).unwrap());
         assert!(m(SkillId::S000, false, 1, 0).unwrap() > 0.0);
+        assert_eq!(m(SkillId::S000, false, 1, 10), Some(2000.0), "fireball 1000*(1+.1*time)");
+        assert_eq!(m(SkillId::S008, true, 1, 10), Some(1600.0), "magma 800*(1+.1*time)");
+        let ratio = |id: SkillId| {
+            let a = m(id, false, 1, 0).unwrap();
+            let b = m(id, false, 1, 10).unwrap();
+            b / a
+        };
+        assert!((ratio(SkillId::S002) - 2.5).abs() < 0.01, "bolt range +15%/level (10 levels => 2.5x)");
+        assert!((ratio(SkillId::S003) - 2.5).abs() < 0.01, "S003 projectile reach +15%/level");
+        assert!((ratio(SkillId::S004) - 2.5).abs() < 0.01, "S004 boomerang reach +15%/level");
         assert!(m(SkillId::S011, false, 1, 0).unwrap() >= 770.0, "blink growth range");
         // 只有“真正的施法距离”才用于权威 clamp；投射物航程（S000/S016 等）不 clamp。
         assert_eq!(cast_range_limit(SkillId::S008, false, 1, 0), Some(Fix64::from_num(1200.0)));
