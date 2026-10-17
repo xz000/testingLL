@@ -3155,11 +3155,18 @@ impl Game {
         dashing: bool,
         pos: Vec2,
         target: Vec2,
+        vel: Vec2,
     ) -> bool {
         if !accepted || in_control || dashing {
             return false;
         }
-        let eps = Fix64::from_num(PLAYER_TARGET_ARRIVE_EPS);
+        // 冰面上到达目标时世界只清 `move_target`、不刹车（继续滑行）；
+        // 因此容差要覆盖“本 tick 已越过的距离 ×2”，否则 `player_target` 会被重新下发 → 标记永远不消失。
+        let mut eps = Fix64::from_num(PLAYER_TARGET_ARRIVE_EPS);
+        let slide = vel.length() * Fix64::from_num(TICK) * Fix64::from_num(2.0) + Fix64::ONE;
+        if slide > eps {
+            eps = slide;
+        }
         (target - pos).length_squared() <= eps * eps
     }
 
@@ -3198,6 +3205,7 @@ impl Game {
                     p.dash_active,
                     p.pos,
                     t,
+                    p.cur_vel,
                 ) {
                     self.player_target = None;
                     self.player_target_accepted = false;
@@ -14363,17 +14371,19 @@ mod tests {
         let target = v(0.0);
         let f = super::Game::should_clear_player_target;
         // 未被世界接受过 → 不清（避免刚下目标、world 尚未应用时丢指令）
-        assert!(!f(false, false, false, near, target));
+        assert!(!f(false, false, false, near, target, v(0.0)));
         // 到达附近且未处于位移/冲刺 → 清
-        assert!(f(true, false, false, near, target));
+        assert!(f(true, false, false, near, target, v(0.0)));
         // 远离目标 → 不清
-        assert!(!f(true, false, false, far, target));
+        assert!(!f(true, false, false, far, target, v(0.0)));
         // **击退中**（control）即便在目标附近也不清（核心回归）
-        assert!(!f(true, true, false, near, target));
+        assert!(!f(true, true, false, near, target, v(0.0)));
         // **冲刺中**同样不清
-        assert!(!f(true, false, true, near, target));
+        assert!(!f(true, false, true, near, target, v(0.0)));
         // 精确到达 → 清
-        assert!(f(true, false, false, target, target));
+        assert!(f(true, false, false, target, target, v(0.0)));
+        // High-speed ice slide: one tick can overshoot the target by >12 units.
+        assert!(f(true, false, false, v(20.0), target, v(600.0)));
     }
 
     /// 飘字的血量变化归类：伤害为负、治疗为正、微小变化忽略。
