@@ -454,3 +454,38 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 2. 若 host 在配置同步期真的没了：≤~15s 应看到 `ClientWait 超时 … → 进入迁移探测`，而不是无限卡住；
 3. 出现缺口时 `req` 应**缓慢**增长（≈4/s 而不是 ≈60/s），且 `recv` 正常增长；
 4. 其余不回退：无 `DESYNC`/`panic`/`Phase-B STALL`，归队/接管/系统暂停行为不变。
+
+### 17.9 续：SDK 内部断言专项（E1 `3f94131` / E2 `fd32daf`）
+**现象**：每轮会出现若干条 Valve SDK 的**调试断言**（不是 Rust panic，进程继续跑）：
+- `steamnetworkingsockets_internal.h (769) : !IsLocked()`
+- `interfacemap.cpp (886) : IPC call to IClientNetworkingUtilsSerialized::PostConnectionStateMsg failed to read result code`
+
+**归因（把一轮 14 条逐条与上下文对齐）**：
+| 事件类 | 条数 | 时机 | 说明 |
+|---|---|---|---|
+| **接管/迁移窗口** | **6/14** | `TAKEOVER`/handover 暂停期间（每帧广播 Takeover + 逐 peer `send_to`） | 对应 `!IsLocked` |
+| **leave / 归队 / 回菜单** | **8/14** | `leave match`、`LobbyEnter` 归队、`finished -> back to main menu` | 含全部 `interfacemap` IPC |
+| 稳态学习/对局 | **0** | —— | 与**阶段无关** |
+
+→ 结论：与“学习期/对局期”无关，只与**事件**（收/发路径中间泵回调；SteamAPI 关/重开）相关。
+
+**E1 `3f94131`（回调泵只保留每帧一次）**
+- 现状：`transport_steam.rs` 在 `flush_pending()`、`recv_messages_into_queue()` 里各调 `run_callbacks()`；而 `recv_from`/`send_to` 每帧被调多次（`step_frame` 循环、每个 peer 发送）→ **每帧泵几十次**，且都发生在**收/发路径中间**（回调里还有唯一的“回调内调 Steam API”=`req.accept()`）。
+- 改法：删掉这两处，统一由 `main.rs` 的 `update` 顶部（所有状态分支之前、无 early return）**每帧一次**。
+- 代价/兜底：会话建立或 `AUTO_RESTART` 后最多**晚 1 帧**可见；发送失败仍进 `pending_sends`，下帧顶部泵完 FIFO 补发。
+- 预期：接管窗口那 6 条 `!IsLocked` 消失；`interfacemap` 不受影响。
+
+**E2 `fd32daf`（对局结束不关 SteamAPI）**
+- 现状：`steam_sess` 的 transport 在对局开局被 `into_transport()` 移进 lockstep → 对局结束丢弃 lockstep = 最后一个 `Client` 引用消失 → `SteamAPI_Shutdown`；回菜单 `steam_ensure_session()` 再 `SteamAPI_Init`（日志里每条 `SteamInternal_SetMinidumpSteamID … [steam] session ready` 即此）。
+- 改法：①`join_requests`/`lobby_data_updates` 两个回调队列的**权威位置移到 `SteamTransport`**（回调持有的 `Arc` 与会话共享 → `adopt` 后回调仍写同一队列，否则会“新会话新 Arc → 邀请/H4 探活静默失效”）；②新增 `SteamSession::adopt(transport)`（**不重复注册回调**）；③`SteamTransport::reset_inflight()` 清上一局在途残包/待补发队列（防残留 `Frame` 被下一局 lockstep 当成新帧消费）；④`reset_to_main_menu` 在 `leave_lobby` 后把 `lockstep.into_transport()` 收回 → `adopt` → `steam_sess=Some`（取不到 lockstep 的异常路径仍走旧行为）。
+- 预期：`interfacemap` IPC 断言与 leave/归队/回菜单那 8 条大幅减少；顺带避免回调句柄/头像/排行榜状态重建。
+
+**若 E1+E2 后仍有**：属 Steam 客户端侧噪声（如退出时的 IPC），记录在案，不再折腾。
+
+**联合验收要点（E1+E2 一起测）**：
+1. 断言计数：`!IsLocked` 预期 ≈0；`interfacemap` 预期显著下降（跑 2 轮看趋势，断言非确定性）；
+2. 回菜单日志应出现 `[steam-sess] adopt transport back into session`，且**不再**出现 `[steam] session ready`（说明没重 init）；
+3. 回菜单后功能全部正常：大厅列表/建房/加入、好友「加入游戏」邀请、按 Y 归队、再开一局；
+4. `[netdiag] LobbyChatMsg/LobbyDataUpdate` 仍刷、头像/ping 仍刷新；
+5. `[stat] host … send=(direct,queued)` 的 `queued` **不长期增长**（若持续涨 → 说明 E1 的 1 帧延迟有影响，改用“帧戳节流的 transport 内泵”方案）；
+6. 无 `DESYNC`/`panic`/`Phase-B STALL`。
