@@ -107,4 +107,6 @@ pub fn version() -> &'static str {
 /// S009/S014 按 `700*(1+.1*时间精通)` 截断；超出范围的点击落在边界（不再落到任意位置）。
 /// v60（2026-10-17）：**位移技能与击退对齐**——S012A 冲撞按 098c `AB` 把 `kb_vel`（U/w）替换为沿冲刺方向的 52/s；
 /// S013 换位/搬运不再清空 `kb_vel`（098c `KB`/`LB` 保留 U/w）。
-pub const PROTOCOL_VERSION: u32 = 60;
+/// v61（2026-10-17）：**S013 Stop 语义**——098c `IssueImmediateOrder` 只清移动指令，自定义 `Q/S/U/w`（冲刺/击退）继续；
+/// 因此 S013 换位/搬运也不再清 `control`（保留进行中的冲刺/硬推）。
+pub const PROTOCOL_VERSION: u32 = 61;

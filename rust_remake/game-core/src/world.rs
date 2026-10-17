@@ -2512,7 +2512,7 @@ impl World {
                             let old = p.pos;
                             p.pos = o.pos;
                             p.move_target = None;
-                            p.control = None; // 与 098c `IssueImmediateOrderById` 相近：清移动指令
+                            // 098c `IssueImmediateOrderById` 只清“移动指令”；自定义的 Q/S/U/w（冲刺/击退）继续生效。
                             self.obstacles[oi].pos = old;
                         }
                         pr.alive = false;
@@ -2527,7 +2527,6 @@ impl World {
                             let old = p.pos;
                             p.pos = o.pos;
                             p.move_target = None;
-                            p.control = None;
                             self.obstacles[oi].pos = old;
                         }
                         pr.alive = false;
@@ -9096,6 +9095,12 @@ mod tests {
         world.players[1].pos = Vec2::new(d60(-8.0), Fix64::ZERO); // 敌人放远，避免先命中人
         world.players[1].move_target = None;
         world.players[0].skill_levels[SkillId::S013.as_u32() as usize] = 1;
+        // 098c Stop 只清移动指令；换位后自定义 Q/S/U/w 继续。用长时 control 验证不被清。
+        world.players[0].control = Some(crate::player::Control {
+            vel: Vec2::ZERO,
+            remaining: Fix64::from_num(5.0),
+            decay: false,
+        });
         let caster_start = world.players[0].pos;
         let pillar_start = world.obstacles[0].pos;
         world.step(
@@ -9126,6 +9131,7 @@ mod tests {
             )),
             "交换后弹体应销毁"
         );
+        assert!(world.players[0].control.is_some(), "098c Stop 不应清除冲刺/硬推 control");
     }
 
     /// S013A 换位（098c `KB`，`Gv=si`）：**没命中任何东西**时施法者瞬移到落点
