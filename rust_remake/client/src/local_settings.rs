@@ -58,6 +58,12 @@ pub struct LocalSettings {
     pub training_bots: u8,
     /// 训练场：靶子移动方式（默认漫游）。
     pub training_move: TrainingMove,
+    /// 训练场：出界/岩浆掉血开关（默认开）。
+    pub training_lava: bool,
+    /// 训练场：缩圈开关（默认开）。
+    pub training_shrink: bool,
+    /// 训练场：障碍物开关（默认开）。
+    pub training_obstacles: bool,
     /// 相机平移速度倍率（`0.25..=3.0`，默认 1.0）。作用于方向键平移与边缘滚屏。
     pub cam_pan_speed: f32,
     /// 窗口分辨率偏好（窗口化尺寸；渲染仍固定逻辑分辨率 + letterbox）。
@@ -331,6 +337,9 @@ impl Default for LocalSettings {
             key_shop_cat: DEFAULT_KEY_SHOP_CAT,
             training_bots: DEFAULT_TRAINING_BOTS,
             training_move: TrainingMove::Wander,
+            training_lava: true,
+            training_shrink: true,
+            training_obstacles: true,
             cam_pan_speed: DEFAULT_CAM_PAN_SPEED,
             window_resolution: ResolutionPref::R1280x720,
             fullscreen: FullscreenPref::Windowed,
@@ -839,6 +848,15 @@ pub fn parse(text: &str) -> LocalSettings {
                 }
             }
             "training_move" => s.training_move = TrainingMove::from_code(v),
+            "training_lava" => {
+                s.training_lava = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+            }
+            "training_shrink" => {
+                s.training_shrink = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+            }
+            "training_obstacles" => {
+                s.training_obstacles = matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+            }
             "cam_pan_speed" => {
                 if let Ok(x) = v.parse::<f32>() {
                     s.cam_pan_speed = clamp_cam_pan_speed(x);
@@ -906,9 +924,12 @@ pub fn serialize(s: &LocalSettings) -> String {
         s.key_shop_cat.iter().map(|k| k.code()).collect::<Vec<_>>().join(",")
     );
     out.push_str(&format!(
-        "training_bots={}\ntraining_move={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\nedge_scroll={}\nrejoin_window={}\n",
+        "training_bots={}\ntraining_move={}\ntraining_lava={}\ntraining_shrink={}\ntraining_obstacles={}\ncam_pan_speed={}\nwindow_resolution={}\nfullscreen={}\nedge_scroll={}\nrejoin_window={}\n",
         s.training_bots,
         s.training_move.code(),
+        if s.training_lava { 1 } else { 0 },
+        if s.training_shrink { 1 } else { 0 },
+        if s.training_obstacles { 1 } else { 0 },
         s.cam_pan_speed,
         s.window_resolution.code(),
         s.fullscreen.code(),
@@ -989,6 +1010,9 @@ mod tests {
             key_shop_cat: [BindKey::Char('n'), BindKey::Named(NamedBind::Enter), BindKey::Char('q')],
             training_bots: 4,
             training_move: TrainingMove::Still,
+            training_lava: false,
+            training_shrink: false,
+            training_obstacles: true,
             cam_pan_speed: 2.5,
             window_resolution: ResolutionPref::R1600x900,
             fullscreen: FullscreenPref::Borderless,
@@ -1248,6 +1272,7 @@ mod tests {
     fn training_settings_parse_clamp_and_roundtrip() {
         let d = LocalSettings::default();
         assert_eq!(d.training_bots, DEFAULT_TRAINING_BOTS);
+        assert!(d.training_lava && d.training_shrink && d.training_obstacles, "training toggles default on");
         assert_eq!(d.training_move, TrainingMove::Wander, "默认漫游");
         // 超范围夹紧
         assert_eq!(parse("training_bots=9\n").training_bots, TRAINING_BOTS_MAX);
@@ -1258,12 +1283,17 @@ mod tests {
         assert_eq!(parse("training_move=still\n").training_move, TrainingMove::Still);
         assert_eq!(parse("training_move=wander\n").training_move, TrainingMove::Wander);
         assert_eq!(parse("training_move=\n").training_move, TrainingMove::Wander);
+        assert!(!parse("training_lava=0\n").training_lava);
+        assert!(!parse("training_shrink=off\n").training_shrink);
+        assert!(!parse("training_obstacles=false\n").training_obstacles);
+        assert!(parse("training_lava=on\ntraining_shrink=1\ntraining_obstacles=yes\n").training_obstacles);
         assert_eq!(TrainingMove::Still.next(), TrainingMove::Wander);
         // roundtrip
-        let s = parse("training_bots=5\ntraining_move=still\n");
+        let s = parse("training_bots=5\ntraining_move=still\ntraining_lava=0\ntraining_shrink=0\ntraining_obstacles=0\n");
         let back = parse(&serialize(&s));
         assert_eq!(back.training_bots, 5);
         assert_eq!(back.training_move, TrainingMove::Still);
+        assert!(!back.training_lava && !back.training_shrink && !back.training_obstacles);
         // 旧档（无这两行）→ 默认
         let old = parse("master_volume=0.5\n");
         assert_eq!(old.training_bots, DEFAULT_TRAINING_BOTS);

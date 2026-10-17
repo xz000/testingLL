@@ -315,6 +315,30 @@ fn solo_world_and_meta(bots: u8) -> (game_core::world::World, game_core::meta::M
     (w, m)
 }
 
+/// 训练场：把本地设置里的开关应用到 solo world（仅单机；不影响联机/快照）。
+fn apply_training_settings(world: &mut game_core::world::World, s: &local_settings::LocalSettings) {
+    if !s.training_lava {
+        world.lava_damage_mult = Fix64::ZERO;
+    }
+    if !s.training_shrink {
+        // 把缩圈推到极远的未来；仍保持非 sandbox，回合/胜负逻辑不变。
+        world.configure_shrink(1.0e9, 1.0e9);
+    }
+    if !s.training_obstacles {
+        world.obstacles.clear();
+    }
+}
+
+/// 训练场入口：先按默认生成，再应用岩浆/缩圈/障碍开关。
+fn solo_world_and_meta_with_settings(
+    bots: u8,
+    s: &local_settings::LocalSettings,
+) -> (game_core::world::World, game_core::meta::MatchState) {
+    let (mut w, m) = solo_world_and_meta(bots);
+    apply_training_settings(&mut w, s);
+    (w, m)
+}
+
 /// 靶子下一个目标点（纯函数，便于单测）：
 ///
 /// - `out_of_arena = true`（自身已到场地边缘外）→ 指回内圈（半径 `0.25*arena`）→ **会被推回场内**；
@@ -584,7 +608,7 @@ enum TrainingAction {
 }
 
 /// 训练场设置面板的行数（靶子数量 / 靶子移动）。
-const TRAINING_ROWS: usize = 2;
+const TRAINING_ROWS: usize = 5;
 
 /// 主菜单卡片数（单机 / 局域网 / Steam / 设置）。
 const MENU_COUNT: usize = 4;
@@ -1004,6 +1028,10 @@ struct Game {
     present_shrink_warn_mask: u8,
     /// P5: minimum interval between own out-of-bounds warning sounds (seconds).
     present_oob_warn_cooldown: f32,
+    /// P5/training: max single-frame damage taken/dealt by self this round.
+    present_max_hit: f32,
+    /// 表现层：屏幕右上角的击杀信息流（最近几条，数秒后淡出）。
+    kill_feed: Vec<KillFeedEntry>,
     /// 渲染插值：上一 sim 步的各玩家位置（索引 = player id）。绘制时在 `prev → cur` 间按 alpha 插值，
     /// 消除帧到达抖动带来的画面跳动（纯渲染，不进快照）。
     prev_player_pos: Vec<Vec2>,
@@ -1570,7 +1598,7 @@ impl Game {
         // 不再用 sandbox：出界/缩圈/回合结算全走真实机制；meta 只记录你（靶子无 profile）。
         let is_solo_app = matches!(app, AppState::Solo | AppState::MainMenu);
         let (mut world, mut meta) = if is_solo_app {
-            let (w, m) = solo_world_and_meta(local_settings.training_bots);
+            let (w, m) = solo_world_and_meta_with_settings(local_settings.training_bots, &local_settings);
             eprintln!(
                 "[solo] world players={} sandbox={} training_bots={}",
                 w.players.len(),
@@ -1740,6 +1768,8 @@ impl Game {
             present_prev_oob: Vec::new(),
             present_shrink_warn_mask: 0,
             present_oob_warn_cooldown: 0.0,
+            present_max_hit: 0.0,
+            kill_feed: Vec::new(),
             prev_player_pos: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
@@ -2795,6 +2825,9 @@ impl Game {
         eprintln!("[teardown] world post: {:?}", self.world.players.iter().enumerate().map(|(i, p)| (i as u32, p.skill_levels.to_vec())).collect::<Vec<_>>());
         self.world.round_number = self.meta.round; // 岩浆随回合成长（098c，D9）
         self.world.reset_round();
+        if self.app == AppState::Solo {
+            apply_training_settings(&mut self.world, &self.local_settings);
+        }
         self.player_target = None;
         self.pending_cast = None;
         self.self_was_busy = false;
@@ -2908,6 +2941,14 @@ impl Game {
 
         // 退出菜单打开时暂停本地战斗输入；世界仍按权威帧推进（见 EXIT_MENU_RECONNECT_PLAN.md §4.2）。
         if self.escape_menu {
+            return;
+        }
+        // Solo training: F5 resets the arena without leaving the match.
+        if self.app == AppState::Solo
+            && self.meta.phase == game_core::meta::MatchPhase::Fighting
+            && ctx.keyboard.is_logical_key_just_pressed(&Key::Named(winit::keyboard::NamedKey::F5))
+        {
+            self.training_reset();
             return;
         }
 
@@ -5518,6 +5559,9 @@ impl Game {
                 }
                 // 自身状态面板（Dota2 风格，左下）：生命 / 状态 / 施法
                 self.draw_self_status(canvas, ctx)?;
+                if self.app == AppState::Solo {
+                    self.draw_training_stats(canvas, ctx)?;
+                }
                 // 技能冷却 HUD：底部一排 8 个键位槽，显示绑定技能图标/名称 + 冷却遮罩
                 let self_idx = self.self_index();
                 if let (Some(me), Some(me_player)) = (
@@ -6370,6 +6414,10 @@ impl Game {
             b.life -= dt;
             b.life > 0.0
         });
+        self.kill_feed.retain_mut(|e| {
+            e.life -= dt;
+            e.life > 0.0
+        });
         self.fx.update(dt);
         self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
         self.present_oob_warn_cooldown = (self.present_oob_warn_cooldown - dt).max(0.0);
@@ -6400,6 +6448,7 @@ impl Game {
             self.present_last_kill_at = vec![-1e9; self.world.players.len()];
             self.present_multikill = vec![0; self.world.players.len()];
             self.present_prev_oob = vec![false; self.world.players.len()];
+            self.present_max_hit = 0.0;
             self.float_texts.clear();
             self.fx.clear();
             self.present_ready_pulse = [0.0; 8];
@@ -6616,6 +6665,7 @@ impl Game {
                     *slot = 0;
                 }
                 let killer = self.world.players[i].last_hit_by.filter(|k| *k != victim);
+                self.push_kill_feed(killer, victim);
                 if let Some(k) = killer {
                     self.audio.play(audio::AudioCue::CombatKill);
                     if let Some(slot) = self.present_streak.get_mut(k as usize) {
@@ -6698,6 +6748,9 @@ impl Game {
                     };
                     let pos = self.world.players[i].pos;
                     let damaged = txt.starts_with('-');
+                    if damaged && i as u32 == me {
+                        self.present_max_hit = self.present_max_hit.max(-delta);
+                    }
                     self.push_float(pos, txt, color);
                     if damaged {
                         // P3-1 命中视觉：受击者闪光 + 命中点火花（世界坐标特效，纯客户端）。
@@ -6788,8 +6841,10 @@ impl Game {
         self.present_prev_oob = vec![false; self.world.players.len()];
         self.present_shrink_warn_mask = 0;
         self.present_oob_warn_cooldown = 0.0;
+        self.present_max_hit = 0.0;
         self.float_texts.clear();
         self.banners.clear();
+        self.kill_feed.clear();
         self.fx.clear();
     }
 
@@ -6808,6 +6863,30 @@ impl Game {
     }
 
     /// 压入一条横幅（同文案去重抬到最新；带上限）。
+    fn push_kill_feed(&mut self, killer: Option<u32>, victim: u32) {
+        let me = self.self_index();
+        let victim_label = self.player_label(victim);
+        let (text, color) = match killer {
+            Some(k) => (
+                format!("{}  ⚔  {}", self.player_label(k), victim_label),
+                player_color(k, me),
+            ),
+            None => (
+                i18n::tf("{name} 阵亡", &[("name", victim_label)]),
+                Color::from_rgb(170, 175, 185),
+            ),
+        };
+        if self.kill_feed.len() >= KILL_FEED_MAX {
+            self.kill_feed.remove(0);
+        }
+        self.kill_feed.push(KillFeedEntry {
+            text,
+            color,
+            life: KILL_FEED_LIFE,
+            max_life: KILL_FEED_LIFE,
+        });
+    }
+
     fn push_banner(&mut self, text: String, color: Color) {
         self.banners.retain(|b| b.text != text);
         if self.banners.len() >= PRESENTATION_MAX_BANNERS {
@@ -6840,6 +6919,15 @@ impl Game {
             c.a = (t * 1.6).clamp(0.0, 1.0);
             draw_text(canvas, ctx, &b.text, 26.0, c, Point2 { x: sw / 2.0, y }, true)?;
             y += 34.0;
+        }
+        // Kill feed (top-right, newest first).
+        let mut ky = if self.app == AppState::Solo { 150.0 } else { 12.0 };
+        for e in self.kill_feed.iter().rev() {
+            let t = (e.life / e.max_life).clamp(0.0, 1.0);
+            let mut c = e.color;
+            c.a = (t * 1.3).clamp(0.0, 1.0);
+            ui::text_right(canvas, ctx, &e.text, 17.0, c, sw - 12.0, ky)?;
+            ky += 22.0;
         }
 
         // P5: shrink countdown / active warning + own out-of-bounds vignette.
@@ -6895,6 +6983,48 @@ impl Game {
     }
 
     /// HUD 自身状态面板（Dota2 风格，左下）：生命 + 状态图标 + 施法状态。
+    /// Solo training stats: damage / DPS / max hit / dummies alive.
+    fn draw_training_stats(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
+        let me = self.self_index();
+        if self.world.players.get(me as usize).is_none() {
+            return Ok(());
+        }
+        let dmg = self.world.round_damage_of(me);
+        let secs = self.world.time().to_num::<f64>().max(0.1);
+        let dps = dmg / secs;
+        let bots_alive = self.world.players.iter().skip(1).filter(|p| p.alive).count();
+        let (sw, _) = (ui::UI_W, ui::UI_H);
+        let x = sw - 212.0;
+        let y = 12.0;
+        let lines = [
+            i18n::t("训练统计").to_string(),
+            i18n::tf("总伤害 {n}", &[("n", format!("{dmg:.0}"))]),
+            i18n::tf("DPS {n}", &[("n", format!("{dps:.1}"))]),
+            i18n::tf("最大单击 {n}", &[("n", format!("{:.0}", self.present_max_hit))]),
+            i18n::tf("靶子存活 {n}", &[("n", bots_alive.to_string())]),
+        ];
+        let bg = Mesh::new_rectangle(
+            &ctx.gfx,
+            DrawMode::fill(),
+            graphics::Rect::new(x - 12.0, y - 6.0, 204.0, 118.0),
+            Color::from_rgba(10, 12, 18, 160),
+        )?;
+        canvas.draw(&bg, graphics::DrawParam::new());
+        for (i, line) in lines.iter().enumerate() {
+            let color = if i == 0 { ui::theme::accent() } else { ui::theme::text() };
+            draw_text(
+                canvas,
+                ctx,
+                line,
+                16.0,
+                color,
+                Point2 { x, y: y + i as f32 * 20.0 },
+                false,
+            )?;
+        }
+        Ok(())
+    }
+
     fn draw_self_status(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         use game_core::skill::{CastPhase, DefTable};
         let me = self.self_index();
@@ -8613,7 +8743,7 @@ impl Game {
     #[cfg_attr(not(feature = "steam"), allow(unused_variables))]
     fn reset_to_main_menu(&mut self, keep_rejoin: bool) {
         // 主菜单与 Solo 共用同一份训练场世界/配置（金币 9999 / 轮数不终局）。
-        let (w, m) = solo_world_and_meta(self.local_settings.training_bots);
+        let (w, m) = solo_world_and_meta_with_settings(self.local_settings.training_bots, &self.local_settings);
         self.world = w;
         self.meta = m;
         // 开局不带默认技能：玩家从零在配置界面选。
@@ -12510,7 +12640,7 @@ impl Game {
             self.local_settings.training_bots, self.local_settings.training_move
         );
         self.menu_hint.clear();
-        let (mut w, m) = solo_world_and_meta(self.local_settings.training_bots);
+        let (mut w, m) = solo_world_and_meta_with_settings(self.local_settings.training_bots, &self.local_settings);
         // 单机路径同样应用房间设置（与建房/入房共用同一份 `MatchConfig`）。
         w.configure_shrink(self.match_cfg.shrink_delay_secs, self.match_cfg.shrink_total_secs);
         w.configure_regen(self.match_cfg.base_regen);
@@ -12520,6 +12650,7 @@ impl Game {
             self.match_cfg.lava_damage_mult,
         );
         w.configure_terrain(self.match_cfg.pillar_mode, self.match_cfg.ice_mode);
+        apply_training_settings(&mut w, &self.local_settings);
         self.world = w;
         self.meta = m;
         self.app = AppState::Solo;
@@ -12533,6 +12664,30 @@ impl Game {
     }
 
     /// 设置页底部一闪而过的反馈（如 demo 拦截），用**帧数**计时，不引额外时间状态。
+    /// F5: reset the training arena (settings/skills kept; positions/HP/projectiles/stats reset).
+    fn training_reset(&mut self) {
+        if self.app != AppState::Solo || self.meta.phase != game_core::meta::MatchPhase::Fighting {
+            return;
+        }
+        self.world.reset_round();
+        apply_training_settings(&mut self.world, &self.local_settings);
+        self.reseed_presentation();
+        self.accumulator = 0.0;
+        self.player_target = None;
+        self.pending_cast = None;
+        self.pending_skill = None;
+        self.pending_shift_skill = None;
+        self.queued_cmds.clear();
+        self.bot_targets.clear();
+        self.bot_rngs.clear();
+        self.bot_retarget.clear();
+        self.audio.play(audio::AudioCue::UiConfirm);
+        self.push_banner(
+            i18n::t("训练场已重置").to_string(),
+            Color::from_rgb(120, 225, 150),
+        );
+    }
+
     fn settings_flash(&mut self, msg: String) {
         self.settings_msg = msg;
         self.settings_msg_until = self.frame + SETTINGS_MSG_FRAMES;
@@ -12542,10 +12697,13 @@ impl Game {
     fn training_value_text(&self, row: usize) -> String {
         match row {
             0 => i18n::tf("{n} 个", &[("n", self.local_settings.training_bots.to_string())]),
-            _ => match self.local_settings.training_move {
+            1 => match self.local_settings.training_move {
                 local_settings::TrainingMove::Still => i18n::t("静止（纯靶子）").to_string(),
                 local_settings::TrainingMove::Wander => i18n::t("漫游").to_string(),
             },
+            2 => if self.local_settings.training_lava { i18n::t("开").to_string() } else { i18n::t("关").to_string() },
+            3 => if self.local_settings.training_shrink { i18n::t("开").to_string() } else { i18n::t("关").to_string() },
+            _ => if self.local_settings.training_obstacles { i18n::t("开").to_string() } else { i18n::t("关").to_string() },
         }
     }
 
@@ -12560,9 +12718,12 @@ impl Game {
                 ) as u8;
                 self.local_settings.training_bots = n;
             }
-            _ => {
+            1 => {
                 self.local_settings.training_move = self.local_settings.training_move.next();
             }
+            2 => self.local_settings.training_lava = !self.local_settings.training_lava,
+            3 => self.local_settings.training_shrink = !self.local_settings.training_shrink,
+            _ => self.local_settings.training_obstacles = !self.local_settings.training_obstacles,
         }
         local_settings::save(&self.local_settings_path, &self.local_settings);
         self.audio.play(audio::AudioCue::UiMove);
@@ -12643,10 +12804,12 @@ impl Game {
             let hover = r.contains(mouse);
             ui::paint_row(&mut canvas, ctx, r, sel, hover)?;
             let col = if sel { ui::theme::accent() } else { ui::theme::text() };
-            let label = if i == 0 {
-                i18n::t("靶子数量")
-            } else {
-                i18n::t("靶子移动")
+            let label = match i {
+                0 => i18n::t("靶子数量"),
+                1 => i18n::t("靶子移动"),
+                2 => i18n::t("岩浆（出界）"),
+                3 => i18n::t("缩圈"),
+                _ => i18n::t("障碍物"),
             };
             ui::text_left(&mut canvas, ctx, label, ui::theme::BODY, col, r.x + 14.0, r.y + 8.0)?;
             ui::text_right(
@@ -12682,6 +12845,11 @@ impl Game {
             &mut canvas, ctx,
             i18n::t("↑/↓ 选择 · ←/→ 或点击 调整 · **回车** 开始训练 · Esc/Q 返回"),
             ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 30.0,
+        )?;
+        ui::text_center(
+            &mut canvas, ctx,
+            i18n::t("对局中按 F5 重置训练场"),
+            ui::theme::SMALL, ui::theme::text_dim(), cx, py + ph + 52.0,
         )?;
         canvas.finish(ctx)?;
         Ok(())
@@ -13235,6 +13403,15 @@ struct FloatText {
     max_life: f32,
 }
 
+/// 客户端本地表现：屏幕右上角的击杀信息流条目。
+#[derive(Clone, Debug)]
+struct KillFeedEntry {
+    text: String,
+    color: Color,
+    life: f32,
+    max_life: f32,
+}
+
 /// 客户端本地表现：屏幕中上横幅（首杀 / 连杀 / 击杀播报）。
 #[derive(Clone, Debug)]
 struct Banner {
@@ -13248,6 +13425,9 @@ struct Banner {
 const FLOAT_TEXT_LIFE: f32 = 1.0;
 /// 横幅存活秒数。
 const BANNER_LIFE: f32 = 2.6;
+/// 击杀信息流每条停留时长（秒）与上限。
+const KILL_FEED_LIFE: f32 = 5.0;
+const KILL_FEED_MAX: usize = 5;
 /// 098c 多重击杀窗口（`Wn` = 9 秒）：同一击杀者在该窗口内的连续击杀计数。
 const MULTIKILL_WINDOW_SECS: f32 = 9.0;
 
@@ -14327,6 +14507,20 @@ mod tests {
         assert_eq!(BindKey::parse("Q"), Some(BindKey::Char('q')));
         assert_eq!(BindKey::parse("@"), None);
         assert_eq!(BindKey::parse(""), None);
+    }
+
+    #[test]
+    fn apply_training_settings_respects_toggles() {
+        use super::{apply_training_settings, solo_world_and_meta};
+        let (mut w, _) = solo_world_and_meta(3);
+        let mut s = local_settings::LocalSettings::default();
+        s.training_lava = false;
+        s.training_shrink = false;
+        s.training_obstacles = false;
+        apply_training_settings(&mut w, &s);
+        assert_eq!(w.lava_damage_mult, game_core::fix::Fix64::ZERO);
+        assert!(w.shrink_remaining_secs() > 1.0e6);
+        assert!(w.obstacles.is_empty());
     }
 
     #[test]
