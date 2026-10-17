@@ -3,7 +3,7 @@
 > 用途：本表给出**每份 `.md` 的角色与权威性**，避免新会话把**历史/过时**文档当真值。
 > 入口是 **`HANDOFF.md`**；真值永远是 **098c 代码**（`098c/out/war3map.j`）。
 >
-> **2026-10-10 整理**：根目录只留 **A（真值）+ B（在办）**；已完成/被取代的一律移入 **`archive/`**（顶部带历史横幅）。
+> **2026-10-17 整理**：根目录只留 **A（真值）+ B（在办）**；已完成/被取代的一律移入 **`archive/`**（顶部带历史横幅）。
 > 检索 098c 用 `tools/jass_find.py <regex>` 等（见 `tools/README.md` §7：`jass_find`/`jass_where`/`jass_func`/`dump_tooltips`）。
 
 ## A. 权威 / 真值（活，改动须同步）
@@ -23,16 +23,11 @@
 
 | 文档 | 角色 |
 |---|---|
-| `EXIT_MENU_RECONNECT_PLAN.md` | 联机：Esc 退出菜单 / 重连 / 迁移 / 暂停（R 系列）记录 |
-| `LEAVE_REJOIN_PLAN.md` | **主动离开 + 三因归队**（L1–L5 已完成；真机双账号验收清单见 §4.1）|
-| `REJOIN_DETECT_PLAN.md` | **“连回上一局”检测机制优化规划**（在办：现状/弱点 W1–W6、方案 P1–P6；先规划未开工）|
-| `LEARNING_PHASE_NET_PLAN.md` | **学习期联机**（已定稿：E1 心跳+快照 / E2 按阶段恢复 / E3 离开·掉线 / E5 R7e；无投降·恒桩子）|
 | `HOST_MIGRATION_LEARNING_PLAN.md` | **学习期房主退出/主机迁移**（M0–M5、S1–S6 已完成；§16 迁移抖振+换主机系统暂停；§17 F 系列；§17.8 报递延迟；§17.9 E1/E2；**§17.10 陈旧 owner 自接管残余风险（暂不修，含成因/证据/P7-lite 方案）**）|
-| `DISPLAY_CAMERA_PLAN.md` | **显示/相机设置**（分辨率/全屏/边缘滚屏/平移速度；S1–S4 已完成 `d0a6675`/`55e2919`/`7c35928`/`f7a10d2`）|
 | `RECONNECT.md` | 掉线/重连机制设计 |
-| `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案 |
-| `PRESENTATION_PLAN.md` | 表现层（P1–P6）：飘字/横幅/音效/特效 |
-| `TRAINING_PLAN.md` | 单机训练场分期 |
+| `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案（已实现，待 4 项真机验证）|
+| `PRESENTATION_PLAN.md` | 表现层（P1–P4 已完成；**P5 剩余：缩圈/出界预警**）|
+| `TRAINING_PLAN.md` | 单机训练场分期（P0 已完成；**P1 计划：统计 HUD / F5 重置 / 开关**）|
 | `I18N.md` | 多语言（中文/English）|
 
 ## C. ⚠ 历史归档（`archive/`，**勿当真值**）
@@ -41,6 +36,11 @@
 
 | 文档 | 说明 |
 |---|---|
+| `archive/EXIT_MENU_RECONNECT_PLAN.md` | 联机 R 系列（Esc 退出菜单/重连/迁移/暂停；已完成；P7 残余见 `HOST_MIGRATION_LEARNING_PLAN.md` §17.10）|
+| `archive/LEAVE_REJOIN_PLAN.md` | 主动离开 + 三因归队（L1–L5 已完成并真机验收）|
+| `archive/REJOIN_DETECT_PLAN.md` | “连回上一局”检测（H1–H4 已完成并真机验收）|
+| `archive/LEARNING_PHASE_NET_PLAN.md` | 学习期联机（E1–E3/E5 已完成并验收）|
+| `archive/DISPLAY_CAMERA_PLAN.md` | 显示/相机设置（S1–S4 已完成；手感调整转入当前打磨计划）|
 | `archive/SKILL_PER_LEVEL_AUDIT.md` | 逐档表**按 tooltip** 建立，已多处与 098c 代码不符 → 用 `SKILL_CODE_AUDIT_098c.md` |
 | `archive/JASS_AUDIT_098c.md` | 早期逐技能事实汇编；数值/状态以台账+代码审计为准 |
 | `archive/KNOCKBACK_ALIGNMENT.md` | 击退系数改动记录（已并入台账 §14）|

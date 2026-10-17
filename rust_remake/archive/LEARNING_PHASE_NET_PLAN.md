@@ -1,3 +1,5 @@
+> **历史归档（2026-10-17）**：E1–E3/E5 已完成并验收；后续迁移专项见 `HOST_MIGRATION_LEARNING_PLAN.md`。
+
 # 学习期联机 设计规划（LEARNING_PHASE_NET_PLAN.md）
 
 > 目标：让**学习期（`MatchPhase::Learning`，首局配置/商店）**也支持**离开**、**掉线检测**、**重连/归队**，并承接 **R7e 学习期暂停**。

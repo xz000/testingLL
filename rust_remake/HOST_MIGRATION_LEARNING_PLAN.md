@@ -508,7 +508,7 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
 
 ### 17.10 残余风险：陈旧 owner 导致的自接管（2026-10-17 记录，**暂不改代码**）
 
-**背景**：`EXIT_MENU_RECONNECT_PLAN.md` §14.2 的 **P7**（“client 可自选为 host → 双权威”）**已不是当前代码的风险**：
+**背景**：`archive/EXIT_MENU_RECONNECT_PLAN.md` §14.2 的 **P7**（“client 可自选为 host → 双权威”）**已不是当前代码的风险**：
 - **M3/R3'**：选举只认 Steam `lobby_owner`（`elect_new_host` 不合法即返回 0，不做最小 ID 回退）——`client/src/steam.rs:40-50`；
 - **F3'-c**：`HostLockstep::poll` 忽略来自本端的 `Takeover`——`net/src/lockstep.rs:1104-1122`；
 - 代码中没有任何“客户端自选举/自封 host”的路径。

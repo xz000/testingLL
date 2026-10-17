@@ -1,3 +1,5 @@
+> **历史归档（2026-10-17）**：R 系列已完成；离开/归队与检测已分别由 `LEAVE_REJOIN_PLAN` / `REJOIN_DETECT_PLAN` 落实并验收。P7 残余风险见 `HOST_MIGRATION_LEARNING_PLAN.md` §17.10。本文件仅作追溯。
+
 # 对局内退出菜单 + 重连 规划（EXIT_MENU_RECONNECT_PLAN.md）
 
 > 创建 2026-09-27（v2）。目标：把「对局中按 Esc 立即退回主菜单」改成**确认式退出菜单**，并补全**重连**的界面与入口。
