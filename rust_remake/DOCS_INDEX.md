@@ -25,7 +25,7 @@
 |---|---|
 | `HOST_MIGRATION_LEARNING_PLAN.md` | **学习期房主退出/主机迁移**（M0–M5、S1–S6 已完成；§16 迁移抖振+换主机系统暂停；§17 F 系列；§17.8 报递延迟；§17.9 E1/E2；**§17.10 陈旧 owner 自接管残余风险（暂不修，含成因/证据/P7-lite 方案）**）|
 | `ALIGNMENT_REAUDIT_2026-10.md` | **增量对齐审计（只读）**：**F1/F2/F8 已修复（协议 66/67）**；F3 = S012B 数值待核；TODO 清扫清单 |
-| `ASPECT_RATIO_PLAN.md` | **宽高比 4:3–21:9 动态布局（方案 2）**：**Phase A 已实施（`c741c6e`）**；Phase B 逐屏/Phase C 设置验收待做 |
+| `ASPECT_RATIO_PLAN.md` | **宽高比 4:3–21:9 动态布局（方案 2）**：**Phase A/B 已实施（`c741c6e`/`2830498`）**；Phase C 比例预设可选 |
 | `S012B_PHOENIX_REWRITE_PLAN.md` | **S012B 凤凰冲刺重写（已实施 `651b208`，协议 67）**：098c `WB/UB/PB/tB` 对照、输入边沿/状态机/结束速度 |
 | `RECONNECT.md` | 掉线/重连机制设计 |
 | `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案（已实现，待 4 项真机验证）|
