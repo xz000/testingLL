@@ -38,6 +38,8 @@ pub struct PlayerInput {
     pub clear_queue: bool,
     /// 若为 true，则本帧清除该玩家的移动目标（停止移动；S 停手）。
     pub stop_move: bool,
+    /// 本帧是否有**新的点地指令**（S012B 凤凰转向边沿；普通移动不使用）。
+    pub phoenix_order: bool,
 }
 
 /// 一整帧里所有玩家的输入。
@@ -908,7 +910,7 @@ impl World {
             // B4-R 凤凰态（098c `WB`/`UB`）：
             //   - 普通移动指令 → `bO(gX, 18×0.5^(v/20))` **转向冲刺**（v 为每 tick 速度，单位/帧）；
             //   - 疾风步状态中（`Fr[gX]`）→ 额外发射凤凰弹（`tB`，速度 1000、半径 44）。
-            if pi.set_target.is_some() && p.phoenix_remaining > Fix64::ZERO && p.control.is_some() {
+            if pi.phoenix_order && pi.set_target.is_some() && p.phoenix_remaining > Fix64::ZERO && p.control.is_some() {
                 let t = pi.set_target.unwrap();
                 let d = t - p.pos;
                 if d.length() > Fix64::ZERO {
@@ -920,7 +922,7 @@ impl World {
                         let v_tick = p.control.as_ref().unwrap().vel.length() * Fix64::from_num(0.03);
                         let imp = Fix64::from_num(18.0)
                             * Fix64::from_num(0.5_f64.powf((v_tick / Fix64::from_num(20.0)).to_num::<f64>()));
-                        p.control.as_mut().unwrap().vel = nd * (imp / Fix64::from_num(0.03));
+                        p.control.as_mut().unwrap().vel += nd * (imp / Fix64::from_num(0.03));
                     }
                 }
                 continue;
@@ -5799,17 +5801,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Some(t) => { let d = t - p.pos; if d.length() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) } }
                                 None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                             };
-                            let dist = stats.max_distance * Fix64::from_num(ei_mult(false));
-                            let dur_s = (dist / speed).to_num::<f64>().max(dur);
+                            // 098c WB：固定时长 3.1*jn；初速度 20/tick ≈667/s；无距离 clamp、无直接接触伤害。
+                            let dur_s = dur * p.jn();
                             p.push(dir * speed, dur_s);
-                            p.kick = Some(Kick {
-                                push_power: Fix64::from_num(150.0),
-                                push_time: Fix64::from_num(0.3),
-                                push_damage: stats.damage * Fix64::from_num(0.8),
-                                remaining: Fix64::from_num(dur_s),
-                                stop_on_hit: false,
-                            });
-                            p.phoenix_remaining = Fix64::from_num(dur);
+                            p.phoenix_remaining = Fix64::from_num(dur_s);
                         }
                     }
                     crate::skill::W098bUtilKind::Charge => {
@@ -7323,6 +7318,78 @@ mod tests {
     /// S012B 凤凰（098c `UB` 普通分支）：**非**疾风步状态时，移动指令只把冲刺转向
     /// （`bO(gX, 18×0.5^(v/20))`），不发射凤凰弹。
     #[test]
+    fn s012b_phoenix_duration_scales_with_jn_and_steering_is_additive() {
+        let mut world = World::new(2, 1011);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].forms[SkillId::S012.as_u32() as usize] = true;
+        world.players[0].item_fx.buff_dur_mult = 1.5;
+        world.players[1].pos = Vec2::new(d60(50.0), d60(50.0));
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let rem = world.players[0].phoenix_remaining.to_num::<f64>();
+        assert!(rem > 4.6 && rem <= 4.65, "3.1*1.5 minus one tick expected ~4.63, got {rem}");
+        let v0 = world.players[0].control.as_ref().unwrap().vel.length();
+        // 同一个 set_target，但没有新点地边沿 → 不应追加。
+        world.step(
+            vec![
+                PlayerInput { set_target: Some(Vec2::new(d60(8.0), Fix64::ZERO)), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let v1 = world.players[0].control.as_ref().unwrap().vel.length();
+        assert!((v1 - v0).abs() < Fix64::from_num(0.01), "no edge should not change velocity");
+        // 新点地边沿 → 追加 bO 速度。
+        world.step(
+            vec![
+                PlayerInput { set_target: Some(Vec2::new(d60(8.0), Fix64::ZERO)), phoenix_order: true, ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let v2 = world.players[0].control.as_ref().unwrap().vel.length();
+        assert!(v2 > v1 + Fix64::from_num(100.0), "new order should add bO velocity, {v1} -> {v2}");
+    }
+
+    #[test]
+    fn s012b_phoenix_end_preserves_velocity() {
+        let mut world = World::new(2, 1012);
+        world.obstacles.clear();
+        world.sandbox = true;
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].forms[SkillId::S012.as_u32() as usize] = true;
+        world.players[1].pos = Vec2::new(d60(50.0), d60(50.0));
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(8.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut seen = false;
+        for _ in 0..300 {
+            world.step(none.clone(), dt);
+            if seen && world.players[0].control.is_none() {
+                break;
+            }
+            seen |= world.players[0].control.is_some();
+        }
+        let v = world.players[0].cur_vel.length().to_num::<f64>();
+        assert!(seen, "phoenix should start");
+        assert!(v > 500.0, "PB should keep Q/S velocity, got {v}");
+    }
+
+    #[test]
     fn s012b_phoenix_redirect_without_windwalk_steers_only() {
         let mut world = World::new(2, 1010);
         world.obstacles.clear();
@@ -7340,7 +7407,7 @@ mod tests {
         ], dt);
         let before = world.players[0].pos;
         world.step(vec![
-            PlayerInput { set_target: Some(Vec2::new(Fix64::ZERO, d60(8.0))), ..Default::default() },
+            PlayerInput { set_target: Some(Vec2::new(Fix64::ZERO, d60(8.0))), phoenix_order: true, ..Default::default() },
             PlayerInput::default(),
         ], dt);
         for _ in 0..10 {
@@ -14186,7 +14253,7 @@ mod tests {
         // 098c `UB`：只有**疾风步状态**（`Fr[gX]`）中移动指令才会发射凤凰弹。
         world.players[0].windwalk_state = Fix64::from_num(3.0);
         world.step(vec![
-            PlayerInput { set_target: Some(Vec2::new(d60(6.0), d60(3.0))), ..Default::default() },
+            PlayerInput { set_target: Some(Vec2::new(d60(6.0), d60(3.0))), phoenix_order: true, ..Default::default() },
             PlayerInput::default(),
         ], dt);
         let mut spawned = false;

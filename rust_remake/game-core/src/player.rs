@@ -866,9 +866,12 @@ impl Player {
             }
         }
         if stop_control {
+            // 098c `PB`：凤凰结束时只清状态，不清 Q/S → 保留当前速度继续滑/走。
+            if self.phoenix_remaining > Fix64::ZERO {
+                self.cur_vel = control_vel;
+            } else if self.burning {
             // 098c `CR`：冲刺正常结束（非撞人/撞墙）时 Q=.2Q，保留 20% 余速；
             // 冰面上会按 0.98 缓慢衰减继续滑。只有 S012A 冲刺会置 burning。
-            if self.burning {
                 self.cur_vel = control_vel * Fix64::from_num(0.2);
             }
             self.control = None;

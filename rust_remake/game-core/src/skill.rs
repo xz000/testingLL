@@ -1464,6 +1464,10 @@ pub fn cast_max_distance(
         DefTable::def(id)
     };
     let stats = def.stats_at(level);
+    // 098c S012B（凤凰）没有施法距离；点地只决定转向方向。
+    if id == SkillId::S012 && alt {
+        return None;
+    }
     let time_scale = 1.0 + 0.1 * time_mastery as f64;
     // 098c：S003/S004 投射物寿命/航程 +15%/级（`1+1.5*.1*ei`），其余 W098b +10%；S002 闪电也 +15%。
     let heavy_scale = 1.0 + 0.15 * time_mastery as f64;
@@ -1519,6 +1523,7 @@ pub fn cast_range_limit(
             Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64)))
         }
         SkillId::S011 => (stats.max_distance > Fix64::ZERO).then_some(stats.max_distance),
+        SkillId::S012 if alt => None,
         SkillId::S012 | SkillId::S013 => {
             (stats.max_distance > Fix64::ZERO)
                 .then_some(stats.max_distance * Fix64::from_num(time_scale))
@@ -4157,6 +4162,8 @@ mod tests {
         assert_eq!(m(SkillId::S009, false, 1, 10), Some(1400.0), "700*(1+.1*time mastery)");
         assert_eq!(m(SkillId::S014, false, 1, 5), Some(1050.0));
         assert_eq!(m(SkillId::S012, false, 1, 10), Some(1400.0), "S012 700*(1+.1*time)");
+        assert_eq!(m(SkillId::S012, true, 1, 10), None, "S012B phoenix has no cast range");
+        assert_eq!(cast_range_limit(SkillId::S012, true, 1, 10), None, "S012B no range clamp");
         assert_eq!(m(SkillId::S013, false, 1, 10), Some(1800.0), "S013A 900*(1+.1*time)");
         assert!(m(SkillId::S016, false, 1, 10).unwrap() > m(SkillId::S016, false, 1, 0).unwrap());
         assert!(m(SkillId::S000, false, 1, 0).unwrap() > 0.0);

@@ -906,6 +906,8 @@ struct Game {
     pending_clear_signal: bool,
     /// 本帧是否要给 World 下发"停止移动"信号（S 停手）
     pending_stop_signal: bool,
+    /// 本帧是否有新的点地指令（S012B 凤凰转向；右键时置 true，下一帧取走）。
+    pending_phoenix_order: bool,
     /// 学习阶段当前选中的键（用于从该键的树里选技能/升级）
     learn_tree_key: Option<game_core::skill::CastKey>,
     /// 学习阶段当前选中的技能下标（树内第 i 个）；点击技能名称=选中查看详情，不直接购买。
@@ -1704,6 +1706,7 @@ impl Game {
             pending_shift_skill: None,
             pending_clear_signal: false,
             pending_stop_signal: false,
+            pending_phoenix_order: false,
             // 默认首选一棵技能树（第一个键 C），让“按数字键绑技能”立即可用，不必先想到去按字母键选树。
             learn_tree_key: game_core::skill::CastKey::ALL.first().copied(),
             learn_skill_index: None,
@@ -3025,6 +3028,7 @@ impl Game {
             self.pending_skill = None;
             self.pending_cast = None;
             self.pending_shift_skill = None;
+            self.pending_phoenix_order = true;
             let m = ui::mouse_design(ctx);
             let world = self.screen_to_world(m.x, m.y);
             if shift {
@@ -3123,6 +3127,8 @@ impl Game {
         let queued = self.queued_cmds.drain(..).collect();
         let clear_queue = self.pending_clear_signal;
         let stop_move = self.pending_stop_signal;
+        let phoenix_order = self.pending_phoenix_order;
+        self.pending_phoenix_order = false;
         self.pending_clear_signal = false;
         self.pending_stop_signal = false;
         PlayerInput {
@@ -3131,6 +3137,7 @@ impl Game {
             queued,
             clear_queue,
             stop_move,
+            phoenix_order,
         }
     }
 

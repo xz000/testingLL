@@ -233,6 +233,7 @@ mod tests {
             queued: vec![Cmd::Move(Vec2::new(Fix64::from_num(4.0), Fix64::ZERO))],
             clear_queue: false,
             stop_move: false,
+            phoenix_order: false,
         }
     }
 

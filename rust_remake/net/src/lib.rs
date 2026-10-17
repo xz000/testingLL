@@ -44,6 +44,7 @@ mod tests {
             queued: vec![Cmd::Move(Vec2::new(f(4.0), f(0.0))), Cmd::Stop],
             clear_queue: false,
             stop_move: false,
+            phoenix_order: false,
         };
         if pid % 2 == 0 {
             p.set_target = None;
