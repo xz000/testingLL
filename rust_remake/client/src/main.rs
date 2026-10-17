@@ -1000,6 +1000,10 @@ struct Game {
     present_multikill: Vec<u32>,
     /// 表现层：各玩家上一帧是否在出界（危险）区，用于 Last Second Save 判定。
     present_prev_oob: Vec<bool>,
+    /// P5: bitmask of shrink-warning thresholds already played (bit0=5s, bit1=3s, bit2=1s).
+    present_shrink_warn_mask: u8,
+    /// P5: minimum interval between own out-of-bounds warning sounds (seconds).
+    present_oob_warn_cooldown: f32,
     /// 渲染插值：上一 sim 步的各玩家位置（索引 = player id）。绘制时在 `prev → cur` 间按 alpha 插值，
     /// 消除帧到达抖动带来的画面跳动（纯渲染，不进快照）。
     prev_player_pos: Vec<Vec2>,
@@ -1734,6 +1738,8 @@ impl Game {
             present_last_kill_at: Vec::new(),
             present_multikill: Vec::new(),
             present_prev_oob: Vec::new(),
+            present_shrink_warn_mask: 0,
+            present_oob_warn_cooldown: 0.0,
             prev_player_pos: Vec::new(),
             scale: 1.0,
             offset: Point2 { x: w / 2.0, y: h / 2.0 },
@@ -3356,13 +3362,31 @@ impl Game {
 
         // 场地绳圈（逐渐收缩）
         let ar = self.world.arena_radius.to_num::<f32>();
+        // P5: arena fence pulses yellow before shrinking and red while shrinking.
+        let shrink_rem = self.world.shrink_remaining_secs();
+        let shrinking = self.world.shrink_is_active();
+        let warning = shrink_rem > 0.0 && shrink_rem <= SHRINK_WARN_SECS[0];
+        let fence_pulse = 0.5 + 0.5 * (self.present_clock * 6.0).sin();
+        let (fence_color, fence_width) = if shrinking {
+            (
+                Color::from_rgba(255, 90, 70, 190 + (fence_pulse * 65.0) as u8),
+                4.0 + fence_pulse * 2.0,
+            )
+        } else if warning {
+            (
+                Color::from_rgba(255, 210, 90, 160 + (fence_pulse * 60.0) as u8),
+                3.0 + fence_pulse * 2.0,
+            )
+        } else {
+            (Color::from_rgb(120, 130, 160), 3.0)
+        };
         let fence = Mesh::new_circle(
             &ctx.gfx,
-            DrawMode::stroke(3.0),
+            DrawMode::stroke(fence_width),
             self.offset,
             ar * self.scale,
             0.5,
-            Color::from_rgb(120, 130, 160),
+            fence_color,
         )?;
         canvas.draw(&fence, graphics::DrawParam::new());
 
@@ -6348,6 +6372,7 @@ impl Game {
         });
         self.fx.update(dt);
         self.present_hit_cooldown = (self.present_hit_cooldown - dt).max(0.0);
+        self.present_oob_warn_cooldown = (self.present_oob_warn_cooldown - dt).max(0.0);
         for p in &mut self.present_ready_pulse {
             *p = (*p - dt).max(0.0);
         }
@@ -6395,6 +6420,17 @@ impl Game {
             return;
         }
         // 098c `Vo`（GameFound）：首局开局时播一次「开局」。
+        // P5: shrink warning cues at 5/3/1s (at most one cue per frame).
+        let shrink_remaining = self.world.shrink_remaining_secs();
+        if shrink_remaining > SHRINK_WARN_SECS[0] {
+            self.present_shrink_warn_mask = 0;
+        } else if shrink_remaining > 0.0 {
+            let newly = shrink_warn_bits(shrink_remaining, self.present_shrink_warn_mask);
+            if newly != 0 {
+                self.audio.play(audio::AudioCue::FlowShrinkWarn);
+                self.present_shrink_warn_mask |= newly;
+            }
+        }
         if self.world.round_number == 1 && !self.present_match_started {
             self.present_match_started = true;
             self.audio.play(audio::AudioCue::AnnGameStart);
@@ -6705,6 +6741,11 @@ impl Game {
             // 且残血极低（`Fn <= 6*To+0.5`，`Fn`=当前 HP）。仅对该玩家所在队显示/发声。
             let oob = alive
                 && self.world.players[i].pos.length() > self.world.arena_radius;
+            // P5: periodic own-OOB warning (rate limited).
+            if i as u32 == me && oob && self.present_oob_warn_cooldown <= 0.0 {
+                self.audio.play(audio::AudioCue::FlowOobWarn);
+                self.present_oob_warn_cooldown = 2.0;
+            }
             if was_alive
                 && alive
                 && self.present_prev_oob.get(i).copied().unwrap_or(false)
@@ -6745,6 +6786,8 @@ impl Game {
         self.present_last_kill_at = vec![-1e9; self.world.players.len()];
         self.present_multikill = vec![0; self.world.players.len()];
         self.present_prev_oob = vec![false; self.world.players.len()];
+        self.present_shrink_warn_mask = 0;
+        self.present_oob_warn_cooldown = 0.0;
         self.float_texts.clear();
         self.banners.clear();
         self.fx.clear();
@@ -6797,6 +6840,56 @@ impl Game {
             c.a = (t * 1.6).clamp(0.0, 1.0);
             draw_text(canvas, ctx, &b.text, 26.0, c, Point2 { x: sw / 2.0, y }, true)?;
             y += 34.0;
+        }
+
+        // P5: shrink countdown / active warning + own out-of-bounds vignette.
+        if self.meta.phase == game_core::meta::MatchPhase::Fighting {
+            let rem = self.world.shrink_remaining_secs();
+            let shrinking = self.world.shrink_is_active();
+            let msg = if shrinking {
+                Some((i18n::t("边缘收缩中").to_string(), Color::from_rgb(255, 120, 95)))
+            } else if rem > 0.0 && rem <= SHRINK_WARN_SECS[0] {
+                Some((
+                    i18n::tf("缩圈倒计时 {secs}s", &[("secs", format!("{rem:.1}"))]),
+                    Color::from_rgb(255, 215, 100),
+                ))
+            } else {
+                None
+            };
+            if let Some((text, color)) = msg {
+                let size = if shrinking || rem <= 3.0 { 26.0 } else { 22.0 };
+                draw_text(canvas, ctx, &text, size, color, Point2 { x: sw / 2.0, y: sh * 0.17 }, true)?;
+            }
+            let me = self.self_index() as usize;
+            let oob = self
+                .world
+                .players
+                .get(me)
+                .map(|p| p.alive && p.pos.length() > self.world.arena_radius)
+                .unwrap_or(false);
+            if oob {
+                let pulse = 0.35 + 0.25 * (self.present_clock * 5.0).sin().abs();
+                let band = 18.0 + 10.0 * pulse;
+                let color = Color::from_rgba(255, 40, 40, (90.0 * pulse) as u8);
+                for r in [
+                    graphics::Rect::new(0.0, 0.0, sw, band),
+                    graphics::Rect::new(0.0, sh - band, sw, band),
+                    graphics::Rect::new(0.0, 0.0, band, sh),
+                    graphics::Rect::new(sw - band, 0.0, band, sh),
+                ] {
+                    let mesh = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), r, color)?;
+                    canvas.draw(&mesh, graphics::DrawParam::new());
+                }
+                draw_text(
+                    canvas,
+                    ctx,
+                    i18n::t("出界！返回场地"),
+                    24.0,
+                    Color::from_rgb(255, 190, 170),
+                    Point2 { x: sw / 2.0, y: sh * 0.9 },
+                    true,
+                )?;
+            }
         }
         Ok(())
     }
@@ -13157,6 +13250,20 @@ const FLOAT_TEXT_LIFE: f32 = 1.0;
 const BANNER_LIFE: f32 = 2.6;
 /// 098c 多重击杀窗口（`Wn` = 9 秒）：同一击杀者在该窗口内的连续击杀计数。
 const MULTIKILL_WINDOW_SECS: f32 = 9.0;
+
+/// Arena-shrink warning thresholds (seconds), descending.
+const SHRINK_WARN_SECS: [f64; 3] = [5.0, 3.0, 1.0];
+
+/// Newly crossed shrink-warning thresholds: bit0=5s, bit1=3s, bit2=1s.
+fn shrink_warn_bits(remaining: f64, played: u8) -> u8 {
+    let mut out = 0u8;
+    for (i, secs) in SHRINK_WARN_SECS.iter().enumerate() {
+        if remaining <= *secs && remaining > 0.0 && (played & (1 << i)) == 0 {
+            out |= 1 << i;
+        }
+    }
+    out
+}
 /// 触发飘字的最小血量变化（过滤回血等微小变化）。
 const PRESENTATION_MIN_DELTA: f32 = 1.0;
 /// 飘字/横幅数量上限（防刷屏）。
@@ -14372,6 +14479,16 @@ mod tests {
     }
 
     /// 多重击杀映射（098c `dn[VI+$C]`，2..6）。
+    #[test]
+    fn shrink_warn_bits_fires_each_threshold_once() {
+        use super::shrink_warn_bits;
+        assert_eq!(shrink_warn_bits(6.0, 0), 0);
+        assert_eq!(shrink_warn_bits(4.9, 0), 0b001);
+        assert_eq!(shrink_warn_bits(4.9, 0b001), 0);
+        assert_eq!(shrink_warn_bits(0.5, 0b001), 0b110, "skipped 3s and 1s are both marked");
+        assert_eq!(shrink_warn_bits(0.0, 0b001), 0, "active shrink must not replay cues");
+    }
+
     #[test]
     fn multikill_cue_matches_098c_thresholds() {
         use super::multikill_cue;

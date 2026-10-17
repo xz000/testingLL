@@ -4859,6 +4859,16 @@ impl World {
         self.shrink_timer = self.shrink_delay_secs * Fix64::from_num(alive.sqrt());
     }
 
+    /// Seconds until the arena starts shrinking (0 once shrinking). Read-only HUD helper.
+    pub fn shrink_remaining_secs(&self) -> f64 {
+        self.shrink_timer.to_num::<f64>().max(0.0)
+    }
+
+    /// True while the arena is actively shrinking (delay elapsed, radius remains).
+    pub fn shrink_is_active(&self) -> bool {
+        self.shrink_timer <= Fix64::ZERO && self.arena_radius > Fix64::ZERO
+    }
+
     pub fn configure_regen(&mut self, per_sec: f64) {
         self.base_regen = per_sec;
     }
@@ -12117,6 +12127,20 @@ mod tests {
     }
 
 
+
+    /// HUD/alert getters must mirror `shrink_timer`; they do not mutate state or affect snapshots.
+    #[test]
+    fn shrink_remaining_reflects_timer_and_active_state() {
+        let mut world = World::new(2, 93);
+        world.shrink_timer = Fix64::from_num(4.5);
+        assert!((world.shrink_remaining_secs() - 4.5).abs() < 1e-6);
+        assert!(!world.shrink_is_active());
+        world.shrink_timer = Fix64::ZERO;
+        assert_eq!(world.shrink_remaining_secs(), 0.0);
+        assert!(world.shrink_is_active());
+        world.arena_radius = Fix64::ZERO;
+        assert!(!world.shrink_is_active());
+    }
 
     #[test]
     fn projectile_kill_is_recorded_in_kills_and_eliminated_order() {

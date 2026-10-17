@@ -478,6 +478,9 @@ const EN: &[(&str, &str)] = &[
     ("出局", "Out"),
     ("{name}{role} (我)", "{name}{role} (me)"),
     ("玩家{id}", "Player{id}"),
+    ("缩圈倒计时 {secs}s", "Shrink in {secs}s"),
+    ("边缘收缩中", "Arena shrinking"),
+    ("出界！返回场地", "Out of bounds! Return to the arena"),
     // ---- 房间设置徒章 / 就绪界面 ----
     ("房间设置：默认（原版）", "Room settings: Default (vanilla)"),
     ("房间设置：自定义 {n} 项 ⚠", "Room settings: {n} custom ⚠"),
