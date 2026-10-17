@@ -51,7 +51,7 @@
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 125 / game-core 344 / net 62 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体 **client 138**（见 `check.ps1`）。
+- 测试：**client 126 / game-core 345 / net 62 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体 **client 139**（见 `check.ps1`）。
 - `PROTOCOL_VERSION = 58`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。（运行期包如 `Packet::Leave`/`ParticipantsAll` **不进 World ⇒ 不升协议**。）
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
@@ -99,7 +99,7 @@
    - **`archive/REJOIN_DETECT_PLAN.md`**：**“连回上一局”检测**专项。**H1–H4 已完成并真机验收**：本地**历史记录**(退房/回菜单不再丢)、提示含轮次/人数/房名、判据改为“**曾进入对局**”、忽略键 **Delete**、**探活=直接 `RequestLobbyData` + `LobbyDataUpdate.success` + matchkey 复核**（满员/不可加入也能查；修复“应答被 `member==0` 过滤丢掉”）。期间还修：归队后画面卡死/无头像、自动恢复“无法操作”（采纳广播快照致 index 未纠正）。
    - **`HOST_MIGRATION_LEARNING_PLAN.md`**：学习期房主退出/**主机迁移**专项。**M0–M5 全部完成并真机验收**（3 账号“房主退出→重开→连回”）：撤自选举回归 `5b4ec99`；M1 诊断 + M2 全量名单权威下发 `748f626`；M3(D1=10s 等 owner 移交、取消共识) + M4 断言 `e6ff182`；M5 修 `host_left` 跨迁移残留 `91c83f7`。验收：`Phase-B STALL`/`cannot determine`/`DESYNC`/`M4`/`panic` 均 0；❌ 不做共识（唯一权威 = Steam `lobby_owner`）。**后续 S1–S6 也已收尾**（见其 **§14/§15**）：S1/S2 撤守卫+等移交 120s、S3 `SteamServersConnected/Disconnected`、S4 学习期自动冻结、S5 重连 `RequestLobbyData` 刷新大厅、S6 归队重建头像名单；并修“`steam_net_ticks` 双递增致对局中头像不刷新”的回归与“归队后 ClientWait 冻结”。
 6. **当前主线：打磨（2026-10-17 拍板）**：
-   - **顺序**：A（文档收口 + `tools/soak-report.ps1`）→ **P5**（缩圈/出界预警）→ **训练场 P1-lite**（统计 HUD + `F5` 重置 + 岩浆/缩圈/障碍开关）→ **Kill feed**；
+   - **顺序**：A（文档收口 + `tools/soak-report.ps1`，✅ `36b231b`/`d361510`）→ **P5**（缩圈/出界预警，✅ `1a68e9e`）→ **训练场 P1-lite**（统计 HUD + `F5` 重置 + 岩浆/缩圈/障碍开关）→ **Kill feed**；
    - **音频**：创意工坊/本地包通道已完整，缺真实素材；素材到位后优先**替换 `client/assets/audio/*.wav`**（正式版与 demo 都生效），工坊包留给玩家自定义；
    - **暂缓**：P7-lite、多帧打包、观战/回放、AI 反击、En4/Scourge 模式。
 

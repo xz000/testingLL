@@ -26,7 +26,7 @@
 | `HOST_MIGRATION_LEARNING_PLAN.md` | **学习期房主退出/主机迁移**（M0–M5、S1–S6 已完成；§16 迁移抖振+换主机系统暂停；§17 F 系列；§17.8 报递延迟；§17.9 E1/E2；**§17.10 陈旧 owner 自接管残余风险（暂不修，含成因/证据/P7-lite 方案）**）|
 | `RECONNECT.md` | 掉线/重连机制设计 |
 | `STEAM_DEMO_PLAN.md` | Steam demo（AppID `1042120`）出包方案（已实现，待 4 项真机验证）|
-| `PRESENTATION_PLAN.md` | 表现层（P1–P4 已完成；**P5 剩余：缩圈/出界预警**）|
+| `PRESENTATION_PLAN.md` | 表现层（P1–P5 已完成：飘字/横幅/音效/特效/缩圈预警；P6 观战未启动）|
 | `TRAINING_PLAN.md` | 单机训练场分期（P0 已完成；**P1 计划：统计 HUD / F5 重置 / 开关**）|
 | `I18N.md` | 多语言（中文/English）|
 
