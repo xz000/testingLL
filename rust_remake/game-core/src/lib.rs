@@ -105,4 +105,6 @@ pub fn version() -> &'static str {
 /// （迁移/接管后可能变），客户端据此校正 `steam_my_index` 与上行输入 index；修“归队后控制错角色 + host 等不到输入而卡死”。
 /// v59（2026-10-17）：**点目标施法范围核准**——S008 陨石 `max_distance=1200`（098c `aran`）并在权威模拟中 clamp；
 /// S009/S014 按 `700*(1+.1*时间精通)` 截断；超出范围的点击落在边界（不再落到任意位置）。
-pub const PROTOCOL_VERSION: u32 = 59;
+/// v60（2026-10-17）：**位移技能与击退对齐**——S012A 冲撞按 098c `AB` 把 `kb_vel`（U/w）替换为沿冲刺方向的 52/s；
+/// S013 换位/搬运不再清空 `kb_vel`（098c `KB`/`LB` 保留 U/w）。
+pub const PROTOCOL_VERSION: u32 = 60;

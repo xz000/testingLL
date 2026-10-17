@@ -2513,7 +2513,6 @@ impl World {
                             p.pos = o.pos;
                             p.move_target = None;
                             p.control = None; // 与 098c `IssueImmediateOrderById` 相近：清移动指令
-                            p.kb_vel = Vec2::ZERO;
                             self.obstacles[oi].pos = old;
                         }
                         pr.alive = false;
@@ -2529,7 +2528,6 @@ impl World {
                             p.pos = o.pos;
                             p.move_target = None;
                             p.control = None;
-                            p.kb_vel = Vec2::ZERO;
                             self.obstacles[oi].pos = old;
                         }
                         pr.alive = false;
@@ -5860,6 +5858,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             };
                             let dur_s = (stats.max_distance * Fix64::from_num(ei_mult(false)) / speed).to_num::<f64>();
                             p.push(dir * speed, dur_s);
+                            // 098c `AB`：把击退速度 `U/w` 替换为沿冲刺方向的 `hr=Gr*(1-.96)`（≈52/s），不是相加。
+                            p.kb_vel = dir * Fix64::from_num(52.0);
                             p.kick = Some(Kick {
                                 push_power: Fix64::from_num(100.0) * stats.damage, // 基数 100（目标 mana 放大 TODO）
                                 push_time: Fix64::from_num(W098B_KB_TIME),
@@ -6349,6 +6349,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                         None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                     };
                     p.push(dir * stats.speed.max(Fix64::ONE), stats.duration.to_num::<f64>());
+                    // 098c `AB`：同时把击退速度 `U/w` **替换**为沿冲刺方向的 `hr = Gr*(1-.96)`（≈52/s）。
+                    // 不是相加；否则被击退时冲撞会飞得比正常冲刺更远。
+                    p.kb_vel = dir * Fix64::from_num(52.0);
                     p.kick = Some(Kick {
                         push_power: stats.push_power,
                         push_time: stats.push_time,
@@ -11168,6 +11171,36 @@ mod tests {
     }
 
     /// S012 冲撞：冲刺撞人造成 KI 伤害 + 冲刺位移生效。
+    #[test]
+    fn s012_dash_replaces_knockback_velocity() {
+        let mut world = World::new(2, 959);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[0].kb_vel = Vec2::new(Fix64::from_num(-600.0), Fix64::ZERO);
+        world.players[1].pos = Vec2::new(d60(50.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(20.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..30 {
+            world.step(none.clone(), dt);
+            if world.players[0].control.is_some() {
+                break;
+            }
+        }
+        let kb = world.players[0].kb_vel;
+        assert!(kb.x > Fix64::ZERO, "098c AB sets U/w along dash direction, got {kb:?}");
+        let len = kb.length().to_num::<f64>();
+        assert!(len > 35.0 && len < 55.0, "expected ~52/s dash knockback, got {len}");
+    }
+
     #[test]
     fn s012_dash_charges_and_kicks() {
         let mut world = World::new(2, 958);
