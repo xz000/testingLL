@@ -1482,6 +1482,32 @@ pub fn cast_max_distance(
     }
 }
 
+/// 权威模拟使用的最远施法距离（只含“真正的施法距离限制”）。
+/// 与 [`cast_max_distance`] 区分：后者还包含投射物航程（仅用于指示线）。
+pub fn cast_range_limit(
+    id: SkillId,
+    alt: bool,
+    level: u32,
+    time_mastery: u32,
+) -> Option<Fix64> {
+    let def = if alt {
+        DefTable::def_alt(id).unwrap_or_else(|| DefTable::def(id))
+    } else {
+        DefTable::def(id)
+    };
+    let stats = def.stats_at(level);
+    match id {
+        SkillId::S008 if !alt => Some(Fix64::from_num(1200.0)),
+        SkillId::S009 | SkillId::S014 => {
+            Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64)))
+        }
+        SkillId::S011 | SkillId::S012 | SkillId::S013 => {
+            (stats.max_distance > Fix64::ZERO).then_some(stats.max_distance)
+        }
+        _ => None,
+    }
+}
+
 pub struct DefTable;
 
 impl DefTable {
@@ -4113,6 +4139,12 @@ mod tests {
         assert_eq!(m(SkillId::S014, false, 1, 5), Some(1050.0));
         assert!(m(SkillId::S000, false, 1, 0).unwrap() > 0.0);
         assert!(m(SkillId::S011, false, 1, 0).unwrap() >= 770.0, "blink growth range");
+        // 只有“真正的施法距离”才用于权威 clamp；投射物航程（S000/S016 等）不 clamp。
+        assert_eq!(cast_range_limit(SkillId::S008, false, 1, 0), Some(Fix64::from_num(1200.0)));
+        assert_eq!(cast_range_limit(SkillId::S000, false, 1, 0), None);
+        assert_eq!(cast_range_limit(SkillId::S016, false, 1, 0), None);
+        assert_eq!(cast_range_limit(SkillId::S009, false, 1, 10), Some(Fix64::from_num(1400.0)));
+        assert!(cast_range_limit(SkillId::S011, false, 1, 0).is_some());
     }
 
     #[test]

@@ -1256,7 +1256,7 @@ impl World {
     /// 点目标施法：超出该技能最大距离时沿方向压到边界（与客户端指示线同一口径）。
     fn clamp_cast_target(p: &Player, skill: SkillId, target: Option<Vec2>) -> Option<Vec2> {
         let t = target?;
-        let max = crate::skill::cast_max_distance(
+        let max = crate::skill::cast_range_limit(
             skill,
             p.form_of(skill),
             p.skill_level(skill),

@@ -1554,7 +1554,7 @@ R7(a–d) 联机暂停、R8 有界追赶——这些是**联机功能**，098c �
 - 其余：优先 `growth.max_distance`（Blink/Dash/Swap/Bounce），否则投射物 `speed*life` / `W098bBolt::range`；
 - `None` = 不限（098c `aran=99999` 的跟随鼠标类）。
 
-**模拟**：`World::clamp_cast_target` 在 `Cmd::Cast` 与 `handle_casts` 两条入口把超距目标沿方向压到边界；陨石落点因此在 1200 内（单测 `s008_meteor_target_is_clamped_to_1200`）。
+**模拟**：`World::clamp_cast_target` 在 `Cmd::Cast` 与 `handle_casts` 两条入口把超距目标沿方向压到边界，**只用 `cast_range_limit`**（S008/S009/S014 + Blink/Dash/Swap）；纯投射物航程（S000/S016 等，098c `aran=99999`）**不 clamp**，避免改变追踪锚点。陨石落点因此在 1200 内（单测 `s008_meteor_target_is_clamped_to_1200`）。
 
 **指示线**：S008 额外显示爆炸半径 `210×sqrt(1+.25×范围精通)`（与 `DelayedBlast` 同式）。
 
