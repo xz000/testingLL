@@ -5847,7 +5847,9 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     crate::skill::W098bUtilKind::Dash => {
                         // 冲撞（098b IB / 098c 对齐）：1300/s 强制位移 + 冲刺期间踢击窗口（撞人 KI 伤+击退）。
-                        // 时长 = min(点击距离, 最大距离)/速度 + 3 tick（098c `ev=Rr/Gr*.03+3*.03`），不是固定跑满最大距离。
+                        // 时长 = min(点击距离, 最大距离)/速度。
+                        // 注意：098c `ev` 另有手调的 +3 tick 尾部（补偿最后一 tick 的 20% 速度/残影），
+                        // 本实现按用户拍板选 B：为了使冲撞停在点击点附近，**有意去掉该 +3 tick**。
                         // 撞敌即停见碰撞结算 stop_on_hit，撞墙截断见 resolve_obstacles（清 control）。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             let dir = match target {
@@ -5859,7 +5861,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                                 Some(t) => (t - p.pos).length().min(max_d),
                                 None => max_d,
                             };
-                            let dur_s = (dist / speed).to_num::<f64>() + 3.0 * 0.03;
+                            let dur_s = (dist / speed).to_num::<f64>();
                             p.push(dir * speed, dur_s);
                             // 098c `AB`：把击退速度 `U/w` 替换为沿冲刺方向的 `hr=Gr*(1-.96)`（≈52/s），不是相加。
                             // 098c `AB` 把旧击退替换为 `U/w=52/s`；但 098c 的 Q/S 每 tick 会乘 .96，
@@ -11207,8 +11209,8 @@ mod tests {
         }
         let x = world.players[0].pos.x.to_num::<f64>();
         assert!(
-            x > 250.0 && x < 550.0,
-            "dash to 300 should stop near 300 (+3 ticks), got {x} (max would be ~700)"
+            x > 280.0 && x < 360.0,
+            "dash to 300 should stop near 300 without the 098c +3 tick tail, got {x}"
         );
     }
 

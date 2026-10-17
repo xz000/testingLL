@@ -112,4 +112,6 @@ pub fn version() -> &'static str {
 /// v62（2026-10-17）：**S012A 冲撞时长按点击距离**——`ev=Rr/Gr*.03+3*.03`（Rr 截到最大距离），不再固定跑满 max_distance。
 /// v63（2026-10-17）：**S012A 的 U/w 是衰减补偿**——098c 每 tick `Q*=.96` 后 `+U(w)=52/s`，净速度仍 1300/s；
 /// 我们的 constant-control 不衰减，故冲撞只清旧击退、不再额外加 52（否则 1352/s、冲过头）。
-pub const PROTOCOL_VERSION: u32 = 63;
+/// v64（2026-10-17）：**S012A 去掉 098c 的 +3 tick 尾部**（按用户拍板选 B）——时长 = min(点击距离, 最大距离)/1300，
+/// 冲撞在点击点附近停下；这是有意偏离 098c 手调余量。
+pub const PROTOCOL_VERSION: u32 = 64;
