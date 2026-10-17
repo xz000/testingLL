@@ -1219,6 +1219,7 @@ impl World {
                         break; // 开始移动：本帧停止级联，等到达后再执行下一个
                     }
                     Cmd::Cast(skill, target) => {
+                        let target = Self::clamp_cast_target(&self.players[i], skill, target);
                         let def = crate::skill::DefTable::def(skill);
                         let lv = self.players[i].skill_level(skill);
                         let pos = self.players[i].pos;
@@ -1252,6 +1253,29 @@ impl World {
     /// 3. 对前摇结束的技能执行效果
     ///
     /// 返回 `just_cast`：每个玩家本帧是否新开始了一次施法（用于取消旧移动命令）。
+    /// 点目标施法：超出该技能最大距离时沿方向压到边界（与客户端指示线同一口径）。
+    fn clamp_cast_target(p: &Player, skill: SkillId, target: Option<Vec2>) -> Option<Vec2> {
+        let t = target?;
+        let max = crate::skill::cast_max_distance(
+            skill,
+            p.form_of(skill),
+            p.skill_level(skill),
+            p.mastery[2] as u32,
+        );
+        match max {
+            Some(md) if md > Fix64::ZERO => {
+                let d = t - p.pos;
+                let len = d.length();
+                if len > md {
+                    Some(p.pos + d.normalized() * md)
+                } else {
+                    Some(t)
+                }
+            }
+            _ => Some(t),
+        }
+    }
+
     fn handle_casts(&mut self, input: &InputSlice, dt: Fix64) -> Vec<bool> {
         let mut just_cast = vec![false; self.players.len()];
         // F 槽施法替换快照（B3：化身→灾变 S020 / 国王→虔诚 S021），避免借用冲突。
@@ -1335,6 +1359,7 @@ impl World {
                     continue;
                 }
                 let def = DefTable::def(skill);
+                let target = Self::clamp_cast_target(p, skill, target);
                 // 无蓝量系统（PORT_098B_DECISIONS.md D3）：098b 施法不耗蓝，仅冷却/前摇门控。
                 if p
                     .caster
@@ -9168,6 +9193,36 @@ mod tests {
     }
 
     /// S008 陨石（098c `iB`/`oB`）：**无飞行弹体**，落点 1.35s 后定时爆炸；自身/同队免疫。
+    #[test]
+    fn s008_meteor_target_is_clamped_to_1200() {
+        let mut world = World::new(2, 967);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[1].pos = Vec2::new(d60(30.0), Fix64::ZERO);
+        let far = Vec2::new(d60(50.0), Fix64::ZERO);
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S008, Some(far))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let pos = world
+            .projectiles
+            .iter()
+            .find_map(|p| match p.kind {
+                ProjectileKind::DelayedBlast { .. } => Some(p.pos),
+                _ => None,
+            })
+            .expect("meteor should spawn a DelayedBlast");
+        assert!(
+            (pos.x.to_num::<f64>() - 1200.0).abs() < 1.0,
+            "meteor landing must clamp to 1200, got {}",
+            pos.x.to_num::<f64>()
+        );
+    }
+
     #[test]
     fn s008_meteor_is_delayed_blast_and_self_immune() {
         let mut world = World::new(2, 966);

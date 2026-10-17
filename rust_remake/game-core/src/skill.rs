@@ -1447,6 +1447,41 @@ fn legacy_scale_def(mut d: SkillDef) -> SkillDef {
 ///
 /// 数值参考原版（R1/R2/R3b/E1/E2/C1/C3/C4）；前摇/后摇为本重写新增的
 /// 网络手感补偿设计，先在原地取保守值，后续再调斜率。
+/// 点目标技能的“最大施法距离”（权威模拟与客户端指示线共用）。
+/// `None` = 不限（098c `aran=99999` 的跟随鼠标类技能）。
+/// - S008 陨石：098c `aran=1200`；
+/// - S009/S014：JASS 按 `700*(1+.1*时间精通)` 截断；
+/// - 其余：优先 `growth.max_distance`（Blink/Dash/Swap/Bounce），否则按投射物 `speed*life` / Bolt `range`。
+pub fn cast_max_distance(
+    id: SkillId,
+    alt: bool,
+    level: u32,
+    time_mastery: u32,
+) -> Option<Fix64> {
+    let def = if alt {
+        DefTable::def_alt(id).unwrap_or_else(|| DefTable::def(id))
+    } else {
+        DefTable::def(id)
+    };
+    let stats = def.stats_at(level);
+    if stats.max_distance > Fix64::ZERO {
+        return Some(stats.max_distance);
+    }
+    match id {
+        SkillId::S008 if !alt => Some(Fix64::from_num(1200.0)),
+        SkillId::S009 => Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64))),
+        SkillId::S014 => Some(Fix64::from_num(700.0 * (1.0 + 0.1 * time_mastery as f64))),
+        _ => match def.effect {
+            SkillEffect::W098bBolt { range, .. } => Some(range),
+            SkillEffect::Warlock098b { proj, speed, life, .. } => match proj {
+                W098bProjKind::Boomerang => Some(Fix64::from_num(800.0)),
+                _ => Some(speed * life),
+            },
+            _ => None,
+        },
+    }
+}
+
 pub struct DefTable;
 
 impl DefTable {
@@ -4066,6 +4101,18 @@ mod tests {
             caster.advance(dt);
         }
         assert!(matches!(caster.phase(), CastPhase::Idle));
+    }
+
+    #[test]
+    fn cast_max_distance_matches_098c_caps() {
+        let m = |id, alt, lv, tm| cast_max_distance(id, alt, lv, tm).map(|v| v.to_num::<f64>());
+        assert_eq!(m(SkillId::S008, false, 1, 0), Some(1200.0), "meteor aran=1200");
+        assert_eq!(m(SkillId::S008, true, 1, 0), Some(800.0), "magma keeps projectile reach (400*2)");
+        assert_eq!(m(SkillId::S009, false, 1, 0), Some(700.0));
+        assert_eq!(m(SkillId::S009, false, 1, 10), Some(1400.0), "700*(1+.1*time mastery)");
+        assert_eq!(m(SkillId::S014, false, 1, 5), Some(1050.0));
+        assert!(m(SkillId::S000, false, 1, 0).unwrap() > 0.0);
+        assert!(m(SkillId::S011, false, 1, 0).unwrap() >= 770.0, "blink growth range");
     }
 
     #[test]

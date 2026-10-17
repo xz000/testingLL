@@ -103,4 +103,6 @@ pub fn version() -> &'static str {
 /// 以前未序列化 → 重连/归队/迁移后重建为默认值 ⇒ 与 host 永久分叉（DESYNC）。**快照格式变更**。
 /// v58（2026-10-13）：`Packet::Snapshot` 增 `your_index: u8`——主机在重连应答里告知归队端**当前世界索引**
 /// （迁移/接管后可能变），客户端据此校正 `steam_my_index` 与上行输入 index；修“归队后控制错角色 + host 等不到输入而卡死”。
-pub const PROTOCOL_VERSION: u32 = 58;
+/// v59（2026-10-17）：**点目标施法范围核准**——S008 陨石 `max_distance=1200`（098c `aran`）并在权威模拟中 clamp；
+/// S009/S014 按 `700*(1+.1*时间精通)` 截断；超出范围的点击落在边界（不再落到任意位置）。
+pub const PROTOCOL_VERSION: u32 = 59;

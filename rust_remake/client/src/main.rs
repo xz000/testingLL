@@ -2907,30 +2907,23 @@ impl Game {
     /// 射程优先取 growth 按等级的 stats；098b 名册弹体类用 effect 常量（speed×life / range / blast）。
     fn skill_aim_hint(&self, skill: SkillId) -> (Fix64, Fix64) {
         let def = game_core::skill::DefTable::def(skill);
-        let level = self
-            .world
-            .players
-            .get(self.self_index() as usize)
-            .map(|p| p.skill_level(skill))
-            .unwrap_or(1);
-        let stats = def.stats_at(level);
-        let max_dist = if stats.max_distance > Fix64::ZERO {
-            stats.max_distance
-        } else {
-            match def.effect {
-                game_core::skill::SkillEffect::Warlock098b { proj, speed, life, .. } => match proj {
-                    game_core::skill::W098bProjKind::Boomerang => Fix64::from_num(800.0),
-                    _ => speed * life,
-                },
-                game_core::skill::SkillEffect::W098bBolt { range, .. } => range,
-                _ => Fix64::ZERO,
-            }
+        let Some(p) = self.world.players.get(self.self_index() as usize) else {
+            return (Fix64::ZERO, Fix64::ZERO);
         };
-        let radius = match def.effect {
+        let level = p.skill_level(skill);
+        let alt = p.form_of(skill);
+        let max_dist = game_core::skill::cast_max_distance(skill, alt, level, p.mastery[2] as u32)
+            .unwrap_or(Fix64::ZERO);
+        let mut radius = match def.effect {
             game_core::skill::SkillEffect::Warlock098b { blast, .. } => blast.unwrap_or(Fix64::ZERO),
             game_core::skill::SkillEffect::W098bNova { radius, .. } => radius,
             _ => Fix64::ZERO,
         };
+        // 陨石爆炸半径由 world.rs 的 DelayedBlast 自己算（210*sqrt(1+.25*范围精通)），这里同步显示。
+        if skill == SkillId::S008 && !alt {
+            let xi = p.mastery[1] as f64;
+            radius = Fix64::from_num(210.0 * (1.0 + 0.25 * xi).sqrt());
+        }
         (max_dist, radius)
     }
 
@@ -3403,27 +3396,25 @@ impl Game {
 
         // 场地绳圈（逐渐收缩）
         let ar = self.world.arena_radius.to_num::<f32>();
-        // P5: arena fence pulses yellow before shrinking and red while shrinking.
+        // P5: arena fence — constant width; color pulses light/dark red while shrinking.
         let shrink_rem = self.world.shrink_remaining_secs();
         let shrinking = self.world.shrink_is_active();
         let warning = shrink_rem > 0.0 && shrink_rem <= SHRINK_WARN_SECS[0];
-        let fence_pulse = 0.5 + 0.5 * (self.present_clock * 6.0).sin();
-        let (fence_color, fence_width) = if shrinking {
-            (
-                Color::from_rgba(255, 90, 70, 190 + (fence_pulse * 65.0) as u8),
-                4.0 + fence_pulse * 2.0,
+        let fence_color = if shrinking {
+            let t = 0.5 + 0.5 * (self.present_clock * 6.0).sin();
+            Color::from_rgb(
+                (150.0 + 105.0 * t) as u8,
+                (30.0 + 90.0 * t) as u8,
+                (20.0 + 80.0 * t) as u8,
             )
         } else if warning {
-            (
-                Color::from_rgba(255, 210, 90, 160 + (fence_pulse * 60.0) as u8),
-                3.0 + fence_pulse * 2.0,
-            )
+            Color::from_rgb(255, 210, 90)
         } else {
-            (Color::from_rgb(120, 130, 160), 3.0)
+            Color::from_rgb(120, 130, 160)
         };
         let fence = Mesh::new_circle(
             &ctx.gfx,
-            DrawMode::stroke(fence_width),
+            DrawMode::stroke(3.0),
             self.offset,
             ar * self.scale,
             0.5,
@@ -6933,23 +6924,21 @@ impl Game {
             ky += 22.0;
         }
 
-        // P5: shrink countdown / active warning + own out-of-bounds vignette.
+        // P5: shrink countdown only（收缩期间不再显示文字） + own out-of-bounds vignette.
         if self.meta.phase == game_core::meta::MatchPhase::Fighting {
             let rem = self.world.shrink_remaining_secs();
-            let shrinking = self.world.shrink_is_active();
-            let msg = if shrinking {
-                Some((i18n::t("边缘收缩中").to_string(), Color::from_rgb(255, 120, 95)))
-            } else if rem > 0.0 && rem <= SHRINK_WARN_SECS[0] {
-                Some((
-                    i18n::tf("缩圈倒计时 {secs}s", &[("secs", format!("{rem:.1}"))]),
+            if rem > 0.0 && rem <= SHRINK_WARN_SECS[0] {
+                let text = i18n::tf("缩圈倒计时 {secs}s", &[("secs", format!("{rem:.1}"))]);
+                let size = if rem <= 3.0 { 26.0 } else { 22.0 };
+                draw_text(
+                    canvas,
+                    ctx,
+                    &text,
+                    size,
                     Color::from_rgb(255, 215, 100),
-                ))
-            } else {
-                None
-            };
-            if let Some((text, color)) = msg {
-                let size = if shrinking || rem <= 3.0 { 26.0 } else { 22.0 };
-                draw_text(canvas, ctx, &text, size, color, Point2 { x: sw / 2.0, y: sh * 0.17 }, true)?;
+                    Point2 { x: sw / 2.0, y: sh * 0.17 },
+                    true,
+                )?;
             }
             let me = self.self_index() as usize;
             let oob = self
