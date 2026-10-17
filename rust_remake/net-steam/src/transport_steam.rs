@@ -185,16 +185,17 @@ impl SteamTransport {
 
     /// 把可靠补发队列里、且会话当前可发（send 成功）的消息按序补发。
     /// 用 AUTO_RESTART_BROKEN_SESSION 后无需自行判断“已建立”——send 成功即送达；失败则留在队首等下一帧。
+    ///
+    /// 注（E1）：这里**不再** `run_callbacks()` —— 回调泵由 `update` 顶部统一每帧一次（`main.rs:6924`）。
+    /// 原先在这里（以及 `recv_messages_into_queue`）也泵，导致“**在收/发路径中间分发 SDK 回调**”
+    /// （真机 `!IsLocked()` 断言就集中在接管窗口：每帧广播 Takeover + 逐 peer `send_to`）。
+    /// 去掉后最多“晚 1 帧”才能看到会话建立/重启；发送失败仍进 `pending_sends`，下帧顶部泵完再补发。
     fn flush_pending(&mut self) {
         let keys: Vec<u64> = self.pending_sends.keys().copied().collect();
         for id in keys {
             // 用 while let 尽量清空：发送成功才 pop；失败则 break 保留在队首等下帧补发（FIFO 顺序）。
             while let Some(head) = self.pending_sends.get(&id).and_then(|q| q.front().cloned()) {
-                let ok = {
-                    // 若该 peer 之前排队的那条补发失败，先立即重试它；同时每轮先 run_callbacks 推进会话。
-                    self.client.run_callbacks();
-                    self.send_reliable(id, &head)
-                };
+                let ok = self.send_reliable(id, &head);
                 if !ok {
                     break; // 会话仍不可发：留队，下帧再补
                 }
@@ -223,8 +224,10 @@ impl SteamTransport {
     /// 从「指定 SteamID 频道」读取收到的消息（UDP 风格，接收方无需维护连接）。
     /// 注意：`receive_messages_on_channel` 一次会拿回并**出队**一批（最多 batch）消息；这里把整批存入
     /// `recv_queue`，由 `recv_from` 逐条交付（否则同批次第 2 条及以后（如 PlayerCfg 跟在 RoomState 后到达）会被丢）。
+    ///
+    /// 注（E1）：这里**不再** `run_callbacks()` —— 回调泵由 `update` 顶部统一每帧一次（`main.rs:6924`），
+    /// 避免“在收包路径中间分发 SDK 回调”。
     fn recv_messages_into_queue(&mut self, batch: usize) {
-        self.client.run_callbacks();
         let msgs = self.client.networking_messages().receive_messages_on_channel(0, batch);
         for m in msgs {
             self.recv_msgs += 1;
