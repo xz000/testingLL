@@ -1028,7 +1028,7 @@ struct Game {
     present_shrink_warn_mask: u8,
     /// P5: minimum interval between own out-of-bounds warning sounds (seconds).
     present_oob_warn_cooldown: f32,
-    /// P5/training: max single-frame damage taken/dealt by self this round.
+    /// P5/training: max single-frame damage dealt by self this round.
     present_max_hit: f32,
     /// 表现层：屏幕右上角的击杀信息流（最近几条，数秒后淡出）。
     kill_feed: Vec<KillFeedEntry>,
@@ -6748,7 +6748,10 @@ impl Game {
                     };
                     let pos = self.world.players[i].pos;
                     let damaged = txt.starts_with('-');
-                    if damaged && i as u32 == me {
+                    if damaged
+                        && i as u32 != me
+                        && self.world.players[i].last_hit_by == Some(me)
+                    {
                         self.present_max_hit = self.present_max_hit.max(-delta);
                     }
                     self.push_float(pos, txt, color);
