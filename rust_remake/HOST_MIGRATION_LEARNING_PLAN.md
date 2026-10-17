@@ -427,3 +427,30 @@ M0–M5 全部实施并真机验收通过；本工程为 **A（真值）+ B（�
   2. 按 Y 归队时已把 `steam_rejoin_prompt` 清空（只保留 `steam_rejoin_target`），取消分支又没恢复它——而 **H4 探活只在“有提示”时跑** → 提示永不再生 → 玩家看不到归队提示、也没法再按 Y。
 - 修法（`cb9143a`）：取消分支里若 `steam_rejoin_target` 存在 → 取走它 + 对目标大厅 **best-effort `leave_lobby`**（防“取消后那个 join 其实成功了 → 本端静默留厅占位”）+ `refresh_rejoin_prompt()` 恢复提示 + `menu_hint` = “已取消连接上一局（可按 Y 重试）”。
 - 注：`Error` 类拒绝本身已有正确策略（`4028360`：大厅仍在就不标 ended、保留会话+提示可重试）——本次真正丢的是提示。
+
+### 17.8 续：通报延迟的深挖 + 三项修复（`fedbce8` / `85f54c3` / `21476c0`）
+**真机（2026-10-17 12:39 轮）现象**：B 端（client）在 ~12s 内出现 **3 次** `NO frames for 3.0s → 探测 → host alive, resumed`（每 ~4s 一次），随后自行稳定。
+
+**排除过程（全部有日志证据）**：
+- host（A）侧：`[stat] host frames=300/600/900 … emit=[… max=34ms n=300]`、`wait_ticks` 恒定 → **稳定 60fps 产帧**；
+- 发送：无 `send_to … not sendable yet`（只打前 10 条）+ `push_pending` 有 1024 上限 → **发送没失败/没堆积**，帧交给了 Steam SDK；
+- 会话：B 的 `conn[A]` 从 `Connecting→FindingRoute→Connected`（383/396/407 行，正好在第一次静默前后），其后一直 `Connected` → **不是断连**；
+- 接收：静默后 B 的 `pending_max` 冲到 **58**、`frame … n=97`（5s 只推进 97 帧）→ 帧是**迟到成批到达**；
+- 结论：这是 **Steam 投递层的延迟/成批化**（首次可解释为“B 刚归队、P2P 会话未就绪时 host 已在发帧 → SDK 缓冲后成批投递”），**不是**状态机逻辑错误。
+
+**同时找到两个放大缺陷**：
+1. **`ReqFrame` 无节流**：`try_advance` 在缺口时**每次 step 都发**（~60/s），而 host 每收一条就回一帧 → 链路本已拥塞时反向加压（3s 静默对应 ~180 条请求 + 最多 180 帧回包）。
+2. **`ClientWait` 判活无豁免、也无超时**：同步期只收 cfg 不收帧 → 定时器累积 → 同步一结束**立刻误判**（`NO frames for 3.2s (67 ticks)`）；且 `recv_cfg_all` 只认 `PlayerCfgAll`、**丢弃 `Leave`/`PauseState` 等包**，而 `ClientWait` 原先**无任何超时**（真机曾卡 ~40s）→ host 真没了会无限等。
+
+**修复（均按风险约束版本）**：
+- **Fix1 `fedbce8`（只节流、不放弃）**：新缺口**立即**请求一次；同一缺口每 `REQ_FRAME_EVERY=15` 步（≈0.25s）最多一次；**持续低频重试**（UDP 靠它补包；Steam 真补不到时仍由 3s 静默→探测/Resync 兜底）；推进成功 / `apply_resync` 重定基线时重置节流状态（否则后续新缺口可能静默不请求）。**刻意不做 give-up**（会把轻量恢复推给重快照路径；且 UDP 无 3s 探测兜底会真卡死）。新增 `frame_requests_sent()` + 单测 `missing_frame_requests_are_throttled`（net **62**）。
+- **Fix2 `85f54c3`（有界豁免 + 硬超时）**：`steam_cfg_wait_since` 从进入 `ClientWait` 起算；①前 `CFG_SYNC_LIVENESS_GRACE_SECS=10s` 内每帧 `steam_note_host_alive(now)`（豁免）；②超过 10s 不再豁免（host 真死了要能发现）；③达到 `CLIENT_CFG_WAIT_TIMEOUT_SECS=15s` 打日志并**主动进入迁移探测** → 把“无限等”变成“最多 ~13–15s 自救”；④离开 `ClientWait` 时清计时。
+- **Fix3 `21476c0`（诊断）**：`[stat] client` 增 `recv=`（累计收包）/`pending=`（当前待步进）/`req=`（累计 `ReqFrame`）；`[stat] host` 增 `send=(direct,queued)`。下一轮可直接区分：`req` 暴涨而 `recv` 不动 → 链路没送到；`pending` 涨而 `seq` 不动 → 缺口卡住；`send.queued` 涨 → 发送积压。
+
+**仍待数据决定（不做盲改）**：若诊断指向“消息率过高/发送队列拥塞”，结构解是**多帧打包**（把 ~60 条/秒降到 ~20），那是下一步。
+
+**验收要点（本轮）**：
+1. 配置同步完成后**不应**再出现立刻的 `NO frames …`（应有的顺序：同步完成 → `pending/recv` 正常 → 无需探测）；
+2. 若 host 在配置同步期真的没了：≤~15s 应看到 `ClientWait 超时 … → 进入迁移探测`，而不是无限卡住；
+3. 出现缺口时 `req` 应**缓慢**增长（≈4/s 而不是 ≈60/s），且 `recv` 正常增长；
+4. 其余不回退：无 `DESYNC`/`panic`/`Phase-B STALL`，归队/接管/系统暂停行为不变。
