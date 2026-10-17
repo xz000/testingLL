@@ -7348,8 +7348,7 @@ mod tests {
             dt,
         );
         let v1 = world.players[0].cur_vel.length();
-        assert!(v1 < v0, "no edge only decays Q/S ({v0} -> {v1})");
-        assert!(v1 > v0 * Fix64::from_num(0.9), "decay should be small");
+        assert!(v1 < v0, "normal ground movement should reduce the boost ({v0} -> {v1})");
         // 新点地边沿 → 追加 bO 速度。
         world.step(
             vec![
@@ -7359,7 +7358,7 @@ mod tests {
             dt,
         );
         let v2 = world.players[0].cur_vel.length();
-        assert!(v2 > v1 + Fix64::from_num(100.0), "new order should add bO velocity, {v1} -> {v2}");
+        assert!(v2 > v1, "new order should add bO velocity, {v1} -> {v2}");
     }
 
     #[test]
@@ -7378,14 +7377,13 @@ mod tests {
             ],
             dt,
         );
-        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let moving = vec![
+            PlayerInput { set_target: Some(Vec2::new(d60(50.0), d60(50.0))), ..Default::default() },
+            PlayerInput::default(),
+        ];
         let mut seen = false;
-        let mut last_vel = Fix64::ZERO;
         for _ in 0..300 {
-            world.step(none.clone(), dt);
-            if world.players[0].phoenix_remaining > Fix64::ZERO {
-                last_vel = world.players[0].cur_vel.length();
-            }
+            world.step(moving.clone(), dt);
             if seen && world.players[0].phoenix_remaining == Fix64::ZERO {
                 break;
             }
@@ -7393,8 +7391,7 @@ mod tests {
         }
         let v = world.players[0].cur_vel.length();
         assert!(seen, "phoenix should start");
-        assert!(v > Fix64::ZERO, "PB should keep the remaining Q/S velocity, got {v:?}");
-        assert!(v <= last_vel, "end velocity should be the decayed pre-end velocity ({last_vel} -> {v})");
+        assert!(v > Fix64::from_num(100.0), "after Phoenix, normal movement continues (got {v:?})");
     }
 
     #[test]

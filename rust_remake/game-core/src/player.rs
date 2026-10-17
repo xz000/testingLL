@@ -767,29 +767,6 @@ impl Player {
             self.move_target = None;
         }
         // 0) 冲刺斩：无限时长直线冲刺，优先级最高（直到新移动命令解除）。
-        // 098c Phoenix：走普通 Q/S 分支（地面 .96 / 冰面 .98 衰减），点地边沿由输入阶段追加 bO。
-        if self.phoenix_remaining > Fix64::ZERO {
-            if self.on_ice {
-                self.cur_vel = self.cur_vel * Fix64::from_num(ICE_DECAY_PER_FRAME);
-            } else {
-                let walk = self
-                    .move_target
-                    .map(|t| {
-                        let d = t - self.pos;
-                        if d.length_squared() > Fix64::from_num(1.0 / 65536.0) {
-                            d.normalized() * self.base_speed()
-                        } else {
-                            Vec2::ZERO
-                        }
-                    })
-                    .unwrap_or(Vec2::ZERO);
-                self.cur_vel = (self.cur_vel - walk) * Fix64::from_num(W098B_KB_DECAY_PER_FRAME) + walk;
-            }
-            self.pos += self.cur_vel * dt;
-            self.pos += self.kb_vel * dt;
-            self.pos += self.pull * dt;
-            return;
-        }
         if self.dash_active {
             self.cur_vel = Vec2::ZERO;
             self.pos += self.dash_vel * dt;
