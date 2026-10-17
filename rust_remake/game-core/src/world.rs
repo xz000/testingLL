@@ -910,19 +910,20 @@ impl World {
             // B4-R 凤凰态（098c `WB`/`UB`）：
             //   - 普通移动指令 → `bO(gX, 18×0.5^(v/20))` **转向冲刺**（v 为每 tick 速度，单位/帧）；
             //   - 疾风步状态中（`Fr[gX]`）→ 额外发射凤凰弹（`tB`，速度 1000、半径 44）。
-            if pi.phoenix_order && pi.set_target.is_some() && p.phoenix_remaining > Fix64::ZERO && p.control.is_some() {
+            if pi.phoenix_order && pi.set_target.is_some() && p.phoenix_remaining > Fix64::ZERO {
                 let t = pi.set_target.unwrap();
                 let d = t - p.pos;
                 if d.length() > Fix64::ZERO {
                     let nd = d.normalized();
+                    p.move_target = Some(t);
                     if p.windwalk_state > Fix64::ZERO && !p.charging {
                         phoenix_shots.push((i as u32, p.pos, nd));
                     } else {
                         // 098c `bO`：每 tick 冲量，18×0.5^(v/20)（v 单位/帧）。v=0 → 18/tick≈600/s；v=20/tick→9/tick。
-                        let v_tick = p.control.as_ref().unwrap().vel.length() * Fix64::from_num(0.03);
+                        let v_tick = p.cur_vel.length() * Fix64::from_num(0.03);
                         let imp = Fix64::from_num(18.0)
                             * Fix64::from_num(0.5_f64.powf((v_tick / Fix64::from_num(20.0)).to_num::<f64>()));
-                        p.control.as_mut().unwrap().vel += nd * (imp / Fix64::from_num(0.03));
+                        p.cur_vel += nd * (imp / Fix64::from_num(0.03));
                     }
                 }
                 continue;
@@ -5804,7 +5805,7 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             // 098c WB：固定时长 3.1*jn；初速度 20/tick ≈667/s；无距离 clamp、无直接接触伤害。
                             let dur_s = dur * p.jn();
                             // 098c `bO(ii,20,TX,TY)` 是**加到现有 Q/S**，不是覆盖。
-                            p.push(p.cur_vel + dir * speed, dur_s);
+                            p.cur_vel += dir * speed;
                             p.phoenix_remaining = Fix64::from_num(dur_s);
                         }
                     }
@@ -7337,7 +7338,7 @@ mod tests {
         );
         let rem = world.players[0].phoenix_remaining.to_num::<f64>();
         assert!(rem > 4.6 && rem <= 4.65, "3.1*1.5 minus one tick expected ~4.63, got {rem}");
-        let v0 = world.players[0].control.as_ref().unwrap().vel.length();
+        let v0 = world.players[0].cur_vel.length();
         // 同一个 set_target，但没有新点地边沿 → 不应追加。
         world.step(
             vec![
@@ -7346,7 +7347,7 @@ mod tests {
             ],
             dt,
         );
-        let v1 = world.players[0].control.as_ref().unwrap().vel.length();
+        let v1 = world.players[0].cur_vel.length();
         assert!(v1 < v0, "no edge only decays Q/S ({v0} -> {v1})");
         assert!(v1 > v0 * Fix64::from_num(0.9), "decay should be small");
         // 新点地边沿 → 追加 bO 速度。
@@ -7357,7 +7358,7 @@ mod tests {
             ],
             dt,
         );
-        let v2 = world.players[0].control.as_ref().unwrap().vel.length();
+        let v2 = world.players[0].cur_vel.length();
         assert!(v2 > v1 + Fix64::from_num(100.0), "new order should add bO velocity, {v1} -> {v2}");
     }
 
@@ -7382,13 +7383,13 @@ mod tests {
         let mut last_vel = Fix64::ZERO;
         for _ in 0..300 {
             world.step(none.clone(), dt);
-            if world.players[0].control.is_some() {
-                last_vel = world.players[0].control.as_ref().unwrap().vel.length();
+            if world.players[0].phoenix_remaining > Fix64::ZERO {
+                last_vel = world.players[0].cur_vel.length();
             }
-            if seen && world.players[0].control.is_none() {
+            if seen && world.players[0].phoenix_remaining == Fix64::ZERO {
                 break;
             }
-            seen |= world.players[0].control.is_some();
+            seen |= world.players[0].phoenix_remaining > Fix64::ZERO;
         }
         let v = world.players[0].cur_vel.length();
         assert!(seen, "phoenix should start");

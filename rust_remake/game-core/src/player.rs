@@ -767,6 +767,29 @@ impl Player {
             self.move_target = None;
         }
         // 0) 冲刺斩：无限时长直线冲刺，优先级最高（直到新移动命令解除）。
+        // 098c Phoenix：走普通 Q/S 分支（地面 .96 / 冰面 .98 衰减），点地边沿由输入阶段追加 bO。
+        if self.phoenix_remaining > Fix64::ZERO {
+            if self.on_ice {
+                self.cur_vel = self.cur_vel * Fix64::from_num(ICE_DECAY_PER_FRAME);
+            } else {
+                let walk = self
+                    .move_target
+                    .map(|t| {
+                        let d = t - self.pos;
+                        if d.length_squared() > Fix64::from_num(1.0 / 65536.0) {
+                            d.normalized() * self.base_speed()
+                        } else {
+                            Vec2::ZERO
+                        }
+                    })
+                    .unwrap_or(Vec2::ZERO);
+                self.cur_vel = (self.cur_vel - walk) * Fix64::from_num(W098B_KB_DECAY_PER_FRAME) + walk;
+            }
+            self.pos += self.cur_vel * dt;
+            self.pos += self.kb_vel * dt;
+            self.pos += self.pull * dt;
+            return;
+        }
         if self.dash_active {
             self.cur_vel = Vec2::ZERO;
             self.pos += self.dash_vel * dt;
@@ -776,13 +799,7 @@ impl Player {
         }
         // 1) 强制位移：定格速推进，重置自走惯性。
         if self.control.is_some() {
-            let mut vel = self.control.as_ref().unwrap().vel;
-            // 098c Phoenix uses normal Q/S decay (ground .96 / ice .98) before each bO order.
-            if self.phoenix_remaining > Fix64::ZERO {
-                let f = if self.on_ice { ICE_DECAY_PER_FRAME } else { W098B_KB_DECAY_PER_FRAME };
-                vel = vel * Fix64::from_num(f);
-                self.control.as_mut().unwrap().vel = vel;
-            }
+            let vel = self.control.as_ref().unwrap().vel;
             self.cur_vel = Vec2::ZERO;
             self.pos += vel * dt;
             self.pos += self.kb_vel * dt;
@@ -873,12 +890,8 @@ impl Player {
             }
         }
         if stop_control {
-            // 098c `PB`：凤凰结束时只清状态，不清 Q/S → 保留当前速度继续滑/走。
-            if self.phoenix_remaining > Fix64::ZERO {
-                self.cur_vel = control_vel;
-            } else if self.burning {
-            // 098c `CR`：冲刺正常结束（非撞人/撞墙）时 Q=.2Q，保留 20% 余速；
-            // 冰面上会按 0.98 缓慢衰减继续滑。只有 S012A 冲刺会置 burning。
+            // 098c `CR`：S012A 冲刺正常结束（非撞人/撞墙）时 Q=.2Q，保留 20% 余速。
+            if self.burning {
                 self.cur_vel = control_vel * Fix64::from_num(0.2);
             }
             self.control = None;
