@@ -7726,11 +7726,13 @@ impl event::EventHandler for Game {
                                         .max()
                                         .unwrap_or(0);
                                     logging::log(&format!(
-                                        "[stat] host frames={} seq={seq} wait_ticks={} ping_max={}ms emit=[{}]",
+                                        "[stat] host frames={} seq={seq} wait_ticks={} ping_max={}ms emit=[{}] send=(direct={},queued={})",
                                         self.host_frame_count,
                                         self.steam_lobby_wait_ticks,
                                         ping_max,
-                                        self.host_emit_stats.summary()
+                                        self.host_emit_stats.summary(),
+                                        host.transport_ref().send_stats().0,
+                                        host.transport_ref().send_stats().1
                                     ));
                                     self.host_emit_stats.reset();
                                 }
@@ -7976,11 +7978,14 @@ impl event::EventHandler for Game {
                                 if last % 300 == 0 {
                                     let host_id = self.steam_participants.first().copied().unwrap_or(0);
                                     logging::log(&format!(
-                                        "[stat] client me={} seq={last} stale={} pending_max={} ping_host={:?}ms frame=[{}] in=[{}]",
+                                        "[stat] client me={} seq={last} stale={} pending_max={} ping_host={:?}ms recv={} pending={} req={} frame=[{}] in=[{}]",
                                         self.steam_my_index,
                                         self.steam_cli_stale_ticks,
                                         self.client_pending_max,
                                         self.steam_ping_of(host_id),
+                                        cli.transport_ref().recv_tag_counts().0,
+                                        cli.pending_len(),
+                                        cli.frame_requests_sent(),
                                         self.client_frame_stats.summary(),
                                         self.client_input_stats.summary()
                                     ));
