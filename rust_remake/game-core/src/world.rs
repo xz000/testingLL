@@ -5862,7 +5862,10 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                             let dur_s = (dist / speed).to_num::<f64>() + 3.0 * 0.03;
                             p.push(dir * speed, dur_s);
                             // 098c `AB`：把击退速度 `U/w` 替换为沿冲刺方向的 `hr=Gr*(1-.96)`（≈52/s），不是相加。
-                            p.kb_vel = dir * Fix64::from_num(52.0);
+                            // 098c `AB` 把旧击退替换为 `U/w=52/s`；但 098c 的 Q/S 每 tick 会乘 .96，
+                            // 52 正好抵消该衰减（39*.96+1.56=39）。我们的 control 是恒定速度、不衰减，
+                            // 因此这里只清掉旧击退，不再额外加 52（否则冲刺速度会变成 1352/s）。
+                            p.kb_vel = Vec2::ZERO;
                             p.kick = Some(Kick {
                                 push_power: Fix64::from_num(100.0) * stats.damage, // 基数 100（目标 mana 放大 TODO）
                                 push_time: Fix64::from_num(W098B_KB_TIME),
@@ -6354,7 +6357,8 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     p.push(dir * stats.speed.max(Fix64::ONE), stats.duration.to_num::<f64>());
                     // 098c `AB`：同时把击退速度 `U/w` **替换**为沿冲刺方向的 `hr = Gr*(1-.96)`（≈52/s）。
                     // 不是相加；否则被击退时冲撞会飞得比正常冲刺更远。
-                    p.kb_vel = dir * Fix64::from_num(52.0);
+                    // 098c 的 U/w 是抵消 Q/S 的 .96 每 tick 衰减；我们的 control 不衰减，故只清旧击退。
+                    p.kb_vel = Vec2::ZERO;
                     p.kick = Some(Kick {
                         push_power: stats.push_power,
                         push_time: stats.push_time,
@@ -11209,7 +11213,7 @@ mod tests {
     }
 
     #[test]
-    fn s012_dash_replaces_knockback_velocity() {
+    fn s012_dash_cancels_knockback_velocity() {
         let mut world = World::new(2, 959);
         world.obstacles.clear();
         let dt = Fix64::from_num(1.0 / 60.0);
@@ -11233,9 +11237,7 @@ mod tests {
             }
         }
         let kb = world.players[0].kb_vel;
-        assert!(kb.x > Fix64::ZERO, "098c AB sets U/w along dash direction, got {kb:?}");
-        let len = kb.length().to_num::<f64>();
-        assert!(len > 35.0 && len < 55.0, "expected ~52/s dash knockback, got {len}");
+        assert!(kb == Vec2::ZERO, "dash must replace old knockback (our constant control has no .96 decay), got {kb:?}");
     }
 
     #[test]
