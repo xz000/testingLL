@@ -19,20 +19,33 @@ use ggez::{Context, GameResult};
 // 因此所有布局/字号/命中盒都直接用设计坐标，**不再用 `drawable_size()`**。
 // 鼠标：`ctx.mouse.position()` 是**物理像素**（与 `drawable_size` 同基准），用 [`mouse_design`] 逆变换。
 
-/// 逻辑设计宽度。
-pub const UI_W: f32 = 1280.0;
-/// 逻辑设计高度。
+/// 逻辑设计高度（宽度随窗口比例动态变化，限制 4:3–21:9）。
 pub const UI_H: f32 = 720.0;
+/// 基准设计宽度（仅作参考；实际布局用 [`view_size`]）。
+pub const UI_W: f32 = 1280.0;
 
-/// 窗口像素尺寸 → 屏坐标矩形（设计空间单位）。保证 16:9、居中、不变形。
+/// 宽高比限制：4:3 – 21:9。
+pub const ASPECT_MIN: f32 = 4.0 / 3.0;
+pub const ASPECT_MAX: f32 = 21.0 / 9.0;
+
+/// 当前窗口对应的设计视口尺寸：高度固定 720，宽度按比例夹在 960–1680。
+pub fn view_size(ctx: &Context) -> (f32, f32) {
+    let (ww, wh) = ctx.gfx.drawable_size();
+    let aspect = (ww.max(1.0) / wh.max(1.0)).clamp(ASPECT_MIN, ASPECT_MAX);
+    (UI_H * aspect, UI_H)
+}
+
+/// 窗口像素尺寸 → 屏坐标矩形（设计空间单位）。
+/// 高度固定 720；宽度按比例（限制在 4:3–21:9）；超出范围的窗口继续 letterbox。
 pub fn design_rect(win_w: f32, win_h: f32) -> graphics::Rect {
     let ww = win_w.max(1.0);
     let wh = win_h.max(1.0);
-    // 每窗口像素对应的设计单位数（保持等比）。
-    let s = (ww / UI_W).min(wh / UI_H);
+    let aspect = (ww / wh).clamp(ASPECT_MIN, ASPECT_MAX);
+    let dw = UI_H * aspect;
+    let s = (ww / dw).min(wh / UI_H);
     let w = ww / s;
     let h = wh / s;
-    graphics::Rect::new((UI_W - w) / 2.0, (UI_H - h) / 2.0, w, h)
+    graphics::Rect::new((dw - w) / 2.0, (UI_H - h) / 2.0, w, h)
 }
 
 /// 按当前窗口尺寸设置该 canvas 的屏坐标（即逻辑设计空间 + letterbox）。

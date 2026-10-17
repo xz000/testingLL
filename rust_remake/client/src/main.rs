@@ -798,14 +798,14 @@ const MAIN_MENU_CARD_Y0: f32 = 168.0;
 const MAIN_MENU_CARD_GAP: f32 = 16.0;
 
 /// 主菜单卡片宽度（随设计宽度缩放，上限 560）。
-fn main_menu_card_w() -> f32 {
-    (ui::UI_W * 0.62).min(560.0)
+fn main_menu_card_w(sw: f32) -> f32 {
+    (sw * 0.62).min(560.0)
 }
 
 /// 主菜单第 `i` 张卡片的矩形（**绘制与命中盒必须共用此函数**）。
-fn main_menu_card_rect(i: usize) -> graphics::Rect {
-    let card_w = main_menu_card_w();
-    let x = ui::UI_W / 2.0 - card_w / 2.0;
+fn main_menu_card_rect(sw: f32, i: usize) -> graphics::Rect {
+    let card_w = main_menu_card_w(sw);
+    let x = sw / 2.0 - card_w / 2.0;
     let y = MAIN_MENU_CARD_Y0 + i as f32 * (MAIN_MENU_CARD_H + MAIN_MENU_CARD_GAP);
     graphics::Rect::new(x, y, card_w, MAIN_MENU_CARD_H)
 }
@@ -816,8 +816,7 @@ fn escape_menu_panel(sw: f32, sh: f32) -> graphics::Rect {
 }
 
 /// 对局内 Esc 菜单各行的矩形（**绘制与鼠标命中必须共用**）。
-fn escape_menu_rows(allow_pause: bool) -> Vec<graphics::Rect> {
-    let (sw, sh) = (ui::UI_W, ui::UI_H);
+fn escape_menu_rows(sw: f32, sh: f32, allow_pause: bool) -> Vec<graphics::Rect> {
     let panel = escape_menu_panel(sw, sh);
     let content = graphics::Rect::new(panel.x + 24.0, panel.y + 58.0, panel.w - 48.0, panel.h - 100.0);
     let n = escape_menu_items(allow_pause).len();
@@ -2051,9 +2050,9 @@ impl Game {
         const PAN_SPEED: f32 = 1.1; // 方向键平移：屏幕对角线/秒
         const CAM_MAX_R: f32 = 2.5; // 相机离原点上限 = CAM_MAX_R * START_RADIUS
 
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         // 基准缩放：场地约占短边 45%（随窗口尺寸自适应）。用户缩放 zoom 在它之上叠加。
-        let base = sw.min(sh) * 0.45 / game_core::world::START_RADIUS as f32;
+        let base = sh * 0.45 / game_core::world::START_RADIUS as f32;
         let old_scale = self.scale; // 光标锚点缩放用：改缩放前世界点 → 改后不动
         self.zoom = self.zoom.clamp(ZOOM_MIN, ZOOM_MAX);
         self.scale = base * self.zoom;
@@ -4077,7 +4076,7 @@ impl Game {
 
         // 帧同步分歧警示：检测到本端世界哈希与 host 广播不一致时显示红条。
         if self.desync_detected {
-            let (sw, _sh) = (ui::UI_W, ui::UI_H);
+            let (sw, _sh) = ui::view_size(ctx);
             let cx = sw / 2.0;
             let bg = Mesh::new_rectangle(
                 &ctx.gfx,
@@ -4092,7 +4091,7 @@ impl Game {
         // 对局内 HUD（D9 UI 批次2）：物品栏（容量随背包研究 1~10）+ 金币。仅对战/学习阶段显示。
         if !self.world.sandbox || self.meta.phase == game_core::meta::MatchPhase::Fighting {
             if let Some(pr) = self.meta.profiles.iter().find(|p| p.player_id == self.self_index()) {
-                let (sw, sh) = (ui::UI_W, ui::UI_H);
+                let (sw, sh) = ui::view_size(ctx);
                 // 左上状态区（U1）：金币/模式/精通/进度纵排。加**半透明底衬**，
                 // 否则纯文字浮在亮色地板/特效上可读性差（与学习界面面板同色系）。
                 let backdrop = Mesh::new_rectangle(
@@ -4234,11 +4233,11 @@ impl Game {
         {
             let now = ctx.time.time_since_start().as_secs_f64();
             if !self.steam_toast.0.is_empty() && now < self.steam_toast.1 {
-                let (sw, sh) = (ui::UI_W, ui::UI_H);
+                let (sw, sh) = ui::view_size(ctx);
                 draw_text(&mut canvas, ctx, &self.steam_toast.0, 22.0, Color::from_rgb(255, 215, 120), Point2 { x: sw / 2.0, y: sh * 0.08 }, true)?;
             }
             if !self.pause_toast.0.is_empty() && now < self.pause_toast.1 {
-                let (sw, sh) = (ui::UI_W, ui::UI_H);
+                let (sw, sh) = ui::view_size(ctx);
                 draw_text(&mut canvas, ctx, &self.pause_toast.0, 22.0, Color::from_rgb(255, 190, 90), Point2 { x: sw / 2.0, y: sh * 0.12 }, true)?;
             }
         }
@@ -4257,7 +4256,7 @@ impl Game {
 
         // 视角提示（仅对战阶段显示）：键位跟随自定义绑定；跟随时换成状态提示。
         if !self.pre_game_config {
-            let (_, sh) = (ui::UI_W, ui::UI_H);
+            let (_, sh) = ui::view_size(ctx);
             let key = |a: local_settings::BindAction| self.local_settings.bind_key(a).label();
             let hint = if self.cam_follow {
                 format!(
@@ -4293,7 +4292,7 @@ impl Game {
         const ROW_H: f32 = 30.0;
         // 行： (player_id, score, kills, total_damage, alive)
         type Row = (u32, u32, u32, f64, bool);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let me = self.self_index();
 
         // 分数降序（同分按 id 升序，保证确定性）；存活取自 world（帧内真实状态）。
@@ -4483,11 +4482,12 @@ impl Game {
         } else {
             "   [O] 查看"
         };
+        let (sw, sh) = ui::view_size(ctx);
         ui::text_center(
             canvas, ctx,
             &format!("{text}{edit_hint}"),
             ui::theme::SMALL, col,
-            ui::UI_W / 2.0, ui::UI_H * 0.075,
+            sw / 2.0, sh * 0.075,
         )?;
         Ok(())
     }
@@ -4499,7 +4499,7 @@ impl Game {
         // 鼠标命中盒每帧重建（与键盘同一条动作路径，见 `room_cfg_editor_input`）。
         self.room_cfg_hitboxes.clear();
         let mouse = ui::mouse_design(ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         // 半透明底 + 面板
         let dim = Mesh::new_rectangle(
             &ctx.gfx,
@@ -4714,7 +4714,7 @@ impl Game {
     #[cfg(feature = "steam")]
     fn draw_steam_ready_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
         self.draw_room_cfg_badge(canvas, ctx)?;
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let dim = Mesh::new_rectangle(&ctx.gfx, DrawMode::fill(), graphics::Rect::new(0.0, 0.0, sw, sh), Color::from_rgba(8, 10, 16, 225))?;
         canvas.draw(&dim, graphics::DrawParam::new());
         let cx = sw / 2.0;
@@ -4848,7 +4848,7 @@ impl Game {
     /// `roster_end_y` 是成员列表画完后的 y，面板从它下面开始，避免与成员列表叠在一起。
     #[cfg(feature = "steam")]
     fn draw_steam_friend_panel(&self, canvas: &mut Canvas, ctx: &Context, roster_end_y: f32) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let title_y = (roster_end_y + 14.0).max(sh * 0.58);
         let hint_y = sh * 0.83; // 面板操作提示
@@ -4945,7 +4945,8 @@ impl Game {
         let mut act: Option<usize> = None;
         if ctx.mouse.button_just_pressed(ggez::input::mouse::MouseButton::Left) {
             let m = ui::mouse_design(ctx);
-            for (i, r) in escape_menu_rows(self.steam_active()).iter().enumerate() {
+            let (sw, sh) = ui::view_size(ctx);
+            for (i, r) in escape_menu_rows(sw, sh, self.steam_active()).iter().enumerate() {
                 if r.contains(m) {
                     act = Some(i);
                     break;
@@ -5372,7 +5373,7 @@ impl Game {
 
     /// 绘制对局内 Esc 菜单（主题风格面板 + 行；危险项二次确认提示）。
     fn draw_escape_menu(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let panel = escape_menu_panel(sw, sh);
         // 半透明遮罩 + 面板底/边框。
@@ -5383,7 +5384,7 @@ impl Game {
         let border = Mesh::new_rectangle(&ctx.gfx, DrawMode::stroke(1.0), panel, ui::theme::panel_border())?;
         canvas.draw(&border, graphics::DrawParam::new());
         ui::text_center(canvas, ctx, i18n::t("对局菜单"), 30.0, ui::theme::accent(), cx, panel.y + 18.0)?;
-        let rows = escape_menu_rows(self.steam_active());
+        let rows = escape_menu_rows(sw, sh, self.steam_active());
         let items = escape_menu_items(self.steam_active());
         let mouse = ui::mouse_design(ctx);
         for (i, (r, item)) in rows.iter().zip(items.iter()).enumerate() {
@@ -5458,7 +5459,7 @@ impl Game {
     /// Steam 联机：顶部非模态横幅（不遮挡操作）。
     #[cfg(feature = "steam")]
     fn draw_top_banner(&self, canvas: &mut Canvas, ctx: &Context, text: &str) -> GameResult {
-        let (sw, _sh) = (ui::UI_W, ui::UI_H);
+        let (sw, _sh) = ui::view_size(ctx);
         let bg = Mesh::new_rectangle(
             &ctx.gfx,
             DrawMode::fill(),
@@ -5505,7 +5506,7 @@ impl Game {
     /// S2：主机迁移期间的模态覆盖层（探测 / 选举 / 接管），spinner + 已等待秒数 + Esc 放弃提示。
     #[cfg(feature = "steam")]
     fn draw_migration_overlay(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let dim = Mesh::new_rectangle(
             &ctx.gfx,
@@ -5536,7 +5537,7 @@ impl Game {
 
     /// 客户端掉线/重连提示覆盖层：提醒玩家已掉线，按 R 重连。
     fn draw_reconnect_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let dim = Mesh::new_rectangle(
             &ctx.gfx,
             DrawMode::fill(),
@@ -5557,7 +5558,7 @@ impl Game {
 
     /// 渲染学习阶段 / 整场结束的信息覆盖层（无依赖文本，用简笔几何表示）。
     fn draw_meta_overlay(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
 
         match self.meta.phase {
             MatchPhase::Fighting => {
@@ -6935,7 +6936,7 @@ impl Game {
             c.a = (t * 1.6).clamp(0.0, 1.0);
             draw_text(canvas, ctx, &f.text, 20.0, c, Point2 { x, y: y - 16.0 }, true)?;
         }
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let mut y = sh * 0.12;
         for b in &self.banners {
             let t = (b.life / b.max_life).clamp(0.0, 1.0);
@@ -7015,7 +7016,7 @@ impl Game {
         let secs = self.world.time().to_num::<f64>().max(0.1);
         let dps = dmg / secs;
         let bots_alive = self.world.players.iter().skip(1).filter(|p| p.alive).count();
-        let (sw, _) = (ui::UI_W, ui::UI_H);
+        let (sw, _) = ui::view_size(ctx);
         let x = sw - 212.0;
         let y = 12.0;
         let lines = [
@@ -7054,7 +7055,7 @@ impl Game {
         if !p.alive {
             return Ok(());
         }
-        let (_, sh) = (ui::UI_W, ui::UI_H);
+        let (_, sh) = ui::view_size(ctx);
         let x = 10.0;
         let w = 250.0;
         let h = 126.0;
@@ -7401,8 +7402,9 @@ impl event::EventHandler for Game {
             // 鼠标点击主菜单卡片（与键盘共用 menu_selection + act）。
             if !in_lobby_menu && ctx.mouse.button_just_pressed(MouseButton::Left) {
                 let p = ui::mouse_design(ctx);
+                let sw = ui::view_size(ctx).0;
                 for i in 0..MENU_COUNT {
-                    if main_menu_card_rect(i).contains(p) {
+                    if main_menu_card_rect(sw, i).contains(p) {
                         self.menu_selection = i;
                         act = Some(i);
                     }
@@ -9431,7 +9433,7 @@ impl Game {
         let badge_clicked = !self.room_cfg_edit
             && ctx.mouse.button_just_pressed(MouseButton::Left)
             && {
-                let (sw, sh) = (ui::UI_W, ui::UI_H);
+                let (sw, sh) = ui::view_size(ctx);
                 let badge_rect = graphics::Rect::new(sw / 2.0 - 260.0, sh * 0.075 - 10.0, 520.0, 32.0);
                 badge_rect.contains(ui::mouse_design(ctx))
             };
@@ -9535,7 +9537,7 @@ impl Game {
         }
         // 鼠标点击主操作按钮：等效键盘 U（就绪/取消）或房主回车（开始倒计时）。
         if !panel_open {
-            let (sw, sh) = (ui::UI_W, ui::UI_H);
+            let (sw, sh) = ui::view_size(ctx);
             let cx = sw / 2.0;
             let (_, rnote) = self.steam_current_room_info();
             let flow_y = if rnote.is_empty() { sh * 0.18 + 66.0 } else { sh * 0.18 + 92.0 };
@@ -10867,7 +10869,7 @@ impl Game {
     /// R7：暂停覆盖层（确认框 / 暂停中 / 恢复倒计时）。
     #[cfg(feature = "steam")]
     fn draw_pause_overlay(&self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let v = self.steam_pause_view();
         if !self.pause_confirm {
@@ -12194,7 +12196,7 @@ impl Game {
     fn draw_workshop_list(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         ui::text_center(
             &mut canvas, ctx, i18n::t("创意工坊物品"), 34.0, ui::theme::accent(), cx, sh * 0.13,
@@ -12448,7 +12450,7 @@ impl Game {
         ui::set_design_coordinates(&mut canvas, ctx);
         self.keybinds_hitboxes.clear();
         let mouse = ui::mouse_design(ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         ui::text_center(
             &mut canvas, ctx, i18n::t("按键设置"), 34.0, ui::theme::accent(), cx, sh * 0.1,
@@ -12547,7 +12549,7 @@ impl Game {
         }
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let mouse = ui::mouse_design(ctx);
         self.settings_hitboxes.clear();
@@ -12812,7 +12814,7 @@ impl Game {
         ui::set_design_coordinates(&mut canvas, ctx);
         self.training_hitboxes.clear();
         let mouse = ui::mouse_design(ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         ui::text_center(
             &mut canvas, ctx, i18n::t("训练场设置"), 34.0, ui::theme::accent(), cx, sh * 0.22,
@@ -12886,7 +12888,7 @@ impl Game {
         }
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
 
         // 标题区（上移，给 4 张卡片 + 底部提示留出空间，避免重叠）
@@ -13003,7 +13005,7 @@ impl Game {
         ];
         let mpos = ui::mouse_design(ctx);
         for (i, (num, name, desc)) in items.iter().enumerate() {
-            let card = main_menu_card_rect(i);
+            let card = main_menu_card_rect(sw, i);
             let selected = i == self.menu_selection;
             let hover = !selected && card.contains(mpos);
             // 选中卡片：高亮背景条；悬停：中亮；未选中：深灰背景。
@@ -13061,7 +13063,7 @@ impl Game {
     fn draw_steam_connecting(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let is_host = matches!(self.steam_lobby_pending, Some(SteamLobbyPending::Host { .. }));
         let status = if is_host { "正在创建房间…" } else { "正在加入房间…" };
@@ -13096,7 +13098,7 @@ impl Game {
     fn draw_steam_host_left_overlay(&self, ctx: &mut Context) -> GameResult {
         let mut canvas = graphics::Canvas::from_frame(ctx, graphics::Color::from_rgb(18, 20, 26));
         ui::set_design_coordinates(&mut canvas, ctx);
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let cy = sh / 2.0;
         let waiting = self.steam_host_wait_ticks < STEAM_LOBBY_HOST_TRANSFER_TIMEOUT_TICKS;
@@ -13117,7 +13119,7 @@ impl Game {
     /// 绘制「房间列表」界面：公开大厅列表（房主昵称/房名/人数/备注），当前选中高亮。
     #[cfg(feature = "steam")]
     fn draw_steam_lobby_list(&mut self, canvas: &mut Canvas, ctx: &Context) -> GameResult {
-        let (sw, sh) = (ui::UI_W, ui::UI_H);
+        let (sw, sh) = ui::view_size(ctx);
         let cx = sw / 2.0;
         let pad = ui::theme::PAD;
         let mouse = ui::mouse_design(ctx);
@@ -14908,7 +14910,7 @@ mod tests {
     #[test]
     fn main_menu_cards_hit_region_matches_drawn_region() {
         // 四张卡片互不重叠，且每张卡的中心点命中它自己。
-        let rects: Vec<_> = (0..4).map(super::main_menu_card_rect).collect();
+        let rects: Vec<_> = (0..4).map(|i| super::main_menu_card_rect(super::ui::UI_W, i)).collect();
         for (i, r) in rects.iter().enumerate() {
             let center = ggez::mint::Point2 { x: r.x + r.w / 2.0, y: r.y + r.h / 2.0 };
             assert!(r.contains(center), "卡片 {i} 的中心应命中自身");
@@ -14921,6 +14923,32 @@ mod tests {
         // 最后一张卡片必须落在底部提示条（UI_H - 34）之上，避免压字。
         let last = rects[3];
         assert!(last.y + last.h < super::ui::UI_H - 34.0, "卡片不得与底部提示重叠");
+    }
+
+    /// 动态宽高比：4:3 / 16:9 / 21:9 都居中且卡片/菜单不越界。
+    #[test]
+    fn dynamic_aspect_layouts_stay_centered() {
+        for sw in [960.0_f32, 1280.0, 1680.0] {
+            let rects: Vec<_> = (0..4).map(|i| super::main_menu_card_rect(sw, i)).collect();
+            for r in &rects {
+                assert!(r.x >= 0.0 && r.x + r.w <= sw + 0.5, "card out of viewport at {sw}: {r:?}");
+                let cx = r.x + r.w / 2.0;
+                assert!((cx - sw / 2.0).abs() < 0.5, "card should be centered at {sw}");
+            }
+            let rows = super::escape_menu_rows(sw, super::ui::UI_H, true);
+            for r in &rows {
+                assert!(r.x >= 0.0 && r.x + r.w <= sw + 0.5, "row out of viewport at {sw}: {r:?}");
+            }
+        }
+        // 4:3 / 16:9 / 21:9 填满设计视口；超宽屏在两侧留 letterbox。
+        let r43 = super::ui::design_rect(960.0, 720.0);
+        assert!((r43.w - 960.0).abs() < 0.5 && r43.x.abs() < 0.5);
+        let r169 = super::ui::design_rect(1280.0, 720.0);
+        assert!((r169.w - 1280.0).abs() < 0.5 && r169.x.abs() < 0.5);
+        let r219 = super::ui::design_rect(1680.0, 720.0);
+        assert!((r219.w - 1680.0).abs() < 0.5 && r219.x.abs() < 0.5);
+        let r32 = super::ui::design_rect(3440.0, 1080.0);
+        assert!(r32.x < -0.5, "32:9 should letterbox horizontally: {r32:?}");
     }
 
     /// R8：追赶预算判定（仅 Steam）。
@@ -14980,7 +15008,7 @@ mod tests {
     /// E1：退出菜单各行的几何（绘制与鼠标命中共用）应落在设计分辨率内、从上到下且不重叠。
     #[test]
     fn escape_menu_rows_are_inside_screen_and_disjoint() {
-        let rows = super::escape_menu_rows(true);
+        let rows = super::escape_menu_rows(super::ui::UI_W, super::ui::UI_H, true);
         assert_eq!(rows.len(), super::escape_menu_items(true).len());
         for r in &rows {
             assert!(r.x >= 0.0 && r.y >= 0.0, "行不得跑到屏幕外(负坐标): {r:?}");
