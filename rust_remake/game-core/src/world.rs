@@ -5847,15 +5847,19 @@ fn execute_effects(world: &mut World, queue: &[(u32, SkillId, Option<Vec2>)]) {
                     }
                     crate::skill::W098bUtilKind::Dash => {
                         // 冲撞（098b IB / 098c 对齐）：1300/s 强制位移 + 冲刺期间踢击窗口（撞人 KI 伤+击退）。
-                        // 时长 = 最大距离/速度（距离截断到 max_distance）；撞敌即停见碰撞结算 stop_on_hit，
-                        // 撞墙截断见 resolve_obstacles（清 control）。098c 碰撞（CA/BA）本身不对目标施加定身，
-                        // 仅 伤害(mI)+魔法吸取(FX)+击退冲量，故此处不引入独立的「定身」状态。
+                        // 时长 = min(点击距离, 最大距离)/速度 + 3 tick（098c `ev=Rr/Gr*.03+3*.03`），不是固定跑满最大距离。
+                        // 撞敌即停见碰撞结算 stop_on_hit，撞墙截断见 resolve_obstacles（清 control）。
                         if let Some(p) = world.players.get_mut(idx as usize) {
                             let dir = match target {
                                 Some(t) => { let d = t - p.pos; if d.length() > Fix64::ZERO { d.normalized() } else { Vec2::new(Fix64::ONE, Fix64::ZERO) } }
                                 None => Vec2::new(Fix64::ONE, Fix64::ZERO),
                             };
-                            let dur_s = (stats.max_distance * Fix64::from_num(ei_mult(false)) / speed).to_num::<f64>();
+                            let max_d = stats.max_distance * Fix64::from_num(ei_mult(false));
+                            let dist = match target {
+                                Some(t) => (t - p.pos).length().min(max_d),
+                                None => max_d,
+                            };
+                            let dur_s = (dist / speed).to_num::<f64>() + 3.0 * 0.03;
                             p.push(dir * speed, dur_s);
                             // 098c `AB`：把击退速度 `U/w` 替换为沿冲刺方向的 `hr=Gr*(1-.96)`（≈52/s），不是相加。
                             p.kb_vel = dir * Fix64::from_num(52.0);
@@ -11177,6 +11181,33 @@ mod tests {
     }
 
     /// S012 冲撞：冲刺撞人造成 KI 伤害 + 冲刺位移生效。
+    #[test]
+    fn s012_dash_stops_near_clicked_distance() {
+        let mut world = World::new(2, 960);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(50.0), Fix64::ZERO); // far away: no hit-stop
+        world.players[1].move_target = None;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+        }
+        let x = world.players[0].pos.x.to_num::<f64>();
+        assert!(
+            x > 250.0 && x < 550.0,
+            "dash to 300 should stop near 300 (+3 ticks), got {x} (max would be ~700)"
+        );
+    }
+
     #[test]
     fn s012_dash_replaces_knockback_velocity() {
         let mut world = World::new(2, 959);

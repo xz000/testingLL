@@ -109,4 +109,5 @@ pub fn version() -> &'static str {
 /// S013 换位/搬运不再清空 `kb_vel`（098c `KB`/`LB` 保留 U/w）。
 /// v61（2026-10-17）：**S013 Stop 语义**——098c `IssueImmediateOrder` 只清移动指令，自定义 `Q/S/U/w`（冲刺/击退）继续；
 /// 因此 S013 换位/搬运也不再清 `control`（保留进行中的冲刺/硬推）。
-pub const PROTOCOL_VERSION: u32 = 61;
+/// v62（2026-10-17）：**S012A 冲撞时长按点击距离**——`ev=Rr/Gr*.03+3*.03`（Rr 截到最大距离），不再固定跑满 max_distance。
+pub const PROTOCOL_VERSION: u32 = 62;
