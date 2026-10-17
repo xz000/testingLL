@@ -41,6 +41,11 @@ pub fn newer_snapshot(
 /// host 仅在冷却归零时回整快照+Resync，避免在迁移探测期间被反复广播整快照刷屏。
 const RECONNECT_RESP_INTERVAL: u32 = 30;
 
+/// Fix1：补帧请求（`ReqFrame`）的**节流**：同一缺口每这么多步（≈0.25s@60fps）最多请求一次。
+/// 原为每次 `step_frame` 都发（~60/s）——链路拥塞时会反向加压（host 每收一条就回一帧）。
+/// 新缺口仍**立即**请求一次；且**不放弃**（UDP 靠重试补包；Steam 真补不到时由上层 3s 静默→探测/Resync 兜底）。
+const REQ_FRAME_EVERY: u32 = 15;
+
 /// R7：每位参与者默认暂停额度。
 pub const PAUSE_BUDGET_DEFAULT: u8 = 3;
 /// R7：恢复请求后的倒计时帧数（60fps 下约 3s，War3/Dota2 风格）。
@@ -1300,6 +1305,13 @@ pub struct ClientLockstep<T: Transport> {
     latest_all_participants: Option<Vec<u64>>,
     /// 诊断：是否已就“收到非 host 的快照”告警一次（避免刷屏）。
     warned_nonhost_snapshot: bool,
+    /// Fix1：补帧请求的节流状态——上一次已请求的 `expect_seq`（`None` = 无进行中的缺口）。
+    /// 同一缺口每 `REQ_FRAME_EVERY` 次 `try_advance` 最多请求一次（原为每次 step 都发 → ~60/s）。
+    req_frame_seq: Option<u64>,
+    /// Fix1：距上次发 `ReqFrame` 已过的 `try_advance` 调用次数。
+    req_frame_wait: u32,
+    /// Fix1：累计发出的 `ReqFrame` 包数（诊断/单测用）。
+    frame_requests: u64,
 }
 
 /// 待比对状态哈希的最大缓存条数（超出丢弃最旧的）。
@@ -1326,6 +1338,9 @@ impl<T: Transport> ClientLockstep<T> {
             latest_participants: None,
             latest_all_participants: None,
             warned_nonhost_snapshot: false,
+            req_frame_seq: None,
+            req_frame_wait: 0,
+            frame_requests: 0,
         }
     }
 
@@ -1595,9 +1610,15 @@ impl<T: Transport> ClientLockstep<T> {
 
     /// 请求补发 `missing_seq`。
     pub fn request_frame(&mut self, missing_seq: u64) -> io::Result<()> {
+        self.frame_requests = self.frame_requests.saturating_add(1);
         let pkt = Packet::ReqFrame { seq: missing_seq };
         self.transport.send_to(&pkt.encode(), &self.host)?;
         Ok(())
+    }
+
+    /// Fix1 诊断：累计发出的 `ReqFrame` 包数（供 `[stat]` / 单测校验节流）。
+    pub fn frame_requests_sent(&self) -> u64 {
+        self.frame_requests
     }
 
     /// 向 host 发送重连请求（附本端稳定身份 + 最后已知 seq，供 host 按身份找回槽位/选快照）。
@@ -1853,6 +1874,9 @@ impl<T: Transport> ClientLockstep<T> {
                         // 清空后 seq 起的帧由 host 可靠重发/广播补齐（frame_buf 含最近帧）。
                         self.pending.clear();
                         self.expect_seq = seq;
+                        // Fix1：重定基线 → 清掉旧缺口的节流状态（新缺口可立即请求）。
+                        self.req_frame_seq = None;
+                        self.req_frame_wait = 0;
                         return Ok(true);
                     }
                 }
@@ -1872,6 +1896,9 @@ impl<T: Transport> ClientLockstep<T> {
                 let ret = Some(entries);
                 // 期望下一帧。
                 self.expect_seq += 1;
+                // Fix1：推进成功 → 清掉“当前缺口”记录，下一个新缺口可**立即**发请求。
+                self.req_frame_seq = None;
+                self.req_frame_wait = 0;
                 // 若缓冲里现在是连续的下一帧，循环继续消费（一帧步进只返回一帧？见下）。
                 // 设计：step_frame 每调用推进一帧；但缓冲里的连续帧可由后续 step_frame 继续消费。
                 // 这里我们返回最新推进的一帧。为简单，只在 expect==min 时推一帧。
@@ -1882,7 +1909,23 @@ impl<T: Transport> ClientLockstep<T> {
             } else {
                 // min_seq > expect_seq：有缺口，需补发。
                 // 此时不应推进（保证严格按序）。如果缺口缓存里已有 >expect 的帧，说明丢了 expect 那帧。
-                let _ = self.request_frame(self.expect_seq);
+                //
+                // Fix1（**节流**）：原先每次 `step_frame` 都发一条 `ReqFrame`（~60 条/秒），链路拥塞时
+                // 会反过来加压（host 每收一条就回一帧）。现改为：
+                //   - **新缺口**（`expect_seq` 变化）→ **立即**请求一次（不牺牲首次恢复延迟）；
+                //   - 同一缺口 → 每 `REQ_FRAME_EVERY` 次调用（≈0.25s）最多一次；
+                //   - **不放弃**：持续低频重试（UDP 不可靠，靠重试补包；Steam 侧真补不到时由上层 3s 静默→探测/Resync 兜底）。
+                if self.req_frame_seq != Some(self.expect_seq) {
+                    self.req_frame_seq = Some(self.expect_seq);
+                    self.req_frame_wait = 0;
+                    let _ = self.request_frame(self.expect_seq);
+                } else {
+                    self.req_frame_wait = self.req_frame_wait.saturating_add(1);
+                    if self.req_frame_wait >= REQ_FRAME_EVERY {
+                        self.req_frame_wait = 0;
+                        let _ = self.request_frame(self.expect_seq);
+                    }
+                }
                 return None;
             }
         }
@@ -2951,6 +2994,37 @@ mod tests {
         host.poll(&mut rcv);
         assert_eq!(host.online_ids(999).len(), 2, "收到普通心跳应自动解除掉线");
         assert!(host.take_online_dirty(), "解除掉线应置 online_dirty（供上层重播在线集）");
+    }
+
+    /// Fix1：缺口时的 `ReqFrame` 应被节流（新缺口立即一次，之后每 `REQ_FRAME_EVERY` 步最多一次），
+    /// 且**不放弃**（继续低频重试）。原实现是每次 step 都发（~60/s）。
+    #[test]
+    fn missing_frame_requests_are_throttled() {
+        let (mut ht, ct) = pair();
+        ht.drop_seqs = vec![2]; // host 首次广播 seq=2 丢包 → 客户端在 seq=2 处出现缺口
+        let mut host = HostLockstep::new(ht, 2, true);
+        let mut cli = ClientLockstep::new(ct, 1, Peer::Udp(SocketAddr::from(([127, 0, 0, 1], 4000))));
+        let mut rcv = [0u8; 4096];
+        // 先让 client 上行一次，host 才会登记 peer（否则 `try_emit` 无广播目标）。
+        cli.send_input(&[0]).unwrap();
+        host.poll(&mut rcv);
+        // host 产 6 帧（seq 0..5）；client 收下并把 seq 0/1 推进掉，停在 seq=2
+        for i in 0..6u8 {
+            host.set_local_input(Some(vec![i]));
+            let _ = host.try_emit();
+        }
+        while cli.step_frame(&mut rcv).unwrap().is_some() {}
+        assert_eq!(cli.expect_seq(), 2, "应在丢包的 seq=2 处停住");
+
+        // 之后 60 步都不让 host 回包（不 poll）→ 缺口持续；请求应被节流
+        let before = cli.frame_requests_sent();
+        for _ in 0..60 {
+            assert!(cli.step_frame(&mut rcv).unwrap().is_none(), "缺口未补前不应推进");
+        }
+        let sent = cli.frame_requests_sent() - before;
+        assert!(sent >= 1, "应至少请求一次缺失帧");
+        assert!(sent <= 6, "同一缺口应节流（60 步内 ≤6 次），实际 {sent}");
+        assert!(sent < 60, "不能像旧实现那样每步都发");
     }
 
     /// 阶段 1（Steam 战斗端等效）完整链路：对战中 client 停发 → host `auto_drop_idle` 自动掉线并靠默认占位继续产帧（不空转）
