@@ -51,7 +51,7 @@
 
 ## 3. 基线（改动前先确认，改动后必须一致或增长）
 
-- 测试：**client 128 / game-core 353 / net 62 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体 **client 141**（见 `check.ps1`）。
+- 测试：**client 129 / game-core 353 / net 62 / net-steam 9**（默认）；带 `client/steam,client/gui` 的变体 **client 142**（见 `check.ps1`）。
 - `PROTOCOL_VERSION = 69`——**动了会进快照的字段 / 改变世界演化的数值逻辑都必须 +1**，并同步 `world_ser.rs` 的 ser + de + 往返测试。（运行期包如 `Packet::Leave`/`ParticipantsAll` **不进 World ⇒ 不升协议**。）
 - 命令：`powershell -NoProfile -ExecutionPolicy Bypass -File check.ps1`（= build + test + clippy `-D warnings`，含 steam/gui 变体）。
 - 提交：默认走 **pre-commit 钩子**（跑完整回归）；**纯文档提交**可 `git commit --no-verify`，但仍需先跑一次 `check.ps1` 确认全绿。
@@ -101,7 +101,7 @@
 6. **当前主线：打磨（2026-10-17 拍板）**：
    - **顺序**：A（文档收口 + `tools/soak-report.ps1`，✅ `36b231b`/`d361510`）→ **P5**（缩圈/出界预警，✅ `1a68e9e`）→ **训练场 P1-lite**（统计 HUD + `F5` 重置 + 岩浆/缩圈/障碍开关，✅ `1c1690d`）→ **Kill feed**（✅ 同 commit）；
    - **已全部完成**（2026-10-17 打磨批次）；后续按真机反馈再排。
-   - **追加修复**：Ludicrous Kill 判定改用实时伤害矩阵 `world.round_damage_of(victim)<=0`（原用 `meta.damage_this_round`，对局中恒为 0 → 几乎每次击杀都触发，`8d606c5`）；`fd6a481` 目标点清除改为位移线段穿越；`bbb1d28` 位移技能与击退对齐（协议 60，见台账 §24）；`338e9bc` S013 Stop 只清移动指令、保留 `control`（协议 61）；`ff89904` S012A 冲撞时长按点击距离（协议 62）；`299b9f6` 冲撞不再额外加 52/s（协议 63）；`ddb71da` 去掉 +3 tick 尾部（协议 64，用户选 B）；`22dac12` 冲撞正常结束保留 20% 余速（协议 65）；`ade52bc` 时间精通范围统一（协议 66，F1/F2）；`16ef5bb` 普通投射物指示线补时间精通；`651b208` S012B 凤凰重写（协议 67）；`1469184` 凤凰速度按 Q/S 每 tick 衰减（手感修正）；`61f0ea2` Phoenix 改 cur_vel/普通移动分支（方案 C，恢复 Y/z）；`cf09a08` HUD 增加「凤」状态图标；`4eb332f` Phoenix 效果优先（协议 68，删除专用摩擦分支）；`0374bc5` 冷却按技能等级/形态（协议 69）。
+   - **追加修复**：Ludicrous Kill 判定改用实时伤害矩阵 `world.round_damage_of(victim)<=0`（原用 `meta.damage_this_round`，对局中恒为 0 → 几乎每次击杀都触发，`8d606c5`）；`fd6a481` 目标点清除改为位移线段穿越；`bbb1d28` 位移技能与击退对齐（协议 60，见台账 §24）；`338e9bc` S013 Stop 只清移动指令、保留 `control`（协议 61）；`ff89904` S012A 冲撞时长按点击距离（协议 62）；`299b9f6` 冲撞不再额外加 52/s（协议 63）；`ddb71da` 去掉 +3 tick 尾部（协议 64，用户选 B）；`22dac12` 冲撞正常结束保留 20% 余速（协议 65）；`ade52bc` 时间精通范围统一（协议 66，F1/F2）；`16ef5bb` 普通投射物指示线补时间精通；`651b208` S012B 凤凰重写（协议 67）；`1469184` 凤凰速度按 Q/S 每 tick 衰减（手感修正）；`61f0ea2` Phoenix 改 cur_vel/普通移动分支（方案 C，恢复 Y/z）；`cf09a08` HUD 增加「凤」状态图标；`4eb332f` Phoenix 效果优先（协议 68，删除专用摩擦分支）；`0374bc5` 冷却按技能等级/形态（协议 69）；`c741c6e` 宽高比 Phase A（4:3–21:9 动态布局，纯客户端）。
    - **音频**：创意工坊/本地包通道已完整，缺真实素材；素材到位后优先**替换 `client/assets/audio/*.wav`**（正式版与 demo 都生效），工坊包留给玩家自定义；
    - **暂缓**：P7-lite、多帧打包、观战/回放、AI 反击、En4/Scourge 模式。
 

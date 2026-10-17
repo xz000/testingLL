@@ -1,6 +1,6 @@
 # 宽高比 4:3–21:9 动态布局规划（方案 2）
 
-> 状态：**只读盘点完成，待实施**（2026-10-17）。
+> 状态：**Phase A 已实施（`c741c6e`）**；Phase B/C 待做（2026-10-17）。
 > 目标：窗口/全屏在 4:3–21:9 之间时**用满屏幕**，而不是固定 1280×720 外框 letterbox；宽屏显示更多横向场景，HUD 贴边。
 
 ## 0. 现状
@@ -89,3 +89,11 @@
 - 只改 `ui.rs`（`view_size`/`design_rect`/`mouse_design`）+ `update_camera` + 主菜单/Esc；
 - 不改协议、不改模拟；
 - `check.ps1` + 4:3/16:9/21:9 布局测试通过后再继续逐屏迁移。
+
+## 9. Phase A 实施记录（`c741c6e`）
+
+- `ui.rs`：新增 `view_size(ctx)`（高度 720，宽度 = 720×clamp(aspect,4:3,21:9)）与动态 `design_rect`；`mouse_design` 自动同步；范围外继续 letterbox。
+- `update_camera`：缩放基准从 `min(sw,sh)` 改为 `sh`（垂直视野恒定，宽屏显示更多横向）。
+- `main.rs`：所有原有 `(sw, sh) = (UI_W, UI_H)` 面板布局改为 `ui::view_size(ctx)`；主菜单卡片/Esc 行改为接收动态 `sw`。
+- 测试：新增 960/1280/1680 宽度下卡片/菜单不越界 + 4:3/16:9/21:9 填满/32:9 letterbox 断言。
+- 基线：client **129** / steam+gui **142**；协议仍 **69**（纯客户端）。
