@@ -6725,13 +6725,9 @@ impl Game {
                         }
                     }
                     // 098c Ludicrous Kill（`Io`）：击杀**本轮 0 伤害**的对手（`Rn[NI]==0`）。
-                    let victim_zero_dmg = self
-                        .meta
-                        .profiles
-                        .iter()
-                        .find(|p| p.player_id == victim)
-                        .map(|p| p.damage_this_round <= 0.0)
-                        .unwrap_or(false);
+                    // 098c Ludicrous Kill：击杀**本回合造成 0 伤害**的对手（`Rn[NI]==0`）。
+                    // 用实时伤害矩阵；`meta.damage_this_round` 仅在回合结束填充并立即清零，不可用于实时判定。
+                    let victim_zero_dmg = is_ludicrous_kill(&self.world, victim);
                     if victim_zero_dmg {
                         self.audio.play(audio::AudioCue::AnnLudicrousKill);
                         self.push_banner("Ludicrous Kill!".to_string(), Color::from_rgb(220, 130, 255));
@@ -13348,6 +13344,11 @@ fn draw_lightning_polyline(
     Ok(())
 }
 
+/// 098c `AI`：被击杀者本回合造成伤害为 0 ⇒ Ludicrous Kill。
+fn is_ludicrous_kill(world: &game_core::world::World, victim: u32) -> bool {
+    world.round_damage_of(victim) <= 0.0
+}
+
 fn player_color(id: u32, me: u32) -> Color {
     if id == me {
         Color::from_rgb(90, 200, 160)
@@ -14381,6 +14382,17 @@ mod tests {
     }
 
     /// 回归：击退/冲刺期间不得清除右键移动目标；只有到位才清。
+    #[test]
+    fn ludicrous_kill_uses_live_round_damage() {
+        use game_core::fix::Fix64;
+        let mut w = game_core::world::World::new(2, 1);
+        assert!(super::is_ludicrous_kill(&w, 1), "fresh round: zero damage");
+        w.damage_matrix[1][0] += Fix64::ONE;
+        assert!(!super::is_ludicrous_kill(&w, 1), "victim dealt damage -> not ludicrous");
+        w.reset_round();
+        assert!(super::is_ludicrous_kill(&w, 1), "new round resets the damage row");
+    }
+
     #[test]
     fn player_target_clear_requires_arrival_and_no_displacement() {
         use game_core::fix::{Fix64, Vec2};
