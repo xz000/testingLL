@@ -857,13 +857,20 @@ impl Player {
 
         // 强制位移计时（仅 `push` 恒速：`push_knockback` 已改用 kb_vel，不再走此处）
         let mut stop_control = false;
+        let mut control_vel = Vec2::ZERO;
         if let Some(c) = &mut self.control {
+            control_vel = c.vel;
             c.remaining = (c.remaining - dt).max(Fix64::ZERO);
             if c.remaining < eps {
                 stop_control = true;
             }
         }
         if stop_control {
+            // 098c `CR`：冲刺正常结束（非撞人/撞墙）时 Q=.2Q，保留 20% 余速；
+            // 冰面上会按 0.98 缓慢衰减继续滑。只有 S012A 冲刺会置 burning。
+            if self.burning {
+                self.cur_vel = control_vel * Fix64::from_num(0.2);
+            }
             self.control = None;
         }
         // 击退/冲量分量衰减（098c `Q=(Q−Y)*0.96+Y`）：普通每帧 ×0.96^(5/9)、冰面 ×0.98^(5/9)，

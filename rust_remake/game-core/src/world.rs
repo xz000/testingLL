@@ -11188,6 +11188,39 @@ mod tests {
 
     /// S012 冲撞：冲刺撞人造成 KI 伤害 + 冲刺位移生效。
     #[test]
+    fn s012_dash_keeps_twenty_percent_velocity_after_end() {
+        let mut world = World::new(2, 961);
+        world.obstacles.clear();
+        let dt = Fix64::from_num(1.0 / 60.0);
+        world.players[0].pos = Vec2::ZERO;
+        world.players[0].move_target = None;
+        world.players[1].pos = Vec2::new(d60(50.0), Fix64::ZERO);
+        world.players[1].move_target = None;
+        world.step(
+            vec![
+                PlayerInput { cast: Some((SkillId::S012, Some(Vec2::new(d60(5.0), Fix64::ZERO)))), ..Default::default() },
+                PlayerInput::default(),
+            ],
+            dt,
+        );
+        let none = vec![PlayerInput::default(), PlayerInput::default()];
+        let mut seen = false;
+        for _ in 0..120 {
+            world.step(none.clone(), dt);
+            if seen && world.players[0].control.is_none() {
+                break;
+            }
+            seen |= world.players[0].control.is_some();
+        }
+        assert!(seen, "dash should start");
+        let len = world.players[0].cur_vel.length().to_num::<f64>();
+        assert!(
+            len > 240.0 && len < 280.0,
+            "098c CR keeps 20% of 1300/s (~260/s), got {len}"
+        );
+    }
+
+    #[test]
     fn s012_dash_stops_near_clicked_distance() {
         let mut world = World::new(2, 960);
         world.obstacles.clear();
@@ -11284,6 +11317,7 @@ mod tests {
             world.step(none.clone(), dt);
         }
         assert!(world.players[0].control.is_none(), "命中后应清除强制位移（098c BA 急停）");
+        assert!(world.players[0].cur_vel == Vec2::ZERO, "098c BA 命中后 Q=0，不应保留余速");
         assert!(world.players[0].pos.x < d60(5.0), "应停在敌人前方而非冲过目标，x={:?}", world.players[0].pos.x);
     }
 
