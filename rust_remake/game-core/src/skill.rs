@@ -1218,9 +1218,9 @@ impl Caster {
     }
 
     /// 施法完成/开始后设置冷却（由效果执行方调用）。
-    pub fn begin_cooldown(&mut self, id: SkillId) {
-        let base_cd = DefTable::def(id).growth.cooldown_base;
-        self.cooldowns[id.as_u32() as usize] = Fix64::from_num(base_cd.max(0.1));
+    pub fn begin_cooldown(&mut self, id: SkillId, level: u32, alt: bool) {
+        let def = DefTable::def_for(id, alt);
+        self.cooldowns[id.as_u32() as usize] = def.stats_at(level).cooldown;
     }
 }
 
@@ -4111,6 +4111,17 @@ mod tests {
         assert!(s3.damage > s1.damage);
         assert!(near(s1.damage, 10.0, 1e-3));
         assert!(near(s3.damage, 14.0, 1e-3));
+    }
+
+    #[test]
+    fn cooldown_scales_with_skill_level() {
+        let mut caster = Caster::new();
+        caster.begin_cooldown(SkillId::S012, 1, false);
+        let l1 = caster.cooldown_remaining(SkillId::S012);
+        caster.begin_cooldown(SkillId::S012, 9, false);
+        let l9 = caster.cooldown_remaining(SkillId::S012);
+        assert!(l9 < l1, "S012 cooldown should drop with level: {l1} -> {l9}");
+        assert_eq!(l9, DefTable::def(SkillId::S012).stats_at(9).cooldown);
     }
 
     #[test]

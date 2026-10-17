@@ -122,4 +122,6 @@ pub fn version() -> &'static str {
 /// 每次新点地**追加** `18*0.5^(v/20)`；B 无施法距离/clamp、结束保留速度、移除直接接触伤害。
 /// v68（2026-10-17）：**Phoenix 效果优先**——删除专用 Q/S 摩擦分支；Phoenix 只负责转向窗口+bO 冲量，
 /// 速度/位置复用现有普通地面/冰面移动模型（地形自然区分）。
-pub const PROTOCOL_VERSION: u32 = 68;
+/// v69（2026-10-17）：**冷却按技能等级/形态**——`Caster::begin_cooldown` 改取 `stats_at(level).cooldown`（原固定 growth.cooldown_base），
+/// 修“购买菜单冷却变短但对局不变”。
+pub const PROTOCOL_VERSION: u32 = 69;

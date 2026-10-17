@@ -1445,7 +1445,9 @@ impl World {
             }
             if let Some((id, target)) = p.caster.advance(dt) {
                 fire_queue.push((idx as u32, id, target));
-                p.caster.begin_cooldown(id);
+                let lv = p.skill_level(id);
+                let alt = p.form_of(id);
+                p.caster.begin_cooldown(id, lv, alt);
             }
         }
 
