@@ -173,6 +173,16 @@
 - **架构岔路**：客户端 AI（零协议改动、只能单机）vs 核心 AI（放进 `World::step`，可复现/可进联机，但要动 core+协议）。
   建议将来先做 L1 客户端 AI，但把决策写成纯函数 `decide(view, rng) -> Action`，使日后搬进 core 只换调用点。
 
+## 11c. P1-lite 已实施（2026-10-17，`1c1690d`）
+
+按用户拍板做“训练场 A”但**不做 AI 反击**：
+
+- 设置面板 2→5 行：靶子数量 / 移动 / **岩浆（出界）** / **缩圈** / **障碍物**（后三者默认开，仅单机；写入 `settings.txt`）。
+- `F5` 一键重置：`World::reset_round()` + 重新应用训练开关，保留设置与技能；清弹幕/特效/统计，提示「训练场已重置」。
+- 右上角统计 HUD：本轮总伤害 / DPS / 最大单击 / 靶子存活（`World::round_damage_of` + `time()`；`present_max_hit` 由掉血差分跟踪）。
+- 实现：`apply_training_settings()`（进入训练/回合重置后调用）、`solo_world_and_meta_with_settings()`；新增 `training_lava` / `training_shrink` / `training_obstacles` 三个持久化字段。
+- 未做：AI 反击（仍按 §11b 远期）、固定场地大小、更多统计维度。
+
 ---
 
 ## 7. 需要你拍板（决定 P0 范围）
